@@ -1,10 +1,7 @@
 use crate::{
-    entropy::ENTROPY_LIFESPAN,
-    gateway_cache::GatewayCache,
-    gateway_cache::GatewayCacheError,
-    hex_density::HexDensityMap,
-    last_beacon::{LastBeacon, LastBeaconError},
-    region_cache::{RegionCache, RegionCacheError},
+    entropy::ENTROPY_LIFESPAN, gateway_cache::GatewayCache, gateway_cache::GatewayCacheError,
+    hex_density::HexDensityMap, last_beacon::LastBeacon, last_witness::LastWitness,
+    region_cache::RegionCache,
 };
 use beacon;
 use chrono::{DateTime, Duration, DurationRound, Utc};
@@ -29,7 +26,7 @@ use iot_config::{
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use std::{convert::Infallible, f64::consts::PI};
+use std::f64::consts::PI;
 
 pub type GenericVerifyResult<T = ()> = std::result::Result<T, InvalidResponse>;
 
@@ -56,6 +53,8 @@ lazy_static! {
     static ref MAX_WITNESS_LAG: Duration = Duration::milliseconds(1500);
     /// max permitted lag between the beaconer and a witness
     static ref MAX_BEACON_TO_WITNESS_LAG: Duration = Duration::milliseconds(4000);
+    /// the duration in which a beaconer or witness must have a valid opposite report from
+    static ref RECIPROCITY_WINDOW: Duration = Duration::hours(48);
 
 }
 #[derive(Debug, PartialEq)]
@@ -65,6 +64,8 @@ pub struct InvalidResponse {
 }
 
 pub struct Poc {
+    pool: PgPool,
+    beacon_interval: Duration,
     beacon_report: IotBeaconIngestReport,
     witness_reports: Vec<IotWitnessIngestReport>,
     entropy_start: DateTime<Utc>,
@@ -80,27 +81,16 @@ pub struct VerifyBeaconResult {
     pub hex_scale: Option<Decimal>,
 }
 
+#[derive(Clone, Debug)]
 pub struct VerifyWitnessesResult {
     pub verified_witnesses: Vec<IotVerifiedWitnessReport>,
     pub failed_witnesses: Vec<IotWitnessIngestReport>,
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum VerificationError<GatewayApiError> {
-    #[error("not found: {0}")]
-    NotFound(&'static str),
-    #[error("last beacon error: {0}")]
-    LastBeaconError(#[from] LastBeaconError),
-    #[error("calc distance error: {0}")]
-    CalcDistanceError(#[from] CalcDistanceError),
-    #[error("error querying gateway info from iot config service")]
-    GatewayCache(#[from] GatewayCacheError),
-    #[error("error querying region info from iot config service")]
-    RegionCache(#[from] RegionCacheError<GatewayApiError>),
-}
-
 impl Poc {
     pub async fn new(
+        pool: PgPool,
+        beacon_interval: Duration,
         beacon_report: IotBeaconIngestReport,
         witness_reports: Vec<IotWitnessIngestReport>,
         entropy_start: DateTime<Utc>,
@@ -108,6 +98,8 @@ impl Poc {
     ) -> Self {
         let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
         Self {
+            pool,
+            beacon_interval,
             beacon_report,
             witness_reports,
             entropy_start,
@@ -116,16 +108,13 @@ impl Poc {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn verify_beacon<G>(
         &mut self,
         hex_density_map: &HexDensityMap,
         gateway_cache: &GatewayCache,
         region_cache: &RegionCache<G>,
-        pool: &PgPool,
-        beacon_interval: Duration,
         deny_list: &DenyList,
-    ) -> Result<VerifyBeaconResult, VerificationError<G::Error>>
+    ) -> anyhow::Result<VerifyBeaconResult>
     where
         G: Gateways,
     {
@@ -154,10 +143,10 @@ impl Poc {
             .await
         {
             Ok(res) => res,
-            Err(err) => return Err(VerificationError::RegionCache(err)),
+            Err(err) => return Err(anyhow::Error::from(err)),
         };
         // we have beaconer info, proceed to verifications
-        let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
+        let last_beacon = LastBeacon::get(&self.pool, beaconer_pub_key.as_ref()).await?;
         match do_beacon_verifications(
             deny_list,
             self.entropy_start,
@@ -167,14 +156,32 @@ impl Poc {
             &self.beacon_report,
             &beaconer_info,
             &beaconer_region_info.region_params,
-            beacon_interval,
+            self.beacon_interval,
         ) {
             Ok(()) => {
                 let tx_scale = hex_density_map
                     .get(beaconer_metadata.location)
                     .await
                     .unwrap_or(*DEFAULT_TX_SCALE);
-                Ok(VerifyBeaconResult::valid(beaconer_info, tx_scale))
+                // update 'last beacon' timestamp if the beacon has passed regular validations
+                LastBeacon::update_last_timestamp(
+                    &self.pool,
+                    beaconer_pub_key.as_ref(),
+                    self.beacon_report.received_timestamp,
+                )
+                .await?;
+                // post regular validations, check for beacon reciprocity
+                // if this check fails we will invalidate the beacon
+                // even tho it has passed all regular validations
+                if !self.verify_beacon_reciprocity().await? {
+                    Ok(VerifyBeaconResult::invalid(
+                        InvalidReason::GatewayNoValidWitnesses,
+                        None,
+                        beaconer_info,
+                    ))
+                } else {
+                    Ok(VerifyBeaconResult::valid(beaconer_info, tx_scale))
+                }
             }
             Err(invalid_response) => Ok(VerifyBeaconResult::invalid(
                 invalid_response.reason,
@@ -190,11 +197,13 @@ impl Poc {
         hex_density_map: &HexDensityMap,
         gateway_cache: &GatewayCache,
         deny_list: &DenyList,
-    ) -> Result<VerifyWitnessesResult, VerificationError<Infallible>> {
+    ) -> anyhow::Result<VerifyWitnessesResult> {
+        let mut witnesses_to_update: Vec<(PublicKeyBinary, DateTime<Utc>)> = Vec::new();
         let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
         let mut failed_witnesses: Vec<IotWitnessIngestReport> = Vec::new();
         let mut existing_gateways: Vec<PublicKeyBinary> = Vec::new();
         let witnesses = self.witness_reports.clone();
+
         if !witnesses.is_empty() {
             let witness_earliest_received_ts = witnesses[0].received_timestamp;
             for witness_report in witnesses {
@@ -214,10 +223,30 @@ impl Poc {
                         )
                         .await
                     {
-                        Ok(verified_witness) => {
+                        Ok(mut verified_witness) => {
                             // track which gateways we have saw a witness report from
                             existing_gateways.push(verified_witness.report.pub_key.clone());
-                            verified_witnesses.push(verified_witness)
+                            if verified_witness.status == VerificationStatus::Valid {
+                                // add to list of witness to update last timestamp off
+                                witnesses_to_update.push((
+                                    witness_report.report.pub_key.clone(),
+                                    verified_witness.received_timestamp,
+                                ));
+                                // post regular validations, check for witness reciprocity
+                                // if this check fails we will invalidate the witness
+                                // even tho it has passed all regular validations
+                                if !self
+                                    .verify_witness_reciprocity(&witness_report.report.pub_key)
+                                    .await?
+                                {
+                                    verified_witness.status = VerificationStatus::Invalid;
+                                    verified_witness.invalid_reason =
+                                        InvalidReason::GatewayNoValidBeacons;
+                                    verified_witness.participant_side =
+                                        InvalidParticipantSide::Witness;
+                                }
+                            };
+                            verified_witnesses.push(verified_witness);
                         }
                         Err(_) => failed_witnesses.push(witness_report),
                     }
@@ -238,6 +267,12 @@ impl Poc {
                 }
             }
         }
+
+        // update the last witness timestamp for any witness which has successfully passed regular validations
+        if !witnesses_to_update.is_empty() {
+            LastWitness::bulk_update_last_timestamps(&self.pool, witnesses_to_update).await?
+        };
+
         let resp = VerifyWitnessesResult {
             verified_witnesses,
             failed_witnesses,
@@ -253,7 +288,7 @@ impl Poc {
         gateway_cache: &GatewayCache,
         hex_density_map: &HexDensityMap,
         witness_first_ts: DateTime<Utc>,
-    ) -> Result<IotVerifiedWitnessReport, VerificationError<Infallible>> {
+    ) -> anyhow::Result<IotVerifiedWitnessReport> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
         // pull the witness info from our follower
@@ -341,6 +376,28 @@ impl Poc {
                 InvalidParticipantSide::Witness,
             )),
         }
+    }
+
+    async fn verify_beacon_reciprocity(&self) -> anyhow::Result<bool> {
+        let last_witness =
+            LastWitness::get(&self.pool, self.beacon_report.report.pub_key.as_ref()).await?;
+        if let Some(last_witness) = last_witness {
+            if self.beacon_report.received_timestamp - last_witness.timestamp < *RECIPROCITY_WINDOW
+            {
+                return Ok(true);
+            }
+        };
+        Ok(false)
+    }
+
+    async fn verify_witness_reciprocity(&self, pubkey: &PublicKeyBinary) -> anyhow::Result<bool> {
+        let last_beacon = LastBeacon::get(&self.pool, pubkey.as_ref()).await?;
+        if let Some(last_beacon) = last_beacon {
+            if self.beacon_report.received_timestamp - last_beacon.timestamp < *RECIPROCITY_WINDOW {
+                return Ok(true);
+            }
+        };
+        Ok(false)
     }
 }
 

@@ -15,7 +15,8 @@ use file_store::{
     FileType,
 };
 use mobile_config::client::{
-    entity_client::EntityClient, AuthorizationClient, CarrierServiceClient, GatewayClient,
+    entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
+    CarrierServiceClient, GatewayClient,
 };
 use price::PriceTracker;
 use task_manager::TaskManager;
@@ -45,6 +46,7 @@ impl Cmd {
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
         let entity_client = EntityClient::from_settings(&settings.config_client)?;
         let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
+        let hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
 
         // price tracker
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
@@ -93,7 +95,10 @@ impl Cmd {
         .create()
         .await?;
 
-        let geofence = Geofence::from_settings(settings)?;
+        let cbrs_region_paths = settings.cbrs_region_paths()?;
+        tracing::info!(?cbrs_region_paths, "cbrs_geofence_regions");
+
+        let cbrs_geofence = Geofence::new(cbrs_region_paths, settings.cbrs_fencing_resolution()?)?;
 
         let cbrs_heartbeat_daemon = CellHeartbeatDaemon::new(
             pool.clone(),
@@ -104,8 +109,13 @@ impl Cmd {
             settings.max_distance_from_coverage,
             valid_heartbeats.clone(),
             seniority_updates.clone(),
-            geofence.clone(),
+            cbrs_geofence,
         );
+
+        let wifi_region_paths = settings.wifi_region_paths()?;
+        tracing::info!(?wifi_region_paths, "wifi_geofence_regions");
+
+        let wifi_geofence = Geofence::new(wifi_region_paths, settings.wifi_fencing_resolution()?)?;
 
         let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
             pool.clone(),
@@ -116,7 +126,7 @@ impl Cmd {
             settings.max_distance_from_coverage,
             valid_heartbeats,
             seniority_updates,
-            geofence,
+            wifi_geofence,
         );
 
         // Speedtests
@@ -212,6 +222,7 @@ impl Cmd {
         let rewarder = Rewarder::new(
             pool.clone(),
             carrier_client,
+            hex_boosting_client,
             Duration::hours(reward_period_hours),
             Duration::minutes(settings.reward_offset_minutes),
             mobile_rewards,

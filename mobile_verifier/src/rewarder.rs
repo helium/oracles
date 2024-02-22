@@ -10,14 +10,19 @@ use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
-
 use futures_util::TryFutureExt;
 use helium_proto::services::{
     poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
     poc_mobile::UnallocatedReward, poc_mobile::UnallocatedRewardType,
 };
 use helium_proto::RewardManifest;
-use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
+use mobile_config::{
+    boosted_hex_info::BoostedHexes,
+    client::{
+        carrier_service_client::CarrierServiceVerifier,
+        hex_boosting_client::HexBoostingInfoResolver, ClientError,
+    },
+};
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
@@ -29,9 +34,10 @@ use tokio::time::sleep;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
-pub struct Rewarder<A> {
+pub struct Rewarder<A, B> {
     pool: Pool<Postgres>,
     carrier_client: A,
+    hex_service_client: B,
     reward_period_duration: Duration,
     reward_offset: Duration,
     pub mobile_rewards: FileSinkClient,
@@ -40,14 +46,16 @@ pub struct Rewarder<A> {
     speedtest_averages: FileSinkClient,
 }
 
-impl<A> Rewarder<A>
+impl<A, B> Rewarder<A, B>
 where
     A: CarrierServiceVerifier<Error = ClientError>,
+    B: HexBoostingInfoResolver<Error = ClientError>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
         carrier_client: A,
+        hex_service_client: B,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient,
@@ -58,6 +66,7 @@ where
         Self {
             pool,
             carrier_client,
+            hex_service_client,
             reward_period_duration,
             reward_offset,
             mobile_rewards,
@@ -181,6 +190,7 @@ where
         // process rewards for poc and data transfer
         reward_poc_and_dc(
             &self.pool,
+            &self.hex_service_client,
             &self.mobile_rewards,
             &self.speedtest_averages,
             reward_period,
@@ -239,9 +249,10 @@ where
     }
 }
 
-impl<A> ManagedTask for Rewarder<A>
+impl<A, B> ManagedTask for Rewarder<A, B>
 where
     A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
+    B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
 {
     fn start_task(
         self: Box<Self>,
@@ -258,6 +269,7 @@ where
 
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
+    hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient,
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
@@ -276,28 +288,42 @@ pub async fn reward_poc_and_dc(
         bail!("The data transfer rewards scale cannot be converted to a float");
     };
     telemetry::data_transfer_rewards_scale(scale);
-
-    reward_poc(
+    // reward dc before poc so that we can calculate the unallocated dc reward
+    // and carry this into the poc pool
+    let dc_unallocated_amount = reward_dc(mobile_rewards, reward_period, transfer_rewards).await?;
+    // any poc unallocated gets attributed to the unallocated reward
+    let poc_unallocated_amount = reward_poc(
         pool,
+        hex_service_client,
         mobile_rewards,
         speedtest_avg_sink,
         reward_period,
-        transfer_rewards_sum,
+        transfer_rewards_sum - dc_unallocated_amount,
+    )
+    .await?
+    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+    .to_u64()
+    .unwrap_or(0);
+
+    write_unallocated_reward(
+        mobile_rewards,
+        UnallocatedRewardType::Poc,
+        poc_unallocated_amount,
+        reward_period,
     )
     .await?;
-
-    reward_dc(mobile_rewards, reward_period, transfer_rewards).await?;
 
     Ok(())
 }
 
 async fn reward_poc(
     pool: &Pool<Postgres>,
+    hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient,
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     transfer_reward_sum: Decimal,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Decimal> {
     let total_poc_rewards =
         reward_shares::get_scheduled_tokens_for_poc(reward_period.end - reward_period.start)
             - transfer_reward_sum;
@@ -308,11 +334,18 @@ async fn reward_poc(
 
     speedtest_averages.write_all(speedtest_avg_sink).await?;
 
-    let coverage_points =
-        CoveragePoints::aggregate_points(pool, heartbeats, &speedtest_averages, reward_period.end)
-            .await?;
+    let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
 
-    if let Some(mobile_reward_shares) =
+    let coverage_points = CoveragePoints::aggregate_points(
+        pool,
+        heartbeats,
+        &speedtest_averages,
+        &boosted_hexes,
+        reward_period,
+    )
+    .await?;
+
+    let unallocated_poc_amount = if let Some(mobile_reward_shares) =
         coverage_points.into_rewards(total_poc_rewards, reward_period)
     {
         // handle poc reward outputs
@@ -325,28 +358,20 @@ async fn reward_poc(
                 // Await the returned one shot to ensure that we wrote the file
                 .await??;
         }
-        // write out any unallocated poc reward
-        let unallocated_poc_reward_amount = (total_poc_rewards
-            - Decimal::from(allocated_poc_rewards))
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-        write_unallocated_reward(
-            mobile_rewards,
-            UnallocatedRewardType::Poc,
-            unallocated_poc_reward_amount,
-            reward_period,
-        )
-        .await?;
+        // calculate any unallocated poc reward
+        total_poc_rewards - Decimal::from(allocated_poc_rewards)
+    } else {
+        // default unallocated poc reward to the total poc reward
+        total_poc_rewards
     };
-    Ok(())
+    Ok(unallocated_poc_amount)
 }
 
 pub async fn reward_dc(
     mobile_rewards: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     transfer_rewards: TransferRewards,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Decimal> {
     // handle dc reward outputs
     let mut allocated_dc_rewards = 0_u64;
     let total_dc_rewards = transfer_rewards.total();
@@ -358,19 +383,11 @@ pub async fn reward_dc(
             // Await the returned one shot to ensure that we wrote the file
             .await??;
     }
-    // write out any unallocated dc reward
-    let unallocated_dc_reward_amount = (total_dc_rewards - Decimal::from(allocated_dc_rewards))
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-    write_unallocated_reward(
-        mobile_rewards,
-        UnallocatedRewardType::Data,
-        unallocated_dc_reward_amount,
-        reward_period,
-    )
-    .await?;
-    Ok(())
+    // for Dc we return the unallocated amount rather than writing it out to as an unallocated reward
+    // it then gets added to the poc pool
+    // we return the full decimal value just to ensure we allocate all to poc
+    let unallocated_dc_reward_amount = total_dc_rewards - Decimal::from(allocated_dc_rewards);
+    Ok(unallocated_dc_reward_amount)
 }
 
 pub async fn reward_mappers(
@@ -404,11 +421,11 @@ pub async fn reward_mappers(
     }
 
     // write out any unallocated mapping rewards
-    let unallocated_mapping_reward_amount = (total_mappers_pool
-        - Decimal::from(allocated_mapping_rewards))
-    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-    .to_u64()
-    .unwrap_or(0);
+    let unallocated_mapping_reward_amount = total_mappers_pool
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0)
+        - allocated_mapping_rewards;
     write_unallocated_reward(
         mobile_rewards,
         UnallocatedRewardType::Mapper,
@@ -427,11 +444,11 @@ pub async fn reward_oracles(
     let total_oracle_rewards =
         reward_shares::get_scheduled_tokens_for_oracles(reward_period.end - reward_period.start);
     let allocated_oracle_rewards = 0_u64;
-    let unallocated_oracle_reward_amount = (total_oracle_rewards
-        - Decimal::from(allocated_oracle_rewards))
-    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-    .to_u64()
-    .unwrap_or(0);
+    let unallocated_oracle_reward_amount = total_oracle_rewards
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0)
+        - allocated_oracle_rewards;
     write_unallocated_reward(
         mobile_rewards,
         UnallocatedRewardType::Oracle,
@@ -467,10 +484,11 @@ pub async fn reward_service_providers(
         mobile_rewards.write(sp_share.clone(), []).await?.await??;
     }
     // write out any unallocated service provider reward
-    let unallocated_sp_reward_amount = (total_sp_rewards - Decimal::from(allocated_sp_rewards))
+    let unallocated_sp_reward_amount = total_sp_rewards
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        - allocated_sp_rewards;
     write_unallocated_reward(
         mobile_rewards,
         UnallocatedRewardType::ServiceProvider,

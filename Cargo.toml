@@ -3,6 +3,7 @@ debug = true
 
 [workspace]
 members = [
+    "boost_manager",
     "db_store",
     "denylist",
     "file_store",

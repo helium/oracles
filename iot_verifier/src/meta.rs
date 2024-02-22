@@ -61,8 +61,7 @@ impl Meta {
         .await?
         .and_then(|v| {
             v.parse::<u64>()
-                .ok()
-                .and_then(|ts| ts.to_timestamp_millis().ok())
+                .map_or_else(|_| None, |ts| ts.to_timestamp_millis().ok())
         });
         Ok(last_timestamp)
     }

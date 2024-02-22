@@ -1,6 +1,7 @@
 use crate::entropy::ENTROPY_LIFESPAN;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::{Postgres, Transaction};
 
 const REPORT_INSERT_SQL: &str = "insert into poc_report (
     id,
@@ -102,13 +103,10 @@ impl Report {
         Ok(())
     }
 
-    pub async fn bulk_insert<'c, E>(
-        executor: E,
+    pub async fn bulk_insert(
+        txn: &mut Transaction<'_, Postgres>,
         bindings: Vec<InsertBindings>,
-    ) -> Result<(), ReportError>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
+    ) -> Result<(), ReportError> {
         let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
             sqlx::QueryBuilder::new(REPORT_INSERT_SQL);
         query_builder.push_values(bindings, |mut b, insert| {
@@ -124,7 +122,7 @@ impl Report {
         query_builder.push(" on conflict (id) do nothing ");
         let query = query_builder.build();
         query
-            .execute(executor)
+            .execute(&mut *txn)
             .await
             .map(|_| ())
             .map_err(ReportError::from)

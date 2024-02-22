@@ -1,0 +1,44 @@
+log = "boost_manager=info,solana=debug"
+
+# Cache location for generated boost manager outputs; Required
+cache = "/tmp/oracles/boost-manager"
+
+start_after = 1702602001
+
+enable_solana_integration = true
+
+activation_check_interval = 30
+
+[solana]
+# Solana RPC. This may contain a secret
+rpc_url = "https://api.devnet.solana.com"
+# Path to the keypair used to sign data credit burn solana transactions
+start_authority_keypair = ""
+# Public key of the hex boost authority
+hexboost_authority_pubkey = ""
+# Solana cluster to use. "devnet" or "mainnet"
+cluster = "devnet"
+
+#
+[database]
+url = "postgresql://postgres:postgres@localhost:5432/hexboosting"
+# Max connections to the database.
+max_connections = 10
+
+[verifier]
+bucket = "mobile-verified"
+
+[output]
+bucket = "mobile-verified"
+
+[mobile_config_client]
+url = "http://localhost:6090"
+config_pubkey = ""
+signing_keypair = ""
+
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+endpoint = "127.0.0.1:19001"

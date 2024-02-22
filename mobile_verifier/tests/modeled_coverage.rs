@@ -7,8 +7,11 @@ use file_store::{
 };
 use futures::stream::{self, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::mobile_config::NetworkKeyRole;
-use helium_proto::services::poc_mobile::{CoverageObjectValidity, SignalLevel};
+use helium_proto::services::{
+    mobile_config::NetworkKeyRole,
+    poc_mobile::{CoverageObjectValidity, SignalLevel},
+};
+use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
@@ -19,8 +22,9 @@ use mobile_verifier::{
     GatewayResolution, GatewayResolver, IsAuthorized,
 };
 use rust_decimal_macros::dec;
+use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
-use std::{collections::HashMap, ops::Range, pin::pin};
+use std::{collections::HashMap, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -31,6 +35,8 @@ impl GeofenceValidator for MockGeofence {
         true
     }
 }
+const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
+const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
 
 #[sqlx::test]
 #[ignore]
@@ -473,8 +479,14 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
+    let coverage_points = CoveragePoints::aggregate_points(
+        &pool,
+        heartbeats,
+        &speedtest_avgs,
+        &BoostedHexes::default(),
+        &reward_period,
+    )
+    .await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner), dec!(1000));
 
@@ -566,8 +578,14 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
+    let coverage_points = CoveragePoints::aggregate_points(
+        &pool,
+        heartbeats,
+        &speedtest_avgs,
+        &BoostedHexes::default(),
+        &reward_period,
+    )
+    .await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(500));
     assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(1000));
@@ -798,10 +816,58 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     averages.insert(owner_6.clone(), SpeedtestAverage::from(speedtests_6));
     let speedtest_avgs = SpeedtestAverages { averages };
 
+    let mut boosted_hexes = BoostedHexes::default();
+    boosted_hexes.hexes.insert(
+        0x8a1fb466d2dffff_u64,
+        BoostedHexInfo {
+            location: 0x8a1fb466d2dffff_u64,
+            start_ts: None,
+            end_ts: None,
+            period_length: Duration::hours(1),
+            multipliers: vec![1],
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            version: 0,
+        },
+    );
+    boosted_hexes.hexes.insert(
+        0x8a1fb49642dffff_u64,
+        BoostedHexInfo {
+            location: 0x8a1fb49642dffff_u64,
+            start_ts: None,
+            end_ts: None,
+            period_length: Duration::hours(1),
+            multipliers: vec![2],
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            version: 0,
+        },
+    );
+    boosted_hexes.hexes.insert(
+        0x8c2681a306607ff_u64,
+        BoostedHexInfo {
+            // hotspot 1's location
+            location: 0x8c2681a306607ff_u64,
+            start_ts: None,
+            end_ts: None,
+            period_length: Duration::hours(1),
+            multipliers: vec![3],
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            version: 0,
+        },
+    );
+
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
+    let coverage_points = CoveragePoints::aggregate_points(
+        &pool,
+        heartbeats,
+        &speedtest_avgs,
+        &boosted_hexes,
+        &reward_period,
+    )
+    .await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(250));
     assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(250));
@@ -865,8 +931,14 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
+    let coverage_points = CoveragePoints::aggregate_points(
+        &pool,
+        heartbeats,
+        &speedtest_avgs,
+        &BoostedHexes::default(),
+        &reward_period,
+    )
+    .await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner), dec!(76));
 
@@ -957,8 +1029,14 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
+    let coverage_points = CoveragePoints::aggregate_points(
+        &pool,
+        heartbeats,
+        &speedtest_avgs,
+        &BoostedHexes::default(),
+        &reward_period,
+    )
+    .await?;
 
     assert_eq!(
         coverage_points.hotspot_points(&owner_1),
@@ -1197,8 +1275,14 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
+    let coverage_points = CoveragePoints::aggregate_points(
+        &pool,
+        heartbeats,
+        &speedtest_avgs,
+        &BoostedHexes::default(),
+        &reward_period,
+    )
+    .await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(250));
     assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(250));

@@ -1,14 +1,20 @@
 mod common;
-use crate::common::MockFileSinkReceiver;
+use crate::common::{MockFileSinkReceiver, MockHexBoostingClient};
+use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     speedtest::CellSpeedtest,
 };
+use futures_util::{stream, StreamExt as FuturesStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, GatewayReward, HeartbeatValidity, RadioReward, SeniorityUpdateReason,
     SignalLevel, UnallocatedReward, UnallocatedRewardType,
+};
+use mobile_config::{
+    boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
+    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
 use mobile_verifier::{
     cell_type::CellType,
@@ -24,8 +30,30 @@ use uuid::Uuid;
 
 const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11uJHS2YaEWJqgqC7yza9uvSmpv5FWoMQXiP8WbxBGgNUmifUJf";
-const HOTSPOT_3: &str = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp";
+const HOTSPOT_3: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
 const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
+
+impl MockHexBoostingClient {
+    fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
+        Self { boosted_hexes }
+    }
+}
+
+#[async_trait]
+impl HexBoostingInfoResolver for MockHexBoostingClient {
+    type Error = ClientError;
+
+    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
+        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
+    }
+
+    async fn stream_modified_boosted_hexes_info(
+        &mut self,
+        _timestamp: DateTime<Utc>,
+    ) -> Result<BoostedHexInfoStream, ClientError> {
+        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
+    }
+}
 
 #[sqlx::test]
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
@@ -41,10 +69,15 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     seed_data_sessions(epoch.start, &mut txn).await?;
     txn.commit().await?;
 
+    let boosted_hexes = vec![];
+
+    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
+            &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -54,21 +87,31 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     );
     if let Ok((poc_rewards, dc_rewards, unallocated_poc_reward)) = rewards {
         // assert poc reward outputs
-        assert_eq!(24_108_003_121_986, poc_rewards[0].poc_reward);
+        let hotspot_1_reward = 24_108_003_121_986;
+        let hotspot_2_reward = 24_108_003_121_986;
+        let hotspot_3_reward = 964_320_124_879;
+        assert_eq!(hotspot_1_reward, poc_rewards[0].poc_reward);
         assert_eq!(
             HOTSPOT_1.to_string(),
             PublicKeyBinary::from(poc_rewards[0].hotspot_key.clone()).to_string()
         );
-        assert_eq!(964_320_124_879, poc_rewards[1].poc_reward);
-        assert_eq!(
-            HOTSPOT_2.to_string(),
-            PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
-        );
-        assert_eq!(24_108_003_121_986, poc_rewards[2].poc_reward);
+        assert_eq!(hotspot_2_reward, poc_rewards[1].poc_reward);
         assert_eq!(
             HOTSPOT_3.to_string(),
+            PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
+        );
+        assert_eq!(hotspot_3_reward, poc_rewards[2].poc_reward);
+        assert_eq!(
+            HOTSPOT_2.to_string(),
             PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
         );
+
+        // assert the boosted hexes in the radio rewards
+        // boosted hexes will contain the used multiplier for each boosted hex
+        // in this test there are no boosted hexes
+        assert_eq!(0, poc_rewards[0].boosted_hexes.len());
+        assert_eq!(0, poc_rewards[1].boosted_hexes.len());
+        assert_eq!(0, poc_rewards[2].boosted_hexes.len());
 
         // assert unallocated amount
         assert_eq!(
@@ -85,12 +128,12 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         );
         assert_eq!(500_000, dc_rewards[1].dc_transfer_reward);
         assert_eq!(
-            HOTSPOT_2.to_string(),
+            HOTSPOT_3.to_string(),
             PublicKeyBinary::from(dc_rewards[1].hotspot_key.clone()).to_string()
         );
         assert_eq!(500_000, dc_rewards[2].dc_transfer_reward);
         assert_eq!(
-            HOTSPOT_3.to_string(),
+            HOTSPOT_2.to_string(),
             PublicKeyBinary::from(dc_rewards[2].hotspot_key.clone()).to_string()
         );
 
@@ -120,6 +163,14 @@ async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver,
 ) -> anyhow::Result<(Vec<RadioReward>, Vec<GatewayReward>, UnallocatedReward)> {
     // get the filestore outputs from rewards run
+
+    // expect 3 gateway rewards for dc transfer
+    let dc_reward1 = mobile_rewards.receive_gateway_reward().await;
+    let dc_reward2 = mobile_rewards.receive_gateway_reward().await;
+    let dc_reward3 = mobile_rewards.receive_gateway_reward().await;
+    let mut dc_rewards = vec![dc_reward1, dc_reward2, dc_reward3];
+    dc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
+
     // we will have 3 radio rewards, 1 wifi radio and 2 cbrs radios
     let radio_reward1 = mobile_rewards.receive_radio_reward().await;
     let radio_reward2 = mobile_rewards.receive_radio_reward().await;
@@ -131,13 +182,6 @@ async fn receive_expected_rewards(
 
     // expect one unallocated reward for poc
     let unallocated_poc_reward = mobile_rewards.receive_unallocated_reward().await;
-
-    // expect 3 gateway rewards for dc transfer
-    let dc_reward1 = mobile_rewards.receive_gateway_reward().await;
-    let dc_reward2 = mobile_rewards.receive_gateway_reward().await;
-    let dc_reward3 = mobile_rewards.receive_gateway_reward().await;
-    let mut dc_rewards = vec![dc_reward1, dc_reward2, dc_reward3];
-    dc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
 
     // should be no further msgs
     mobile_rewards.assert_no_messages();

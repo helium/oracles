@@ -4,6 +4,7 @@ pub mod gateway_cache;
 pub mod gateway_updater;
 pub mod hex_density;
 pub mod last_beacon;
+pub mod last_witness;
 pub mod loader;
 pub mod meta;
 pub mod packet_loader;

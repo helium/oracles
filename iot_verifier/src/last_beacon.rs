@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use file_store::traits::TimestampDecode;
 use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -9,20 +8,8 @@ pub struct LastBeacon {
     pub timestamp: DateTime<Utc>,
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum LastBeaconError {
-    #[error("database error: {0}")]
-    DatabaseError(#[from] sqlx::Error),
-    #[error("file store error: {0}")]
-    FileStoreError(#[from] file_store::Error),
-}
-
 impl LastBeacon {
-    pub async fn insert_kv<'c, E>(
-        executor: E,
-        id: &[u8],
-        val: &str,
-    ) -> Result<Self, LastBeaconError>
+    pub async fn insert_kv<'c, E>(executor: E, id: &[u8], val: &str) -> anyhow::Result<Self>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -39,7 +26,7 @@ impl LastBeacon {
         .await?)
     }
 
-    pub async fn get<'c, E>(executor: E, id: &[u8]) -> Result<Option<Self>, LastBeaconError>
+    pub async fn get<'c, E>(executor: E, id: &[u8]) -> anyhow::Result<Option<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -52,26 +39,28 @@ impl LastBeacon {
     }
 
     pub async fn get_all_since<'c, E>(
-        deadline: DateTime<Utc>,
         executor: E,
-    ) -> Result<Vec<Self>, sqlx::Error>
+        timestamp: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + 'c,
     {
-        sqlx::query_as::<_, Self>(r#" select * from last_beacon where timestamp >= $1; "#)
-            .bind(deadline)
-            .fetch_all(executor)
-            .await
+        Ok(
+            sqlx::query_as::<_, Self>(r#" select * from last_beacon where timestamp >= $1; "#)
+                .bind(timestamp)
+                .fetch_all(executor)
+                .await?,
+        )
     }
 
     pub async fn last_timestamp<'c, E>(
         executor: E,
         id: &[u8],
-    ) -> Result<Option<DateTime<Utc>>, LastBeaconError>
+    ) -> anyhow::Result<Option<DateTime<Utc>>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let height = sqlx::query_scalar::<_, String>(
+        let height = sqlx::query_scalar(
             r#"
             select timestamp from last_beacon
             where id = $1
@@ -79,12 +68,7 @@ impl LastBeacon {
         )
         .bind(id)
         .fetch_optional(executor)
-        .await?
-        .and_then(|v| {
-            v.parse::<u64>()
-                .map_or_else(|_| None, |secs| Some(secs.to_timestamp()))
-        })
-        .transpose()?;
+        .await?;
         Ok(height)
     }
 
@@ -92,7 +76,7 @@ impl LastBeacon {
         executor: E,
         id: &[u8],
         timestamp: DateTime<Utc>,
-    ) -> Result<(), LastBeaconError>
+    ) -> anyhow::Result<()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {

@@ -12,6 +12,8 @@ async-trait = {workspace = true}
 anchor-lang = {workspace = true}
 anchor-client = {workspace = true}
 clap = {workspace = true}
+chrono = {workspace = true}
+file-store = {path = "../file_store"}
 futures = {workspace = true}
 helium-anchor-gen = {workspace = true}
 helium-crypto = {workspace = true, features = ["solana"]}

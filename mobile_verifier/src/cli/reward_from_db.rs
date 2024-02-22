@@ -8,6 +8,7 @@ use anyhow::Result;
 use chrono::NaiveDateTime;
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
+use mobile_config::boosted_hex_info::BoostedHexes;
 use rust_decimal::Decimal;
 use serde_json::json;
 use std::collections::HashMap;
@@ -38,8 +39,15 @@ impl Cmd {
         let heartbeats = HeartbeatReward::validated(&pool, &epoch);
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
-        let reward_shares =
-            CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_averages, end).await?;
+        let boosted_hexes = BoostedHexes::default();
+        let reward_shares = CoveragePoints::aggregate_points(
+            &pool,
+            heartbeats,
+            &speedtest_averages,
+            &boosted_hexes,
+            &epoch,
+        )
+        .await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
