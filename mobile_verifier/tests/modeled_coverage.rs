@@ -532,7 +532,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_2,
             key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_2.clone()),
-            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
+            coverage_claim_time: "2022-01-31 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
             coverage: vec![
@@ -587,7 +587,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(500));
+    assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(450));
     assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(1000));
 
     Ok(())
@@ -687,7 +687,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_4,
             key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_4.clone()),
-            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
+            coverage_claim_time: "2022-01-31 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
             coverage: vec![
@@ -869,9 +869,9 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(250));
-    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(250));
-    assert_eq!(coverage_points.hotspot_points(&owner_3), dec!(1000));
+    assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(0));
+    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(0));
+    assert_eq!(coverage_points.hotspot_points(&owner_3), dec!(0));
     assert_eq!(coverage_points.hotspot_points(&owner_4), dec!(1000));
     assert_eq!(coverage_points.hotspot_points(&owner_5), dec!(0));
     assert_eq!(coverage_points.hotspot_points(&owner_6), dec!(0));
@@ -1042,7 +1042,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         coverage_points.hotspot_points(&owner_1),
         dec!(76) * dec!(0.5)
     );
-    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(34));
+    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(32));
 
     Ok(())
 }
@@ -1100,7 +1100,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_2,
             key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_2.clone()),
-            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
+            coverage_claim_time: "2022-01-31 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
             coverage: vec![
@@ -1284,11 +1284,11 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(250));
+    assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(0));
     assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(250));
-    assert_eq!(coverage_points.hotspot_points(&owner_3), dec!(1000));
-    assert_eq!(coverage_points.hotspot_points(&owner_4), dec!(1000));
-    assert_eq!(coverage_points.hotspot_points(&owner_5), dec!(1000));
+    assert_eq!(coverage_points.hotspot_points(&owner_3), dec!(0));
+    assert_eq!(coverage_points.hotspot_points(&owner_4), dec!(0));
+    assert_eq!(coverage_points.hotspot_points(&owner_5), dec!(0));
     assert_eq!(coverage_points.hotspot_points(&owner_6), dec!(0));
 
     Ok(())
