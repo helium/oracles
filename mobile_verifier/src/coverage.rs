@@ -599,6 +599,7 @@ fn insert_outdoor_coverage(
             hotspot: hotspot.clone(),
         });
 }
+
 fn into_outdoor_rewards(
     outdoor: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
     boosted_hexes: &BoostedHexes,
