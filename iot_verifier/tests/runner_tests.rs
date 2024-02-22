@@ -1043,11 +1043,11 @@ async fn valid_beacon_and_no_witnesses(pool: PgPool) -> anyhow::Result<()> {
 
     let beacon_to_inject = common::create_valid_beacon_report(
         common::BEACONER1,
-        ctx.entropy_ts + ChronoDuration::seconds(5),
+        ctx.entropy_ts + test_beacon_interval,
     );
     let witness_to_inject = common::create_valid_witness_report(
         common::WITNESS1,
-        ctx.entropy_ts + ChronoDuration::seconds(5),
+        ctx.entropy_ts + test_beacon_interval,
     );
     common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
     common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
