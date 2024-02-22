@@ -521,66 +521,20 @@ impl CoveredHexes {
         let mut covered_hexes = std::pin::pin!(covered_hexes);
         let mut boosted = false;
 
-        while let Some(HexCoverage {
-            hex,
-            indoor,
-            signal_level,
-            coverage_claim_time,
-            radio_key,
-            signal_power,
-            ..
-        }) = covered_hexes.next().await.transpose()?
-        {
-            let hex = hex as u64;
-            boosted |= boosted_hexes.is_boosted(&hex);
-            match (indoor, &radio_key) {
-                (true, OwnedKeyType::Cbrs(_)) => self
-                    .indoor_cbrs
-                    .entry(CellIndex::try_from(hex).unwrap())
-                    .or_default()
-                    .entry(signal_level)
-                    .or_default()
-                    .push(IndoorCoverageLevel {
-                        radio_key,
-                        seniority_timestamp: coverage_claim_time,
-                        signal_level,
-                        hotspot: hotspot.clone(),
-                    }),
-                (true, OwnedKeyType::Wifi(_)) => self
-                    .indoor_wifi
-                    .entry(CellIndex::try_from(hex).unwrap())
-                    .or_default()
-                    .entry(signal_level)
-                    .or_default()
-                    .push(IndoorCoverageLevel {
-                        radio_key,
-                        seniority_timestamp: coverage_claim_time,
-                        signal_level,
-                        hotspot: hotspot.clone(),
-                    }),
+        while let Some(hex_coverage) = covered_hexes.next().await.transpose()? {
+            boosted |= boosted_hexes.is_boosted(&(hex_coverage.hex as u64));
+            match (hex_coverage.indoor, &hex_coverage.radio_key) {
+                (true, OwnedKeyType::Cbrs(_)) => {
+                    insert_indoor_coverage(&mut self.indoor_cbrs, hotspot, hex_coverage);
+                }
+                (true, OwnedKeyType::Wifi(_)) => {
+                    insert_indoor_coverage(&mut self.indoor_wifi, hotspot, hex_coverage);
+                }
                 (false, OwnedKeyType::Cbrs(_)) => {
-                    self.outdoor_cbrs
-                        .entry(CellIndex::try_from(hex).unwrap())
-                        .or_default()
-                        .push(OutdoorCoverageLevel {
-                            radio_key,
-                            seniority_timestamp: coverage_claim_time,
-                            signal_level,
-                            signal_power,
-                            hotspot: hotspot.clone(),
-                        });
+                    insert_outdoor_coverage(&mut self.outdoor_cbrs, hotspot, hex_coverage);
                 }
                 (false, OwnedKeyType::Wifi(_)) => {
-                    self.outdoor_wifi
-                        .entry(CellIndex::try_from(hex).unwrap())
-                        .or_default()
-                        .push(OutdoorCoverageLevel {
-                            radio_key,
-                            seniority_timestamp: coverage_claim_time,
-                            signal_level,
-                            signal_power,
-                            hotspot: hotspot.clone(),
-                        });
+                    insert_outdoor_coverage(&mut self.outdoor_wifi, hotspot, hex_coverage);
                 }
             }
         }
@@ -611,6 +565,40 @@ impl CoveredHexes {
     }
 }
 
+fn insert_indoor_coverage(
+    indoor: &mut HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>,
+    hotspot: &PublicKeyBinary,
+    hex_coverage: HexCoverage,
+) {
+    indoor
+        .entry(CellIndex::try_from(hex_coverage.hex as u64).unwrap())
+        .or_default()
+        .entry(hex_coverage.signal_level)
+        .or_default()
+        .push(IndoorCoverageLevel {
+            radio_key: hex_coverage.radio_key,
+            seniority_timestamp: hex_coverage.coverage_claim_time,
+            signal_level: hex_coverage.signal_level,
+            hotspot: hotspot.clone(),
+        })
+}
+
+fn insert_outdoor_coverage(
+    outdoor: &mut HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
+    hotspot: &PublicKeyBinary,
+    hex_coverage: HexCoverage,
+) {
+    outdoor
+        .entry(CellIndex::try_from(hex_coverage.hex as u64).unwrap())
+        .or_default()
+        .push(OutdoorCoverageLevel {
+            radio_key: hex_coverage.radio_key,
+            seniority_timestamp: hex_coverage.coverage_claim_time,
+            signal_level: hex_coverage.signal_level,
+            signal_power: hex_coverage.signal_power,
+            hotspot: hotspot.clone(),
+        });
+}
 fn into_outdoor_rewards(
     outdoor: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
     boosted_hexes: &BoostedHexes,
