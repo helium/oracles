@@ -1284,8 +1284,6 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    dbg!(&coverage_points);
-
     assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(0));
     assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(250));
     assert_eq!(coverage_points.hotspot_points(&owner_3), dec!(0));

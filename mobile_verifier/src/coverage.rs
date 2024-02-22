@@ -828,6 +828,8 @@ impl CachedCoverageObject<'_> {
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
     use super::*;
     use chrono::NaiveDate;
     use futures::stream::iter;
@@ -845,11 +847,11 @@ mod test {
                 &owner,
                 &BoostedHexes::default(),
                 iter(vec![
-                    anyhow::Ok(indoor_cbrs_hex_coverage("1", SignalLevel::None)),
-                    anyhow::Ok(indoor_cbrs_hex_coverage("2", SignalLevel::Low)),
-                    anyhow::Ok(indoor_cbrs_hex_coverage("3", SignalLevel::High)),
-                    anyhow::Ok(indoor_cbrs_hex_coverage("4", SignalLevel::Low)),
-                    anyhow::Ok(indoor_cbrs_hex_coverage("5", SignalLevel::None)),
+                    anyhow::Ok(indoor_cbrs_hex_coverage("1", SignalLevel::None, None)),
+                    anyhow::Ok(indoor_cbrs_hex_coverage("2", SignalLevel::Low, None)),
+                    anyhow::Ok(indoor_cbrs_hex_coverage("3", SignalLevel::High, None)),
+                    anyhow::Ok(indoor_cbrs_hex_coverage("4", SignalLevel::Low, None)),
+                    anyhow::Ok(indoor_cbrs_hex_coverage("5", SignalLevel::None, None)),
                 ]),
             )
             .await
@@ -1038,7 +1040,248 @@ mod test {
         );
     }
 
-    fn indoor_cbrs_hex_coverage(cbsd_id: &str, signal_level: SignalLevel) -> HexCoverage {
+    #[tokio::test]
+    async fn hip_105_ensure_all_types_get_rewards() -> anyhow::Result<()> {
+        let mut covered_hexes = CoveredHexes::default();
+        let boosted_hexes = BoostedHexes::default();
+
+        let outdoor_cbrs_owner1 =
+            PublicKeyBinary::from_str("11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL")?;
+        covered_hexes
+            .aggregate_coverage(
+                &outdoor_cbrs_owner1,
+                &boosted_hexes,
+                iter(vec![
+                    anyhow::Ok(outdoor_cbrs_hex_coverage("oco1-1", -700, date(2024, 2, 20))),
+                    anyhow::Ok(outdoor_cbrs_hex_coverage("oco1-2", -700, date(2024, 2, 21))),
+                    anyhow::Ok(outdoor_cbrs_hex_coverage("oco1-3", -699, date(2024, 2, 23))),
+                    anyhow::Ok(outdoor_cbrs_hex_coverage("oco1-4", -700, date(2024, 2, 19))),
+                ]),
+            )
+            .await?;
+
+        let indoor_cbrs_owner1 =
+            PublicKeyBinary::from_str("11PfLUsMAfsozjy2kcERF43UuhNAhicEQM8ioutFM322Eu37D4m")?;
+        covered_hexes
+            .aggregate_coverage(
+                &indoor_cbrs_owner1,
+                &boosted_hexes,
+                iter(vec![
+                    anyhow::Ok(indoor_cbrs_hex_coverage(
+                        "ico1-1",
+                        SignalLevel::High,
+                        Some(date(2024, 2, 20)),
+                    )),
+                    anyhow::Ok(indoor_cbrs_hex_coverage(
+                        "ico1-2",
+                        SignalLevel::High,
+                        Some(date(2024, 2, 21)),
+                    )),
+                ]),
+            )
+            .await?;
+
+        let outdoor_wifi_owner1 =
+            PublicKeyBinary::from_str("1trSuseczBVbfpbJjefoFsuPazRSrzJjCXaKJPU9B3HKJvb6sdqTepcbY2zWBq2yMTt7Jsf7NZCm28ez856kDa5MT3Ja1gh8HyZWS8k9LCSFSWiDNG2YmcCpLgnhGrEw9FriCVPLuXaciQ2Fu9ztW7r1U1Pv64i3HvpkC4mmQWE9DSq7tgiNkNhNuWBA3Sf8KbtefMPofTxjCsfVCUKX2ow8MScn82CK6vWUZNUPonpTJydKVLNiMGfvceY1MsfXtHdx6bUCjoFoZNkikAzEpgArczJV9CdhkBjKX3xLVLpehdrBDGu8aBLfRbNJ4RRz9Gj4pHFnBhFq78tRGi1USpnf6Dohp9bA18qr4XdPJc59Qz")?;
+        covered_hexes
+            .aggregate_coverage(
+                &outdoor_wifi_owner1,
+                &boosted_hexes,
+                iter(vec![anyhow::Ok(outdoor_wifi_hex_coverage(
+                    &outdoor_wifi_owner1,
+                    -700,
+                    date(2024, 2, 20),
+                ))]),
+            )
+            .await?;
+
+        let outdoor_wifi_owner2 =
+            PublicKeyBinary::from_str("1trSuseerjmxKaD43hSLPD1oWTt6Y6svqJX7WJecMwKKcRk1355AQp1GSkUNV7fnL9QYGpZSS378XoxmaHte5PCD64NYzJ1x7bBNdq6qBRFRDqTW1PGPMatjX3i18Y39hh8Ngsephg93YCZoVbvfGc5YMmtvxqqP4WXy4UxmiTZ6uuYzPV5U31piAFVxaUhTZtoQLCyLzAZEks8bj2cP6EyEFMecHb9Vq76d4qnXdjARvFim7xACkBKHTnAwEEN8wfWfGEw5QBQMfpvvSLUerL64xR72tT3SrM7qUXk9m7fTbLuwg8XfUKEs2iqhPSfSu2v4DpcKY7L4fvu8BT2WsMChC3xaPWWiibTVatoNLNxTH6")?;
+        covered_hexes
+            .aggregate_coverage(
+                &outdoor_wifi_owner2,
+                &boosted_hexes,
+                iter(vec![anyhow::Ok(outdoor_wifi_hex_coverage(
+                    &outdoor_wifi_owner2,
+                    -700,
+                    date(2024, 2, 21),
+                ))]),
+            )
+            .await?;
+
+        let outdoor_wifi_owner3 =
+            PublicKeyBinary::from_str("1trSusefexd9C3purVPScg433RXrVb5kU9hLTTKjuc2dTju9udy2rsgAYUTjhxARa9ewZAW1PdsjsErGyaHNJKNDkjHfzuHZmPm7vWK3A13sckxRbwSBtBXAMg4nyChmoJ5JgZVeeHBtdYX69emPoDD8niKSx5vkkoBw5g1AYS7S4LfnpGhCtwKA8PzjjzE3ZY6dWQjm2oCut31ScsH9nZfBHriHpkTbNK8KttkFRU3ax3wdJXmN996PPbYsgm1wx8ctU9iU6Q7FvTvVkZTGfHHcH8J38YCuWB9LfizRSueKWNSPbfsrJgQe3otTYtdU7NDWWQzrpv3yATS2NJzyorKpjg8hH5J2krtU3KdByBgZdU")?;
+        covered_hexes
+            .aggregate_coverage(
+                &outdoor_wifi_owner3,
+                &boosted_hexes,
+                iter(vec![anyhow::Ok(outdoor_wifi_hex_coverage(
+                    &outdoor_wifi_owner3,
+                    -699,
+                    date(2024, 2, 23),
+                ))]),
+            )
+            .await?;
+
+        let outdoor_wifi_owner4 =
+            PublicKeyBinary::from_str("1trSusf5rnmrUHqyv28ksYJGBBkHZi821ss7vLkBchUPi6vxDHpHGoscCftuHddxpaHgMacxD7fyHESf8Ht3JpRjebZnTzZMwqs6u6z2v8S7VZzxjv5KkaNZpX2CPYGYNfVRWC2tovSaUwEdc3P6Tyk6S9axAw7WM9pP2sxyEqWiCmyzhCnnd8xhZqaTKtiyoamvVTXqB1iZaUFX2KtSB6pLVGrDCUxGs7x4PrMrgAcPcdDF1jrF6s7EpAR9MjRHv6qxstoSHnGMpTeZaXLJEhySqtnSvyQEJaT218zuDSoHArKRUSQ9ViWE55T8hbwsVDusNDdayS4JG2fRMoDkj8LPYHvhMtVzQUDSg1ufFEFukh")?;
+        covered_hexes
+            .aggregate_coverage(
+                &outdoor_wifi_owner4,
+                &boosted_hexes,
+                iter(vec![anyhow::Ok(outdoor_wifi_hex_coverage(
+                    &outdoor_wifi_owner4,
+                    -700,
+                    date(2024, 2, 19),
+                ))]),
+            )
+            .await?;
+
+        let indoor_wifi_owner1 =
+            PublicKeyBinary::from_str("1trSusf79ALaHuYSxUcvHLQEtHUgTnc25rfjyUUSKDs9AUwvXkJ7CQoGMrY7RhVpXyKYH4HaDnekRLYTUq5pczPk4XqnzXnACrwbY5CzhzdTSQkHRN2LuHvgQeySeh4LvjfhRP3Cru89zTGNNGMDXkpASuz3NkQx3ctqnTcdrjLgcBavQQmASofARxrqSPUz4UFTU1Gp4eRdaJgu1G7ys1f8NsjH5WU6bi5N4U5cWRVQkC7FEJZsGFn1sNferANVwkkSR2NLEpwYvL5qpGTYtk7zcqPrHY5hNC6jkjWhM5S4JPDYzZNcxRW28ekRCp2igJCqErA3APbcwkaZPXUxpqFJGWqu6GJf7aZRKz8R9cNAmd")?;
+        covered_hexes
+            .aggregate_coverage(
+                &indoor_wifi_owner1,
+                &boosted_hexes,
+                iter(vec![anyhow::Ok(indoor_wifi_hex_coverage(
+                    &indoor_wifi_owner1,
+                    SignalLevel::High,
+                    date(2024, 2, 19),
+                ))]),
+            )
+            .await?;
+
+        let indoor_wifi_owner2 =
+            PublicKeyBinary::from_str("1trSusew4P9SVD2q9GjvNYf8e5qEH2NmZRQDnkXodQt1fmpcR9cG28iA3LJD476H31wrNcr6jbfBhoPdyJvfepQonxXH7kUDjpMcVJqfMZGeQyXQvaxxnPh4yzoPonpS5RM6VSmsk4WNczr6nBUa49ak1XM8s5DCGSRZEPqWhXfG9urQ8hgDSYdkd61eBcWmThRKLAfarT5cE1ZaeexFtUgjgRBUGd7ifCtchZTgkWTa9WVsMdpWTjFd8GUkaTekX1RWzFDtFyETGZHbD6wDut729EfoBuSKowJuwFv2LYZr7Cw4qKPmVboDBpem1ZramSq3PmatdrpNHHipXniz4Z1vtM1vfgtJ57o8BrWSQNuD9B")?;
+        covered_hexes
+            .aggregate_coverage(
+                &indoor_wifi_owner2,
+                &boosted_hexes,
+                iter(vec![anyhow::Ok(indoor_wifi_hex_coverage(
+                    &indoor_wifi_owner2,
+                    SignalLevel::High,
+                    date(2024, 2, 20),
+                ))]),
+            )
+            .await?;
+
+        //Calculate coverage points
+        let rewards: Vec<_> = covered_hexes
+            .into_coverage_rewards(&boosted_hexes, Utc::now())
+            .collect();
+
+        // assert outdoor cbrs radios
+        assert_eq!(
+            dec!(16),
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-3".to_string()))
+                .unwrap()
+                .points
+        );
+
+        assert_eq!(
+            dec!(8),
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-4".to_string()))
+                .unwrap()
+                .points
+        );
+
+        assert_eq!(
+            dec!(4),
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-1".to_string()))
+                .unwrap()
+                .points
+        );
+
+        assert_eq!(
+            None,
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-2".to_string()))
+        );
+
+        // assert indoor cbrs radios
+        assert_eq!(
+            dec!(400),
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Cbrs("ico1-1".to_string()))
+                .unwrap()
+                .points
+        );
+
+        assert_eq!(
+            None,
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Cbrs("ico1-2".to_string()))
+        );
+
+        //assert outdoor wifi radios
+        assert_eq!(
+            dec!(16),
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Wifi(outdoor_wifi_owner3.clone()))
+                .unwrap()
+                .points
+        );
+
+        assert_eq!(
+            dec!(8),
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Wifi(outdoor_wifi_owner4.clone()))
+                .unwrap()
+                .points
+        );
+
+        assert_eq!(
+            dec!(4),
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Wifi(outdoor_wifi_owner1.clone()))
+                .unwrap()
+                .points
+        );
+
+        assert_eq!(
+            None,
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Wifi(outdoor_wifi_owner2.clone()))
+        );
+
+        //assert indoor wifi radios
+        assert_eq!(
+            dec!(400),
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Wifi(indoor_wifi_owner1.clone()))
+                .unwrap()
+                .points
+        );
+
+        assert_eq!(
+            None,
+            rewards
+                .iter()
+                .find(|r| r.radio_key == OwnedKeyType::Wifi(indoor_wifi_owner2.clone()))
+        );
+
+        Ok(())
+    }
+
+    fn indoor_cbrs_hex_coverage(
+        cbsd_id: &str,
+        signal_level: SignalLevel,
+        coverage_claim_time: Option<DateTime<Utc>>,
+    ) -> HexCoverage {
         HexCoverage {
             uuid: Uuid::new_v4(),
             hex: 0x8a1fb46622dffff_u64 as i64,
@@ -1047,7 +1290,7 @@ mod test {
             signal_level,
             // Signal power is ignored for indoor radios:
             signal_power: 0,
-            coverage_claim_time: DateTime::<Utc>::MIN_UTC,
+            coverage_claim_time: coverage_claim_time.unwrap_or(DateTime::<Utc>::MIN_UTC),
             inserted_at: DateTime::<Utc>::MIN_UTC,
         }
     }
@@ -1064,6 +1307,40 @@ mod test {
             radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
             signal_power,
             signal_level: SignalLevel::High,
+            coverage_claim_time,
+            inserted_at: DateTime::<Utc>::MIN_UTC,
+        }
+    }
+
+    fn outdoor_wifi_hex_coverage(
+        hotspot_key: &PublicKeyBinary,
+        signal_power: i32,
+        coverage_claim_time: DateTime<Utc>,
+    ) -> HexCoverage {
+        HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex: 0x8a1fb46622dffff_u64 as i64,
+            indoor: false,
+            radio_key: OwnedKeyType::Wifi(hotspot_key.clone()),
+            signal_power,
+            signal_level: SignalLevel::High,
+            coverage_claim_time,
+            inserted_at: DateTime::<Utc>::MIN_UTC,
+        }
+    }
+
+    fn indoor_wifi_hex_coverage(
+        hotspot_key: &PublicKeyBinary,
+        signal_level: SignalLevel,
+        coverage_claim_time: DateTime<Utc>,
+    ) -> HexCoverage {
+        HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex: 0x8a1fb46622dffff_u64 as i64,
+            indoor: true,
+            radio_key: OwnedKeyType::Wifi(hotspot_key.clone()),
+            signal_power: 0,
+            signal_level,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
         }
