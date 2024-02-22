@@ -1,8 +1,10 @@
 use crate::{metrics::Metrics, Settings};
+use anchor_lang::AccountDeserialize;
 use anyhow::{anyhow, bail, Error, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::file_sink;
 use futures::{future::LocalBoxFuture, TryFutureExt};
+use helium_anchor_gen::price_oracle::{calculate_current_price, PriceOracleV0};
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -207,7 +209,15 @@ impl PriceGenerator {
         key: &SolPubkey,
         file_sink: &file_sink::FileSinkClient,
     ) -> Result<()> {
-        let price_opt = match self.get_price(key).await {
+        let price_opt = match if matches!(
+            self.token_type,
+            BlockchainTokenTypeV1::Hnt | BlockchainTokenTypeV1::Mobile
+        ) {
+            // HNT and Mobile prices are currently supported by pyth
+            self.get_pyth_price(key).await
+        } else {
+            self.get_standard_price(key).await
+        } {
             Ok(new_price) => {
                 tracing::info!(
                     "updating price for {:?} to {}",
@@ -267,7 +277,7 @@ impl PriceGenerator {
         Ok(())
     }
 
-    async fn get_price(&self, price_key: &SolPubkey) -> Result<Price> {
+    async fn get_pyth_price(&self, price_key: &SolPubkey) -> Result<Price> {
         let mut account = self.client.get_account(price_key).await?;
         let price_oracle = pyth_sdk_solana::load_price_feed_from_account(price_key, &mut account)?;
         let curr_price = price_oracle
@@ -301,6 +311,26 @@ impl PriceGenerator {
             adjusted_optimistic_price,
             self.token_type,
         ))
+    }
+
+    async fn get_standard_price(&self, price_key: &SolPubkey) -> Result<Price> {
+        let price_oracle_v0_data = self.client.get_account_data(price_key).await?;
+        let mut price_oracle_v0_data = price_oracle_v0_data.as_ref();
+        let price_oracle_v0 = PriceOracleV0::try_deserialize(&mut price_oracle_v0_data)?;
+
+        let current_time = Utc::now();
+        let current_timestamp = current_time.timestamp();
+
+        calculate_current_price(&price_oracle_v0.oracles, current_timestamp)
+            .map(|price| {
+                tracing::debug!(
+                    "got price: {:?} for token_type: {:?}",
+                    price,
+                    self.token_type
+                );
+                Price::new(current_time, price, self.token_type)
+            })
+            .ok_or_else(|| anyhow!("unable to fetch price!"))
     }
 
     fn is_valid(&self, price: &Price) -> bool {
