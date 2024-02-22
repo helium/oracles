@@ -379,14 +379,16 @@ impl Poc {
     }
 
     async fn verify_beacon_reciprocity(&self) -> anyhow::Result<bool> {
-        let last_witness =
-            LastWitness::get(&self.pool, self.beacon_report.report.pub_key.as_ref()).await?;
-        if let Some(last_witness) = last_witness {
-            if self.beacon_report.received_timestamp - last_witness.timestamp < *RECIPROCITY_WINDOW
-            {
-                return Ok(true);
+        if !self.witness_reports.is_empty() {
+            let last_witness =
+                LastWitness::get(&self.pool, self.beacon_report.report.pub_key.as_ref()).await?;
+            if let Some(last_witness) = last_witness {
+                return Ok(
+                    self.beacon_report.received_timestamp - last_witness.timestamp
+                        < *RECIPROCITY_WINDOW,
+                );
             }
-        };
+        }
         Ok(false)
     }
 
