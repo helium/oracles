@@ -93,13 +93,14 @@ fn packet_report(
     timestamp: u64,
     payload_size: u32,
     payload_hash: Vec<u8>,
-    net_id: Option<u32>,
+    free: bool,
 ) -> PacketRouterPacketReport {
     PacketRouterPacketReport {
         received_timestamp: Utc.timestamp_opt(timestamp as i64, 0).unwrap(),
         oui,
-        net_id: net_id.unwrap_or_default(),
+        net_id: 0,
         rssi: 0,
+        free,
         frequency: 0,
         snr: 0.0,
         data_rate: DataRate::Fsk50,
@@ -122,6 +123,7 @@ fn join_packet_report(
         oui,
         net_id: 0,
         rssi: 0,
+        free: true,
         frequency: 0,
         snr: 0.0,
         data_rate: DataRate::Fsk50,
@@ -204,9 +206,9 @@ async fn test_config_unlocking() {
             1,
             balances.clone(),
             stream::iter(vec![
-                packet_report(0, 0, 24, vec![1], None),
-                packet_report(0, 1, 48, vec![2], None),
-                packet_report(0, 2, 1, vec![3], None),
+                packet_report(0, 0, 24, vec![1], false),
+                packet_report(0, 1, 48, vec![2], false),
+                packet_report(0, 2, 1, vec![3], false),
             ]),
             &mut valid_packets,
             &mut invalid_packets,
@@ -262,9 +264,9 @@ async fn test_config_unlocking() {
             1,
             balances.clone(),
             stream::iter(vec![
-                packet_report(0, 0, 24, vec![1], None),
-                packet_report(0, 1, 48, vec![2], None),
-                packet_report(0, 2, 1, vec![3], None),
+                packet_report(0, 0, 24, vec![1], false),
+                packet_report(0, 1, 48, vec![2], false),
+                packet_report(0, 2, 1, vec![3], false),
             ]),
             &mut valid_packets,
             &mut invalid_packets,
@@ -286,13 +288,11 @@ async fn test_config_unlocking() {
 
 #[tokio::test]
 async fn test_verifier_free_packets() {
-    const FREE_DEV_NETID: u32 = 12582995u32;
-
     // Org packets
     let packets = vec![
-        packet_report(0, 0, 24, vec![4], Some(FREE_DEV_NETID)),
-        packet_report(0, 1, 48, vec![5], Some(FREE_DEV_NETID)),
-        packet_report(0, 2, 1, vec![6], Some(FREE_DEV_NETID)),
+        packet_report(0, 0, 24, vec![4], true),
+        packet_report(0, 1, 48, vec![5], true),
+        packet_report(0, 2, 1, vec![6], true),
     ];
 
     let org_pubkey = PublicKeyBinary::from(vec![0]);
@@ -356,17 +356,17 @@ async fn test_verifier_free_packets() {
 async fn test_verifier() {
     let packets = vec![
         // Packets for first OUI
-        packet_report(0, 0, 24, vec![1], None),
-        packet_report(0, 1, 48, vec![2], None),
-        packet_report(0, 2, 1, vec![3], None),
+        packet_report(0, 0, 24, vec![1], false),
+        packet_report(0, 1, 48, vec![2], false),
+        packet_report(0, 2, 1, vec![3], false),
         join_packet_report(0, 3, 1, vec![4]),
         // Packets for second OUI
-        packet_report(1, 0, 24, vec![4], None),
-        packet_report(1, 1, 48, vec![5], None),
-        packet_report(1, 2, 1, vec![6], None),
+        packet_report(1, 0, 24, vec![4], false),
+        packet_report(1, 1, 48, vec![5], false),
+        packet_report(1, 2, 1, vec![6], false),
         join_packet_report(1, 3, 1, vec![4]),
         // Packets for third OUI
-        packet_report(2, 0, 24, vec![7], None),
+        packet_report(2, 0, 24, vec![7], false),
         join_packet_report(2, 1, 1, vec![4]),
     ];
     // Set up orgs:
@@ -476,10 +476,10 @@ async fn test_end_to_end() {
             1,
             pending_burns.clone(),
             stream::iter(vec![
-                packet_report(0, 0, BYTES_PER_DC as u32, vec![1], None),
-                packet_report(0, 1, BYTES_PER_DC as u32, vec![2], None),
-                packet_report(0, 2, BYTES_PER_DC as u32, vec![3], None),
-                packet_report(0, 3, BYTES_PER_DC as u32, vec![4], None),
+                packet_report(0, 0, BYTES_PER_DC as u32, vec![1], false),
+                packet_report(0, 1, BYTES_PER_DC as u32, vec![2], false),
+                packet_report(0, 2, BYTES_PER_DC as u32, vec![3], false),
+                packet_report(0, 3, BYTES_PER_DC as u32, vec![4], false),
             ]),
             &mut valid_packets,
             &mut invalid_packets,
@@ -560,7 +560,7 @@ async fn test_end_to_end() {
                 4,
                 BYTES_PER_DC as u32,
                 vec![5],
-                None,
+                false,
             )]),
             &mut valid_packets,
             &mut invalid_packets,
