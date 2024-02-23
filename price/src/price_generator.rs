@@ -49,7 +49,7 @@ impl ManagedTask for PriceGenerator {
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run_tm(shutdown))
+        Box::pin(self.run(shutdown))
     }
 }
 
@@ -101,28 +101,7 @@ impl PriceGenerator {
         })
     }
 
-    pub async fn run(
-        &mut self,
-        file_sink: file_sink::FileSinkClient,
-        shutdown: &triggered::Listener,
-    ) -> Result<()> {
-        match (self.key, self.default_price) {
-            (Some(key), _) => self.run_with_key(key, file_sink, shutdown).await,
-            (None, Some(defaut_price)) => {
-                self.run_with_default(defaut_price, file_sink, shutdown)
-                    .await
-            }
-            _ => {
-                tracing::warn!(
-                    "stopping price generator for {:?}, not configured",
-                    self.token_type
-                );
-                Ok(())
-            }
-        }
-    }
-
-    pub async fn run_tm(mut self, shutdown: triggered::Listener) -> Result<()> {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         match (self.key, self.default_price, self.file_sink.clone()) {
             (Some(key), _, Some(file_sink)) => self.run_with_key(key, file_sink, &shutdown).await,
             (None, Some(defaut_price), Some(file_sink)) => {
