@@ -89,11 +89,15 @@ impl PacketLoader {
         file_info_stream
             .into_stream(&mut transaction)
             .await?
-            .map(|valid_packet| {
-                (
-                    ValidPacket::from(valid_packet.clone()),
-                    GatewayDCShare::share_from_packet(&valid_packet),
-                )
+            .filter_map(|valid_packet| async move {
+                if valid_packet.num_dcs > 0 {
+                    Some((
+                        ValidPacket::from(valid_packet.clone()),
+                        GatewayDCShare::share_from_packet(&valid_packet),
+                    ))
+                } else {
+                    None
+                }
             })
             .map(anyhow::Ok)
             .try_fold(

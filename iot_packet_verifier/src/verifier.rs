@@ -71,7 +71,11 @@ where
                 continue;
             }
 
-            let debit_amount = payload_size_to_dc(report.payload_size as u64);
+            let debit_amount = if report.free {
+                0
+            } else {
+                payload_size_to_dc(report.payload_size as u64)
+            };
 
             let payer = self
                 .config_server
