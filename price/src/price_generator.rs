@@ -81,23 +81,7 @@ impl TryFrom<PriceReportV1> for Price {
 }
 
 impl PriceGenerator {
-    pub async fn new(settings: &Settings, token_type: BlockchainTokenTypeV1) -> Result<Self> {
-        let client = RpcClient::new(settings.source.clone());
-        Ok(Self {
-            last_price_opt: None,
-            token_type,
-            client,
-            key: settings.price_key(token_type)?,
-            default_price: settings.default_price(token_type),
-            interval_duration: settings.interval().to_std()?,
-            stale_price_duration: settings.stale_price_duration(),
-            latest_price_file: PathBuf::from_str(&settings.cache)?
-                .join(format!("{token_type:?}.latest")),
-            file_sink: None,
-        })
-    }
-
-    pub async fn new_tm(
+    pub async fn new(
         settings: &Settings,
         token_type: BlockchainTokenTypeV1,
         file_sink: file_sink::FileSinkClient,
