@@ -1590,7 +1590,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#c2b1dfa06e6f726ab19cd50444b2a90dd6c841e0"
+source = "git+https://github.com/helium/proto?branch=andymck/add-invalid-reason-beacon-no-witnesses#e1d7be930639cb41d60676905cb0f3acaa7a72d5"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -1600,7 +1600,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -3556,7 +3556,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#c2b1dfa06e6f726ab19cd50444b2a90dd6c841e0"
+source = "git+https://github.com/helium/proto?branch=andymck/add-invalid-reason-beacon-no-witnesses#e1d7be930639cb41d60676905cb0f3acaa7a72d5"
 dependencies = [
  "bytes",
  "prost",

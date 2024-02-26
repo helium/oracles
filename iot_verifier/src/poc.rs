@@ -149,6 +149,7 @@ impl Poc {
         let last_beacon = LastBeacon::get(&self.pool, beaconer_pub_key.as_ref()).await?;
         match do_beacon_verifications(
             deny_list,
+            self.witness_reports.len(),
             self.entropy_start,
             self.entropy_end,
             self.entropy_version,
@@ -379,15 +380,13 @@ impl Poc {
     }
 
     async fn verify_beacon_reciprocity(&self) -> anyhow::Result<bool> {
-        if !self.witness_reports.is_empty() {
-            let last_witness =
-                LastWitness::get(&self.pool, self.beacon_report.report.pub_key.as_ref()).await?;
-            if let Some(last_witness) = last_witness {
-                return Ok(
-                    self.beacon_report.received_timestamp - last_witness.timestamp
-                        < *RECIPROCITY_WINDOW,
-                );
-            }
+        let last_witness =
+            LastWitness::get(&self.pool, self.beacon_report.report.pub_key.as_ref()).await?;
+        if let Some(last_witness) = last_witness {
+            return Ok(
+                self.beacon_report.received_timestamp - last_witness.timestamp
+                    < *RECIPROCITY_WINDOW,
+            );
         }
         Ok(false)
     }
@@ -406,6 +405,7 @@ impl Poc {
 #[allow(clippy::too_many_arguments)]
 pub fn do_beacon_verifications(
     deny_list: &DenyList,
+    num_witnesses: usize,
     entropy_start: DateTime<Utc>,
     entropy_end: DateTime<Utc>,
     entropy_version: i32,
@@ -441,6 +441,7 @@ pub fn do_beacon_verifications(
         entropy_start,
         entropy_version as u32,
     )?;
+    verify_beacon_witness_count(num_witnesses)?;
     tracing::debug!(
         "valid beacon from beaconer: {:?}",
         beaconer_info.address.clone()
@@ -563,6 +564,22 @@ fn verify_beacon_schedule(
         None => {
             tracing::debug!("no last beacon timestamp available for this beaconer, ignoring ");
         }
+    }
+    Ok(())
+}
+
+fn verify_beacon_witness_count(num_witnesses: usize) -> GenericVerifyResult {
+    if num_witnesses < 1 {
+        tracing::debug!(
+            "report verification failed, reason: {:?}.
+                num_witnesses: {:?}",
+            InvalidReason::BeaconNoWitnesses,
+            num_witnesses,
+        );
+        return Err(InvalidResponse {
+            reason: InvalidReason::BeaconNoWitnesses,
+            details: None,
+        });
     }
     Ok(())
 }
@@ -1583,8 +1600,10 @@ mod tests {
         // test deny list verification is active in the beacon validation list
         let beacon_report1 =
             valid_beacon_report(DENIED_PUBKEY1, entropy_start + Duration::minutes(4));
+        let fake_num_witnesses = 1;
         let resp1 = do_beacon_verifications(
             &deny_list,
+            fake_num_witnesses,
             entropy_start,
             entropy_end,
             ENTROPY_VERSION,
@@ -1606,8 +1625,10 @@ mod tests {
 
         // test entropy lifespan verification is active in the beacon validation list
         let beacon_report1 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(4));
+        let fake_num_witnesses = 1;
         let resp1 = do_beacon_verifications(
             &deny_list,
+            fake_num_witnesses,
             entropy_start,
             entropy_end,
             ENTROPY_VERSION,
@@ -1628,8 +1649,10 @@ mod tests {
         // test location verification is active in the beacon validation list
         let beacon_report2 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(2));
         let beacon_info2 = beaconer_gateway_info(None, ProtoRegion::Eu868, true);
+        let fake_num_witnesses = 1;
         let resp2 = do_beacon_verifications(
             &deny_list,
+            fake_num_witnesses,
             entropy_start,
             entropy_end,
             ENTROPY_VERSION,
@@ -1653,8 +1676,10 @@ mod tests {
             id: vec![],
             timestamp: Utc::now() - Duration::hours(5),
         };
+        let fake_num_witnesses = 1;
         let resp3 = do_beacon_verifications(
             &deny_list,
+            fake_num_witnesses,
             entropy_start,
             entropy_end,
             ENTROPY_VERSION,
@@ -1675,8 +1700,10 @@ mod tests {
         // test capability verification is active in the beacon validation list
         let beacon_report4 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(2));
         let beacon_info4 = beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, false);
+        let fake_num_witnesses = 1;
         let resp4 = do_beacon_verifications(
             &deny_list,
+            fake_num_witnesses,
             entropy_start,
             entropy_end,
             ENTROPY_VERSION,
@@ -1696,8 +1723,10 @@ mod tests {
 
         // test beacon construction verification is active in the beacon validation list
         let beacon_report5 = invalid_beacon_bad_payload(entropy_start + Duration::minutes(2));
+        let fake_num_witnesses = 1;
         let resp5 = do_beacon_verifications(
             &deny_list,
+            fake_num_witnesses,
             entropy_start,
             entropy_end,
             ENTROPY_VERSION,
@@ -1717,8 +1746,10 @@ mod tests {
 
         // for completeness, confirm our valid beacon report is sane
         let beacon_report6 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(2));
+        let fake_num_witnesses = 1;
         let resp6 = do_beacon_verifications(
             &deny_list,
+            fake_num_witnesses,
             entropy_start,
             entropy_end,
             ENTROPY_VERSION,
