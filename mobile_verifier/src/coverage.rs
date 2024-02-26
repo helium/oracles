@@ -4,7 +4,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use file_store::{
-    coverage::{self, CoverageObjectIngestReport},
+    coverage::{self, CoverageObjectIngestReport, RadioHexSignalLevel},
     file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
     traits::TimestampEncode,
@@ -19,6 +19,7 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
+use hextree::disktree::DiskTreeMap;
 use mobile_config::{
     boosted_hex_info::{BoostedHex, BoostedHexes},
     client::AuthorizationClient,
@@ -62,22 +63,28 @@ impl From<SignalLevelProto> for SignalLevel {
 pub struct CoverageDaemon {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
+    urbanized: DiskTreeMap,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-    file_sink: FileSinkClient,
+    coverage_obj_sink: FileSinkClient,
+    oracle_boosting_sink: FileSinkClient,
 }
 
 impl CoverageDaemon {
     pub fn new(
         pool: Pool<Postgres>,
         auth_client: AuthorizationClient,
+        urbanized: DiskTreeMap,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-        file_sink: FileSinkClient,
+        coverage_obj_sink: FileSinkClient,
+        oracle_boosting_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
             auth_client,
+            urbanized,
             coverage_objs,
-            file_sink,
+            coverage_obj_sink,
+            oracle_boosting_sink,
         }
     }
 
@@ -100,8 +107,45 @@ impl CoverageDaemon {
         Ok(())
     }
 
+    pub async fn set_initial_oracle_boosting_values(&self) -> anyhow::Result<()> {
+        #[derive(FromRow)]
+        struct UnsetHex {
+            uuid: Uuid,
+            location: i64,
+        }
+
+        tracing::info!("Setting initial values for the urbanization column");
+
+        let mut unset_hexes =
+            sqlx::query_as("SELECT uuid, location FROM hexes WHERE urbanization IS NULL")
+                .fetch(&self.pool);
+
+        while let Some(UnsetHex { uuid, location }) = unset_hexes.next().await.transpose()? {
+            let urbanized = is_urbanized(&self.urbanized, location as u64)?;
+            sqlx::query("UPDATE hexes SET urbanized = $1 WHERE uuid = $2 AND location = $3")
+                .bind(urbanized)
+                .bind(uuid)
+                .bind(location)
+                .execute(&self.pool)
+                .await?;
+            let location = CellIndex::try_from(location as u64)?;
+            self.oracle_boosting_sink
+                .write(
+                    proto::OracleBoostingReportV1 {
+                        coverage_object: Vec::from(uuid.into_bytes()),
+                        location: location.to_string(),
+                        urbanized,
+                    },
+                    &[],
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+
     async fn process_file(
-        &mut self,
+        &self,
         file: FileInfoStream<CoverageObjectIngestReport>,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing coverage object file {}", file.file_info.key);
@@ -115,13 +159,21 @@ impl CoverageDaemon {
         ));
 
         while let Some(coverage_object) = validated_coverage_objects.next().await.transpose()? {
-            coverage_object.write(&self.file_sink).await?;
+            coverage_object
+                .write(
+                    &self.urbanized,
+                    &self.coverage_obj_sink,
+                    &self.oracle_boosting_sink,
+                )
+                .await?;
             if coverage_object.is_valid() {
-                coverage_object.save(&mut transaction).await?;
+                coverage_object
+                    .save(&self.urbanized, &mut transaction)
+                    .await?;
             }
         }
 
-        self.file_sink.commit().await?;
+        self.coverage_obj_sink.commit().await?;
         transaction.commit().await?;
 
         Ok(())
@@ -186,7 +238,26 @@ impl CoverageObject {
         }
     }
 
-    pub async fn write(&self, coverage_objects: &FileSinkClient) -> file_store::Result {
+    pub async fn write(
+        &self,
+        urbanization: &DiskTreeMap,
+        coverage_objects: &FileSinkClient,
+        oracle_boosting_reports: &FileSinkClient,
+    ) -> anyhow::Result<()> {
+        let uuid = Vec::from(self.coverage_object.uuid.into_bytes());
+        for hex in &self.coverage_object.coverage {
+            let location: u64 = hex.location.into();
+            oracle_boosting_reports
+                .write(
+                    proto::OracleBoostingReportV1 {
+                        coverage_object: uuid.clone(),
+                        location: hex.location.to_string(),
+                        urbanized: is_urbanized(urbanization, location)?,
+                    },
+                    &[],
+                )
+                .await?;
+        }
         coverage_objects
             .write(
                 proto::CoverageObjectV1 {
@@ -217,7 +288,11 @@ impl CoverageObject {
         Ok(())
     }
 
-    pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
+    pub async fn save(
+        self,
+        urbanization: &DiskTreeMap,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> anyhow::Result<()> {
         let insertion_time = Utc::now();
         let key = self.key();
         let hb_type = key.hb_type();
@@ -252,29 +327,46 @@ impl CoverageObject {
             .coverage
             .chunks(COVERAGE_MAX_BATCH_ENTRIES)
         {
-            QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power)")
-                .push_values(hexes, |mut b, hex| {
+            let hexes: anyhow::Result<Vec<(u64, bool, &RadioHexSignalLevel)>> = hexes
+                .into_iter()
+                .map(|hex| {
                     let location: u64 = hex.location.into();
-
-                    b.push_bind(self.coverage_object.uuid)
-                        .push_bind(location as i64)
-                        .push_bind(SignalLevel::from(hex.signal_level))
-                        .push_bind(hex.signal_power);
+                    let urbanized = is_urbanized(urbanization, location)?;
+                    Ok((location, urbanized, hex))
                 })
-                .push(
-                    r#"
+                .collect();
+
+            QueryBuilder::new(
+                "INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized)",
+            )
+            .push_values(hexes?, |mut b, (location, urbanized, hex)| {
+                b.push_bind(self.coverage_object.uuid)
+                    .push_bind(location as i64)
+                    .push_bind(SignalLevel::from(hex.signal_level))
+                    .push_bind(hex.signal_power)
+                    .push_bind(urbanized);
+            })
+            .push(
+                r#"
                     ON CONFLICT (uuid, hex) DO UPDATE SET
                       signal_level = EXCLUDED.signal_level,
-                      signal_power = EXCLUDED.signal_power
+                      signal_power = EXCLUDED.signal_power,
+                      urbanized = EXCLUDED.urbanized
                     "#,
-                )
-                .build()
-                .execute(&mut *transaction)
-                .await?;
+            )
+            .build()
+            .execute(&mut *transaction)
+            .await?;
         }
 
         Ok(())
     }
+}
+
+fn is_urbanized(disktree: &DiskTreeMap, location: u64) -> anyhow::Result<bool> {
+    let cell = hextree::Cell::from_raw(location)?;
+    let result = disktree.get(cell)?;
+    Ok(result.is_some())
 }
 
 #[derive(Clone, FromRow)]
@@ -287,6 +379,7 @@ pub struct HexCoverage {
     pub signal_power: i32,
     pub coverage_claim_time: DateTime<Utc>,
     pub inserted_at: DateTime<Utc>,
+    pub urbanized: bool,
 }
 
 #[derive(Eq, Debug)]
@@ -295,6 +388,7 @@ struct IndoorCoverageLevel {
     seniority_timestamp: DateTime<Utc>,
     hotspot: PublicKeyBinary,
     signal_level: SignalLevel,
+    urbanized: bool,
 }
 
 impl PartialEq for IndoorCoverageLevel {
@@ -332,6 +426,7 @@ struct OutdoorCoverageLevel {
     hotspot: PublicKeyBinary,
     signal_power: i32,
     signal_level: SignalLevel,
+    urbanized: bool,
 }
 
 impl PartialEq for OutdoorCoverageLevel {
@@ -580,6 +675,7 @@ fn insert_indoor_coverage(
             seniority_timestamp: hex_coverage.coverage_claim_time,
             signal_level: hex_coverage.signal_level,
             hotspot: hotspot.clone(),
+            urbanized: hex_coverage.urbanized,
         })
 }
 
@@ -597,6 +693,7 @@ fn insert_outdoor_coverage(
             signal_level: hex_coverage.signal_level,
             signal_power: hex_coverage.signal_power,
             hotspot: hotspot.clone(),
+            urbanized: hex_coverage.urbanized,
         });
 }
 
@@ -615,8 +712,13 @@ fn into_outdoor_rewards(
                 let boost_multiplier = boosted_hexes
                     .get_current_multiplier(hex.into(), epoch_start)
                     .unwrap_or(1);
+                let oracle_multiplier = if boost_multiplier > 1 || cl.urbanized {
+                    dec!(1.0)
+                } else {
+                    dec!(0.25)
+                };
                 CoverageReward {
-                    points: cl.coverage_points() * rank,
+                    points: cl.coverage_points() * oracle_multiplier * rank,
                     hotspot: cl.hotspot,
                     radio_key: cl.radio_key,
                     boosted_hex_info: BoostedHex {
@@ -645,8 +747,13 @@ fn into_indoor_rewards(
                         let boost_multiplier = boosted_hexes
                             .get_current_multiplier(hex.into(), epoch_start)
                             .unwrap_or(1);
+                        let oracle_multiplier = if boost_multiplier > 1 || cl.urbanized {
+                            dec!(1.0)
+                        } else {
+                            dec!(0.25)
+                        };
                         CoverageReward {
-                            points: cl.coverage_points(),
+                            points: cl.coverage_points() * oracle_multiplier,
                             hotspot: cl.hotspot,
                             radio_key: cl.radio_key,
                             boosted_hex_info: BoostedHex {

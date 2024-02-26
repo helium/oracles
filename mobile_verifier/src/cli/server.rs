@@ -14,6 +14,7 @@ use file_store::{
     speedtest::CellSpeedtestIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport, FileStore,
     FileType,
 };
+use hextree::disktree::DiskTreeMap;
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
     CarrierServiceClient, GatewayClient,
@@ -190,12 +191,31 @@ impl Cmd {
         .create()
         .await?;
 
+        // Oracle boosting reports
+        let (oracle_boosting_reports, oracle_boosting_reports_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::OracleBoostingReport,
+                store_base_path,
+                concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
+            )
+            .file_upload(Some(file_upload.clone()))
+            .auto_commit(false)
+            .roll_time(Duration::minutes(15))
+            .create()
+            .await?;
+
+        let disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
+
         let coverage_daemon = CoverageDaemon::new(
             pool.clone(),
             auth_client.clone(),
+            disktree,
             coverage_objs,
             valid_coverage_objs,
+            oracle_boosting_reports,
         );
+
+        coverage_daemon.set_initial_oracle_boosting_values().await?;
 
         // Mobile rewards
         let reward_period_hours = settings.rewards;
@@ -291,6 +311,7 @@ impl Cmd {
             .add_task(wifi_heartbeat_daemon)
             .add_task(speedtests_server)
             .add_task(coverage_objs_server)
+            .add_task(oracle_boosting_reports_server)
             .add_task(speedtest_daemon)
             .add_task(coverage_daemon)
             .add_task(rewarder)

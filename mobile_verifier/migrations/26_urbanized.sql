@@ -1,0 +1,1 @@
+ALTER TABLE hexes ADD COLUMN urbanized BOOLEAN;
