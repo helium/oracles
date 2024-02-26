@@ -164,12 +164,15 @@ impl Poc {
                     .await
                     .unwrap_or(*DEFAULT_TX_SCALE);
                 // update 'last beacon' timestamp if the beacon has passed regular validations
-                LastBeacon::update_last_timestamp(
-                    &self.pool,
-                    beaconer_pub_key.as_ref(),
-                    self.beacon_report.received_timestamp,
-                )
-                .await?;
+                // but only if there has been at least one witness report
+                if !self.witness_reports.is_empty() {
+                    LastBeacon::update_last_timestamp(
+                        &self.pool,
+                        beaconer_pub_key.as_ref(),
+                        self.beacon_report.received_timestamp,
+                    )
+                    .await?;
+                }
                 // post regular validations, check for beacon reciprocity
                 // if this check fails we will invalidate the beacon
                 // even tho it has passed all regular validations
