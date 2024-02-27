@@ -1,3 +1,4 @@
+pub mod boosting_oracles;
 pub mod cell_type;
 pub mod cli;
 pub mod coverage;

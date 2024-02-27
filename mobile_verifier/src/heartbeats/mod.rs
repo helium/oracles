@@ -386,7 +386,7 @@ impl ValidatedHeartbeat {
         max_distance_to_asserted: u32,
         max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
-        geofence: &impl GeofenceValidator,
+        geofence: &impl GeofenceValidator<Heartbeat>,
     ) -> anyhow::Result<Self> {
         let Some(coverage_object) = heartbeat.coverage_object else {
             return Ok(Self::new(
@@ -554,7 +554,7 @@ impl ValidatedHeartbeat {
         max_distance_to_asserted: u32,
         max_distance_to_coverage: u32,
         epoch: &'a Range<DateTime<Utc>>,
-        geofence: &'a impl GeofenceValidator,
+        geofence: &'a impl GeofenceValidator<Heartbeat>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
             Self::validate(

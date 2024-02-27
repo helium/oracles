@@ -1,4 +1,6 @@
 use crate::{
+    boosting_oracles::{assignment::urbanization_multiplier, Assignment, Urbanization},
+    geofence::GeofenceValidator,
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized,
 };
@@ -19,13 +21,12 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
-use hextree::disktree::DiskTreeMap;
 use mobile_config::{
     boosted_hex_info::{BoostedHex, BoostedHexes},
     client::AuthorizationClient,
 };
 use retainer::{entry::CacheReadGuard, Cache};
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
 use std::{
@@ -60,20 +61,23 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
-pub struct CoverageDaemon {
+pub struct CoverageDaemon<T> {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
-    urbanized: DiskTreeMap,
+    urbanization: Urbanization<T>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
 }
 
-impl CoverageDaemon {
+impl<T> CoverageDaemon<T>
+where
+    T: GeofenceValidator<u64>,
+{
     pub fn new(
         pool: Pool<Postgres>,
         auth_client: AuthorizationClient,
-        urbanized: DiskTreeMap,
+        urbanization: Urbanization<T>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
         oracle_boosting_sink: FileSinkClient,
@@ -81,7 +85,7 @@ impl CoverageDaemon {
         Self {
             pool,
             auth_client,
-            urbanized,
+            urbanization,
             coverage_objs,
             coverage_obj_sink,
             oracle_boosting_sink,
@@ -116,12 +120,13 @@ impl CoverageDaemon {
 
         tracing::info!("Setting initial values for the urbanization column");
 
+        let now = Utc::now();
         let mut unset_hexes =
             sqlx::query_as("SELECT uuid, location FROM hexes WHERE urbanization IS NULL")
                 .fetch(&self.pool);
 
         while let Some(UnsetHex { uuid, location }) = unset_hexes.next().await.transpose()? {
-            let urbanized = is_urbanized(&self.urbanized, location as u64)?;
+            let urbanized = self.urbanization.hex_assignment(location as u64)?;
             sqlx::query("UPDATE hexes SET urbanized = $1 WHERE uuid = $2 AND location = $3")
                 .bind(urbanized)
                 .bind(uuid)
@@ -129,12 +134,18 @@ impl CoverageDaemon {
                 .execute(&self.pool)
                 .await?;
             let location = CellIndex::try_from(location as u64)?;
+            let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
+                .to_u32()
+                .unwrap_or(0);
+            let assignment = urbanized.to_string();
             self.oracle_boosting_sink
                 .write(
                     proto::OracleBoostingReportV1 {
                         coverage_object: Vec::from(uuid.into_bytes()),
                         location: location.to_string(),
-                        urbanized,
+                        assignment,
+                        assignment_multiplier,
+                        timestamp: now.encode_timestamp(),
                     },
                     &[],
                 )
@@ -161,14 +172,14 @@ impl CoverageDaemon {
         while let Some(coverage_object) = validated_coverage_objects.next().await.transpose()? {
             coverage_object
                 .write(
-                    &self.urbanized,
+                    &self.urbanization,
                     &self.coverage_obj_sink,
                     &self.oracle_boosting_sink,
                 )
                 .await?;
             if coverage_object.is_valid() {
                 coverage_object
-                    .save(&self.urbanized, &mut transaction)
+                    .save(&self.urbanization, &mut transaction)
                     .await?;
             }
         }
@@ -180,7 +191,10 @@ impl CoverageDaemon {
     }
 }
 
-impl ManagedTask for CoverageDaemon {
+impl<T> ManagedTask for CoverageDaemon<T>
+where
+    T: GeofenceValidator<u64>,
+{
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -240,19 +254,27 @@ impl CoverageObject {
 
     pub async fn write(
         &self,
-        urbanization: &DiskTreeMap,
+        urbanization: &Urbanization<impl GeofenceValidator<u64>>,
         coverage_objects: &FileSinkClient,
         oracle_boosting_reports: &FileSinkClient,
     ) -> anyhow::Result<()> {
         let uuid = Vec::from(self.coverage_object.uuid.into_bytes());
+        let now = Utc::now();
         for hex in &self.coverage_object.coverage {
             let location: u64 = hex.location.into();
+            let urbanization = urbanization.hex_assignment(location)?;
+            let assignment_multiplier = (urbanization_multiplier(urbanization) * dec!(1000))
+                .to_u32()
+                .unwrap_or(0);
+            let assignment = urbanization.to_string();
             oracle_boosting_reports
                 .write(
                     proto::OracleBoostingReportV1 {
                         coverage_object: uuid.clone(),
                         location: hex.location.to_string(),
-                        urbanized: is_urbanized(urbanization, location)?,
+                        assignment,
+                        assignment_multiplier,
+                        timestamp: now.encode_timestamp(),
                     },
                     &[],
                 )
@@ -290,7 +312,7 @@ impl CoverageObject {
 
     pub async fn save(
         self,
-        urbanization: &DiskTreeMap,
+        urbanization: &Urbanization<impl GeofenceValidator<u64>>,
         transaction: &mut Transaction<'_, Postgres>,
     ) -> anyhow::Result<()> {
         let insertion_time = Utc::now();
@@ -327,12 +349,12 @@ impl CoverageObject {
             .coverage
             .chunks(COVERAGE_MAX_BATCH_ENTRIES)
         {
-            let hexes: anyhow::Result<Vec<(u64, bool, &RadioHexSignalLevel)>> = hexes
+            let hexes: anyhow::Result<Vec<(u64, Assignment, &RadioHexSignalLevel)>> = hexes
                 .into_iter()
                 .map(|hex| {
                     let location: u64 = hex.location.into();
-                    let urbanized = is_urbanized(urbanization, location)?;
-                    Ok((location, urbanized, hex))
+                    let urbanization_assignment = urbanization.hex_assignment(location)?;
+                    Ok((location, urbanization_assignment, hex))
                 })
                 .collect();
 
@@ -363,12 +385,6 @@ impl CoverageObject {
     }
 }
 
-fn is_urbanized(disktree: &DiskTreeMap, location: u64) -> anyhow::Result<bool> {
-    let cell = hextree::Cell::from_raw(location)?;
-    let result = disktree.get(cell)?;
-    Ok(result.is_some())
-}
-
 #[derive(Clone, FromRow)]
 pub struct HexCoverage {
     pub uuid: Uuid,
@@ -379,7 +395,7 @@ pub struct HexCoverage {
     pub signal_power: i32,
     pub coverage_claim_time: DateTime<Utc>,
     pub inserted_at: DateTime<Utc>,
-    pub urbanized: bool,
+    pub urbanized: Assignment,
 }
 
 #[derive(Eq, Debug)]
@@ -388,7 +404,7 @@ struct IndoorCoverageLevel {
     seniority_timestamp: DateTime<Utc>,
     hotspot: PublicKeyBinary,
     signal_level: SignalLevel,
-    urbanized: bool,
+    urbanized: Assignment,
 }
 
 impl PartialEq for IndoorCoverageLevel {
@@ -426,7 +442,7 @@ struct OutdoorCoverageLevel {
     hotspot: PublicKeyBinary,
     signal_power: i32,
     signal_level: SignalLevel,
-    urbanized: bool,
+    urbanized: Assignment,
 }
 
 impl PartialEq for OutdoorCoverageLevel {
@@ -712,10 +728,10 @@ fn into_outdoor_rewards(
                 let boost_multiplier = boosted_hexes
                     .get_current_multiplier(hex.into(), epoch_start)
                     .unwrap_or(1);
-                let oracle_multiplier = if boost_multiplier > 1 || cl.urbanized {
+                let oracle_multiplier = if boost_multiplier > 1 {
                     dec!(1.0)
                 } else {
-                    dec!(0.25)
+                    urbanization_multiplier(cl.urbanized)
                 };
                 CoverageReward {
                     points: cl.coverage_points() * oracle_multiplier * rank,
@@ -747,10 +763,10 @@ fn into_indoor_rewards(
                         let boost_multiplier = boosted_hexes
                             .get_current_multiplier(hex.into(), epoch_start)
                             .unwrap_or(1);
-                        let oracle_multiplier = if boost_multiplier > 1 || cl.urbanized {
+                        let oracle_multiplier = if boost_multiplier > 1 {
                             dec!(1.0)
                         } else {
-                            dec!(0.25)
+                            urbanization_multiplier(cl.urbanized)
                         };
                         CoverageReward {
                             points: cl.coverage_points() * oracle_multiplier,
@@ -992,6 +1008,7 @@ mod test {
             signal_power: 0,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: true,
         }
     }
 
@@ -1388,6 +1405,7 @@ mod test {
             signal_power: 0,
             coverage_claim_time: coverage_claim_time.unwrap_or(DateTime::<Utc>::MIN_UTC),
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: true,
         }
     }
 
@@ -1422,6 +1440,7 @@ mod test {
             signal_level: SignalLevel::High,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: true,
         }
     }
 
@@ -1439,6 +1458,7 @@ mod test {
             signal_level,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: true,
         }
     }
 }

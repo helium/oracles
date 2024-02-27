@@ -36,12 +36,12 @@ pub struct Settings {
     #[serde(default = "default_max_asserted_distance_deviation")]
     pub max_asserted_distance_deviation: u32,
     // Geofencing settings
-    pub wifi_geofence_regions: String,
+    pub usa_and_mexico_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
-    pub wifi_fencing_resolution: u8,
-    pub cbrs_geofence_regions: String,
+    pub usa_and_mexico_fencing_resolution: u8,
+    pub usa_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
-    pub cbrs_fencing_resolution: u8,
+    pub usa_fencing_resolution: u8,
     pub urbanization_data_set: PathBuf,
 }
 
@@ -109,8 +109,8 @@ impl Settings {
             .unwrap()
     }
 
-    pub fn wifi_region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {
-        let paths = std::fs::read_dir(&self.wifi_geofence_regions)?;
+    pub fn usa_region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {
+        let paths = std::fs::read_dir(&self.usa_geofence_regions)?;
         Ok(paths
             .into_iter()
             .collect::<Result<Vec<std::fs::DirEntry>, std::io::Error>>()?
@@ -119,12 +119,12 @@ impl Settings {
             .collect())
     }
 
-    pub fn wifi_fencing_resolution(&self) -> anyhow::Result<h3o::Resolution> {
-        Ok(h3o::Resolution::try_from(self.wifi_fencing_resolution)?)
+    pub fn usa_fencing_resolution(&self) -> anyhow::Result<h3o::Resolution> {
+        Ok(h3o::Resolution::try_from(self.usa_fencing_resolution)?)
     }
 
-    pub fn cbrs_region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {
-        let paths = std::fs::read_dir(&self.cbrs_geofence_regions)?;
+    pub fn usa_and_mexico_region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {
+        let paths = std::fs::read_dir(&self.usa_and_mexico_geofence_regions)?;
         Ok(paths
             .into_iter()
             .collect::<Result<Vec<std::fs::DirEntry>, std::io::Error>>()?
@@ -133,7 +133,9 @@ impl Settings {
             .collect())
     }
 
-    pub fn cbrs_fencing_resolution(&self) -> anyhow::Result<h3o::Resolution> {
-        Ok(h3o::Resolution::try_from(self.cbrs_fencing_resolution)?)
+    pub fn usa_and_mexico_fencing_resolution(&self) -> anyhow::Result<h3o::Resolution> {
+        Ok(h3o::Resolution::try_from(
+            self.usa_and_mexico_fencing_resolution,
+        )?)
     }
 }

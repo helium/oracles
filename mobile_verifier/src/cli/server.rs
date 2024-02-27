@@ -1,6 +1,6 @@
 use crate::{
-    coverage::CoverageDaemon, data_session::DataSessionIngestor, geofence::Geofence,
-    heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
+    boosting_oracles::Urbanization, coverage::CoverageDaemon, data_session::DataSessionIngestor,
+    geofence::Geofence, heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
     heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon, rewarder::Rewarder,
     speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
     Settings,
@@ -96,10 +96,10 @@ impl Cmd {
         .create()
         .await?;
 
-        let cbrs_region_paths = settings.cbrs_region_paths()?;
-        tracing::info!(?cbrs_region_paths, "cbrs_geofence_regions");
+        let usa_region_paths = settings.usa_region_paths()?;
+        tracing::info!(?usa_region_paths, "usa_geofence_regions");
 
-        let cbrs_geofence = Geofence::new(cbrs_region_paths, settings.cbrs_fencing_resolution()?)?;
+        let usa_geofence = Geofence::new(usa_region_paths, settings.usa_fencing_resolution()?)?;
 
         let cbrs_heartbeat_daemon = CellHeartbeatDaemon::new(
             pool.clone(),
@@ -110,13 +110,19 @@ impl Cmd {
             settings.max_distance_from_coverage,
             valid_heartbeats.clone(),
             seniority_updates.clone(),
-            cbrs_geofence,
+            usa_geofence.clone(),
         );
 
-        let wifi_region_paths = settings.wifi_region_paths()?;
-        tracing::info!(?wifi_region_paths, "wifi_geofence_regions");
+        let usa_and_mexico_region_paths = settings.usa_and_mexico_region_paths()?;
+        tracing::info!(
+            ?usa_and_mexico_region_paths,
+            "usa_and_mexico_geofence_regions"
+        );
 
-        let wifi_geofence = Geofence::new(wifi_region_paths, settings.wifi_fencing_resolution()?)?;
+        let usa_and_mexico_geofence = Geofence::new(
+            usa_and_mexico_region_paths,
+            settings.usa_and_mexico_fencing_resolution()?,
+        )?;
 
         let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
             pool.clone(),
@@ -127,7 +133,7 @@ impl Cmd {
             settings.max_distance_from_coverage,
             valid_heartbeats,
             seniority_updates,
-            wifi_geofence,
+            usa_and_mexico_geofence,
         );
 
         // Speedtests
@@ -205,11 +211,12 @@ impl Cmd {
             .await?;
 
         let disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
+        let urbanization = Urbanization::new(disktree, usa_geofence);
 
         let coverage_daemon = CoverageDaemon::new(
             pool.clone(),
             auth_client.clone(),
-            disktree,
+            urbanization,
             coverage_objs,
             valid_coverage_objs,
             oracle_boosting_reports,

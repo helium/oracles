@@ -976,6 +976,7 @@ mod test {
             signal_power: 0,
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: true,
         }]
     }
 
