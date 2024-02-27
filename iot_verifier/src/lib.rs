@@ -18,4 +18,5 @@ pub mod runner;
 mod settings;
 pub mod telemetry;
 pub mod tx_scaler;
+pub mod witness_updater;
 pub use settings::Settings;

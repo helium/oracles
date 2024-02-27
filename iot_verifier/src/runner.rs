@@ -5,7 +5,9 @@ use crate::{
     poc_report::Report,
     region_cache::RegionCache,
     reward_share::GatewayPocShare,
-    telemetry, Settings,
+    telemetry,
+    witness_updater::WitnessUpdater,
+    Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
@@ -54,6 +56,7 @@ pub struct Runner<G> {
     pub invalid_witness_sink: FileSinkClient,
     pub poc_sink: FileSinkClient,
     pub hex_density_map: HexDensityMap,
+    pub witness_updater: WitnessUpdater,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -98,6 +101,7 @@ where
         invalid_witness_sink: FileSinkClient,
         poc_sink: FileSinkClient,
         hex_density_map: HexDensityMap,
+        witness_updater: WitnessUpdater,
     ) -> anyhow::Result<Self> {
         let beacon_interval = settings.beacon_interval()?;
         let max_witnesses_per_poc = settings.max_witnesses_per_poc;
@@ -134,6 +138,7 @@ where
             invalid_witness_sink,
             poc_sink,
             hex_density_map,
+            witness_updater,
         })
     }
 
@@ -268,6 +273,7 @@ where
                 &self.gateway_cache,
                 &self.region_cache,
                 &self.deny_list,
+                &self.witness_updater,
             )
             .await?;
         match beacon_verify_result.result {
@@ -280,6 +286,7 @@ where
                             &self.hex_density_map,
                             &self.gateway_cache,
                             &self.deny_list,
+                            &self.witness_updater,
                         )
                         .await?;
 
