@@ -21,7 +21,10 @@ use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
-    poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
+    poc_mobile::{
+        self as proto, CoverageObjectValidity, OracleBoostingReportV1,
+        SignalLevel as SignalLevelProto,
+    },
 };
 use mobile_config::{
     boosted_hex_info::{BoostedHex, BoostedHexes},
@@ -68,6 +71,7 @@ pub struct CoverageDaemon<DT, GF> {
     auth_client: AuthorizationClient,
     urbanization: Urbanization<DT, GF>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
+    initial_boosting_reports: Vec<OracleBoostingReportV1>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
 }
@@ -77,25 +81,40 @@ where
     DT: DiskTreeLike,
     GF: GeofenceValidator<u64>,
 {
-    pub fn new(
-        pool: Pool<Postgres>,
+    pub async fn new(
+        pool: PgPool,
         auth_client: AuthorizationClient,
         urbanization: Urbanization<DT, GF>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
         oracle_boosting_sink: FileSinkClient,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        tracing::info!("Setting initial values for the urbanization column");
+
+        let unassigned_hexes = UnassignedHex::fetch(&pool);
+        let initial_boosting_reports =
+            set_oracle_boosting_assignments(unassigned_hexes, &urbanization, &pool)
+                .await?
+                .collect();
+
+        Ok(Self {
             pool,
             auth_client,
             urbanization,
             coverage_objs,
             coverage_obj_sink,
             oracle_boosting_sink,
-        }
+            initial_boosting_reports,
+        })
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        let initial_boosting_reports = std::mem::take(&mut self.initial_boosting_reports);
+        self.oracle_boosting_sink
+            .write_all(initial_boosting_reports)
+            .await?;
+        self.oracle_boosting_sink.commit().await?;
+
         loop {
             #[rustfmt::skip]
             tokio::select! {
@@ -110,21 +129,6 @@ where
                 }
             }
         }
-
-        Ok(())
-    }
-
-    pub async fn set_initial_oracle_boosting_assignments(&self) -> anyhow::Result<()> {
-        tracing::info!("Setting initial values for the urbanization column");
-
-        let unassigned_hexes = UnassignedHex::fetch(&self.pool);
-        let boosting_reports =
-            set_oracle_boosting_assignments(unassigned_hexes, &self.urbanization, &self.pool)
-                .await?;
-        self.oracle_boosting_sink
-            .write_all(boosting_reports)
-            .await?;
-        self.oracle_boosting_sink.commit().await?;
 
         Ok(())
     }
