@@ -13,7 +13,11 @@ use helium_proto::services::{
 };
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 use mobile_verifier::{
-    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
+    boosting_oracles::{MockDiskTree, Urbanization},
+    coverage::{
+        set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
+        CoverageObjectCache, Seniority, UnassignedHex,
+    },
     geofence::GeofenceValidator,
     heartbeats::{Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate, ValidatedHeartbeat},
     reward_shares::CoveragePoints,
@@ -28,13 +32,20 @@ use std::{collections::HashMap, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;
 
 #[derive(Clone)]
-struct MockGeofence {}
+struct MockGeofence;
 
-impl GeofenceValidator for MockGeofence {
+impl GeofenceValidator<Heartbeat> for MockGeofence {
     fn in_valid_region(&self, _heartbeat: &Heartbeat) -> bool {
         true
     }
 }
+
+impl GeofenceValidator<u64> for MockGeofence {
+    fn in_valid_region(&self, _cell: &u64) -> bool {
+        true
+    }
+}
+
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
 
@@ -394,6 +405,10 @@ async fn process_input(
     while let Some(coverage_obj) = coverage_objs.next().await.transpose()? {
         coverage_obj.save(&mut transaction).await?;
     }
+    let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
+    let unassigned_hexes = UnassignedHex::fetch_all(&mut transaction).await?;
+    let _ =
+        set_oracle_boosting_assignments(unassigned_hexes, &urbanization, &mut transaction).await?;
     transaction.commit().await?;
 
     let mut transaction = pool.begin().await?;
@@ -404,7 +419,7 @@ async fn process_input(
         2000,
         2000,
         epoch,
-        &MockGeofence {},
+        &MockGeofence,
     ));
     while let Some(heartbeat) = heartbeats.next().await.transpose()? {
         let coverage_claim_time = coverage_claim_time_cache
@@ -1358,7 +1373,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         2000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
-        &MockGeofence {},
+        &MockGeofence,
     )
     .await
     .unwrap();
@@ -1372,7 +1387,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         1000000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
-        &MockGeofence {},
+        &MockGeofence,
     )
     .await
     .unwrap();
@@ -1386,7 +1401,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         2000,
         1000000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
-        &MockGeofence {},
+        &MockGeofence,
     )
     .await
     .unwrap();
@@ -1400,7 +1415,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         1000000,
         1000000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
-        &MockGeofence {},
+        &MockGeofence,
     )
     .await
     .unwrap();

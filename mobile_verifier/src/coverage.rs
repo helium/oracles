@@ -171,12 +171,12 @@ where
 #[derive(FromRow)]
 pub struct UnassignedHex {
     uuid: Uuid,
-    location: i64,
+    hex: i64,
 }
 
 impl UnassignedHex {
     pub async fn fetch_all(transaction: &mut Transaction<'_, Postgres>) -> sqlx::Result<Vec<Self>> {
-        sqlx::query_as("SELECT uuid, location FROM hexes WHERE urbanization IS NULL")
+        sqlx::query_as("SELECT uuid, hex FROM hexes WHERE urbanized IS NULL")
             .fetch_all(transaction)
             .await
     }
@@ -190,17 +190,17 @@ pub async fn set_oracle_boosting_assignments(
     let now = Utc::now();
     let mut boost_results = HashMap::<Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
 
-    for UnassignedHex { uuid, location } in unassigned_hexes {
-        let urbanized = urbanization.hex_assignment(location as u64)?;
+    for UnassignedHex { uuid, hex } in unassigned_hexes {
+        let urbanized = urbanization.hex_assignment(hex as u64)?;
 
-        sqlx::query("UPDATE hexes SET urbanized = $1 WHERE uuid = $2 AND location = $3")
+        sqlx::query("UPDATE hexes SET urbanized = $1 WHERE uuid = $2 AND hex = $3")
             .bind(urbanized)
             .bind(uuid)
-            .bind(location)
+            .bind(hex)
             .execute(&mut *transaction)
             .await?;
 
-        let location = CellIndex::try_from(location as u64)?.to_string();
+        let location = CellIndex::try_from(hex as u64)?.to_string();
         let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
             .to_u32()
             .unwrap_or(0);
@@ -1002,7 +1002,7 @@ mod test {
             signal_power: 0,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
-            urbanized: true,
+            urbanized: Assignment::A,
         }
     }
 
@@ -1399,7 +1399,7 @@ mod test {
             signal_power: 0,
             coverage_claim_time: coverage_claim_time.unwrap_or(DateTime::<Utc>::MIN_UTC),
             inserted_at: DateTime::<Utc>::MIN_UTC,
-            urbanized: true,
+            urbanized: Assignment::A,
         }
     }
 
@@ -1417,6 +1417,7 @@ mod test {
             signal_level: SignalLevel::High,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: Assignment::A,
         }
     }
 
@@ -1434,7 +1435,7 @@ mod test {
             signal_level: SignalLevel::High,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
-            urbanized: true,
+            urbanized: Assignment::A,
         }
     }
 
@@ -1452,7 +1453,7 @@ mod test {
             signal_level,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
-            urbanized: true,
+            urbanized: Assignment::A,
         }
     }
 }

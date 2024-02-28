@@ -21,9 +21,9 @@ impl From<Assignment> for oracle_boosting_hex_assignment::Assignment {
     }
 }
 
-impl Into<i32> for Assignment {
-    fn into(self) -> i32 {
-        oracle_boosting_hex_assignment::Assignment::from(self) as i32
+impl From<Assignment> for i32 {
+    fn from(assignment: Assignment) -> i32 {
+        oracle_boosting_hex_assignment::Assignment::from(assignment) as i32
     }
 }
 

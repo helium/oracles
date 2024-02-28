@@ -670,6 +670,7 @@ pub fn get_scheduled_tokens_for_oracles(duration: Duration) -> Decimal {
 mod test {
     use super::*;
     use crate::{
+        boosting_oracles::Assignment,
         cell_type::CellType,
         coverage::{CoveredHexStream, HexCoverage, Seniority},
         data_session::HotspotDataSession,
@@ -976,7 +977,7 @@ mod test {
             signal_power: 0,
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
-            urbanized: true,
+            urbanized: Assignment::A,
         }]
     }
 

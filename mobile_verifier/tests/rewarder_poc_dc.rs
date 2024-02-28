@@ -17,9 +17,11 @@ use mobile_config::{
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
 use mobile_verifier::{
+    boosting_oracles::{MockDiskTree, Urbanization},
     cell_type::CellType,
-    coverage::CoverageObject,
+    coverage::{set_oracle_boosting_assignments, CoverageObject, UnassignedHex},
     data_session,
+    geofence::GeofenceValidator,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder, speedtests,
 };
@@ -52,6 +54,15 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
         _timestamp: DateTime<Utc>,
     ) -> Result<BoostedHexInfoStream, ClientError> {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())
+    }
+}
+
+#[derive(Clone)]
+struct MockGeofence;
+
+impl GeofenceValidator<u64> for MockGeofence {
+    fn in_valid_region(&self, _cell: &u64) -> bool {
+        true
     }
 }
 
@@ -288,6 +299,10 @@ async fn seed_heartbeats(
         cov_obj_1.save(txn).await?;
         cov_obj_2.save(txn).await?;
         cov_obj_3.save(txn).await?;
+
+        let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
+        let unassigned_hexes = UnassignedHex::fetch_all(txn).await?;
+        let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, txn).await?;
     }
     Ok(())
 }
