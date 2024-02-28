@@ -14,6 +14,7 @@ use iot_config::{
     client::{Gateways, RegionParamsInfo},
     gateway_info::{GatewayInfo, GatewayInfoStream},
 };
+use iot_verifier::witness_updater::WitnessUpdater;
 use iot_verifier::{
     gateway_cache::GatewayCache, gateway_updater::GatewayUpdater, poc_report::Report,
     region_cache::RegionCache, runner::Runner, tx_scaler::Server as DensityScaler,
@@ -89,7 +90,7 @@ impl TestContext {
         let density_scaler =
             DensityScaler::new(refresh_interval, pool.clone(), gateway_updater_receiver).await?;
         let region_cache = RegionCache::new(Duration::from_secs(60), iot_config_client.clone())?;
-
+        let (witness_updater, witness_updater_server) = WitnessUpdater::new(pool.clone()).await?;
         // create the runner
         let runner = Runner {
             pool: pool.clone(),
@@ -107,6 +108,7 @@ impl TestContext {
             invalid_witness_sink: invalid_witness_client,
             poc_sink: valid_poc_client,
             hex_density_map: density_scaler.hex_density_map.clone(),
+            witness_updater,
         };
 
         // generate a datetime based on a hardcoded timestamp
@@ -117,6 +119,10 @@ impl TestContext {
         let report_ts = entropy_ts + ChronoDuration::minutes(1);
         // add the entropy to the DB
         common::inject_entropy_report(pool.clone(), entropy_ts).await?;
+
+        // start up the witness updater
+        let (_shutdown_trigger, shutdown) = triggered::trigger();
+        let _handle = tokio::spawn(witness_updater_server.run(shutdown));
 
         Ok(Self {
             runner,

@@ -10,7 +10,7 @@ use iot_config::client::Client as IotConfigClient;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, gateway_updater::GatewayUpdater, loader,
     packet_loader, purger, rewarder::Rewarder, runner, telemetry,
-    tx_scaler::Server as DensityScaler, Settings,
+    tx_scaler::Server as DensityScaler, witness_updater::WitnessUpdater, Settings,
 };
 use price::PriceTracker;
 use std::path;
@@ -76,6 +76,10 @@ impl Server {
         let store_base_path = path::Path::new(&settings.cache);
 
         let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
+
+        // create the witness updater to handle serialization of last witness updates to db
+        // also exposes a cache of the last witness updates
+        let (witness_updater, witness_updater_server) = WitnessUpdater::new(pool.clone()).await?;
 
         // *
         // setup caches
@@ -288,6 +292,7 @@ impl Server {
             runner_invalid_witness_sink,
             runner_poc_sink,
             density_scaler.hex_density_map.clone(),
+            witness_updater,
         )
         .await?;
 
@@ -300,6 +305,7 @@ impl Server {
             .add_task(purger_invalid_witness_sink_server)
             .add_task(runner_invalid_beacon_sink_server)
             .add_task(runner_invalid_witness_sink_server)
+            .add_task(witness_updater_server)
             .add_task(runner_poc_sink_server)
             .add_task(price_daemon)
             .add_task(density_scaler)
