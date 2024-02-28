@@ -1,12 +1,14 @@
 use crate::{
-    boosting_oracles::{assignment::urbanization_multiplier, Assignment, Urbanization},
+    boosting_oracles::{
+        assignment::urbanization_multiplier, Assignment, DiskTreeLike, Urbanization,
+    },
     geofence::GeofenceValidator,
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized,
 };
 use chrono::{DateTime, Utc};
 use file_store::{
-    coverage::{self, CoverageObjectIngestReport, RadioHexSignalLevel},
+    coverage::{self, CoverageObjectIngestReport},
     file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
     traits::TimestampEncode,
@@ -61,23 +63,24 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
-pub struct CoverageDaemon<T> {
+pub struct CoverageDaemon<DT, GF> {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
-    urbanization: Urbanization<T>,
+    urbanization: Urbanization<DT, GF>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
 }
 
-impl<T> CoverageDaemon<T>
+impl<DT, GF> CoverageDaemon<DT, GF>
 where
-    T: GeofenceValidator<u64>,
+    DT: DiskTreeLike,
+    GF: GeofenceValidator<u64>,
 {
     pub fn new(
         pool: Pool<Postgres>,
         auth_client: AuthorizationClient,
-        urbanization: Urbanization<T>,
+        urbanization: Urbanization<DT, GF>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
         oracle_boosting_sink: FileSinkClient,
@@ -111,46 +114,18 @@ where
         Ok(())
     }
 
-    pub async fn set_initial_oracle_boosting_values(&self) -> anyhow::Result<()> {
-        #[derive(FromRow)]
-        struct UnsetHex {
-            uuid: Uuid,
-            location: i64,
-        }
-
+    pub async fn set_initial_oracle_boosting_assignments(&self) -> anyhow::Result<()> {
         tracing::info!("Setting initial values for the urbanization column");
 
-        let now = Utc::now();
-        let mut unset_hexes =
-            sqlx::query_as("SELECT uuid, location FROM hexes WHERE urbanization IS NULL")
-                .fetch(&self.pool);
-
-        while let Some(UnsetHex { uuid, location }) = unset_hexes.next().await.transpose()? {
-            let urbanized = self.urbanization.hex_assignment(location as u64)?;
-            sqlx::query("UPDATE hexes SET urbanized = $1 WHERE uuid = $2 AND location = $3")
-                .bind(urbanized)
-                .bind(uuid)
-                .bind(location)
-                .execute(&self.pool)
+        let mut transaction = self.pool.begin().await?;
+        let unassigned_hexes = UnassignedHex::fetch_all(&mut transaction).await?;
+        let boosting_reports =
+            set_oracle_boosting_assignments(unassigned_hexes, &self.urbanization, &mut transaction)
                 .await?;
-            let location = CellIndex::try_from(location as u64)?;
-            let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
-                .to_u32()
-                .unwrap_or(0);
-            let assignment = urbanized.to_string();
-            self.oracle_boosting_sink
-                .write(
-                    proto::OracleBoostingReportV1 {
-                        coverage_object: Vec::from(uuid.into_bytes()),
-                        location: location.to_string(),
-                        assignment,
-                        assignment_multiplier,
-                        timestamp: now.encode_timestamp(),
-                    },
-                    &[],
-                )
-                .await?;
-        }
+        self.oracle_boosting_sink
+            .write_all(boosting_reports)
+            .await?;
+        transaction.commit().await?;
 
         Ok(())
     }
@@ -170,19 +145,21 @@ where
         ));
 
         while let Some(coverage_object) = validated_coverage_objects.next().await.transpose()? {
-            coverage_object
-                .write(
-                    &self.urbanization,
-                    &self.coverage_obj_sink,
-                    &self.oracle_boosting_sink,
-                )
-                .await?;
+            coverage_object.write(&self.coverage_obj_sink).await?;
             if coverage_object.is_valid() {
-                coverage_object
-                    .save(&self.urbanization, &mut transaction)
-                    .await?;
+                coverage_object.save(&mut transaction).await?;
             }
         }
+
+        // After writing all of the coverage objects, we set their oracle boosting assignments. This is
+        // done in two steps to improve the testability of the assignments.
+        let unassigned_hexes = UnassignedHex::fetch_all(&mut transaction).await?;
+        let boosting_reports =
+            set_oracle_boosting_assignments(unassigned_hexes, &self.urbanization, &mut transaction)
+                .await?;
+        self.oracle_boosting_sink
+            .write_all(boosting_reports)
+            .await?;
 
         self.coverage_obj_sink.commit().await?;
         transaction.commit().await?;
@@ -191,9 +168,69 @@ where
     }
 }
 
-impl<T> ManagedTask for CoverageDaemon<T>
+#[derive(FromRow)]
+pub struct UnassignedHex {
+    uuid: Uuid,
+    location: i64,
+}
+
+impl UnassignedHex {
+    pub async fn fetch_all(transaction: &mut Transaction<'_, Postgres>) -> sqlx::Result<Vec<Self>> {
+        sqlx::query_as("SELECT uuid, location FROM hexes WHERE urbanization IS NULL")
+            .fetch_all(transaction)
+            .await
+    }
+}
+
+pub async fn set_oracle_boosting_assignments(
+    unassigned_hexes: impl IntoIterator<Item = UnassignedHex>,
+    urbanization: &Urbanization<impl DiskTreeLike, impl GeofenceValidator<u64>>,
+    transaction: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
+    let now = Utc::now();
+    let mut boost_results = HashMap::<Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
+
+    for UnassignedHex { uuid, location } in unassigned_hexes {
+        let urbanized = urbanization.hex_assignment(location as u64)?;
+
+        sqlx::query("UPDATE hexes SET urbanized = $1 WHERE uuid = $2 AND location = $3")
+            .bind(urbanized)
+            .bind(uuid)
+            .bind(location)
+            .execute(&mut *transaction)
+            .await?;
+
+        let location = CellIndex::try_from(location as u64)?.to_string();
+        let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
+            .to_u32()
+            .unwrap_or(0);
+        let assignments = vec![urbanized.into()];
+
+        boost_results
+            .entry(uuid)
+            .or_default()
+            .push(proto::OracleBoostingHexAssignment {
+                location,
+                assignments,
+                assignment_multiplier,
+            });
+    }
+
+    Ok(boost_results
+        .into_iter()
+        .map(
+            move |(coverage_object, assignments)| proto::OracleBoostingReportV1 {
+                coverage_object: Vec::from(coverage_object.into_bytes()),
+                assignments,
+                timestamp: now.encode_timestamp(),
+            },
+        ))
+}
+
+impl<DT, GF> ManagedTask for CoverageDaemon<DT, GF>
 where
-    T: GeofenceValidator<u64>,
+    DT: DiskTreeLike,
+    GF: GeofenceValidator<u64>,
 {
     fn start_task(
         self: Box<Self>,
@@ -252,34 +289,7 @@ impl CoverageObject {
         }
     }
 
-    pub async fn write(
-        &self,
-        urbanization: &Urbanization<impl GeofenceValidator<u64>>,
-        coverage_objects: &FileSinkClient,
-        oracle_boosting_reports: &FileSinkClient,
-    ) -> anyhow::Result<()> {
-        let uuid = Vec::from(self.coverage_object.uuid.into_bytes());
-        let now = Utc::now();
-        for hex in &self.coverage_object.coverage {
-            let location: u64 = hex.location.into();
-            let urbanization = urbanization.hex_assignment(location)?;
-            let assignment_multiplier = (urbanization_multiplier(urbanization) * dec!(1000))
-                .to_u32()
-                .unwrap_or(0);
-            let assignment = urbanization.to_string();
-            oracle_boosting_reports
-                .write(
-                    proto::OracleBoostingReportV1 {
-                        coverage_object: uuid.clone(),
-                        location: hex.location.to_string(),
-                        assignment,
-                        assignment_multiplier,
-                        timestamp: now.encode_timestamp(),
-                    },
-                    &[],
-                )
-                .await?;
-        }
+    pub async fn write(&self, coverage_objects: &FileSinkClient) -> anyhow::Result<()> {
         coverage_objects
             .write(
                 proto::CoverageObjectV1 {
@@ -310,11 +320,7 @@ impl CoverageObject {
         Ok(())
     }
 
-    pub async fn save(
-        self,
-        urbanization: &Urbanization<impl GeofenceValidator<u64>>,
-        transaction: &mut Transaction<'_, Postgres>,
-    ) -> anyhow::Result<()> {
+    pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         let insertion_time = Utc::now();
         let key = self.key();
         let hb_type = key.hb_type();
@@ -349,36 +355,24 @@ impl CoverageObject {
             .coverage
             .chunks(COVERAGE_MAX_BATCH_ENTRIES)
         {
-            let hexes: anyhow::Result<Vec<(u64, Assignment, &RadioHexSignalLevel)>> = hexes
-                .into_iter()
-                .map(|hex| {
+            QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power)")
+                .push_values(hexes, |mut b, hex| {
                     let location: u64 = hex.location.into();
-                    let urbanization_assignment = urbanization.hex_assignment(location)?;
-                    Ok((location, urbanization_assignment, hex))
+                    b.push_bind(self.coverage_object.uuid)
+                        .push_bind(location as i64)
+                        .push_bind(SignalLevel::from(hex.signal_level))
+                        .push_bind(hex.signal_power);
                 })
-                .collect();
-
-            QueryBuilder::new(
-                "INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized)",
-            )
-            .push_values(hexes?, |mut b, (location, urbanized, hex)| {
-                b.push_bind(self.coverage_object.uuid)
-                    .push_bind(location as i64)
-                    .push_bind(SignalLevel::from(hex.signal_level))
-                    .push_bind(hex.signal_power)
-                    .push_bind(urbanized);
-            })
-            .push(
-                r#"
+                .push(
+                    r#"
                     ON CONFLICT (uuid, hex) DO UPDATE SET
                       signal_level = EXCLUDED.signal_level,
-                      signal_power = EXCLUDED.signal_power,
-                      urbanized = EXCLUDED.urbanized
+                      signal_power = EXCLUDED.signal_power
                     "#,
-            )
-            .build()
-            .execute(&mut *transaction)
-            .await?;
+                )
+                .build()
+                .execute(&mut *transaction)
+                .await?;
         }
 
         Ok(())
@@ -544,7 +538,7 @@ impl CoveredHexStream for Pool<Postgres> {
         Ok(
             sqlx::query_as(
                 r#"
-                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, h.signal_power, co.coverage_claim_time, co.inserted_at
+                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, h.signal_power, co.coverage_claim_time, co.inserted_at, h.urbanized
                 FROM coverage_objects co
                     INNER JOIN hexes h on co.uuid = h.uuid
                 WHERE co.radio_key = $1

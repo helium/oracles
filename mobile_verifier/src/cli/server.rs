@@ -222,7 +222,9 @@ impl Cmd {
             oracle_boosting_reports,
         );
 
-        coverage_daemon.set_initial_oracle_boosting_values().await?;
+        coverage_daemon
+            .set_initial_oracle_boosting_assignments()
+            .await?;
 
         // Mobile rewards
         let reward_period_hours = settings.rewards;

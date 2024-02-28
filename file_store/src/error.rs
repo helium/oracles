@@ -37,6 +37,8 @@ pub enum Error {
     DbError(#[from] sqlx::Error),
     #[error("channel send error")]
     SendError(#[from] tokio::sync::mpsc::error::SendError<()>),
+    #[error("empty slice passed to write_all")]
+    EmptySlice,
 }
 
 #[derive(Error, Debug)]

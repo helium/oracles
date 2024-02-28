@@ -1,3 +1,4 @@
+use helium_proto::services::poc_mobile::oracle_boosting_hex_assignment;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -8,6 +9,22 @@ pub enum Assignment {
     A,
     B,
     C,
+}
+
+impl From<Assignment> for oracle_boosting_hex_assignment::Assignment {
+    fn from(assignment: Assignment) -> Self {
+        match assignment {
+            Assignment::A => Self::A,
+            Assignment::B => Self::B,
+            Assignment::C => Self::C,
+        }
+    }
+}
+
+impl Into<i32> for Assignment {
+    fn into(self) -> i32 {
+        oracle_boosting_hex_assignment::Assignment::from(self) as i32
+    }
 }
 
 impl ToString for Assignment {

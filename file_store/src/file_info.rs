@@ -236,7 +236,7 @@ impl fmt::Display for FileType {
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
             Self::SeniorityUpdate => SENIORITY_UPDATE,
             Self::BoostedHexUpdate => BOOSTED_HEX_UPDATE,
-	    Self::OracleBoostingReport => ORACLE_BOOSTING_REPORT,
+            Self::OracleBoostingReport => ORACLE_BOOSTING_REPORT,
         };
         f.write_str(s)
     }
@@ -287,7 +287,7 @@ impl FileType {
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
             Self::SeniorityUpdate => SENIORITY_UPDATE,
             Self::BoostedHexUpdate => BOOSTED_HEX_UPDATE,
-	    Self::OracleBoostingReport => ORACLE_BOOSTING_REPORT,
+            Self::OracleBoostingReport => ORACLE_BOOSTING_REPORT,
         }
     }
 }
@@ -338,7 +338,7 @@ impl FromStr for FileType {
             COVERAGE_OBJECT_INGEST_REPORT => Self::CoverageObjectIngestReport,
             SENIORITY_UPDATE => Self::SeniorityUpdate,
             BOOSTED_HEX_UPDATE => Self::BoostedHexUpdate,
-	    ORACLE_BOOSTING_REPORT => Self::OracleBoostingReport,
+            ORACLE_BOOSTING_REPORT => Self::OracleBoostingReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

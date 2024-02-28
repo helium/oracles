@@ -1590,7 +1590,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=map/oracle-boosting#7260c5ae4ddfcbbb17a9faa7dc09ec256b6f4d53"
+source = "git+https://github.com/helium/proto?branch=map/oracle-boosting#4cd2dd1ad50cc41f2266a6afc32580b00811ff38"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3556,7 +3556,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=map/oracle-boosting#7260c5ae4ddfcbbb17a9faa7dc09ec256b6f4d53"
+source = "git+https://github.com/helium/proto?branch=map/oracle-boosting#4cd2dd1ad50cc41f2266a6afc32580b00811ff38"
 dependencies = [
  "bytes",
  "prost",
