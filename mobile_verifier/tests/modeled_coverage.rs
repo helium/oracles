@@ -405,11 +405,11 @@ async fn process_input(
     while let Some(coverage_obj) = coverage_objs.next().await.transpose()? {
         coverage_obj.save(&mut transaction).await?;
     }
-    let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
-    let unassigned_hexes = UnassignedHex::fetch_all(&mut transaction).await?;
-    let _ =
-        set_oracle_boosting_assignments(unassigned_hexes, &urbanization, &mut transaction).await?;
     transaction.commit().await?;
+
+    let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
+    let unassigned_hexes = UnassignedHex::fetch(pool);
+    let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, pool).await?;
 
     let mut transaction = pool.begin().await?;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(

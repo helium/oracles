@@ -79,6 +79,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     seed_speedtests(epoch.end, &mut txn).await?;
     seed_data_sessions(epoch.start, &mut txn).await?;
     txn.commit().await?;
+    update_assignments(&pool).await?;
 
     let boosted_hexes = vec![];
 
@@ -299,11 +300,14 @@ async fn seed_heartbeats(
         cov_obj_1.save(txn).await?;
         cov_obj_2.save(txn).await?;
         cov_obj_3.save(txn).await?;
-
-        let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
-        let unassigned_hexes = UnassignedHex::fetch_all(txn).await?;
-        let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, txn).await?;
     }
+    Ok(())
+}
+
+async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
+    let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
+    let unassigned_hexes = UnassignedHex::fetch(pool);
+    let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, pool).await?;
     Ok(())
 }
 

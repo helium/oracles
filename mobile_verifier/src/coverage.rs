@@ -117,15 +117,14 @@ where
     pub async fn set_initial_oracle_boosting_assignments(&self) -> anyhow::Result<()> {
         tracing::info!("Setting initial values for the urbanization column");
 
-        let mut transaction = self.pool.begin().await?;
-        let unassigned_hexes = UnassignedHex::fetch_all(&mut transaction).await?;
+        let unassigned_hexes = UnassignedHex::fetch(&self.pool);
         let boosting_reports =
-            set_oracle_boosting_assignments(unassigned_hexes, &self.urbanization, &mut transaction)
+            set_oracle_boosting_assignments(unassigned_hexes, &self.urbanization, &self.pool)
                 .await?;
         self.oracle_boosting_sink
             .write_all(boosting_reports)
             .await?;
-        transaction.commit().await?;
+        self.oracle_boosting_sink.commit().await?;
 
         Ok(())
     }
@@ -151,18 +150,19 @@ where
             }
         }
 
+        self.coverage_obj_sink.commit().await?;
+        transaction.commit().await?;
+
         // After writing all of the coverage objects, we set their oracle boosting assignments. This is
         // done in two steps to improve the testability of the assignments.
-        let unassigned_hexes = UnassignedHex::fetch_all(&mut transaction).await?;
+        let unassigned_hexes = UnassignedHex::fetch(&self.pool);
         let boosting_reports =
-            set_oracle_boosting_assignments(unassigned_hexes, &self.urbanization, &mut transaction)
+            set_oracle_boosting_assignments(unassigned_hexes, &self.urbanization, &self.pool)
                 .await?;
         self.oracle_boosting_sink
             .write_all(boosting_reports)
             .await?;
-
-        self.coverage_obj_sink.commit().await?;
-        transaction.commit().await?;
+        self.oracle_boosting_sink.commit().await?;
 
         Ok(())
     }
@@ -172,48 +172,71 @@ where
 pub struct UnassignedHex {
     uuid: Uuid,
     hex: i64,
+    signal_level: SignalLevel,
+    signal_power: i32,
 }
 
 impl UnassignedHex {
-    pub async fn fetch_all(transaction: &mut Transaction<'_, Postgres>) -> sqlx::Result<Vec<Self>> {
-        sqlx::query_as("SELECT uuid, hex FROM hexes WHERE urbanized IS NULL")
-            .fetch_all(transaction)
-            .await
+    pub fn fetch(pool: &PgPool) -> impl Stream<Item = sqlx::Result<Self>> + '_ {
+        sqlx::query_as(
+            "SELECT uuid, hex, signal_level, signal_power FROM hexes WHERE urbanized IS NULL",
+        )
+        .fetch(pool)
     }
 }
 
-pub async fn set_oracle_boosting_assignments(
-    unassigned_hexes: impl IntoIterator<Item = UnassignedHex>,
+pub async fn set_oracle_boosting_assignments<'a>(
+    unassigned_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
     urbanization: &Urbanization<impl DiskTreeLike, impl GeofenceValidator<u64>>,
-    transaction: &mut Transaction<'_, Postgres>,
+    pool: &'a PgPool,
 ) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
+    const NUMBER_OF_FIELDS_IN_QUERY: u16 = 5;
+    const ASSIGNMENTS_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
+
     let now = Utc::now();
     let mut boost_results = HashMap::<Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
+    let mut unassigned_hexes = pin!(unassigned_hexes.try_chunks(ASSIGNMENTS_MAX_BATCH_ENTRIES));
 
-    for UnassignedHex { uuid, hex } in unassigned_hexes {
-        let urbanized = urbanization.hex_assignment(hex as u64)?;
+    while let Some(hexes) = unassigned_hexes.try_next().await? {
+        let hexes: anyhow::Result<Vec<_>> = hexes
+            .into_iter()
+            .map(|hex| {
+                let urbanized = urbanization.hex_assignment(hex.hex as u64)?;
+                let location = CellIndex::try_from(hex.hex as u64)?.to_string();
+                let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
+                    .to_u32()
+                    .unwrap_or(0);
+                let assignments = vec![urbanized.into()];
 
-        sqlx::query("UPDATE hexes SET urbanized = $1 WHERE uuid = $2 AND hex = $3")
-            .bind(urbanized)
-            .bind(uuid)
-            .bind(hex)
-            .execute(&mut *transaction)
+                boost_results.entry(hex.uuid).or_default().push(
+                    proto::OracleBoostingHexAssignment {
+                        location,
+                        assignments,
+                        assignment_multiplier,
+                    },
+                );
+
+                Ok((hex, urbanized))
+            })
+            .collect();
+
+        QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized)")
+            .push_values(hexes?, |mut b, (hex, urbanized)| {
+                b.push_bind(hex.uuid)
+                    .push_bind(hex.hex)
+                    .push_bind(hex.signal_level)
+                    .push_bind(hex.signal_power)
+                    .push_bind(urbanized);
+            })
+            .push(
+                r#"
+                ON CONFLICT (uuid, hex) DO UPDATE SET
+                  urbanized = EXCLUDED.urbanized
+                "#,
+            )
+            .build()
+            .execute(pool)
             .await?;
-
-        let location = CellIndex::try_from(hex as u64)?.to_string();
-        let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
-            .to_u32()
-            .unwrap_or(0);
-        let assignments = vec![urbanized.into()];
-
-        boost_results
-            .entry(uuid)
-            .or_default()
-            .push(proto::OracleBoostingHexAssignment {
-                location,
-                assignments,
-                assignment_multiplier,
-            });
     }
 
     Ok(boost_results

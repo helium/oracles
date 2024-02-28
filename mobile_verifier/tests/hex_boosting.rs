@@ -67,6 +67,14 @@ impl GeofenceValidator<u64> for MockGeofence {
         true
     }
 }
+
+async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
+    let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
+    let unassigned_hexes = UnassignedHex::fetch(pool);
+    let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, pool).await?;
+    Ok(())
+}
+
 //
 // TODO: add a bootstrapper to reduce boiler plate
 //
@@ -85,6 +93,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     seed_heartbeats_v1(epoch.start, &mut txn).await?;
     seed_speedtests(epoch.end, &mut txn).await?;
     txn.commit().await?;
+    update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is in the second period length
     let multipliers1 = vec![2, 10, 15, 35];
@@ -236,6 +245,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     seed_heartbeats_v2(epoch.start, &mut txn).await?;
     seed_speedtests(epoch.end, &mut txn).await?;
     txn.commit().await?;
+    update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is in the second period length
     let multipliers1 = vec![2, 10, 15, 35];
@@ -402,6 +412,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     seed_heartbeats_v1(epoch.start, &mut txn).await?;
     seed_speedtests(epoch.end, &mut txn).await?;
     txn.commit().await?;
+    update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is after the boost period ends
     let multipliers1 = vec![2, 10, 15];
@@ -514,6 +525,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     seed_heartbeats_v3(epoch.start, &mut txn).await?;
     seed_speedtests(epoch.end, &mut txn).await?;
     txn.commit().await?;
+    update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is in the second period length
     let multipliers1 = vec![2];
@@ -758,10 +770,6 @@ async fn seed_heartbeats_v1(
         cov_obj_1.save(txn).await?;
         cov_obj_2.save(txn).await?;
         cov_obj_3.save(txn).await?;
-
-        let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
-        let unassigned_hexes = UnassignedHex::fetch_all(txn).await?;
-        let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, txn).await?;
     }
     Ok(())
 }
@@ -864,10 +872,6 @@ async fn seed_heartbeats_v2(
         cov_obj_1.save(txn).await?;
         cov_obj_2.save(txn).await?;
         cov_obj_3.save(txn).await?;
-
-        let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
-        let unassigned_hexes = UnassignedHex::fetch_all(txn).await?;
-        let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, txn).await?;
     }
     Ok(())
 }
@@ -972,10 +976,6 @@ async fn seed_heartbeats_v3(
         cov_obj_1.save(txn).await?;
         cov_obj_2.save(txn).await?;
         cov_obj_3.save(txn).await?;
-
-        let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
-        let unassigned_hexes = UnassignedHex::fetch_all(txn).await?;
-        let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, txn).await?;
     }
     Ok(())
 }
