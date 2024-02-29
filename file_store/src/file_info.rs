@@ -145,6 +145,8 @@ pub const COVERAGE_OBJECT: &str = "coverage_object";
 pub const COVERAGE_OBJECT_INGEST_REPORT: &str = "coverage_object_ingest_report";
 pub const SENIORITY_UPDATE: &str = "seniority_update";
 
+pub const BOOSTED_HEX_UPDATE: &str = "boosted_hex_update";
+
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
 pub enum FileType {
@@ -185,6 +187,7 @@ pub enum FileType {
     VerifiedSpeedtest,
     WifiHeartbeat,
     WifiHeartbeatIngestReport,
+    BoostedHexUpdate,
 }
 
 impl fmt::Display for FileType {
@@ -231,6 +234,7 @@ impl fmt::Display for FileType {
             Self::CoverageObject => COVERAGE_OBJECT,
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
             Self::SeniorityUpdate => SENIORITY_UPDATE,
+            Self::BoostedHexUpdate => BOOSTED_HEX_UPDATE,
         };
         f.write_str(s)
     }
@@ -280,6 +284,7 @@ impl FileType {
             Self::CoverageObject => COVERAGE_OBJECT,
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
             Self::SeniorityUpdate => SENIORITY_UPDATE,
+            Self::BoostedHexUpdate => BOOSTED_HEX_UPDATE,
         }
     }
 }
@@ -329,6 +334,7 @@ impl FromStr for FileType {
             COVERAGE_OBJECT => Self::CoverageObject,
             COVERAGE_OBJECT_INGEST_REPORT => Self::CoverageObjectIngestReport,
             SENIORITY_UPDATE => Self::SeniorityUpdate,
+            BOOSTED_HEX_UPDATE => Self::BoostedHexUpdate,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

@@ -1,5 +1,5 @@
 use crate::speedtests::{self, Speedtest};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use file_store::{
     file_sink::FileSinkClient,
     traits::{MsgTimestamp, TimestampEncode},
@@ -27,22 +27,18 @@ pub struct SpeedtestAverage {
     pub latency_avg_ms: u32,
     pub validity: proto::SpeedtestAvgValidity,
     pub reward_multiplier: Decimal,
+    pub speedtests: Vec<Speedtest>,
 }
 
-impl<'a, I: ?Sized> From<&'a I> for SpeedtestAverage
-where
-    &'a I: IntoIterator<Item = &'a Speedtest>,
-{
-    fn from(iter: &'a I) -> Self {
+impl From<Vec<Speedtest>> for SpeedtestAverage {
+    fn from(speedtests: Vec<Speedtest>) -> Self {
         let mut id = vec![]; // eww!
         let mut window_size = 0;
         let mut sum_upload = 0;
         let mut sum_download = 0;
         let mut sum_latency = 0;
 
-        for Speedtest { report, .. } in
-            speedtests_without_lapsed(iter.into_iter(), Duration::hours(SPEEDTEST_LAPSE))
-        {
+        for Speedtest { report, .. } in speedtests.iter() {
             id = report.pubkey.as_ref().to_vec(); // eww!
             sum_upload += report.upload_speed;
             sum_download += report.download_speed;
@@ -75,6 +71,7 @@ where
                 latency_avg_ms,
                 validity,
                 reward_multiplier,
+                speedtests,
             }
         } else {
             SpeedtestAverage {
@@ -85,17 +82,14 @@ where
                 latency_avg_ms: sum_latency,
                 validity: proto::SpeedtestAvgValidity::TooFewSamples,
                 reward_multiplier: Decimal::ZERO,
+                speedtests,
             }
         }
     }
 }
 
 impl SpeedtestAverage {
-    pub async fn write(
-        &self,
-        filesink: &FileSinkClient,
-        speedtests: Vec<Speedtest>,
-    ) -> file_store::Result {
+    pub async fn write(&self, filesink: &FileSinkClient) -> file_store::Result {
         filesink
             .write(
                 proto::SpeedtestAvg {
@@ -104,17 +98,16 @@ impl SpeedtestAverage {
                     download_speed_avg_bps: self.download_speed_avg_bps,
                     latency_avg_ms: self.latency_avg_ms,
                     timestamp: Utc::now().encode_timestamp(),
-                    speedtests: speedtests_without_lapsed(
-                        speedtests.iter(),
-                        Duration::hours(SPEEDTEST_LAPSE),
-                    )
-                    .map(|st| proto::Speedtest {
-                        timestamp: st.report.timestamp(),
-                        upload_speed_bps: st.report.upload_speed,
-                        download_speed_bps: st.report.download_speed,
-                        latency_ms: st.report.latency,
-                    })
-                    .collect(),
+                    speedtests: self
+                        .speedtests
+                        .iter()
+                        .map(|st| proto::Speedtest {
+                            timestamp: st.report.timestamp(),
+                            upload_speed_bps: st.report.upload_speed,
+                            download_speed_bps: st.report.download_speed,
+                            latency_ms: st.report.latency,
+                        })
+                        .collect(),
                     validity: self.validity as i32,
                     reward_multiplier: self.reward_multiplier.try_into().unwrap(),
                 },
@@ -135,6 +128,7 @@ pub enum SpeedtestTier {
     Poor = 1,
     Degraded = 2,
     Acceptable = 3,
+    Good = 4,
 }
 
 impl SpeedtestTier {
@@ -154,7 +148,8 @@ impl SpeedtestTier {
 
     fn into_multiplier(self) -> Decimal {
         match self {
-            Self::Acceptable => dec!(1.0),
+            Self::Good => dec!(1.0),
+            Self::Acceptable => dec!(0.75),
             Self::Degraded => dec!(0.5),
             Self::Poor => dec!(0.25),
             Self::Failed => dec!(0.0),
@@ -163,6 +158,8 @@ impl SpeedtestTier {
 
     fn from_download_speed(download_speed: u64) -> Self {
         if download_speed >= mbps(100) {
+            Self::Good
+        } else if download_speed >= mbps(75) {
             Self::Acceptable
         } else if download_speed >= mbps(50) {
             Self::Degraded
@@ -175,6 +172,8 @@ impl SpeedtestTier {
 
     fn from_upload_speed(upload_speed: u64) -> Self {
         if upload_speed >= mbps(10) {
+            Self::Good
+        } else if upload_speed >= mbps(8) {
             Self::Acceptable
         } else if upload_speed >= mbps(5) {
             Self::Degraded
@@ -186,11 +185,13 @@ impl SpeedtestTier {
     }
 
     fn from_latency(latency: u32) -> Self {
-        if latency <= 50 {
+        if latency < 50 {
+            Self::Good
+        } else if latency < 60 {
             Self::Acceptable
-        } else if latency <= 75 {
+        } else if latency < 75 {
             Self::Degraded
-        } else if latency <= 100 {
+        } else if latency < 100 {
             Self::Poor
         } else {
             Self::Failed
@@ -204,6 +205,14 @@ pub struct SpeedtestAverages {
 }
 
 impl SpeedtestAverages {
+    pub async fn write_all(&self, sink: &FileSinkClient) -> anyhow::Result<()> {
+        for speedtest in self.averages.values() {
+            speedtest.write(sink).await?;
+        }
+
+        Ok(())
+    }
+
     pub fn get_average(&self, pub_key: &PublicKeyBinary) -> Option<SpeedtestAverage> {
         self.averages.get(pub_key).cloned()
     }
@@ -216,7 +225,7 @@ impl SpeedtestAverages {
             .await?
             .into_iter()
             .map(|(pub_key, speedtests)| {
-                let average = SpeedtestAverage::from(&speedtests);
+                let average = SpeedtestAverage::from(speedtests);
                 (pub_key, average)
             })
             .collect();
@@ -261,20 +270,6 @@ pub fn validity(
     proto::SpeedtestAvgValidity::Valid
 }
 
-fn speedtests_without_lapsed<'a>(
-    iterable: impl Iterator<Item = &'a Speedtest>,
-    lapse_cliff: Duration,
-) -> impl Iterator<Item = &'a Speedtest> {
-    let mut last_timestamp = None;
-    iterable.take_while(move |speedtest| match last_timestamp {
-        Some(ts) if ts - speedtest.report.timestamp > lapse_cliff => false,
-        None | Some(_) => {
-            last_timestamp = Some(speedtest.report.timestamp);
-            true
-        }
-    })
-}
-
 const fn mbps(mbps: u64) -> u64 {
     mbps * 125000
 }
@@ -282,7 +277,6 @@ const fn mbps(mbps: u64) -> u64 {
 #[cfg(test)]
 mod test {
     use super::*;
-    use chrono::TimeZone;
     use file_store::speedtest::CellSpeedtest;
 
     impl SpeedtestAverage {
@@ -296,11 +290,6 @@ mod test {
         }
     }
 
-    fn parse_dt(dt: &str) -> DateTime<Utc> {
-        Utc.datetime_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
-            .expect("unable_to_parse")
-    }
-
     fn bytes_per_s(mbps: u64) -> u64 {
         mbps * 125000
     }
@@ -308,173 +297,115 @@ mod test {
     #[test]
     fn check_tier_cmp() {
         assert_eq!(
-            SpeedtestTier::Acceptable.min(SpeedtestTier::Failed),
+            SpeedtestTier::Good.min(SpeedtestTier::Failed),
             SpeedtestTier::Failed,
         );
     }
 
     #[test]
-    fn check_known_valid() {
-        let speedtests = known_speedtests();
-        assert_ne!(
-            SpeedtestAverage::from(&speedtests[0..5]).tier(),
-            SpeedtestTier::Acceptable,
+    fn validate_good_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(10, 100, 49), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Good
+        );
+    }
+
+    #[test]
+    fn validate_acceptable_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(9, 100, 49), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Acceptable
         );
         assert_eq!(
-            SpeedtestAverage::from(&speedtests[0..6]).tier(),
+            SpeedtestAverage::from(vec![speedtest(10, 99, 49), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Acceptable
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(10, 100, 50), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Acceptable
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(8, 75, 59), speedtest(8, 100, 60)]).tier(),
             SpeedtestTier::Acceptable
         );
     }
 
     #[test]
-    fn check_minimum_known_valid() {
-        let speedtests = known_speedtests();
-        assert_ne!(
-            SpeedtestAverage::from(&speedtests[4..4]).tier(),
-            SpeedtestTier::Acceptable
+    fn validate_degraded_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(7, 75, 59), speedtest(8, 75, 60)]).tier(),
+            SpeedtestTier::Degraded
         );
         assert_eq!(
-            SpeedtestAverage::from(&speedtests[4..=5]).tier(),
-            SpeedtestTier::Acceptable
+            SpeedtestAverage::from(vec![speedtest(8, 74, 59), speedtest(8, 75, 60)]).tier(),
+            SpeedtestTier::Degraded
         );
         assert_eq!(
-            SpeedtestAverage::from(&speedtests[4..=6]).tier(),
-            SpeedtestTier::Acceptable
+            SpeedtestAverage::from(vec![speedtest(8, 75, 60), speedtest(8, 75, 60)]).tier(),
+            SpeedtestTier::Degraded
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(5, 50, 74), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Degraded
         );
     }
 
     #[test]
-    fn check_minimum_known_invalid() {
-        let speedtests = known_speedtests();
-        assert_ne!(
-            SpeedtestAverage::from(&speedtests[5..6]).tier(),
-            SpeedtestTier::Acceptable
+    fn validate_poor_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(4, 50, 74), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Poor
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(5, 49, 74), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Poor
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(5, 50, 75), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Poor
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 30, 99), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Poor
         );
     }
 
-    fn known_speedtests() -> Vec<Speedtest> {
-        // This data is taken from the spreadsheet
-        // Timestamp	DL	UL	Latency	DL RA	UL RA	Latency RA	Acceptable?
-        // 2022-08-02 18:00:00	70	30	40	103.33	19.17	30.00	TRUE
-        // 2022-08-02 12:00:00	100	10	30	116.67	17.50	35.00	TRUE
-        // 2022-08-02 6:00:00	130	20	10	100.00	15.83	30.00	TRUE
-        // 2022-08-02 0:00:00	90	15	10	94.00	15.00	34.00	FALSE
-        // 2022-08-01 18:00:00	112	30	40	95.00	15.00	40.00	FALSE
-        // 2022-08-01 12:00:00	118	10	50	89.33	10.00	40.00	FALSE
-        // 2022-08-01 6:00:00	150	20	70	75.00	10.00	35.00	FALSE
-        // 2022-08-01 0:00:00	0	0	0	0.00	0.00	0.00	FALSE*
-        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed gw1 parse");
+    #[test]
+    fn validate_failed_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(1, 30, 99), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Failed
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 29, 99), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Failed
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 30, 100), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Failed
+        );
 
-        vec![
-            default_cellspeedtest(gw1.clone(), parse_dt("2022-08-02 18:00:00 +0000"), 0, 0, 0),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 12:00:00 +0000"),
-                bytes_per_s(20),
-                bytes_per_s(150),
-                70,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 6:00:00 +0000"),
-                bytes_per_s(10),
-                bytes_per_s(118),
-                50,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 0:00:00 +0000"),
-                bytes_per_s(30),
-                bytes_per_s(112),
-                40,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 0:00:00 +0000"),
-                bytes_per_s(15),
-                bytes_per_s(90),
-                10,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-01 18:00:00 +0000"),
-                bytes_per_s(20),
-                bytes_per_s(130),
-                10,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-01 12:00:00 +0000"),
-                bytes_per_s(10),
-                bytes_per_s(100),
-                30,
-            ),
-            default_cellspeedtest(
-                gw1,
-                parse_dt("2022-08-01 6:00:00 +0000"),
-                bytes_per_s(30),
-                bytes_per_s(70),
-                40,
-            ),
-        ]
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 30, 99)]).tier(),
+            SpeedtestTier::Failed
+        );
     }
 
-    #[test]
-    fn check_speedtest_without_lapsed() {
-        let speedtest_cutoff = Duration::hours(10);
-        let contiguos_speedtests = known_speedtests();
-        let contiguous_speedtests =
-            speedtests_without_lapsed(contiguos_speedtests.iter(), speedtest_cutoff);
+    fn speedtest(upload: u64, download: u64, latency: u32) -> Speedtest {
         let pubkey: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
-            .expect("failed owner parse");
-        let disjoint_speedtests = vec![
-            default_cellspeedtest(
-                pubkey.clone(),
-                parse_dt("2022-08-02 6:00:00 +0000"),
-                bytes_per_s(20),
-                bytes_per_s(150),
-                70,
-            ),
-            default_cellspeedtest(
-                pubkey.clone(),
-                parse_dt("2022-08-01 18:00:00 +0000"),
-                bytes_per_s(10),
-                bytes_per_s(118),
-                50,
-            ),
-            default_cellspeedtest(
-                pubkey,
-                parse_dt("2022-08-01 12:00:00 +0000"),
-                bytes_per_s(30),
-                bytes_per_s(112),
-                40,
-            ),
-        ];
-        let disjoint_speedtests =
-            speedtests_without_lapsed(disjoint_speedtests.iter(), speedtest_cutoff);
-
-        assert_eq!(contiguous_speedtests.count(), 8);
-        assert_eq!(disjoint_speedtests.count(), 1);
-    }
-
-    fn default_cellspeedtest(
-        pubkey: PublicKeyBinary,
-        timestamp: DateTime<Utc>,
-        upload_speed: u64,
-        download_speed: u64,
-        latency: u32,
-    ) -> Speedtest {
+            .expect("failed gw1 parse");
         Speedtest {
             report: CellSpeedtest {
                 pubkey,
-                timestamp,
-                upload_speed,
-                download_speed,
-                latency,
+                timestamp: Utc::now(),
                 serial: "".to_string(),
+                upload_speed: bytes_per_s(upload),
+                download_speed: bytes_per_s(download),
+                latency,
             },
         }
     }

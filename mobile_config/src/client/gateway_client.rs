@@ -1,5 +1,5 @@
 use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
-use crate::gateway_info;
+use crate::gateway_info::{self, GatewayInfo, GatewayInfoStream};
 use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
@@ -8,7 +8,7 @@ use helium_proto::{
     Message,
 };
 use retainer::Cache;
-use std::{sync::Arc, time::Duration};
+use std::{error::Error, sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct GatewayClient {
@@ -42,7 +42,19 @@ impl GatewayClient {
 }
 
 #[async_trait::async_trait]
-impl gateway_info::GatewayInfoResolver for GatewayClient {
+pub trait GatewayInfoResolver: Clone + Send + Sync + 'static {
+    type Error: Error + Send + Sync + 'static;
+
+    async fn resolve_gateway_info(
+        &self,
+        address: &PublicKeyBinary,
+    ) -> Result<Option<GatewayInfo>, Self::Error>;
+
+    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, Self::Error>;
+}
+
+#[async_trait::async_trait]
+impl GatewayInfoResolver for GatewayClient {
     type Error = ClientError;
 
     async fn resolve_gateway_info(
@@ -64,7 +76,10 @@ impl gateway_info::GatewayInfoResolver for GatewayClient {
             Ok(info_res) => {
                 let response = info_res.into_inner();
                 response.verify(&self.config_pubkey)?;
-                response.info.map(gateway_info::GatewayInfo::from)
+                response
+                    .info
+                    .map(gateway_info::GatewayInfo::try_from)
+                    .transpose()?
             }
             Err(status) if status.code() == tonic::Code::NotFound => None,
             Err(status) => Err(status)?,
@@ -99,7 +114,8 @@ impl gateway_info::GatewayInfoResolver for GatewayClient {
                 }
             })
             .flat_map(|res| stream::iter(res.gateways))
-            .map(gateway_info::GatewayInfo::from)
+            .map(gateway_info::GatewayInfo::try_from)
+            .filter_map(|gateway| async move { gateway.ok() })
             .boxed();
 
         Ok(res_stream)

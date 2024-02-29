@@ -1,0 +1,1 @@
+ALTER TABLE pending_burns ALTER COLUMN last_burn TYPE TIMESTAMPTZ USING last_burn AT TIME ZONE 'UTC';

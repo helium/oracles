@@ -14,9 +14,10 @@ use helium_proto::services::poc_mobile::{
     SpeedtestIngestReportV1, SpeedtestVerificationResult,
     VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
-use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
+use mobile_config::client::gateway_client::GatewayInfoResolver;
 use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
@@ -43,25 +44,28 @@ impl FromRow<'_, PgRow> for Speedtest {
     }
 }
 
-pub struct SpeedtestDaemon {
+pub struct SpeedtestDaemon<GIR> {
     pool: sqlx::Pool<sqlx::Postgres>,
-    gateway_client: GatewayClient,
+    gateway_info_resolver: GIR,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
     speedtest_avg_file_sink: FileSinkClient,
     verified_speedtest_file_sink: FileSinkClient,
 }
 
-impl SpeedtestDaemon {
+impl<GIR> SpeedtestDaemon<GIR>
+where
+    GIR: GatewayInfoResolver,
+{
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        gateway_client: GatewayClient,
+        gateway_info_resolver: GIR,
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
         speedtest_avg_file_sink: FileSinkClient,
         verified_speedtest_file_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
-            gateway_client,
+            gateway_info_resolver,
             speedtests,
             speedtest_avg_file_sink,
             verified_speedtest_file_sink,
@@ -69,26 +73,26 @@ impl SpeedtestDaemon {
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = shutdown.clone() => {
-                        tracing::info!("SpeedtestDaemon shutting down");
-                        break;
-                    }
-                    Some(file) = self.speedtests.recv() => self.process_file(file).await?,
+        loop {
+            #[rustfmt::skip]
+            tokio::select! {
+                biased;
+                _ = shutdown.clone() => {
+                    tracing::info!("SpeedtestDaemon shutting down");
+                    break;
+                }
+                Some(file) = self.speedtests.recv() => {
+		    let start = Instant::now();
+		    self.process_file(file).await?;
+		    metrics::histogram!("speedtest_processing_time", start.elapsed());
                 }
             }
+        }
 
-            Ok(())
-        })
-        .map_err(anyhow::Error::from)
-        .and_then(|result| async move { result })
-        .await
+        Ok(())
     }
 
-    async fn process_file(
+    pub async fn process_file(
         &self,
         file: FileInfoStream<CellSpeedtestIngestReport>,
     ) -> anyhow::Result<()> {
@@ -101,13 +105,12 @@ impl SpeedtestDaemon {
                 save_speedtest(&speedtest_report.report, &mut transaction).await?;
                 let latest_speedtests = get_latest_speedtests_for_pubkey(
                     &speedtest_report.report.pubkey,
+                    speedtest_report.report.timestamp,
                     &mut transaction,
                 )
                 .await?;
-                let average = SpeedtestAverage::from(&latest_speedtests);
-                average
-                    .write(&self.speedtest_avg_file_sink, latest_speedtests)
-                    .await?;
+                let average = SpeedtestAverage::from(latest_speedtests);
+                average.write(&self.speedtest_avg_file_sink).await?;
             }
             // write out paper trail of speedtest validity
             self.write_verified_speedtest(speedtest_report, result)
@@ -125,7 +128,7 @@ impl SpeedtestDaemon {
     ) -> anyhow::Result<SpeedtestVerificationResult> {
         let pubkey = speedtest.report.pubkey.clone();
         if self
-            .gateway_client
+            .gateway_info_resolver
             .resolve_gateway_info(&pubkey)
             .await?
             .is_some()
@@ -141,7 +144,7 @@ impl SpeedtestDaemon {
         speedtest_report: CellSpeedtestIngestReport,
         result: SpeedtestVerificationResult,
     ) -> anyhow::Result<()> {
-        let ingest_report: SpeedtestIngestReportV1 = speedtest_report.try_into()?;
+        let ingest_report: SpeedtestIngestReportV1 = speedtest_report.into();
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let proto = VerifiedSpeedtestProto {
             report: Some(ingest_report),
@@ -152,6 +155,23 @@ impl SpeedtestDaemon {
             .write(proto, &[("result", result.as_str_name())])
             .await?;
         Ok(())
+    }
+}
+
+impl<GIR> ManagedTask for SpeedtestDaemon<GIR>
+where
+    GIR: GatewayInfoResolver,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 
@@ -179,12 +199,23 @@ pub async fn save_speedtest(
 
 pub async fn get_latest_speedtests_for_pubkey(
     pubkey: &PublicKeyBinary,
+    timestamp: DateTime<Utc>,
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<Vec<Speedtest>, sqlx::Error> {
     let speedtests = sqlx::query_as::<_, Speedtest>(
-        "SELECT * FROM speedtests where pubkey = $1 order by timestamp desc limit $2",
+        r#"
+        SELECT * 
+        FROM speedtests 
+        WHERE pubkey = $1 
+            AND timestamp >= $2
+            AND timestamp <= $3
+        ORDER BY timestamp DESC 
+        LIMIT $4
+        "#,
     )
     .bind(pubkey)
+    .bind(timestamp - Duration::hours(SPEEDTEST_LAPSE))
+    .bind(timestamp)
     .bind(SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
     .fetch_all(exec)
     .await?;

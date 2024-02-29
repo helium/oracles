@@ -37,7 +37,7 @@ fn main() {
             sub_dao.as_ref(),
             &sha_digest,
         ],
-        &data_credits::ID,
+        &helium_anchor_gen::data_credits::ID,
     );
     println!("https://explorer.solana.com/address/{ddc_key}");
 }

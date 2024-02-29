@@ -2,7 +2,6 @@ use crate::{
     gateway_updater::MessageReceiver,
     hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap},
     last_beacon::LastBeacon,
-    Settings,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::future::LocalBoxFuture;
@@ -40,15 +39,15 @@ impl ManagedTask for Server {
 }
 
 impl Server {
-    pub async fn from_settings(
-        settings: &Settings,
+    pub async fn new(
+        refresh_offset: Duration,
         pool: PgPool,
         gateway_cache_receiver: MessageReceiver,
     ) -> anyhow::Result<Self> {
         let mut server = Self {
             hex_density_map: HexDensityMap::new(),
             pool,
-            refresh_offset: settings.loader_window_max_lookback_age(),
+            refresh_offset,
             gateway_cache_receiver,
         };
 
@@ -76,13 +75,9 @@ impl Server {
         let refresh_start = Utc::now() - self.refresh_offset;
         tracing::info!("density_scaler: generating hex scaling map, starting at {refresh_start:?}");
         let mut global_map = GlobalHexMap::new();
-        let active_gateways = self
-            .gateways_recent_activity(refresh_start)
-            .await
-            .map_err(sqlx::Error::from)?;
-        for k in active_gateways.keys() {
-            let pubkey = PublicKeyBinary::from(k.clone());
-            if let Some(gateway_info) = self.gateway_cache_receiver.borrow().get(&pubkey) {
+        let active_gateways = self.gateways_recent_activity(refresh_start).await?;
+        for pubkey in active_gateways.keys() {
+            if let Some(gateway_info) = self.gateway_cache_receiver.borrow().get(pubkey) {
                 if let Some(metadata) = &gateway_info.metadata {
                     global_map.increment_unclipped(metadata.location)
                 }
@@ -105,14 +100,14 @@ impl Server {
     async fn gateways_recent_activity(
         &self,
         now: DateTime<Utc>,
-    ) -> Result<HashMap<Vec<u8>, DateTime<Utc>>, sqlx::Error> {
+    ) -> anyhow::Result<HashMap<PublicKeyBinary, DateTime<Utc>>> {
         let interactivity_deadline = now - Duration::minutes(HIP_17_INTERACTIVITY_LIMIT);
         Ok(
-            LastBeacon::get_all_since(interactivity_deadline, &self.pool)
+            LastBeacon::get_all_since(&self.pool, interactivity_deadline)
                 .await?
                 .into_iter()
                 .map(|beacon| (beacon.id, beacon.timestamp))
-                .collect::<HashMap<Vec<u8>, DateTime<Utc>>>(),
+                .collect::<HashMap<PublicKeyBinary, DateTime<Utc>>>(),
         )
     }
 }

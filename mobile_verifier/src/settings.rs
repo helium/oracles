@@ -25,14 +25,32 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
-    #[serde(default = "default_max_heartbeat_distance_from_coverage_km")]
-    pub max_heartbeat_distance_from_coverage_km: f64,
     pub modeled_coverage_start: u64,
-    // Max distance in meters between the asserted location of a WIFI hotspot
-    // and the lat/lng defined in a heartbeat
-    // beyond which its location weight will be reduced
+    /// Max distance in meters between the heartbeat and all of the hexes in
+    /// its respective coverage object
+    #[serde(default = "default_max_distance_from_coverage")]
+    pub max_distance_from_coverage: u32,
+    /// Max distance in meters between the asserted location of a WIFI hotspot
+    /// and the lat/lng defined in a heartbeat
+    /// beyond which its location weight will be reduced
     #[serde(default = "default_max_asserted_distance_deviation")]
     pub max_asserted_distance_deviation: u32,
+    // Geofencing settings
+    pub wifi_geofence_regions: String,
+    #[serde(default = "default_fencing_resolution")]
+    pub wifi_fencing_resolution: u8,
+    pub cbrs_geofence_regions: String,
+    #[serde(default = "default_fencing_resolution")]
+    pub cbrs_fencing_resolution: u8,
+}
+
+fn default_fencing_resolution() -> u8 {
+    7
+}
+
+pub fn default_max_distance_from_coverage() -> u32 {
+    // Default is 2 km
+    2000
 }
 
 pub fn default_max_asserted_distance_deviation() -> u32 {
@@ -53,10 +71,6 @@ pub fn default_reward_period() -> i64 {
 
 pub fn default_reward_offset_minutes() -> i64 {
     30
-}
-
-pub fn default_max_heartbeat_distance_from_coverage_km() -> f64 {
-    2.5
 }
 
 impl Settings {
@@ -92,5 +106,33 @@ impl Settings {
         Utc.timestamp_opt(self.modeled_coverage_start as i64, 0)
             .single()
             .unwrap()
+    }
+
+    pub fn wifi_region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {
+        let paths = std::fs::read_dir(&self.wifi_geofence_regions)?;
+        Ok(paths
+            .into_iter()
+            .collect::<Result<Vec<std::fs::DirEntry>, std::io::Error>>()?
+            .into_iter()
+            .map(|path| path.path())
+            .collect())
+    }
+
+    pub fn wifi_fencing_resolution(&self) -> anyhow::Result<h3o::Resolution> {
+        Ok(h3o::Resolution::try_from(self.wifi_fencing_resolution)?)
+    }
+
+    pub fn cbrs_region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {
+        let paths = std::fs::read_dir(&self.cbrs_geofence_regions)?;
+        Ok(paths
+            .into_iter()
+            .collect::<Result<Vec<std::fs::DirEntry>, std::io::Error>>()?
+            .into_iter()
+            .map(|path| path.path())
+            .collect())
+    }
+
+    pub fn cbrs_fencing_resolution(&self) -> anyhow::Result<h3o::Resolution> {
+        Ok(h3o::Resolution::try_from(self.cbrs_fencing_resolution)?)
     }
 }

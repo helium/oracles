@@ -4,11 +4,11 @@ use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_proto::services::iot_config::{AdminServer, GatewayServer, OrgServer, RouteServer};
 use iot_config::{
-    admin::AuthCache, admin_service::AdminService, gateway_service::GatewayService, org,
-    org_service::OrgService, region_map::RegionMapReader, route_service::RouteService,
-    settings::Settings, telemetry,
+    admin::AuthCache, admin_service::AdminService, db_cleaner::DbCleaner,
+    gateway_service::GatewayService, org, org_service::OrgService, region_map::RegionMapReader,
+    route_service::RouteService, settings::Settings, telemetry,
 };
-use std::{net::SocketAddr, path::PathBuf, time::Duration};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tonic::transport;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -70,9 +70,11 @@ impl Daemon {
 
         let listen_addr = settings.listen_addr()?;
 
-        let (auth_updater, auth_cache) = AuthCache::new(settings, &pool).await?;
+        let (auth_updater, auth_cache) = AuthCache::new(settings.admin_pubkey()?, &pool).await?;
         let (region_updater, region_map) = RegionMapReader::new(&pool).await?;
         let (delegate_key_updater, delegate_key_cache) = org::delegate_keys_cache(&pool).await?;
+
+        let signing_keypair = Arc::new(settings.signing_keypair()?);
 
         let gateway_svc = GatewayService::new(
             settings,
@@ -81,14 +83,18 @@ impl Daemon {
             auth_cache.clone(),
             delegate_key_cache,
         )?;
-        let route_svc = RouteService::new(settings, auth_cache.clone(), pool.clone())?;
+
+        let route_svc =
+            RouteService::new(signing_keypair.clone(), auth_cache.clone(), pool.clone());
+
         let org_svc = OrgService::new(
-            settings,
+            signing_keypair.clone(),
             auth_cache.clone(),
             pool.clone(),
             route_svc.clone_update_channel(),
             delegate_key_updater,
         )?;
+
         let admin_svc = AdminService::new(
             settings,
             auth_cache.clone(),
@@ -112,7 +118,13 @@ impl Daemon {
             admin_svc,
         };
 
-        TaskManager::builder().add_task(grpc_server).start().await
+        let db_cleaner = DbCleaner::new(pool.clone(), settings.deleted_entry_retention());
+
+        TaskManager::builder()
+            .add_task(grpc_server)
+            .add_task(db_cleaner)
+            .start()
+            .await
     }
 }
 

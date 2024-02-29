@@ -1,4 +1,5 @@
 use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
+use async_trait::async_trait;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
@@ -7,6 +8,13 @@ use helium_proto::{
 };
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
+
+#[async_trait]
+pub trait EntityVerifier {
+    type Error;
+
+    async fn verify_rewardable_entity(&self, entity_id: &[u8]) -> Result<bool, Self::Error>;
+}
 
 #[derive(Clone)]
 pub struct EntityClient {
@@ -17,27 +25,13 @@ pub struct EntityClient {
     cache_ttl: Duration,
 }
 
-impl EntityClient {
-    pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
-        let cache = Arc::new(Cache::new());
-        let cloned_cache = cache.clone();
-        tokio::spawn(async move {
-            cloned_cache
-                .monitor(4, 0.25, CACHE_EVICTION_FREQUENCY)
-                .await
-        });
+#[async_trait]
+impl EntityVerifier for EntityClient {
+    type Error = ClientError;
 
-        Ok(Self {
-            client: settings.connect_entity_client(),
-            signing_key: settings.signing_keypair()?,
-            config_pubkey: settings.config_pubkey()?,
-            cache_ttl: settings.cache_ttl(),
-            cache,
-        })
-    }
-
-    pub async fn verify_rewardable_entity(&self, entity_id: &Vec<u8>) -> Result<bool, ClientError> {
-        if let Some(entity_found) = self.cache.get(entity_id).await {
+    async fn verify_rewardable_entity(&self, entity_id: &[u8]) -> Result<bool, ClientError> {
+        let entity_id = entity_id.to_vec();
+        if let Some(entity_found) = self.cache.get(&entity_id).await {
             return Ok(*entity_found.value());
         }
 
@@ -63,5 +57,25 @@ impl EntityClient {
             .await;
 
         Ok(response)
+    }
+}
+
+impl EntityClient {
+    pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
+        let cache = Arc::new(Cache::new());
+        let cloned_cache = cache.clone();
+        tokio::spawn(async move {
+            cloned_cache
+                .monitor(4, 0.25, CACHE_EVICTION_FREQUENCY)
+                .await
+        });
+
+        Ok(Self {
+            client: settings.connect_entity_client(),
+            signing_key: settings.signing_keypair()?,
+            config_pubkey: settings.config_pubkey()?,
+            cache_ttl: settings.cache_ttl(),
+            cache,
+        })
     }
 }

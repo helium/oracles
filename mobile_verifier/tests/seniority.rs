@@ -5,6 +5,7 @@ use mobile_verifier::coverage::Seniority;
 use mobile_verifier::heartbeats::{
     HbType, Heartbeat, SeniorityUpdate, SeniorityUpdateAction, ValidatedHeartbeat,
 };
+use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -28,7 +29,8 @@ async fn test_seniority_updates(pool: PgPool) -> anyhow::Result<()> {
         },
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: None,
-        coverage_object_insertion_time: None,
+        coverage_meta: None,
+        location_trust_score_multiplier: dec!(1.0),
         validity: HeartbeatValidity::Valid,
     };
     let mut transaction = pool.begin().await?;

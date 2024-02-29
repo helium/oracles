@@ -1,11 +1,12 @@
 use crate::{traits::MsgDecode, Error, FileInfo, FileStore, Result};
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, Utc};
 use derive_builder::Builder;
-use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt, TryFutureExt};
+use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
+use futures_util::TryFutureExt;
 use retainer::Cache;
-use std::marker::PhantomData;
+use std::{collections::VecDeque, marker::PhantomData, sync::Arc};
 use task_manager::ManagedTask;
-use tokio::sync::mpsc::{error::TrySendError, Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: std::time::Duration =
@@ -13,23 +14,53 @@ const DEFAULT_POLL_DURATION: std::time::Duration =
 const CLEAN_DURATION: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
 const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(3 * 60 * 60);
 
-type MemoryFileCache = Cache<String, bool>;
+type MemoryFileCache = Arc<Cache<String, bool>>;
+
+#[async_trait::async_trait]
+pub trait FileInfoPollerState: Send + Sync + 'static {
+    async fn latest_timestamp(
+        &self,
+        process_name: &str,
+        file_type: &str,
+    ) -> Result<Option<DateTime<Utc>>>;
+
+    async fn exists(&self, process_name: &str, file_info: &FileInfo) -> Result<bool>;
+
+    async fn clean(&self, process_name: &str, file_type: &str) -> Result;
+}
+
+#[async_trait::async_trait]
+pub trait FileInfoPollerStateRecorder {
+    async fn record(self, process_name: &str, file_info: &FileInfo) -> Result;
+}
 
 pub struct FileInfoStream<T> {
     pub file_info: FileInfo,
-    stream: BoxStream<'static, T>,
+    process_name: String,
+    data: Vec<T>,
 }
 
 impl<T> FileInfoStream<T>
 where
     T: Send,
 {
+    pub fn new(process_name: String, file_info: FileInfo, data: Vec<T>) -> Self {
+        Self {
+            file_info,
+            process_name,
+            data,
+        }
+    }
+
     pub async fn into_stream(
         self,
-        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<BoxStream<'static, T>> {
-        db::insert(transaction, self.file_info).await?;
-        Ok(self.stream)
+        recorder: impl FileInfoPollerStateRecorder,
+    ) -> Result<BoxStream<'static, T>>
+    where
+        T: 'static,
+    {
+        recorder.record(&self.process_name, &self.file_info).await?;
+        Ok(futures::stream::iter(self.data.into_iter()).boxed())
     }
 }
 
@@ -41,41 +72,63 @@ pub enum LookbackBehavior {
 
 #[derive(Debug, Clone, Builder)]
 #[builder(pattern = "owned")]
-pub struct FileInfoPollerConfig<T> {
+pub struct FileInfoPollerConfig<T, S> {
     #[builder(default = "Duration::seconds(DEFAULT_POLL_DURATION_SECS)")]
     poll_duration: Duration,
-    db: sqlx::Pool<sqlx::Postgres>,
+    state: S,
     store: FileStore,
     prefix: String,
     lookback: LookbackBehavior,
     #[builder(default = "Duration::minutes(10)")]
     offset: Duration,
-    #[builder(default = "20")]
+    #[builder(default = "5")]
     queue_size: usize,
+    #[builder(default = r#""default".to_string()"#)]
+    process_name: String,
     #[builder(setter(skip))]
     p: PhantomData<T>,
 }
 
-#[derive(Debug, Clone)]
-pub struct FileInfoPollerServer<T> {
-    config: FileInfoPollerConfig<T>,
+#[derive(Clone)]
+pub struct FileInfoPollerServer<T, S> {
+    config: FileInfoPollerConfig<T, S>,
     sender: Sender<FileInfoStream<T>>,
+    file_queue: VecDeque<FileInfo>,
+    latest_file_timestamp: Option<DateTime<Utc>>,
+    cache: MemoryFileCache,
 }
 
-impl<T> FileInfoPollerConfigBuilder<T>
+type FileInfoStreamReceiver<T> = Receiver<FileInfoStream<T>>;
+impl<T, S> FileInfoPollerConfigBuilder<T, S>
 where
     T: Clone,
+    S: FileInfoPollerState,
 {
-    pub fn create(self) -> Result<(Receiver<FileInfoStream<T>>, FileInfoPollerServer<T>)> {
+    pub async fn create(self) -> Result<(FileInfoStreamReceiver<T>, FileInfoPollerServer<T, S>)> {
         let config = self.build()?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
-        Ok((receiver, FileInfoPollerServer { config, sender }))
+        let latest_file_timestamp = config
+            .state
+            .latest_timestamp(&config.process_name, &config.prefix)
+            .await?;
+
+        Ok((
+            receiver,
+            FileInfoPollerServer {
+                config,
+                sender,
+                file_queue: VecDeque::new(),
+                latest_file_timestamp,
+                cache: create_cache(),
+            },
+        ))
     }
 }
 
-impl<T> ManagedTask for FileInfoPollerServer<T>
+impl<T, S> ManagedTask for FileInfoPollerServer<T, S>
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
+    S: FileInfoPollerState,
 {
     fn start_task(
         self: Box<Self>,
@@ -91,9 +144,10 @@ where
     }
 }
 
-impl<T> FileInfoPollerServer<T>
+impl<T, S> FileInfoPollerServer<T, S>
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
+    S: FileInfoPollerState,
 {
     pub async fn start(
         self,
@@ -109,38 +163,57 @@ where
         })
     }
 
-    async fn run(self, shutdown: triggered::Listener) -> Result {
-        let cache = create_cache();
-        let mut poll_trigger = tokio::time::interval(self.poll_duration());
-        let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
-
-        let mut latest_ts = db::latest_ts(&self.config.db, &self.config.prefix).await?;
-        tracing::info!(r#type = self.config.prefix, "starting FileInfoPoller",);
-
+    async fn get_next_file(&mut self) -> Result<FileInfo> {
         loop {
-            let after = self.after(latest_ts);
-            let before = Utc::now();
+            if let Some(file_info) = self.file_queue.pop_front() {
+                return Ok(file_info);
+            }
 
+            let after = self.after(self.latest_file_timestamp);
+            let before = Utc::now();
+            let files = self
+                .config
+                .store
+                .list_all(&self.config.prefix, after, before)
+                .await?;
+
+            for file in files {
+                if !self.is_already_processed(&file).await? {
+                    self.latest_file_timestamp = Some(file.timestamp);
+                    self.file_queue.push_back(file);
+                }
+            }
+
+            if self.file_queue.is_empty() {
+                tokio::time::sleep(self.poll_duration()).await;
+            }
+        }
+    }
+
+    async fn run(mut self, shutdown: triggered::Listener) -> Result {
+        let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
+        let process_name = self.config.process_name.clone();
+
+        tracing::info!(
+            r#type = self.config.prefix,
+            %process_name,
+            "starting FileInfoPoller",
+        );
+
+        let sender = self.sender.clone();
+        loop {
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
-                    tracing::info!(r#type = self.config.prefix, "stopping FileInfoPoller");
+                    tracing::info!(r#type = self.config.prefix, %process_name, "stopping FileInfoPoller");
                     break;
                 }
-                _ = cleanup_trigger.tick() => self.clean(&cache).await?,
-                _ = poll_trigger.tick() => {
-                    let files = self.config.store.list_all(&self.config.prefix, after, before).await?;
-                    for file in files {
-                        if !is_already_processed(&self.config.db, &cache, &file).await? {
-                            if send_stream(&self.sender, &self.config.store, file.clone()).await? {
-                                latest_ts = Some(file.timestamp);
-                                cache_file(&cache, &file).await;
-                            } else {
-                                tracing::info!("FileInfoPoller: channel full");
-                                break;
-                            }
-                        }
-                    }
+                _ = cleanup_trigger.tick() => self.clean(&self.cache).await?,
+                result = futures::future::try_join(sender.reserve().map_err(Error::from), self.get_next_file()) => {
+                    let (permit, file) = result?;
+                    let data = parse_file(&self.config.store, process_name.clone(), file.clone()).await?;
+                    permit.send(data);
+                    cache_file(&self.cache, &file).await;
                 }
             }
         }
@@ -160,7 +233,10 @@ where
 
     async fn clean(&self, cache: &MemoryFileCache) -> Result {
         cache.purge(4, 0.25).await;
-        db::clean(&self.config.db, &self.config.prefix).await?;
+        self.config
+            .state
+            .clean(&self.config.process_name, &self.config.prefix)
+            .await?;
         Ok(())
     }
 
@@ -170,17 +246,28 @@ where
             .to_std()
             .unwrap_or(DEFAULT_POLL_DURATION)
     }
+
+    async fn is_already_processed(&self, file_info: &FileInfo) -> Result<bool> {
+        if self.cache.get(&file_info.key).await.is_some() {
+            Ok(true)
+        } else {
+            self.config
+                .state
+                .exists(&self.config.process_name, file_info)
+                .await
+        }
+    }
 }
 
-async fn send_stream<T>(
-    sender: &Sender<FileInfoStream<T>>,
+async fn parse_file<T>(
     store: &FileStore,
+    process_name: String,
     file: FileInfo,
-) -> Result<bool>
+) -> Result<FileInfoStream<T>>
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
-    let stream = store
+    let stream: Vec<T> = store
         .stream_file(file.clone())
         .await?
         .filter_map(|msg| async {
@@ -204,110 +291,90 @@ where
                 })
                 .ok()
         })
-        .boxed();
+        .collect()
+        .await;
 
-    let incoming_data_stream = FileInfoStream {
-        file_info: file,
-        stream,
-    };
-
-    match sender.try_send(incoming_data_stream) {
-        Ok(_) => Ok(true),
-        Err(TrySendError::Full(_)) => Ok(false),
-        Err(TrySendError::Closed(_)) => Err(Error::channel()),
-    }
+    Ok(FileInfoStream::new(process_name, file, stream))
 }
 
 fn create_cache() -> MemoryFileCache {
-    Cache::new()
-}
-
-async fn is_already_processed(
-    db: impl sqlx::PgExecutor<'_>,
-    cache: &MemoryFileCache,
-    file_info: &FileInfo,
-) -> Result<bool> {
-    if cache.get(&file_info.key).await.is_some() {
-        Ok(true)
-    } else {
-        db::exists(db, file_info).await
-    }
+    Arc::new(Cache::new())
 }
 
 async fn cache_file(cache: &MemoryFileCache, file_info: &FileInfo) {
     cache.insert(file_info.key.clone(), true, CACHE_TTL).await;
 }
 
-mod db {
-    use super::*;
-
-    pub async fn latest_ts(
-        db: impl sqlx::PgExecutor<'_>,
-        file_type: &str,
-    ) -> Result<Option<DateTime<Utc>>> {
-        let default = Utc.timestamp_opt(0, 0).single().unwrap();
-
-        let result = sqlx::query_scalar::<_, DateTime<Utc>>(
-            r#"
-        SELECT COALESCE(MAX(file_timestamp), $1) FROM files_processed where file_type = $2
-        "#,
-        )
-        .bind(default)
-        .bind(file_type)
-        .fetch_one(db)
-        .await?;
-
-        if result == default {
-            Ok(None)
-        } else {
-            Ok(Some(result))
-        }
-    }
-
-    pub async fn exists(db: impl sqlx::PgExecutor<'_>, file_info: &FileInfo) -> Result<bool> {
-        Ok(sqlx::query_scalar::<_, bool>(
-            r#"
-        SELECT EXISTS(SELECT 1 from files_processed where file_name = $1)
-        "#,
-        )
-        .bind(file_info.key.clone())
-        .fetch_one(db)
-        .await?)
-    }
-
-    pub async fn insert(
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        file_info: FileInfo,
-    ) -> Result {
-        sqlx::query(r#"
-        INSERT INTO files_processed(file_name, file_type, file_timestamp, processed_at) VALUES($1, $2, $3, $4)
-        "#)
-    .bind(file_info.key)
-    .bind(&file_info.prefix)
-    .bind(file_info.timestamp)
-    .bind(Utc::now())
-    .execute(tx)
-    .await?;
-
-        Ok(())
-    }
-
-    pub async fn clean(db: impl sqlx::PgExecutor<'_>, file_type: &str) -> Result {
+#[cfg(feature = "sqlx-postgres")]
+#[async_trait::async_trait]
+impl FileInfoPollerStateRecorder for &mut sqlx::Transaction<'_, sqlx::Postgres> {
+    async fn record(self, process_name: &str, file_info: &FileInfo) -> Result {
         sqlx::query(
             r#"
-        DELETE FROM files_processed where file_name in (
-            SELECT file_name
-            FROM files_processed
-            WHERE file_type = $1
-            ORDER BY file_timestamp DESC
-            OFFSET 100
-        )
-        "#,
-        )
-        .bind(file_type)
-        .execute(db)
-        .await?;
+                INSERT INTO files_processed(process_name, file_name, file_type, file_timestamp, processed_at) VALUES($1, $2, $3, $4, $5)
+            "#)
+            .bind(process_name)
+            .bind(&file_info.key)
+            .bind(&file_info.prefix)
+            .bind(file_info.timestamp)
+            .bind(Utc::now())
+            .execute(self)
+            .await
+            .map(|_| ())
+            .map_err(Error::from)
+    }
+}
 
-        Ok(())
+#[cfg(feature = "sqlx-postgres")]
+#[async_trait::async_trait]
+impl FileInfoPollerState for sqlx::Pool<sqlx::Postgres> {
+    async fn latest_timestamp(
+        &self,
+        process_name: &str,
+        file_type: &str,
+    ) -> Result<Option<DateTime<Utc>>> {
+        sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
+            r#"
+                SELECT MAX(file_timestamp) FROM files_processed where process_name = $1 and file_type = $2
+            "#,
+            )
+            .bind(process_name)
+            .bind(file_type)
+            .fetch_one(self)
+            .await
+            .map_err(Error::from)
+    }
+
+    async fn exists(&self, process_name: &str, file_info: &FileInfo) -> Result<bool> {
+        sqlx::query_scalar::<_, bool>(
+            r#"
+                SELECT EXISTS(SELECT 1 from files_processed where process_name = $1 and file_name = $2)
+            "#,
+            )
+            .bind(process_name)
+            .bind(&file_info.key)
+            .fetch_one(self)
+            .await
+            .map_err(Error::from)
+    }
+
+    async fn clean(&self, process_name: &str, file_type: &str) -> Result {
+        sqlx::query(
+            r#"
+                DELETE FROM files_processed where file_name in (
+                    SELECT file_name
+                    FROM files_processed
+                    WHERE process_name = $1 and file_type = $2
+                    ORDER BY file_timestamp DESC
+                    OFFSET 100
+                )
+            "#,
+        )
+        .bind(process_name)
+        .bind(file_type)
+        .execute(self)
+        .await
+        .map(|_| ())
+        .map_err(Error::from)
     }
 }

@@ -10,7 +10,7 @@ use iot_config::client::Client as IotConfigClient;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, gateway_updater::GatewayUpdater, loader,
     packet_loader, purger, rewarder::Rewarder, runner, telemetry,
-    tx_scaler::Server as DensityScaler, Settings,
+    tx_scaler::Server as DensityScaler, witness_updater::WitnessUpdater, Settings,
 };
 use price::PriceTracker;
 use std::path;
@@ -77,11 +77,18 @@ impl Server {
 
         let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
 
+        // create the witness updater to handle serialization of last witness updates to db
+        // also exposes a cache of the last witness updates
+        let (witness_updater, witness_updater_server) = WitnessUpdater::new(pool.clone()).await?;
+
         // *
         // setup caches
         // *
-        let (gateway_updater_receiver, gateway_updater_server) =
-            GatewayUpdater::from_settings(settings, iot_config_client.clone()).await?;
+        let (gateway_updater_receiver, gateway_updater_server) = GatewayUpdater::new(
+            settings.gateway_refresh_interval(),
+            iot_config_client.clone(),
+        )
+        .await?;
         let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
 
         // *
@@ -98,8 +105,12 @@ impl Server {
         // *
         // setup the density scaler requirements
         // *
-        let density_scaler =
-            DensityScaler::from_settings(settings, pool.clone(), gateway_updater_receiver).await?;
+        let density_scaler = DensityScaler::new(
+            settings.loader_window_max_lookback_age(),
+            pool.clone(),
+            gateway_updater_receiver,
+        )
+        .await?;
 
         // *
         // setup the rewarder requirements
@@ -144,14 +155,15 @@ impl Server {
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
         let entropy_interval = settings.entropy_interval();
         let (entropy_loader_receiver, entropy_loader_server) =
-            file_source::continuous_source::<EntropyReport>()
-                .db(pool.clone())
+            file_source::continuous_source::<EntropyReport, _>()
+                .state(pool.clone())
                 .store(entropy_store)
                 .prefix(FileType::EntropyReport.to_string())
                 .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(entropy_interval)
                 .offset(entropy_interval * 2)
-                .create()?;
+                .create()
+                .await?;
 
         let entropy_loader = EntropyLoader {
             pool: pool.clone(),
@@ -176,14 +188,15 @@ impl Server {
         let packet_store = FileStore::from_settings(&settings.packet_ingest).await?;
         let packet_interval = settings.packet_interval();
         let (pk_loader_receiver, pk_loader_server) =
-            file_source::continuous_source::<IotValidPacket>()
-                .db(pool.clone())
+            file_source::continuous_source::<IotValidPacket, _>()
+                .state(pool.clone())
                 .store(packet_store.clone())
                 .prefix(FileType::IotValidPacket.to_string())
                 .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(packet_interval)
                 .offset(packet_interval * 2)
-                .create()?;
+                .create()
+                .await?;
 
         let packet_loader = packet_loader::PacketLoader::from_settings(
             settings,
@@ -219,8 +232,15 @@ impl Server {
             .create()
             .await?;
 
-        let purger = purger::Purger::from_settings(
-            settings,
+        let base_stale_period = settings.base_stale_period();
+        let beacon_stale_period = settings.beacon_stale_period();
+        let witness_stale_period = settings.witness_stale_period();
+        let entropy_stale_period = settings.entropy_stale_period();
+        let purger = purger::Purger::new(
+            base_stale_period,
+            beacon_stale_period,
+            witness_stale_period,
+            entropy_stale_period,
             pool.clone(),
             purger_invalid_beacon_sink,
             purger_invalid_witness_sink,
@@ -272,6 +292,7 @@ impl Server {
             runner_invalid_witness_sink,
             runner_poc_sink,
             density_scaler.hex_density_map.clone(),
+            witness_updater,
         )
         .await?;
 
@@ -284,6 +305,7 @@ impl Server {
             .add_task(purger_invalid_witness_sink_server)
             .add_task(runner_invalid_beacon_sink_server)
             .add_task(runner_invalid_witness_sink_server)
+            .add_task(witness_updater_server)
             .add_task(runner_poc_sink_server)
             .add_task(price_daemon)
             .add_task(density_scaler)

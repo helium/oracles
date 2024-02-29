@@ -1,10 +1,11 @@
 use crate::{
     entropy::ENTROPY_LIFESPAN,
-    gateway_cache::GatewayCache,
-    gateway_cache::GatewayCacheError,
+    gateway_cache::{GatewayCache, GatewayCacheError},
     hex_density::HexDensityMap,
-    last_beacon::{LastBeacon, LastBeaconError},
-    region_cache::{RegionCache, RegionCacheError},
+    last_beacon::LastBeacon,
+    last_witness::LastWitness,
+    region_cache::RegionCache,
+    witness_updater::WitnessUpdater,
 };
 use beacon;
 use chrono::{DateTime, Duration, DurationRound, Utc};
@@ -22,13 +23,16 @@ use helium_proto::{
     },
     BlockchainRegionParamV1, Region as ProtoRegion,
 };
-use iot_config::gateway_info::{GatewayInfo, GatewayMetadata};
+use iot_config::{
+    client::Gateways,
+    gateway_info::{GatewayInfo, GatewayMetadata},
+};
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::f64::consts::PI;
 
-pub type GenericVerifyResult<T = ()> = std::result::Result<T, InvalidResponse>;
+pub type GenericVerifyResult<T = ()> = Result<T, InvalidResponse>;
 
 /// C is the speed of light in air in meters per second
 pub const C: f64 = 2.998e8;
@@ -49,6 +53,13 @@ lazy_static! {
     /// from density scaling calculations and not finding a value on subsequent lookups
     /// would disqualify the hotspot from validating further beacons
     static ref DEFAULT_TX_SCALE: Decimal = Decimal::new(2000, 4);
+    /// max permitted lag between the first witness and all subsequent witnesses
+    static ref MAX_WITNESS_LAG: Duration = Duration::milliseconds(1500);
+    /// max permitted lag between the beaconer and a witness
+    static ref MAX_BEACON_TO_WITNESS_LAG: Duration = Duration::milliseconds(4000);
+    /// the duration in which a beaconer or witness must have a valid opposite report from
+    static ref RECIPROCITY_WINDOW: Duration = Duration::hours(48);
+
 }
 #[derive(Debug, PartialEq)]
 pub struct InvalidResponse {
@@ -57,13 +68,15 @@ pub struct InvalidResponse {
 }
 
 pub struct Poc {
+    pool: PgPool,
+    beacon_interval: Duration,
     beacon_report: IotBeaconIngestReport,
     witness_reports: Vec<IotWitnessIngestReport>,
     entropy_start: DateTime<Utc>,
     entropy_end: DateTime<Utc>,
     entropy_version: i32,
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
     pub invalid_reason: InvalidReason,
@@ -72,27 +85,16 @@ pub struct VerifyBeaconResult {
     pub hex_scale: Option<Decimal>,
 }
 
+#[derive(Clone, Debug)]
 pub struct VerifyWitnessesResult {
     pub verified_witnesses: Vec<IotVerifiedWitnessReport>,
     pub failed_witnesses: Vec<IotWitnessIngestReport>,
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum VerificationError {
-    #[error("not found: {0}")]
-    NotFound(&'static str),
-    #[error("last beacon error: {0}")]
-    LastBeaconError(#[from] LastBeaconError),
-    #[error("calc distance error: {0}")]
-    CalcDistanceError(#[from] CalcDistanceError),
-    #[error("error querying gateway info from iot config service")]
-    GatewayCache(#[from] GatewayCacheError),
-    #[error("error querying region info from iot config service")]
-    RegionCache(#[from] RegionCacheError),
-}
-
 impl Poc {
     pub async fn new(
+        pool: PgPool,
+        beacon_interval: Duration,
         beacon_report: IotBeaconIngestReport,
         witness_reports: Vec<IotWitnessIngestReport>,
         entropy_start: DateTime<Utc>,
@@ -100,6 +102,8 @@ impl Poc {
     ) -> Self {
         let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
         Self {
+            pool,
+            beacon_interval,
             beacon_report,
             witness_reports,
             entropy_start,
@@ -108,16 +112,17 @@ impl Poc {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn verify_beacon(
+    pub async fn verify_beacon<G>(
         &mut self,
         hex_density_map: &HexDensityMap,
         gateway_cache: &GatewayCache,
-        region_cache: &RegionCache,
-        pool: &PgPool,
-        beacon_interval: Duration,
+        region_cache: &RegionCache<G>,
         deny_list: &DenyList,
-    ) -> Result<VerifyBeaconResult, VerificationError> {
+        witness_updater: &WitnessUpdater,
+    ) -> anyhow::Result<VerifyBeaconResult>
+    where
+        G: Gateways,
+    {
         let beacon = &self.beacon_report.report;
         let beaconer_pub_key = beacon.pub_key.clone();
         // get the beaconer info from our follower
@@ -143,10 +148,10 @@ impl Poc {
             .await
         {
             Ok(res) => res,
-            Err(err) => return Err(VerificationError::RegionCache(err)),
+            Err(err) => return Err(anyhow::Error::from(err)),
         };
         // we have beaconer info, proceed to verifications
-        let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
+        let last_beacon = LastBeacon::get(&self.pool, &beaconer_pub_key).await?;
         match do_beacon_verifications(
             deny_list,
             self.entropy_start,
@@ -156,14 +161,36 @@ impl Poc {
             &self.beacon_report,
             &beaconer_info,
             &beaconer_region_info.region_params,
-            beacon_interval,
+            self.beacon_interval,
         ) {
             Ok(()) => {
                 let tx_scale = hex_density_map
                     .get(beaconer_metadata.location)
                     .await
                     .unwrap_or(*DEFAULT_TX_SCALE);
-                Ok(VerifyBeaconResult::valid(beaconer_info, tx_scale))
+                // update 'last beacon' timestamp if the beacon has passed regular validations
+                // but only if there has been at least one witness report
+                if !self.witness_reports.is_empty() {
+                    LastBeacon::update_last_timestamp(
+                        &self.pool,
+                        &beaconer_pub_key,
+                        self.beacon_report.received_timestamp,
+                    )
+                    .await?;
+                }
+
+                // post regular validations, check for beacon reciprocity
+                // if this check fails we will invalidate the beacon
+                // even tho it has passed all regular validations
+                if !self.verify_beacon_reciprocity(witness_updater).await? {
+                    Ok(VerifyBeaconResult::invalid(
+                        InvalidReason::GatewayNoValidWitnesses,
+                        None,
+                        beaconer_info,
+                    ))
+                } else {
+                    Ok(VerifyBeaconResult::valid(beaconer_info, tx_scale))
+                }
             }
             Err(invalid_response) => Ok(VerifyBeaconResult::invalid(
                 invalid_response.reason,
@@ -179,50 +206,79 @@ impl Poc {
         hex_density_map: &HexDensityMap,
         gateway_cache: &GatewayCache,
         deny_list: &DenyList,
-    ) -> Result<VerifyWitnessesResult, VerificationError> {
+        witness_updater: &WitnessUpdater,
+    ) -> anyhow::Result<VerifyWitnessesResult> {
+        let mut witnesses_to_update: Vec<LastWitness> = Vec::new();
         let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
         let mut failed_witnesses: Vec<IotWitnessIngestReport> = Vec::new();
         let mut existing_gateways: Vec<PublicKeyBinary> = Vec::new();
         let witnesses = self.witness_reports.clone();
-        for witness_report in witnesses {
-            // have we already processed a witness report from this gateway ?
-            // if not, run verifications
-            // if so, skip verifications and declare the report a dup
-            if !existing_gateways.contains(&witness_report.report.pub_key) {
-                // not a dup, run the verifications
-                match self
-                    .verify_witness(
-                        deny_list,
-                        &witness_report,
-                        beacon_info,
-                        gateway_cache,
-                        hex_density_map,
-                    )
-                    .await
-                {
-                    Ok(verified_witness) => {
-                        // track which gateways we have saw a witness report from
-                        existing_gateways.push(verified_witness.report.pub_key.clone());
-                        verified_witnesses.push(verified_witness)
+
+        if !witnesses.is_empty() {
+            let witness_earliest_received_ts = witnesses[0].received_timestamp;
+            for witness_report in witnesses {
+                // have we already processed a witness report from this gateway ?
+                // if not, run verifications
+                // if so, skip verifications and declare the report a dup
+                if !existing_gateways.contains(&witness_report.report.pub_key) {
+                    // not a dup, run the verifications
+                    match self
+                        .verify_witness(
+                            deny_list,
+                            &witness_report,
+                            beacon_info,
+                            gateway_cache,
+                            hex_density_map,
+                            witness_earliest_received_ts,
+                        )
+                        .await
+                    {
+                        Ok(mut verified_witness) => {
+                            // track which gateways we have saw a witness report from
+                            existing_gateways.push(verified_witness.report.pub_key.clone());
+                            if verified_witness.status == VerificationStatus::Valid {
+                                // add to list of witness to update last timestamp off
+                                witnesses_to_update.push(LastWitness {
+                                    id: witness_report.report.pub_key.clone(),
+                                    timestamp: verified_witness.received_timestamp,
+                                });
+
+                                // post regular validations, check for witness reciprocity
+                                // if this check fails we will invalidate the witness
+                                // even tho it has passed all regular validations
+                                if !self.verify_witness_reciprocity(&witness_report).await? {
+                                    verified_witness.status = VerificationStatus::Invalid;
+                                    verified_witness.invalid_reason =
+                                        InvalidReason::GatewayNoValidBeacons;
+                                    verified_witness.participant_side =
+                                        InvalidParticipantSide::Witness;
+                                }
+                            };
+                            verified_witnesses.push(verified_witness);
+                        }
+                        Err(_) => failed_witnesses.push(witness_report),
                     }
-                    Err(_) => failed_witnesses.push(witness_report),
+                } else {
+                    // the report is a dup
+                    let dup_witness = IotVerifiedWitnessReport::invalid(
+                        InvalidReason::Duplicate,
+                        None,
+                        &witness_report.report,
+                        witness_report.received_timestamp,
+                        None,
+                        // if location is None, default gain and elevation to zero
+                        0,
+                        0,
+                        InvalidParticipantSide::Witness,
+                    );
+                    verified_witnesses.push(dup_witness)
                 }
-            } else {
-                // the report is a dup
-                let dup_witness = IotVerifiedWitnessReport::invalid(
-                    InvalidReason::Duplicate,
-                    None,
-                    &witness_report.report,
-                    witness_report.received_timestamp,
-                    None,
-                    // if location is None, default gain and elevation to zero
-                    0,
-                    0,
-                    InvalidParticipantSide::Witness,
-                );
-                verified_witnesses.push(dup_witness)
             }
         }
+
+        // save a list of gateways which require their last witness timestamp to be updated
+        witness_updater.update(witnesses_to_update).await?;
+
         let resp = VerifyWitnessesResult {
             verified_witnesses,
             failed_witnesses,
@@ -237,7 +293,8 @@ impl Poc {
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
         hex_density_map: &HexDensityMap,
-    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
+        witness_first_ts: DateTime<Utc>,
+    ) -> anyhow::Result<IotVerifiedWitnessReport> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
         // pull the witness info from our follower
@@ -298,6 +355,7 @@ impl Poc {
             &witness_info,
             &self.beacon_report,
             beaconer_metadata,
+            witness_first_ts,
         ) {
             Ok(()) => {
                 let tx_scale = hex_density_map
@@ -324,6 +382,31 @@ impl Poc {
                 InvalidParticipantSide::Witness,
             )),
         }
+    }
+
+    async fn verify_beacon_reciprocity(
+        &self,
+        witness_updater: &WitnessUpdater,
+    ) -> anyhow::Result<bool> {
+        if !self.witness_reports.is_empty() {
+            let last_witness = witness_updater
+                .get_last_witness(&self.beacon_report.report.pub_key)
+                .await?;
+            return Ok(last_witness.map_or(false, |lw| {
+                self.beacon_report.received_timestamp - lw.timestamp < *RECIPROCITY_WINDOW
+            }));
+        }
+        Ok(false)
+    }
+
+    async fn verify_witness_reciprocity(
+        &self,
+        report: &IotWitnessIngestReport,
+    ) -> anyhow::Result<bool> {
+        let last_beacon = LastBeacon::get(&self.pool, &report.report.pub_key).await?;
+        Ok(last_beacon.map_or(false, |lw| {
+            report.received_timestamp - lw.timestamp < *RECIPROCITY_WINDOW
+        }))
     }
 }
 
@@ -372,6 +455,7 @@ pub fn do_beacon_verifications(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn do_witness_verifications(
     deny_list: &DenyList,
     entropy_start: DateTime<Utc>,
@@ -380,6 +464,7 @@ pub fn do_witness_verifications(
     witness_info: &GatewayInfo,
     beacon_report: &IotBeaconIngestReport,
     beaconer_metadata: &GatewayMetadata,
+    witness_first_ts: DateTime<Utc>,
 ) -> GenericVerifyResult {
     tracing::debug!(
         "verifying witness from gateway: {:?}",
@@ -408,6 +493,11 @@ pub fn do_witness_verifications(
     verify_entropy(
         entropy_start,
         entropy_end,
+        witness_report.received_timestamp,
+    )?;
+    verify_witness_lag(
+        beacon_report.received_timestamp,
+        witness_first_ts,
         witness_report.received_timestamp,
     )?;
     verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
@@ -649,6 +739,38 @@ fn verify_gw_capability(is_full_hotspot: bool) -> GenericVerifyResult {
             details: None,
         });
     };
+    Ok(())
+}
+
+/// verify witness lag
+/// if the first received event is the beacon then,
+/// all witnesses must be received within MAX_BEACON_TO_WITNESS_LAG of the beacon
+/// if the first received event is a witness then,
+/// all subsequent witnesses must be received within MAX_WITNESS_LAG of that first witness
+fn verify_witness_lag(
+    beacon_received_ts: DateTime<Utc>,
+    first_witness_ts: DateTime<Utc>,
+    received_ts: DateTime<Utc>,
+) -> GenericVerifyResult {
+    let (first_event_ts, max_permitted_lag) = if beacon_received_ts <= first_witness_ts {
+        (beacon_received_ts, *MAX_BEACON_TO_WITNESS_LAG)
+    } else {
+        (first_witness_ts, *MAX_WITNESS_LAG)
+    };
+    let this_witness_lag = received_ts - first_event_ts;
+    if this_witness_lag > max_permitted_lag {
+        tracing::debug!(
+            reason = ?InvalidReason::TooLate,
+            %received_ts,
+            %beacon_received_ts,
+            %first_witness_ts,
+            "witness verification failed"
+        );
+        return Err(InvalidResponse {
+            reason: InvalidReason::TooLate,
+            details: None,
+        });
+    }
     Ok(())
 }
 
@@ -1099,14 +1221,13 @@ mod tests {
 
     #[test]
     fn test_verify_beacon_schedule() {
-        let id: &str = "test_id";
         let beacon_interval = Duration::seconds(21600); // 6 hours
         let last_beacon_ts: DateTime<Utc> =
             DateTime::parse_from_str("2023 Jan 02 00:00:01 +0000", "%Y %b %d %H:%M:%S %z")
                 .unwrap()
                 .into();
         let last_beacon = Some(LastBeacon {
-            id: id.as_bytes().to_vec(),
+            id: PublicKeyBinary::from_str(PUBKEY1).unwrap(),
             timestamp: last_beacon_ts,
         });
         // beacon is in a later bucket ( by one hour) after last beacon, expectation pass
@@ -1251,6 +1372,57 @@ mod tests {
             }),
             verify_gw_capability(false)
         );
+    }
+
+    #[test]
+    fn test_verify_witness_lag() {
+        let now = Utc::now();
+        // a beacon is received first and our test witness is within the acceptable lag from that beacon
+        assert!(verify_witness_lag(
+            now - Duration::seconds(60),
+            now - Duration::seconds(59),
+            now - Duration::seconds(58)
+        )
+        .is_ok());
+        // a witness is received first and our test witness is within the acceptable lag from that first witness
+        assert!(verify_witness_lag(
+            now - Duration::seconds(60),
+            now - Duration::seconds(64),
+            now - Duration::seconds(63)
+        )
+        .is_ok());
+        // a beacon is received first and our test witness is over the acceptable lag from that beacon
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::TooLate,
+                details: None
+            }),
+            verify_witness_lag(
+                now - Duration::seconds(60),
+                now - Duration::seconds(59),
+                now - Duration::seconds(55)
+            )
+        );
+
+        // a witness is received first and our test witness is over the acceptable lag from that first witness
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::TooLate,
+                details: None
+            }),
+            verify_witness_lag(
+                now - Duration::seconds(55),
+                now - Duration::seconds(60),
+                now - Duration::seconds(58)
+            )
+        );
+        // a witness is received first and our test witness is that same first witness
+        assert!(verify_witness_lag(
+            now - Duration::seconds(55),
+            now - Duration::seconds(60),
+            now - Duration::seconds(60)
+        )
+        .is_ok());
     }
 
     #[test]
@@ -1484,7 +1656,7 @@ mod tests {
         // test schedule verification is active in the beacon validation list
         let beacon_report3 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(2));
         let last_beacon3 = LastBeacon {
-            id: vec![],
+            id: PublicKeyBinary::from_str(PUBKEY1).unwrap(),
             timestamp: Utc::now() - Duration::hours(5),
         };
         let resp3 = do_beacon_verifications(
@@ -1598,6 +1770,7 @@ mod tests {
             &witness_info,
             &beacon_report,
             &beaconer_metadata,
+            witness_report1.received_timestamp,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1617,6 +1790,7 @@ mod tests {
             &witness_info,
             &beacon_report,
             &beaconer_metadata,
+            witness_report2.received_timestamp,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1636,6 +1810,7 @@ mod tests {
             &witness_info,
             &beacon_report,
             &beaconer_metadata,
+            witness_report3.received_timestamp,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1656,6 +1831,7 @@ mod tests {
             &witness_info4,
             &beacon_report,
             &beaconer_metadata,
+            witness_report4.received_timestamp,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1675,6 +1851,7 @@ mod tests {
             &witness_info,
             &beacon_report,
             &beaconer_metadata,
+            witness_report5.received_timestamp,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1695,6 +1872,7 @@ mod tests {
             &witness_info6,
             &beacon_report,
             &beaconer_metadata,
+            witness_report6.received_timestamp,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1715,6 +1893,7 @@ mod tests {
             &witness_info7,
             &beacon_report,
             &beaconer_metadata,
+            witness_report7.received_timestamp,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1735,6 +1914,7 @@ mod tests {
             &witness_info8,
             &beacon_report,
             &beaconer_metadata,
+            witness_report8.received_timestamp,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1754,6 +1934,7 @@ mod tests {
             &witness_info,
             &beacon_report,
             &beaconer_metadata,
+            witness_report9.received_timestamp,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1774,6 +1955,7 @@ mod tests {
             &witness_info10,
             &beacon_report,
             &beaconer_metadata,
+            witness_report10.received_timestamp,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1783,9 +1965,10 @@ mod tests {
             resp10
         );
 
-        // for completeness, confirm our valid witness report is sane
+        // test witness lag from first received event
         let witness_report11 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(2));
         let witness_info11 = witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, true);
+
         let resp11 = do_witness_verifications(
             &deny_list,
             entropy_start,
@@ -1794,8 +1977,30 @@ mod tests {
             &witness_info11,
             &beacon_report,
             &beaconer_metadata,
+            witness_report11.received_timestamp - Duration::milliseconds(6000),
         );
-        assert_eq!(Ok(()), resp11);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::TooLate,
+                details: None
+            }),
+            resp11
+        );
+
+        // for completeness, confirm our valid witness report is sane
+        let witness_report12 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(2));
+        let witness_info12 = witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, true);
+        let resp12 = do_witness_verifications(
+            &deny_list,
+            entropy_start,
+            entropy_end,
+            &witness_report12,
+            &witness_info12,
+            &beacon_report,
+            &beaconer_metadata,
+            witness_report12.received_timestamp,
+        );
+        assert_eq!(Ok(()), resp12);
     }
 
     fn beaconer_gateway_info(

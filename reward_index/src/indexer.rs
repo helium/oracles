@@ -9,7 +9,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_lora::{iot_reward_share::Reward as IotReward, IotRewardShare},
     services::poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
-    Message,
+    Message, ServiceProvider,
 };
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
@@ -21,6 +21,7 @@ pub struct Indexer {
     verifier_store: FileStore,
     mode: settings::Mode,
     op_fund_key: String,
+    unallocated_reward_key: String,
 }
 
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
@@ -30,6 +31,9 @@ pub enum RewardType {
     IotGateway,
     IotOperational,
     MobileSubscriber,
+    MobileServiceProvider,
+    MobileUnallocated,
+    IotUnallocated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -50,6 +54,9 @@ impl Indexer {
                     .ok_or_else(|| anyhow!("operation fund key is required for IOT mode"))?,
                 settings::Mode::Mobile => String::new(),
             },
+            unallocated_reward_key: settings
+                .unallocated_reward_entity_key()
+                .ok_or_else(|| anyhow!("missing unallocated reward key"))?,
         })
     }
 
@@ -150,6 +157,26 @@ impl Indexer {
                         },
                         r.discovery_location_amount,
                     )),
+                    Some(MobileReward::ServiceProviderReward(r)) => {
+                        if let Some(sp) = ServiceProvider::from_i32(r.service_provider_id) {
+                            Ok((
+                                RewardKey {
+                                    key: sp.to_string(),
+                                    reward_type: RewardType::MobileServiceProvider,
+                                },
+                                r.amount,
+                            ))
+                        } else {
+                            bail!("failed to decode service provider")
+                        }
+                    }
+                    Some(MobileReward::UnallocatedReward(r)) => Ok((
+                        RewardKey {
+                            key: self.unallocated_reward_key.clone(),
+                            reward_type: RewardType::MobileUnallocated,
+                        },
+                        r.amount,
+                    )),
                     _ => bail!("got an invalid reward share"),
                 }
             }
@@ -167,6 +194,13 @@ impl Indexer {
                         RewardKey {
                             key: self.op_fund_key.clone(),
                             reward_type: RewardType::IotOperational,
+                        },
+                        r.amount,
+                    )),
+                    Some(IotReward::UnallocatedReward(r)) => Ok((
+                        RewardKey {
+                            key: self.unallocated_reward_key.clone(),
+                            reward_type: RewardType::IotUnallocated,
                         },
                         r.amount,
                     )),

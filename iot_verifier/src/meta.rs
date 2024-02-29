@@ -60,10 +60,8 @@ impl Meta {
         .fetch_optional(executor)
         .await?
         .and_then(|v| {
-            v.parse::<u64>().map_or_else(
-                |_| None,
-                |ts| ts.to_timestamp_millis().map_or_else(|_| None, Some),
-            )
+            v.parse::<u64>()
+                .map_or_else(|_| None, |ts| ts.to_timestamp_millis().ok())
         });
         Ok(last_timestamp)
     }

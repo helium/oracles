@@ -1,6 +1,7 @@
 use crate::{
     balances::BalanceCache,
     burner::Burner,
+    pending::confirm_pending_txns,
     settings::Settings,
     verifier::{CachedOrgClient, ConfigServer, Verifier},
 };
@@ -14,23 +15,28 @@ use file_store::{
     FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-use iot_config::client::OrgClient;
-use solana::SolanaRpc;
+use iot_config::client::{org_client::Orgs, OrgClient};
+use solana::burn::SolanaRpc;
 use sqlx::{Pool, Postgres};
 use std::{sync::Arc, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::{mpsc::Receiver, Mutex};
 
-struct Daemon {
+type SharedCachedOrgClient<T> = Arc<Mutex<CachedOrgClient<T>>>;
+
+struct Daemon<O> {
     pool: Pool<Postgres>,
-    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, Arc<Mutex<CachedOrgClient>>>,
+    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, SharedCachedOrgClient<O>>,
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
     minimum_allowed_balance: u64,
 }
 
-impl ManagedTask for Daemon {
+impl<O> ManagedTask for Daemon<O>
+where
+    O: Orgs,
+{
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -39,7 +45,10 @@ impl ManagedTask for Daemon {
     }
 }
 
-impl Daemon {
+impl<O> Daemon<O>
+where
+    O: Orgs,
+{
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         tracing::info!("Starting verifier daemon");
         loop {
@@ -108,7 +117,11 @@ impl Cmd {
         };
 
         // Set up the balance cache:
-        let balances = BalanceCache::new(&mut pool.clone(), solana.clone()).await?;
+        let balances = BalanceCache::new(&pool, solana.clone()).await?;
+
+        // Check if we have any left over pending transactions, and if we
+        // do check if they have been confirmed:
+        confirm_pending_txns(&pool, &solana, &balances.balances()).await?;
 
         // Set up the balance burner:
         let burner = Burner::new(
@@ -151,12 +164,13 @@ impl Cmd {
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
         let (report_files, report_files_server) =
-            file_source::continuous_source::<PacketRouterPacketReport>()
-                .db(pool.clone())
+            file_source::continuous_source::<PacketRouterPacketReport, _>()
+                .state(pool.clone())
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::IotPacketReport.to_string())
-                .create()?;
+                .create()
+                .await?;
 
         let balance_store = balances.balances();
         let verifier_daemon = Daemon {

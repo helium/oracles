@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::SolanaNetwork;
+use solana::burn::SolanaNetwork;
 use sqlx::{FromRow, Pool, Postgres};
 use std::collections::HashMap;
 
@@ -12,6 +12,7 @@ pub struct DataTransferSession {
     payer: PublicKeyBinary,
     uploaded_bytes: i64,
     downloaded_bytes: i64,
+    rewardable_bytes: i64,
     first_timestamp: DateTime<Utc>,
     last_timestamp: DateTime<Utc>,
 }
@@ -24,7 +25,7 @@ pub struct PayerTotals {
 
 impl PayerTotals {
     fn push_sess(&mut self, sess: DataTransferSession) {
-        self.total_dcs += bytes_to_dc(sess.downloaded_bytes as u64 + sess.uploaded_bytes as u64);
+        self.total_dcs += bytes_to_dc(sess.rewardable_bytes as u64);
         self.sessions.push(sess);
     }
 }
@@ -93,12 +94,7 @@ where
             }
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
-            if self
-                .solana
-                .burn_data_credits(&payer, total_dcs)
-                .await
-                .is_err()
-            {
+            if self.burn_data_credits(&payer, total_dcs).await.is_err() {
                 // We have failed to burn data credits:
                 metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "false");
                 continue;
@@ -116,8 +112,7 @@ where
                 .await?;
 
             for session in sessions {
-                let num_dcs =
-                    bytes_to_dc(session.uploaded_bytes as u64 + session.downloaded_bytes as u64);
+                let num_dcs = bytes_to_dc(session.rewardable_bytes as u64);
                 self.valid_sessions
                     .write(
                         ValidDataTransferSession {
@@ -125,10 +120,10 @@ where
                             payer: session.payer.into(),
                             upload_bytes: session.uploaded_bytes as u64,
                             download_bytes: session.downloaded_bytes as u64,
+                            rewardable_bytes: session.rewardable_bytes as u64,
                             num_dcs,
                             first_timestamp: session.first_timestamp.encode_timestamp_millis(),
                             last_timestamp: session.last_timestamp.encode_timestamp_millis(),
-                            rewardable_bytes: 0,
                         },
                         &[],
                     )
@@ -136,6 +131,16 @@ where
             }
         }
 
+        Ok(())
+    }
+
+    async fn burn_data_credits(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<(), S::Error> {
+        let txn = self.solana.make_burn_transaction(payer, amount).await?;
+        self.solana.submit_transaction(&txn).await?;
         Ok(())
     }
 }

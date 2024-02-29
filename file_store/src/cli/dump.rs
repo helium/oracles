@@ -28,7 +28,8 @@ use helium_proto::{
         },
         router::PacketRouterPacketReportV1,
     },
-    BlockchainTxn, Message, PriceReportV1, RewardManifest, SubnetworkRewards,
+    BlockchainTxn, BoostedHexUpdateV1 as BoostedHexUpdateProto, Message, PriceReportV1,
+    RewardManifest, SubnetworkRewards,
 };
 use serde_json::json;
 use serde::Serialize;

@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_service;
 pub mod client;
+pub mod db_cleaner;
 pub mod gateway_info;
 pub mod gateway_service;
 mod helium_netids;

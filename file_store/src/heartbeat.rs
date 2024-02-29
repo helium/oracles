@@ -95,7 +95,6 @@ pub mod cli {
     pub struct ValidatedHeartbeat {
         pub cbsd_id: String,
         pub pub_key: PublicKeyBinary,
-        pub reward_multiplier: f32,
         pub timestamp: DateTime<Utc>,
         pub cell_type: CellType,
         pub validity: HeartbeatValidity,
@@ -104,6 +103,7 @@ pub mod cli {
         pub coverage_object: Vec<u8>,
         pub location_validation_timestamp: DateTime<Utc>,
         pub distance_to_asserted: u64,
+        pub location_trust_score_multiplier: u32,
     }
 
     impl TryFrom<Heartbeat> for ValidatedHeartbeat {
@@ -113,7 +113,6 @@ pub mod cli {
             Ok(Self {
                 cbsd_id: v.cbsd_id.clone(),
                 pub_key: v.pub_key.clone().into(),
-                reward_multiplier: v.reward_multiplier,
                 timestamp: Utc
                     .timestamp_opt(v.timestamp as i64, 0)
                     .single()
@@ -130,6 +129,7 @@ pub mod cli {
                         DecodeError::invalid_timestamp(v.location_validation_timestamp)
                     })?,
                 distance_to_asserted: v.distance_to_asserted,
+                location_trust_score_multiplier: v.location_trust_score_multiplier,
             })
         }
     }

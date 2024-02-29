@@ -5,36 +5,59 @@ use futures::{
     TryFutureExt,
 };
 use helium_crypto::PublicKeyBinary;
-use sqlx::{PgPool, Postgres, Transaction};
-use std::{collections::HashMap, ops::Range};
+use helium_proto::ServiceProvider;
+use rust_decimal::Decimal;
+use sqlx::{PgPool, Postgres, Row, Transaction};
+use std::{collections::HashMap, ops::Range, time::Instant};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 pub struct DataSessionIngestor {
+    pub receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
     pub pool: PgPool,
 }
 
-pub type HotspotMap = HashMap<PublicKeyBinary, u64>;
+#[derive(Default)]
+pub struct HotspotReward {
+    pub rewardable_bytes: u64,
+    pub rewardable_dc: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct ServiceProviderDataSession {
+    pub service_provider: ServiceProvider,
+    pub total_dcs: Decimal,
+}
+
+pub type HotspotMap = HashMap<PublicKeyBinary, HotspotReward>;
 
 impl DataSessionIngestor {
-    pub fn new(pool: sqlx::Pool<sqlx::Postgres>) -> Self {
-        Self { pool }
+    pub fn new(
+        pool: sqlx::Pool<sqlx::Postgres>,
+        receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
+    ) -> Self {
+        Self { pool, receiver }
     }
 
-    pub async fn run(
-        self,
-        mut receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
-        shutdown: triggered::Listener,
-    ) -> anyhow::Result<()> {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting DataSessionIngestor");
         tokio::spawn(async move {
             loop {
+                #[rustfmt::skip]
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {
                         tracing::info!("DataSessionIngestor shutting down");
                         break;
                     }
-                    Some(file) = receiver.recv() => self.process_file(file).await?,
+                    Some(file) = self.receiver.recv() => {
+			let start = Instant::now();
+			self.process_file(file).await?;
+			metrics::histogram!(
+			    "valid_data_transfer_session_processing_time",
+			    start.elapsed()
+			);
+                    }
                 }
             }
 
@@ -72,6 +95,20 @@ impl DataSessionIngestor {
     }
 }
 
+impl ManagedTask for DataSessionIngestor {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
+    }
+}
+
 #[derive(sqlx::FromRow)]
 pub struct HotspotDataSession {
     pub pub_key: PublicKeyBinary,
@@ -100,6 +137,7 @@ impl HotspotDataSession {
         .await?;
         Ok(())
     }
+
     fn from_valid_data_session(
         v: ValidDataTransferSession,
         received_timestamp: DateTime<Utc>,
@@ -132,13 +170,40 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     data_sessions_to_dc(stream).await
 }
 
+pub async fn sum_data_sessions_to_dc_by_payer<'a>(
+    exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
+    epoch: &'a Range<DateTime<Utc>>,
+) -> Result<HashMap<String, u64>, sqlx::Error> {
+    Ok(sqlx::query(
+        r#"
+        SELECT payer as sp, sum(num_dcs)::bigint as total_dcs
+        FROM hotspot_data_transfer_sessions
+        WHERE received_timestamp >= $1 and received_timestamp < $2
+        GROUP BY payer
+        "#,
+    )
+    .bind(epoch.start)
+    .bind(epoch.end)
+    .fetch_all(exec)
+    .await?
+    .iter()
+    .map(|row| {
+        let sp = row.get::<String, &str>("sp");
+        let dcs: u64 = row.get::<i64, &str>("total_dcs") as u64;
+        (sp, dcs)
+    })
+    .collect::<HashMap<String, u64>>())
+}
+
 pub async fn data_sessions_to_dc<'a>(
     stream: impl Stream<Item = Result<HotspotDataSession, sqlx::Error>>,
 ) -> Result<HotspotMap, sqlx::Error> {
     tokio::pin!(stream);
     let mut map = HotspotMap::new();
     while let Some(session) = stream.try_next().await? {
-        *map.entry(session.pub_key).or_default() += session.num_dcs as u64
+        let rewards = map.entry(session.pub_key).or_default();
+        rewards.rewardable_dc += session.num_dcs as u64;
+        rewards.rewardable_bytes += session.upload_bytes as u64 + session.download_bytes as u64;
     }
     Ok(map)
 }

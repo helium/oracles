@@ -1,13 +1,14 @@
 use crate::{
     heartbeats::HeartbeatReward,
-    reward_shares::{get_scheduled_tokens_for_poc_and_dc, CoveragePoints},
+    reward_shares::{get_scheduled_tokens_for_poc, CoveragePoints},
     speedtests_average::SpeedtestAverages,
     Settings,
 };
 use anyhow::Result;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::NaiveDateTime;
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
+use mobile_config::boosted_hex_info::BoostedHexes;
 use rust_decimal::Decimal;
 use serde_json::json;
 use std::collections::HashMap;
@@ -25,30 +26,35 @@ impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         let Self { start, end } = self;
 
-        let start = DateTime::from_utc(start, Utc);
-        let end = DateTime::from_utc(end, Utc);
+        let start = start.and_utc();
+        let end = end.and_utc();
 
         tracing::info!("Rewarding shares from the following time range: {start} to {end}");
         let epoch = start..end;
-        let expected_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
+        let expected_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
 
         let (shutdown_trigger, _shutdown_listener) = triggered::trigger();
         let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
 
-        let heartbeats =
-            HeartbeatReward::validated(&pool, &epoch, settings.max_asserted_distance_deviation)
-                .await?;
+        let heartbeats = HeartbeatReward::validated(&pool, &epoch);
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
-        let reward_shares =
-            CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_averages, end).await?;
+        let boosted_hexes = BoostedHexes::default();
+        let reward_shares = CoveragePoints::aggregate_points(
+            &pool,
+            heartbeats,
+            &speedtest_averages,
+            &boosted_hexes,
+            &epoch,
+        )
+        .await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
         let radio_rewards = reward_shares
             .into_rewards(Decimal::ZERO, &epoch)
             .ok_or(anyhow::anyhow!("no rewardable events"))?;
-        for reward in radio_rewards {
+        for (_reward_amount, reward) in radio_rewards {
             if let Some(proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
                 hotspot_key,
                 poc_reward,

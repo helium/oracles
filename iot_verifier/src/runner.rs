@@ -1,12 +1,13 @@
 use crate::{
     gateway_cache::GatewayCache,
     hex_density::HexDensityMap,
-    last_beacon::LastBeacon,
     poc::{Poc, VerifyBeaconResult},
     poc_report::Report,
     region_cache::RegionCache,
     reward_share::GatewayPocShare,
-    telemetry, Settings,
+    telemetry,
+    witness_updater::WitnessUpdater,
+    Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
@@ -24,7 +25,7 @@ use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
     LoraPocV1, VerificationStatus,
 };
-use iot_config::client::Client as IotConfigClient;
+use iot_config::client::Gateways;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
@@ -40,21 +41,22 @@ const WITNESS_REDUNDANCY: u32 = 4;
 const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
 const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
-pub struct Runner {
-    pool: PgPool,
-    beacon_interval: ChronoDuration,
-    max_witnesses_per_poc: u64,
-    beacon_max_retries: u64,
-    witness_max_retries: u64,
-    deny_list_latest_url: String,
-    deny_list_trigger_interval: Duration,
-    deny_list: DenyList,
-    gateway_cache: GatewayCache,
-    region_cache: RegionCache,
-    invalid_beacon_sink: FileSinkClient,
-    invalid_witness_sink: FileSinkClient,
-    poc_sink: FileSinkClient,
-    hex_density_map: HexDensityMap,
+pub struct Runner<G> {
+    pub pool: PgPool,
+    pub beacon_interval: ChronoDuration,
+    pub max_witnesses_per_poc: u64,
+    pub beacon_max_retries: u64,
+    pub witness_max_retries: u64,
+    pub deny_list_latest_url: String,
+    pub deny_list_trigger_interval: Duration,
+    pub deny_list: DenyList,
+    pub gateway_cache: GatewayCache,
+    pub region_cache: RegionCache<G>,
+    pub invalid_beacon_sink: FileSinkClient,
+    pub invalid_witness_sink: FileSinkClient,
+    pub poc_sink: FileSinkClient,
+    pub hex_density_map: HexDensityMap,
+    pub witness_updater: WitnessUpdater,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -68,7 +70,10 @@ pub enum FilterStatus {
     Include,
 }
 
-impl ManagedTask for Runner {
+impl<G> ManagedTask for Runner<G>
+where
+    G: Gateways,
+{
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -82,17 +87,21 @@ impl ManagedTask for Runner {
     }
 }
 
-impl Runner {
+impl<G> Runner<G>
+where
+    G: Gateways,
+{
     #[allow(clippy::too_many_arguments)]
     pub async fn from_settings(
         settings: &Settings,
-        iot_config_client: IotConfigClient,
+        gateways: G,
         pool: PgPool,
         gateway_cache: GatewayCache,
         invalid_beacon_sink: FileSinkClient,
         invalid_witness_sink: FileSinkClient,
         poc_sink: FileSinkClient,
         hex_density_map: HexDensityMap,
+        witness_updater: WitnessUpdater,
     ) -> anyhow::Result<Self> {
         let beacon_interval = settings.beacon_interval()?;
         let max_witnesses_per_poc = settings.max_witnesses_per_poc;
@@ -100,7 +109,7 @@ impl Runner {
         let witness_max_retries = settings.witness_max_retries;
         let deny_list_latest_url = settings.denylist.denylist_url.clone();
         let mut deny_list = DenyList::new(&settings.denylist)?;
-        let region_cache = RegionCache::from_settings(settings, iot_config_client)?;
+        let region_cache = RegionCache::new(settings.region_params_refresh_interval(), gateways)?;
         // force update to latest in order to update the tag name
         // when first run, the denylist will load the local filter
         // but we dont save the tag name so it defaults to 0
@@ -129,6 +138,7 @@ impl Runner {
             invalid_witness_sink,
             poc_sink,
             hex_density_map,
+            witness_updater,
         })
     }
 
@@ -182,7 +192,7 @@ impl Runner {
         Ok(())
     }
 
-    async fn handle_db_tick(&self) -> anyhow::Result<()> {
+    pub async fn handle_db_tick(&self) -> anyhow::Result<()> {
         tracing::info!("starting query get_next_beacons");
         let db_beacon_reports =
             Report::get_next_beacons(&self.pool, self.beacon_max_retries).await?;
@@ -216,6 +226,7 @@ impl Runner {
     }
 
     async fn handle_beacon_report(&self, db_beacon: Report) -> anyhow::Result<()> {
+        // TODO: look at wrapping all db access from this point onwards in a transaction
         let entropy_start_time = match db_beacon.timestamp {
             Some(v) => v,
             None => return Ok(()),
@@ -246,6 +257,8 @@ impl Runner {
 
         // create the struct defining this POC
         let mut poc = Poc::new(
+            self.pool.clone(),
+            self.beacon_interval,
             beacon_report.clone(),
             witnesses.clone(),
             entropy_start_time,
@@ -259,9 +272,8 @@ impl Runner {
                 &self.hex_density_map,
                 &self.gateway_cache,
                 &self.region_cache,
-                &self.pool,
-                self.beacon_interval,
                 &self.deny_list,
+                &self.witness_updater,
             )
             .await?;
         match beacon_verify_result.result {
@@ -274,8 +286,10 @@ impl Runner {
                             &self.hex_density_map,
                             &self.gateway_cache,
                             &self.deny_list,
+                            &self.witness_updater,
                         )
                         .await?;
+
                     // check if there are any failed witnesses
                     // if so update the DB attempts count
                     // and halt here, let things be reprocessed next tick
@@ -458,7 +472,6 @@ impl Runner {
         unselected_witnesses: Vec<IotVerifiedWitnessReport>,
     ) -> anyhow::Result<()> {
         let received_timestamp = valid_beacon_report.received_timestamp;
-        let pub_key = valid_beacon_report.report.pub_key.clone();
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
@@ -494,8 +507,7 @@ impl Runner {
         // but could nae get it to get a way past the lack of COPY
         fire_invalid_witness_metric(&selected_witnesses);
         fire_invalid_witness_metric(&unselected_witnesses);
-        // update timestamp of last beacon for the beaconer
-        LastBeacon::update_last_timestamp(&self.pool, pub_key.as_ref(), received_timestamp).await?;
+
         Report::delete_poc(&self.pool, &packet_data).await?;
         telemetry::decrement_num_beacons();
         Ok(())
@@ -684,7 +696,7 @@ mod tests {
         assert_eq!(1, included_witnesses.len());
         assert_eq!(
             InvalidReason::Stale,
-            excluded_witnesses.get(0).unwrap().invalid_reason
+            excluded_witnesses.first().unwrap().invalid_reason
         );
         assert_eq!(
             InvalidReason::Duplicate,

@@ -18,6 +18,7 @@ pub struct PacketRouterPacketReport {
     pub oui: u64,
     pub net_id: u32,
     pub rssi: i32,
+    pub free: bool,
     /// Frequency in Hz
     pub frequency: u32,
     pub snr: f32,
@@ -90,6 +91,7 @@ impl TryFrom<PacketRouterPacketReportV1> for PacketRouterPacketReport {
             oui: v.oui,
             net_id: v.net_id,
             rssi: v.rssi,
+            free: v.free,
             frequency: v.frequency,
             snr: v.snr,
             data_rate,

@@ -23,6 +23,7 @@ helium-proto = {workspace = true}
 hextree = {workspace = true}
 http = {workspace = true}
 http-serde = {workspace = true}
+lazy_static = {workspace = true}
 metrics = {workspace = true}
 metrics-exporter-prometheus = {workspace = true}
 poc-metrics = {path = "../metrics"}
@@ -41,3 +42,4 @@ tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
 task-manager = { path = "../task_manager" }
+solana-sdk = {workspace = true}

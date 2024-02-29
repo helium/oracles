@@ -24,7 +24,7 @@ pub struct Settings {
     /// Minimum data credit balance required for a payer before we disable them
     #[serde(default = "default_minimum_allowed_balance")]
     pub minimum_allowed_balance: u64,
-    pub solana: Option<solana::Settings>,
+    pub solana: Option<solana::burn::Settings>,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
     /// Number of minutes we should sleep before checking to re-enable

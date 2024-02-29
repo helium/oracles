@@ -3,6 +3,7 @@ debug = true
 
 [workspace]
 members = [
+    "boost_manager",
     "db_store",
     "denylist",
     "file_store",
@@ -59,12 +60,13 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
+helium-anchor-gen = {git = "https://github.com/helium/helium-anchor-gen.git"}
 helium-crypto = {version = "0.8.1", features=["sqlx-postgres", "multisig"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 hextree = "*"
-solana-client = "1.14"
-solana-sdk = "1.14"
-solana-program = "1.11"
+solana-client = "1.16"
+solana-sdk = "1.16"
+solana-program = "1.16"
 spl-token = "3.5.0"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
 beacon = { git = "https://github.com/helium/proto", branch = "master" }
@@ -78,11 +80,12 @@ rust_decimal_macros = "1"
 base64 = ">=0.21"
 sha2 = "0.10"
 tonic = {version = "0", features = ["tls", "tls-roots"]}
-http = "*"
+http = "<=0.2"
 triggered = "0"
 futures = "*"
 futures-util = "*"
 prost = "*"
+pyth-sdk-solana = "=0.8"
 once_cell = "1"
 lazy_static = "1"
 config = {version="0", default-features=false, features=["toml"]}
@@ -97,9 +100,6 @@ blake3 = "*"
 retainer = "*"
 rand = "0.8"
 itertools = "*"
-data-credits = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.1.0"}
-helium-sub-daos = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.1.0"}
-price-oracle = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.1.0"}
 tokio-util = "0"
 uuid = {version = "1", features = ["v4", "serde"]}
 tower-http = {version = "0", features = ["trace"]}

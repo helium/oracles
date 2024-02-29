@@ -68,18 +68,6 @@ fn h3index_to_region(
         .ok_or_else(|| anyhow!("invalid region"))
 }
 
-#[async_trait::async_trait]
-pub trait GatewayInfoResolver {
-    type Error;
-
-    async fn resolve_gateway_info(
-        &mut self,
-        address: &PublicKeyBinary,
-    ) -> Result<Option<GatewayInfo>, Self::Error>;
-
-    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, Self::Error>;
-}
-
 impl From<GatewayInfoProto> for GatewayInfo {
     fn from(info: GatewayInfoProto) -> Self {
         let metadata = if let Some(metadata) = info.metadata {

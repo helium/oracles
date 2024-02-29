@@ -48,6 +48,8 @@ impl TimestampEncode for DateTime<Utc> {
     }
 
     fn encode_timestamp_nanos(&self) -> u64 {
-        self.timestamp_nanos() as u64
+        self.timestamp_nanos_opt()
+            .expect("value can not be represented in a timestamp with nanosecond precision.")
+            as u64
     }
 }

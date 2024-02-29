@@ -13,11 +13,8 @@ thiserror = {workspace = true}
 sqlx = {workspace = true}
 serde = {workspace = true}
 http = {workspace = true}
-http-serde = {workspace = true}
 tokio = {workspace = true}
 tracing = {workspace = true}
-triggered = {workspace = true}
-futures = {workspace = true}
 
 aws-config = "0"
 aws-sdk-sts = "0"
