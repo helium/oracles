@@ -211,14 +211,13 @@ pub async fn set_oracle_boosting_assignments<'a>(
                 let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
                     .to_u32()
                     .unwrap_or(0);
-                let assignments = vec![urbanized.into()];
 
                 boost_results.entry(hex.uuid).or_default().push(
                     proto::OracleBoostingHexAssignment {
                         location,
                         urbanized: urbanized.into(),
-			footfall_assignment: None,
-			landtype_assignment: None,
+                        footfall_assignment: None,
+                        landtype_assignment: None,
                         assignment_multiplier,
                     },
                 );
