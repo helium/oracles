@@ -103,10 +103,11 @@ pub struct BoostedHex {
 
 impl BoostedHexes {
     pub fn new(hexes: Vec<BoostedHexInfo>) -> Self {
-	let hexes = hexes.into_iter()
-	    .map(|info| (info.location, info))
-	    .collect();
-	Self { hexes }
+        let hexes = hexes
+            .into_iter()
+            .map(|info| (info.location, info))
+            .collect();
+        Self { hexes }
     }
 
     pub async fn get_all(
