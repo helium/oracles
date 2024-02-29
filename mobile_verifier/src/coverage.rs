@@ -175,7 +175,8 @@ where
 #[derive(FromRow)]
 pub struct UnassignedHex {
     uuid: Uuid,
-    hex: i64,
+    #[sqlx(try_from = "i64")]
+    hex: u64,
     signal_level: SignalLevel,
     signal_power: i32,
 }
@@ -205,8 +206,8 @@ pub async fn set_oracle_boosting_assignments<'a>(
         let hexes: anyhow::Result<Vec<_>> = hexes
             .into_iter()
             .map(|hex| {
-                let urbanized = urbanization.hex_assignment(hex.hex as u64)?;
-                let location = CellIndex::try_from(hex.hex as u64)?.to_string();
+                let urbanized = urbanization.hex_assignment(hex.hex)?;
+                let location = format!("{:x}", hex.hex);
                 let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
                     .to_u32()
                     .unwrap_or(0);
@@ -227,7 +228,7 @@ pub async fn set_oracle_boosting_assignments<'a>(
         QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized)")
             .push_values(hexes?, |mut b, (hex, urbanized)| {
                 b.push_bind(hex.uuid)
-                    .push_bind(hex.hex)
+                    .push_bind(hex.hex as i64)
                     .push_bind(hex.signal_level)
                     .push_bind(hex.signal_power)
                     .push_bind(urbanized);

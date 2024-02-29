@@ -216,7 +216,7 @@ impl FileSinkClient {
         }
     }
 
-    /// Writes all messages to the the file sink, return the last one shot
+    /// Writes all messages to the file sink, return the last oneshot
     pub async fn write_all(
         &self,
         items: impl IntoIterator<Item = impl prost::Message>,
