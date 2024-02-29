@@ -1,12 +1,18 @@
 use base64::{engine::general_purpose, Engine as _};
 use h3o::{LatLng, Resolution};
 use hextree::{Cell, HexTreeSet};
-use std::{fs, io::Read, path, sync::Arc};
+use std::{collections::HashSet, fs, io::Read, path, sync::Arc};
 
 use crate::heartbeats::Heartbeat;
 
 pub trait GeofenceValidator<T>: Clone + Send + Sync + 'static {
     fn in_valid_region(&self, t: &T) -> bool;
+}
+
+impl GeofenceValidator<u64> for HashSet<u64> {
+    fn in_valid_region(&self, cell: &u64) -> bool {
+        self.contains(cell)
+    }
 }
 
 #[derive(Clone)]
