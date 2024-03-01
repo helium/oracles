@@ -6,8 +6,8 @@ use helium_proto::services::{
 };
 use helium_proto::{
     services::poc_mobile::{
-        CellHeartbeatReqV1, CoverageObjectReqV1, DataTransferSessionReqV1, SpeedtestReqV1,
-        SubscriberLocationReqV1, WifiHeartbeatReqV1,
+        CellHeartbeatReqV1, CoverageObjectReqV1, DataTransferSessionReqV1,
+        RadioThresholdReportReqV1, SpeedtestReqV1, SubscriberLocationReqV1, WifiHeartbeatReqV1,
     },
     Message,
 };
@@ -29,6 +29,7 @@ macro_rules! impl_msg_verify {
         }
     };
 }
+impl_msg_verify!(RadioThresholdReportReqV1, signature);
 impl_msg_verify!(SubscriberLocationReqV1, signature);
 impl_msg_verify!(CellHeartbeatReqV1, signature);
 impl_msg_verify!(WifiHeartbeatReqV1, signature);

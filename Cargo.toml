@@ -62,8 +62,8 @@ sqlx = {version = "0", features = [
 ]}
 helium-anchor-gen = {git = "https://github.com/helium/helium-anchor-gen.git"}
 helium-crypto = {version = "0.8.1", features=["sqlx-postgres", "multisig"]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 hextree = {git = "https://github.com/jaykickliter/HexTree", branch = "main", features = ["disktree"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 solana-client = "1.16"
 solana-sdk = "1.16"
 solana-program = "1.16"

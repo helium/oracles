@@ -106,6 +106,9 @@ impl FileInfo {
     }
 }
 
+pub const RADIO_THRESHOLD_REQ: &str = "radio_threshold_req";
+pub const RADIO_THRESHOLD_INGEST_REPORT: &str = "radio_threshold_ingest_report";
+pub const VERIFIED_RADIO_THRESHOLD_INGEST_REPORT: &str = "verified_radio_threshold_report";
 pub const SUBSCRIBER_LOCATION_REQ: &str = "subscriber_location_req";
 pub const SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "subscriber_location_report";
 pub const VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "verified_subscriber_location_report";
@@ -189,11 +192,17 @@ pub enum FileType {
     WifiHeartbeatIngestReport,
     BoostedHexUpdate,
     OracleBoostingReport,
+    RadioThresholdReq,
+    RadioThresholdIngestReport,
+    VerifiedRadioThresholdIngestReport,
 }
 
 impl fmt::Display for FileType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
+            Self::RadioThresholdReq => RADIO_THRESHOLD_REQ,
+            Self::RadioThresholdIngestReport => RADIO_THRESHOLD_INGEST_REPORT,
+            Self::VerifiedRadioThresholdIngestReport => VERIFIED_RADIO_THRESHOLD_INGEST_REPORT,
             Self::SubscriberLocationReq => SUBSCRIBER_LOCATION_REQ,
             Self::SubscriberLocationIngestReport => SUBSCRIBER_LOCATION_INGEST_REPORT,
             Self::VerifiedSubscriberLocationIngestReport => {
@@ -245,6 +254,9 @@ impl fmt::Display for FileType {
 impl FileType {
     pub fn to_str(&self) -> &'static str {
         match self {
+            Self::RadioThresholdReq => RADIO_THRESHOLD_REQ,
+            Self::RadioThresholdIngestReport => RADIO_THRESHOLD_INGEST_REPORT,
+            Self::VerifiedRadioThresholdIngestReport => VERIFIED_RADIO_THRESHOLD_INGEST_REPORT,
             Self::SubscriberLocationReq => SUBSCRIBER_LOCATION_REQ,
             Self::SubscriberLocationIngestReport => SUBSCRIBER_LOCATION_INGEST_REPORT,
             Self::VerifiedSubscriberLocationIngestReport => {
@@ -296,6 +308,9 @@ impl FromStr for FileType {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         let result = match s {
+            RADIO_THRESHOLD_REQ => Self::RadioThresholdReq,
+            RADIO_THRESHOLD_INGEST_REPORT => Self::RadioThresholdIngestReport,
+            VERIFIED_RADIO_THRESHOLD_INGEST_REPORT => Self::VerifiedRadioThresholdIngestReport,
             SUBSCRIBER_LOCATION_REQ => Self::SubscriberLocationReq,
             SUBSCRIBER_LOCATION_INGEST_REPORT => Self::SubscriberLocationIngestReport,
             VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT => {

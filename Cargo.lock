@@ -1590,7 +1590,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#9605fd416dc1f1baa6e1783821143efce94c0aff"
+source = "git+https://github.com/helium/proto?branch=master#7011d31e39af8d548466c820a7c1409288a7f48e"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -1600,7 +1600,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
 ]
 
@@ -3556,7 +3556,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#9605fd416dc1f1baa6e1783821143efce94c0aff"
+source = "git+https://github.com/helium/proto?branch=master#7011d31e39af8d548466c820a7c1409288a7f48e"
 dependencies = [
  "bytes",
  "prost",
@@ -8862,7 +8862,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "twox-hash",
  "xorf",
