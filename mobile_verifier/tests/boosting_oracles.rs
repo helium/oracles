@@ -148,7 +148,7 @@ async fn test_urbanization(pool: PgPool) -> anyhow::Result<()> {
         vec![],
     );
 
-    // The last hex isoutside the US
+    // The last hex is outside the US
     let mut geofence = HashSet::new();
     geofence.insert(u64::from_str_radix("8c2681a3064d9ff", 16)?);
     geofence.insert(u64::from_str_radix("8c2681a339a4bff", 16)?);
