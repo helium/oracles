@@ -1,6 +1,7 @@
 use helium_proto::services::poc_mobile::oracle_boosting_hex_assignment;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::fmt;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, sqlx::Type)]
 #[sqlx(type_name = "oracle_assignment")]
@@ -27,14 +28,14 @@ impl From<Assignment> for i32 {
     }
 }
 
-impl ToString for Assignment {
-    fn to_string(&self) -> String {
+impl fmt::Display for Assignment {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Assignment::*;
 
         match self {
-            A => "A".to_string(),
-            B => "B".to_string(),
-            C => "C".to_string(),
+            A => write!(f, "a"),
+            B => write!(f, "b"),
+            C => write!(f, "c"),
         }
     }
 }

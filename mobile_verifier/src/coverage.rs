@@ -71,7 +71,7 @@ pub struct CoverageDaemon<DT, GF> {
     auth_client: AuthorizationClient,
     urbanization: Urbanization<DT, GF>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-    initial_boosting_reports: Vec<OracleBoostingReportV1>,
+    initial_boosting_reports: Option<Vec<OracleBoostingReportV1>>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
 }
@@ -92,10 +92,11 @@ where
         tracing::info!("Setting initial values for the urbanization column");
 
         let unassigned_hexes = UnassignedHex::fetch(&pool);
-        let initial_boosting_reports =
+        let initial_boosting_reports = Some(
             set_oracle_boosting_assignments(unassigned_hexes, &urbanization, &pool)
                 .await?
-                .collect();
+                .collect(),
+        );
 
         Ok(Self {
             pool,
@@ -109,7 +110,10 @@ where
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        let initial_boosting_reports = std::mem::take(&mut self.initial_boosting_reports);
+        let Some(initial_boosting_reports) = std::mem::take(&mut self.initial_boosting_reports)
+        else {
+            anyhow::bail!("Initial boosting reports is None");
+        };
         self.oracle_boosting_sink
             .write_all(initial_boosting_reports)
             .await?;
