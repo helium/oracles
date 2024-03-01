@@ -1,15 +1,16 @@
 use crate::{
     boosting_oracles::Urbanization, coverage::CoverageDaemon, data_session::DataSessionIngestor,
     geofence::Geofence, heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
-    heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon, rewarder::Rewarder,
-    speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
-    Settings,
+    heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon,
+    radio_threshold::RadioThresholdIngestor, rewarder::Rewarder, speedtests::SpeedtestDaemon,
+    subscriber_location::SubscriberLocationIngestor, telemetry, Settings,
 };
 use anyhow::Result;
 use chrono::Duration;
 use file_store::{
     coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink,
     file_source, file_upload, heartbeat::CbrsHeartbeatIngestReport,
+    mobile_radio_threshold::RadioThresholdIngestReport,
     mobile_subscriber::SubscriberLocationIngestReport, mobile_transfer::ValidDataTransferSession,
     speedtest::CellSpeedtestIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport, FileStore,
     FileType,
@@ -286,6 +287,34 @@ impl Cmd {
             verified_subscriber_location,
         );
 
+        // radio threshold reports
+        let (radio_threshold_ingest, radio_threshold_ingest_server) =
+            file_source::continuous_source::<RadioThresholdIngestReport, _>()
+                .state(pool.clone())
+                .store(report_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::RadioThresholdIngestReport.to_string())
+                .create()
+                .await?;
+
+        let (verified_radio_threshold, verified_radio_threshold_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::VerifiedRadioThresholdIngestReport,
+                store_base_path,
+                concat!(env!("CARGO_PKG_NAME"), "_verified_radio_threshold"),
+            )
+            .file_upload(Some(file_upload.clone()))
+            .auto_commit(false)
+            .create()
+            .await?;
+
+        let radio_threshold_ingestor = RadioThresholdIngestor::new(
+            pool.clone(),
+            radio_threshold_ingest,
+            verified_radio_threshold,
+            auth_client.clone(),
+        );
+
         // data transfers
         let (data_session_ingest, data_session_ingest_server) =
             file_source::continuous_source::<ValidDataTransferSession, _>()
@@ -311,6 +340,8 @@ impl Cmd {
             .add_task(reward_manifests_server)
             .add_task(verified_subscriber_location_server)
             .add_task(subscriber_location_ingestor)
+            .add_task(radio_threshold_ingestor)
+            .add_task(verified_radio_threshold_server)
             .add_task(data_session_ingest_server)
             .add_task(price_daemon)
             .add_task(cbrs_heartbeat_daemon)
@@ -322,6 +353,7 @@ impl Cmd {
             .add_task(coverage_daemon)
             .add_task(rewarder)
             .add_task(subscriber_location_ingest_server)
+            .add_task(radio_threshold_ingest_server)
             .add_task(data_session_ingestor)
             .start()
             .await

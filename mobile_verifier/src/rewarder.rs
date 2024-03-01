@@ -1,6 +1,7 @@
 use crate::{
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
+    radio_threshold,
     reward_shares::{self, CoveragePoints, MapperShares, ServiceProviderShares, TransferRewards},
     speedtests,
     speedtests_average::SpeedtestAverages,
@@ -336,11 +337,15 @@ async fn reward_poc(
 
     let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
 
+    let verified_radio_thresholds =
+        radio_threshold::verified_radio_thresholds(pool, reward_period).await?;
+
     let coverage_points = CoveragePoints::aggregate_points(
         pool,
         heartbeats,
         &speedtest_averages,
         &boosted_hexes,
+        &verified_radio_thresholds,
         reward_period,
     )
     .await?;

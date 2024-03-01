@@ -16,6 +16,7 @@ use mobile_verifier::{
     },
     geofence::GeofenceValidator,
     heartbeats::{Heartbeat, HeartbeatReward, SeniorityUpdate, ValidatedHeartbeat},
+    radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoveragePoints,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
@@ -217,6 +218,7 @@ async fn test_urbanization(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &epoch,
     )
     .await?;
