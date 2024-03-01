@@ -220,8 +220,6 @@ pub async fn set_oracle_boosting_assignments<'a>(
                     proto::OracleBoostingHexAssignment {
                         location,
                         urbanized: urbanized.into(),
-                        footfall_assignment: None,
-                        landtype_assignment: None,
                         assignment_multiplier,
                     },
                 );
