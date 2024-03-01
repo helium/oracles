@@ -37,7 +37,9 @@ pub enum Error {
     DbError(#[from] sqlx::Error),
     #[error("channel send error")]
     SendError(#[from] tokio::sync::mpsc::error::SendError<()>),
-    #[error("External Error")]
+    //Generic error wrapper for external (out of that repository) traits implementations. 
+    //Not recommended for internal use!
+    #[error("external error")]
     ExternalError(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
