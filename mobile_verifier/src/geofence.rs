@@ -1,12 +1,18 @@
 use base64::{engine::general_purpose, Engine as _};
 use h3o::{LatLng, Resolution};
 use hextree::{Cell, HexTreeSet};
-use std::{fs, io::Read, path, sync::Arc};
+use std::{collections::HashSet, fs, io::Read, path, sync::Arc};
 
 use crate::heartbeats::Heartbeat;
 
-pub trait GeofenceValidator: Clone + Send + Sync + 'static {
-    fn in_valid_region(&self, heartbeat: &Heartbeat) -> bool;
+pub trait GeofenceValidator<T>: Clone + Send + Sync + 'static {
+    fn in_valid_region(&self, t: &T) -> bool;
+}
+
+impl GeofenceValidator<u64> for HashSet<u64> {
+    fn in_valid_region(&self, cell: &u64) -> bool {
+        self.contains(cell)
+    }
 }
 
 #[derive(Clone)]
@@ -24,12 +30,21 @@ impl Geofence {
     }
 }
 
-impl GeofenceValidator for Geofence {
+impl GeofenceValidator<Heartbeat> for Geofence {
     fn in_valid_region(&self, heartbeat: &Heartbeat) -> bool {
         let Ok(lat_lon) = LatLng::new(heartbeat.lat, heartbeat.lon) else {
             return false;
         };
         let Ok(cell) = Cell::try_from(u64::from(lat_lon.to_cell(self.resolution))) else {
+            return false;
+        };
+        self.regions.contains(cell)
+    }
+}
+
+impl GeofenceValidator<u64> for Geofence {
+    fn in_valid_region(&self, cell: &u64) -> bool {
+        let Ok(cell) = Cell::try_from(*cell) else {
             return false;
         };
         self.regions.contains(cell)

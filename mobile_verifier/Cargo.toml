@@ -13,7 +13,7 @@ thiserror = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
 h3o = {workspace = true, features = ["geo"]}
-hextree = "0"
+hextree = {workspace = true}
 http-serde = {workspace = true}
 clap = {workspace = true}
 sqlx = {workspace = true}

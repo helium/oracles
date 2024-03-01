@@ -34,7 +34,7 @@ pub struct HeartbeatDaemon<GIR, GFV> {
 impl<GIR, GFV> HeartbeatDaemon<GIR, GFV>
 where
     GIR: GatewayResolver,
-    GFV: GeofenceValidator,
+    GFV: GeofenceValidator<Heartbeat>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -148,7 +148,7 @@ where
 impl<GIR, GFV> ManagedTask for HeartbeatDaemon<GIR, GFV>
 where
     GIR: GatewayResolver,
-    GFV: GeofenceValidator,
+    GFV: GeofenceValidator<Heartbeat>,
 {
     fn start_task(
         self: Box<Self>,

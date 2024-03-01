@@ -17,9 +17,11 @@ use mobile_config::{
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
 use mobile_verifier::{
+    boosting_oracles::{MockDiskTree, Urbanization},
     cell_type::CellType,
-    coverage::CoverageObject,
+    coverage::{set_oracle_boosting_assignments, CoverageObject, UnassignedHex},
     data_session,
+    geofence::GeofenceValidator,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder, speedtests,
 };
@@ -55,6 +57,15 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
     }
 }
 
+#[derive(Clone)]
+struct MockGeofence;
+
+impl GeofenceValidator<u64> for MockGeofence {
+    fn in_valid_region(&self, _cell: &u64) -> bool {
+        true
+    }
+}
+
 #[sqlx::test]
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
@@ -68,6 +79,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     seed_speedtests(epoch.end, &mut txn).await?;
     seed_data_sessions(epoch.start, &mut txn).await?;
     txn.commit().await?;
+    update_assignments(&pool).await?;
 
     let boosted_hexes = vec![];
 
@@ -289,6 +301,13 @@ async fn seed_heartbeats(
         cov_obj_2.save(txn).await?;
         cov_obj_3.save(txn).await?;
     }
+    Ok(())
+}
+
+async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
+    let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
+    let unassigned_hexes = UnassignedHex::fetch(pool);
+    let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, pool).await?;
     Ok(())
 }
 

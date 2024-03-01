@@ -1590,7 +1590,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#c2b1dfa06e6f726ab19cd50444b2a90dd6c841e0"
+source = "git+https://github.com/helium/proto?branch=master#9605fd416dc1f1baa6e1783821143efce94c0aff"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -1600,7 +1600,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -3556,7 +3556,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#c2b1dfa06e6f726ab19cd50444b2a90dd6c841e0"
+source = "git+https://github.com/helium/proto?branch=master#9605fd416dc1f1baa6e1783821143efce94c0aff"
 dependencies = [
  "bytes",
  "prost",
@@ -3618,8 +3618,12 @@ dependencies = [
 [[package]]
 name = "hextree"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bcae6addbacd470c8033b8f874feb49fa568c17ceadadbf98ee6ae4029cd2b6"
+source = "git+https://github.com/jaykickliter/HexTree?branch=main#bbc9fcf5b0cdfe0b6e99cec8d798d338819e985b"
+dependencies = [
+ "byteorder",
+ "memmap",
+ "serde",
+]
 
 [[package]]
 name = "histogram"
@@ -4487,6 +4491,16 @@ name = "memchr"
 version = "2.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f665ee40bc4a3c5590afb1e9677db74a508659dfd71e126420da8274909a0167"
+
+[[package]]
+name = "memmap"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6585fd95e7bb50d6cc31e20d4cf9afb4e2ba16c5846fc76793f11218da9c475b"
+dependencies = [
+ "libc",
+ "winapi",
+]
 
 [[package]]
 name = "memmap2"
@@ -8848,7 +8862,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
  "twox-hash",
  "xorf",

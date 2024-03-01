@@ -102,12 +102,12 @@ pub struct BoostedHex {
 }
 
 impl BoostedHexes {
-    pub async fn new(hexes: Vec<BoostedHexInfo>) -> anyhow::Result<Self> {
-        let mut map = HashMap::new();
-        for info in hexes {
-            map.insert(info.location, info);
-        }
-        Ok(Self { hexes: map })
+    pub fn new(hexes: Vec<BoostedHexInfo>) -> Self {
+        let hexes = hexes
+            .into_iter()
+            .map(|info| (info.location, info))
+            .collect();
+        Self { hexes }
     }
 
     pub async fn get_all(

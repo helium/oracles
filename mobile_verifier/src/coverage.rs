@@ -1,4 +1,8 @@
 use crate::{
+    boosting_oracles::{
+        assignment::urbanization_multiplier, Assignment, DiskTreeLike, Urbanization,
+    },
+    geofence::GeofenceValidator,
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized,
 };
@@ -17,14 +21,17 @@ use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
-    poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
+    poc_mobile::{
+        self as proto, CoverageObjectValidity, OracleBoostingReportV1,
+        SignalLevel as SignalLevelProto,
+    },
 };
 use mobile_config::{
     boosted_hex_info::{BoostedHex, BoostedHexes},
     client::AuthorizationClient,
 };
 use retainer::{entry::CacheReadGuard, Cache};
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
 use std::{
@@ -59,29 +66,59 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
-pub struct CoverageDaemon {
+pub struct CoverageDaemon<DT, GF> {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
+    urbanization: Urbanization<DT, GF>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-    file_sink: FileSinkClient,
+    initial_boosting_reports: Option<Vec<OracleBoostingReportV1>>,
+    coverage_obj_sink: FileSinkClient,
+    oracle_boosting_sink: FileSinkClient,
 }
 
-impl CoverageDaemon {
-    pub fn new(
-        pool: Pool<Postgres>,
+impl<DT, GF> CoverageDaemon<DT, GF>
+where
+    DT: DiskTreeLike,
+    GF: GeofenceValidator<u64>,
+{
+    pub async fn new(
+        pool: PgPool,
         auth_client: AuthorizationClient,
+        urbanization: Urbanization<DT, GF>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-        file_sink: FileSinkClient,
-    ) -> Self {
-        Self {
+        coverage_obj_sink: FileSinkClient,
+        oracle_boosting_sink: FileSinkClient,
+    ) -> anyhow::Result<Self> {
+        tracing::info!("Setting initial values for the urbanization column");
+
+        let unassigned_hexes = UnassignedHex::fetch(&pool);
+        let initial_boosting_reports = Some(
+            set_oracle_boosting_assignments(unassigned_hexes, &urbanization, &pool)
+                .await?
+                .collect(),
+        );
+
+        Ok(Self {
             pool,
             auth_client,
+            urbanization,
             coverage_objs,
-            file_sink,
-        }
+            coverage_obj_sink,
+            oracle_boosting_sink,
+            initial_boosting_reports,
+        })
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        let Some(initial_boosting_reports) = std::mem::take(&mut self.initial_boosting_reports)
+        else {
+            anyhow::bail!("Initial boosting reports is None");
+        };
+        self.oracle_boosting_sink
+            .write_all(initial_boosting_reports)
+            .await?;
+        self.oracle_boosting_sink.commit().await?;
+
         loop {
             #[rustfmt::skip]
             tokio::select! {
@@ -101,7 +138,7 @@ impl CoverageDaemon {
     }
 
     async fn process_file(
-        &mut self,
+        &self,
         file: FileInfoStream<CoverageObjectIngestReport>,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing coverage object file {}", file.file_info.key);
@@ -115,20 +152,117 @@ impl CoverageDaemon {
         ));
 
         while let Some(coverage_object) = validated_coverage_objects.next().await.transpose()? {
-            coverage_object.write(&self.file_sink).await?;
+            coverage_object.write(&self.coverage_obj_sink).await?;
             if coverage_object.is_valid() {
                 coverage_object.save(&mut transaction).await?;
             }
         }
 
-        self.file_sink.commit().await?;
+        self.coverage_obj_sink.commit().await?;
         transaction.commit().await?;
+
+        // After writing all of the coverage objects, we set their oracle boosting assignments. This is
+        // done in two steps to improve the testability of the assignments.
+        let unassigned_hexes = UnassignedHex::fetch(&self.pool);
+        let boosting_reports =
+            set_oracle_boosting_assignments(unassigned_hexes, &self.urbanization, &self.pool)
+                .await?;
+        self.oracle_boosting_sink
+            .write_all(boosting_reports)
+            .await?;
+        self.oracle_boosting_sink.commit().await?;
 
         Ok(())
     }
 }
 
-impl ManagedTask for CoverageDaemon {
+#[derive(FromRow)]
+pub struct UnassignedHex {
+    uuid: Uuid,
+    #[sqlx(try_from = "i64")]
+    hex: u64,
+    signal_level: SignalLevel,
+    signal_power: i32,
+}
+
+impl UnassignedHex {
+    pub fn fetch(pool: &PgPool) -> impl Stream<Item = sqlx::Result<Self>> + '_ {
+        sqlx::query_as(
+            "SELECT uuid, hex, signal_level, signal_power FROM hexes WHERE urbanized IS NULL",
+        )
+        .fetch(pool)
+    }
+}
+
+pub async fn set_oracle_boosting_assignments<'a>(
+    unassigned_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
+    urbanization: &Urbanization<impl DiskTreeLike, impl GeofenceValidator<u64>>,
+    pool: &'a PgPool,
+) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
+    const NUMBER_OF_FIELDS_IN_QUERY: u16 = 5;
+    const ASSIGNMENTS_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
+
+    let now = Utc::now();
+    let mut boost_results = HashMap::<Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
+    let mut unassigned_hexes = pin!(unassigned_hexes.try_chunks(ASSIGNMENTS_MAX_BATCH_ENTRIES));
+
+    while let Some(hexes) = unassigned_hexes.try_next().await? {
+        let hexes: anyhow::Result<Vec<_>> = hexes
+            .into_iter()
+            .map(|hex| {
+                let urbanized = urbanization.hex_assignment(hex.hex)?;
+                let location = format!("{:x}", hex.hex);
+                let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
+                    .to_u32()
+                    .unwrap_or(0);
+
+                boost_results.entry(hex.uuid).or_default().push(
+                    proto::OracleBoostingHexAssignment {
+                        location,
+                        urbanized: urbanized.into(),
+                        assignment_multiplier,
+                    },
+                );
+
+                Ok((hex, urbanized))
+            })
+            .collect();
+
+        QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized)")
+            .push_values(hexes?, |mut b, (hex, urbanized)| {
+                b.push_bind(hex.uuid)
+                    .push_bind(hex.hex as i64)
+                    .push_bind(hex.signal_level)
+                    .push_bind(hex.signal_power)
+                    .push_bind(urbanized);
+            })
+            .push(
+                r#"
+                ON CONFLICT (uuid, hex) DO UPDATE SET
+                  urbanized = EXCLUDED.urbanized
+                "#,
+            )
+            .build()
+            .execute(pool)
+            .await?;
+    }
+
+    Ok(boost_results
+        .into_iter()
+        .map(
+            move |(coverage_object, assignments)| proto::OracleBoostingReportV1 {
+                coverage_object: Vec::from(coverage_object.into_bytes()),
+                assignments,
+                timestamp: now.encode_timestamp(),
+            },
+        ))
+}
+
+impl<DT, GF> ManagedTask for CoverageDaemon<DT, GF>
+where
+    DT: DiskTreeLike,
+    GF: GeofenceValidator<u64>,
+{
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -186,7 +320,7 @@ impl CoverageObject {
         }
     }
 
-    pub async fn write(&self, coverage_objects: &FileSinkClient) -> file_store::Result {
+    pub async fn write(&self, coverage_objects: &FileSinkClient) -> anyhow::Result<()> {
         coverage_objects
             .write(
                 proto::CoverageObjectV1 {
@@ -255,7 +389,6 @@ impl CoverageObject {
             QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power)")
                 .push_values(hexes, |mut b, hex| {
                     let location: u64 = hex.location.into();
-
                     b.push_bind(self.coverage_object.uuid)
                         .push_bind(location as i64)
                         .push_bind(SignalLevel::from(hex.signal_level))
@@ -287,6 +420,7 @@ pub struct HexCoverage {
     pub signal_power: i32,
     pub coverage_claim_time: DateTime<Utc>,
     pub inserted_at: DateTime<Utc>,
+    pub urbanized: Assignment,
 }
 
 #[derive(Eq, Debug)]
@@ -295,6 +429,7 @@ struct IndoorCoverageLevel {
     seniority_timestamp: DateTime<Utc>,
     hotspot: PublicKeyBinary,
     signal_level: SignalLevel,
+    urbanized: Assignment,
 }
 
 impl PartialEq for IndoorCoverageLevel {
@@ -332,6 +467,7 @@ struct OutdoorCoverageLevel {
     hotspot: PublicKeyBinary,
     signal_power: i32,
     signal_level: SignalLevel,
+    urbanized: Assignment,
 }
 
 impl PartialEq for OutdoorCoverageLevel {
@@ -433,7 +569,7 @@ impl CoveredHexStream for Pool<Postgres> {
         Ok(
             sqlx::query_as(
                 r#"
-                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, h.signal_power, co.coverage_claim_time, co.inserted_at
+                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, h.signal_power, co.coverage_claim_time, co.inserted_at, h.urbanized
                 FROM coverage_objects co
                     INNER JOIN hexes h on co.uuid = h.uuid
                 WHERE co.radio_key = $1
@@ -580,6 +716,7 @@ fn insert_indoor_coverage(
             seniority_timestamp: hex_coverage.coverage_claim_time,
             signal_level: hex_coverage.signal_level,
             hotspot: hotspot.clone(),
+            urbanized: hex_coverage.urbanized,
         })
 }
 
@@ -597,6 +734,7 @@ fn insert_outdoor_coverage(
             signal_level: hex_coverage.signal_level,
             signal_power: hex_coverage.signal_power,
             hotspot: hotspot.clone(),
+            urbanized: hex_coverage.urbanized,
         });
 }
 
@@ -615,8 +753,13 @@ fn into_outdoor_rewards(
                 let boost_multiplier = boosted_hexes
                     .get_current_multiplier(hex.into(), epoch_start)
                     .unwrap_or(1);
+                let oracle_multiplier = if boost_multiplier > 1 {
+                    dec!(1.0)
+                } else {
+                    urbanization_multiplier(cl.urbanized)
+                };
                 CoverageReward {
-                    points: cl.coverage_points() * rank,
+                    points: cl.coverage_points() * oracle_multiplier * rank,
                     hotspot: cl.hotspot,
                     radio_key: cl.radio_key,
                     boosted_hex_info: BoostedHex {
@@ -645,8 +788,13 @@ fn into_indoor_rewards(
                         let boost_multiplier = boosted_hexes
                             .get_current_multiplier(hex.into(), epoch_start)
                             .unwrap_or(1);
+                        let oracle_multiplier = if boost_multiplier > 1 {
+                            dec!(1.0)
+                        } else {
+                            urbanization_multiplier(cl.urbanized)
+                        };
                         CoverageReward {
-                            points: cl.coverage_points(),
+                            points: cl.coverage_points() * oracle_multiplier,
                             hotspot: cl.hotspot,
                             radio_key: cl.radio_key,
                             boosted_hex_info: BoostedHex {
@@ -885,6 +1033,7 @@ mod test {
             signal_power: 0,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: Assignment::A,
         }
     }
 
@@ -1281,6 +1430,7 @@ mod test {
             signal_power: 0,
             coverage_claim_time: coverage_claim_time.unwrap_or(DateTime::<Utc>::MIN_UTC),
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: Assignment::A,
         }
     }
 
@@ -1298,6 +1448,7 @@ mod test {
             signal_level: SignalLevel::High,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: Assignment::A,
         }
     }
 
@@ -1315,6 +1466,7 @@ mod test {
             signal_level: SignalLevel::High,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: Assignment::A,
         }
     }
 
@@ -1332,6 +1484,7 @@ mod test {
             signal_level,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
+            urbanized: Assignment::A,
         }
     }
 }

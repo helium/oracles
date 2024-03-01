@@ -216,6 +216,18 @@ impl FileSinkClient {
         }
     }
 
+    /// Writes all messages to the file sink, return the last oneshot
+    pub async fn write_all(
+        &self,
+        items: impl IntoIterator<Item = impl prost::Message>,
+    ) -> Result<Option<oneshot::Receiver<Result>>> {
+        let mut last_oneshot = None;
+        for item in items {
+            last_oneshot = Some(self.write(item, &[]).await?);
+        }
+        Ok(last_oneshot)
+    }
+
     pub async fn commit(&self) -> Result<oneshot::Receiver<Result<FileManifest>>> {
         let (on_commit_tx, on_commit_rx) = oneshot::channel();
         self.sender
