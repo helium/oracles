@@ -106,6 +106,11 @@ impl FileInfo {
     }
 }
 
+pub const INVALIDATED_RADIO_THRESHOLD_REQ: &str = "invalidated_radio_threshold_req";
+pub const INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT: &str =
+    "invalidated_radio_threshold_ingest_report";
+pub const VERIFIED_INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT: &str =
+    "verified_invalidated_radio_threshold_report";
 pub const RADIO_THRESHOLD_REQ: &str = "radio_threshold_req";
 pub const RADIO_THRESHOLD_INGEST_REPORT: &str = "radio_threshold_ingest_report";
 pub const VERIFIED_RADIO_THRESHOLD_INGEST_REPORT: &str = "verified_radio_threshold_report";
@@ -195,11 +200,21 @@ pub enum FileType {
     RadioThresholdReq,
     RadioThresholdIngestReport,
     VerifiedRadioThresholdIngestReport,
+    InvalidatedRadioThresholdReq,
+    InvalidatedRadioThresholdIngestReport,
+    VerifiedInvalidatedRadioThresholdIngestReport,
 }
 
 impl fmt::Display for FileType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
+            Self::InvalidatedRadioThresholdReq => INVALIDATED_RADIO_THRESHOLD_REQ,
+            Self::InvalidatedRadioThresholdIngestReport => {
+                INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT
+            }
+            Self::VerifiedInvalidatedRadioThresholdIngestReport => {
+                VERIFIED_INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT
+            }
             Self::RadioThresholdReq => RADIO_THRESHOLD_REQ,
             Self::RadioThresholdIngestReport => RADIO_THRESHOLD_INGEST_REPORT,
             Self::VerifiedRadioThresholdIngestReport => VERIFIED_RADIO_THRESHOLD_INGEST_REPORT,
@@ -254,6 +269,13 @@ impl fmt::Display for FileType {
 impl FileType {
     pub fn to_str(&self) -> &'static str {
         match self {
+            Self::InvalidatedRadioThresholdReq => INVALIDATED_RADIO_THRESHOLD_REQ,
+            Self::InvalidatedRadioThresholdIngestReport => {
+                INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT
+            }
+            Self::VerifiedInvalidatedRadioThresholdIngestReport => {
+                VERIFIED_INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT
+            }
             Self::RadioThresholdReq => RADIO_THRESHOLD_REQ,
             Self::RadioThresholdIngestReport => RADIO_THRESHOLD_INGEST_REPORT,
             Self::VerifiedRadioThresholdIngestReport => VERIFIED_RADIO_THRESHOLD_INGEST_REPORT,
@@ -308,6 +330,13 @@ impl FromStr for FileType {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         let result = match s {
+            INVALIDATED_RADIO_THRESHOLD_REQ => Self::InvalidatedRadioThresholdReq,
+            INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT => {
+                Self::InvalidatedRadioThresholdIngestReport
+            }
+            VERIFIED_INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT => {
+                Self::VerifiedInvalidatedRadioThresholdIngestReport
+            }
             RADIO_THRESHOLD_REQ => Self::RadioThresholdReq,
             RADIO_THRESHOLD_INGEST_REPORT => Self::RadioThresholdIngestReport,
             VERIFIED_RADIO_THRESHOLD_INGEST_REPORT => Self::VerifiedRadioThresholdIngestReport,
