@@ -14,7 +14,7 @@ use helium_proto::services::{
     poc_mobile::{RadioThresholdReportVerificationStatus, VerifiedRadioThresholdIngestReportV1},
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
-use sqlx::{postgres::PgRow, FromRow, PgPool, Postgres, Row, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, Row, Transaction};
 use std::{collections::HashMap, ops::Range};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
@@ -91,17 +91,24 @@ where
                 // boosted rewards prior to the data component of hip84 going live
                 // if true then it is automatically valid and assigned a status reason of Legacy
                 // TODO: remove this handling after the grandfathering period
-                let verified_report_status =
-                    match verify_legacy(&self.pool, &ingest_report.report.hotspot_pubkey, &ingest_report.report.cbsd_id).await? {
-                        true => RadioThresholdReportVerificationStatus::ThresholdReportStatusLegacyValid,
-                        false => self.verify_report(&ingest_report.report).await,
-                    };
+                let verified_report_status = match verify_legacy(
+                    &self.pool,
+                    &ingest_report.report.hotspot_pubkey,
+                    &ingest_report.report.cbsd_id,
+                )
+                .await?
+                {
+                    true => {
+                        RadioThresholdReportVerificationStatus::ThresholdReportStatusLegacyValid
+                    }
+                    false => self.verify_report(&ingest_report.report).await,
+                };
 
                 // if the report is valid then save to the db
                 // and thus available to the rewarder
                 match verified_report_status {
-                    RadioThresholdReportVerificationStatus::ThresholdReportStatusValid |
-                    RadioThresholdReportVerificationStatus::ThresholdReportStatusInvalidCarrierKey => {
+                    RadioThresholdReportVerificationStatus::ThresholdReportStatusValid
+                    | RadioThresholdReportVerificationStatus::ThresholdReportStatusLegacyValid => {
                         save(&ingest_report, &mut transaction).await?;
                     }
                     _ => {}
@@ -114,7 +121,7 @@ where
                         status: verified_report_status,
                         timestamp: Utc::now(),
                     }
-                        .into();
+                    .into();
                 self.verified_report_sink
                     .write(
                         verified_report_proto,
@@ -185,22 +192,14 @@ pub async fn save(
     Ok(())
 }
 
+#[derive(FromRow, Debug)]
 pub struct RadioThreshold {
     hotspot_pubkey: PublicKeyBinary,
     cbsd_id: Option<String>,
+    #[sqlx(try_from = "i64")]
     bytes_threshold: u64,
+    #[sqlx(try_from = "i32")]
     subscriber_threshold: u32,
-}
-
-impl FromRow<'_, PgRow> for RadioThreshold {
-    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
-        Ok(Self {
-            hotspot_pubkey: row.try_get("hotspot_pubkey")?,
-            cbsd_id: row.try_get("cbsd_id")?,
-            bytes_threshold: row.try_get::<i64, _>("bytes_threshold")? as u64,
-            subscriber_threshold: row.try_get::<i32, _>("subscriber_threshold")? as u32,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -266,7 +265,7 @@ async fn verify_legacy(
     hotspot_key: &PublicKeyBinary,
     cbsd_id: &Option<String>,
 ) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query(" select exists(select 1 from grandfathered_radio_thresholds where hotspot_key = $1 and cbsd_id = $2) ")
+    let row = sqlx::query(" select exists(select 1 from grandfathered_radio_threshold where hotspot_key = $1 and cbsd_id = $2) ")
     .bind(hotspot_key)
     .bind(cbsd_id)
     .fetch_one(pool)
