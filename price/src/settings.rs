@@ -15,8 +15,6 @@ pub struct ClusterConfig {
     pub mobile_price: Option<u64>,
     pub iot_price_key: Option<String>,
     pub iot_price: Option<u64>,
-    pub hst_price_key: Option<String>,
-    pub hst_price: Option<u64>,
 }
 
 impl Default for ClusterConfig {
@@ -29,8 +27,6 @@ impl Default for ClusterConfig {
             mobile_price: None,
             iot_price_key: None,
             iot_price: None,
-            hst_price_key: None,
-            hst_price: None,
         }
     }
 }
@@ -118,27 +114,27 @@ impl Settings {
     }
 
     pub fn price_key(&self, token_type: BlockchainTokenTypeV1) -> Result<Option<SolPubkey>> {
-        self.key(token_type)
+        self.key(token_type)?
             .as_ref()
             .map(|key| SolPubkey::from_str(key).map_err(|_| anyhow!("unable to parse {}", key)))
             .transpose()
     }
 
-    pub fn default_price(&self, token_type: BlockchainTokenTypeV1) -> Option<u64> {
+    pub fn default_price(&self, token_type: BlockchainTokenTypeV1) -> Result<Option<u64>> {
         match token_type {
-            BlockchainTokenTypeV1::Hnt => self.cluster.hnt_price,
-            BlockchainTokenTypeV1::Iot => self.cluster.iot_price,
-            BlockchainTokenTypeV1::Mobile => self.cluster.mobile_price,
-            BlockchainTokenTypeV1::Hst => self.cluster.hst_price,
+            BlockchainTokenTypeV1::Hnt => Ok(self.cluster.hnt_price),
+            BlockchainTokenTypeV1::Iot => Ok(self.cluster.iot_price),
+            BlockchainTokenTypeV1::Mobile => Ok(self.cluster.mobile_price),
+            _ => Err(anyhow::anyhow!("token type not supported")),
         }
     }
 
-    fn key(&self, token_type: BlockchainTokenTypeV1) -> &Option<String> {
+    fn key(&self, token_type: BlockchainTokenTypeV1) -> Result<&Option<String>> {
         match token_type {
-            BlockchainTokenTypeV1::Hnt => &self.cluster.hnt_price_key,
-            BlockchainTokenTypeV1::Hst => &self.cluster.hst_price_key,
-            BlockchainTokenTypeV1::Mobile => &self.cluster.mobile_price_key,
-            BlockchainTokenTypeV1::Iot => &self.cluster.iot_price_key,
+            BlockchainTokenTypeV1::Hnt => Ok(&self.cluster.hnt_price_key),
+            BlockchainTokenTypeV1::Mobile => Ok(&self.cluster.mobile_price_key),
+            BlockchainTokenTypeV1::Iot => Ok(&self.cluster.iot_price_key),
+            _ => Err(anyhow::anyhow!("token type not supported")),
         }
     }
 }
