@@ -147,8 +147,9 @@ pub async fn delete(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-            DELETE FROM radio_threshold
-            WHERE hotspot_pubkey = $1 AND cbsd_id = $2
+            UPDATE radio_threshold
+            SET threshold_met = false, updated_at = NOW(), bytes_threshold = 0, subscriber_threshold = 0
+            WHERE hotspot_pubkey = $1 AND (cbsd_id is null or cbsd_id = $2)
         "#,
     )
     .bind(ingest_report.report.hotspot_pubkey.to_string())
