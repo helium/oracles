@@ -432,7 +432,7 @@ impl HotspotPoints {
         // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
         let final_boost_info = match (
             radio_key.is_wifi() && rp.location_trust_score_multiplier < dec!(1),
-            verified_radio_thresholds.is_verified(&hotspot, cbsd_id),
+            verified_radio_thresholds.is_verified(hotspot, cbsd_id),
         ) {
             (true, _) | (_, false) => BoostedHex {
                 location: boosted_hex_info.location,

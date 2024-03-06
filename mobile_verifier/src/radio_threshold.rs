@@ -15,7 +15,7 @@ use helium_proto::services::{
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
 use sqlx::{FromRow, PgPool, Postgres, Row, Transaction};
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashSet, ops::Range};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
@@ -87,22 +87,7 @@ where
             .map(anyhow::Ok)
             .try_fold(transaction, |mut transaction, ingest_report| async move {
                 // verify the report
-                // check if the radio has been grandfathered in, meaning a radio which has received
-                // boosted rewards prior to the data component of hip84 going live
-                // if true then it is automatically valid and assigned a status reason of Legacy
-                // TODO: remove this handling after the grandfathering period
-                let verified_report_status = match verify_legacy(
-                    &self.pool,
-                    &ingest_report.report.hotspot_pubkey,
-                    &ingest_report.report.cbsd_id,
-                )
-                .await?
-                {
-                    true => {
-                        RadioThresholdReportVerificationStatus::ThresholdReportStatusLegacyValid
-                    }
-                    false => self.verify_report(&ingest_report.report).await,
-                };
+                let verified_report_status = self.verify_report(&ingest_report.report).await?;
 
                 // if the report is valid then save to the db
                 // and thus available to the rewarder
@@ -133,10 +118,29 @@ where
             .await?
             .commit()
             .await?;
+        self.verified_report_sink.commit().await?;
         Ok(())
     }
 
     async fn verify_report(
+        &self,
+        report: &RadioThresholdReportReq,
+    ) -> anyhow::Result<RadioThresholdReportVerificationStatus> {
+        let is_legacy = self
+            .verify_legacy(&report.hotspot_pubkey, &report.cbsd_id)
+            .await?;
+        let report_validity = self.do_report_verifications(report).await;
+        let final_validity = if is_legacy
+            && report_validity == RadioThresholdReportVerificationStatus::ThresholdReportStatusValid
+        {
+            RadioThresholdReportVerificationStatus::ThresholdReportStatusLegacyValid
+        } else {
+            report_validity
+        };
+        Ok(final_validity)
+    }
+
+    async fn do_report_verifications(
         &self,
         report: &RadioThresholdReportReq,
     ) -> RadioThresholdReportVerificationStatus {
@@ -155,6 +159,23 @@ where
             Ok(res) => res,
             Err(_err) => false,
         }
+    }
+
+    async fn verify_legacy(
+        &self,
+        hotspot_key: &PublicKeyBinary,
+        cbsd_id: &Option<String>,
+    ) -> Result<bool, sqlx::Error> {
+        // check if the radio has been grandfathered in, meaning a radio which has received
+        // boosted rewards prior to the data component of hip84 going live
+        // if true then it is assigned a status reason of Legacy
+        // TODO: remove this handling after the grandfathering period
+        let row = sqlx::query(" select exists(select 1 from grandfathered_radio_threshold where hotspot_key = $1 and cbsd_id = $2) ")
+        .bind(hotspot_key)
+        .bind(cbsd_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row.get("exists"))
     }
 }
 
@@ -196,46 +217,20 @@ pub async fn save(
 pub struct RadioThreshold {
     hotspot_pubkey: PublicKeyBinary,
     cbsd_id: Option<String>,
-    #[sqlx(try_from = "i64")]
-    bytes_threshold: u64,
-    #[sqlx(try_from = "i32")]
-    subscriber_threshold: u32,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct VerifiedRadioThresholds {
-    gateways: HashMap<PublicKeyBinary, RadioThresholds>,
-}
-
-#[derive(Debug, Clone, Default)]
-struct RadioThresholds {
-    // we do nothing with the map value here,
-    // we only care about the key being present
-    // but dont want to use a vec, so the value
-    // contains the threshold values, which are
-    // not currently used
-    thresholds: HashMap<Option<String>, (u64, u32)>,
+    gateways: HashSet<(PublicKeyBinary, Option<String>)>,
 }
 
 impl VerifiedRadioThresholds {
-    pub fn insert(
-        &mut self,
-        hotspot_key: PublicKeyBinary,
-        cbsd_id: Option<String>,
-        value: (u64, u32),
-    ) {
-        self.gateways
-            .entry(hotspot_key)
-            .or_default()
-            .thresholds
-            .insert(cbsd_id, value);
+    pub fn insert(&mut self, hotspot_key: PublicKeyBinary, cbsd_id: Option<String>) {
+        self.gateways.insert((hotspot_key, cbsd_id));
     }
 
-    pub fn is_verified(&self, key: &PublicKeyBinary, cbsd_id: Option<String>) -> bool {
-        self.gateways
-            .get(key)
-            .and_then(|radio_thresholds| radio_thresholds.thresholds.get(&cbsd_id))
-            .is_some()
+    pub fn is_verified(&self, key: PublicKeyBinary, cbsd_id: Option<String>) -> bool {
+        self.gateways.contains(&(key, cbsd_id))
     }
 }
 
@@ -244,31 +239,14 @@ pub async fn verified_radio_thresholds(
     reward_period: &Range<DateTime<Utc>>,
 ) -> Result<VerifiedRadioThresholds, sqlx::Error> {
     let mut rows = sqlx::query_as::<_, RadioThreshold>(
-        "SELECT hotspot_pubkey, cbsd_id, bytes_threshold, subscriber_threshold
-             FROM radio_threshold WHERE created_at >= $1",
+        "SELECT hotspot_pubkey, cbsd_id
+             FROM radio_threshold WHERE threshold_timestamp < $1",
     )
-    .bind(reward_period.start)
+    .bind(reward_period.end)
     .fetch(pool);
     let mut map = VerifiedRadioThresholds::default();
     while let Some(row) = rows.try_next().await? {
-        map.insert(
-            row.hotspot_pubkey,
-            row.cbsd_id,
-            (row.bytes_threshold, row.subscriber_threshold),
-        );
+        map.insert(row.hotspot_pubkey, row.cbsd_id);
     }
     Ok(map)
-}
-
-async fn verify_legacy(
-    pool: &sqlx::Pool<Postgres>,
-    hotspot_key: &PublicKeyBinary,
-    cbsd_id: &Option<String>,
-) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query(" select exists(select 1 from grandfathered_radio_threshold where hotspot_key = $1 and cbsd_id = $2) ")
-    .bind(hotspot_key)
-    .bind(cbsd_id)
-    .fetch_one(pool)
-    .await?;
-    Ok(row.get("exists"))
 }
