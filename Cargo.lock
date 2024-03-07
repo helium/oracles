@@ -442,7 +442,7 @@ dependencies = [
  "arrayref",
  "base64 0.13.1",
  "bincode",
- "borsh 0.9.3",
+ "borsh 0.10.3",
  "bytemuck",
  "getrandom 0.2.10",
  "solana-program",
@@ -2020,7 +2020,7 @@ version = "0.1.0"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -2610,7 +2610,7 @@ version = "0.2.1"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -2993,7 +2993,7 @@ version = "0.1.0"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -3503,7 +3503,7 @@ version = "0.1.0"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
  "circuit-breaker",
  "data-credits",
  "fanout",
@@ -3529,7 +3529,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.1.16",
+ "getrandom 0.2.10",
  "k256",
  "lazy_static",
  "multihash",
@@ -3550,7 +3550,7 @@ version = "0.2.4"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -3573,7 +3573,7 @@ version = "0.1.4"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -3612,7 +3612,7 @@ version = "0.0.2"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -4321,7 +4321,7 @@ version = "0.1.0"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -4330,7 +4330,7 @@ version = "0.2.0"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -4709,7 +4709,7 @@ version = "0.1.1"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -5409,7 +5409,7 @@ version = "0.2.1"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -5958,7 +5958,7 @@ version = "0.2.0"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -8139,7 +8139,7 @@ version = "0.2.0"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
@@ -8183,7 +8183,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
@@ -8375,7 +8375,7 @@ version = "0.3.0"
 source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang 0.26.0",
+ "anchor-lang 0.28.0",
 ]
 
 [[package]]
