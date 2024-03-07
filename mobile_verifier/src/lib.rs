@@ -5,6 +5,7 @@ pub mod coverage;
 pub mod data_session;
 pub mod geofence;
 pub mod heartbeats;
+pub mod invalidated_radio_threshold;
 pub mod radio_threshold;
 pub mod reward_shares;
 pub mod rewarder;
