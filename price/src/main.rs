@@ -103,8 +103,6 @@ impl Server {
                 .await?;
         let iot_price_generator =
             PriceGenerator::new(settings, BlockchainTokenTypeV1::Iot, price_sink.clone()).await?;
-        let hst_price_generator =
-            PriceGenerator::new(settings, BlockchainTokenTypeV1::Hst, price_sink).await?;
 
         TaskManager::builder()
             .add_task(file_upload_server)
@@ -112,7 +110,6 @@ impl Server {
             .add_task(hnt_price_generator)
             .add_task(mobile_price_generator)
             .add_task(iot_price_generator)
-            .add_task(hst_price_generator)
             .start()
             .await
     }
