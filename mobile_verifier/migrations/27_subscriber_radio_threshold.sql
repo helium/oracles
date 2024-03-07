@@ -21,4 +21,4 @@ CREATE TABLE IF NOT EXISTS grandfathered_radio_threshold (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS grandfathered_radio_thresholds_hotspot_pubkey_cbsd_id_idx ON grandfathered_radio_thresholds (hotspot_pubkey, cbsd_id) NULLS NOT DISTINCT;
+CREATE UNIQUE INDEX IF NOT EXISTS grandfathered_radio_threshold_hotspot_pubkey_cbsd_id_idx ON grandfathered_radio_threshold (hotspot_pubkey, cbsd_id) NULLS NOT DISTINCT;
