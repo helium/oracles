@@ -12,6 +12,7 @@ use helium_proto::services::{
     poc_mobile::{CoverageObjectValidity, SignalLevel},
 };
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
+
 use mobile_verifier::{
     boosting_oracles::{MockDiskTree, Urbanization},
     coverage::{
@@ -20,6 +21,7 @@ use mobile_verifier::{
     },
     geofence::GeofenceValidator,
     heartbeats::{Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate, ValidatedHeartbeat},
+    radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoveragePoints,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
@@ -499,6 +501,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -598,6 +601,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -880,6 +884,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &boosted_hexes,
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -951,6 +956,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -1049,6 +1055,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -1295,6 +1302,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
