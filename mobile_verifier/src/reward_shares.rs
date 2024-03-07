@@ -430,14 +430,16 @@ impl HotspotPoints {
         // need to consider requirements from hip93 & hip84 before applying any boost
         // hip93: if radio is wifi & location_trust score multiplier < 1, no boosting
         // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
-        let final_boost_info = if radio_key.is_wifi() && rp.location_trust_score_multiplier < dec!(1)
-            || !verified_radio_thresholds.is_verified(hotspot, cbsd_id) {
-                 BoostedHex {
-                     location: boosted_hex_info.location,
-                     multiplier: 1,
-                 }
+        let final_boost_info = if radio_key.is_wifi()
+            && rp.location_trust_score_multiplier < dec!(1)
+            || !verified_radio_thresholds.is_verified(hotspot, cbsd_id)
+        {
+            BoostedHex {
+                location: boosted_hex_info.location,
+                multiplier: 1,
+            }
         } else {
-            boosted_hex_info,
+            boosted_hex_info
         };
         rp.points += points * Decimal::from(final_boost_info.multiplier);
         rp.boosted_hexes.push(final_boost_info);
