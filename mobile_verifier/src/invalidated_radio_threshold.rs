@@ -116,6 +116,7 @@ where
             .await?
             .commit()
             .await?;
+        self.verified_report_sink.commit().await?;
         Ok(())
     }
 
@@ -147,8 +148,7 @@ pub async fn delete(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-            UPDATE radio_threshold
-            SET threshold_met = false, updated_at = NOW(), bytes_threshold = 0, subscriber_threshold = 0
+            DELETE FROM radio_threshold
             WHERE hotspot_pubkey = $1 AND (cbsd_id is null or cbsd_id = $2)
         "#,
     )
