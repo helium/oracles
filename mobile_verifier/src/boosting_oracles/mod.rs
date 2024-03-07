@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::geofence::GeofenceValidator;
 pub use assignment::Assignment;
+use sqlx::PgPool;
 pub use urbanization::Urbanization;
 use hextree::disktree::DiskTreeMap;
 
@@ -18,8 +19,26 @@ pub trait DataSet {
     fn assign(&self, hex: u64) -> Assignment;
 }
 
-pub struct DataSetDownloaderDaemon<T> {
-    data_set: T,
+pub struct DataSetDownloaderDaemon<A> {
+    pool: PgPool,
+    urbanization: A,
+    /*
+    footfall: B,
+    landtype: C,
+    */
+}
+
+impl<A> DataSetDownloaderDaemon<A> {
+    pub fn run(self) -> anyhow::Result<()> {
+        /*
+        find the next timestamp for each data set
+        insert that into the pending table,
+        wait until the given time and then download that file
+        update the data sets
+         */
+
+        Ok(())
+    }
 }
 
 pub trait DiskTreeLike: Send + Sync + 'static {
