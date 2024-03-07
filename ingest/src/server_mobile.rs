@@ -14,11 +14,11 @@ use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
-    InvalidatedRadioThresholdReportReqV1, InvalidatedRadioThresholdReportRespV1,
-    RadioThresholdIngestReportV1, RadioThresholdReportReqV1, RadioThresholdReportRespV1,
-    SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
-    SubscriberLocationReqV1, SubscriberLocationRespV1, WifiHeartbeatIngestReportV1,
-    WifiHeartbeatReqV1, WifiHeartbeatRespV1,
+    InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
+    InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
+    RadioThresholdReportRespV1, SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1,
+    SubscriberLocationIngestReportV1, SubscriberLocationReqV1, SubscriberLocationRespV1,
+    WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1, WifiHeartbeatRespV1,
 };
 use std::{net::SocketAddr, path::Path};
 use task_manager::{ManagedTask, TaskManager};
@@ -39,6 +39,7 @@ pub struct GrpcServer {
     data_transfer_session_sink: FileSinkClient,
     subscriber_location_report_sink: FileSinkClient,
     radio_threshold_report_sink: FileSinkClient,
+    invalidated_radio_threshold_report_sink: FileSinkClient,
     coverage_object_report_sink: FileSinkClient,
     required_network: Network,
     address: SocketAddr,
@@ -254,9 +255,37 @@ impl poc_mobile::PocMobile for GrpcServer {
 
     async fn submit_invalidated_threshold_report(
         &self,
-        _request: Request<InvalidatedRadioThresholdReportReqV1>,
+        request: Request<InvalidatedRadioThresholdReportReqV1>,
     ) -> GrpcResult<InvalidatedRadioThresholdReportRespV1> {
         let timestamp = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+        let hotspot_pubkey = event.hotspot_pubkey.clone();
+        let cbsd_id = event.cbsd_id.clone();
+        let invalidated_timestamp = event.timestamp;
+
+        let report = self
+            .verify_public_key(event.carrier_pub_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| InvalidatedRadioThresholdIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(event),
+            })
+            .map_err(|status| {
+                tracing::debug!(
+                    hotspot_pubkey = ?hotspot_pubkey,
+                    cbsd_id = ?cbsd_id,
+                    invalidated_timestamp = %invalidated_timestamp,
+                    status = %status
+                );
+                status
+            })?;
+
+        _ = self
+            .invalidated_radio_threshold_report_sink
+            .write(report, [])
+            .await;
+
         Ok(Response::new(InvalidatedRadioThresholdReportRespV1 {
             id: timestamp.to_string(),
         }))
@@ -362,6 +391,20 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .create()
         .await?;
 
+    let (invalidated_radio_threshold_report_sink, invalidated_radio_threshold_report_sink_server) =
+        file_sink::FileSinkBuilder::new(
+            FileType::InvalidatedRadioThresholdIngestReport,
+            store_base_path,
+            concat!(
+                env!("CARGO_PKG_NAME"),
+                "_invalidated_radio_threshold_ingest_report"
+            ),
+        )
+        .file_upload(Some(file_upload.clone()))
+        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .create()
+        .await?;
+
     let (coverage_object_report_sink, coverage_object_report_sink_server) =
         file_sink::FileSinkBuilder::new(
             FileType::CoverageObjectIngestReport,
@@ -388,6 +431,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         data_transfer_session_sink,
         subscriber_location_report_sink,
         radio_threshold_report_sink,
+        invalidated_radio_threshold_report_sink,
         coverage_object_report_sink,
         required_network: settings.network,
         address: grpc_addr,
@@ -407,6 +451,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(data_transfer_session_sink_server)
         .add_task(subscriber_location_report_sink_server)
         .add_task(radio_threshold_report_sink_server)
+        .add_task(invalidated_radio_threshold_report_sink_server)
         .add_task(coverage_object_report_sink_server)
         .add_task(grpc_server)
         .start()
