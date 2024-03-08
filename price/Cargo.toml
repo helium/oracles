@@ -32,4 +32,3 @@ triggered = {workspace = true}
 solana-client = {workspace = true}
 solana-sdk = {workspace = true}
 task-manager = {path = "../task_manager"}
-anchor-lang = {workspace = true}

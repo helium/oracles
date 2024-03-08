@@ -1,6 +1,8 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
-use anchor_client::{RequestBuilder, RequestNamespace};
-use anchor_lang::{InstructionData, ToAccountMetas};
+use anchor_client::{
+    anchor_lang::{InstructionData, ToAccountMetas},
+    RequestBuilder, RequestNamespace,
+};
 use async_trait::async_trait;
 use file_store::hex_boost::BoostedHexActivation;
 use helium_anchor_gen::hexboosting::{self, accounts, instruction};
