@@ -31,7 +31,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [workspace.dependencies]
-anchor-client = "0.27.0"
+anchor-client = "0.28.0"
 anyhow = {version = "1", features = ["backtrace"]}
 bs58 = {version = "0.4", features=["check"]}
 thiserror = "1"
