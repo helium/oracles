@@ -92,7 +92,6 @@ config = {version="0", default-features=false, features=["toml"]}
 h3o = {version = "0", features = ["serde"]}
 xorf = {version = "0", features = ["serde"] }
 bytes = "*"
-structopt = "0"
 bincode = "1"
 twox-hash = "1"
 async-trait = "*"
