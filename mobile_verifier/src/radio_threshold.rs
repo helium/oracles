@@ -194,7 +194,7 @@ pub async fn save(
             threshold_met,
             recv_timestamp)
             VALUES ($1, $2, $3, $4, $5, true, $6)
-            ON CONFLICT (hotspot_pubkey, cbsd_id)
+            ON CONFLICT (hotspot_pubkey, COALESCE(cbsd_id, ''))
             DO UPDATE SET
             bytes_threshold = EXCLUDED.bytes_threshold,
             subscriber_threshold = EXCLUDED.subscriber_threshold,
