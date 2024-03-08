@@ -1,5 +1,5 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
-use anchor_client::{RequestBuilder, RequestNamespace};
+use anchor_client::RequestBuilder;
 use async_trait::async_trait;
 use helium_anchor_gen::{
     anchor_lang::AccountDeserialize,
@@ -167,7 +167,6 @@ impl SolanaNetwork for SolanaRpc {
                 &self.cluster,
                 std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
                 Some(CommitmentConfig::confirmed()),
-                RequestNamespace::Global,
             );
 
             let accounts = accounts::BurnDelegatedDataCreditsV0 {
