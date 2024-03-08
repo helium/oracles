@@ -170,7 +170,7 @@ where
         // boosted rewards prior to the data component of hip84 going live
         // if true then it is assigned a status reason of Legacy
         // TODO: remove this handling after the grandfathering period
-        let row = sqlx::query(" select exists(select 1 from grandfathered_radio_threshold where hotspot_key = $1 and cbsd_id = $2) ")
+        let row = sqlx::query(" select exists(select 1 from grandfathered_radio_threshold where hotspot_pubkey = $1 and (cbsd_id is null or cbsd_id = $2)) ")
         .bind(hotspot_key)
         .bind(cbsd_id)
         .fetch_one(&self.pool)
@@ -194,7 +194,7 @@ pub async fn save(
             threshold_met,
             recv_timestamp)
             VALUES ($1, $2, $3, $4, $5, true, $6)
-            ON CONFLICT (hotspot_pubkey, cbsd_id)
+            ON CONFLICT (hotspot_pubkey, COALESCE(cbsd_id, ''))
             DO UPDATE SET
             bytes_threshold = EXCLUDED.bytes_threshold,
             subscriber_threshold = EXCLUDED.subscriber_threshold,
