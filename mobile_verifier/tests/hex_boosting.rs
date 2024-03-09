@@ -1450,7 +1450,7 @@ async fn seed_radio_thresholds(
         received_timestamp: Default::default(),
         report: RadioThresholdReportReq {
             hotspot_pubkey: HOTSPOT_1.parse().unwrap(),
-            cbsd_id: None,
+            cbsd_id: Some("".to_string()),
             bytes_threshold: 1000000,
             subscriber_threshold: 3,
             threshold_timestamp: ts,
@@ -1472,7 +1472,7 @@ async fn seed_radio_thresholds(
         received_timestamp: Default::default(),
         report: RadioThresholdReportReq {
             hotspot_pubkey: HOTSPOT_3.parse().unwrap(),
-            cbsd_id: None,
+            cbsd_id: Some("".to_string()),
             bytes_threshold: 1000000,
             subscriber_threshold: 3,
             threshold_timestamp: ts,

@@ -247,7 +247,7 @@ pub async fn verified_radio_thresholds(
     .fetch(pool);
     let mut map = VerifiedRadioThresholds::default();
     while let Some(row) = rows.try_next().await? {
-        map.insert(row.hotspot_pubkey, row.cbsd_id);
+        map.insert(row.hotspot_pubkey, row.cbsd_id.filter(|s| !s.is_empty()));
     }
     Ok(map)
 }
