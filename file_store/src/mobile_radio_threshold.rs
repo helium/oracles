@@ -50,7 +50,7 @@ impl TryFrom<RadioThresholdReportReqV1> for RadioThresholdReportReq {
     type Error = Error;
     fn try_from(v: RadioThresholdReportReqV1) -> Result<Self> {
         Ok(Self {
-            cbsd_id: v.cbsd_id.parse().ok(),
+            cbsd_id: Some(v.cbsd_id).filter(|s| !s.is_empty()),
             hotspot_pubkey: v.hotspot_pubkey.into(),
             bytes_threshold: v.bytes_threshold,
             subscriber_threshold: v.subscriber_threshold,
