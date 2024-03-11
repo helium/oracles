@@ -31,8 +31,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [workspace.dependencies]
-anchor-lang = "0.26.0"
-anchor-client = "0.26"
+anchor-client = "0.29.0"
 anyhow = {version = "1", features = ["backtrace"]}
 bs58 = {version = "0.4", features=["check"]}
 thiserror = "1"
@@ -92,7 +91,6 @@ config = {version="0", default-features=false, features=["toml"]}
 h3o = {version = "0", features = ["serde"]}
 xorf = {version = "0", features = ["serde"] }
 bytes = "*"
-structopt = "0"
 bincode = "1"
 twox-hash = "1"
 async-trait = "*"

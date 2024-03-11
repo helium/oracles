@@ -9,8 +9,6 @@ license.workspace = true
 
 [dependencies]
 anyhow = {workspace = true}
-anchor-lang = "0.28"
-anchor-spl = "0.28"
 axum = {version = "0", features = ["tracing"]}
 bs58 = {workspace = true}
 config = {workspace = true}
