@@ -41,3 +41,46 @@ flowchart TD
     MV -- S3 --> MRI
     MRI --> DB2
 ```
+
+## IOT
+
+```mermaid
+flowchart TD
+    DB1[(Foundation owned db populated by helius)]
+    IC("`**IOT Config**
+        - Provides access to on-chain data
+        - Stores pubkeys for remote systems
+        - Store orgs and routes used by Helium Packet Router
+    `")
+    HPR("`**Helium Packet Router**
+        - Ingest packets from Hotspots
+        - Deliver packets to LNS
+    `")
+    IPV("`**IOT Packet Verifier**
+        - Burns DC for data transfer (on solana)
+    `")
+    II("`**IOT Ingestor**
+        - Beacons
+        - Wtinesses
+        - Long lived grpc streams
+    `")
+    IV("`**IOT Verifier**
+        - Validates all incoming data 
+        - Calculates rewards at 01:30 UTC
+    `")
+    IE("`**IOT Entropy**
+        - Creates entropy used by gateways and iot-verifier
+    `")
+    IRE("`**IOT Reward Index**
+        - Writes rewards to foundation db
+    `")
+    DB2[(Foundation owned db that stores reward totals)]
+    DB1 --> IC
+    IC -- gRPC --> HPR
+    HPR -- s3 --> IPV
+    II -- s3 --> IV
+    IPV -- s3 --> IV
+    IE -- s3 --> IV
+    IV -- s3 --> IRE
+    IRE --> DB2
+```
