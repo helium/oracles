@@ -118,11 +118,7 @@ fn signal_level(hex: &str, signal_level: SignalLevel) -> anyhow::Result<RadioHex
 }
 
 fn hex_cell(loc: &str) -> hextree::Cell {
-    hextree::Cell::from_raw(hex_u64(loc)).unwrap()
-}
-
-fn hex_u64(loc: &str) -> u64 {
-    u64::from_str_radix(loc, 16).unwrap()
+    hextree::Cell::from_raw(u64::from_str_radix(loc, 16).unwrap()).unwrap()
 }
 
 #[sqlx::test]
@@ -207,12 +203,12 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     };
 
     let mut footfall = HashMap::new();
-    footfall.insert(hex_u64(&hex1.location), true);
-    footfall.insert(hex_u64(&hex2.location), true);
-    footfall.insert(hex_u64(&hex3.location), true);
-    footfall.insert(hex_u64(&hex4.location), false);
-    footfall.insert(hex_u64(&hex5.location), false);
-    footfall.insert(hex_u64(&hex6.location), false);
+    footfall.insert(hex_cell(&hex1.location), true);
+    footfall.insert(hex_cell(&hex2.location), true);
+    footfall.insert(hex_cell(&hex3.location), true);
+    footfall.insert(hex_cell(&hex4.location), false);
+    footfall.insert(hex_cell(&hex5.location), false);
+    footfall.insert(hex_cell(&hex6.location), false);
 
     let mut urbanized = HashMap::<hextree::Cell, Vec<u8>>::new();
     urbanized.insert(hex_cell(&hex1.location), vec![]);
@@ -220,12 +216,12 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     urbanized.insert(hex_cell(&hex7.location), vec![]);
 
     let mut geofence = HashSet::new();
-    geofence.insert(hex_u64(&hex1.location));
-    geofence.insert(hex_u64(&hex2.location));
-    geofence.insert(hex_u64(&hex4.location));
-    geofence.insert(hex_u64(&hex5.location));
-    geofence.insert(hex_u64(&hex7.location));
-    geofence.insert(hex_u64(&hex8.location));
+    geofence.insert(hex_cell(&hex1.location));
+    geofence.insert(hex_cell(&hex2.location));
+    geofence.insert(hex_cell(&hex4.location));
+    geofence.insert(hex_cell(&hex5.location));
+    geofence.insert(hex_cell(&hex7.location));
+    geofence.insert(hex_cell(&hex8.location));
 
     let mut transaction = pool.begin().await?;
     CoverageObject {
@@ -342,12 +338,12 @@ async fn test_footfall_and_urbanization(pool: PgPool) -> anyhow::Result<()> {
     };
 
     let mut footfall = HashMap::new();
-    footfall.insert(hex_u64(&hex1.location), true);
-    footfall.insert(hex_u64(&hex2.location), true);
-    footfall.insert(hex_u64(&hex3.location), true);
-    footfall.insert(hex_u64(&hex4.location), false);
-    footfall.insert(hex_u64(&hex5.location), false);
-    footfall.insert(hex_u64(&hex6.location), false);
+    footfall.insert(hex_cell(&hex1.location), true);
+    footfall.insert(hex_cell(&hex2.location), true);
+    footfall.insert(hex_cell(&hex3.location), true);
+    footfall.insert(hex_cell(&hex4.location), false);
+    footfall.insert(hex_cell(&hex5.location), false);
+    footfall.insert(hex_cell(&hex6.location), false);
 
     let mut urbanized = HashMap::<hextree::Cell, Vec<u8>>::new();
     urbanized.insert(hex_cell(&hex1.location), vec![]);
@@ -355,12 +351,12 @@ async fn test_footfall_and_urbanization(pool: PgPool) -> anyhow::Result<()> {
     urbanized.insert(hex_cell(&hex7.location), vec![]);
 
     let mut geofence = HashSet::new();
-    geofence.insert(hex_u64(&hex1.location));
-    geofence.insert(hex_u64(&hex2.location));
-    geofence.insert(hex_u64(&hex4.location));
-    geofence.insert(hex_u64(&hex5.location));
-    geofence.insert(hex_u64(&hex7.location));
-    geofence.insert(hex_u64(&hex8.location));
+    geofence.insert(hex_cell(&hex1.location));
+    geofence.insert(hex_cell(&hex2.location));
+    geofence.insert(hex_cell(&hex4.location));
+    geofence.insert(hex_cell(&hex5.location));
+    geofence.insert(hex_cell(&hex7.location));
+    geofence.insert(hex_cell(&hex8.location));
 
     let mut transaction = pool.begin().await?;
     CoverageObject {

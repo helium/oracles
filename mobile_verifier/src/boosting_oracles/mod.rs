@@ -47,16 +47,15 @@ impl<DT, GF> UrbanizationData<DT, GF> {
 impl<DT, GF> UrbanizationData<DT, GF>
 where
     DT: DiskTreeLike,
-    GF: GeofenceValidator<u64>,
+    GF: GeofenceValidator<hextree::Cell>,
 {
-    fn is_urbanized(&self, location: u64) -> anyhow::Result<bool> {
-        let cell = hextree::Cell::from_raw(location)?;
+    fn is_urbanized(&self, cell: hextree::Cell) -> anyhow::Result<bool> {
         let result = self.urbanized.get(cell)?;
         Ok(result.is_some())
     }
 
-    pub fn hex_assignment(&self, hex: u64) -> anyhow::Result<Assignment> {
-        let assignment = if self.usa_geofence.in_valid_region(&hex) {
+    pub fn hex_assignment(&self, hex: &hextree::Cell) -> anyhow::Result<Assignment> {
+        let assignment = if self.usa_geofence.in_valid_region(hex) {
             if self.is_urbanized(hex)? {
                 Assignment::A
             } else {
@@ -71,7 +70,7 @@ where
 
 #[derive(Default)]
 pub struct FootfallData {
-    values: HashMap<u64, bool>,
+    values: HashMap<hextree::Cell, bool>,
 }
 
 impl FootfallData {
@@ -79,12 +78,12 @@ impl FootfallData {
         Self::default()
     }
 
-    pub fn with_values(values: HashMap<u64, bool>) -> Self {
+    pub fn with_values(values: HashMap<hextree::Cell, bool>) -> Self {
         Self { values }
     }
 
-    pub fn hex_assignment(&self, cell: u64) -> anyhow::Result<Assignment> {
-        match self.values.get(&cell) {
+    pub fn hex_assignment(&self, cell: &hextree::Cell) -> anyhow::Result<Assignment> {
+        match self.values.get(cell) {
             Some(true) => Ok(Assignment::A),
             Some(false) => Ok(Assignment::B),
             None => Ok(Assignment::C),

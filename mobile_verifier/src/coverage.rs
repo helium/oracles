@@ -82,7 +82,7 @@ pub struct CoverageDaemon<DT, GF> {
 impl<DT, GF> CoverageDaemon<DT, GF>
 where
     DT: DiskTreeLike,
-    GF: GeofenceValidator<u64>,
+    GF: GeofenceValidator<hextree::Cell>,
 {
     pub async fn new(
         pool: PgPool,
@@ -217,7 +217,7 @@ impl UnassignedHex {
 pub async fn set_oracle_boosting_assignments<'a>(
     unassigned_urbinization_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
     footfall_data: &FootfallData,
-    urbanization_data: &UrbanizationData<impl DiskTreeLike, impl GeofenceValidator<u64>>,
+    urbanization_data: &UrbanizationData<impl DiskTreeLike, impl GeofenceValidator<hextree::Cell>>,
     pool: &'a PgPool,
 ) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
     let now = Utc::now();
@@ -244,7 +244,7 @@ pub async fn set_oracle_boosting_assignments<'a>(
 async fn initialize_unassigned_hexes(
     unassigned_urbinization_hexes: impl Stream<Item = Result<UnassignedHex, sqlx::Error>>,
     footfall_data: &FootfallData,
-    urbanization_data: &UrbanizationData<impl DiskTreeLike, impl GeofenceValidator<u64>>,
+    urbanization_data: &UrbanizationData<impl DiskTreeLike, impl GeofenceValidator<hextree::Cell>>,
     pool: &Pool<Postgres>,
 ) -> Result<HashMap<Uuid, Vec<proto::OracleBoostingHexAssignment>>, anyhow::Error> {
     const NUMBER_OF_FIELDS_IN_QUERY: u16 = 6;
@@ -259,8 +259,9 @@ async fn initialize_unassigned_hexes(
         let hexes: anyhow::Result<Vec<_>> = hexes
             .into_iter()
             .map(|hex| {
-                let urbanized = urbanization_data.hex_assignment(hex.hex)?;
-                let footfall = footfall_data.hex_assignment(hex.hex)?;
+                let cell = hextree::Cell::from_raw(hex.hex)?;
+                let urbanized = urbanization_data.hex_assignment(&cell)?;
+                let footfall = footfall_data.hex_assignment(&cell)?;
                 let location = hex.to_location_string();
                 let assignment_multiplier =
                     (footfall_and_urbanization_multiplier(footfall, urbanized) * dec!(1000))
@@ -309,7 +310,7 @@ async fn initialize_unassigned_hexes(
 impl<DT, GF> ManagedTask for CoverageDaemon<DT, GF>
 where
     DT: DiskTreeLike,
-    GF: GeofenceValidator<u64>,
+    GF: GeofenceValidator<hextree::Cell>,
 {
     fn start_task(
         self: Box<Self>,
