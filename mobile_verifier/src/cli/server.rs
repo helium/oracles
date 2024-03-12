@@ -1,9 +1,16 @@
+use std::sync::Arc;
+
 use crate::{
-    boosting_oracles::Urbanization, coverage::CoverageDaemon, data_session::DataSessionIngestor,
-    geofence::Geofence, heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
-    heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon, rewarder::Rewarder,
-    speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
-    Settings,
+    boosting_oracles::{CheckForNewDataSetDaemon, DataSetDownloaderDaemon, Urbanization},
+    coverage::CoverageDaemon,
+    data_session::DataSessionIngestor,
+    geofence::Geofence,
+    heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
+    heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon,
+    rewarder::Rewarder,
+    speedtests::SpeedtestDaemon,
+    subscriber_location::SubscriberLocationIngestor,
+    telemetry, Settings,
 };
 use anyhow::Result;
 use chrono::Duration;
@@ -14,13 +21,13 @@ use file_store::{
     speedtest::CellSpeedtestIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport, FileStore,
     FileType,
 };
-use hextree::disktree::DiskTreeMap;
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
     CarrierServiceClient, GatewayClient,
 };
 use price::PriceTracker;
 use task_manager::TaskManager;
+use tokio::sync::Mutex;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
@@ -210,18 +217,31 @@ impl Cmd {
             .create()
             .await?;
 
-        let disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
-        let urbanization = Urbanization::new(disktree, usa_geofence);
+        let urbanization = Arc::new(Mutex::new(Urbanization::new(usa_geofence)));
 
         let coverage_daemon = CoverageDaemon::new(
             pool.clone(),
             auth_client.clone(),
-            urbanization,
+            urbanization.clone(),
             coverage_objs,
             valid_coverage_objs,
-            oracle_boosting_reports,
+            oracle_boosting_reports.clone(),
         )
         .await?;
+
+        // Data sets and downloaders
+        let data_sets_file_store = FileStore::from_settings(&settings.data_sets).await?;
+        let data_set_downloader = DataSetDownloaderDaemon::new(
+            pool.clone(),
+            urbanization.clone(),
+            data_sets_file_store.clone(),
+            oracle_boosting_reports,
+        );
+        let check_for_urbanization_data_sets = CheckForNewDataSetDaemon::new(
+            pool.clone(),
+            data_sets_file_store,
+            crate::boosting_oracles::DataSetType::Urbanization,
+        );
 
         // Mobile rewards
         let reward_period_hours = settings.rewards;
@@ -323,6 +343,8 @@ impl Cmd {
             .add_task(rewarder)
             .add_task(subscriber_location_ingest_server)
             .add_task(data_session_ingestor)
+            .add_task(data_set_downloader)
+            .add_task(check_for_urbanization_data_sets)
             .start()
             .await
     }

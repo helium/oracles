@@ -3,6 +3,7 @@ use crate::{
     file_source,
     heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     iot_packet::IotValidPacket,
+    mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
     mobile_session::{DataTransferSessionIngestReport, InvalidDataTransferIngestReport},
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
@@ -317,6 +318,14 @@ impl Cmd {
                         "carrier_pub_key": report.report.report.carrier_pub_key,
                         "status": report.status,
                         "recv_timestamp": report.report.received_timestamp}))?;
+                }
+                FileType::VerifiedRadioThresholdIngestReport => {
+                    let report = VerifiedRadioThresholdIngestReport::decode(msg)?;
+                    print_json(&json!({
+                        "hotspot_pubkey": report.report.report.hotspot_pubkey,
+                        "cbsd_id": report.report.report.cbsd_id,
+                        "status": report.status,
+                    }))?;
                 }
                 _ => (),
             }

@@ -1,6 +1,7 @@
 use crate::{
     boosting_oracles::{
-        assignment::urbanization_multiplier, Assignment, DiskTreeLike, Urbanization,
+        assignment::urbanization_multiplier, set_oracle_boosting_assignments, Assignment,
+        DiskTreeLike, UnassignedHex, Urbanization,
     },
     geofence::GeofenceValidator,
     heartbeats::{HbType, KeyType, OwnedKeyType},
@@ -21,17 +22,14 @@ use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
-    poc_mobile::{
-        self as proto, CoverageObjectValidity, OracleBoostingReportV1,
-        SignalLevel as SignalLevelProto,
-    },
+    poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
 use mobile_config::{
     boosted_hex_info::{BoostedHex, BoostedHexes},
     client::AuthorizationClient,
 };
 use retainer::{entry::CacheReadGuard, Cache};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
 use std::{
@@ -42,7 +40,7 @@ use std::{
     time::Instant,
 };
 use task_manager::ManagedTask;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::{mpsc::Receiver, Mutex};
 use uuid::Uuid;
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
@@ -69,9 +67,8 @@ impl From<SignalLevelProto> for SignalLevel {
 pub struct CoverageDaemon<DT, GF> {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
-    urbanization: Urbanization<DT, GF>,
+    urbanization: Arc<Mutex<Urbanization<DT, GF>>>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-    initial_boosting_reports: Option<Vec<OracleBoostingReportV1>>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
 }
@@ -84,20 +81,11 @@ where
     pub async fn new(
         pool: PgPool,
         auth_client: AuthorizationClient,
-        urbanization: Urbanization<DT, GF>,
+        urbanization: Arc<Mutex<Urbanization<DT, GF>>>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
         oracle_boosting_sink: FileSinkClient,
     ) -> anyhow::Result<Self> {
-        tracing::info!("Setting initial values for the urbanization column");
-
-        let unassigned_hexes = UnassignedHex::fetch(&pool);
-        let initial_boosting_reports = Some(
-            set_oracle_boosting_assignments(unassigned_hexes, &urbanization, &pool)
-                .await?
-                .collect(),
-        );
-
         Ok(Self {
             pool,
             auth_client,
@@ -105,20 +93,10 @@ where
             coverage_objs,
             coverage_obj_sink,
             oracle_boosting_sink,
-            initial_boosting_reports,
         })
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        let Some(initial_boosting_reports) = std::mem::take(&mut self.initial_boosting_reports)
-        else {
-            anyhow::bail!("Initial boosting reports is None");
-        };
-        self.oracle_boosting_sink
-            .write_all(initial_boosting_reports)
-            .await?;
-        self.oracle_boosting_sink.commit().await?;
-
         loop {
             #[rustfmt::skip]
             tokio::select! {
@@ -161,12 +139,15 @@ where
         self.coverage_obj_sink.commit().await?;
         transaction.commit().await?;
 
-        // After writing all of the coverage objects, we set their oracle boosting assignments. This is
-        // done in two steps to improve the testability of the assignments.
-        let unassigned_hexes = UnassignedHex::fetch(&self.pool);
+        // After writing all of the coverage objects, we set their oracle boosting assignments.
+        // If the urbanized data set is not ready, we leave everything as NULL.
+        let urbanization = self.urbanization.lock().await;
+        if !urbanization.is_ready() {
+            return Ok(());
+        }
+        let unassigned_hexes = UnassignedHex::fetch_unassigned(&self.pool);
         let boosting_reports =
-            set_oracle_boosting_assignments(unassigned_hexes, &self.urbanization, &self.pool)
-                .await?;
+            set_oracle_boosting_assignments(unassigned_hexes, &*urbanization, &self.pool).await?;
         self.oracle_boosting_sink
             .write_all(boosting_reports)
             .await?;
@@ -176,6 +157,7 @@ where
     }
 }
 
+/*
 #[derive(FromRow)]
 pub struct UnassignedHex {
     uuid: Uuid,
@@ -257,6 +239,7 @@ pub async fn set_oracle_boosting_assignments<'a>(
             },
         ))
 }
+*/
 
 impl<DT, GF> ManagedTask for CoverageDaemon<DT, GF>
 where

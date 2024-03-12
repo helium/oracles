@@ -1,7 +1,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -20,6 +20,7 @@ pub struct Settings {
     pub ingest: file_store::Settings,
     pub data_transfer_ingest: file_store::Settings,
     pub output: file_store::Settings,
+    pub data_sets: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     pub price_tracker: price::price_tracker::Settings,
     pub config_client: mobile_config::ClientSettings,
@@ -42,7 +43,6 @@ pub struct Settings {
     pub usa_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
     pub usa_fencing_resolution: u8,
-    pub urbanization_data_set: PathBuf,
 }
 
 fn default_fencing_resolution() -> u8 {

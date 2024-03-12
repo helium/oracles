@@ -9,11 +9,8 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{CoverageObjectValidity, SignalLevel};
 use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
-    boosting_oracles::Urbanization,
-    coverage::{
-        set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
-        CoverageObjectCache, Seniority, UnassignedHex,
-    },
+    boosting_oracles::{set_oracle_boosting_assignments, UnassignedHex, Urbanization},
+    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
     heartbeats::{Heartbeat, HeartbeatReward, SeniorityUpdate, ValidatedHeartbeat},
     reward_shares::CoveragePoints,
@@ -162,8 +159,8 @@ async fn test_urbanization(pool: PgPool) -> anyhow::Result<()> {
     .await?;
     transaction.commit().await?;
 
-    let urbanization = Urbanization::new(urbanized, geofence);
-    let unassigned_hexes = UnassignedHex::fetch(&pool);
+    let urbanization = Urbanization::new_mock(urbanized, geofence);
+    let unassigned_hexes = UnassignedHex::fetch_unassigned(&pool);
     let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, &pool).await?;
 
     let heartbeats = heartbeats(12, start, &owner, &cbsd_id, 0.0, 0.0, uuid);
