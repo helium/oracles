@@ -260,8 +260,8 @@ async fn initialize_unassigned_hexes(
             .into_iter()
             .map(|hex| {
                 let cell = hextree::Cell::from_raw(hex.hex)?;
-                let urbanized = urbanization_data.hex_assignment(&cell)?;
-                let footfall = footfall_data.hex_assignment(&cell)?;
+                let urbanized = urbanization_data.hex_assignment(cell)?;
+                let footfall = footfall_data.hex_assignment(cell)?;
                 let location = hex.to_location_string();
                 let assignment_multiplier =
                     (footfall_and_urbanization_multiplier(footfall, urbanized) * dec!(1000))
