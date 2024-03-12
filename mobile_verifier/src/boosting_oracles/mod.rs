@@ -68,25 +68,46 @@ where
     }
 }
 
-#[derive(Default)]
-pub struct FootfallData {
-    values: HashMap<hextree::Cell, bool>,
+
+
+pub trait FootfallLike: Send + Sync + 'static {
+    fn get(&self, cell: hextree::Cell) -> Option<bool>;
 }
 
-impl FootfallData {
-    pub fn new() -> Self {
-        Self::default()
-    }
+#[derive(Default)]
+pub struct FootfallData<FL> {
+    values: FL
+}
 
-    pub fn with_values(values: HashMap<hextree::Cell, bool>) -> Self {
+impl<FL> FootfallData<FL> where FL: FootfallLike {
+    pub fn new(values: FL) -> Self {
         Self { values }
     }
 
     pub fn hex_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        match self.values.get(&cell) {
+        match self.values.get(cell) {
             Some(true) => Ok(Assignment::A),
             Some(false) => Ok(Assignment::B),
             None => Ok(Assignment::C),
         }
     }
 }
+
+impl FootfallLike for HashMap<hextree::Cell, bool> {
+    fn get(&self, cell: hextree::Cell) -> Option<bool> {
+        self.get(&cell).cloned()
+    }
+}
+
+
+pub struct MockFootfallData;
+
+impl FootfallLike for MockFootfallData {
+    fn get(&self, _cell: hextree::Cell) -> Option<bool> {
+        Some(true)
+    }
+}
+
+
+
+

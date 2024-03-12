@@ -17,7 +17,7 @@ use mobile_config::{
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
 use mobile_verifier::{
-    boosting_oracles::{FootfallData, MockDiskTree, UrbanizationData},
+    boosting_oracles::{FootfallData, MockDiskTree, MockFootfallData, UrbanizationData},
     cell_type::CellType,
     coverage::{set_oracle_boosting_assignments, CoverageObject, UnassignedHex},
     data_session,
@@ -305,7 +305,7 @@ async fn seed_heartbeats(
 }
 
 async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
-    let footfall_data = FootfallData::new();
+    let footfall_data = FootfallData::new(MockFootfallData);
     let urbanization_data = UrbanizationData::new(MockDiskTree, MockGeofence);
     let unassigned_hexes = UnassignedHex::fetch(pool);
     let _ =
