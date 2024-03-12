@@ -54,8 +54,8 @@ where
         Ok(result.is_some())
     }
 
-    pub fn hex_assignment(&self, hex: &hextree::Cell) -> anyhow::Result<Assignment> {
-        let assignment = if self.usa_geofence.in_valid_region(hex) {
+    pub fn hex_assignment(&self, hex: hextree::Cell) -> anyhow::Result<Assignment> {
+        let assignment = if self.usa_geofence.in_valid_region(&hex) {
             if self.is_urbanized(hex)? {
                 Assignment::A
             } else {
@@ -82,8 +82,8 @@ impl FootfallData {
         Self { values }
     }
 
-    pub fn hex_assignment(&self, cell: &hextree::Cell) -> anyhow::Result<Assignment> {
-        match self.values.get(cell) {
+    pub fn hex_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        match self.values.get(&cell) {
             Some(true) => Ok(Assignment::A),
             Some(false) => Ok(Assignment::B),
             None => Ok(Assignment::C),
