@@ -18,7 +18,7 @@ use mobile_config::{
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
 use mobile_verifier::{
-    boosting_oracles::{MockDiskTree, Urbanization},
+    boosting_oracles::{FootfallData, MockDiskTree, UrbanizationData},
     cell_type::CellType,
     coverage::{set_oracle_boosting_assignments, CoverageObject, UnassignedHex},
     geofence::GeofenceValidator,
@@ -72,9 +72,12 @@ impl GeofenceValidator<u64> for MockGeofence {
 }
 
 async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
-    let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
+    let footfall_data = FootfallData::new();
+    let urbanization_data = UrbanizationData::new(MockDiskTree, MockGeofence);
     let unassigned_hexes = UnassignedHex::fetch(pool);
-    let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, pool).await?;
+    let _ =
+        set_oracle_boosting_assignments(unassigned_hexes, &footfall_data, &urbanization_data, pool)
+            .await?;
     Ok(())
 }
 

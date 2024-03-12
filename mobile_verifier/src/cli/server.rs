@@ -1,10 +1,16 @@
 use crate::{
-    boosting_oracles::Urbanization, coverage::CoverageDaemon, data_session::DataSessionIngestor,
-    geofence::Geofence, heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
+    boosting_oracles::{FootfallData, UrbanizationData},
+    coverage::CoverageDaemon,
+    data_session::DataSessionIngestor,
+    geofence::Geofence,
+    heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
     heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon,
     invalidated_radio_threshold::InvalidatedRadioThresholdIngestor,
-    radio_threshold::RadioThresholdIngestor, rewarder::Rewarder, speedtests::SpeedtestDaemon,
-    subscriber_location::SubscriberLocationIngestor, telemetry, Settings,
+    radio_threshold::RadioThresholdIngestor,
+    rewarder::Rewarder,
+    speedtests::SpeedtestDaemon,
+    subscriber_location::SubscriberLocationIngestor,
+    telemetry, Settings,
 };
 use anyhow::Result;
 use chrono::Duration;
@@ -214,12 +220,14 @@ impl Cmd {
             .await?;
 
         let disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
-        let urbanization = Urbanization::new(disktree, usa_geofence);
+        let urbanization_data = UrbanizationData::new(disktree, usa_geofence);
+        let footfall_data = FootfallData::new();
 
         let coverage_daemon = CoverageDaemon::new(
             pool.clone(),
             auth_client.clone(),
-            urbanization,
+            footfall_data,
+            urbanization_data,
             coverage_objs,
             valid_coverage_objs,
             oracle_boosting_reports,

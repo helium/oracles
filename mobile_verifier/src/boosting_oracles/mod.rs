@@ -30,12 +30,12 @@ impl DiskTreeLike for MockDiskTree {
     }
 }
 
-pub struct Urbanization<DT, GF> {
+pub struct UrbanizationData<DT, GF> {
     urbanized: DT,
     usa_geofence: GF,
 }
 
-impl<DT, GF> Urbanization<DT, GF> {
+impl<DT, GF> UrbanizationData<DT, GF> {
     pub fn new(urbanized: DT, usa_geofence: GF) -> Self {
         Self {
             urbanized,
@@ -44,7 +44,7 @@ impl<DT, GF> Urbanization<DT, GF> {
     }
 }
 
-impl<DT, GF> Urbanization<DT, GF>
+impl<DT, GF> UrbanizationData<DT, GF>
 where
     DT: DiskTreeLike,
     GF: GeofenceValidator<u64>,
@@ -66,5 +66,28 @@ where
             Assignment::C
         };
         Ok(assignment)
+    }
+}
+
+#[derive(Default)]
+pub struct FootfallData {
+    values: HashMap<u64, bool>,
+}
+
+impl FootfallData {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_values(values: HashMap<u64, bool>) -> Self {
+        Self { values }
+    }
+
+    pub fn hex_assignment(&self, cell: u64) -> anyhow::Result<Assignment> {
+        match self.values.get(&cell) {
+            Some(true) => Ok(Assignment::A),
+            Some(false) => Ok(Assignment::B),
+            None => Ok(Assignment::C),
+        }
     }
 }
