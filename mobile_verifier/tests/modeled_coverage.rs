@@ -42,8 +42,8 @@ impl GeofenceValidator<Heartbeat> for MockGeofence {
     }
 }
 
-impl GeofenceValidator<u64> for MockGeofence {
-    fn in_valid_region(&self, _cell: &u64) -> bool {
+impl GeofenceValidator<hextree::Cell> for MockGeofence {
+    fn in_valid_region(&self, _cell: &hextree::Cell) -> bool {
         true
     }
 }
