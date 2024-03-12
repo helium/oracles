@@ -232,7 +232,7 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     .await?;
     transaction.commit().await?;
 
-    let footfall_data = FootfallData::with_values(footfall);
+    let footfall_data = FootfallData::new(footfall);
     let urbanization_data = UrbanizationData::new(urbanized, geofence);
     let unassigned_hexes = UnassignedHex::fetch(&pool);
     let oba = set_oracle_boosting_assignments(
@@ -367,7 +367,7 @@ async fn test_footfall_and_urbanization(pool: PgPool) -> anyhow::Result<()> {
     .await?;
     transaction.commit().await?;
 
-    let footfall_data = FootfallData::with_values(footfall);
+    let footfall_data = FootfallData::new(footfall);
     let urbanization_data = UrbanizationData::new(urbanized, geofence);
     let unassigned_hexes = UnassignedHex::fetch(&pool);
     let _ = set_oracle_boosting_assignments(

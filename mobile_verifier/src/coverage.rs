@@ -1,7 +1,6 @@
 use crate::{
     boosting_oracles::{
-        assignment::footfall_and_urbanization_multiplier, Assignment, DiskTreeLike, FootfallData,
-        UrbanizationData,
+        assignment::footfall_and_urbanization_multiplier, Assignment, DiskTreeLike, FootfallData, FootfallLike, UrbanizationData
     },
     geofence::GeofenceValidator,
     heartbeats::{HbType, KeyType, OwnedKeyType},
@@ -68,26 +67,28 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
-pub struct CoverageDaemon<DT, GF> {
+pub struct CoverageDaemon<DT, GF, FL> {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
     urbanization_data: UrbanizationData<DT, GF>,
-    footfall_data: FootfallData,
+    footfall_data:  FootfallData<FL>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     initial_boosting_reports: Option<Vec<OracleBoostingReportV1>>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
 }
 
-impl<DT, GF> CoverageDaemon<DT, GF>
+impl<DT, GF, FL> CoverageDaemon<DT, GF, FL>
 where
     DT: DiskTreeLike,
     GF: GeofenceValidator<hextree::Cell>,
+    FL: FootfallLike
+    
 {
     pub async fn new(
         pool: PgPool,
         auth_client: AuthorizationClient,
-        footfall_data: FootfallData,
+        footfall_data: FootfallData<FL>,
         urbanization_data: UrbanizationData<DT, GF>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
@@ -216,7 +217,7 @@ impl UnassignedHex {
 
 pub async fn set_oracle_boosting_assignments<'a>(
     unassigned_urbinization_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
-    footfall_data: &FootfallData,
+    footfall_data: &FootfallData<impl FootfallLike>,
     urbanization_data: &UrbanizationData<impl DiskTreeLike, impl GeofenceValidator<hextree::Cell>>,
     pool: &'a PgPool,
 ) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
@@ -243,7 +244,7 @@ pub async fn set_oracle_boosting_assignments<'a>(
 
 async fn initialize_unassigned_hexes(
     unassigned_urbinization_hexes: impl Stream<Item = Result<UnassignedHex, sqlx::Error>>,
-    footfall_data: &FootfallData,
+    footfall_data: &FootfallData<impl FootfallLike>,
     urbanization_data: &UrbanizationData<impl DiskTreeLike, impl GeofenceValidator<hextree::Cell>>,
     pool: &Pool<Postgres>,
 ) -> Result<HashMap<Uuid, Vec<proto::OracleBoostingHexAssignment>>, anyhow::Error> {
@@ -307,10 +308,11 @@ async fn initialize_unassigned_hexes(
     Ok(boost_results)
 }
 
-impl<DT, GF> ManagedTask for CoverageDaemon<DT, GF>
+impl<DT, GF, FL> ManagedTask for CoverageDaemon<DT, GF, FL>
 where
     DT: DiskTreeLike,
     GF: GeofenceValidator<hextree::Cell>,
+    FL: FootfallLike
 {
     fn start_task(
         self: Box<Self>,

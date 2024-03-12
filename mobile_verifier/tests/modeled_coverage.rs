@@ -14,7 +14,7 @@ use helium_proto::services::{
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
-    boosting_oracles::{FootfallData, MockDiskTree, UrbanizationData},
+    boosting_oracles::{FootfallData, MockDiskTree, MockFootfallData, UrbanizationData},
     coverage::{
         set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
         CoverageObjectCache, Seniority, UnassignedHex,
@@ -409,7 +409,7 @@ async fn process_input(
     }
     transaction.commit().await?;
 
-    let footfall_data = FootfallData::new();
+    let footfall_data = FootfallData::new(MockFootfallData);
     let urbanization_data = UrbanizationData::new(MockDiskTree, MockGeofence);
     let unassigned_hexes = UnassignedHex::fetch(pool);
     let _ =

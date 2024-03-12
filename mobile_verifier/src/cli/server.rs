@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     boosting_oracles::{FootfallData, UrbanizationData},
     coverage::CoverageDaemon,
@@ -221,7 +223,9 @@ impl Cmd {
 
         let disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
         let urbanization_data = UrbanizationData::new(disktree, usa_geofence);
-        let footfall_data = FootfallData::new();
+        // TODO: get real data
+        let temp_footfall_data = HashMap::default();
+        let footfall_data = FootfallData::new(temp_footfall_data);
 
         let coverage_daemon = CoverageDaemon::new(
             pool.clone(),
