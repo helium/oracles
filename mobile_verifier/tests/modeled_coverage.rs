@@ -14,7 +14,7 @@ use helium_proto::services::{
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
-    boosting_oracles::{MockDiskTree, Urbanization},
+    boosting_oracles::{FootfallData, MockDiskTree, UrbanizationData},
     coverage::{
         set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
         CoverageObjectCache, Seniority, UnassignedHex,
@@ -409,9 +409,12 @@ async fn process_input(
     }
     transaction.commit().await?;
 
-    let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
+    let footfall_data = FootfallData::new();
+    let urbanization_data = UrbanizationData::new(MockDiskTree, MockGeofence);
     let unassigned_hexes = UnassignedHex::fetch(pool);
-    let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, pool).await?;
+    let _ =
+        set_oracle_boosting_assignments(unassigned_hexes, &footfall_data, &urbanization_data, pool)
+            .await?;
 
     let mut transaction = pool.begin().await?;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(

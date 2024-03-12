@@ -989,6 +989,7 @@ mod test {
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
+            footfall: Assignment::C,
         }]
     }
 
@@ -1869,8 +1870,19 @@ mod test {
                         location_trust_score_multiplier: dec!(1.0),
                         seniority: DateTime::default(),
                         coverage_object: Uuid::new_v4(),
-                        points: dec!(10.0),
-                        boosted_hexes: vec![],
+                        reward_points: vec![CoverageRewardPointsWithMultiplier {
+                            coverage_points: CoverageRewardPoints {
+                                boost_multiplier: 1,
+                                coverage_points: dec!(10.0),
+                                urbanized: Assignment::A,
+                                footfall: Assignment::A,
+                                rank: None,
+                            },
+                            boosted_hex: BoostedHex {
+                                location: 0,
+                                multiplier: 1,
+                            },
+                        }],
                     },
                 )]
                 .into_iter()

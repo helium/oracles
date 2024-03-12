@@ -40,18 +40,7 @@ impl fmt::Display for Assignment {
     }
 }
 
-pub fn urbanization_multiplier(urbanization: Assignment) -> Decimal {
-    use Assignment::*;
-
-    match urbanization {
-        A => dec!(1.0),
-        B => dec!(0.25),
-        C => dec!(0.0),
-    }
-}
-
-#[allow(dead_code)]
-pub fn urbanization_and_footfall_multiplier(
+pub fn footfall_and_urbanization_multiplier(
     footfall: Assignment,
     urbanization: Assignment,
 ) -> Decimal {
