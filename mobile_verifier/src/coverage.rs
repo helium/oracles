@@ -1,6 +1,7 @@
 use crate::{
     boosting_oracles::{
-        assignment::footfall_and_urbanization_multiplier, Assignment, DiskTreeLike, FootfallData, FootfallLike, UrbanizationData
+        assignment::footfall_and_urbanization_multiplier, Assignment, DiskTreeLike, FootfallData,
+        FootfallLike, UrbanizationData,
     },
     geofence::GeofenceValidator,
     heartbeats::{HbType, KeyType, OwnedKeyType},
@@ -71,7 +72,7 @@ pub struct CoverageDaemon<DT, GF, FL> {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
     urbanization_data: UrbanizationData<DT, GF>,
-    footfall_data:  FootfallData<FL>,
+    footfall_data: FootfallData<FL>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     initial_boosting_reports: Option<Vec<OracleBoostingReportV1>>,
     coverage_obj_sink: FileSinkClient,
@@ -82,8 +83,7 @@ impl<DT, GF, FL> CoverageDaemon<DT, GF, FL>
 where
     DT: DiskTreeLike,
     GF: GeofenceValidator<hextree::Cell>,
-    FL: FootfallLike
-    
+    FL: FootfallLike,
 {
     pub async fn new(
         pool: PgPool,
@@ -312,7 +312,7 @@ impl<DT, GF, FL> ManagedTask for CoverageDaemon<DT, GF, FL>
 where
     DT: DiskTreeLike,
     GF: GeofenceValidator<hextree::Cell>,
-    FL: FootfallLike
+    FL: FootfallLike,
 {
     fn start_task(
         self: Box<Self>,

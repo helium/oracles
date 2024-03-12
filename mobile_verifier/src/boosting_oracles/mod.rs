@@ -68,18 +68,19 @@ where
     }
 }
 
-
-
 pub trait FootfallLike: Send + Sync + 'static {
     fn get(&self, cell: hextree::Cell) -> Option<bool>;
 }
 
 #[derive(Default)]
 pub struct FootfallData<FL> {
-    values: FL
+    values: FL,
 }
 
-impl<FL> FootfallData<FL> where FL: FootfallLike {
+impl<FL> FootfallData<FL>
+where
+    FL: FootfallLike,
+{
     pub fn new(values: FL) -> Self {
         Self { values }
     }
@@ -99,7 +100,6 @@ impl FootfallLike for HashMap<hextree::Cell, bool> {
     }
 }
 
-
 pub struct MockFootfallData;
 
 impl FootfallLike for MockFootfallData {
@@ -107,7 +107,3 @@ impl FootfallLike for MockFootfallData {
         Some(true)
     }
 }
-
-
-
-
