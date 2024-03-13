@@ -225,10 +225,10 @@ impl Heartbeat {
         }
     }
 
-    pub fn asserted_distance(&self, asserted_location: u64) -> anyhow::Result<i64> {
-        let asserted_latlng: LatLng = CellIndex::try_from(asserted_location)?.into();
-        let hb_latlng = LatLng::new(self.lat, self.lon)?;
-        Ok(asserted_latlng.distance_m(hb_latlng).round() as i64)
+    fn centered_latlng(&self) -> anyhow::Result<LatLng> {
+        Ok(LatLng::new(self.lat, self.lon)?
+            .to_cell(h3o::Resolution::Twelve)
+            .into())
     }
 }
 
@@ -470,7 +470,7 @@ impl ValidatedHeartbeat {
             ));
         }
 
-        let Ok(hb_latlng) = LatLng::new(heartbeat.lat, heartbeat.lon) else {
+        let Ok(hb_latlng) = heartbeat.centered_latlng() else {
             return Ok(Self::new(
                 heartbeat,
                 cell_type,
