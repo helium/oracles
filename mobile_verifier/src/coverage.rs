@@ -1101,7 +1101,7 @@ mod test {
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
-            footfall: Assignment::C,
+            footfall: Assignment::A,
         }
     }
 
@@ -1499,7 +1499,7 @@ mod test {
             coverage_claim_time: coverage_claim_time.unwrap_or(DateTime::<Utc>::MIN_UTC),
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
-            footfall: Assignment::C,
+            footfall: Assignment::A,
         }
     }
 
@@ -1518,7 +1518,7 @@ mod test {
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
-            footfall: Assignment::C,
+            footfall: Assignment::A,
         }
     }
 
@@ -1537,7 +1537,7 @@ mod test {
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
-            footfall: Assignment::C,
+            footfall: Assignment::A,
         }
     }
 
@@ -1556,7 +1556,7 @@ mod test {
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
-            footfall: Assignment::C,
+            footfall: Assignment::A,
         }
     }
 }
