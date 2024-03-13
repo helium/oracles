@@ -750,14 +750,13 @@ fn into_outdoor_rewards(
             .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
             .zip(OUTDOOR_REWARD_WEIGHTS)
             .map(move |(cl, rank)| {
-                let boost_multiplier = boosted_hexes
+                let (boost_multiplier, oracle_multiplier) = boosted_hexes
                     .get_current_multiplier(hex.into(), epoch_start)
-                    .unwrap_or(1);
-                let oracle_multiplier = if boost_multiplier > 1 {
-                    dec!(1.0)
-                } else {
-                    urbanization_multiplier(cl.urbanized)
-                };
+                    .map_or_else(
+                        || (1, urbanization_multiplier(cl.urbanized)),
+                        |multiplier| (multiplier, dec!(1.0)),
+                    );
+
                 CoverageReward {
                     points: cl.coverage_points() * oracle_multiplier * rank,
                     hotspot: cl.hotspot,
@@ -785,14 +784,13 @@ fn into_indoor_rewards(
                     .into_iter()
                     .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
                     .map(move |cl| {
-                        let boost_multiplier = boosted_hexes
+                        let (boost_multiplier, oracle_multiplier) = boosted_hexes
                             .get_current_multiplier(hex.into(), epoch_start)
-                            .unwrap_or(1);
-                        let oracle_multiplier = if boost_multiplier > 1 {
-                            dec!(1.0)
-                        } else {
-                            urbanization_multiplier(cl.urbanized)
-                        };
+                            .map_or_else(
+                                || (1, urbanization_multiplier(cl.urbanized)),
+                                |multiplier| (multiplier, dec!(1.0)),
+                            );
+
                         CoverageReward {
                             points: cl.coverage_points() * oracle_multiplier,
                             hotspot: cl.hotspot,
