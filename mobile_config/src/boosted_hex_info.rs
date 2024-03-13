@@ -4,6 +4,7 @@ use file_store::traits::TimestampDecode;
 use futures::stream::{BoxStream, StreamExt};
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
 use solana_sdk::pubkey::Pubkey;
+use std::num::NonZeroU32;
 use std::{collections::HashMap, convert::TryFrom};
 
 pub type BoostedHexInfoStream = BoxStream<'static, BoostedHexInfo>;
@@ -18,7 +19,7 @@ pub struct BoostedHexInfo {
     pub start_ts: Option<DateTime<Utc>>,
     pub end_ts: Option<DateTime<Utc>>,
     pub period_length: Duration,
-    pub multipliers: Vec<u32>,
+    pub multipliers: Vec<NonZeroU32>,
     pub boosted_hex_pubkey: Pubkey,
     pub boost_config_pubkey: Pubkey,
     pub version: u32,
@@ -28,7 +29,12 @@ impl TryFrom<BoostedHexInfoProto> for BoostedHexInfo {
     type Error = anyhow::Error;
     fn try_from(v: BoostedHexInfoProto) -> anyhow::Result<Self> {
         let period_length = Duration::seconds(v.period_length as i64);
-        let multipliers = v.multipliers;
+        let multipliers = v
+            .multipliers
+            .into_iter()
+            .map(NonZeroU32::new)
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| anyhow::anyhow!("multipliers cannot contain 0"))?;
         let start_ts = to_start_ts(v.start_ts);
         let end_ts = to_end_ts(start_ts, period_length, multipliers.len());
         let boosted_hex_pubkey: Pubkey = Pubkey::try_from(v.boosted_hex_pubkey.as_slice())?;
@@ -52,12 +58,17 @@ impl TryFrom<BoostedHexInfo> for BoostedHexInfoProto {
     fn try_from(v: BoostedHexInfo) -> anyhow::Result<Self> {
         let start_ts = v.start_ts.map_or(0, |v| v.timestamp() as u64);
         let end_ts = v.end_ts.map_or(0, |v| v.timestamp() as u64);
+        let multipliers = v
+            .multipliers
+            .into_iter()
+            .map(|v| v.get())
+            .collect::<Vec<_>>();
         Ok(Self {
             location: v.location,
             start_ts,
             end_ts,
             period_length: v.period_length.num_seconds() as u32,
-            multipliers: v.multipliers,
+            multipliers,
             boosted_hex_pubkey: v.boosted_hex_pubkey.to_bytes().into(),
             boost_config_pubkey: v.boost_config_pubkey.to_bytes().into(),
             version: v.version,
@@ -66,7 +77,7 @@ impl TryFrom<BoostedHexInfo> for BoostedHexInfoProto {
 }
 
 impl BoostedHexInfo {
-    pub fn current_multiplier(&self, ts: DateTime<Utc>) -> anyhow::Result<Option<u32>> {
+    pub fn current_multiplier(&self, ts: DateTime<Utc>) -> anyhow::Result<Option<NonZeroU32>> {
         if self.end_ts.is_some() && ts >= self.end_ts.unwrap() {
             // end time has been set and the current time is after the end time, so return None
             // to indicate that the hex is no longer boosted
@@ -98,7 +109,7 @@ pub struct BoostedHexes {
 #[derive(PartialEq, Debug, Clone)]
 pub struct BoostedHex {
     pub location: u64,
-    pub multiplier: u32,
+    pub multiplier: NonZeroU32,
 }
 
 impl BoostedHexes {
@@ -144,7 +155,7 @@ impl BoostedHexes {
         Ok(Self { hexes: map })
     }
 
-    pub fn get_current_multiplier(&self, location: u64, ts: DateTime<Utc>) -> Option<u32> {
+    pub fn get_current_multiplier(&self, location: u64, ts: DateTime<Utc>) -> Option<NonZeroU32> {
         self.hexes
             .get(&location)
             .and_then(|info| info.current_multiplier(ts).ok()?)
@@ -157,6 +168,7 @@ pub(crate) mod db {
     use futures::stream::{Stream, StreamExt};
     use solana_sdk::pubkey::Pubkey;
     use sqlx::{PgExecutor, Row};
+    use std::num::NonZeroU32;
     use std::str::FromStr;
 
     const GET_BOOSTED_HEX_INFO_SQL: &str = r#"
@@ -214,8 +226,9 @@ pub(crate) mod db {
             let multipliers = row
                 .get::<Vec<u8>, &str>("multipliers")
                 .into_iter()
-                .map(|v| v as u32)
-                .collect::<Vec<_>>();
+                .map(|v| NonZeroU32::new(v as u32))
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| sqlx::Error::Decode(Box::from("multipliers cannot contain 0")))?;
             let end_ts = to_end_ts(start_ts, period_length, multipliers.len());
             let boost_config_pubkey =
                 Pubkey::from_str(row.get::<&str, &str>("boost_config_pubkey"))

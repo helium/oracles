@@ -34,6 +34,7 @@ use retainer::{entry::CacheReadGuard, Cache};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
+use std::num::NonZeroU32;
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BinaryHeap, HashMap},
@@ -753,7 +754,12 @@ fn into_outdoor_rewards(
                 let (boost_multiplier, oracle_multiplier) = boosted_hexes
                     .get_current_multiplier(hex.into(), epoch_start)
                     .map_or_else(
-                        || (1, urbanization_multiplier(cl.urbanized)),
+                        || {
+                            (
+                                NonZeroU32::new(1).unwrap(),
+                                urbanization_multiplier(cl.urbanized),
+                            )
+                        },
                         |multiplier| (multiplier, dec!(1.0)),
                     );
 
@@ -787,7 +793,12 @@ fn into_indoor_rewards(
                         let (boost_multiplier, oracle_multiplier) = boosted_hexes
                             .get_current_multiplier(hex.into(), epoch_start)
                             .map_or_else(
-                                || (1, urbanization_multiplier(cl.urbanized)),
+                                || {
+                                    (
+                                        NonZeroU32::new(1).unwrap(),
+                                        urbanization_multiplier(cl.urbanized),
+                                    )
+                                },
                                 |multiplier| (multiplier, dec!(1.0)),
                             );
 
@@ -1002,7 +1013,7 @@ mod test {
                 points: dec!(400),
                 boosted_hex_info: BoostedHex {
                     location: 0x8a1fb46622dffff_u64,
-                    multiplier: 1,
+                    multiplier: NonZeroU32::new(1).unwrap(),
                 },
             }]
         );
@@ -1113,7 +1124,7 @@ mod test {
                 points: dec!(400),
                 boosted_hex_info: BoostedHex {
                     location: 0x8a1fb46622dffff_u64,
-                    multiplier: 1,
+                    multiplier: NonZeroU32::new(1).unwrap(),
                 },
             }]
         );
@@ -1151,7 +1162,7 @@ mod test {
                     points: dec!(16),
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
+                        multiplier: NonZeroU32::new(1).unwrap(),
                     },
                 },
                 CoverageReward {
@@ -1160,7 +1171,7 @@ mod test {
                     points: dec!(8),
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
+                        multiplier: NonZeroU32::new(1).unwrap(),
                     },
                 },
                 CoverageReward {
@@ -1169,7 +1180,7 @@ mod test {
                     points: dec!(4),
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
+                        multiplier: NonZeroU32::new(1).unwrap(),
                     },
                 }
             ]

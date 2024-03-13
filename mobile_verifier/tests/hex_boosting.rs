@@ -29,6 +29,7 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::{PgPool, Postgres, Transaction};
+use std::num::NonZeroU32;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -100,19 +101,32 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is in the second period length
-    let multipliers1 = vec![2, 10, 15, 35];
+    let multipliers1 = vec![
+        NonZeroU32::new(2).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(15).unwrap(),
+        NonZeroU32::new(35).unwrap(),
+    ];
     let start_ts_1 = epoch.start - boost_period_length;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where reward start time is in the third & last period length
-    let multipliers2 = vec![3, 10, 20];
+    let multipliers2 = vec![
+        NonZeroU32::new(3).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(20).unwrap(),
+    ];
     let start_ts_2 = epoch.start - (boost_period_length * 2);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
 
     // setup boosted hex where no start or end time is set
     // will default to the first multiplier
     // first multiplier is 1x for easy math when comparing relative rewards
-    let multipliers3 = vec![1, 10, 20];
+    let multipliers3 = vec![
+        NonZeroU32::new(1).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(20).unwrap(),
+    ];
 
     let boosted_hexes = vec![
         BoostedHexInfo {
@@ -255,19 +269,32 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
     update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is in the second period length
-    let multipliers1 = vec![2, 10, 15, 35];
+    let multipliers1 = vec![
+        NonZeroU32::new(2).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(15).unwrap(),
+        NonZeroU32::new(35).unwrap(),
+    ];
     let start_ts_1 = epoch.start - boost_period_length;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where reward start time is in the third & last period length
-    let multipliers2 = vec![3, 10, 20];
+    let multipliers2 = vec![
+        NonZeroU32::new(3).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(20).unwrap(),
+    ];
     let start_ts_2 = epoch.start - (boost_period_length * 2);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
 
     // setup boosted hex where no start or end time is set
     // will default to the first multiplier
     // first multiplier is 1x for easy math when comparing relative rewards
-    let multipliers3 = vec![1, 10, 20];
+    let multipliers3 = vec![
+        NonZeroU32::new(1).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(20).unwrap(),
+    ];
 
     let boosted_hexes = vec![
         BoostedHexInfo {
@@ -386,18 +413,34 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is in the second period length
-    let multipliers1 = vec![2, 10, 15, 35];
+    let multipliers1 = vec![
+        NonZeroU32::new(2).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(15).unwrap(),
+        NonZeroU32::new(35).unwrap(),
+    ];
     let start_ts_1 = epoch.start - boost_period_length;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where reward start time is in the third & last period length
-    let multipliers2 = vec![3, 10, 20];
+
+    let multipliers2 = vec![
+        NonZeroU32::new(3).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(20).unwrap(),
+    ];
+
     let start_ts_2 = epoch.start - (boost_period_length * 2);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
 
     // setup boosted hex where reward start time is in the first period length
     // default to 1x multiplier for easy math when comparing relative rewards
-    let multipliers3 = vec![1, 10, 20];
+    let multipliers3 = vec![
+        NonZeroU32::new(1).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(20).unwrap(),
+    ];
+
     let start_ts_3 = epoch.start;
     let end_ts_3 = start_ts_3 + (boost_period_length * multipliers3.len() as i32);
 
@@ -554,13 +597,21 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is after the boost period ends
-    let multipliers1 = vec![2, 10, 15];
+    let multipliers1 = vec![
+        NonZeroU32::new(2).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(15).unwrap(),
+    ];
     let start_ts_1 =
         epoch.start - (boost_period_length * multipliers1.len() as i32 + ChronoDuration::days(1));
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
     dbg!(epoch.start, start_ts_1, end_ts_1);
     // setup boosted hex where reward start time is same as the boost period ends
-    let multipliers2 = vec![4, 12, 17];
+    let multipliers2 = vec![
+        NonZeroU32::new(4).unwrap(),
+        NonZeroU32::new(12).unwrap(),
+        NonZeroU32::new(17).unwrap(),
+    ];
     let start_ts_2 = epoch.start - (boost_period_length * multipliers2.len() as i32);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
     dbg!(epoch.start, start_ts_2, end_ts_2);
@@ -668,12 +719,12 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is in the second period length
-    let multipliers1 = vec![2];
+    let multipliers1 = vec![NonZeroU32::new(2).unwrap()];
     let start_ts_1 = epoch.start;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where no start or end time is set
-    let multipliers2 = vec![2];
+    let multipliers2 = vec![NonZeroU32::new(2).unwrap()];
 
     let boosted_hexes = vec![
         BoostedHexInfo {
@@ -811,18 +862,31 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is in the second period length
-    let multipliers1 = vec![2, 10, 15, 35];
+    let multipliers1 = vec![
+        NonZeroU32::new(2).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(15).unwrap(),
+        NonZeroU32::new(35).unwrap(),
+    ];
     let start_ts_1 = epoch.start - boost_period_length;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where reward start time is in the third & last period length
-    let multipliers2 = vec![3, 10, 20];
+    let multipliers2 = vec![
+        NonZeroU32::new(3).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(20).unwrap(),
+    ];
     let start_ts_2 = epoch.start - (boost_period_length * 2);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
 
     // setup boosted hex where reward start time is in the first period length
     // default to 1x multiplier for easy math when comparing relative rewards
-    let multipliers3 = vec![1, 10, 20];
+    let multipliers3 = vec![
+        NonZeroU32::new(1).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(20).unwrap(),
+    ];
     let start_ts_3 = epoch.start;
     let end_ts_3 = start_ts_3 + (boost_period_length * multipliers3.len() as i32);
 

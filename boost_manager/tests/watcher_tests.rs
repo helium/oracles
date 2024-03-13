@@ -11,6 +11,7 @@ use mobile_config::{
 };
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
+use std::num::NonZeroU32;
 use std::str::FromStr;
 
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
@@ -47,10 +48,19 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
     let boost_period_length = Duration::days(30);
 
     // setup boosted hex data to stream as updates
-    let multipliers1 = vec![2, 10, 15, 35];
+    let multipliers1 = vec![
+        NonZeroU32::new(2).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(15).unwrap(),
+        NonZeroU32::new(35).unwrap(),
+    ];
     let start_ts_1 = epoch.start - boost_period_length;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
-    let multipliers2 = vec![3, 10, 20];
+    let multipliers2 = vec![
+        NonZeroU32::new(3).unwrap(),
+        NonZeroU32::new(10).unwrap(),
+        NonZeroU32::new(20).unwrap(),
+    ];
     let start_ts_2 = epoch.start - (boost_period_length * 2);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
 

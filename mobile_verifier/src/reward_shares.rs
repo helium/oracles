@@ -25,6 +25,7 @@ use mobile_config::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+use std::num::NonZeroU32;
 use std::{collections::HashMap, ops::Range};
 use uuid::Uuid;
 
@@ -436,12 +437,12 @@ impl HotspotPoints {
         {
             BoostedHex {
                 location: boosted_hex_info.location,
-                multiplier: 1,
+                multiplier: NonZeroU32::new(1).unwrap(),
             }
         } else {
             boosted_hex_info
         };
-        rp.points += points * Decimal::from(final_boost_info.multiplier);
+        rp.points += points * Decimal::from(final_boost_info.multiplier.get());
         rp.boosted_hexes.push(final_boost_info);
     }
 }
@@ -622,10 +623,10 @@ fn new_radio_reward(
     let boosted_hexes = radio_points
         .boosted_hexes
         .iter()
-        .filter(|boosted_hex| boosted_hex.multiplier > 1)
+        .filter(|boosted_hex| boosted_hex.multiplier > NonZeroU32::new(1).unwrap())
         .map(|boosted_hex| proto::BoostedHex {
             location: boosted_hex.location,
-            multiplier: boosted_hex.multiplier,
+            multiplier: boosted_hex.multiplier.get(),
         })
         .collect();
     (

@@ -30,6 +30,7 @@ use mobile_verifier::{
 use rust_decimal_macros::dec;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
+use std::num::NonZeroU32;
 use std::{collections::HashMap, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;
 
@@ -843,7 +844,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             start_ts: None,
             end_ts: None,
             period_length: Duration::hours(1),
-            multipliers: vec![1],
+            multipliers: vec![NonZeroU32::new(1).unwrap()],
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
@@ -856,7 +857,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             start_ts: None,
             end_ts: None,
             period_length: Duration::hours(1),
-            multipliers: vec![2],
+            multipliers: vec![NonZeroU32::new(2).unwrap()],
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
@@ -870,7 +871,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             start_ts: None,
             end_ts: None,
             period_length: Duration::hours(1),
-            multipliers: vec![3],
+            multipliers: vec![NonZeroU32::new(3).unwrap()],
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
