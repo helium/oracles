@@ -281,17 +281,20 @@ impl PriorityFee {
         }
         // Find a new estimate
         let time_taken = Utc::now();
-        let mut estimates = provider.get_recent_prioritization_fees(&[]).await?;
-        estimates.sort_by_key(|x| x.prioritization_fee);
+        let mut recent_fees = provider.get_recent_prioritization_fees(&[]).await?;
+        recent_fees.sort_by_key(|x| x.prioritization_fee);
         // Get the median:
-        let num_estimates = estimates.len();
-        let estimate = if num_estimates == 0 {
+        let num_recent_fees = recent_fees.len();
+        let mid = num_recent_fees / 2;
+        let estimate = if num_recent_fees == 0 {
             BASE_PRIORITY_FEE
+        } else if num_recent_fees % 2 == 0 {
+            // If the number of samples is even, taken the mean of the two median fees
+            (recent_fees[mid - 1].prioritization_fee + recent_fees[mid].prioritization_fee) / 2
         } else {
-            estimates[estimates.len() / 2]
-                .prioritization_fee
-                .max(BASE_PRIORITY_FEE)
-        };
+            recent_fees[mid].prioritization_fee
+        }
+        .max(BASE_PRIORITY_FEE);
         *last_estimate = LastEstimate::new(time_taken, estimate);
         Ok(estimate)
     }
