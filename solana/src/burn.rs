@@ -95,7 +95,7 @@ impl SolanaRpc {
             return Err(SolanaRpcError::FailedToReadKeypairError);
         };
         let provider =
-            RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());
+            RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::confirmed());
         let program_cache = BurnProgramCache::new(&provider, dc_mint, dnt_mint).await?;
         if program_cache.dc_burn_authority != keypair.pubkey() {
             return Err(SolanaRpcError::InvalidKeypair);
@@ -263,7 +263,7 @@ impl SolanaNetwork for SolanaRpc {
             .provider
             .send_and_confirm_transaction_with_spinner_and_config(
                 tx,
-                CommitmentConfig::finalized(),
+                CommitmentConfig::confirmed(),
                 config,
             )) {
             Ok(signature) => {
