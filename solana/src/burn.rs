@@ -287,7 +287,7 @@ pub const BASE_PRIORITY_FEE: u64 = 1;
 pub const MAX_RECENT_PRIORITY_FEE_ACCOUNTS: usize = 128;
 
 impl PriorityFee {
-    async fn get_estimate(
+    pub async fn get_estimate(
         &self,
         provider: &RpcClient,
         accounts: &[Pubkey],
@@ -303,12 +303,15 @@ impl PriorityFee {
         let time_taken = Utc::now();
         let recent_fees = provider.get_recent_prioritization_fees(accounts).await?;
         let mut max_per_slot = Vec::new();
-        for (_, fees) in &recent_fees.into_iter().group_by(|x| x.slot) {
+        for (slot, fees) in &recent_fees.into_iter().group_by(|x| x.slot) {
             let Some(maximum) = fees.map(|x| x.prioritization_fee).max() else {
                 continue;
             };
-            max_per_slot.push(maximum);
+            max_per_slot.push((slot, maximum));
         }
+        // Only take the most recent 20 maximum fees:
+        max_per_slot.sort_by(|a, b| a.0.cmp(&b.0).reverse());
+        let mut max_per_slot: Vec<_> = max_per_slot.into_iter().take(20).map(|x| x.1).collect();
         max_per_slot.sort();
         // Get the median:
         let num_recent_fees = max_per_slot.len();
