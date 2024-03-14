@@ -2,9 +2,26 @@ pub mod assignment;
 
 use std::collections::HashMap;
 
-use crate::geofence::GeofenceValidator;
+use crate::{
+    geofence::{Geofence, GeofenceValidator},
+    Settings,
+};
 pub use assignment::Assignment;
 use hextree::disktree::DiskTreeMap;
+
+pub fn make_hex_boost_data(
+    settings: &Settings,
+    usa_geofence: Geofence,
+) -> anyhow::Result<HexBoostData<Urbanization<DiskTreeMap, Geofence>, FootfallData<DiskTreeMap>>> {
+    let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
+    let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
+
+    let urbanization = Urbanization::new(urban_disktree, usa_geofence);
+    let footfall_data = FootfallData::new(footfall_disktree);
+    let hex_boost_data = HexBoostData::new(urbanization, footfall_data);
+
+    Ok(hex_boost_data)
+}
 
 pub enum FootfallCategory {
     /// More than 1 point of interest
