@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-
 use crate::{
-    boosting_oracles::{FootfallData, UrbanizationData},
+    boosting_oracles,
     coverage::CoverageDaemon,
     data_session::DataSessionIngestor,
     geofence::Geofence,
-    heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
-    heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon,
+    heartbeats::{
+        cbrs::HeartbeatDaemon as CellHeartbeatDaemon, wifi::HeartbeatDaemon as WifiHeartbeatDaemon,
+    },
     invalidated_radio_threshold::InvalidatedRadioThresholdIngestor,
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
@@ -25,7 +24,7 @@ use file_store::{
     speedtest::CellSpeedtestIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport, FileStore,
     FileType,
 };
-use hextree::disktree::DiskTreeMap;
+
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
     CarrierServiceClient, GatewayClient,
@@ -221,17 +220,11 @@ impl Cmd {
             .create()
             .await?;
 
-        let disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
-        let urbanization_data = UrbanizationData::new(disktree, usa_geofence);
-        // TODO: get real data
-        let temp_footfall_data = HashMap::default();
-        let footfall_data = FootfallData::new(temp_footfall_data);
-
+        let hex_boost_data = boosting_oracles::make_hex_boost_data(settings, usa_geofence)?;
         let coverage_daemon = CoverageDaemon::new(
             pool.clone(),
             auth_client.clone(),
-            footfall_data,
-            urbanization_data,
+            hex_boost_data,
             coverage_objs,
             valid_coverage_objs,
             oracle_boosting_reports,
