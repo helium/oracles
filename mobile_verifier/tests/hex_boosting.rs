@@ -29,8 +29,7 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::{PgPool, Postgres, Transaction};
-use std::num::NonZeroU32;
-use std::str::FromStr;
+use std::{num::NonZeroU32, str::FromStr};
 use uuid::Uuid;
 
 const HOTSPOT_1: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";

@@ -34,10 +34,10 @@ use retainer::{entry::CacheReadGuard, Cache};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
-use std::num::NonZeroU32;
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BinaryHeap, HashMap},
+    num::NonZeroU32,
     pin::pin,
     sync::Arc,
     time::Instant,

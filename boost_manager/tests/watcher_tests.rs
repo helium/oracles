@@ -11,8 +11,7 @@ use mobile_config::{
 };
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
-use std::num::NonZeroU32;
-use std::str::FromStr;
+use std::{num::NonZeroU32, str::FromStr};
 
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";

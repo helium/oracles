@@ -4,8 +4,7 @@ use file_store::traits::TimestampDecode;
 use futures::stream::{BoxStream, StreamExt};
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
 use solana_sdk::pubkey::Pubkey;
-use std::num::NonZeroU32;
-use std::{collections::HashMap, convert::TryFrom};
+use std::{collections::HashMap, convert::TryFrom, num::NonZeroU32};
 
 pub type BoostedHexInfoStream = BoxStream<'static, BoostedHexInfo>;
 
@@ -34,7 +33,7 @@ impl TryFrom<BoostedHexInfoProto> for BoostedHexInfo {
             .into_iter()
             .map(NonZeroU32::new)
             .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| anyhow::anyhow!("multipliers cannot contain 0"))?;
+            .ok_or_else(|| anyhow::anyhow!("multipliers cannot contain values of 0"))?;
         let start_ts = to_start_ts(v.start_ts);
         let end_ts = to_end_ts(start_ts, period_length, multipliers.len());
         let boosted_hex_pubkey: Pubkey = Pubkey::try_from(v.boosted_hex_pubkey.as_slice())?;
@@ -124,7 +123,6 @@ impl BoostedHexes {
     pub async fn get_all(
         hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     ) -> anyhow::Result<Self> {
-        tracing::info!("getting boosted hexes");
         let mut map = HashMap::new();
         let mut stream = hex_service_client
             .clone()
@@ -228,7 +226,9 @@ pub(crate) mod db {
                 .into_iter()
                 .map(|v| NonZeroU32::new(v as u32))
                 .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| sqlx::Error::Decode(Box::from("multipliers cannot contain 0")))?;
+                .ok_or_else(|| {
+                    sqlx::Error::Decode(Box::from("multipliers cannot contain values of 0"))
+                })?;
             let end_ts = to_end_ts(start_ts, period_length, multipliers.len());
             let boost_config_pubkey =
                 Pubkey::from_str(row.get::<&str, &str>("boost_config_pubkey"))
@@ -264,4 +264,121 @@ fn to_end_ts(
     num_multipliers: usize,
 ) -> Option<DateTime<Utc>> {
     start_ts.map(|ts| ts + period_length * num_multipliers as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDateTime;
+    use std::str::FromStr;
+
+    const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
+    const BOOST_HEX_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
+
+    #[test]
+    fn boosted_hex_from_proto_valid_not_started() -> anyhow::Result<()> {
+        let proto = BoostedHexInfoProto {
+            location: 631252734740306943,
+            start_ts: 0,
+            end_ts: 0,
+            period_length: 2592000,
+            multipliers: vec![2, 10, 15, 35],
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY)
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+            version: 1,
+        };
+
+        let msg = BoostedHexInfo::try_from(proto)?;
+        assert_eq!(631252734740306943, msg.location);
+        assert_eq!(None, msg.start_ts);
+        assert_eq!(None, msg.end_ts);
+        assert_eq!(2592000, msg.period_length.num_seconds());
+        assert_eq!(4, msg.multipliers.len());
+        assert_eq!(2, msg.multipliers[0].get());
+        assert_eq!(10, msg.multipliers[1].get());
+        assert_eq!(15, msg.multipliers[2].get());
+        assert_eq!(35, msg.multipliers[3].get());
+        assert_eq!(
+            Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            msg.boosted_hex_pubkey
+        );
+        assert_eq!(
+            Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY).unwrap(),
+            msg.boost_config_pubkey
+        );
+        assert_eq!(1, msg.version);
+        Ok(())
+    }
+
+    #[test]
+    fn boosted_hex_from_proto_valid_started() -> anyhow::Result<()> {
+        let proto = BoostedHexInfoProto {
+            location: 631252734740306943,
+            start_ts: 1710378000,
+            end_ts: 1720746000,
+            period_length: 2592000,
+            multipliers: vec![2, 10, 15, 35],
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY)
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+            version: 1,
+        };
+
+        let msg = BoostedHexInfo::try_from(proto)?;
+        assert_eq!(631252734740306943, msg.location);
+        assert_eq!(parse_dt("2024-03-14 01:00:00"), msg.start_ts.unwrap());
+        assert_eq!(parse_dt("2024-07-12 01:00:00"), msg.end_ts.unwrap());
+        assert_eq!(2592000, msg.period_length.num_seconds());
+        assert_eq!(4, msg.multipliers.len());
+        assert_eq!(2, msg.multipliers[0].get());
+        assert_eq!(10, msg.multipliers[1].get());
+        assert_eq!(15, msg.multipliers[2].get());
+        assert_eq!(35, msg.multipliers[3].get());
+        assert_eq!(
+            Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            msg.boosted_hex_pubkey
+        );
+        assert_eq!(
+            Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY).unwrap(),
+            msg.boost_config_pubkey
+        );
+        assert_eq!(1, msg.version);
+        Ok(())
+    }
+
+    #[test]
+    fn boosted_hex_from_proto_invalid_multiplier() -> anyhow::Result<()> {
+        let proto = BoostedHexInfoProto {
+            location: 631252734740306943,
+            start_ts: 1712624400000,
+            end_ts: 0,
+            period_length: 2592000,
+            multipliers: vec![2, 0, 15, 35],
+            boosted_hex_pubkey: BOOST_HEX_PUBKEY.as_bytes().to_vec(),
+            boost_config_pubkey: BOOST_HEX_CONFIG_PUBKEY.as_bytes().to_vec(),
+            version: 1,
+        };
+        assert_eq!(
+            "multipliers cannot contain values of 0",
+            BoostedHexInfo::try_from(proto).err().unwrap().to_string()
+        );
+        Ok(())
+    }
+
+    fn parse_dt(dt: &str) -> DateTime<Utc> {
+        NaiveDateTime::parse_from_str(dt, "%Y-%m-%d %H:%M:%S")
+            .expect("unable_to_parse")
+            .and_utc()
+    }
 }

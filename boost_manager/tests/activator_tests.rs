@@ -5,8 +5,7 @@ use helium_proto::services::poc_mobile::BoostedHex as BoostedHexProto;
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
-use std::num::NonZeroU32;
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";

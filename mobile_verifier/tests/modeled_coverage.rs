@@ -30,8 +30,7 @@ use mobile_verifier::{
 use rust_decimal_macros::dec;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
-use std::num::NonZeroU32;
-use std::{collections::HashMap, ops::Range, pin::pin, str::FromStr};
+use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;
 
 #[derive(Clone)]

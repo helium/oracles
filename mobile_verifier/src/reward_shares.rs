@@ -25,8 +25,7 @@ use mobile_config::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use std::num::NonZeroU32;
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashMap, num::NonZeroU32, ops::Range};
 use uuid::Uuid;
 
 /// Total tokens emissions pool per 365 days or 366 days for a leap year
