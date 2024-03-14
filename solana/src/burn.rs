@@ -13,8 +13,7 @@ use itertools::Itertools;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use solana_client::{
-    client_error::ClientError, nonblocking::rpc_client::RpcClient,
-    rpc_response::Response,
+    client_error::ClientError, nonblocking::rpc_client::RpcClient, rpc_response::Response,
 };
 use solana_sdk::{
     commitment_config::CommitmentConfig,
