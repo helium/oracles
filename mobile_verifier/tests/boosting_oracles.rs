@@ -11,7 +11,7 @@ use helium_proto::services::poc_mobile::{
 };
 use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
-    boosting_oracles::{Assignment, FootfallData, UrbanizationData},
+    boosting_oracles::{Assignment, HexBoostData, Urbanization},
     coverage::{
         set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
         CoverageObjectCache, Seniority, UnassignedHex,
@@ -210,10 +210,10 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     footfall.insert(hex_cell(&hex5.location), false);
     footfall.insert(hex_cell(&hex6.location), false);
 
-    let mut urbanized = HashMap::<hextree::Cell, Vec<u8>>::new();
-    urbanized.insert(hex_cell(&hex1.location), vec![]);
-    urbanized.insert(hex_cell(&hex4.location), vec![]);
-    urbanized.insert(hex_cell(&hex7.location), vec![]);
+    let mut urbanized = HashSet::new();
+    urbanized.insert(hex_cell(&hex1.location));
+    urbanized.insert(hex_cell(&hex4.location));
+    urbanized.insert(hex_cell(&hex7.location));
 
     let mut geofence = HashSet::new();
     geofence.insert(hex_cell(&hex1.location));
@@ -232,17 +232,12 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     .await?;
     transaction.commit().await?;
 
-    let footfall_data = FootfallData::new(footfall);
-    let urbanization_data = UrbanizationData::new(urbanized, geofence);
     let unassigned_hexes = UnassignedHex::fetch(&pool);
-    let oba = set_oracle_boosting_assignments(
-        unassigned_hexes,
-        &footfall_data,
-        &urbanization_data,
-        &pool,
-    )
-    .await?
-    .collect::<Vec<_>>();
+    let urbanization = Urbanization::new(urbanized, geofence);
+    let hex_boost_data = HexBoostData::new(urbanization, footfall);
+    let oba = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool)
+        .await?
+        .collect::<Vec<_>>();
 
     assert_eq!(oba.len(), 1);
     assert_eq!(
@@ -345,10 +340,10 @@ async fn test_footfall_and_urbanization(pool: PgPool) -> anyhow::Result<()> {
     footfall.insert(hex_cell(&hex5.location), false);
     footfall.insert(hex_cell(&hex6.location), false);
 
-    let mut urbanized = HashMap::<hextree::Cell, Vec<u8>>::new();
-    urbanized.insert(hex_cell(&hex1.location), vec![]);
-    urbanized.insert(hex_cell(&hex4.location), vec![]);
-    urbanized.insert(hex_cell(&hex7.location), vec![]);
+    let mut urbanized = HashSet::new();
+    urbanized.insert(hex_cell(&hex1.location));
+    urbanized.insert(hex_cell(&hex4.location));
+    urbanized.insert(hex_cell(&hex7.location));
 
     let mut geofence = HashSet::new();
     geofence.insert(hex_cell(&hex1.location));
@@ -367,16 +362,10 @@ async fn test_footfall_and_urbanization(pool: PgPool) -> anyhow::Result<()> {
     .await?;
     transaction.commit().await?;
 
-    let footfall_data = FootfallData::new(footfall);
-    let urbanization_data = UrbanizationData::new(urbanized, geofence);
     let unassigned_hexes = UnassignedHex::fetch(&pool);
-    let _ = set_oracle_boosting_assignments(
-        unassigned_hexes,
-        &footfall_data,
-        &urbanization_data,
-        &pool,
-    )
-    .await?;
+    let urbanization = Urbanization::new(urbanized, geofence);
+    let hex_boost_data = HexBoostData::new(urbanization, footfall);
+    let _ = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool).await?;
 
     let heartbeats = heartbeats(12, start, &owner, &cbsd_id, 0.0, 0.0, uuid);
 
