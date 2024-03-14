@@ -274,7 +274,7 @@ impl PriorityFee {
     async fn get_estimate(&self, provider: &RpcClient) -> Result<u64, ClientError> {
         let mut last_estimate = self.last_estimate.lock().await;
         match last_estimate.time_taken {
-            Some(time_taken) if (Utc::now() - time_taken) >= chrono::Duration::minutes(15) => {
+            Some(time_taken) if (Utc::now() - time_taken) < chrono::Duration::minutes(15) => {
                 return Ok(last_estimate.fee_estimate)
             }
             _ => (),
