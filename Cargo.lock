@@ -6630,6 +6630,7 @@ dependencies = [
  "futures",
  "helium-anchor-gen",
  "helium-crypto",
+ "itertools 0.10.5",
  "metrics",
  "serde",
  "sha2 0.10.6",

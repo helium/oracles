@@ -1,17 +1,23 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
 use anchor_client::{RequestBuilder, RequestNamespace};
+use anchor_lang::ToAccountMetas;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use helium_anchor_gen::{
     anchor_lang::AccountDeserialize,
     data_credits::{self, accounts, instruction},
     helium_sub_daos::{self, DaoV0, SubDaoV0},
 };
 use helium_crypto::PublicKeyBinary;
+use itertools::Itertools;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_response::Response};
+use solana_client::{
+    client_error::ClientError, nonblocking::rpc_client::RpcClient, rpc_response::Response,
+};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
+    compute_budget::ComputeBudgetInstruction,
     program_pack::Pack,
     pubkey::Pubkey,
     signature::{read_keypair_file, Keypair, Signature},
@@ -71,6 +77,7 @@ pub struct SolanaRpc {
     cluster: String,
     keypair: [u8; 64],
     payers_to_monitor: Vec<PublicKeyBinary>,
+    priority_fee: PriorityFee,
 }
 
 impl SolanaRpc {
@@ -92,6 +99,7 @@ impl SolanaRpc {
             program_cache,
             keypair: keypair.to_bytes(),
             payers_to_monitor: settings.payers_to_monitor()?,
+            priority_fee: PriorityFee::default(),
         }))
     }
 }
@@ -161,6 +169,42 @@ impl SolanaNetwork for SolanaRpc {
             &data_credits::ID,
         );
 
+        let accounts = accounts::BurnDelegatedDataCreditsV0 {
+            sub_dao_epoch_info,
+            dao: self.program_cache.dao,
+            sub_dao: self.program_cache.sub_dao,
+            account_payer: self.program_cache.account_payer,
+            data_credits: self.program_cache.data_credits,
+            delegated_data_credits: delegated_data_credits(&self.program_cache.sub_dao, payer),
+            token_program: spl_token::id(),
+            helium_sub_daos_program: helium_sub_daos::id(),
+            system_program: solana_program::system_program::id(),
+            dc_burn_authority: self.program_cache.dc_burn_authority,
+            dc_mint: self.program_cache.dc_mint,
+            escrow_account,
+            registrar: self.program_cache.registrar,
+        };
+
+        let priority_fee_accounts: Vec<_> = accounts
+            .to_account_metas(None)
+            .into_iter()
+            .map(|x| x.pubkey)
+            .unique()
+            .collect();
+
+        // Get a new priority fee. Can't be done in Sync land
+        let priority_fee = self
+            .priority_fee
+            .get_estimate(
+                &self.provider,
+                &priority_fee_accounts[..MAX_RECENT_PRIORITY_FEE_ACCOUNTS],
+            )
+            .await
+            .map_err(SolanaRpcError::RpcClientError)?;
+
+        tracing::info!(%priority_fee);
+
+        // This is Sync land: anything async in here will error.
         let instructions = {
             let request = RequestBuilder::from(
                 data_credits::id(),
@@ -170,21 +214,6 @@ impl SolanaNetwork for SolanaRpc {
                 RequestNamespace::Global,
             );
 
-            let accounts = accounts::BurnDelegatedDataCreditsV0 {
-                sub_dao_epoch_info,
-                dao: self.program_cache.dao,
-                sub_dao: self.program_cache.sub_dao,
-                account_payer: self.program_cache.account_payer,
-                data_credits: self.program_cache.data_credits,
-                delegated_data_credits: delegated_data_credits(&self.program_cache.sub_dao, payer),
-                token_program: spl_token::id(),
-                helium_sub_daos_program: helium_sub_daos::id(),
-                system_program: solana_program::system_program::id(),
-                dc_burn_authority: self.program_cache.dc_burn_authority,
-                dc_mint: self.program_cache.dc_mint,
-                escrow_account,
-                registrar: self.program_cache.registrar,
-            };
             let args = instruction::BurnDelegatedDataCreditsV0 {
                 _args: data_credits::BurnDelegatedDataCreditsArgsV0 { amount },
             };
@@ -192,6 +221,12 @@ impl SolanaNetwork for SolanaRpc {
             // As far as I can tell, the instructions function does not actually have any
             // error paths.
             request
+                // Set priority fees:
+                .instruction(ComputeBudgetInstruction::set_compute_unit_limit(300_000))
+                .instruction(ComputeBudgetInstruction::set_compute_unit_price(
+                    priority_fee,
+                ))
+                // Create burn transaction
                 .accounts(accounts)
                 .args(args)
                 .instructions()
@@ -240,6 +275,73 @@ impl SolanaNetwork for SolanaRpc {
                 .await?,
             Some(Ok(()))
         ))
+    }
+}
+
+#[derive(Default)]
+pub struct PriorityFee {
+    last_estimate: Arc<Mutex<LastEstimate>>,
+}
+
+pub const BASE_PRIORITY_FEE: u64 = 1;
+pub const MAX_RECENT_PRIORITY_FEE_ACCOUNTS: usize = 128;
+
+impl PriorityFee {
+    pub async fn get_estimate(
+        &self,
+        provider: &RpcClient,
+        accounts: &[Pubkey],
+    ) -> Result<u64, ClientError> {
+        let mut last_estimate = self.last_estimate.lock().await;
+        match last_estimate.time_taken {
+            Some(time_taken) if (Utc::now() - time_taken) < chrono::Duration::minutes(15) => {
+                return Ok(last_estimate.fee_estimate)
+            }
+            _ => (),
+        }
+        // Find a new estimate
+        let time_taken = Utc::now();
+        let recent_fees = provider.get_recent_prioritization_fees(accounts).await?;
+        let mut max_per_slot = Vec::new();
+        for (slot, fees) in &recent_fees.into_iter().group_by(|x| x.slot) {
+            let Some(maximum) = fees.map(|x| x.prioritization_fee).max() else {
+                continue;
+            };
+            max_per_slot.push((slot, maximum));
+        }
+        // Only take the most recent 20 maximum fees:
+        max_per_slot.sort_by(|a, b| a.0.cmp(&b.0).reverse());
+        let mut max_per_slot: Vec<_> = max_per_slot.into_iter().take(20).map(|x| x.1).collect();
+        max_per_slot.sort();
+        // Get the median:
+        let num_recent_fees = max_per_slot.len();
+        let mid = num_recent_fees / 2;
+        let estimate = if num_recent_fees == 0 {
+            BASE_PRIORITY_FEE
+        } else if num_recent_fees % 2 == 0 {
+            // If the number of samples is even, taken the mean of the two median fees
+            (max_per_slot[mid - 1] + max_per_slot[mid]) / 2
+        } else {
+            max_per_slot[mid]
+        }
+        .max(BASE_PRIORITY_FEE);
+        *last_estimate = LastEstimate::new(time_taken, estimate);
+        Ok(estimate)
+    }
+}
+
+#[derive(Copy, Clone, Default)]
+pub struct LastEstimate {
+    time_taken: Option<DateTime<Utc>>,
+    fee_estimate: u64,
+}
+
+impl LastEstimate {
+    fn new(time_taken: DateTime<Utc>, fee_estimate: u64) -> Self {
+        Self {
+            time_taken: Some(time_taken),
+            fee_estimate,
+        }
     }
 }
 
