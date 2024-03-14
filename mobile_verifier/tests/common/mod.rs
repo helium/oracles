@@ -7,6 +7,7 @@ use helium_proto::{
     Message,
 };
 use mobile_config::boosted_hex_info::BoostedHexInfo;
+use mobile_verifier::boosting_oracles::{Assignment, HexAssignment};
 use std::collections::HashMap;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 
@@ -153,6 +154,7 @@ impl MockFileSinkReceiver {
     }
 }
 
+#[allow(dead_code)]
 pub fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
     let (tx, rx) = tokio::sync::mpsc::channel(20);
     (
@@ -166,4 +168,29 @@ pub fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
 
 pub fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
+}
+
+pub struct MockHexAssignments {
+    urban: Assignment,
+    footfall: Assignment,
+}
+
+#[allow(dead_code)]
+impl MockHexAssignments {
+    pub fn best() -> Self {
+        Self {
+            urban: Assignment::A,
+            footfall: Assignment::A,
+        }
+    }
+}
+
+impl HexAssignment for MockHexAssignments {
+    fn urban_assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        Ok(self.urban)
+    }
+
+    fn footfall_assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        Ok(self.footfall)
+    }
 }
