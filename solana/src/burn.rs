@@ -1,5 +1,6 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
 use anchor_client::{RequestBuilder, RequestNamespace};
+use anchor_lang::ToAccountMetas;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use helium_anchor_gen::{
@@ -8,6 +9,7 @@ use helium_anchor_gen::{
     helium_sub_daos::{self, DaoV0, SubDaoV0},
 };
 use helium_crypto::PublicKeyBinary;
+use itertools::Itertools;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use solana_client::{
@@ -167,12 +169,40 @@ impl SolanaNetwork for SolanaRpc {
             &data_credits::ID,
         );
 
+        let accounts = accounts::BurnDelegatedDataCreditsV0 {
+            sub_dao_epoch_info,
+            dao: self.program_cache.dao,
+            sub_dao: self.program_cache.sub_dao,
+            account_payer: self.program_cache.account_payer,
+            data_credits: self.program_cache.data_credits,
+            delegated_data_credits: delegated_data_credits(&self.program_cache.sub_dao, payer),
+            token_program: spl_token::id(),
+            helium_sub_daos_program: helium_sub_daos::id(),
+            system_program: solana_program::system_program::id(),
+            dc_burn_authority: self.program_cache.dc_burn_authority,
+            dc_mint: self.program_cache.dc_mint,
+            escrow_account,
+            registrar: self.program_cache.registrar,
+        };
+
+        let priority_fee_accounts: Vec<_> = accounts
+            .to_account_metas(None)
+            .into_iter()
+            .map(|x| x.pubkey)
+            .unique()
+            .collect();
+
         // Get a new priority fee. Can't be done in Sync land
         let priority_fee = self
             .priority_fee
-            .get_estimate(&self.provider)
+            .get_estimate(
+                &self.provider,
+                &priority_fee_accounts[..MAX_RECENT_PRIORITY_FEE_ACCOUNTS],
+            )
             .await
             .map_err(SolanaRpcError::RpcClientError)?;
+
+        tracing::info!(%priority_fee);
 
         // This is Sync land: anything async in here will error.
         let instructions = {
@@ -184,21 +214,6 @@ impl SolanaNetwork for SolanaRpc {
                 RequestNamespace::Global,
             );
 
-            let accounts = accounts::BurnDelegatedDataCreditsV0 {
-                sub_dao_epoch_info,
-                dao: self.program_cache.dao,
-                sub_dao: self.program_cache.sub_dao,
-                account_payer: self.program_cache.account_payer,
-                data_credits: self.program_cache.data_credits,
-                delegated_data_credits: delegated_data_credits(&self.program_cache.sub_dao, payer),
-                token_program: spl_token::id(),
-                helium_sub_daos_program: helium_sub_daos::id(),
-                system_program: solana_program::system_program::id(),
-                dc_burn_authority: self.program_cache.dc_burn_authority,
-                dc_mint: self.program_cache.dc_mint,
-                escrow_account,
-                registrar: self.program_cache.registrar,
-            };
             let args = instruction::BurnDelegatedDataCreditsV0 {
                 _args: data_credits::BurnDelegatedDataCreditsArgsV0 { amount },
             };
@@ -269,9 +284,14 @@ pub struct PriorityFee {
 }
 
 pub const BASE_PRIORITY_FEE: u64 = 1;
+pub const MAX_RECENT_PRIORITY_FEE_ACCOUNTS: usize = 128;
 
 impl PriorityFee {
-    async fn get_estimate(&self, provider: &RpcClient) -> Result<u64, ClientError> {
+    async fn get_estimate(
+        &self,
+        provider: &RpcClient,
+        accounts: &[Pubkey],
+    ) -> Result<u64, ClientError> {
         let mut last_estimate = self.last_estimate.lock().await;
         match last_estimate.time_taken {
             Some(time_taken) if (Utc::now() - time_taken) < chrono::Duration::minutes(15) => {
@@ -281,18 +301,25 @@ impl PriorityFee {
         }
         // Find a new estimate
         let time_taken = Utc::now();
-        let mut recent_fees = provider.get_recent_prioritization_fees(&[]).await?;
-        recent_fees.sort_by_key(|x| x.prioritization_fee);
+        let recent_fees = provider.get_recent_prioritization_fees(accounts).await?;
+        let mut max_per_slot = Vec::new();
+        for (_, fees) in &recent_fees.into_iter().group_by(|x| x.slot) {
+            let Some(maximum) = fees.map(|x| x.prioritization_fee).max() else {
+                continue;
+            };
+            max_per_slot.push(maximum);
+        }
+        max_per_slot.sort();
         // Get the median:
-        let num_recent_fees = recent_fees.len();
+        let num_recent_fees = max_per_slot.len();
         let mid = num_recent_fees / 2;
         let estimate = if num_recent_fees == 0 {
             BASE_PRIORITY_FEE
         } else if num_recent_fees % 2 == 0 {
             // If the number of samples is even, taken the mean of the two median fees
-            (recent_fees[mid - 1].prioritization_fee + recent_fees[mid].prioritization_fee) / 2
+            (max_per_slot[mid - 1] + max_per_slot[mid]) / 2
         } else {
-            recent_fees[mid].prioritization_fee
+            max_per_slot[mid]
         }
         .max(BASE_PRIORITY_FEE);
         *last_estimate = LastEstimate::new(time_taken, estimate);
