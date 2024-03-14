@@ -59,6 +59,12 @@ pub struct Settings {
     dnt_mint: String,
     #[serde(default)]
     payers_to_monitor: Vec<String>,
+    #[serde(default = "min_priority_fee")]
+    min_priority_fee: u64,
+}
+
+fn min_priority_fee() -> u64 {
+    1
 }
 
 impl Settings {
@@ -78,6 +84,7 @@ pub struct SolanaRpc {
     keypair: [u8; 64],
     payers_to_monitor: Vec<PublicKeyBinary>,
     priority_fee: PriorityFee,
+    min_priority_fee: u64,
 }
 
 impl SolanaRpc {
@@ -88,7 +95,7 @@ impl SolanaRpc {
             return Err(SolanaRpcError::FailedToReadKeypairError);
         };
         let provider =
-            RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());
+            RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::confirmed());
         let program_cache = BurnProgramCache::new(&provider, dc_mint, dnt_mint).await?;
         if program_cache.dc_burn_authority != keypair.pubkey() {
             return Err(SolanaRpcError::InvalidKeypair);
@@ -100,6 +107,7 @@ impl SolanaRpc {
             keypair: keypair.to_bytes(),
             payers_to_monitor: settings.payers_to_monitor()?,
             priority_fee: PriorityFee::default(),
+            min_priority_fee: settings.min_priority_fee,
         }))
     }
 }
@@ -196,7 +204,11 @@ impl SolanaNetwork for SolanaRpc {
         // Get a new priority fee. Can't be done in Sync land
         let priority_fee = self
             .priority_fee
-            .get_estimate(&self.provider, &priority_fee_accounts)
+            .get_estimate(
+                &self.provider,
+                &priority_fee_accounts,
+                self.min_priority_fee,
+            )
             .await
             .map_err(SolanaRpcError::RpcClientError)?;
 
@@ -243,7 +255,17 @@ impl SolanaNetwork for SolanaRpc {
     }
 
     async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), Self::Error> {
-        match send_with_retry!(self.provider.send_and_confirm_transaction(tx)) {
+        let config = solana_client::rpc_config::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        };
+        match send_with_retry!(self
+            .provider
+            .send_and_confirm_transaction_with_spinner_and_config(
+                tx,
+                CommitmentConfig::confirmed(),
+                config,
+            )) {
             Ok(signature) => {
                 tracing::info!(
                     transaction = %signature,
@@ -281,7 +303,6 @@ pub struct PriorityFee {
     last_estimate: Arc<Mutex<LastEstimate>>,
 }
 
-pub const BASE_PRIORITY_FEE: u64 = 1;
 pub const MAX_RECENT_PRIORITY_FEE_ACCOUNTS: usize = 128;
 
 impl PriorityFee {
@@ -289,6 +310,7 @@ impl PriorityFee {
         &self,
         provider: &RpcClient,
         accounts: &[Pubkey],
+        min_priority_fee: u64,
     ) -> Result<u64, ClientError> {
         let mut last_estimate = self.last_estimate.lock().await;
         match last_estimate.time_taken {
@@ -315,14 +337,14 @@ impl PriorityFee {
         let num_recent_fees = max_per_slot.len();
         let mid = num_recent_fees / 2;
         let estimate = if num_recent_fees == 0 {
-            BASE_PRIORITY_FEE
+            min_priority_fee
         } else if num_recent_fees % 2 == 0 {
             // If the number of samples is even, taken the mean of the two median fees
             (max_per_slot[mid - 1] + max_per_slot[mid]) / 2
         } else {
             max_per_slot[mid]
         }
-        .max(BASE_PRIORITY_FEE);
+        .max(min_priority_fee);
         *last_estimate = LastEstimate::new(time_taken, estimate);
         Ok(estimate)
     }
