@@ -6,7 +6,127 @@ use crate::geofence::GeofenceValidator;
 pub use assignment::Assignment;
 use hextree::disktree::DiskTreeMap;
 
-pub trait DiskTreeLike: Send + Sync + 'static {
+pub enum FootfallCategory {
+    /// More than 1 point of interest
+    Poi,
+    /// (ZERO) points of interest
+    PoiNoData,
+    /// Cell not found
+    NoPoi,
+}
+
+pub enum UrbanizationCategory {
+    Urban,
+    NotUrban,
+    OutsideUSA,
+}
+
+pub trait HexAssignment: Send + Sync {
+    fn urban_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
+    fn footfall_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
+}
+
+pub struct HexBoostData<Urban, Foot> {
+    urbanization: Urban,
+    footfall: Foot,
+}
+
+pub struct Urbanization<Urban, Geo> {
+    urbanized: Urban,
+    usa_geofence: Geo,
+}
+
+pub struct FootfallData<Foot> {
+    footfall: Foot,
+}
+
+impl<Urban, Foot> HexBoostData<Urban, Foot> {
+    pub fn new(urbanization: Urban, footfall: Foot) -> Self {
+        Self {
+            urbanization,
+            footfall,
+        }
+    }
+}
+
+impl<Urban, Geo> Urbanization<Urban, Geo> {
+    pub fn new(urbanized: Urban, usa_geofence: Geo) -> Self {
+        Self {
+            urbanized,
+            usa_geofence,
+        }
+    }
+}
+
+impl<Foot> FootfallData<Foot> {
+    pub fn new(footfall: Foot) -> Self {
+        Self { footfall }
+    }
+}
+
+impl<Urban, Foot> HexAssignment for HexBoostData<Urban, Foot>
+where
+    Urban: TryAsCategory<UrbanizationCategory>,
+    Foot: TryAsCategory<FootfallCategory>,
+{
+    fn urban_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        self.urbanization
+            .try_as_category(cell)
+            .map(|cat| match cat {
+                UrbanizationCategory::Urban => Assignment::A,
+                UrbanizationCategory::NotUrban => Assignment::B,
+                UrbanizationCategory::OutsideUSA => Assignment::C,
+            })
+    }
+
+    fn footfall_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        self.footfall.try_as_category(cell).map(|cat| match cat {
+            FootfallCategory::Poi => Assignment::A,
+            FootfallCategory::PoiNoData => Assignment::B,
+            FootfallCategory::NoPoi => Assignment::C,
+        })
+    }
+}
+
+pub trait TryAsCategory<T>: Sync + Send {
+    fn try_as_category(&self, cell: hextree::Cell) -> anyhow::Result<T>;
+}
+
+impl<Urban, Geo> TryAsCategory<UrbanizationCategory> for Urbanization<Urban, Geo>
+where
+    Urban: DiskTreeLike,
+    Geo: GeofenceValidator<hextree::Cell>,
+{
+    fn try_as_category(&self, cell: hextree::Cell) -> anyhow::Result<UrbanizationCategory> {
+        if !self.usa_geofence.in_valid_region(&cell) {
+            return Ok(UrbanizationCategory::OutsideUSA);
+        }
+
+        match self.urbanized.get(cell)?.is_some() {
+            true => Ok(UrbanizationCategory::Urban),
+            false => Ok(UrbanizationCategory::NotUrban),
+        }
+    }
+}
+
+impl<Foot> TryAsCategory<FootfallCategory> for FootfallData<Foot>
+where
+    Foot: DiskTreeLike,
+{
+    fn try_as_category(&self, cell: hextree::Cell) -> anyhow::Result<FootfallCategory> {
+        let Some((_, vals)) = self.footfall.get(cell)? else {
+            return Ok(FootfallCategory::NoPoi);
+        };
+
+        match vals {
+            &[x] if x >= 1 => Ok(FootfallCategory::Poi),
+            &[0] => Ok(FootfallCategory::PoiNoData),
+            other => anyhow::bail!("unexpected disktree data: {cell:?} {other:?}"),
+        }
+    }
+}
+
+trait DiskTreeLike: Send + Sync {
     fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>>;
 }
 
@@ -16,94 +136,25 @@ impl DiskTreeLike for DiskTreeMap {
     }
 }
 
-impl DiskTreeLike for HashMap<hextree::Cell, Vec<u8>> {
+// ==============================
+// ==== TEST IMPLEMENTATIONS ====
+// ==============================
+
+impl DiskTreeLike for std::collections::HashSet<hextree::Cell> {
     fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>> {
-        Ok(self.get(&cell).map(|x| (cell, x.as_slice())))
-    }
-}
-
-pub struct MockDiskTree;
-
-impl DiskTreeLike for MockDiskTree {
-    fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>> {
-        Ok(Some((cell, &[])))
-    }
-}
-
-pub struct UrbanizationData<DT, GF> {
-    urbanized: DT,
-    usa_geofence: GF,
-}
-
-impl<DT, GF> UrbanizationData<DT, GF> {
-    pub fn new(urbanized: DT, usa_geofence: GF) -> Self {
-        Self {
-            urbanized,
-            usa_geofence,
+        match self.contains(&cell) {
+            true => Ok(Some((cell, &[]))),
+            false => Ok(None),
         }
     }
 }
 
-impl<DT, GF> UrbanizationData<DT, GF>
-where
-    DT: DiskTreeLike,
-    GF: GeofenceValidator<hextree::Cell>,
-{
-    fn is_urbanized(&self, cell: hextree::Cell) -> anyhow::Result<bool> {
-        let result = self.urbanized.get(cell)?;
-        Ok(result.is_some())
-    }
-
-    pub fn hex_assignment(&self, hex: hextree::Cell) -> anyhow::Result<Assignment> {
-        let assignment = if self.usa_geofence.in_valid_region(&hex) {
-            if self.is_urbanized(hex)? {
-                Assignment::A
-            } else {
-                Assignment::B
-            }
-        } else {
-            Assignment::C
-        };
-        Ok(assignment)
-    }
-}
-
-pub trait FootfallLike: Send + Sync + 'static {
-    fn get(&self, cell: hextree::Cell) -> Option<bool>;
-}
-
-#[derive(Default)]
-pub struct FootfallData<FL> {
-    values: FL,
-}
-
-impl<FL> FootfallData<FL>
-where
-    FL: FootfallLike,
-{
-    pub fn new(values: FL) -> Self {
-        Self { values }
-    }
-
-    pub fn hex_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        match self.values.get(cell) {
-            Some(true) => Ok(Assignment::A),
-            Some(false) => Ok(Assignment::B),
-            None => Ok(Assignment::C),
+impl TryAsCategory<FootfallCategory> for HashMap<hextree::Cell, bool> {
+    fn try_as_category(&self, cell: hextree::Cell) -> anyhow::Result<FootfallCategory> {
+        match self.get(&cell) {
+            Some(true) => Ok(FootfallCategory::Poi),
+            Some(false) => Ok(FootfallCategory::PoiNoData),
+            None => Ok(FootfallCategory::NoPoi),
         }
-    }
-}
-
-impl FootfallLike for HashMap<hextree::Cell, bool> {
-    fn get(&self, cell: hextree::Cell) -> Option<bool> {
-        self.get(&cell).cloned()
-    }
-}
-
-pub struct MockFootfallData;
-
-impl FootfallLike for MockFootfallData {
-    fn get(&self, _cell: hextree::Cell) -> Option<bool> {
-        Some(true)
     }
 }
