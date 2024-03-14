@@ -12,11 +12,12 @@ use hextree::disktree::DiskTreeMap;
 pub fn make_hex_boost_data(
     settings: &Settings,
     usa_geofence: Geofence,
-) -> anyhow::Result<HexBoostData<Urbanization<DiskTreeMap, Geofence>, FootfallData<DiskTreeMap>>> {
+) -> anyhow::Result<HexBoostData<UrbanizationData<DiskTreeMap, Geofence>, FootfallData<DiskTreeMap>>>
+{
     let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
     let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
 
-    let urbanization = Urbanization::new(urban_disktree, usa_geofence);
+    let urbanization = UrbanizationData::new(urban_disktree, usa_geofence);
     let footfall_data = FootfallData::new(footfall_disktree);
     let hex_boost_data = HexBoostData::new(urbanization, footfall_data);
 
@@ -48,7 +49,7 @@ pub struct HexBoostData<Urban, Foot> {
     footfall: Foot,
 }
 
-pub struct Urbanization<Urban, Geo> {
+pub struct UrbanizationData<Urban, Geo> {
     urbanized: Urban,
     usa_geofence: Geo,
 }
@@ -66,7 +67,7 @@ impl<Urban, Foot> HexBoostData<Urban, Foot> {
     }
 }
 
-impl<Urban, Geo> Urbanization<Urban, Geo> {
+impl<Urban, Geo> UrbanizationData<Urban, Geo> {
     pub fn new(urbanized: Urban, usa_geofence: Geo) -> Self {
         Self {
             urbanized,
@@ -109,7 +110,7 @@ pub trait TryAsCategory<T>: Sync + Send {
     fn try_as_category(&self, cell: hextree::Cell) -> anyhow::Result<T>;
 }
 
-impl<Urban, Geo> TryAsCategory<UrbanizationCategory> for Urbanization<Urban, Geo>
+impl<Urban, Geo> TryAsCategory<UrbanizationCategory> for UrbanizationData<Urban, Geo>
 where
     Urban: DiskTreeLike,
     Geo: GeofenceValidator<hextree::Cell>,
