@@ -190,15 +190,13 @@ impl SolanaNetwork for SolanaRpc {
             .into_iter()
             .map(|x| x.pubkey)
             .unique()
+            .take(MAX_RECENT_PRIORITY_FEE_ACCOUNTS)
             .collect();
 
         // Get a new priority fee. Can't be done in Sync land
         let priority_fee = self
             .priority_fee
-            .get_estimate(
-                &self.provider,
-                &priority_fee_accounts[..MAX_RECENT_PRIORITY_FEE_ACCOUNTS],
-            )
+            .get_estimate(&self.provider, &priority_fee_accounts)
             .await
             .map_err(SolanaRpcError::RpcClientError)?;
 
