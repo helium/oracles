@@ -1,6 +1,7 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
 use anchor_client::{RequestBuilder, RequestNamespace};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use helium_anchor_gen::{
     anchor_lang::AccountDeserialize,
     data_credits::{self, accounts, instruction},
@@ -9,9 +10,12 @@ use helium_anchor_gen::{
 use helium_crypto::PublicKeyBinary;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_response::Response};
+use solana_client::{
+    client_error::ClientError, nonblocking::rpc_client::RpcClient, rpc_response::Response,
+};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
+    compute_budget::ComputeBudgetInstruction,
     program_pack::Pack,
     pubkey::Pubkey,
     signature::{read_keypair_file, Keypair, Signature},
@@ -71,6 +75,7 @@ pub struct SolanaRpc {
     cluster: String,
     keypair: [u8; 64],
     payers_to_monitor: Vec<PublicKeyBinary>,
+    priority_fee: PriorityFee,
 }
 
 impl SolanaRpc {
@@ -92,6 +97,7 @@ impl SolanaRpc {
             program_cache,
             keypair: keypair.to_bytes(),
             payers_to_monitor: settings.payers_to_monitor()?,
+            priority_fee: PriorityFee::default(),
         }))
     }
 }
@@ -161,6 +167,14 @@ impl SolanaNetwork for SolanaRpc {
             &data_credits::ID,
         );
 
+        // Get a new priority fee. Can't be done in Sync land
+        let priority_fee = self
+            .priority_fee
+            .get_estimate(&self.provider)
+            .await
+            .map_err(SolanaRpcError::RpcClientError)?;
+
+        // This is Sync land: anything async in here will error.
         let instructions = {
             let request = RequestBuilder::from(
                 data_credits::id(),
@@ -192,6 +206,12 @@ impl SolanaNetwork for SolanaRpc {
             // As far as I can tell, the instructions function does not actually have any
             // error paths.
             request
+                // Set priority fees:
+                .instruction(ComputeBudgetInstruction::set_compute_unit_limit(300_000))
+                .instruction(ComputeBudgetInstruction::set_compute_unit_price(
+                    priority_fee,
+                ))
+                // Create burn transaction
                 .accounts(accounts)
                 .args(args)
                 .instructions()
@@ -240,6 +260,55 @@ impl SolanaNetwork for SolanaRpc {
                 .await?,
             Some(Ok(()))
         ))
+    }
+}
+
+#[derive(Default)]
+pub struct PriorityFee {
+    last_estimate: Arc<Mutex<LastEstimate>>,
+}
+
+pub const BASE_PRIORITY_FEE: u64 = 1;
+
+impl PriorityFee {
+    async fn get_estimate(&self, provider: &RpcClient) -> Result<u64, ClientError> {
+        let mut last_estimate = self.last_estimate.lock().await;
+        match last_estimate.time_taken {
+            Some(time_taken) if (Utc::now() - time_taken) >= chrono::Duration::minutes(15) => {
+                return Ok(last_estimate.fee_estimate)
+            }
+            _ => (),
+        }
+        // Find a new estimate
+        let time_taken = Utc::now();
+        let mut estimates = provider.get_recent_prioritization_fees(&[]).await?;
+        estimates.sort_by_key(|x| x.prioritization_fee);
+        // Get the median:
+        let num_estimates = estimates.len();
+        let estimate = if num_estimates == 0 {
+            BASE_PRIORITY_FEE
+        } else {
+            estimates[estimates.len() / 2]
+                .prioritization_fee
+                .max(BASE_PRIORITY_FEE)
+        };
+        *last_estimate = LastEstimate::new(time_taken, estimate);
+        Ok(estimate)
+    }
+}
+
+#[derive(Copy, Clone, Default)]
+pub struct LastEstimate {
+    time_taken: Option<DateTime<Utc>>,
+    fee_estimate: u64,
+}
+
+impl LastEstimate {
+    fn new(time_taken: DateTime<Utc>, fee_estimate: u64) -> Self {
+        Self {
+            time_taken: Some(time_taken),
+            fee_estimate,
+        }
     }
 }
 
