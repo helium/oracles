@@ -93,10 +93,9 @@ where
     ) -> anyhow::Result<Self> {
         tracing::info!("Setting initial values for the urbanization column");
 
-        let unassigned_urbanization_hexes = UnassignedHex::fetch(&pool);
-
+        let unassigned_hexes = UnassignedHex::fetch(&pool);
         let initial_boosting_reports = Some(
-            set_oracle_boosting_assignments(unassigned_urbanization_hexes, &hex_boost_data, &pool)
+            set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool)
                 .await?
                 .collect(),
         );
@@ -166,14 +165,10 @@ where
 
         // After writing all of the coverage objects, we set their oracle boosting assignments. This is
         // done in two steps to improve the testability of the assignments.
-        let unassigned_urbinization_hexes = UnassignedHex::fetch(&self.pool);
-
-        let boosting_reports = set_oracle_boosting_assignments(
-            unassigned_urbinization_hexes,
-            &self.hex_boost_data,
-            &self.pool,
-        )
-        .await?;
+        let unassigned_hexes = UnassignedHex::fetch(&self.pool);
+        let boosting_reports =
+            set_oracle_boosting_assignments(unassigned_hexes, &self.hex_boost_data, &self.pool)
+                .await?;
         self.oracle_boosting_sink
             .write_all(boosting_reports)
             .await?;
