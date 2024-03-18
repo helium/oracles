@@ -1,6 +1,6 @@
 use crate::{
     boosting_oracles::{
-        assignment::footfall_and_urbanization_multiplier, Assignment, HexAssignment,
+        assignment::footfall_and_urbanization_multiplier, Assignment, HexAssignment, HexBoostData,
     },
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized,
@@ -66,27 +66,29 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
-pub struct CoverageDaemon<HA>
+pub struct CoverageDaemon<Urban, Foot>
 where
-    HA: HexAssignment,
+    Urban: HexAssignment,
+    Foot: HexAssignment,
 {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
-    hex_boost_data: HA,
+    hex_boost_data: HexBoostData<Urban, Foot>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     initial_boosting_reports: Option<Vec<OracleBoostingReportV1>>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
 }
 
-impl<HA> CoverageDaemon<HA>
+impl<Urban, Foot> CoverageDaemon<Urban, Foot>
 where
-    HA: HexAssignment,
+    Urban: HexAssignment,
+    Foot: HexAssignment,
 {
     pub async fn new(
         pool: PgPool,
         auth_client: AuthorizationClient,
-        hex_boost_data: HA,
+        hex_boost_data: HexBoostData<Urban, Foot>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
         oracle_boosting_sink: FileSinkClient,
@@ -202,7 +204,7 @@ impl UnassignedHex {
 
 pub async fn set_oracle_boosting_assignments(
     unassigned_urbinization_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
-    hex_boost_data: &impl HexAssignment,
+    hex_boost_data: &HexBoostData<impl HexAssignment, impl HexAssignment>,
     pool: &PgPool,
 ) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
     let now = Utc::now();
@@ -223,7 +225,7 @@ pub async fn set_oracle_boosting_assignments(
 
 async fn initialize_unassigned_hexes(
     unassigned_urbinization_hexes: impl Stream<Item = Result<UnassignedHex, sqlx::Error>>,
-    hex_boost_data: &impl HexAssignment,
+    hex_boost_data: &HexBoostData<impl HexAssignment, impl HexAssignment>,
     pool: &Pool<Postgres>,
 ) -> Result<HashMap<Uuid, Vec<proto::OracleBoostingHexAssignment>>, anyhow::Error> {
     const NUMBER_OF_FIELDS_IN_QUERY: u16 = 6;
@@ -239,8 +241,8 @@ async fn initialize_unassigned_hexes(
             .into_iter()
             .map(|hex| {
                 let cell = hextree::Cell::from_raw(hex.hex)?;
-                let urbanized = hex_boost_data.urban_assignment(cell)?;
-                let footfall = hex_boost_data.footfall_assignment(cell)?;
+                let urbanized = hex_boost_data.urbanization.assignment(cell)?;
+                let footfall = hex_boost_data.footfall.assignment(cell)?;
 
                 let location = hex.to_location_string();
                 let assignment_multiplier =
@@ -287,9 +289,10 @@ async fn initialize_unassigned_hexes(
     Ok(boost_results)
 }
 
-impl<H> ManagedTask for CoverageDaemon<H>
+impl<Urban, Foot> ManagedTask for CoverageDaemon<Urban, Foot>
 where
-    H: HexAssignment + 'static,
+    Urban: HexAssignment + 'static,
+    Foot: HexAssignment + 'static,
 {
     fn start_task(
         self: Box<Self>,
