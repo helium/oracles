@@ -12,7 +12,7 @@ use hextree::disktree::DiskTreeMap;
 pub fn make_hex_boost_data(
     settings: &Settings,
     usa_geofence: Geofence,
-) -> anyhow::Result<HexBoostData<UrbanizationData<DiskTreeMap, Geofence>, FootfallData<DiskTreeMap>>>
+) -> anyhow::Result<HexBoostData<impl HexAssignment, impl HexAssignment>>
 {
     let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
     let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
@@ -24,29 +24,13 @@ pub fn make_hex_boost_data(
     Ok(hex_boost_data)
 }
 
-pub enum FootfallCategory {
-    /// More than 1 point of interest
-    Poi,
-    /// (ZERO) points of interest
-    PoiNoData,
-    /// Cell not found
-    NoPoi,
-}
-
-pub enum UrbanizationCategory {
-    Urban,
-    NotUrban,
-    OutsideUSA,
-}
-
 pub trait HexAssignment: Send + Sync {
-    fn urban_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
-    fn footfall_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
 }
 
 pub struct HexBoostData<Urban, Foot> {
-    urbanization: Urban,
-    footfall: Foot,
+    pub urbanization: Urban,
+    pub footfall: Foot,
 }
 
 pub struct UrbanizationData<Urban, Geo> {
@@ -82,68 +66,6 @@ impl<Foot> FootfallData<Foot> {
     }
 }
 
-impl<Urban, Foot> HexAssignment for HexBoostData<Urban, Foot>
-where
-    Urban: TryAsCategory<UrbanizationCategory>,
-    Foot: TryAsCategory<FootfallCategory>,
-{
-    fn urban_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        self.urbanization
-            .try_as_category(cell)
-            .map(|cat| match cat {
-                UrbanizationCategory::Urban => Assignment::A,
-                UrbanizationCategory::NotUrban => Assignment::B,
-                UrbanizationCategory::OutsideUSA => Assignment::C,
-            })
-    }
-
-    fn footfall_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        self.footfall.try_as_category(cell).map(|cat| match cat {
-            FootfallCategory::Poi => Assignment::A,
-            FootfallCategory::PoiNoData => Assignment::B,
-            FootfallCategory::NoPoi => Assignment::C,
-        })
-    }
-}
-
-pub trait TryAsCategory<T>: Sync + Send {
-    fn try_as_category(&self, cell: hextree::Cell) -> anyhow::Result<T>;
-}
-
-impl<Urban, Geo> TryAsCategory<UrbanizationCategory> for UrbanizationData<Urban, Geo>
-where
-    Urban: DiskTreeLike,
-    Geo: GeofenceValidator<hextree::Cell>,
-{
-    fn try_as_category(&self, cell: hextree::Cell) -> anyhow::Result<UrbanizationCategory> {
-        if !self.usa_geofence.in_valid_region(&cell) {
-            return Ok(UrbanizationCategory::OutsideUSA);
-        }
-
-        match self.urbanized.get(cell)?.is_some() {
-            true => Ok(UrbanizationCategory::Urban),
-            false => Ok(UrbanizationCategory::NotUrban),
-        }
-    }
-}
-
-impl<Foot> TryAsCategory<FootfallCategory> for FootfallData<Foot>
-where
-    Foot: DiskTreeLike,
-{
-    fn try_as_category(&self, cell: hextree::Cell) -> anyhow::Result<FootfallCategory> {
-        let Some((_, vals)) = self.footfall.get(cell)? else {
-            return Ok(FootfallCategory::NoPoi);
-        };
-
-        match vals {
-            &[x] if x >= 1 => Ok(FootfallCategory::Poi),
-            &[0] => Ok(FootfallCategory::PoiNoData),
-            other => anyhow::bail!("unexpected disktree data: {cell:?} {other:?}"),
-        }
-    }
-}
-
 trait DiskTreeLike: Send + Sync {
     fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>>;
 }
@@ -163,12 +85,53 @@ impl DiskTreeLike for std::collections::HashSet<hextree::Cell> {
     }
 }
 
-impl TryAsCategory<FootfallCategory> for HashMap<hextree::Cell, bool> {
-    fn try_as_category(&self, cell: hextree::Cell) -> anyhow::Result<FootfallCategory> {
-        match self.get(&cell) {
-            Some(true) => Ok(FootfallCategory::Poi),
-            Some(false) => Ok(FootfallCategory::PoiNoData),
-            None => Ok(FootfallCategory::NoPoi),
+impl<Urban, Geo> HexAssignment for UrbanizationData<Urban, Geo>
+where
+    Urban: DiskTreeLike,
+    Geo: GeofenceValidator<hextree::Cell>,
+{
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        if !self.usa_geofence.in_valid_region(&cell) {
+            return Ok(Assignment::C);
         }
+
+        match self.urbanized.get(cell)?.is_some() {
+            true => Ok(Assignment::A),
+            false => Ok(Assignment::B),
+        }
+    }
+}
+
+impl<Foot> HexAssignment for FootfallData<Foot>
+where
+    Foot: DiskTreeLike,
+{
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        let Some((_, vals)) = self.footfall.get(cell)? else {
+            return Ok(Assignment::C);
+        };
+
+        match vals {
+            &[x] if x >= 1 => Ok(Assignment::A),
+            &[0] => Ok(Assignment::B),
+            other => anyhow::bail!("unexpected disktree data: {cell:?} {other:?}"),
+        }
+    }
+}
+
+impl HexAssignment for Assignment {
+    fn assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        Ok(*self)
+    }
+}
+
+impl HexAssignment for HashMap<hextree::Cell, bool> {
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        let assignment = match self.get(&cell) {
+            Some(true) => Assignment::A,
+            Some(false) => Assignment::B,
+            None => Assignment::C,
+        };
+        Ok(assignment)
     }
 }

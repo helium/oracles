@@ -7,7 +7,7 @@ use helium_proto::{
     Message,
 };
 use mobile_config::boosted_hex_info::BoostedHexInfo;
-use mobile_verifier::boosting_oracles::{Assignment, HexAssignment};
+use mobile_verifier::boosting_oracles::{Assignment, HexAssignment, HexBoostData};
 use std::collections::HashMap;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 
@@ -170,27 +170,15 @@ pub fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
-pub struct MockHexAssignments {
-    urban: Assignment,
-    footfall: Assignment,
-}
+pub struct MockHexAssignments;
 
 #[allow(dead_code)]
 impl MockHexAssignments {
-    pub fn best() -> Self {
-        Self {
-            urban: Assignment::A,
+    pub fn best() -> HexBoostData<impl HexAssignment, impl HexAssignment> {
+        HexBoostData {
+            urbanization: Assignment::A,
             footfall: Assignment::A,
         }
     }
 }
 
-impl HexAssignment for MockHexAssignments {
-    fn urban_assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        Ok(self.urban)
-    }
-
-    fn footfall_assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        Ok(self.footfall)
-    }
-}
