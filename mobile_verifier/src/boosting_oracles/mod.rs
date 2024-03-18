@@ -154,10 +154,6 @@ impl DiskTreeLike for DiskTreeMap {
     }
 }
 
-// ==============================
-// ==== TEST IMPLEMENTATIONS ====
-// ==============================
-
 impl DiskTreeLike for std::collections::HashSet<hextree::Cell> {
     fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>> {
         match self.contains(&cell) {
