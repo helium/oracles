@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
@@ -52,6 +53,8 @@ pub enum BurnError<E> {
     SqlError(#[from] sqlx::Error),
     #[error("solana error: {0}")]
     SolanaError(E),
+    #[error("Generic error: {0}")]
+    GenericError(#[from] anyhow::Error),
 }
 
 impl<S> Burner<S>
@@ -132,7 +135,6 @@ where
                     .await?;
             }
         }
-
         Ok(())
     }
 
@@ -140,10 +142,36 @@ where
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<(), S::Error> {
-        let txn = self.solana.make_burn_transaction(payer, amount).await?;
-        self.solana.submit_transaction(&txn).await?;
-        Ok(())
+    ) -> Result<(), BurnError<S::Error>> {
+        let txn = self
+            .solana
+            .make_burn_transaction(payer, amount)
+            .await
+            .map_err(BurnError::SolanaError)?;
+        // retry the sign and submit if we encounter a blockhash not found error
+        // all other errors will be returned and exit the retry loop
+        // if we dont have a successful burn by the end of the loop, return an error
+        for _ in 0..10 {
+            let signed_txn = self
+                .solana
+                .sign_transaction(&txn)
+                .await
+                .map_err(BurnError::SolanaError)?;
+            match self.solana.submit_transaction(&signed_txn).await {
+                Ok(_) => {
+                    tracing::info!(%payer, %amount, "Burned DC");
+                    return Ok(());
+                }
+                Err(err) if self.solana.check_for_blockhash_not_found_error(&err).await => {
+                    tracing::error!(%payer, %amount, "block hash not found..possibly stale block hash, resigning txn and retrying");
+                    continue;
+                }
+                Err(err) => {
+                    return Err(BurnError::SolanaError(err));
+                }
+            }
+        }
+        Err(BurnError::GenericError(anyhow!("Failed to burn DC")))
     }
 }
 

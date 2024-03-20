@@ -44,9 +44,16 @@ pub trait SolanaNetwork: Send + Sync + 'static {
         amount: u64,
     ) -> Result<Self::Transaction, Self::Error>;
 
+    async fn sign_transaction(
+        &self,
+        transaction: &Self::Transaction,
+    ) -> Result<Self::Transaction, Self::Error>;
+
     async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error>;
 
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error>;
+
+    async fn check_for_blockhash_not_found_error(&self, err: &Self::Error) -> bool;
 }
 
 #[derive(Debug, Deserialize)]
@@ -243,15 +250,25 @@ impl SolanaNetwork for SolanaRpc {
                 .unwrap()
         };
 
-        let blockhash = self.provider.get_latest_blockhash().await?;
         let signer = Keypair::from_bytes(&self.keypair).unwrap();
-
-        Ok(Transaction::new_signed_with_payer(
+        Ok(Transaction::new_with_payer(
             &instructions,
             Some(&signer.pubkey()),
-            &[&signer],
-            blockhash,
         ))
+    }
+
+    async fn sign_transaction(
+        &self,
+        txn: &Self::Transaction,
+    ) -> Result<Self::Transaction, Self::Error> {
+        let (blockhash, _) = self
+            .provider
+            .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+            .await?;
+        let signer = Keypair::from_bytes(&self.keypair).unwrap();
+        let mut signed_txn = txn.clone();
+        signed_txn.sign(&[&signer], blockhash);
+        Ok(signed_txn)
     }
 
     async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), Self::Error> {
@@ -295,6 +312,18 @@ impl SolanaNetwork for SolanaRpc {
                 .await?,
             Some(Ok(()))
         ))
+    }
+
+    async fn check_for_blockhash_not_found_error(&self, err: &Self::Error) -> bool {
+        matches!(
+            err,
+            SolanaRpcError::RpcClientError(ClientError {
+                kind: solana_client::client_error::ClientErrorKind::TransactionError(
+                    solana_sdk::transaction::TransactionError::BlockhashNotFound,
+                ),
+                ..
+            })
+        )
     }
 }
 
@@ -467,6 +496,22 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         Ok(())
     }
 
+    async fn sign_transaction(
+        &self,
+        transaction: &Self::Transaction,
+    ) -> Result<Self::Transaction, Self::Error> {
+        match (self, transaction) {
+            (Some(ref rpc), PossibleTransaction::Transaction(txn)) => {
+                let signed_txn = rpc.sign_transaction(txn).await?;
+                Ok(PossibleTransaction::Transaction(signed_txn))
+            }
+            (None, PossibleTransaction::NoTransaction(_)) => {
+                panic!("We will not confirm transactions when Solana is disabled")
+            }
+            _ => unreachable!(),
+        }
+    }
+
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
         if let Some(ref rpc) = self {
             rpc.confirm_transaction(txn).await
@@ -474,8 +519,17 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
             panic!("We will not confirm transactions when Solana is disabled");
         }
     }
+
+    async fn check_for_blockhash_not_found_error(&self, err: &Self::Error) -> bool {
+        if let Some(ref rpc) = self {
+            rpc.check_for_blockhash_not_found_error(err).await
+        } else {
+            false
+        }
+    }
 }
 
+#[derive(Clone)]
 pub struct MockTransaction {
     pub signature: Signature,
     pub payer: PublicKeyBinary,
@@ -509,6 +563,15 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         })
     }
 
+    async fn sign_transaction(
+        &self,
+        txn: &MockTransaction,
+    ) -> Result<Self::Transaction, Self::Error> {
+        let mut signed_txn = txn.clone();
+        signed_txn.signature = Signature::new_unique();
+        Ok(signed_txn)
+    }
+
     async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), Self::Error> {
         *self.lock().await.get_mut(&txn.payer).unwrap() -= txn.amount;
         Ok(())
@@ -516,6 +579,10 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 
     async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, Self::Error> {
         Ok(true)
+    }
+
+    async fn check_for_blockhash_not_found_error(&self, _err: &Self::Error) -> bool {
+        false
     }
 }
 

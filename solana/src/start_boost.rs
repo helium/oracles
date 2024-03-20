@@ -7,7 +7,7 @@ use helium_anchor_gen::{
     hexboosting::{self, accounts, instruction},
 };
 use serde::Deserialize;
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_program::instruction::Instruction;
 use solana_sdk::{
     commitment_config::CommitmentConfig,

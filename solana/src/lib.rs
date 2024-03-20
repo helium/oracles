@@ -13,19 +13,26 @@ macro_rules! send_with_retry {
         loop {
             match $rpc.await {
                 Ok(resp) => break Ok(resp),
-                Err(err) => {
-                    if attempt < 5 {
-                        attempt += 1;
-                        tokio::time::sleep(Duration::from_secs(attempt)).await;
-                        continue;
-                    } else {
-                        break Err(err);
-                    }
+                Err(
+                    err @ ClientError {
+                        kind:
+                            solana_client::client_error::ClientErrorKind::TransactionError(
+                                solana_sdk::transaction::TransactionError::BlockhashNotFound,
+                            ),
+                        ..
+                    },
+                ) => break Err(err),
+                Err(_err) if attempt < 5 => {
+                    attempt += 1;
+                    tokio::time::sleep(Duration::from_secs(attempt)).await;
+                    continue;
                 }
+                Err(err) => break Err(err),
             }
         }
     }};
 }
+
 pub(crate) use send_with_retry;
 
 #[derive(thiserror::Error, Debug)]
