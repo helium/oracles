@@ -24,6 +24,7 @@ prost = {workspace = true}
 serde = {workspace = true}
 sqlx = {workspace = true}
 solana = {path = "../solana"}
+solana-client = {workspace = true}
 mobile-config = {path = "../mobile_config"}
 task-manager = {path = "../task_manager"}
 thiserror = {workspace = true}
