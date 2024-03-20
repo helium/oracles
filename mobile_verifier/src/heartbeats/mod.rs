@@ -827,6 +827,7 @@ impl<'a> SeniorityUpdate<'a> {
 }
 
 impl SeniorityUpdate<'_> {
+    #[allow(deprecated)]
     pub async fn write(&self, seniorities: &FileSinkClient) -> anyhow::Result<()> {
         if let SeniorityUpdateAction::Insert {
             new_seniority,
@@ -839,6 +840,7 @@ impl SeniorityUpdate<'_> {
                         key_type: Some(self.heartbeat.heartbeat.key().into()),
                         new_seniority_timestamp: new_seniority.timestamp() as u64,
                         reason: update_reason as i32,
+                        new_seniority_timestamp_ms: new_seniority.timestamp_millis() as u64,
                     },
                     [],
                 )
