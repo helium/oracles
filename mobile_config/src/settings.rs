@@ -1,3 +1,4 @@
+use anyhow::Context;
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::{
@@ -65,7 +66,9 @@ impl Settings {
     }
 
     pub fn signing_keypair(&self) -> anyhow::Result<helium_crypto::Keypair> {
-        let data = std::fs::read(&self.signing_keypair).map_err(helium_crypto::Error::from)?;
+        let data = std::fs::read(&self.signing_keypair)
+            .map_err(helium_crypto::Error::from)
+            .with_context(|| format!("reading keypair from settings: {}", self.signing_keypair))?;
         Ok(helium_crypto::Keypair::try_from(&data[..])?)
     }
 
