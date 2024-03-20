@@ -1,5 +1,6 @@
 use crate::{
     cli::print_json,
+    coverage::CoverageObject,
     file_source,
     heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     iot_packet::IotValidPacket,
@@ -23,8 +24,8 @@ use helium_proto::{
         },
         poc_mobile::{
             mobile_reward_share::Reward, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
-            Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare, RadioRewardShare,
-            SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
+            CoverageObjectV1, Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare,
+            RadioRewardShare, SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
         },
         router::PacketRouterPacketReportV1,
     },
@@ -318,7 +319,17 @@ impl Cmd {
                         "status": report.status,
                         "recv_timestamp": report.report.received_timestamp}))?;
                 }
-                _ => (),
+                FileType::CoverageObject => {
+                    let coverage = CoverageObjectV1::decode(msg)?;
+                    let coverage = CoverageObject::try_from(coverage.coverage_object.unwrap())?;
+                    print_json(&json!({
+                        "pub_key": coverage.pub_key,
+                        "uuid": coverage.uuid,
+                        "coverage_claim_time": coverage.coverage_claim_time,
+                        "coverage": coverage.coverage,
+                    }))?;
+                }
+                missing_filetype => println!("No dump for {missing_filetype}"),
             }
         }
 
