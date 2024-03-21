@@ -12,8 +12,7 @@ use hextree::disktree::DiskTreeMap;
 pub fn make_hex_boost_data(
     settings: &Settings,
     usa_geofence: Geofence,
-) -> anyhow::Result<HexBoostData<impl HexAssignment, impl HexAssignment>>
-{
+) -> anyhow::Result<HexBoostData<impl HexAssignment, impl HexAssignment>> {
     let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
     let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
 
