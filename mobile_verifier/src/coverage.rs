@@ -540,9 +540,42 @@ impl OutdoorCoverageLevel {
 #[derive(PartialEq, Debug)]
 pub struct CoverageReward {
     pub radio_key: OwnedKeyType,
-    pub points: Decimal,
+    pub points: CoverageRewardPoints,
     pub hotspot: PublicKeyBinary,
     pub boosted_hex_info: BoostedHex,
+}
+
+impl CoverageReward {
+    fn has_rewards(&self) -> bool {
+        self.points.points() > Decimal::ZERO
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct CoverageRewardPoints {
+    pub boost_multiplier: NonZeroU32,
+    pub coverage_points: Decimal,
+    pub urbanized: Assignment,
+    pub footfall: Assignment,
+    pub rank: Option<Decimal>,
+}
+
+impl CoverageRewardPoints {
+    pub fn points(&self) -> Decimal {
+        let oracle_multiplier = if self.boost_multiplier.get() > 1 {
+            dec!(1.0)
+        } else {
+            footfall_and_urbanization_multiplier(self.footfall, self.urbanized)
+        };
+
+        let points = self.coverage_points * oracle_multiplier;
+
+        if let Some(rank) = self.rank {
+            points * rank
+        } else {
+            points
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -731,7 +764,7 @@ impl CoveredHexes {
             .chain(outdoor_wifi_rewards)
             .chain(indoor_cbrs_rewards)
             .chain(indoor_wifi_rewards)
-            .filter(|r| r.points > Decimal::ZERO)
+            .filter(CoverageReward::has_rewards)
     }
 }
 
@@ -786,20 +819,18 @@ fn into_outdoor_rewards(
             .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
             .zip(OUTDOOR_REWARD_WEIGHTS)
             .map(move |(cl, rank)| {
-                let (boost_multiplier, oracle_multiplier) = boosted_hexes
+                let boost_multiplier = boosted_hexes
                     .get_current_multiplier(hex.into(), epoch_start)
-                    .map_or_else(
-                        || {
-                            (
-                                NonZeroU32::new(1).unwrap(),
-                                footfall_and_urbanization_multiplier(cl.footfall, cl.urbanized),
-                            )
-                        },
-                        |multiplier| (multiplier, dec!(1.0)),
-                    );
+                    .unwrap_or(NonZeroU32::new(1).unwrap());
 
                 CoverageReward {
-                    points: cl.coverage_points() * oracle_multiplier * rank,
+                    points: CoverageRewardPoints {
+                        boost_multiplier,
+                        coverage_points: cl.coverage_points(),
+                        urbanized: cl.urbanized,
+                        footfall: cl.footfall,
+                        rank: Some(rank),
+                    },
                     hotspot: cl.hotspot,
                     radio_key: cl.radio_key,
                     boosted_hex_info: BoostedHex {
@@ -825,23 +856,18 @@ fn into_indoor_rewards(
                     .into_iter()
                     .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
                     .map(move |cl| {
-                        let (boost_multiplier, oracle_multiplier) = boosted_hexes
+                        let boost_multiplier = boosted_hexes
                             .get_current_multiplier(hex.into(), epoch_start)
-                            .map_or_else(
-                                || {
-                                    (
-                                        NonZeroU32::new(1).unwrap(),
-                                        footfall_and_urbanization_multiplier(
-                                            cl.footfall,
-                                            cl.urbanized,
-                                        ),
-                                    )
-                                },
-                                |multiplier| (multiplier, dec!(1.0)),
-                            );
+                            .unwrap_or(NonZeroU32::new(1).unwrap());
 
                         CoverageReward {
-                            points: cl.coverage_points() * oracle_multiplier,
+                            points: CoverageRewardPoints {
+                                boost_multiplier,
+                                coverage_points: cl.coverage_points(),
+                                urbanized: cl.urbanized,
+                                footfall: cl.footfall,
+                                rank: None,
+                            },
                             hotspot: cl.hotspot,
                             radio_key: cl.radio_key,
                             boosted_hex_info: BoostedHex {
@@ -1048,7 +1074,13 @@ mod test {
             vec![CoverageReward {
                 radio_key: OwnedKeyType::Cbrs("3".to_string()),
                 hotspot: owner,
-                points: dec!(400),
+                points: CoverageRewardPoints {
+                    coverage_points: dec!(400),
+                    boost_multiplier: NonZeroU32::new(1).unwrap(),
+                    urbanized: Assignment::A,
+                    footfall: Assignment::A,
+                    rank: None
+                },
                 boosted_hex_info: BoostedHex {
                     location: 0x8a1fb46622dffff_u64,
                     multiplier: NonZeroU32::new(1).unwrap(),
@@ -1160,7 +1192,13 @@ mod test {
             vec![CoverageReward {
                 radio_key: OwnedKeyType::Cbrs("10".to_string()),
                 hotspot: owner.clone(),
-                points: dec!(400),
+                points: CoverageRewardPoints {
+                    coverage_points: dec!(400),
+                    boost_multiplier: NonZeroU32::new(1).unwrap(),
+                    urbanized: Assignment::A,
+                    footfall: Assignment::A,
+                    rank: None
+                },
                 boosted_hex_info: BoostedHex {
                     location: 0x8a1fb46622dffff_u64,
                     multiplier: NonZeroU32::new(1).unwrap(),
@@ -1198,7 +1236,13 @@ mod test {
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("5".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(16),
+                    points: CoverageRewardPoints {
+                        coverage_points: dec!(16),
+                        rank: Some(dec!(1.0)),
+                        boost_multiplier: NonZeroU32::new(1).unwrap(),
+                        urbanized: Assignment::A,
+                        footfall: Assignment::A
+                    },
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
                         multiplier: NonZeroU32::new(1).unwrap(),
@@ -1207,7 +1251,13 @@ mod test {
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("4".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(8),
+                    points: CoverageRewardPoints {
+                        coverage_points: dec!(16),
+                        rank: Some(dec!(0.50)),
+                        boost_multiplier: NonZeroU32::new(1).unwrap(),
+                        urbanized: Assignment::A,
+                        footfall: Assignment::A
+                    },
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
                         multiplier: NonZeroU32::new(1).unwrap(),
@@ -1216,7 +1266,13 @@ mod test {
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("3".to_string()),
                     hotspot: owner,
-                    points: dec!(4),
+                    points: CoverageRewardPoints {
+                        coverage_points: dec!(16),
+                        rank: Some(dec!(0.25)),
+                        boost_multiplier: NonZeroU32::new(1).unwrap(),
+                        urbanized: Assignment::A,
+                        footfall: Assignment::A
+                    },
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
                         multiplier: NonZeroU32::new(1).unwrap(),
@@ -1364,6 +1420,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-3".to_string()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1373,6 +1430,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-4".to_string()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1382,6 +1440,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-1".to_string()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1399,6 +1458,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("ico1-1".to_string()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1416,6 +1476,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Wifi(outdoor_wifi_owner3.clone()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1425,6 +1486,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Wifi(outdoor_wifi_owner4.clone()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1434,6 +1496,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Wifi(outdoor_wifi_owner1.clone()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1451,6 +1514,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Wifi(indoor_wifi_owner1.clone()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
