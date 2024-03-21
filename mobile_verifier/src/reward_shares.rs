@@ -408,7 +408,7 @@ impl RadioPoints {
     fn hex_points(&self) -> Decimal {
         self.reward_points
             .iter()
-            .map(|c| c.coverage_points.points() * Decimal::from(c.boosted_hex.multiplier))
+            .map(|c| c.coverage_points.points() * Decimal::from(c.boosted_hex.multiplier.get()))
             .sum::<Decimal>()
     }
 
@@ -1888,7 +1888,7 @@ mod test {
                         coverage_object: Uuid::new_v4(),
                         reward_points: vec![CoverageRewardPointsWithMultiplier {
                             coverage_points: CoverageRewardPoints {
-                                boost_multiplier: 1,
+                                boost_multiplier: NonZeroU32::new(1).unwrap(),
                                 coverage_points: dec!(10.0),
                                 urbanized: Assignment::A,
                                 footfall: Assignment::A,
@@ -1896,7 +1896,7 @@ mod test {
                             },
                             boosted_hex: BoostedHex {
                                 location: 0,
-                                multiplier: 1,
+                                multiplier: NonZeroU32::new(1).unwrap(),
                             },
                         }],
                     },
