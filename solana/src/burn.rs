@@ -1,4 +1,4 @@
-use crate::{send_with_retry, GetSignature, SolanaRpcError};
+use crate::{GetSignature, SolanaRpcError};
 use anchor_client::{RequestBuilder, RequestNamespace};
 use anchor_lang::ToAccountMetas;
 use async_trait::async_trait;
@@ -26,10 +26,7 @@ use solana_sdk::{
 };
 use std::convert::Infallible;
 use std::{collections::HashMap, str::FromStr};
-use std::{
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
 #[async_trait]
@@ -276,13 +273,15 @@ impl SolanaNetwork for SolanaRpc {
             skip_preflight: true,
             ..Default::default()
         };
-        match send_with_retry!(self
+        match self
             .provider
             .send_and_confirm_transaction_with_spinner_and_config(
                 tx,
                 CommitmentConfig::confirmed(),
                 config,
-            )) {
+            )
+            .await
+        {
             Ok(signature) => {
                 tracing::info!(
                     transaction = %signature,

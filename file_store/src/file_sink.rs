@@ -432,6 +432,7 @@ impl FileSink {
             OpenOptions::new()
                 .write(true)
                 .create(true)
+                .truncate(false)
                 .open(&new_path)
                 .await?,
         ));
