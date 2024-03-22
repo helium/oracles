@@ -424,6 +424,17 @@ mod test {
         async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
             Ok(self.0.contains(txn))
         }
+
+        async fn sign_transaction(
+            &self,
+            _transaction: &Self::Transaction,
+        ) -> Result<Self::Transaction, Self::Error> {
+            unreachable!()
+        }
+
+        async fn check_for_blockhash_not_found_error(&self, _err: &Self::Error) -> bool {
+            false
+        }
     }
 
     #[tokio::test]

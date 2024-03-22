@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
@@ -53,8 +52,8 @@ pub enum BurnError<E> {
     SqlError(#[from] sqlx::Error),
     #[error("solana error: {0}")]
     SolanaError(E),
-    #[error("Generic error: {0}")]
-    GenericError(#[from] anyhow::Error),
+    #[error("Custom error: {0}")]
+    CustomError(#[from] anyhow::Error),
 }
 
 impl<S> Burner<S>
@@ -151,7 +150,9 @@ where
         // retry the sign and submit if we encounter a blockhash not found error
         // all other errors will be returned and exit the retry loop
         // if we dont have a successful burn by the end of the loop, return an error
-        for _ in 0..10 {
+        let mut attempt = 1;
+        const MAX_ATTEMPTS: u64 = 10;
+        loop {
             let signed_txn = self
                 .solana
                 .sign_transaction(&txn)
@@ -160,18 +161,22 @@ where
             match self.solana.submit_transaction(&signed_txn).await {
                 Ok(_) => {
                     tracing::info!(%payer, %amount, "Burned DC");
-                    return Ok(());
+                    break;
                 }
-                Err(err) if self.solana.check_for_blockhash_not_found_error(&err).await => {
+                Err(err)
+                    if self.solana.check_for_blockhash_not_found_error(&err).await
+                        && attempt < MAX_ATTEMPTS =>
+                {
                     tracing::error!(%payer, %amount, "block hash not found..possibly stale block hash, resigning txn and retrying");
+                    attempt += 1;
                     continue;
                 }
                 Err(err) => {
-                    return Err(BurnError::SolanaError(err));
+                    Err(BurnError::SolanaError(err))?;
                 }
             }
         }
-        Err(BurnError::GenericError(anyhow!("Failed to burn DC")))
+        Ok(())
     }
 }
 

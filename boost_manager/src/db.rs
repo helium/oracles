@@ -117,6 +117,22 @@ pub async fn save_batch_txn_id(
     .map(|_| ())?)
 }
 
+pub async fn revert_saved_batch(db: &Pool<Postgres>, hexes: &[u64]) -> anyhow::Result<()> {
+    let hexes = hexes.iter().map(|x| *x as i64).collect::<Vec<i64>>();
+    Ok(sqlx::query(
+        r#"
+        UPDATE activated_hexes
+        SET txn_id = NULL, updated_at = $1
+        WHERE location IN (SELECT * FROM UNNEST($2))
+        "#,
+    )
+    .bind(Utc::now())
+    .bind(hexes)
+    .execute(db)
+    .await
+    .map(|_| ())?)
+}
+
 pub async fn update_success_batch(db: &Pool<Postgres>, hexes: &[u64]) -> anyhow::Result<()> {
     let hexes = hexes.iter().map(|x| *x as i64).collect::<Vec<i64>>();
     Ok(sqlx::query(

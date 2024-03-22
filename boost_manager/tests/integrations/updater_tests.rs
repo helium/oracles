@@ -71,6 +71,17 @@ impl SolanaNetwork for MockSolanaConnection {
     async fn confirm_transaction(&self, _id: &str) -> Result<bool, Self::Error> {
         Ok(true)
     }
+
+    async fn sign_transaction(
+        &self,
+        transaction: &Self::Transaction,
+    ) -> Result<Self::Transaction, Self::Error> {
+        Ok(transaction.clone())
+    }
+
+    async fn check_for_blockhash_not_found_error(&self, _err: &Self::Error) -> bool {
+        false
+    }
 }
 
 impl GetSignature for MockTransaction {
