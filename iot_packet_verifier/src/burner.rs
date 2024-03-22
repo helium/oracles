@@ -112,18 +112,16 @@ where
             .make_burn_transaction(&payer, amount)
             .await
             .map_err(BurnError::SolanaError)?;
-
+        let mut signed_txn = self
+            .solana
+            .sign_transaction(&txn)
+            .await
+            .map_err(BurnError::SolanaError)?;
         // retry the sign and submit if we encounter a blockhash not found error
         // all other errors will be returned and exit the retry loop
-        // if we dont have a successful burn by the end of the loop, return an error
         let mut attempt = 1;
         const MAX_ATTEMPTS: u64 = 10;
         loop {
-            let signed_txn = self
-                .solana
-                .sign_transaction(&txn)
-                .await
-                .map_err(BurnError::SolanaError)?;
             self.pending_tables
                 .add_pending_transaction(&payer, amount, signed_txn.get_signature())
                 .await?;
@@ -143,6 +141,15 @@ where
                         .remove_pending_transaction(txn.get_signature())
                         .await?;
                     pending_tables_txn.commit().await?;
+                    attempt += 1;
+                    signed_txn = self
+                        .solana
+                        .sign_transaction(&txn)
+                        .await
+                        .map_err(BurnError::SolanaError)?;
+                    continue;
+                }
+                Err(_) if attempt < MAX_ATTEMPTS => {
                     attempt += 1;
                     continue;
                 }

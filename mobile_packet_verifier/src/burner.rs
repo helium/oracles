@@ -52,8 +52,6 @@ pub enum BurnError<E> {
     SqlError(#[from] sqlx::Error),
     #[error("solana error: {0}")]
     SolanaError(E),
-    #[error("Custom error: {0}")]
-    CustomError(#[from] anyhow::Error),
 }
 
 impl<S> Burner<S>
@@ -147,17 +145,16 @@ where
             .make_burn_transaction(payer, amount)
             .await
             .map_err(BurnError::SolanaError)?;
+        let mut signed_txn = self
+            .solana
+            .sign_transaction(&txn)
+            .await
+            .map_err(BurnError::SolanaError)?;
         // retry the sign and submit if we encounter a blockhash not found error
         // all other errors will be returned and exit the retry loop
-        // if we dont have a successful burn by the end of the loop, return an error
         let mut attempt = 1;
         const MAX_ATTEMPTS: u64 = 10;
         loop {
-            let signed_txn = self
-                .solana
-                .sign_transaction(&txn)
-                .await
-                .map_err(BurnError::SolanaError)?;
             match self.solana.submit_transaction(&signed_txn).await {
                 Ok(_) => {
                     tracing::info!(%payer, %amount, "Burned DC");
@@ -168,6 +165,16 @@ where
                         && attempt < MAX_ATTEMPTS =>
                 {
                     tracing::error!(%payer, %amount, "block hash not found..possibly stale block hash, resigning txn and retrying");
+                    signed_txn = self
+                        .solana
+                        .sign_transaction(&txn)
+                        .await
+                        .map_err(BurnError::SolanaError)?;
+
+                    attempt += 1;
+                    continue;
+                }
+                Err(_) if attempt < MAX_ATTEMPTS => {
                     attempt += 1;
                     continue;
                 }

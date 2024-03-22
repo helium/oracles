@@ -16,7 +16,7 @@ use solana_sdk::{
     signer::Signer,
     transaction::Transaction,
 };
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
@@ -132,7 +132,7 @@ impl SolanaNetwork for SolanaRpc {
     }
 
     async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), Self::Error> {
-        match send_with_retry!(self.provider.send_and_confirm_transaction(tx)) {
+        match self.provider.send_and_confirm_transaction(tx).await {
             Ok(signature) => {
                 tracing::info!(
                     transaction = %signature,

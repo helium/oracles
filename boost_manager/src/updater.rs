@@ -117,6 +117,7 @@ where
             // get a list of all the activations DB ids which form part of the batch
             let ids: Vec<u64> = batch.iter().map(|sp| sp.location).collect();
             let txn = self.solana.make_start_boost_transaction(batch).await?;
+            let mut signed_txn = self.solana.sign_transaction(&txn).await?;
 
             // if activations were processed successfully then
             // update their status in the DB to success
@@ -126,11 +127,9 @@ where
 
             // retry the sign and submit if we encounter a blockhash not found error
             // all other errors will be returned and exit the retry loop
-            // if we dont have a successful burn by the end of the loop, return an error
             let mut attempt = 1;
             const MAX_ATTEMPTS: u64 = 10;
             loop {
-                let signed_txn = self.solana.sign_transaction(&txn).await?;
                 let transaction_id = signed_txn.get_signature().to_string();
                 db::save_batch_txn_id(&self.pool, &transaction_id, &ids).await?;
                 match self.solana.submit_transaction(&signed_txn).await {
@@ -144,17 +143,14 @@ where
                             && attempt < MAX_ATTEMPTS =>
                     {
                         tracing::error!("block hash not found..possibly stale block hash, resigning txn and retrying");
-                        db::revert_saved_batch(&self.pool, &ids).await?;
+                        db::revert_saved_batch_txn_id(&self.pool, &ids).await?;
                         attempt += 1;
+                        signed_txn = self.solana.sign_transaction(&txn).await?;
                         continue;
                     }
-                    Err(err)
-                        if self.solana.check_for_blockhash_not_found_error(&err).await
-                            && attempt >= MAX_ATTEMPTS =>
-                    {
-                        tracing::error!("block hash not found..possibly stale block hash, exceed max attempts...giving up");
-                        self.handle_submit_txn_failure(&ids, batch_size).await?;
-                        break;
+                    Err(_) if attempt < MAX_ATTEMPTS => {
+                        attempt += 1;
+                        continue;
                     }
                     Err(_err) => {
                         tracing::warn!("submit txn failed, error: {}", _err);
