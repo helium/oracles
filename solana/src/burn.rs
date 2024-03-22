@@ -557,7 +557,7 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         amount: u64,
     ) -> Result<MockTransaction, Self::Error> {
         Ok(MockTransaction {
-            signature: Signature::new_unique(),
+            signature: Signature::default(),
             payer: payer.clone(),
             amount,
         })

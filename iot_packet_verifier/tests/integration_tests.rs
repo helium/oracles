@@ -615,6 +615,17 @@ impl SolanaNetwork for MockSolanaNetwork {
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
         Ok(self.confirmed.lock().await.contains(txn))
     }
+
+    async fn sign_transaction(
+        &self,
+        transaction: &Self::Transaction,
+    ) -> Result<Self::Transaction, Self::Error> {
+        self.ledger.sign_transaction(transaction).await
+    }
+
+    async fn check_for_blockhash_not_found_error(&self, _err: &Self::Error) -> bool {
+        false
+    }
 }
 
 #[sqlx::test]

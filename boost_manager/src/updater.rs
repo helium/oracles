@@ -116,27 +116,53 @@ where
 
             // get a list of all the activations DB ids which form part of the batch
             let ids: Vec<u64> = batch.iter().map(|sp| sp.location).collect();
-
-            let solana_txn = self.solana.make_start_boost_transaction(batch).await?;
-            let transaction_id = solana_txn.get_signature().to_string();
-            // update the batch in the db with the txn id
-            db::save_batch_txn_id(&self.pool, &transaction_id, &ids).await?;
+            let txn = self.solana.make_start_boost_transaction(batch).await?;
 
             // if activations were processed successfully then
             // update their status in the DB to success
             // if not processed successfully then bump their retry count
             // if retry count is below max retries then the activations
             // will be retried next tick
-            match self.solana.submit_transaction(&solana_txn).await {
-                Ok(()) => {
-                    self.handle_submit_txn_success(&ids, batch_size, activations_count)
-                        .await?;
-                }
-                Err(e) => {
-                    tracing::warn!("submit txn failed, error: {}", e);
-                    self.handle_submit_txn_failure(&ids, batch_size).await?;
-                }
-            };
+
+            // retry the sign and submit if we encounter a blockhash not found error
+            // all other errors will be returned and exit the retry loop
+            // if we dont have a successful burn by the end of the loop, return an error
+            let mut attempt = 1;
+            const MAX_ATTEMPTS: u64 = 10;
+            loop {
+                let signed_txn = self.solana.sign_transaction(&txn).await?;
+                let transaction_id = signed_txn.get_signature().to_string();
+                db::save_batch_txn_id(&self.pool, &transaction_id, &ids).await?;
+                match self.solana.submit_transaction(&signed_txn).await {
+                    Ok(()) => {
+                        self.handle_submit_txn_success(&ids, batch_size, activations_count)
+                            .await?;
+                        break;
+                    }
+                    Err(err)
+                        if self.solana.check_for_blockhash_not_found_error(&err).await
+                            && attempt < MAX_ATTEMPTS =>
+                    {
+                        tracing::error!("block hash not found..possibly stale block hash, resigning txn and retrying");
+                        db::revert_saved_batch(&self.pool, &ids).await?;
+                        attempt += 1;
+                        continue;
+                    }
+                    Err(err)
+                        if self.solana.check_for_blockhash_not_found_error(&err).await
+                            && attempt >= MAX_ATTEMPTS =>
+                    {
+                        tracing::error!("block hash not found..possibly stale block hash, exceed max attempts...giving up");
+                        self.handle_submit_txn_failure(&ids, batch_size).await?;
+                        break;
+                    }
+                    Err(_err) => {
+                        tracing::warn!("submit txn failed, error: {}", _err);
+                        self.handle_submit_txn_failure(&ids, batch_size).await?;
+                        break;
+                    }
+                };
+            }
         }
         Ok(())
     }
