@@ -13,6 +13,7 @@ pub struct Updater<S> {
     interval: Duration,
     batch_size: usize,
     pub solana: S,
+    retry_delay: Duration,
 }
 
 impl<S> ManagedTask for Updater<S>
@@ -42,6 +43,7 @@ where
         interval: Duration,
         batch_size: usize,
         solana: S,
+        retry_delay: Duration,
     ) -> Result<Self> {
         Ok(Self {
             pool,
@@ -49,6 +51,7 @@ where
             interval,
             batch_size,
             solana,
+            retry_delay,
         })
     }
 
@@ -117,21 +120,13 @@ where
             // get a list of all the activations DB ids which form part of the batch
             let ids: Vec<u64> = batch.iter().map(|sp| sp.location).collect();
             let txn = self.solana.make_start_boost_transaction(batch).await?;
-            let mut signed_txn = self.solana.sign_transaction(&txn).await?;
-
-            // if activations were processed successfully then
-            // update their status in the DB to success
-            // if not processed successfully then bump their retry count
-            // if retry count is below max retries then the activations
-            // will be retried next tick
+            let mut signed_txn = self.sign_and_prep_txn(&txn, &ids).await?;
 
             // retry the sign and submit if we encounter a blockhash not found error
             // all other errors will be returned and exit the retry loop
-            let mut attempt = 1;
-            const MAX_ATTEMPTS: u64 = 10;
+            let mut attempt: u32 = 1;
+            const MAX_ATTEMPTS: u32 = 10;
             loop {
-                let transaction_id = signed_txn.get_signature().to_string();
-                db::save_batch_txn_id(&self.pool, &transaction_id, &ids).await?;
                 match self.solana.submit_transaction(&signed_txn).await {
                     Ok(()) => {
                         self.handle_submit_txn_success(&ids, batch_size, activations_count)
@@ -145,11 +140,12 @@ where
                         tracing::error!("block hash not found..possibly stale block hash, resigning txn and retrying");
                         db::revert_saved_batch_txn_id(&self.pool, &ids).await?;
                         attempt += 1;
-                        signed_txn = self.solana.sign_transaction(&txn).await?;
+                        signed_txn = self.sign_and_prep_txn(&txn, &ids).await?;
                         continue;
                     }
                     Err(_) if attempt < MAX_ATTEMPTS => {
                         attempt += 1;
+                        tokio::time::sleep(self.retry_delay * attempt).await;
                         continue;
                     }
                     Err(_err) => {
@@ -161,6 +157,12 @@ where
             }
         }
         Ok(())
+    }
+
+    async fn sign_and_prep_txn(&self, txn: &S::Transaction, ids: &[u64]) -> Result<S::Transaction> {
+        let signed_txn = self.solana.sign_transaction(txn).await?;
+        db::save_batch_txn_id(&self.pool, &signed_txn.get_signature().to_string(), ids).await?;
+        Ok(signed_txn)
     }
 
     async fn check_failed_activations(&self) -> Result<()> {

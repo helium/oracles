@@ -112,19 +112,13 @@ where
             .make_burn_transaction(&payer, amount)
             .await
             .map_err(BurnError::SolanaError)?;
-        let mut signed_txn = self
-            .solana
-            .sign_transaction(&txn)
-            .await
-            .map_err(BurnError::SolanaError)?;
+        let mut signed_txn = self.sign_and_prep_txn(&txn, &payer, amount).await?;
+
         // retry the sign and submit if we encounter a blockhash not found error
         // all other errors will be returned and exit the retry loop
         let mut attempt = 1;
         const MAX_ATTEMPTS: u64 = 10;
         loop {
-            self.pending_tables
-                .add_pending_transaction(&payer, amount, signed_txn.get_signature())
-                .await?;
             match self.solana.submit_transaction(&signed_txn).await {
                 Ok(_) => {
                     tracing::info!(%payer, %amount, "Burned DC");
@@ -142,15 +136,12 @@ where
                         .await?;
                     pending_tables_txn.commit().await?;
                     attempt += 1;
-                    signed_txn = self
-                        .solana
-                        .sign_transaction(&txn)
-                        .await
-                        .map_err(BurnError::SolanaError)?;
+                    signed_txn = self.sign_and_prep_txn(&txn, &payer, amount).await?;
                     continue;
                 }
                 Err(_) if attempt < MAX_ATTEMPTS => {
                     attempt += 1;
+                    tokio::time::sleep(Duration::from_secs(attempt)).await;
                     continue;
                 }
                 Err(err) => {
@@ -159,6 +150,19 @@ where
             }
         }
         Ok(())
+    }
+
+    async fn sign_and_prep_txn(
+        &self,
+        txn: &S::Transaction,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> anyhow::Result<S::Transaction> {
+        let signed_txn = self.solana.sign_transaction(txn).await?;
+        self.pending_tables
+            .add_pending_transaction(payer, amount, signed_txn.get_signature())
+            .await?;
+        Ok(signed_txn)
     }
 
     async fn handle_burn_success(

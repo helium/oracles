@@ -4,7 +4,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
 use solana::burn::SolanaNetwork;
 use sqlx::{FromRow, Pool, Postgres};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 #[derive(FromRow)]
 pub struct DataTransferSession {
@@ -176,6 +176,7 @@ where
                 }
                 Err(_) if attempt < MAX_ATTEMPTS => {
                     attempt += 1;
+                    tokio::time::sleep(Duration::from_secs(attempt)).await;
                     continue;
                 }
                 Err(err) => {
