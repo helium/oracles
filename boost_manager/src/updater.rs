@@ -122,8 +122,8 @@ where
             let txn = self.solana.make_start_boost_transaction(batch).await?;
             let mut signed_txn = self.sign_and_prep_txn(&txn, &ids).await?;
 
-            // retry the sign and submit if we encounter a blockhash not found error
-            // all other errors will be returned and exit the retry loop
+            // handle retries, if we encounter a blockhash not found error
+            // resign the txn with the latest blockhash before next retry attempt
             let mut attempt: u32 = 1;
             const MAX_ATTEMPTS: u32 = 10;
             loop {

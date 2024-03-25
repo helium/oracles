@@ -150,8 +150,8 @@ where
             .sign_transaction(&txn)
             .await
             .map_err(BurnError::SolanaError)?;
-        // retry the sign and submit if we encounter a blockhash not found error
-        // all other errors will be returned and exit the retry loop
+        // handle retries, if we encounter a blockhash not found error
+        // resign the txn with the latest blockhash before next retry attempt
         let mut attempt = 1;
         const MAX_ATTEMPTS: u64 = 10;
         loop {
