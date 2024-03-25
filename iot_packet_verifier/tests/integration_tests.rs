@@ -629,7 +629,6 @@ impl SolanaNetwork for MockSolanaNetwork {
 }
 
 #[sqlx::test]
-#[ignore]
 async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     const CONFIRMED_BURN_AMOUNT: u64 = 7;
     const UNCONFIRMED_BURN_AMOUNT: u64 = 11;
@@ -667,10 +666,11 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
             .make_burn_transaction(&payer, CONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
-        pool.add_pending_transaction(&payer, CONFIRMED_BURN_AMOUNT, txn.get_signature())
+        let signed_txn = mock_network.sign_transaction(&txn).await.unwrap();
+        pool.add_pending_transaction(&payer, CONFIRMED_BURN_AMOUNT, signed_txn.get_signature())
             .await
             .unwrap();
-        mock_network.submit_transaction(&txn).await.unwrap();
+        mock_network.submit_transaction(&signed_txn).await.unwrap();
     }
 
     // Second is unconfirmed
@@ -679,7 +679,8 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
             .make_burn_transaction(&payer, UNCONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
-        pool.add_pending_transaction(&payer, UNCONFIRMED_BURN_AMOUNT, txn.get_signature())
+        let signed_txn = mock_network.sign_transaction(&txn).await.unwrap();
+        pool.add_pending_transaction(&payer, UNCONFIRMED_BURN_AMOUNT, signed_txn.get_signature())
             .await
             .unwrap();
     }
