@@ -4,6 +4,8 @@ use crate::{
     file_source,
     heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     iot_packet::IotValidPacket,
+    mobile_radio_invalidated_threshold::VerifiedInvalidatedRadioThresholdIngestReport,
+    mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
     mobile_session::{DataTransferSessionIngestReport, InvalidDataTransferIngestReport},
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
@@ -26,7 +28,8 @@ use helium_proto::{
             mobile_reward_share::Reward, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
             CoverageObjectV1, Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare,
             OracleBoostingReportV1, RadioRewardShare, SpeedtestAvg, SpeedtestIngestReportV1,
-            SpeedtestReqV1,
+            SpeedtestReqV1, VerifiedInvalidatedRadioThresholdIngestReportV1,
+            VerifiedRadioThresholdIngestReportV1,
         },
         router::PacketRouterPacketReportV1,
     },
@@ -54,6 +57,16 @@ impl Cmd {
         while let Some(result) = file_stream.next().await {
             let msg = result?;
             match self.file_type {
+                FileType::VerifiedRadioThresholdIngestReport => {
+                    let dec_msg = VerifiedRadioThresholdIngestReportV1::decode(msg)?;
+                    let report = VerifiedRadioThresholdIngestReport::try_from(dec_msg)?;
+                    print_json(&report)?;
+                }
+                FileType::VerifiedInvalidatedRadioThresholdIngestReport => {
+                    let dec_msg = VerifiedInvalidatedRadioThresholdIngestReportV1::decode(msg)?;
+                    let report = VerifiedInvalidatedRadioThresholdIngestReport::try_from(dec_msg)?;
+                    print_json(&report)?;
+                }
                 FileType::BoostedHexUpdate => {
                     let dec_msg = BoostedHexUpdateProto::decode(msg)?;
                     let update = dec_msg.update.unwrap();
