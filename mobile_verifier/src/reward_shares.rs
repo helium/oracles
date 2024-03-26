@@ -428,10 +428,10 @@ impl HotspotPoints {
         let cbsd_id = radio_key.clone().into_cbsd_id();
         let rp = self.radio_points.get_mut(&cbsd_id).unwrap();
         // need to consider requirements from hip93 & hip84 before applying any boost
-        // hip93: if radio is wifi & location_trust score multiplier < 1, no boosting
+        // hip93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
         // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
         let final_boost_info = if radio_key.is_wifi()
-            && rp.location_trust_score_multiplier < dec!(1)
+            && rp.location_trust_score_multiplier < dec!(0.75)
             || !verified_radio_thresholds.is_verified(hotspot, cbsd_id)
         {
             BoostedHex {

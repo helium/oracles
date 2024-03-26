@@ -154,6 +154,7 @@ impl Get {
                 fs::OpenOptions::new()
                     .write(true)
                     .create(true)
+                    .truncate(true)
                     .open(&self.dest.join(Path::new(&info.key)))
                     .map_err(Error::from)
                     .and_then(|mut file| {
