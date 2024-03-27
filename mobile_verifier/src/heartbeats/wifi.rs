@@ -1,8 +1,6 @@
 use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
 use crate::{
-    coverage::{CoverageClaimTimeCache, CoverageObjectCache},
-    geofence::GeofenceValidator,
-    GatewayResolver,
+    coverage::{CoverageClaimTimeCache, CoverageObjectCache}, geofence::GeofenceValidator, heartbeats::LocationCache, GatewayResolver
 };
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
@@ -73,6 +71,7 @@ where
 
         let coverage_claim_time_cache = CoverageClaimTimeCache::new();
         let coverage_object_cache = CoverageObjectCache::new(&self.pool);
+        let location_cache = LocationCache::new(&self.pool);
 
         loop {
             #[rustfmt::skip]
@@ -89,6 +88,7 @@ where
                         &heartbeat_cache,
                         &coverage_claim_time_cache,
                         &coverage_object_cache,
+                        &location_cache
 		    ).await?;
 		    metrics::histogram!("wifi_heartbeat_processing_time", start.elapsed());
                 }
@@ -104,6 +104,7 @@ where
         heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
         coverage_claim_time_cache: &CoverageClaimTimeCache,
         coverage_object_cache: &CoverageObjectCache,
+        location_cache: &LocationCache,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing WIFI heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
@@ -115,9 +116,10 @@ where
             .map(Heartbeat::from);
         process_validated_heartbeats(
             ValidatedHeartbeat::validate_heartbeats(
-                &self.gateway_info_resolver,
                 heartbeats,
+                &self.gateway_info_resolver,
                 coverage_object_cache,
+                location_cache,
                 self.max_distance_to_asserted,
                 self.max_distance_to_coverage,
                 &epoch,
