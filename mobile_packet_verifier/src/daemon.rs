@@ -1,5 +1,5 @@
 use crate::{burner::Burner, event_ids::EventIdPurger, settings::Settings};
-use anyhow::{bail, Ok, Result};
+use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
@@ -95,16 +95,16 @@ where
                 _ = sleep_until(burn_time) => {
                     // It's time to burn
                     match self.burner.burn(&self.pool).await {
-                        Result::Ok(_) => {
+                        Ok(_) => {
                             burn_time = Instant::now() + self.burn_period;
                         }
-                        Result::Err(e) => {
+                        Err(e) => {
                             burn_time = Instant::now() + self.min_burn_period;
                             tracing::warn!("failed to burn {e:?}, re running burn in {:?} min", self.min_burn_period);
                         }
                     }
                 }
-                _ = shutdown.clone() => return Ok(()),
+                _ = shutdown.clone() => return anyhow::Ok(()),
             }
         }
     }
