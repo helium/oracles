@@ -14,6 +14,9 @@ pub struct Settings {
     /// Burn period in hours. (Default is 1)
     #[serde(default = "default_burn_period")]
     pub burn_period: i64,
+    /// Burn period in minutes. (Default is 15)
+    #[serde(default = "default_min_burn_period")]
+    pub min_burn_period: i64,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
@@ -52,6 +55,10 @@ pub fn default_log() -> String {
 
 pub fn default_burn_period() -> i64 {
     1
+}
+
+pub fn default_min_burn_period() -> i64 {
+    15
 }
 
 impl Settings {
