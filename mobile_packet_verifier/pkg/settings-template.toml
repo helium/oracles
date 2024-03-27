@@ -10,6 +10,10 @@ cache = "/var/data/verified-reports"
 # Default value is 1 hour.
 burn_period = 1
 
+# In case burn fails we will accelarate and burn in `min_burn_period` minutes instead of `burn_period` hours.
+# Default value is 15 minutes.
+min_burn_period = 15
+
 # If set to true, enables integration with the Solana network. This includes
 # checking payer balances and burning data credits. If this is disabled, all
 # payers will have a default balance of 1,000,000 data credits, and burned
