@@ -379,6 +379,7 @@ impl ValidatedHeartbeat {
     }
 
     /// Validate a heartbeat in the given epoch.
+    #[allow(clippy::too_many_arguments)]
     pub async fn validate(
         mut heartbeat: Heartbeat,
         gateway_info_resolver: &impl GatewayResolver,
@@ -577,6 +578,7 @@ impl ValidatedHeartbeat {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn validate_heartbeats<'a>(
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
         gateway_info_resolver: &'a impl GatewayResolver,

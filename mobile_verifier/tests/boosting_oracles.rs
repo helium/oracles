@@ -15,7 +15,7 @@ use mobile_verifier::{
         CoverageObjectCache, Seniority, UnassignedHex,
     },
     geofence::GeofenceValidator,
-    heartbeats::{Heartbeat, HeartbeatReward, SeniorityUpdate, ValidatedHeartbeat},
+    heartbeats::{Heartbeat, HeartbeatReward, LocationCache, SeniorityUpdate, ValidatedHeartbeat},
     radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoveragePoints,
     speedtests::Speedtest,
@@ -171,11 +171,13 @@ async fn test_urbanization(pool: PgPool) -> anyhow::Result<()> {
 
     let coverage_objects = CoverageObjectCache::new(&pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
+    let location_cache = LocationCache::new(&pool);
 
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
-        &AllOwnersValid,
         stream::iter(heartbeats.map(Heartbeat::from)),
+        &AllOwnersValid,
         &coverage_objects,
+        &location_cache,
         2000,
         2000,
         &epoch,

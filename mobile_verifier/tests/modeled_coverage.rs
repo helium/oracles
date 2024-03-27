@@ -20,7 +20,9 @@ use mobile_verifier::{
         CoverageObjectCache, Seniority, UnassignedHex,
     },
     geofence::GeofenceValidator,
-    heartbeats::{Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate, ValidatedHeartbeat},
+    heartbeats::{
+        Heartbeat, HeartbeatReward, KeyType, LocationCache, SeniorityUpdate, ValidatedHeartbeat,
+    },
     radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoveragePoints,
     speedtests::Speedtest,
@@ -398,6 +400,7 @@ async fn process_input(
 ) -> anyhow::Result<()> {
     let coverage_objects = CoverageObjectCache::new(pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
+    let location_cache = LocationCache::new(pool);
 
     let mut transaction = pool.begin().await?;
     let mut coverage_objs = pin!(CoverageObject::validate_coverage_objects(
@@ -415,9 +418,10 @@ async fn process_input(
 
     let mut transaction = pool.begin().await?;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
-        &AllOwnersValid,
         stream::iter(heartbeats.map(Heartbeat::from)),
+        &AllOwnersValid,
         &coverage_objects,
+        &location_cache,
         2000,
         2000,
         epoch,
@@ -1373,11 +1377,13 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     let hb_2: Heartbeat = hb_2.into();
 
     let coverage_object_cache = CoverageObjectCache::new(&pool);
+    let location_cache = LocationCache::new(&pool);
 
     let validated_hb_1 = ValidatedHeartbeat::validate(
         hb_1,
         &AllOwnersValid,
         &coverage_object_cache,
+        &location_cache,
         2000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
@@ -1392,6 +1398,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         hb_2.clone(),
         &AllOwnersValid,
         &coverage_object_cache,
+        &location_cache,
         1000000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
@@ -1406,6 +1413,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         hb_2.clone(),
         &AllOwnersValid,
         &coverage_object_cache,
+        &location_cache,
         2000,
         1000000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
@@ -1420,6 +1428,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         hb_2.clone(),
         &AllOwnersValid,
         &coverage_object_cache,
+        &location_cache,
         1000000,
         1000000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
