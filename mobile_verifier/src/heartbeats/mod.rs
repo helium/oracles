@@ -520,12 +520,14 @@ impl ValidatedHeartbeat {
                 let asserted_latlng: LatLng = CellIndex::try_from(location)?.into();
                 let is_valid = match heartbeat.location_validation_timestamp {
                     None => {
-                        if let Some((lat, lon)) = last_location_cache
+                        if let Some(last_location) = last_location_cache
                             .fetch_last_location(&heartbeat.hotspot_key)
                             .await?
                         {
-                            heartbeat.lat = lat;
-                            heartbeat.lon = lon;
+                            heartbeat.lat = last_location.lat;
+                            heartbeat.lon = last_location.lon;
+                            heartbeat.location_validation_timestamp =
+                                Some(last_location.location_validation_timestamp);
                             // Can't panic, previous lat and lon must be valid.
                             hb_latlng = heartbeat.centered_latlng().unwrap();
                             true
@@ -533,13 +535,15 @@ impl ValidatedHeartbeat {
                             false
                         }
                     }
-                    Some(last_valid_timestamp) => {
+                    Some(location_validation_timestamp) => {
                         last_location_cache
                             .set_last_location(
                                 &heartbeat.hotspot_key,
-                                last_valid_timestamp,
-                                heartbeat.lat,
-                                heartbeat.lon,
+                                LastLocation::new(
+                                    location_validation_timestamp,
+                                    heartbeat.lat,
+                                    heartbeat.lon,
+                                ),
                             )
                             .await?;
                         true
@@ -779,7 +783,7 @@ pub async fn clear_heartbeats(
 #[derive(Clone)]
 pub struct LocationCache {
     pool: PgPool,
-    locations: Arc<Cache<PublicKeyBinary, Option<(f64, f64)>>>,
+    locations: Arc<Cache<PublicKeyBinary, Option<LastLocation>>>,
 }
 
 impl LocationCache {
@@ -800,13 +804,7 @@ impl LocationCache {
     async fn fetch_from_db_and_set(
         &self,
         hotspot: &PublicKeyBinary,
-    ) -> Result<Option<(f64, f64)>, sqlx::Error> {
-        #[derive(sqlx::FromRow)]
-        pub struct LastLocation {
-            lat: f64,
-            lon: f64,
-        }
-
+    ) -> anyhow::Result<Option<LastLocation>> {
         let last_location: Option<LastLocation> = sqlx::query_as(
             r#"
             SELECT location_validation_timestamp, lat, lon
@@ -820,12 +818,14 @@ impl LocationCache {
         .bind(Utc::now() - Duration::hours(12))
         .fetch_optional(&self.pool)
         .await?;
-        let last_location = last_location.map(|x| (x.lat, x.lon));
         self.locations
             .insert(
                 hotspot.clone(),
                 last_location,
-                std::time::Duration::from_secs(60 * 60 * 12),
+                last_location
+                    .map(|x| x.duration_to_expiration())
+                    .unwrap_or_else(|| Duration::days(365))
+                    .to_std()?,
             )
             .await;
         Ok(last_location)
@@ -834,7 +834,7 @@ impl LocationCache {
     pub async fn fetch_last_location(
         &self,
         hotspot: &PublicKeyBinary,
-    ) -> Result<Option<(f64, f64)>, sqlx::Error> {
+    ) -> anyhow::Result<Option<LastLocation>> {
         Ok(
             if let Some(last_location) = self.locations.get(hotspot).await {
                 *last_location
@@ -847,21 +847,40 @@ impl LocationCache {
     pub async fn set_last_location(
         &self,
         hotspot: &PublicKeyBinary,
-        last_valid_timestamp: DateTime<Utc>,
-        lat: f64,
-        lon: f64,
+        last_location: LastLocation,
     ) -> anyhow::Result<()> {
-        // Find the the duration from now in which last_valid_timestamp is 12 hours old:
-        let duration_to_expiration =
-            ((last_valid_timestamp + Duration::hours(12)) - Utc::now()).max(Duration::zero());
+        let duration_to_expiration = last_location.duration_to_expiration();
         self.locations
             .insert(
                 hotspot.clone(),
-                Some((lat, lon)),
+                Some(last_location),
                 duration_to_expiration.to_std()?,
             )
             .await;
         Ok(())
+    }
+}
+
+#[derive(sqlx::FromRow, Copy, Clone)]
+pub struct LastLocation {
+    location_validation_timestamp: DateTime<Utc>,
+    lat: f64,
+    lon: f64,
+}
+
+impl LastLocation {
+    fn new(location_validation_timestamp: DateTime<Utc>, lat: f64, lon: f64) -> Self {
+        Self {
+            location_validation_timestamp,
+            lat,
+            lon,
+        }
+    }
+
+    /// Calculates the duration from now in which last_valid_timestamp is 12 hours old
+    fn duration_to_expiration(&self) -> Duration {
+        ((self.location_validation_timestamp + Duration::hours(12)) - Utc::now())
+            .max(Duration::zero())
     }
 }
 
