@@ -104,7 +104,7 @@ where
                         }
                     }
                 }
-                _ = shutdown.clone() => return anyhow::Ok(()),
+                _ = shutdown.clone() => return Ok(()),
             }
         }
     }
