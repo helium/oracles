@@ -47,7 +47,7 @@ impl<S, GIR, AV> Daemon<S, GIR, AV> {
             burner,
             reports,
             burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
-            min_burn_period: Duration::from_secs(60 * settings.burn_period as u64),
+            min_burn_period: Duration::from_secs(60 * settings.min_burn_period as u64),
             gateway_info_resolver,
             authorization_verifier,
             invalid_data_session_report_sink,
