@@ -537,13 +537,11 @@ impl ValidatedHeartbeat {
                         last_location_cache
                             .set_last_location(
                                 &heartbeat.hotspot_key,
-                                LastLocation::new(
-                                    last_valid_timestamp,
-                                    heartbeat.lat,
-                                    heartbeat.lon,
-                                ),
+                                last_valid_timestamp,
+                                heartbeat.lat,
+                                heartbeat.lon,
                             )
-                            .await;
+                            .await?;
                         true
                     }
                 };
@@ -781,7 +779,7 @@ pub async fn clear_heartbeats(
 #[derive(Clone)]
 pub struct LocationCache {
     pool: PgPool,
-    locations: Arc<Cache<PublicKeyBinary, Option<LastLocation>>>,
+    locations: Arc<Cache<PublicKeyBinary, Option<(f64, f64)>>>,
 }
 
 impl LocationCache {
@@ -802,8 +800,14 @@ impl LocationCache {
     async fn fetch_from_db_and_set(
         &self,
         hotspot: &PublicKeyBinary,
-    ) -> Result<Option<LastLocation>, sqlx::Error> {
-        let last_query: Option<LastLocation> = sqlx::query_as(
+    ) -> Result<Option<(f64, f64)>, sqlx::Error> {
+        #[derive(sqlx::FromRow)]
+        pub struct LastLocation {
+            lat: f64,
+            lon: f64,
+        }
+
+        let last_location: Option<LastLocation> = sqlx::query_as(
             r#"
             SELECT location_validation_timestamp, lat, lon
             FROM wifi_heartbeats
@@ -816,14 +820,15 @@ impl LocationCache {
         .bind(Utc::now() - Duration::hours(12))
         .fetch_optional(&self.pool)
         .await?;
+        let last_location = last_location.map(|x| (x.lat, x.lon));
         self.locations
             .insert(
                 hotspot.clone(),
-                last_query,
+                last_location,
                 std::time::Duration::from_secs(60 * 60 * 12),
             )
             .await;
-        Ok(last_query)
+        Ok(last_location)
     }
 
     pub async fn fetch_last_location(
@@ -832,49 +837,31 @@ impl LocationCache {
     ) -> Result<Option<(f64, f64)>, sqlx::Error> {
         Ok(
             if let Some(last_location) = self.locations.get(hotspot).await {
-                if let Some(last_location) = *last_location {
-                    if last_location.location_validation_timestamp
-                        < Utc::now() - Duration::hours(12)
-                    {
-                        return Ok(self
-                            .fetch_from_db_and_set(hotspot)
-                            .await?
-                            .map(|x| (x.lat, x.lon)));
-                    }
-                }
                 *last_location
             } else {
                 self.fetch_from_db_and_set(hotspot).await?
-            }
-            .map(|x| (x.lat, x.lon)),
+            },
         )
     }
 
-    pub async fn set_last_location(&self, hotspot: &PublicKeyBinary, last_location: LastLocation) {
+    pub async fn set_last_location(
+        &self,
+        hotspot: &PublicKeyBinary,
+        last_valid_timestamp: DateTime<Utc>,
+        lat: f64,
+        lon: f64,
+    ) -> anyhow::Result<()> {
+        // Find the the duration from now in which last_valid_timestamp is 12 hours old:
+        let duration_to_expiration =
+            ((last_valid_timestamp + Duration::hours(12)) - Utc::now()).max(Duration::zero());
         self.locations
             .insert(
                 hotspot.clone(),
-                Some(last_location),
-                std::time::Duration::from_secs(60 * 60 * 12),
+                Some((lat, lon)),
+                duration_to_expiration.to_std()?,
             )
             .await;
-    }
-}
-
-#[derive(sqlx::FromRow, Copy, Clone)]
-pub struct LastLocation {
-    location_validation_timestamp: DateTime<Utc>,
-    lat: f64,
-    lon: f64,
-}
-
-impl LastLocation {
-    fn new(location_validation_timestamp: DateTime<Utc>, lat: f64, lon: f64) -> Self {
-        Self {
-            location_validation_timestamp,
-            lat,
-            lon,
-        }
+        Ok(())
     }
 }
 
