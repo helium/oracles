@@ -34,6 +34,12 @@ pub struct Settings {
     // default retention period in seconds
     #[serde(default = "default_retention_period")]
     pub retention_period: i64,
+    #[serde(default = "default_txn_retry_delay")]
+    txn_retry_delay: u64,
+}
+
+fn default_txn_retry_delay() -> u64 {
+    1
 }
 
 fn default_retention_period() -> i64 {
@@ -89,6 +95,10 @@ impl Settings {
 
     pub fn activation_check_interval(&self) -> Duration {
         Duration::from_secs(self.activation_check_interval as u64)
+    }
+
+    pub fn txn_retry_delay(&self) -> Duration {
+        Duration::from_secs(self.txn_retry_delay)
     }
 
     pub fn retention_period(&self) -> ChronoDuration {

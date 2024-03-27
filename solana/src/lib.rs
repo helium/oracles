@@ -7,27 +7,6 @@ use std::time::SystemTimeError;
 pub mod burn;
 pub mod start_boost;
 
-macro_rules! send_with_retry {
-    ($rpc:expr) => {{
-        let mut attempt = 1;
-        loop {
-            match $rpc.await {
-                Ok(resp) => break Ok(resp),
-                Err(err) => {
-                    if attempt < 5 {
-                        attempt += 1;
-                        tokio::time::sleep(Duration::from_secs(attempt)).await;
-                        continue;
-                    } else {
-                        break Err(err);
-                    }
-                }
-            }
-        }
-    }};
-}
-pub(crate) use send_with_retry;
-
 #[derive(thiserror::Error, Debug)]
 pub enum SolanaRpcError {
     #[error("Solana rpc error: {0}")]
