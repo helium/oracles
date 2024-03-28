@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::coverage::RadioHexSignalLevel;
 use futures_util::TryStreamExt;
 use h3o::{CellIndex, LatLng};
@@ -578,6 +578,100 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
     assert_eq!(fourth_heartbeat.location_trust_score_multiplier, dec!(1.0));
     assert_eq!(fourth_heartbeat.heartbeat.lat, lat_lng.lat());
     assert_eq!(fourth_heartbeat.heartbeat.lon, lat_lng.lng());
+
+    // Lastly, check that if the valid heartbeat was saved over 12 hours ago
+    // that it is not used:
+    sqlx::query("TRUNCATE TABLE wifi_heartbeats")
+        .execute(&pool)
+        .await?;
+    location_cache.delete_last_location(&hotspot).await;
+
+    let fifth_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: lat_lng.lat(),
+        lon: lat_lng.lng(),
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: Some(
+            Utc::now() - (Duration::hours(12) + Duration::seconds(1)),
+        ),
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let fifth_heartbeat = ValidatedHeartbeat::validate(
+        fifth_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    let mut transaction = pool.begin().await?;
+    fifth_heartbeat.save(&mut transaction).await?;
+    transaction.commit().await?;
+
+    let sixth_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: 0.0,
+        lon: 0.0,
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: None,
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let sixth_heartbeat = ValidatedHeartbeat::validate(
+        sixth_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    assert_ne!(sixth_heartbeat.location_trust_score_multiplier, dec!(1.0));
+
+    location_cache.delete_last_location(&hotspot).await;
+
+    let seventh_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: 0.0,
+        lon: 0.0,
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: None,
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let seventh_heartbeat = ValidatedHeartbeat::validate(
+        seventh_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    assert_ne!(seventh_heartbeat.location_trust_score_multiplier, dec!(1.0));
 
     Ok(())
 }
