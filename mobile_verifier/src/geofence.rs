@@ -9,8 +9,8 @@ pub trait GeofenceValidator<T>: Clone + Send + Sync + 'static {
     fn in_valid_region(&self, t: &T) -> bool;
 }
 
-impl GeofenceValidator<u64> for HashSet<u64> {
-    fn in_valid_region(&self, cell: &u64) -> bool {
+impl GeofenceValidator<hextree::Cell> for HashSet<hextree::Cell> {
+    fn in_valid_region(&self, cell: &hextree::Cell) -> bool {
         self.contains(cell)
     }
 }
@@ -42,12 +42,9 @@ impl GeofenceValidator<Heartbeat> for Geofence {
     }
 }
 
-impl GeofenceValidator<u64> for Geofence {
-    fn in_valid_region(&self, cell: &u64) -> bool {
-        let Ok(cell) = Cell::try_from(*cell) else {
-            return false;
-        };
-        self.regions.contains(cell)
+impl GeofenceValidator<hextree::Cell> for Geofence {
+    fn in_valid_region(&self, cell: &hextree::Cell) -> bool {
+        self.regions.contains(*cell)
     }
 }
 

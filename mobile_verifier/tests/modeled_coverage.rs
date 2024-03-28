@@ -1,3 +1,4 @@
+mod common;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
@@ -14,7 +15,6 @@ use helium_proto::services::{
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
-    boosting_oracles::{MockDiskTree, Urbanization},
     coverage::{
         set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
         CoverageObjectCache, Seniority, UnassignedHex,
@@ -42,8 +42,8 @@ impl GeofenceValidator<Heartbeat> for MockGeofence {
     }
 }
 
-impl GeofenceValidator<u64> for MockGeofence {
-    fn in_valid_region(&self, _cell: &u64) -> bool {
+impl GeofenceValidator<hextree::Cell> for MockGeofence {
+    fn in_valid_region(&self, _cell: &hextree::Cell) -> bool {
         true
     }
 }
@@ -409,9 +409,13 @@ async fn process_input(
     }
     transaction.commit().await?;
 
-    let urbanization = Urbanization::new(MockDiskTree, MockGeofence);
     let unassigned_hexes = UnassignedHex::fetch(pool);
-    let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, pool).await?;
+    let _ = set_oracle_boosting_assignments(
+        unassigned_hexes,
+        &common::MockHexAssignments::best(),
+        pool,
+    )
+    .await?;
 
     let mut transaction = pool.begin().await?;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
