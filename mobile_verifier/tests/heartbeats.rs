@@ -5,7 +5,7 @@ use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{CoverageObjectValidity, HeartbeatValidity, SignalLevel};
 use mobile_verifier::cell_type::CellType;
-use mobile_verifier::coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache};
+use mobile_verifier::coverage::{CoverageObject, CoverageObjectCache};
 use mobile_verifier::geofence::GeofenceValidator;
 use mobile_verifier::heartbeats::{
     HbType, Heartbeat, HeartbeatReward, LocationCache, ValidatedHeartbeat,
