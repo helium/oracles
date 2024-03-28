@@ -540,5 +540,44 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
     assert_eq!(third_heartbeat.heartbeat.lat, 0.0);
     assert_eq!(third_heartbeat.heartbeat.lon, 0.0);
 
+    // We also want to ensure that if the first heartbeat is saved into the
+    // db that it is properly fetched:
+    let mut transaction = pool.begin().await?;
+    first_heartbeat.save(&mut transaction).await?;
+    transaction.commit().await?;
+
+    // We have to remove the last location again, as the lack of previous
+    // locations was added to the cache:
+    location_cache.delete_last_location(&hotspot).await;
+
+    let fourth_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: 0.0,
+        lon: 0.0,
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: None,
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let fourth_heartbeat = ValidatedHeartbeat::validate(
+        fourth_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(fourth_heartbeat.location_trust_score_multiplier, dec!(1.0));
+    assert_eq!(fourth_heartbeat.heartbeat.lat, lat_lng.lat());
+    assert_eq!(fourth_heartbeat.heartbeat.lon, lat_lng.lng());
+
     Ok(())
 }

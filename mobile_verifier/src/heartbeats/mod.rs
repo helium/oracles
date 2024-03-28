@@ -27,7 +27,7 @@ use uuid::Uuid;
 /// Minimum number of heartbeats required to give a reward to the hotspot.
 const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, sqlx::Type)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, sqlx::Type, Debug)]
 #[sqlx(type_name = "radio_type")]
 #[sqlx(rename_all = "lowercase")]
 pub enum HbType {
@@ -694,8 +694,8 @@ impl ValidatedHeartbeat {
         let truncated_timestamp = self.truncated_timestamp()?;
         sqlx::query(
             r#"
-            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted, lat, lon)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted, location_validation_timestamp, lat, lon)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (hotspot_key, truncated_timestamp) DO UPDATE SET
             latest_timestamp = EXCLUDED.latest_timestamp,
             coverage_object = EXCLUDED.coverage_object
@@ -708,6 +708,7 @@ impl ValidatedHeartbeat {
         .bind(self.heartbeat.coverage_object)
         .bind(self.location_trust_score_multiplier)
         .bind(self.distance_to_asserted)
+        .bind(self.heartbeat.location_validation_timestamp)
         .bind(self.heartbeat.lat)
         .bind(self.heartbeat.lon)
         .execute(&mut *exec)
