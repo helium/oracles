@@ -4,13 +4,13 @@ use futures_util::TryStreamExt;
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{CoverageObjectValidity, HeartbeatValidity, SignalLevel};
-use mobile_verifier::cell_type::CellType;
-use mobile_verifier::coverage::{CoverageObject, CoverageObjectCache};
-use mobile_verifier::geofence::GeofenceValidator;
-use mobile_verifier::heartbeats::{
-    HbType, Heartbeat, HeartbeatReward, LocationCache, ValidatedHeartbeat,
+use mobile_verifier::{
+    cell_type::CellType,
+    coverage::{CoverageObject, CoverageObjectCache},
+    geofence::GeofenceValidator,
+    heartbeats::{HbType, Heartbeat, HeartbeatReward, LocationCache, ValidatedHeartbeat},
+    GatewayResolution, GatewayResolver,
 };
-use mobile_verifier::{GatewayResolution, GatewayResolver};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
