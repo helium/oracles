@@ -1590,7 +1590,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=macpie/footfall#79958f84044527c524bd6fd858d8e44e1d57d002"
+source = "git+https://github.com/helium/proto?branch=master#659cd817e882090de83e4debb3df63f99b06a70a"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3556,7 +3556,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=macpie/footfall#79958f84044527c524bd6fd858d8e44e1d57d002"
+source = "git+https://github.com/helium/proto?branch=master#659cd817e882090de83e4debb3df63f99b06a70a"
 dependencies = [
  "bytes",
  "prost",
