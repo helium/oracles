@@ -20,8 +20,8 @@ use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
-use sqlx::{postgres::PgTypeInfo, Decode, Encode, PgPool, Postgres, Transaction, Type};
-use std::{ops::Range, pin::pin, sync::Arc, time};
+use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
+use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
@@ -379,12 +379,10 @@ impl ValidatedHeartbeat {
     }
 
     /// Validate a heartbeat in the given epoch.
-    #[allow(clippy::too_many_arguments)]
     pub async fn validate(
-        mut heartbeat: Heartbeat,
+        heartbeat: Heartbeat,
         gateway_info_resolver: &impl GatewayResolver,
         coverage_object_cache: &CoverageObjectCache,
-        last_location_cache: &LocationCache,
         max_distance_to_asserted: u32,
         max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
@@ -472,7 +470,7 @@ impl ValidatedHeartbeat {
             ));
         }
 
-        let Ok(mut hb_latlng) = heartbeat.centered_latlng() else {
+        let Ok(hb_latlng) = heartbeat.centered_latlng() else {
             return Ok(Self::new(
                 heartbeat,
                 cell_type,
@@ -518,39 +516,8 @@ impl ValidatedHeartbeat {
             }
             GatewayResolution::AssertedLocation(location) if heartbeat.hb_type == HbType::Wifi => {
                 let asserted_latlng: LatLng = CellIndex::try_from(location)?.into();
-                let is_valid = match heartbeat.location_validation_timestamp {
-                    None => {
-                        if let Some(last_location) = last_location_cache
-                            .fetch_last_location(&heartbeat.hotspot_key)
-                            .await?
-                        {
-                            heartbeat.lat = last_location.lat;
-                            heartbeat.lon = last_location.lon;
-                            heartbeat.location_validation_timestamp =
-                                Some(last_location.location_validation_timestamp);
-                            // Can't panic, previous lat and lon must be valid.
-                            hb_latlng = heartbeat.centered_latlng().unwrap();
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    Some(location_validation_timestamp) => {
-                        last_location_cache
-                            .set_last_location(
-                                &heartbeat.hotspot_key,
-                                LastLocation::new(
-                                    location_validation_timestamp,
-                                    heartbeat.lat,
-                                    heartbeat.lon,
-                                ),
-                            )
-                            .await?;
-                        true
-                    }
-                };
                 let distance_to_asserted = asserted_latlng.distance_m(hb_latlng).round() as i64;
-                let location_trust_score_multiplier = if is_valid
+                let location_trust_score_multiplier = if heartbeat.location_validation_timestamp.is_some()
 		// The heartbeat location to asserted location must be less than the max_distance_to_asserted value:
                     && distance_to_asserted <= max_distance_to_asserted as i64
 		// The heartbeat location to every associated coverage hex must be less than max_distance_to_coverage:
@@ -580,12 +547,10 @@ impl ValidatedHeartbeat {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn validate_heartbeats<'a>(
-        heartbeats: impl Stream<Item = Heartbeat> + 'a,
         gateway_info_resolver: &'a impl GatewayResolver,
+        heartbeats: impl Stream<Item = Heartbeat> + 'a,
         coverage_object_cache: &'a CoverageObjectCache,
-        last_location_cache: &'a LocationCache,
         max_distance_to_asserted: u32,
         max_distance_to_coverage: u32,
         epoch: &'a Range<DateTime<Utc>>,
@@ -596,7 +561,6 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 gateway_info_resolver,
                 coverage_object_cache,
-                last_location_cache,
                 max_distance_to_asserted,
                 max_distance_to_coverage,
                 epoch,
@@ -690,8 +654,8 @@ impl ValidatedHeartbeat {
         let truncated_timestamp = self.truncated_timestamp()?;
         sqlx::query(
             r#"
-            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted, lat, lon)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (hotspot_key, truncated_timestamp) DO UPDATE SET
             latest_timestamp = EXCLUDED.latest_timestamp,
             coverage_object = EXCLUDED.coverage_object
@@ -704,8 +668,6 @@ impl ValidatedHeartbeat {
         .bind(self.heartbeat.coverage_object)
         .bind(self.location_trust_score_multiplier)
         .bind(self.distance_to_asserted)
-        .bind(self.heartbeat.lat)
-        .bind(self.heartbeat.lon)
         .execute(&mut *exec)
         .await?;
         Ok(())
@@ -777,111 +739,6 @@ pub async fn clear_heartbeats(
         .await?;
 
     Ok(())
-}
-
-/// A cache for previous valid (or invalid) WiFi heartbeat locations
-#[derive(Clone)]
-pub struct LocationCache {
-    pool: PgPool,
-    locations: Arc<Cache<PublicKeyBinary, Option<LastLocation>>>,
-}
-
-impl LocationCache {
-    pub fn new(pool: &PgPool) -> Self {
-        let locations = Arc::new(Cache::new());
-        let locations_clone = locations.clone();
-        tokio::spawn(async move {
-            locations_clone
-                .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 24))
-                .await
-        });
-        Self {
-            pool: pool.clone(),
-            locations,
-        }
-    }
-
-    async fn fetch_from_db_and_set(
-        &self,
-        hotspot: &PublicKeyBinary,
-    ) -> anyhow::Result<Option<LastLocation>> {
-        let last_location: Option<LastLocation> = sqlx::query_as(
-            r#"
-            SELECT location_validation_timestamp, lat, lon
-            FROM wifi_heartbeats
-            WHERE location_validation_timestamp IS NOT NULL
-                AND location_validation_timestamp >= $1
-            ORDER BY DESC location_validation_timestamp
-            LIMIT 1
-            "#,
-        )
-        .bind(Utc::now() - Duration::hours(12))
-        .fetch_optional(&self.pool)
-        .await?;
-        self.locations
-            .insert(
-                hotspot.clone(),
-                last_location,
-                last_location
-                    .map(|x| x.duration_to_expiration())
-                    .unwrap_or_else(|| Duration::days(365))
-                    .to_std()?,
-            )
-            .await;
-        Ok(last_location)
-    }
-
-    pub async fn fetch_last_location(
-        &self,
-        hotspot: &PublicKeyBinary,
-    ) -> anyhow::Result<Option<LastLocation>> {
-        Ok(
-            if let Some(last_location) = self.locations.get(hotspot).await {
-                *last_location
-            } else {
-                self.fetch_from_db_and_set(hotspot).await?
-            },
-        )
-    }
-
-    pub async fn set_last_location(
-        &self,
-        hotspot: &PublicKeyBinary,
-        last_location: LastLocation,
-    ) -> anyhow::Result<()> {
-        let duration_to_expiration = last_location.duration_to_expiration();
-        self.locations
-            .insert(
-                hotspot.clone(),
-                Some(last_location),
-                duration_to_expiration.to_std()?,
-            )
-            .await;
-        Ok(())
-    }
-}
-
-#[derive(sqlx::FromRow, Copy, Clone)]
-pub struct LastLocation {
-    location_validation_timestamp: DateTime<Utc>,
-    lat: f64,
-    lon: f64,
-}
-
-impl LastLocation {
-    fn new(location_validation_timestamp: DateTime<Utc>, lat: f64, lon: f64) -> Self {
-        Self {
-            location_validation_timestamp,
-            lat,
-            lon,
-        }
-    }
-
-    /// Calculates the duration from now in which last_valid_timestamp is 12 hours old
-    fn duration_to_expiration(&self) -> Duration {
-        ((self.location_validation_timestamp + Duration::hours(12)) - Utc::now())
-            .max(Duration::zero())
-    }
 }
 
 pub struct SeniorityUpdate<'a> {
