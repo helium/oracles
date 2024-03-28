@@ -811,7 +811,7 @@ impl LocationCache {
             FROM wifi_heartbeats
             WHERE location_validation_timestamp IS NOT NULL
                 AND location_validation_timestamp >= $1
-            ORDER BY DESC location_validation_timestamp
+            ORDER BY location_validation_timestamp DESC
             LIMIT 1
             "#,
         )
