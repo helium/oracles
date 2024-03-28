@@ -524,17 +524,13 @@ impl ValidatedHeartbeat {
                             .fetch_last_location(&heartbeat.hotspot_key)
                             .await?
                         {
-                            if last_location.lat != 0.0 || last_location.lon != 0.0 {
-                                heartbeat.lat = last_location.lat;
-                                heartbeat.lon = last_location.lon;
-                                heartbeat.location_validation_timestamp =
-                                    Some(last_location.location_validation_timestamp);
-                                // Can't panic, previous lat and lon must be valid.
-                                hb_latlng = heartbeat.centered_latlng().unwrap();
-                                true
-                            } else {
-                                false
-                            }
+                            heartbeat.lat = last_location.lat;
+                            heartbeat.lon = last_location.lon;
+                            heartbeat.location_validation_timestamp =
+                                Some(last_location.location_validation_timestamp);
+                            // Can't panic, previous lat and lon must be valid.
+                            hb_latlng = heartbeat.centered_latlng().unwrap();
+                            true
                         } else {
                             false
                         }
