@@ -1,9 +1,16 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
+use file_store::coverage::RadioHexSignalLevel;
 use futures_util::TryStreamExt;
+use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::HeartbeatValidity;
-use mobile_verifier::cell_type::CellType;
-use mobile_verifier::heartbeats::{HbType, Heartbeat, HeartbeatReward, ValidatedHeartbeat};
+use helium_proto::services::poc_mobile::{CoverageObjectValidity, HeartbeatValidity, SignalLevel};
+use mobile_verifier::{
+    cell_type::CellType,
+    coverage::{CoverageObject, CoverageObjectCache},
+    geofence::GeofenceValidator,
+    heartbeats::{HbType, Heartbeat, HeartbeatReward, LocationCache, ValidatedHeartbeat},
+    GatewayResolution, GatewayResolver,
+};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
@@ -363,6 +370,308 @@ VALUES
             coverage_object: latest_coverage_object,
         }]
     );
+
+    Ok(())
+}
+
+fn signal_level(hex: &str, signal_level: SignalLevel) -> anyhow::Result<RadioHexSignalLevel> {
+    Ok(RadioHexSignalLevel {
+        location: hex.parse()?,
+        signal_level,
+        signal_power: 0, // Unused
+    })
+}
+
+#[derive(Clone)]
+struct MockGeofence;
+
+impl GeofenceValidator<Heartbeat> for MockGeofence {
+    fn in_valid_region(&self, _heartbeat: &Heartbeat) -> bool {
+        true
+    }
+}
+
+impl GeofenceValidator<u64> for MockGeofence {
+    fn in_valid_region(&self, _cell: &u64) -> bool {
+        true
+    }
+}
+
+#[derive(Copy, Clone)]
+struct AllOwnersValid;
+
+#[async_trait::async_trait]
+impl GatewayResolver for AllOwnersValid {
+    type Error = std::convert::Infallible;
+
+    async fn resolve_gateway(
+        &self,
+        _address: &PublicKeyBinary,
+    ) -> Result<GatewayResolution, Self::Error> {
+        Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
+    }
+}
+
+#[sqlx::test]
+async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Result<()> {
+    let hotspot: PublicKeyBinary =
+        "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
+    let coverage_obj = Uuid::new_v4();
+    let coverage_object = file_store::coverage::CoverageObject {
+        pub_key: hotspot.clone(),
+        uuid: coverage_obj,
+        key_type: file_store::coverage::KeyType::HotspotKey(hotspot.clone()),
+        coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
+        indoor: true,
+        signature: Vec::new(),
+        coverage: vec![signal_level("8c2681a3064d9ff", SignalLevel::High)?],
+        trust_score: 0,
+    };
+
+    let mut transaction = pool.begin().await?;
+    CoverageObject {
+        coverage_object,
+        validity: CoverageObjectValidity::Valid,
+    }
+    .save(&mut transaction)
+    .await?;
+    transaction.commit().await?;
+
+    let coverage_objects = CoverageObjectCache::new(&pool);
+    let location_cache = LocationCache::new(&pool);
+
+    let cell: CellIndex = "8c2681a3064d9ff".parse().unwrap();
+    let lat_lng: LatLng = cell.into();
+
+    let epoch_start: DateTime<Utc> = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
+    let epoch_end: DateTime<Utc> = "2023-08-25 00:00:00.000000000 UTC".parse().unwrap();
+
+    let first_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: lat_lng.lat(),
+        lon: lat_lng.lng(),
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: Some(Utc::now()),
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let first_heartbeat = ValidatedHeartbeat::validate(
+        first_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    // First heartbeat should have a 1.0 trust score:
+    assert_eq!(first_heartbeat.location_trust_score_multiplier, dec!(1.0));
+
+    let second_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: 0.0,
+        lon: 0.0,
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: None,
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let second_heartbeat = ValidatedHeartbeat::validate(
+        second_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    // Despite having no location set, we should still have a 1.0 trust score
+    // for the second heartbeat:
+    assert_eq!(second_heartbeat.location_trust_score_multiplier, dec!(1.0));
+    // Additionally, the lat and lon should be set to the correct value
+    assert_eq!(second_heartbeat.heartbeat.lat, lat_lng.lat());
+    assert_eq!(second_heartbeat.heartbeat.lon, lat_lng.lng());
+
+    // If we remove the radio from the location cache, then we should not see
+    // the same behavior:
+
+    location_cache.delete_last_location(&hotspot).await;
+
+    let third_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: 0.0,
+        lon: 0.0,
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: None,
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let third_heartbeat = ValidatedHeartbeat::validate(
+        third_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    assert_ne!(third_heartbeat.location_trust_score_multiplier, dec!(1.0));
+    assert_eq!(third_heartbeat.heartbeat.lat, 0.0);
+    assert_eq!(third_heartbeat.heartbeat.lon, 0.0);
+
+    // We also want to ensure that if the first heartbeat is saved into the
+    // db that it is properly fetched:
+    let mut transaction = pool.begin().await?;
+    first_heartbeat.save(&mut transaction).await?;
+    transaction.commit().await?;
+
+    // We have to remove the last location again, as the lack of previous
+    // locations was added to the cache:
+    location_cache.delete_last_location(&hotspot).await;
+
+    let fourth_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: 0.0,
+        lon: 0.0,
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: None,
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let fourth_heartbeat = ValidatedHeartbeat::validate(
+        fourth_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(fourth_heartbeat.location_trust_score_multiplier, dec!(1.0));
+    assert_eq!(fourth_heartbeat.heartbeat.lat, lat_lng.lat());
+    assert_eq!(fourth_heartbeat.heartbeat.lon, lat_lng.lng());
+
+    // Lastly, check that if the valid heartbeat was saved over 12 hours ago
+    // that it is not used:
+    sqlx::query("TRUNCATE TABLE wifi_heartbeats")
+        .execute(&pool)
+        .await?;
+    location_cache.delete_last_location(&hotspot).await;
+
+    let fifth_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: lat_lng.lat(),
+        lon: lat_lng.lng(),
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: Some(
+            Utc::now() - (Duration::hours(12) + Duration::seconds(1)),
+        ),
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let fifth_heartbeat = ValidatedHeartbeat::validate(
+        fifth_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    let mut transaction = pool.begin().await?;
+    fifth_heartbeat.save(&mut transaction).await?;
+    transaction.commit().await?;
+
+    let sixth_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: 0.0,
+        lon: 0.0,
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: None,
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let sixth_heartbeat = ValidatedHeartbeat::validate(
+        sixth_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    assert_ne!(sixth_heartbeat.location_trust_score_multiplier, dec!(1.0));
+
+    location_cache.delete_last_location(&hotspot).await;
+
+    let seventh_heartbeat = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: 0.0,
+        lon: 0.0,
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: None,
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let seventh_heartbeat = ValidatedHeartbeat::validate(
+        seventh_heartbeat,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
+    assert_ne!(seventh_heartbeat.location_trust_score_multiplier, dec!(1.0));
 
     Ok(())
 }
