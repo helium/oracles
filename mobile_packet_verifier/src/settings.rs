@@ -90,6 +90,14 @@ impl Settings {
             .unwrap()
     }
 
+    pub fn burn_period(&self) -> tokio::time::Duration {
+        tokio::time::Duration::from_secs(60 * 60 * self.burn_period as u64)
+    }
+
+    pub fn min_burn_period(&self) -> tokio::time::Duration {
+        tokio::time::Duration::from_secs(60 * self.min_burn_period as u64)
+    }
+
     pub fn purger_interval(&self) -> Duration {
         Duration::hours(self.purger_interval_in_hours as i64)
     }
