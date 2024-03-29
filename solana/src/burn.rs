@@ -1,4 +1,4 @@
-use crate::{send_with_retry, GetSignature, SolanaRpcError};
+use crate::{GetSignature, IsErrorBlockhashNotFound, SolanaRpcError};
 use anchor_client::RequestBuilder;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -30,7 +30,7 @@ use tokio::sync::Mutex;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + IsErrorBlockhashNotFound + Send + Sync + 'static;
     type Transaction: GetSignature + Send + Sync + 'static;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error>;
@@ -49,8 +49,6 @@ pub trait SolanaNetwork: Send + Sync + 'static {
     async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error>;
 
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error>;
-
-    async fn check_for_blockhash_not_found_error(&self, err: &Self::Error) -> bool;
 }
 
 #[derive(Debug, Deserialize)]
@@ -312,18 +310,6 @@ impl SolanaNetwork for SolanaRpc {
             Some(Ok(()))
         ))
     }
-
-    async fn check_for_blockhash_not_found_error(&self, err: &Self::Error) -> bool {
-        matches!(
-            err,
-            SolanaRpcError::RpcClientError(ClientError {
-                kind: solana_client::client_error::ClientErrorKind::TransactionError(
-                    solana_sdk::transaction::TransactionError::BlockhashNotFound,
-                ),
-                ..
-            })
-        )
-    }
 }
 
 #[derive(Default)]
@@ -518,14 +504,6 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
             panic!("We will not confirm transactions when Solana is disabled");
         }
     }
-
-    async fn check_for_blockhash_not_found_error(&self, err: &Self::Error) -> bool {
-        if let Some(ref rpc) = self {
-            rpc.check_for_blockhash_not_found_error(err).await
-        } else {
-            false
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -538,6 +516,12 @@ pub struct MockTransaction {
 impl GetSignature for MockTransaction {
     fn get_signature(&self) -> &Signature {
         &self.signature
+    }
+}
+
+impl IsErrorBlockhashNotFound for Infallible {
+    fn is_error_blockhash_not_found(&self) -> bool {
+        false
     }
 }
 
@@ -578,10 +562,6 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 
     async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, Self::Error> {
         Ok(true)
-    }
-
-    async fn check_for_blockhash_not_found_error(&self, _err: &Self::Error) -> bool {
-        false
     }
 }
 

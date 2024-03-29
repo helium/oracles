@@ -35,6 +35,25 @@ impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
     }
 }
 
+pub trait IsErrorBlockhashNotFound {
+    fn is_error_blockhash_not_found(&self) -> bool;
+}
+
+impl IsErrorBlockhashNotFound for SolanaRpcError {
+    fn is_error_blockhash_not_found(&self) -> bool {
+        // matches!(self, SolanaRpcError::RpcClientError(ClientError::BlockhashNotFound))
+        matches!(
+            self,
+            SolanaRpcError::RpcClientError(ClientError {
+                kind: solana_client::client_error::ClientErrorKind::TransactionError(
+                    solana_sdk::transaction::TransactionError::BlockhashNotFound,
+                ),
+                ..
+            })
+        )
+    }
+}
+
 pub trait GetSignature {
     fn get_signature(&self) -> &Signature;
 }

@@ -431,10 +431,6 @@ mod test {
         ) -> Result<Self::Transaction, Self::Error> {
             unreachable!()
         }
-
-        async fn check_for_blockhash_not_found_error(&self, _err: &Self::Error) -> bool {
-            false
-        }
     }
 
     #[tokio::test]

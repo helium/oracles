@@ -1,7 +1,7 @@
 use crate::db::{self, TxnRow};
 use anyhow::Result;
 use futures::{future::LocalBoxFuture, TryFutureExt};
-use solana::{start_boost::SolanaNetwork, GetSignature};
+use solana::{start_boost::SolanaNetwork, GetSignature, IsErrorBlockhashNotFound};
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 use task_manager::ManagedTask;
@@ -133,10 +133,7 @@ where
                             .await?;
                         break;
                     }
-                    Err(err)
-                        if self.solana.check_for_blockhash_not_found_error(&err).await
-                            && attempt < MAX_ATTEMPTS =>
-                    {
+                    Err(err) if err.is_error_blockhash_not_found() && attempt < MAX_ATTEMPTS => {
                         tracing::error!("block hash not found..possibly stale block hash, resigning txn and retrying");
                         db::revert_saved_batch_txn_id(&self.pool, &ids).await?;
                         attempt += 1;

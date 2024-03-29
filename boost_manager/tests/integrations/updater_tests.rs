@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use boost_manager::{db, updater::Updater, OnChainStatus};
 use chrono::{DateTime, Utc};
 use file_store::hex_boost::BoostedHexActivation;
-use solana::{start_boost::SolanaNetwork, GetSignature};
+use solana::{start_boost::SolanaNetwork, GetSignature, IsErrorBlockhashNotFound};
 use solana_sdk::signature::Signature;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{string::ToString, sync::Mutex, time::Duration};
@@ -45,6 +45,12 @@ impl MockSolanaConnection {
     }
 }
 
+impl IsErrorBlockhashNotFound for Error {
+    fn is_error_blockhash_not_found(&self) -> bool {
+        false
+    }
+}
+
 #[async_trait]
 impl SolanaNetwork for MockSolanaConnection {
     type Error = Error;
@@ -77,10 +83,6 @@ impl SolanaNetwork for MockSolanaConnection {
         transaction: &Self::Transaction,
     ) -> Result<Self::Transaction, Self::Error> {
         Ok(transaction.clone())
-    }
-
-    async fn check_for_blockhash_not_found_error(&self, _err: &Self::Error) -> bool {
-        false
     }
 }
 

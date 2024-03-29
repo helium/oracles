@@ -1,4 +1,4 @@
-use crate::{send_with_retry, GetSignature, SolanaRpcError};
+use crate::{GetSignature, IsErrorBlockhashNotFound, SolanaRpcError};
 use anchor_client::RequestBuilder;
 use async_trait::async_trait;
 use file_store::hex_boost::BoostedHexActivation;
@@ -7,7 +7,7 @@ use helium_anchor_gen::{
     hexboosting::{self, accounts, instruction},
 };
 use serde::Deserialize;
-use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::instruction::Instruction;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + IsErrorBlockhashNotFound + Send + Sync + 'static;
     type Transaction: GetSignature + Send + Sync + 'static;
 
     async fn make_start_boost_transaction(
@@ -36,8 +36,6 @@ pub trait SolanaNetwork: Send + Sync + 'static {
     async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error>;
 
     async fn confirm_transaction(&self, txn: &str) -> Result<bool, Self::Error>;
-
-    async fn check_for_blockhash_not_found_error(&self, err: &Self::Error) -> bool;
 }
 
 #[derive(Debug, Deserialize)]
@@ -164,18 +162,6 @@ impl SolanaNetwork for SolanaRpc {
             Some(Ok(()))
         ))
     }
-
-    async fn check_for_blockhash_not_found_error(&self, err: &Self::Error) -> bool {
-        matches!(
-            err,
-            SolanaRpcError::RpcClientError(ClientError {
-                kind: solana_client::client_error::ClientErrorKind::TransactionError(
-                    solana_sdk::transaction::TransactionError::BlockhashNotFound,
-                ),
-                ..
-            })
-        )
-    }
 }
 pub enum PossibleTransaction {
     NoTransaction(Signature),
@@ -241,14 +227,6 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
             rpc.confirm_transaction(txn).await
         } else {
             panic!("We will not confirm transactions when Solana is disabled");
-        }
-    }
-
-    async fn check_for_blockhash_not_found_error(&self, err: &Self::Error) -> bool {
-        if let Some(ref rpc) = self {
-            rpc.check_for_blockhash_not_found_error(err).await
-        } else {
-            false
         }
     }
 }

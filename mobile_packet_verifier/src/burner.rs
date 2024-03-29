@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::burn::SolanaNetwork;
+use solana::{burn::SolanaNetwork, IsErrorBlockhashNotFound};
 use sqlx::{FromRow, Pool, Postgres};
 use std::{collections::HashMap, time::Duration};
 
@@ -160,10 +160,7 @@ where
                     tracing::info!(%payer, %amount, "Burned DC");
                     break;
                 }
-                Err(err)
-                    if self.solana.check_for_blockhash_not_found_error(&err).await
-                        && attempt < MAX_ATTEMPTS =>
-                {
+                Err(err) if err.is_error_blockhash_not_found() && attempt < MAX_ATTEMPTS => {
                     tracing::error!(%payer, %amount, "block hash not found..possibly stale block hash, resigning txn and retrying");
                     signed_txn = self
                         .solana

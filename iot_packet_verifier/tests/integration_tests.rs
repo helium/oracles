@@ -622,10 +622,6 @@ impl SolanaNetwork for MockSolanaNetwork {
     ) -> Result<Self::Transaction, Self::Error> {
         self.ledger.sign_transaction(transaction).await
     }
-
-    async fn check_for_blockhash_not_found_error(&self, _err: &Self::Error) -> bool {
-        false
-    }
 }
 
 #[sqlx::test]
