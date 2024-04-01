@@ -60,10 +60,10 @@ where
         T: 'static,
     {
         let latency = Utc::now() - self.file_info.timestamp;
-        metrics::histogram!(
+        metrics::gauge!(
             "file-processing-latency",
             latency.num_seconds() as f64,
-            "file-type" => self.file_info.prefix.clone()
+            "file-type" => self.file_info.prefix.clone(), "process-name" => self.process_name.clone(),
         );
 
         recorder.record(&self.process_name, &self.file_info).await?;
