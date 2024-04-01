@@ -812,11 +812,13 @@ impl LocationCache {
             FROM wifi_heartbeats
             WHERE location_validation_timestamp IS NOT NULL
                 AND location_validation_timestamp >= $1
+                AND hotspot_key = $2
             ORDER BY location_validation_timestamp DESC
             LIMIT 1
             "#,
         )
         .bind(Utc::now() - Duration::hours(12))
+        .bind(hotspot)
         .fetch_optional(&self.pool)
         .await?;
         self.locations
@@ -869,9 +871,9 @@ impl LocationCache {
 
 #[derive(sqlx::FromRow, Copy, Clone)]
 pub struct LastLocation {
-    location_validation_timestamp: DateTime<Utc>,
-    lat: f64,
-    lon: f64,
+    pub location_validation_timestamp: DateTime<Utc>,
+    pub lat: f64,
+    pub lon: f64,
 }
 
 impl LastLocation {
