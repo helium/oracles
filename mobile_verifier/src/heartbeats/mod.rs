@@ -871,9 +871,9 @@ impl LocationCache {
 
 #[derive(sqlx::FromRow, Copy, Clone)]
 pub struct LastLocation {
-    location_validation_timestamp: DateTime<Utc>,
-    lat: f64,
-    lon: f64,
+    pub location_validation_timestamp: DateTime<Utc>,
+    pub lat: f64,
+    pub lon: f64,
 }
 
 impl LastLocation {

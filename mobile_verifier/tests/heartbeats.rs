@@ -540,11 +540,51 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
     assert_eq!(third_heartbeat.heartbeat.lat, 0.0);
     assert_eq!(third_heartbeat.heartbeat.lon, 0.0);
 
+    let hotspot_2: PublicKeyBinary =
+        "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp".parse()?;
+
+    let hotspot_2_hb_1 = Heartbeat {
+        hb_type: HbType::Wifi,
+        hotspot_key: hotspot_2.clone(),
+        cbsd_id: None,
+        operation_mode: true,
+        lat: 0.0,
+        lon: 0.0,
+        coverage_object: Some(coverage_obj),
+        location_validation_timestamp: Some(Utc::now()),
+        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+    };
+
+    let hotspot_2_hb_1 = ValidatedHeartbeat::validate(
+        hotspot_2_hb_1,
+        &AllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        1,
+        u32::MAX,
+        &(epoch_start..epoch_end),
+        &MockGeofence,
+    )
+    .await
+    .unwrap();
+
     // We also want to ensure that if the first heartbeat is saved into the
     // db that it is properly fetched:
     let mut transaction = pool.begin().await?;
     first_heartbeat.save(&mut transaction).await?;
+    hotspot_2_hb_1.save(&mut transaction).await?;
     transaction.commit().await?;
+
+    // Also check to make sure that fetching from the DB gives us null island
+    // for hotspot 2:
+    location_cache.delete_last_location(&hotspot_2).await;
+    let hotspot_2_last_location = location_cache
+        .fetch_last_location(&hotspot_2)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(hotspot_2_last_location.lat, 0.0);
+    assert_eq!(hotspot_2_last_location.lon, 0.0);
 
     // We have to remove the last location again, as the lack of previous
     // locations was added to the cache:
