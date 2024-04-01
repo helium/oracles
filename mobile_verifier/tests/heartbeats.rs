@@ -593,7 +593,7 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
     hotspot_2_hb_1.save(&mut transaction).await?;
     transaction.commit().await?;
 
-    // Also check to make sure that fetching from the DB gives us null island
+    // Also check to make sure that fetching from the DB gives us the same location
     // for hotspot 2:
     location_cache.delete_last_location(&hotspot_2).await;
     let hotspot_2_last_location = location_cache
