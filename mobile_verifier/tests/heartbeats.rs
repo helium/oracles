@@ -416,6 +416,9 @@ impl GatewayResolver for AllOwnersValid {
 async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Result<()> {
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
+    let hotspot_2: PublicKeyBinary =
+        "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp".parse()?;
+
     let coverage_obj = Uuid::new_v4();
     let coverage_object = file_store::coverage::CoverageObject {
         pub_key: hotspot.clone(),
@@ -428,9 +431,27 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
         trust_score: 0,
     };
 
+    let coverage_obj_2 = Uuid::new_v4();
+    let coverage_object_2 = file_store::coverage::CoverageObject {
+        pub_key: hotspot_2.clone(),
+        uuid: coverage_obj_2,
+        key_type: file_store::coverage::KeyType::HotspotKey(hotspot_2.clone()),
+        coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
+        indoor: true,
+        signature: Vec::new(),
+        coverage: vec![signal_level("8c2681a3064d9ff", SignalLevel::High)?],
+        trust_score: 0,
+    };
+
     let mut transaction = pool.begin().await?;
     CoverageObject {
         coverage_object,
+        validity: CoverageObjectValidity::Valid,
+    }
+    .save(&mut transaction)
+    .await?;
+    CoverageObject {
+        coverage_object: coverage_object_2,
         validity: CoverageObjectValidity::Valid,
     }
     .save(&mut transaction)
@@ -540,17 +561,14 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
     assert_eq!(third_heartbeat.heartbeat.lat, 0.0);
     assert_eq!(third_heartbeat.heartbeat.lon, 0.0);
 
-    let hotspot_2: PublicKeyBinary =
-        "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp".parse()?;
-
     let hotspot_2_hb_1 = Heartbeat {
         hb_type: HbType::Wifi,
         hotspot_key: hotspot_2.clone(),
         cbsd_id: None,
         operation_mode: true,
-        lat: 0.0,
-        lon: 0.0,
-        coverage_object: Some(coverage_obj),
+        lat: 48.385318100686,
+        lon: -104.697568066261,
+        coverage_object: Some(coverage_obj_2),
         location_validation_timestamp: Some(Utc::now()),
         timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
     };
@@ -583,8 +601,8 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(hotspot_2_last_location.lat, 0.0);
-    assert_eq!(hotspot_2_last_location.lon, 0.0);
+    assert_eq!(hotspot_2_last_location.lat, 48.385318100686);
+    assert_eq!(hotspot_2_last_location.lon, -104.697568066261);
 
     // We have to remove the last location again, as the lack of previous
     // locations was added to the cache:
