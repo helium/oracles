@@ -1,7 +1,8 @@
-use std::sync::Arc;
-
 use crate::{
-    boosting_oracles::{self, CheckForNewDataSetDaemon, DataSetDownloaderDaemon, Urbanization},
+    boosting_oracles::{
+        footfall::Footfall, CheckForNewDataSetDaemon, DataSetDownloaderDaemon, HexBoostData,
+        Urbanization,
+    },
     coverage::CoverageDaemon,
     data_session::DataSessionIngestor,
     geofence::Geofence,
@@ -26,13 +27,13 @@ use file_store::{
     speedtest::CellSpeedtestIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport, FileStore,
     FileType,
 };
+use hextree::disktree::DiskTreeMap;
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
     CarrierServiceClient, GatewayClient,
 };
 use price::PriceTracker;
 use task_manager::TaskManager;
-use tokio::sync::Mutex;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
@@ -222,11 +223,14 @@ impl Cmd {
             .create()
             .await?;
 
-        let hex_boost_data = boosting_oracles::make_hex_boost_data(settings, usa_geofence)?;
+        let urbanization: Urbanization<DiskTreeMap, _> = Urbanization::new(usa_geofence);
+        let footfall: Footfall<DiskTreeMap> = Footfall::new();
+        let hex_boost_data = HexBoostData::new(urbanization, footfall);
+
         let coverage_daemon = CoverageDaemon::new(
             pool.clone(),
             auth_client.clone(),
-            hex_boost_data,
+            hex_boost_data.clone(),
             coverage_objs,
             valid_coverage_objs,
             oracle_boosting_reports.clone(),
@@ -235,16 +239,29 @@ impl Cmd {
 
         // Data sets and downloaders
         let data_sets_file_store = FileStore::from_settings(&settings.data_sets).await?;
-        let data_set_downloader = DataSetDownloaderDaemon::new(
+        let urbanization_data_set_downloader = DataSetDownloaderDaemon::new(
             pool.clone(),
-            urbanization.clone(),
+            hex_boost_data.urbanization.clone(),
+            hex_boost_data.clone(),
+            data_sets_file_store.clone(),
+            oracle_boosting_reports.clone(),
+        );
+        let footfall_data_set_downloader = DataSetDownloaderDaemon::new(
+            pool.clone(),
+            hex_boost_data.footfall.clone(),
+            hex_boost_data.clone(),
             data_sets_file_store.clone(),
             oracle_boosting_reports,
         );
         let check_for_urbanization_data_sets = CheckForNewDataSetDaemon::new(
             pool.clone(),
-            data_sets_file_store,
+            data_sets_file_store.clone(),
             crate::boosting_oracles::DataSetType::Urbanization,
+        );
+        let check_for_footfall_data_sets = CheckForNewDataSetDaemon::new(
+            pool.clone(),
+            data_sets_file_store,
+            crate::boosting_oracles::DataSetType::Footfall,
         );
 
         // Mobile rewards
@@ -412,8 +429,10 @@ impl Cmd {
             .add_task(radio_threshold_ingest_server)
             .add_task(invalidated_radio_threshold_ingest_server)
             .add_task(data_session_ingestor)
-            .add_task(data_set_downloader)
+            .add_task(urbanization_data_set_downloader)
+            .add_task(footfall_data_set_downloader)
             .add_task(check_for_urbanization_data_sets)
+            .add_task(check_for_footfall_data_sets)
             .start()
             .await
     }

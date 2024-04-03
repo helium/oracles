@@ -17,6 +17,7 @@ use mobile_config::{
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
 use mobile_verifier::{
+    boosting_oracles::{set_oracle_boosting_assignments, UnassignedHex},
     cell_type::CellType,
     coverage::CoverageObject,
     data_session,

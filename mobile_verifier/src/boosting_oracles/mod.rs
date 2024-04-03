@@ -17,6 +17,7 @@
 //! in one place would make things more prone to bugs, and the implementation becomes a lot simpler.
 
 pub mod assignment;
+pub mod footfall;
 pub mod urbanization;
 
 use std::collections::HashMap;
@@ -25,10 +26,7 @@ use std::pin::pin;
 use std::sync::Arc;
 
 use crate::{
-    boosting_oracles::assignment::urbanization_multiplier,
-    coverage::SignalLevel,
-    geofence::{Geofence, GeofenceValidator},
-    Settings,
+    boosting_oracles::assignment::footfall_and_urbanization_multiplier, coverage::SignalLevel,
 };
 pub use assignment::Assignment;
 use chrono::{DateTime, Duration, Utc};
@@ -44,14 +42,14 @@ use tokio::{fs::File, io::AsyncWriteExt, sync::Mutex};
 pub use urbanization::Urbanization;
 use uuid::Uuid;
 
-pub trait DataSet {
+pub trait DataSet: HexAssignment + Send + Sync + 'static {
     const TYPE: DataSetType;
 
     fn timestamp(&self) -> Option<DateTime<Utc>>;
 
     fn update(&mut self, path: &Path, time_to_use: DateTime<Utc>) -> anyhow::Result<()>;
 
-    fn assign(&self, hex: u64) -> anyhow::Result<Assignment>;
+    fn is_ready(&self) -> bool;
 }
 
 pub struct DataSetDownloaderDaemon<T, A, B> {
@@ -85,9 +83,11 @@ impl DataSetStatus {
     }
 }
 
-impl<T> ManagedTask for DataSetDownloaderDaemon<T>
+impl<T, A, B> ManagedTask for DataSetDownloaderDaemon<T, A, B>
 where
-    T: DataSet
+    T: DataSet,
+    A: HexAssignment,
+    B: HexAssignment,
 {
     fn start_task(
         self: Box<Self>,
@@ -102,7 +102,7 @@ where
     }
 }
 
-impl<T, A, B> DataSetDownloaderDaemon<T>
+impl<T, A, B> DataSetDownloaderDaemon<T, A, B>
 where
     T: DataSet,
     A: HexAssignment,
@@ -111,7 +111,7 @@ where
     pub fn new(
         pool: PgPool,
         data_set: Arc<Mutex<T>>,
-        data_sets: Arc<Mutex<HexBoostData<A, B>>>,
+        data_sets: HexBoostData<A, B>,
         store: FileStore,
         oracle_boosting_sink: FileSinkClient,
     ) -> Self {
@@ -134,7 +134,7 @@ where
         loop {
             // Find the latest urbanization file
             tracing::info!("Checking for new data sets");
-            let mut data_set = self.urbanization.lock().await;
+            let mut data_set = self.data_set.lock().await;
             let curr_data_set = data_set.timestamp();
             let latest_data_set: Option<NewDataSet> = sqlx::query_as(
                 "SELECT file_name, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = 'urbanization' AND COALESCE(time_to_use > $1, TRUE) AND time_to_use <= $2 ORDER BY time_to_use DESC LIMIT 1"
@@ -316,21 +316,7 @@ pub async fn check_for_unprocessed_data_sets(
     .await
 }
 
-pub fn make_hex_boost_data(
-    settings: &Settings,
-    usa_geofence: Geofence,
-) -> anyhow::Result<HexBoostData<impl HexAssignment, impl HexAssignment>> {
-    let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
-    let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
-
-    let urbanization = UrbanizationData::new(urban_disktree, usa_geofence);
-    let footfall_data = FootfallData::new(footfall_disktree);
-    let hex_boost_data = HexBoostData::new(urbanization, footfall_data);
-
-    Ok(hex_boost_data)
-}
-
-pub trait HexAssignment: Send + Sync {
+pub trait HexAssignment: Send + Sync + 'static {
     fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
 }
 
@@ -339,36 +325,31 @@ pub struct HexBoostData<Urban, Foot> {
     pub footfall: Arc<Mutex<Foot>>,
 }
 
-pub struct UrbanizationData<Urban, Geo> {
-    urbanized: Urban,
-    usa_geofence: Geo,
-}
-
-pub struct FootfallData<Foot> {
-    footfall: Foot,
+impl<U, F> Clone for HexBoostData<U, F> {
+    fn clone(&self) -> Self {
+        Self {
+            urbanization: self.urbanization.clone(),
+            footfall: self.footfall.clone(),
+        }
+    }
 }
 
 impl<Urban, Foot> HexBoostData<Urban, Foot> {
     pub fn new(urbanization: Urban, footfall: Foot) -> Self {
         Self {
-            urbanization,
-            footfall,
+            urbanization: Arc::new(Mutex::new(urbanization)),
+            footfall: Arc::new(Mutex::new(footfall)),
         }
     }
 }
 
-impl<Urban, Geo> UrbanizationData<Urban, Geo> {
-    pub fn new(urbanized: Urban, usa_geofence: Geo) -> Self {
-        Self {
-            urbanized,
-            usa_geofence,
-        }
-    }
-}
-
-impl<Foot> FootfallData<Foot> {
-    pub fn new(footfall: Foot) -> Self {
-        Self { footfall }
+impl<Urban, Foot> HexBoostData<Urban, Foot>
+where
+    Urban: DataSet,
+    Foot: DataSet,
+{
+    pub async fn is_ready(&self) -> bool {
+        self.urbanization.lock().await.is_ready() && self.footfall.lock().await.is_ready()
     }
 }
 
@@ -384,7 +365,7 @@ impl DiskTreeLike for DiskTreeMap {
 
 impl DiskTreeLike for std::collections::HashSet<hextree::Cell> {
     fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>> {
-        Ok(self.contains(&cell).then(|| (cell, &[])))
+        Ok(self.contains(&cell).then_some((cell, &[])))
     }
 }
 
@@ -420,7 +401,7 @@ impl UnassignedHex {
 
 pub async fn set_oracle_boosting_assignments<'a>(
     unassigned_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
-    data_sets: &HexAssignment<impl HexAssignment, impl HexAssignment>,
+    data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment>,
     pool: &'a PgPool,
 ) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
     const NUMBER_OF_FIELDS_IN_QUERY: u16 = 5;
@@ -430,17 +411,21 @@ pub async fn set_oracle_boosting_assignments<'a>(
     let mut boost_results = HashMap::<Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
     let mut unassigned_hexes = pin!(unassigned_hexes.try_chunks(ASSIGNMENTS_MAX_BATCH_ENTRIES));
 
+    let urbanization = data_sets.urbanization.lock().await;
+    let footfall = data_sets.footfall.lock().await;
+
     while let Some(hexes) = unassigned_hexes.try_next().await? {
         let hexes: anyhow::Result<Vec<_>> = hexes
             .into_iter()
             .map(|hex| {
                 let cell = hextree::Cell::try_from(hex.hex)?;
-                let urbanized = data_set.urbanization.assignment(cell)?;
-                let footfall = data_set.footfall.assignment(cell)?;// urbanization.hex_assignment(hex.hex)?;
+                let urbanized = urbanization.assignment(cell)?;
+                let footfall = footfall.assignment(cell)?;
                 let location = format!("{:x}", hex.hex);
-                let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
-                    .to_u32()
-                    .unwrap_or(0);
+                let assignment_multiplier =
+                    (footfall_and_urbanization_multiplier(footfall, urbanized) * dec!(1000))
+                        .to_u32()
+                        .unwrap_or(0);
 
                 boost_results.entry(hex.uuid).or_default().push(
                     proto::OracleBoostingHexAssignment {
@@ -451,27 +436,31 @@ pub async fn set_oracle_boosting_assignments<'a>(
                     },
                 );
 
-                Ok((hex, urbanized))
+                Ok((hex, urbanized, footfall))
             })
             .collect();
 
-        QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized)")
-            .push_values(hexes?, |mut b, (hex, urbanized)| {
-                b.push_bind(hex.uuid)
-                    .push_bind(hex.hex as i64)
-                    .push_bind(hex.signal_level)
-                    .push_bind(hex.signal_power)
-                    .push_bind(urbanized);
-            })
-            .push(
-                r#"
+        QueryBuilder::new(
+            "INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized, footfall)",
+        )
+        .push_values(hexes?, |mut b, (hex, urbanized, footfall)| {
+            b.push_bind(hex.uuid)
+                .push_bind(hex.hex as i64)
+                .push_bind(hex.signal_level)
+                .push_bind(hex.signal_power)
+                .push_bind(urbanized)
+                .push_bind(footfall);
+        })
+        .push(
+            r#"
                 ON CONFLICT (uuid, hex) DO UPDATE SET
-                  urbanized = EXCLUDED.urbanized
+                  urbanized = EXCLUDED.urbanized,
+                  footfall = EXCLUDED.footfall
                 "#,
-            )
-            .build()
-            .execute(pool)
-            .await?;
+        )
+        .build()
+        .execute(pool)
+        .await?;
     }
 
     Ok(boost_results
@@ -483,40 +472,6 @@ pub async fn set_oracle_boosting_assignments<'a>(
                 timestamp: now.encode_timestamp(),
             },
         ))
-}
-
-impl<Urban, Geo> HexAssignment for UrbanizationData<Urban, Geo>
-where
-    Urban: DiskTreeLike,
-    Geo: GeofenceValidator<hextree::Cell>,
-{
-    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        if !self.usa_geofence.in_valid_region(&cell) {
-            return Ok(Assignment::C);
-        }
-
-        match self.urbanized.get(cell)?.is_some() {
-            true => Ok(Assignment::A),
-            false => Ok(Assignment::B),
-        }
-    }
-}
-
-impl<Foot> HexAssignment for FootfallData<Foot>
-where
-    Foot: DiskTreeLike,
-{
-    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        let Some((_, vals)) = self.footfall.get(cell)? else {
-            return Ok(Assignment::C);
-        };
-
-        match vals {
-            &[x] if x >= 1 => Ok(Assignment::A),
-            &[0] => Ok(Assignment::B),
-            other => anyhow::bail!("unexpected disktree data: {cell:?} {other:?}"),
-        }
-    }
 }
 
 impl HexAssignment for Assignment {

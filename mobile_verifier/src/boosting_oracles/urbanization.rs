@@ -3,7 +3,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use hextree::disktree::DiskTreeMap;
 
-use super::{Assignment, DataSet, DataSetType, DiskTreeLike};
+use super::{Assignment, DataSet, DataSetType, DiskTreeLike, HexAssignment};
 use crate::geofence::GeofenceValidator;
 
 pub struct Urbanization<DT, GF> {
@@ -30,41 +30,9 @@ impl<DT, GF> Urbanization<DT, GF> {
     }
 }
 
-impl<DT, GF> Urbanization<DT, GF>
-where
-    DT: DiskTreeLike,
-    GF: GeofenceValidator<u64>,
-{
-    pub fn is_ready(&self) -> bool {
-        self.urbanized.is_some()
-    }
-
-    fn is_urbanized(&self, location: u64) -> anyhow::Result<bool> {
-        let Some(ref urbanized) = self.urbanized else {
-            anyhow::bail!("No urbanization data set file has been loaded");
-        };
-        let cell = hextree::Cell::from_raw(location)?;
-        let result = urbanized.get(cell)?;
-        Ok(result.is_some())
-    }
-
-    pub fn hex_assignment(&self, hex: u64) -> anyhow::Result<Assignment> {
-        let assignment = if self.usa_geofence.in_valid_region(&hex) {
-            if self.is_urbanized(hex)? {
-                Assignment::A
-            } else {
-                Assignment::B
-            }
-        } else {
-            Assignment::C
-        };
-        Ok(assignment)
-    }
-}
-
 impl<GF> DataSet for Urbanization<DiskTreeMap, GF>
 where
-    GF: GeofenceValidator<u64>,
+    GF: GeofenceValidator<hextree::Cell> + Send + Sync + 'static,
 {
     const TYPE: DataSetType = DataSetType::Urbanization;
 
@@ -78,7 +46,27 @@ where
         Ok(())
     }
 
-    fn assign(&self, hex: u64) -> anyhow::Result<Assignment> {
-        self.hex_assignment(hex)
+    fn is_ready(&self) -> bool {
+        self.urbanized.is_some()
+    }
+}
+
+impl<Urban, Geo> HexAssignment for Urbanization<Urban, Geo>
+where
+    Urban: DiskTreeLike + Send + Sync + 'static,
+    Geo: GeofenceValidator<hextree::Cell> + Send + Sync + 'static,
+{
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        let Some(ref urbanized) = self.urbanized else {
+            anyhow::bail!("No urbanization data set has been loaded");
+        };
+
+        if !self.usa_geofence.in_valid_region(&cell) {
+            Ok(Assignment::C)
+        } else if urbanized.get(cell)?.is_some() {
+            Ok(Assignment::A)
+        } else {
+            Ok(Assignment::B)
+        }
     }
 }

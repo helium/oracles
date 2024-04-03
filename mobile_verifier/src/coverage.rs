@@ -1,7 +1,7 @@
 use crate::{
     boosting_oracles::{
-        set_oracle_boosting_assignments
-        assignment::footfall_and_urbanization_multiplier, Assignment, HexAssignment, HexBoostData,
+        assignment::footfall_and_urbanization_multiplier, set_oracle_boosting_assignments,
+        Assignment, DataSet, HexBoostData, UnassignedHex,
     },
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized,
@@ -40,7 +40,7 @@ use std::{
     time::Instant,
 };
 use task_manager::ManagedTask;
-use tokio::sync::{mpsc::Receiver, Mutex};
+use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
@@ -64,14 +64,10 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
-pub struct CoverageDaemon<Urban, Foot>
-where
-    Urban: HexAssignment,
-    Foot: HexAssignment,
-{
+pub struct CoverageDaemon<Urban, Foot> {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
-    hex_boost_data: Arc<Mutex<HexBoostData<Urban, Foot>>>,
+    hex_boost_data: HexBoostData<Urban, Foot>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
@@ -79,8 +75,8 @@ where
 
 impl<Urban, Foot> CoverageDaemon<Urban, Foot>
 where
-    Urban: HexAssignment,
-    Foot: HexAssignment,
+    Urban: DataSet,
+    Foot: DataSet,
 {
     pub async fn new(
         pool: PgPool,
@@ -144,9 +140,8 @@ where
         transaction.commit().await?;
 
         // After writing all of the coverage objects, we set their oracle boosting assignments.
-        // If the urbanized data set is not ready, we leave everything as NULL.
-        let urbanization = self.urbanization.lock().await;
-        if !urbanization.is_ready() {
+        // If the data sets are not ready, we leave everything as NULL.
+        if !self.hex_boost_data.is_ready().await {
             return Ok(());
         }
         let unassigned_hexes = UnassignedHex::fetch_unassigned(&self.pool);
@@ -207,76 +202,10 @@ pub async fn set_oracle_boosting_assignments(
 }
 */
 
-async fn initialize_unassigned_hexes(
-    unassigned_urbinization_hexes: impl Stream<Item = Result<UnassignedHex, sqlx::Error>>,
-    hex_boost_data: &HexBoostData<impl HexAssignment, impl HexAssignment>,
-    pool: &Pool<Postgres>,
-) -> Result<HashMap<Uuid, Vec<proto::OracleBoostingHexAssignment>>, anyhow::Error> {
-    const NUMBER_OF_FIELDS_IN_QUERY: u16 = 6;
-    const ASSIGNMENTS_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
-
-    let mut boost_results = HashMap::<Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
-
-    let mut unassigned_hexes =
-        pin!(unassigned_urbinization_hexes.try_chunks(ASSIGNMENTS_MAX_BATCH_ENTRIES));
-
-    while let Some(hexes) = unassigned_hexes.try_next().await? {
-        let hexes: anyhow::Result<Vec<_>> = hexes
-            .into_iter()
-            .map(|hex| {
-                let cell = hextree::Cell::from_raw(hex.hex)?;
-                let urbanized = hex_boost_data.urbanization.assignment(cell)?;
-                let footfall = hex_boost_data.footfall.assignment(cell)?;
-
-                let location = hex.to_location_string();
-                let assignment_multiplier =
-                    (footfall_and_urbanization_multiplier(footfall, urbanized) * dec!(1000))
-                        .to_u32()
-                        .unwrap_or(0);
-
-                boost_results.entry(hex.uuid).or_default().push(
-                    proto::OracleBoostingHexAssignment {
-                        location,
-                        urbanized: urbanized.into(),
-                        footfall: footfall.into(),
-                        assignment_multiplier,
-                    },
-                );
-
-                Ok((hex, urbanized, footfall))
-            })
-            .collect();
-
-        QueryBuilder::new(
-            "INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized, footfall)",
-        )
-        .push_values(hexes?, |mut b, (hex, urbanized, footfall)| {
-            b.push_bind(hex.uuid)
-                .push_bind(hex.hex as i64)
-                .push_bind(hex.signal_level)
-                .push_bind(hex.signal_power)
-                .push_bind(urbanized)
-                .push_bind(footfall);
-        })
-        .push(
-            r#"
-            ON CONFLICT (uuid, hex) DO UPDATE SET
-                urbanized = EXCLUDED.urbanized,
-                footfall = EXCLUDED.footfall
-            "#,
-        )
-        .build()
-        .execute(pool)
-        .await?;
-    }
-
-    Ok(boost_results)
-}
-
 impl<Urban, Foot> ManagedTask for CoverageDaemon<Urban, Foot>
 where
-    Urban: HexAssignment + 'static,
-    Foot: HexAssignment + 'static,
+    Urban: DataSet,
+    Foot: DataSet,
 {
     fn start_task(
         self: Box<Self>,

@@ -11,11 +11,10 @@ use helium_proto::services::poc_mobile::{
 };
 use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
-    boosting_oracles::{Assignment, HexBoostData, UrbanizationData},
-    coverage::{
-        set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
-        CoverageObjectCache, Seniority, UnassignedHex,
+    boosting_oracles::{
+        set_oracle_boosting_assignments, Assignment, HexBoostData, UnassignedHex, Urbanization,
     },
+    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
     heartbeats::{Heartbeat, HeartbeatReward, LocationCache, SeniorityUpdate, ValidatedHeartbeat},
     radio_threshold::VerifiedRadioThresholds,
@@ -233,7 +232,7 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     transaction.commit().await?;
 
     let unassigned_hexes = UnassignedHex::fetch_unassigned(&pool);
-    let urbanization = UrbanizationData::new(urbanized, geofence);
+    let urbanization = Urbanization::new_mock(urbanized, geofence);
     let hex_boost_data = HexBoostData::new(urbanization, footfall);
     let oba = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool)
         .await?
@@ -363,7 +362,7 @@ async fn test_footfall_and_urbanization(pool: PgPool) -> anyhow::Result<()> {
     transaction.commit().await?;
 
     let unassigned_hexes = UnassignedHex::fetch_unassigned(&pool);
-    let urbanization = UrbanizationData::new(urbanized, geofence);
+    let urbanization = Urbanization::new_mock(urbanized, geofence);
     let hex_boost_data = HexBoostData::new(urbanization, footfall);
     let _ = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool).await?;
 

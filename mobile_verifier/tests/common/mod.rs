@@ -8,8 +8,11 @@ use helium_proto::{
 };
 use mobile_config::boosted_hex_info::BoostedHexInfo;
 use mobile_verifier::boosting_oracles::{Assignment, HexAssignment, HexBoostData};
-use std::collections::HashMap;
-use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
+use std::{collections::HashMap, sync::Arc};
+use tokio::{
+    sync::{mpsc::error::TryRecvError, Mutex},
+    time::timeout,
+};
 
 pub type ValidSpMap = HashMap<String, String>;
 
@@ -176,8 +179,8 @@ pub struct MockHexAssignments;
 impl MockHexAssignments {
     pub fn best() -> HexBoostData<impl HexAssignment, impl HexAssignment> {
         HexBoostData {
-            urbanization: Assignment::A,
-            footfall: Assignment::A,
+            urbanization: Arc::new(Mutex::new(Assignment::A)),
+            footfall: Arc::new(Mutex::new(Assignment::A)),
         }
     }
 }

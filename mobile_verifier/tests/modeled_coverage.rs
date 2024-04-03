@@ -15,10 +15,7 @@ use helium_proto::services::{
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
-    coverage::{
-        set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
-        CoverageObjectCache, Seniority, UnassignedHex,
-    },
+    boosting_oracles::{set_oracle_boosting_assignments, UnassignedHex},
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
     heartbeats::{
