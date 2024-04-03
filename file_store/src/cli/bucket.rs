@@ -3,6 +3,8 @@ use crate::{
     iot_beacon_report::IotBeaconIngestReport,
     iot_valid_poc::IotPoc,
     iot_witness_report::IotWitnessIngestReport,
+    mobile_radio_invalidated_threshold::VerifiedInvalidatedRadioThresholdIngestReport,
+    mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
     speedtest::{cli::SpeedtestAverage, CellSpeedtest},
     traits::MsgDecode,
     Error, FileInfoStream, FileStore, FileType, Result, Settings,
@@ -227,6 +229,15 @@ fn locate(prefix: &str, gateway: &PublicKey, buf: &[u8]) -> Result<Option<serde_
         FileType::IotWitnessIngestReport => {
             IotWitnessIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
+        FileType::VerifiedRadioThresholdIngestReport => {
+            VerifiedRadioThresholdIngestReport::decode(buf)
+                .and_then(|event| event.to_value_if(pub_key))
+        }
+        FileType::VerifiedInvalidatedRadioThresholdIngestReport => {
+            VerifiedInvalidatedRadioThresholdIngestReport::decode(buf)
+                .and_then(|event| event.to_value_if(pub_key))
+        }
+
         FileType::IotPoc => IotPoc::decode(buf).and_then(|event| event.to_value_if(pub_key)),
         _ => Ok(None),
     }
@@ -304,5 +315,17 @@ impl Gateway for ValidatedHeartbeat {
 impl Gateway for SpeedtestAverage {
     fn has_pubkey(&self, pub_key: &[u8]) -> bool {
         self.pub_key.as_ref() == pub_key
+    }
+}
+
+impl Gateway for VerifiedRadioThresholdIngestReport {
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
+        self.report.report.hotspot_pubkey.as_ref() == pub_key
+    }
+}
+
+impl Gateway for VerifiedInvalidatedRadioThresholdIngestReport {
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
+        self.report.report.hotspot_pubkey.as_ref() == pub_key
     }
 }
