@@ -5,7 +5,7 @@ use helium_proto::services::poc_mobile::BoostedHex as BoostedHexProto;
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
@@ -20,13 +20,27 @@ impl TestContext {
         let boost_period_length = Duration::days(30);
 
         // setup boosted hex data to stream as updates
-        let multipliers1 = vec![2, 10, 15, 35];
+        let multipliers1 = vec![
+            NonZeroU32::new(2).unwrap(),
+            NonZeroU32::new(10).unwrap(),
+            NonZeroU32::new(15).unwrap(),
+            NonZeroU32::new(35).unwrap(),
+        ];
         let start_ts_1 = epoch.start - boost_period_length;
         let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
-        let multipliers2 = vec![3, 10, 20];
+        let multipliers2 = vec![
+            NonZeroU32::new(3).unwrap(),
+            NonZeroU32::new(10).unwrap(),
+            NonZeroU32::new(20).unwrap(),
+        ];
+
         let start_ts_2 = epoch.start - (boost_period_length * 2);
         let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
-        let multipliers3 = vec![1, 10, 20];
+        let multipliers3 = vec![
+            NonZeroU32::new(1).unwrap(),
+            NonZeroU32::new(10).unwrap(),
+            NonZeroU32::new(20).unwrap(),
+        ];
 
         let boosts = vec![
             BoostedHexInfo {

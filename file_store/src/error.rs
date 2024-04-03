@@ -162,6 +162,10 @@ impl DecodeError {
     pub fn file_stream_try_decode<E: ToString>(msg: E) -> Error {
         Error::Decode(Self::FileStreamTryDecode(msg.to_string()))
     }
+
+    pub fn unsupported_invalidated_reason<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedInvalidReason(msg1.to_string(), msg2))
+    }
 }
 
 impl From<helium_crypto::Error> for Error {

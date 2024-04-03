@@ -1,6 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache,
     hex_density::HexDensityMap,
+    last_beacon::LastBeacon,
     poc::{Poc, VerifyBeaconResult},
     poc_report::Report,
     region_cache::RegionCache,
@@ -22,10 +23,11 @@ use file_store::{
 };
 use futures::{future::LocalBoxFuture, stream, StreamExt, TryFutureExt};
 use helium_proto::services::poc_lora::{
-    InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
-    LoraPocV1, VerificationStatus,
+    InvalidDetails, InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1,
+    LoraInvalidWitnessReportV1, LoraPocV1, VerificationStatus,
 };
-use iot_config::client::Gateways;
+use iot_config::{client::Gateways, gateway_info::GatewayInfo};
+use lazy_static::lazy_static;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
@@ -40,6 +42,11 @@ const BEACON_WORKERS: usize = 100;
 const WITNESS_REDUNDANCY: u32 = 4;
 const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
 const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
+
+lazy_static! {
+/// the duration in which a beaconer or witness must have a valid opposite report from
+    static ref RECIPROCITY_WINDOW: ChronoDuration = ChronoDuration::hours(48);
+}
 
 pub struct Runner<G> {
     pub pool: PgPool,
@@ -226,7 +233,7 @@ where
     }
 
     async fn handle_beacon_report(&self, db_beacon: Report) -> anyhow::Result<()> {
-        // TODO: look at wrapping all db access from this point onwards in a transaction
+        // get the beacon report and any associated witnesses and then generate a POC
         let entropy_start_time = match db_beacon.timestamp {
             Some(v) => v,
             None => return Ok(()),
@@ -239,8 +246,6 @@ where
 
         let beacon_buf: &[u8] = &db_beacon.report_data;
         let beacon_report = IotBeaconIngestReport::decode(beacon_buf)?;
-        let beacon = &beacon_report.report;
-        let beacon_received_ts = beacon_report.received_timestamp;
 
         let db_witnesses =
             Report::get_witnesses_for_beacon(&self.pool, packet_data, self.witness_max_retries)
@@ -248,24 +253,27 @@ where
         let witness_len = db_witnesses.len();
         tracing::debug!("found {witness_len} witness for beacon");
 
-        // get the beacon and witness report PBs from the db reports
-        let mut witnesses: Vec<IotWitnessIngestReport> = Vec::new();
-        for db_witness in db_witnesses {
-            let witness_buf: &[u8] = &db_witness.report_data;
-            witnesses.push(IotWitnessIngestReport::decode(witness_buf)?);
-        }
+        // decode the protobuf witness reports
+        let witnesses = db_witnesses
+            .into_iter()
+            .map(|w| IotWitnessIngestReport::decode(w.report_data.as_slice()))
+            .collect::<Result<Vec<IotWitnessIngestReport>, _>>()?;
 
         // create the struct defining this POC
-        let mut poc = Poc::new(
+        let poc = Poc::new(
             self.pool.clone(),
             self.beacon_interval,
-            beacon_report.clone(),
-            witnesses.clone(),
+            beacon_report,
+            witnesses,
             entropy_start_time,
             entropy_version,
         )
         .await;
 
+        self.verify_poc(poc).await
+    }
+
+    async fn verify_poc(&self, mut poc: Poc) -> anyhow::Result<()> {
         // verify POC beacon
         let beacon_verify_result = poc
             .verify_beacon(
@@ -273,129 +281,187 @@ where
                 &self.gateway_cache,
                 &self.region_cache,
                 &self.deny_list,
-                &self.witness_updater,
             )
             .await?;
-        match beacon_verify_result.result {
-            VerificationStatus::Valid => {
+        match beacon_verify_result {
+            VerifyBeaconResult {
+                result: VerificationStatus::Valid,
+                gateway_info: Some(beacon_info),
+                ..
+            } => {
                 // beacon is valid, verify the POC witnesses
-                if let Some(beacon_info) = beacon_verify_result.gateway_info {
-                    let verified_witnesses_result = poc
-                        .verify_witnesses(
-                            &beacon_info,
-                            &self.hex_density_map,
-                            &self.gateway_cache,
-                            &self.deny_list,
-                            &self.witness_updater,
-                        )
-                        .await?;
-
-                    // check if there are any failed witnesses
-                    // if so update the DB attempts count
-                    // and halt here, let things be reprocessed next tick
-                    // if a witness continues to fail it will eventually
-                    // be discarded from the list returned for the beacon
-                    // thus one or more failing witnesses will not block the overall POC
-                    if !verified_witnesses_result.failed_witnesses.is_empty() {
-                        tracing::warn!("failed to handle witness");
-                        for failed_witness_report in verified_witnesses_result.failed_witnesses {
-                            let failed_witness = failed_witness_report.report;
-                            let id =
-                                failed_witness.report_id(failed_witness_report.received_timestamp);
-                            Report::update_attempts(&self.pool, &id, Utc::now()).await?;
-                        }
-                        return Ok(());
-                    };
-
-                    let max_witnesses_per_poc = self.max_witnesses_per_poc as usize;
-
-                    // filter witnesses into selected and unselected lists
-                    // the selected list will contain only valid witnesses
-                    // up to a max count equal to `max_witnesses_per_poc`
-                    // these witnesses will be rewarded
-                    // the unselected list will contain potentially a mix of
-                    // valid and invalid witnesses
-                    // none of which will be rewarded
-                    // we exclude self witnesses from the unselected lists
-                    // these are dropped to the floor, never make it to s3
-                    let (mut selected_witnesses, invalid_witnesses) =
-                        filter_witnesses(verified_witnesses_result.verified_witnesses);
-
-                    // keep a subset of our selected and valid witnesses
-                    let mut unselected_witnesses =
-                        sort_and_split_witnesses(&mut selected_witnesses, max_witnesses_per_poc)?;
-
-                    // concat the unselected valid witnesses and the invalid witnesses
-                    // these will then form the unselected list on the poc
-                    unselected_witnesses =
-                        [&unselected_witnesses[..], &invalid_witnesses[..]].concat();
-
-                    // get the number of valid witnesses in our selected list
-                    let num_valid_selected_witnesses = selected_witnesses.len();
-
-                    // get reward units based on the count of valid selected witnesses
-                    let beaconer_reward_units =
-                        poc_beaconer_reward_unit(num_valid_selected_witnesses as u32)?;
-                    let witness_reward_units =
-                        poc_per_witness_reward_unit(num_valid_selected_witnesses as u32)?;
-                    // update the reward units for those valid witnesses within our selected list
-                    selected_witnesses
-                        .iter_mut()
-                        .for_each(|witness| match witness.status {
-                            VerificationStatus::Valid => witness.reward_unit = witness_reward_units,
-                            VerificationStatus::Invalid => witness.reward_unit = Decimal::ZERO,
-                        });
-
-                    // metadata at this point will always be Some...
-                    let (location, gain, elevation) = match beacon_info.metadata {
-                        Some(metadata) => {
-                            (Some(metadata.location), metadata.gain, metadata.elevation)
-                        }
-                        None => (None, 0, 0),
-                    };
-
-                    let valid_beacon_report = IotValidBeaconReport {
-                        received_timestamp: beacon_received_ts,
-                        location,
-                        gain,
-                        elevation,
-                        hex_scale: beacon_verify_result
-                            .hex_scale
-                            .ok_or(RunnerError::NotFound("invalid hex scaling factor"))?,
-                        report: beacon.clone(),
-                        reward_unit: beaconer_reward_units,
-                    };
-                    self.handle_valid_poc(
-                        valid_beacon_report,
-                        selected_witnesses,
-                        unselected_witnesses,
+                let verified_witnesses_result = poc
+                    .verify_witnesses(
+                        &beacon_info,
+                        &self.hex_density_map,
+                        &self.gateway_cache,
+                        &self.deny_list,
+                        &self.witness_updater,
                     )
                     .await?;
+
+                // check if there are any failed witnesses
+                // if so update the DB attempts count
+                // and halt here, let things be reprocessed next tick
+                // if a witness continues to fail it will eventually
+                // be discarded from the list returned for the beacon
+                // thus one or more failing witnesses will not block the overall POC
+                if !verified_witnesses_result.failed_witnesses.is_empty() {
+                    tracing::warn!("failed to handle witness");
+                    for failed_witness_report in verified_witnesses_result.failed_witnesses {
+                        let failed_witness = failed_witness_report.report;
+                        let id = failed_witness.report_id(failed_witness_report.received_timestamp);
+                        Report::update_attempts(&self.pool, &id, Utc::now()).await?;
+                    }
+                    return Ok(());
+                };
+
+                if !self.verify_beacon_reciprocity(&poc.beacon_report).await? {
+                    return self
+                        .handle_invalid_poc(
+                            poc,
+                            InvalidReason::GatewayNoValidWitnesses,
+                            None,
+                            Some(beacon_info),
+                        )
+                        .await;
                 }
-            }
-            VerificationStatus::Invalid => {
-                // the beacon is invalid, which in turn renders all witnesses invalid
-                self.handle_invalid_poc(beacon_verify_result, &beacon_report, witnesses)
+
+                let verified_witnesses = self
+                    .verify_witnesses_reciprocity(verified_witnesses_result.verified_witnesses)
                     .await?;
+
+                self.handle_valid_poc(
+                    poc,
+                    beacon_info,
+                    beacon_verify_result.hex_scale,
+                    verified_witnesses,
+                )
+                .await
+            }
+            _ => {
+                // the beacon is invalid, which in turn renders all witnesses invalid
+                self.handle_invalid_poc(
+                    poc,
+                    beacon_verify_result.invalid_reason,
+                    beacon_verify_result.invalid_details,
+                    beacon_verify_result.gateway_info,
+                )
+                .await
             }
         }
+    }
+
+    async fn handle_valid_poc(
+        &self,
+        poc: Poc,
+        beacon_info: GatewayInfo,
+        beacon_hex_scale: Option<Decimal>,
+        verified_witnesses: Vec<IotVerifiedWitnessReport>,
+    ) -> anyhow::Result<()> {
+        let beacon_received_ts = poc.beacon_report.received_timestamp;
+        let packet_data = poc.beacon_report.report.data.clone();
+        let beacon_report_id = poc.beacon_report.report.report_id(beacon_received_ts);
+
+        let max_witnesses_per_poc = self.max_witnesses_per_poc as usize;
+
+        // filter witnesses into selected and unselected lists
+        // the selected list will contain only valid witnesses
+        // up to a max count equal to `max_witnesses_per_poc`
+        // these witnesses will be rewarded
+        // the unselected list will contain potentially a mix of
+        // valid and invalid witnesses
+        // none of which will be rewarded
+        // we exclude self witnesses from the unselected lists
+        // these are dropped to the floor, never make it to s3
+        let (mut selected_witnesses, invalid_witnesses) = filter_witnesses(verified_witnesses);
+
+        // keep a subset of our selected and valid witnesses
+        let mut unselected_witnesses =
+            sort_and_split_witnesses(&mut selected_witnesses, max_witnesses_per_poc)?;
+
+        // concat the unselected valid witnesses and the invalid witnesses
+        // these will then form the unselected list on the poc
+        unselected_witnesses = [&unselected_witnesses[..], &invalid_witnesses[..]].concat();
+
+        // get the number of valid witnesses in our selected list
+        let num_valid_selected_witnesses = selected_witnesses.len();
+
+        // get reward units based on the count of valid selected witnesses
+        let beaconer_reward_units = poc_beaconer_reward_unit(num_valid_selected_witnesses as u32)?;
+        let witness_reward_units =
+            poc_per_witness_reward_unit(num_valid_selected_witnesses as u32)?;
+        // update the reward units for those valid witnesses within our selected list
+        selected_witnesses
+            .iter_mut()
+            .for_each(|witness| match witness.status {
+                VerificationStatus::Valid => witness.reward_unit = witness_reward_units,
+                VerificationStatus::Invalid => witness.reward_unit = Decimal::ZERO,
+            });
+
+        // metadata at this point will always be Some...
+        let (location, gain, elevation) = match beacon_info.metadata {
+            Some(metadata) => (Some(metadata.location), metadata.gain, metadata.elevation),
+            None => (None, 0, 0),
+        };
+
+        let valid_beacon_report = IotValidBeaconReport {
+            received_timestamp: beacon_received_ts,
+            location,
+            gain,
+            elevation,
+            hex_scale: beacon_hex_scale
+                .ok_or(RunnerError::NotFound("invalid hex scaling factor"))?,
+            report: poc.beacon_report.report.clone(),
+            reward_unit: beaconer_reward_units,
+        };
+
+        let iot_poc: IotPoc = IotPoc {
+            poc_id: beacon_report_id.clone(),
+            beacon_report: valid_beacon_report,
+            selected_witnesses: selected_witnesses.clone(),
+            unselected_witnesses: unselected_witnesses.clone(),
+        };
+
+        let mut transaction = self.pool.begin().await?;
+        for reward_share in GatewayPocShare::shares_from_poc(&iot_poc) {
+            reward_share.save(&mut transaction).await?;
+        }
+        transaction.commit().await?;
+
+        let poc_proto: LoraPocV1 = iot_poc.into();
+        // save the poc to s3, if write fails update attempts and go no further
+        // allow the poc to be reprocessed next tick
+        match self.poc_sink.write(poc_proto, []).await {
+            Ok(_) => (),
+            Err(err) => {
+                tracing::error!("failed to save invalid_witness_report to s3, {err}");
+                Report::update_attempts(&self.pool, &beacon_report_id, Utc::now()).await?;
+                return Ok(());
+            }
+        }
+        // write out metrics for any witness which failed verification
+        fire_invalid_witness_metric(&selected_witnesses);
+        fire_invalid_witness_metric(&unselected_witnesses);
+
+        Report::delete_poc(&self.pool, &packet_data).await?;
+        telemetry::decrement_num_beacons();
         Ok(())
     }
 
     async fn handle_invalid_poc(
         &self,
-        beacon_verify_result: VerifyBeaconResult,
-        beacon_report: &IotBeaconIngestReport,
-        witness_reports: Vec<IotWitnessIngestReport>,
+        poc: Poc,
+        beacon_invalid_reason: InvalidReason,
+        beacon_invalid_details: Option<InvalidDetails>,
+        beacon_info: Option<GatewayInfo>,
     ) -> anyhow::Result<()> {
         // the beacon is invalid, which in turn renders all witnesses invalid
-        let beacon = &beacon_report.report;
+        let beacon = &poc.beacon_report.report;
         let beacon_id = beacon.data.clone();
-        let beacon_report_id = beacon_report.ingest_id();
-        let beacon_invalid_reason = beacon_verify_result.invalid_reason;
-        let beacon_invalid_details = beacon_verify_result.invalid_details;
+        let beacon_report_id = poc.beacon_report.ingest_id();
 
-        let (location, elevation, gain) = match beacon_verify_result.gateway_info {
+        let (location, elevation, gain) = match beacon_info {
             Some(gateway_info) => match gateway_info.metadata {
                 Some(metadata) => (Some(metadata.location), metadata.elevation, metadata.gain),
                 None => (None, 0, 0),
@@ -404,7 +470,7 @@ where
         };
 
         let invalid_poc: IotInvalidBeaconReport = IotInvalidBeaconReport {
-            received_timestamp: beacon_report.received_timestamp,
+            received_timestamp: poc.beacon_report.received_timestamp,
             reason: beacon_invalid_reason,
             invalid_details: beacon_invalid_details.clone(),
             report: beacon.clone(),
@@ -419,7 +485,7 @@ where
             .invalid_beacon_sink
             .write(
                 invalid_poc_proto,
-                &[("reason", beacon_verify_result.invalid_reason.as_str_name())],
+                &[("reason", beacon_invalid_reason.as_str_name())],
             )
             .await
         {
@@ -435,7 +501,7 @@ where
         // we will have to clean out any successful writes of other witnesses
         // and also the invalid poc
         // so if a report fails from this point on, it shall be lost for ever more
-        for witness_report in witness_reports {
+        for witness_report in poc.witness_reports {
             let invalid_witness_report: IotInvalidWitnessReport = IotInvalidWitnessReport {
                 received_timestamp: witness_report.received_timestamp,
                 report: witness_report.report,
@@ -449,7 +515,7 @@ where
                 .invalid_witness_sink
                 .write(
                     invalid_witness_report_proto,
-                    &[("reason", beacon_verify_result.invalid_reason.as_str_name())],
+                    &[("reason", beacon_invalid_reason.as_str_name())],
                 )
                 .await
             {
@@ -465,52 +531,46 @@ where
         Ok(())
     }
 
-    async fn handle_valid_poc(
+    async fn verify_beacon_reciprocity(
         &self,
-        valid_beacon_report: IotValidBeaconReport,
-        selected_witnesses: Vec<IotVerifiedWitnessReport>,
-        unselected_witnesses: Vec<IotVerifiedWitnessReport>,
-    ) -> anyhow::Result<()> {
-        let received_timestamp = valid_beacon_report.received_timestamp;
-        let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
-        let packet_data = valid_beacon_report.report.data.clone();
-        let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
-        let iot_poc: IotPoc = IotPoc {
-            poc_id: beacon_id,
-            beacon_report: valid_beacon_report,
-            selected_witnesses: selected_witnesses.clone(),
-            unselected_witnesses: unselected_witnesses.clone(),
-        };
+        beacon_report: &IotBeaconIngestReport,
+    ) -> anyhow::Result<bool> {
+        let last_witness = self
+            .witness_updater
+            .get_last_witness(&beacon_report.report.pub_key)
+            .await?;
+        Ok(last_witness.map_or(false, |lw| {
+            beacon_report.received_timestamp - lw.timestamp < *RECIPROCITY_WINDOW
+        }))
+    }
 
-        let mut transaction = self.pool.begin().await?;
-        for reward_share in GatewayPocShare::shares_from_poc(&iot_poc) {
-            reward_share.save(&mut transaction).await?;
-        }
-        // TODO: expand this transaction to cover all of the database access below?
-        transaction.commit().await?;
-
-        let poc_proto: LoraPocV1 = iot_poc.into();
-        // save the poc to s3, if write fails update attempts and go no further
-        // allow the poc to be reprocessed next tick
-        match self.poc_sink.write(poc_proto, []).await {
-            Ok(_) => (),
-            Err(err) => {
-                tracing::error!("failed to save invalid_witness_report to s3, {err}");
-                Report::update_attempts(&self.pool, &beacon_report_id, Utc::now()).await?;
-                return Ok(());
+    async fn verify_witnesses_reciprocity(
+        &self,
+        witnesses: Vec<IotVerifiedWitnessReport>,
+    ) -> anyhow::Result<Vec<IotVerifiedWitnessReport>> {
+        let mut verified_witnesses = Vec::new();
+        for mut witness in witnesses {
+            if witness.status == VerificationStatus::Valid
+                && !self.verify_witness_reciprocity(&witness).await?
+            {
+                witness.invalid_reason = InvalidReason::GatewayNoValidBeacons;
+                witness.status = VerificationStatus::Invalid;
+                witness.invalid_details = None;
+                witness.participant_side = InvalidParticipantSide::Witness
             }
+            verified_witnesses.push(witness)
         }
-        // write out metrics for any witness which failed verification
-        // TODO: work our approach that doesn't require the prior cloning of
-        // the selected and unselected witnesses vecs
-        // tried to do this directly from the now discarded poc_proto
-        // but could nae get it to get a way past the lack of COPY
-        fire_invalid_witness_metric(&selected_witnesses);
-        fire_invalid_witness_metric(&unselected_witnesses);
+        Ok(verified_witnesses)
+    }
 
-        Report::delete_poc(&self.pool, &packet_data).await?;
-        telemetry::decrement_num_beacons();
-        Ok(())
+    async fn verify_witness_reciprocity(
+        &self,
+        report: &IotVerifiedWitnessReport,
+    ) -> anyhow::Result<bool> {
+        let last_beacon = LastBeacon::get(&self.pool, &report.report.pub_key).await?;
+        Ok(last_beacon.map_or(false, |lw| {
+            report.received_timestamp - lw.timestamp < *RECIPROCITY_WINDOW
+        }))
     }
 }
 

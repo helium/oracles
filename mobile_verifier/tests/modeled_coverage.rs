@@ -1,3 +1,4 @@
+mod common;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
@@ -12,13 +13,18 @@ use helium_proto::services::{
     poc_mobile::{CoverageObjectValidity, SignalLevel},
 };
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
+
 use mobile_verifier::{
-    boosting_oracles::{
-        set_oracle_boosting_assignments, MockDiskTree, UnassignedHex, Urbanization,
+    coverage::{
+        set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
+        CoverageObjectCache, Seniority, UnassignedHex,
     },
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
-    heartbeats::{Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate, ValidatedHeartbeat},
+    heartbeats::{
+        Heartbeat, HeartbeatReward, KeyType, LocationCache, SeniorityUpdate, ValidatedHeartbeat,
+    },
+    radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoveragePoints,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
@@ -27,7 +33,7 @@ use mobile_verifier::{
 use rust_decimal_macros::dec;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
-use std::{collections::HashMap, ops::Range, pin::pin, str::FromStr};
+use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -39,8 +45,8 @@ impl GeofenceValidator<Heartbeat> for MockGeofence {
     }
 }
 
-impl GeofenceValidator<u64> for MockGeofence {
-    fn in_valid_region(&self, _cell: &u64) -> bool {
+impl GeofenceValidator<hextree::Cell> for MockGeofence {
+    fn in_valid_region(&self, _cell: &hextree::Cell) -> bool {
         true
     }
 }
@@ -395,6 +401,7 @@ async fn process_input(
 ) -> anyhow::Result<()> {
     let coverage_objects = CoverageObjectCache::new(pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
+    let location_cache = LocationCache::new(pool);
 
     let mut transaction = pool.begin().await?;
     let mut coverage_objs = pin!(CoverageObject::validate_coverage_objects(
@@ -406,15 +413,20 @@ async fn process_input(
     }
     transaction.commit().await?;
 
-    let urbanization = Urbanization::new_mock(MockDiskTree, MockGeofence);
     let unassigned_hexes = UnassignedHex::fetch_unassigned(pool);
-    let _ = set_oracle_boosting_assignments(unassigned_hexes, &urbanization, pool).await?;
+    let _ = set_oracle_boosting_assignments(
+        unassigned_hexes,
+        &common::MockHexAssignments::best(),
+        pool,
+    )
+    .await?;
 
     let mut transaction = pool.begin().await?;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
-        &AllOwnersValid,
         stream::iter(heartbeats.map(Heartbeat::from)),
+        &AllOwnersValid,
         &coverage_objects,
+        &location_cache,
         2000,
         2000,
         epoch,
@@ -498,6 +510,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -597,6 +610,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -838,7 +852,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             start_ts: None,
             end_ts: None,
             period_length: Duration::hours(1),
-            multipliers: vec![1],
+            multipliers: vec![NonZeroU32::new(1).unwrap()],
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
@@ -851,7 +865,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             start_ts: None,
             end_ts: None,
             period_length: Duration::hours(1),
-            multipliers: vec![2],
+            multipliers: vec![NonZeroU32::new(2).unwrap()],
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
@@ -865,7 +879,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             start_ts: None,
             end_ts: None,
             period_length: Duration::hours(1),
-            multipliers: vec![3],
+            multipliers: vec![NonZeroU32::new(3).unwrap()],
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
@@ -879,6 +893,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &boosted_hexes,
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -950,6 +965,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -1048,6 +1064,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -1294,6 +1311,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &VerifiedRadioThresholds::default(),
         &reward_period,
     )
     .await?;
@@ -1364,11 +1382,13 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     let hb_2: Heartbeat = hb_2.into();
 
     let coverage_object_cache = CoverageObjectCache::new(&pool);
+    let location_cache = LocationCache::new(&pool);
 
     let validated_hb_1 = ValidatedHeartbeat::validate(
         hb_1,
         &AllOwnersValid,
         &coverage_object_cache,
+        &location_cache,
         2000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
@@ -1383,6 +1403,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         hb_2.clone(),
         &AllOwnersValid,
         &coverage_object_cache,
+        &location_cache,
         1000000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
@@ -1397,6 +1418,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         hb_2.clone(),
         &AllOwnersValid,
         &coverage_object_cache,
+        &location_cache,
         2000,
         1000000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
@@ -1411,6 +1433,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         hb_2.clone(),
         &AllOwnersValid,
         &coverage_object_cache,
+        &location_cache,
         1000000,
         1000000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),

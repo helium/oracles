@@ -28,6 +28,7 @@ use crate::{
     boosting_oracles::assignment::urbanization_multiplier,
     coverage::SignalLevel,
     geofence::{Geofence, GeofenceValidator},
+    Settings,
 };
 pub use assignment::Assignment;
 use chrono::{DateTime, Duration, Utc};
@@ -53,10 +54,11 @@ pub trait DataSet {
     fn assign(&self, hex: u64) -> anyhow::Result<Assignment>;
 }
 
-pub struct DataSetDownloaderDaemon {
+pub struct DataSetDownloaderDaemon<T, A, B> {
     pool: PgPool,
     // Later: footfall and landtype
-    urbanization: Arc<Mutex<Urbanization<DiskTreeMap, Geofence>>>,
+    data_set: Arc<Mutex<T>>,
+    data_sets: HexBoostData<A, B>,
     store: FileStore,
     oracle_boosting_sink: FileSinkClient,
 }
@@ -83,7 +85,10 @@ impl DataSetStatus {
     }
 }
 
-impl ManagedTask for DataSetDownloaderDaemon {
+impl<T> ManagedTask for DataSetDownloaderDaemon<T>
+where
+    T: DataSet
+{
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -97,16 +102,23 @@ impl ManagedTask for DataSetDownloaderDaemon {
     }
 }
 
-impl DataSetDownloaderDaemon {
+impl<T, A, B> DataSetDownloaderDaemon<T>
+where
+    T: DataSet,
+    A: HexAssignment,
+    B: HexAssignment,
+{
     pub fn new(
         pool: PgPool,
-        urbanization: Arc<Mutex<Urbanization<DiskTreeMap, Geofence>>>,
+        data_set: Arc<Mutex<T>>,
+        data_sets: Arc<Mutex<HexBoostData<A, B>>>,
         store: FileStore,
         oracle_boosting_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
-            urbanization,
+            data_set,
+            data_sets,
             store,
             oracle_boosting_sink,
         }
@@ -122,19 +134,20 @@ impl DataSetDownloaderDaemon {
         loop {
             // Find the latest urbanization file
             tracing::info!("Checking for new data sets");
-            let mut urbanization = self.urbanization.lock().await;
-            let curr_urbanization_data_set = urbanization.timestamp();
+            let mut data_set = self.urbanization.lock().await;
+            let curr_data_set = data_set.timestamp();
             let latest_data_set: Option<NewDataSet> = sqlx::query_as(
                 "SELECT file_name, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = 'urbanization' AND COALESCE(time_to_use > $1, TRUE) AND time_to_use <= $2 ORDER BY time_to_use DESC LIMIT 1"
             )
-                .bind(curr_urbanization_data_set)
+                .bind(curr_data_set)
                 .bind(Utc::now())
                 .fetch_optional(&self.pool)
                 .await?;
 
             if let Some(latest_data_set) = latest_data_set {
                 let path = format!(
-                    "urbanization.{}.res10.h3tree",
+                    "{}.{}.res10.h3tree",
+                    T::TYPE.to_prefix(),
                     latest_data_set.time_to_use.timestamp()
                 );
 
@@ -154,13 +167,15 @@ impl DataSetDownloaderDaemon {
                         .await?;
                 }
 
-                // Now that we've downloaded the file, load it into the urbanization data set
-                urbanization.update(Path::new(&path), latest_data_set.time_to_use)?;
+                // Now that we've downloaded the file, load it into the data set
+                data_set.update(Path::new(&path), latest_data_set.time_to_use)?;
+
+                drop(data_set);
 
                 // Update the hexes
                 let boosting_reports = set_oracle_boosting_assignments(
                     UnassignedHex::fetch_all(&self.pool),
-                    &*urbanization,
+                    &self.data_sets,
                     &self.pool,
                 )
                 .await?;
@@ -301,7 +316,63 @@ pub async fn check_for_unprocessed_data_sets(
     .await
 }
 
-pub trait DiskTreeLike: Send + Sync + 'static {
+pub fn make_hex_boost_data(
+    settings: &Settings,
+    usa_geofence: Geofence,
+) -> anyhow::Result<HexBoostData<impl HexAssignment, impl HexAssignment>> {
+    let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
+    let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
+
+    let urbanization = UrbanizationData::new(urban_disktree, usa_geofence);
+    let footfall_data = FootfallData::new(footfall_disktree);
+    let hex_boost_data = HexBoostData::new(urbanization, footfall_data);
+
+    Ok(hex_boost_data)
+}
+
+pub trait HexAssignment: Send + Sync {
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
+}
+
+pub struct HexBoostData<Urban, Foot> {
+    pub urbanization: Arc<Mutex<Urban>>,
+    pub footfall: Arc<Mutex<Foot>>,
+}
+
+pub struct UrbanizationData<Urban, Geo> {
+    urbanized: Urban,
+    usa_geofence: Geo,
+}
+
+pub struct FootfallData<Foot> {
+    footfall: Foot,
+}
+
+impl<Urban, Foot> HexBoostData<Urban, Foot> {
+    pub fn new(urbanization: Urban, footfall: Foot) -> Self {
+        Self {
+            urbanization,
+            footfall,
+        }
+    }
+}
+
+impl<Urban, Geo> UrbanizationData<Urban, Geo> {
+    pub fn new(urbanized: Urban, usa_geofence: Geo) -> Self {
+        Self {
+            urbanized,
+            usa_geofence,
+        }
+    }
+}
+
+impl<Foot> FootfallData<Foot> {
+    pub fn new(footfall: Foot) -> Self {
+        Self { footfall }
+    }
+}
+
+trait DiskTreeLike: Send + Sync {
     fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>>;
 }
 
@@ -311,9 +382,9 @@ impl DiskTreeLike for DiskTreeMap {
     }
 }
 
-impl DiskTreeLike for HashMap<hextree::Cell, Vec<u8>> {
+impl DiskTreeLike for std::collections::HashSet<hextree::Cell> {
     fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>> {
-        Ok(self.get(&cell).map(|x| (cell, x.as_slice())))
+        Ok(self.contains(&cell).then(|| (cell, &[])))
     }
 }
 
@@ -349,7 +420,7 @@ impl UnassignedHex {
 
 pub async fn set_oracle_boosting_assignments<'a>(
     unassigned_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
-    urbanization: &Urbanization<impl DiskTreeLike, impl GeofenceValidator<u64>>,
+    data_sets: &HexAssignment<impl HexAssignment, impl HexAssignment>,
     pool: &'a PgPool,
 ) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
     const NUMBER_OF_FIELDS_IN_QUERY: u16 = 5;
@@ -363,7 +434,9 @@ pub async fn set_oracle_boosting_assignments<'a>(
         let hexes: anyhow::Result<Vec<_>> = hexes
             .into_iter()
             .map(|hex| {
-                let urbanized = urbanization.hex_assignment(hex.hex)?;
+                let cell = hextree::Cell::try_from(hex.hex)?;
+                let urbanized = data_set.urbanization.assignment(cell)?;
+                let footfall = data_set.footfall.assignment(cell)?;// urbanization.hex_assignment(hex.hex)?;
                 let location = format!("{:x}", hex.hex);
                 let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
                     .to_u32()
@@ -373,6 +446,7 @@ pub async fn set_oracle_boosting_assignments<'a>(
                     proto::OracleBoostingHexAssignment {
                         location,
                         urbanized: urbanized.into(),
+                        footfall: footfall.into(),
                         assignment_multiplier,
                     },
                 );
@@ -409,4 +483,55 @@ pub async fn set_oracle_boosting_assignments<'a>(
                 timestamp: now.encode_timestamp(),
             },
         ))
+}
+
+impl<Urban, Geo> HexAssignment for UrbanizationData<Urban, Geo>
+where
+    Urban: DiskTreeLike,
+    Geo: GeofenceValidator<hextree::Cell>,
+{
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        if !self.usa_geofence.in_valid_region(&cell) {
+            return Ok(Assignment::C);
+        }
+
+        match self.urbanized.get(cell)?.is_some() {
+            true => Ok(Assignment::A),
+            false => Ok(Assignment::B),
+        }
+    }
+}
+
+impl<Foot> HexAssignment for FootfallData<Foot>
+where
+    Foot: DiskTreeLike,
+{
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        let Some((_, vals)) = self.footfall.get(cell)? else {
+            return Ok(Assignment::C);
+        };
+
+        match vals {
+            &[x] if x >= 1 => Ok(Assignment::A),
+            &[0] => Ok(Assignment::B),
+            other => anyhow::bail!("unexpected disktree data: {cell:?} {other:?}"),
+        }
+    }
+}
+
+impl HexAssignment for Assignment {
+    fn assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        Ok(*self)
+    }
+}
+
+impl HexAssignment for HashMap<hextree::Cell, bool> {
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        let assignment = match self.get(&cell) {
+            Some(true) => Assignment::A,
+            Some(false) => Assignment::B,
+            None => Assignment::C,
+        };
+        Ok(assignment)
+    }
 }

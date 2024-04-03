@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
 use crate::{
-    boosting_oracles::{CheckForNewDataSetDaemon, DataSetDownloaderDaemon, Urbanization},
+    boosting_oracles::{self, CheckForNewDataSetDaemon, DataSetDownloaderDaemon, Urbanization},
     coverage::CoverageDaemon,
     data_session::DataSessionIngestor,
     geofence::Geofence,
-    heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
-    heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon,
+    heartbeats::{
+        cbrs::HeartbeatDaemon as CellHeartbeatDaemon, wifi::HeartbeatDaemon as WifiHeartbeatDaemon,
+    },
+    invalidated_radio_threshold::InvalidatedRadioThresholdIngestor,
+    radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
     speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor,
@@ -17,6 +20,8 @@ use chrono::Duration;
 use file_store::{
     coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink,
     file_source, file_upload, heartbeat::CbrsHeartbeatIngestReport,
+    mobile_radio_invalidated_threshold::InvalidatedRadioThresholdIngestReport,
+    mobile_radio_threshold::RadioThresholdIngestReport,
     mobile_subscriber::SubscriberLocationIngestReport, mobile_transfer::ValidDataTransferSession,
     speedtest::CellSpeedtestIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport, FileStore,
     FileType,
@@ -217,12 +222,11 @@ impl Cmd {
             .create()
             .await?;
 
-        let urbanization = Arc::new(Mutex::new(Urbanization::new(usa_geofence)));
-
+        let hex_boost_data = boosting_oracles::make_hex_boost_data(settings, usa_geofence)?;
         let coverage_daemon = CoverageDaemon::new(
             pool.clone(),
             auth_client.clone(),
-            urbanization.clone(),
+            hex_boost_data,
             coverage_objs,
             valid_coverage_objs,
             oracle_boosting_reports.clone(),
@@ -306,6 +310,65 @@ impl Cmd {
             verified_subscriber_location,
         );
 
+        // radio threshold reports
+        let (radio_threshold_ingest, radio_threshold_ingest_server) =
+            file_source::continuous_source::<RadioThresholdIngestReport, _>()
+                .state(pool.clone())
+                .store(report_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::RadioThresholdIngestReport.to_string())
+                .create()
+                .await?;
+
+        let (verified_radio_threshold, verified_radio_threshold_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::VerifiedRadioThresholdIngestReport,
+                store_base_path,
+                concat!(env!("CARGO_PKG_NAME"), "_verified_radio_threshold"),
+            )
+            .file_upload(Some(file_upload.clone()))
+            .auto_commit(false)
+            .create()
+            .await?;
+
+        let radio_threshold_ingestor = RadioThresholdIngestor::new(
+            pool.clone(),
+            radio_threshold_ingest,
+            verified_radio_threshold,
+            auth_client.clone(),
+        );
+
+        // invalidated radio threshold reports
+        let (invalidated_radio_threshold_ingest, invalidated_radio_threshold_ingest_server) =
+            file_source::continuous_source::<InvalidatedRadioThresholdIngestReport, _>()
+                .state(pool.clone())
+                .store(report_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::InvalidatedRadioThresholdIngestReport.to_string())
+                .create()
+                .await?;
+
+        let (verified_invalidated_radio_threshold, verified_invalidated_radio_threshold_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::VerifiedInvalidatedRadioThresholdIngestReport,
+                store_base_path,
+                concat!(
+                    env!("CARGO_PKG_NAME"),
+                    "_verified_invalidated_radio_threshold"
+                ),
+            )
+            .file_upload(Some(file_upload.clone()))
+            .auto_commit(false)
+            .create()
+            .await?;
+
+        let invalidated_radio_threshold_ingestor = InvalidatedRadioThresholdIngestor::new(
+            pool.clone(),
+            invalidated_radio_threshold_ingest,
+            verified_invalidated_radio_threshold,
+            auth_client.clone(),
+        );
+
         // data transfers
         let (data_session_ingest, data_session_ingest_server) =
             file_source::continuous_source::<ValidDataTransferSession, _>()
@@ -331,6 +394,10 @@ impl Cmd {
             .add_task(reward_manifests_server)
             .add_task(verified_subscriber_location_server)
             .add_task(subscriber_location_ingestor)
+            .add_task(radio_threshold_ingestor)
+            .add_task(verified_radio_threshold_server)
+            .add_task(invalidated_radio_threshold_ingestor)
+            .add_task(verified_invalidated_radio_threshold_server)
             .add_task(data_session_ingest_server)
             .add_task(price_daemon)
             .add_task(cbrs_heartbeat_daemon)
@@ -342,6 +409,8 @@ impl Cmd {
             .add_task(coverage_daemon)
             .add_task(rewarder)
             .add_task(subscriber_location_ingest_server)
+            .add_task(radio_threshold_ingest_server)
+            .add_task(invalidated_radio_threshold_ingest_server)
             .add_task(data_session_ingestor)
             .add_task(data_set_downloader)
             .add_task(check_for_urbanization_data_sets)

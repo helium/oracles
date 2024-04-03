@@ -1,7 +1,8 @@
 use crate::{
-    coverage::{CoverageReward, CoveredHexStream, CoveredHexes},
+    coverage::{CoverageReward, CoverageRewardPoints, CoveredHexStream, CoveredHexes},
     data_session::{HotspotMap, ServiceProviderDataSession},
     heartbeats::{HeartbeatReward, OwnedKeyType},
+    radio_threshold::VerifiedRadioThresholds,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     subscriber_location::SubscriberValidatedLocations,
 };
@@ -24,7 +25,7 @@ use mobile_config::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashMap, num::NonZeroU32, ops::Range};
 use uuid::Uuid;
 
 /// Total tokens emissions pool per 365 days or 366 days for a leap year
@@ -375,14 +376,19 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
 }
 
 #[derive(Debug)]
+struct CoverageRewardPointsWithMultiplier {
+    coverage_points: CoverageRewardPoints,
+    boosted_hex: BoostedHex,
+}
+
+#[derive(Debug)]
 struct RadioPoints {
     location_trust_score_multiplier: Decimal,
     coverage_object: Uuid,
     seniority: DateTime<Utc>,
-    points: Decimal,
-    // list of all hexes that have been boosted for this hotspot along with the multiplier for each hex
+    // Boosted hexes are included in CoverageRewardPointsWithMultiplier,
     // this gets included in the radio reward share proto
-    boosted_hexes: Vec<BoostedHex>,
+    reward_points: Vec<CoverageRewardPointsWithMultiplier>,
 }
 
 impl RadioPoints {
@@ -395,13 +401,24 @@ impl RadioPoints {
             location_trust_score_multiplier,
             seniority,
             coverage_object,
-            points: Decimal::ZERO,
-            boosted_hexes: vec![],
+            reward_points: vec![],
         }
     }
 
-    fn points(&self) -> Decimal {
-        (self.location_trust_score_multiplier * self.points).max(Decimal::ZERO)
+    fn hex_points(&self) -> Decimal {
+        self.reward_points
+            .iter()
+            .map(|c| c.coverage_points.points() * Decimal::from(c.boosted_hex.multiplier.get()))
+            .sum::<Decimal>()
+    }
+
+    fn coverage_points(&self) -> Decimal {
+        let coverage_points = self.hex_points();
+        (self.location_trust_score_multiplier * coverage_points).max(Decimal::ZERO)
+    }
+
+    fn poc_reward(&self, reward_per_share: Decimal, speedtest_multiplier: Decimal) -> Decimal {
+        reward_per_share * speedtest_multiplier * self.coverage_points()
     }
 }
 
@@ -419,26 +436,32 @@ impl HotspotPoints {
     pub fn add_coverage_entry(
         &mut self,
         radio_key: OwnedKeyType,
-        points: Decimal,
+        hotspot: PublicKeyBinary,
+        points: CoverageRewardPoints,
         boosted_hex_info: BoostedHex,
+        verified_radio_thresholds: &VerifiedRadioThresholds,
     ) {
-        let rp = self
-            .radio_points
-            .get_mut(&radio_key.clone().into_cbsd_id())
-            .unwrap();
-        // as per hip93, if radio is wifi & the location trust score multiplier is less than 1,
-        // then no boost points for you mister
-        let final_boost_info =
-            if radio_key.is_wifi() && rp.location_trust_score_multiplier < dec!(1) {
-                BoostedHex {
-                    location: boosted_hex_info.location,
-                    multiplier: 1,
-                }
-            } else {
-                boosted_hex_info
-            };
-        rp.points += points * Decimal::from(final_boost_info.multiplier);
-        rp.boosted_hexes.push(final_boost_info);
+        let cbsd_id = radio_key.clone().into_cbsd_id();
+        let rp = self.radio_points.get_mut(&cbsd_id).unwrap();
+        // need to consider requirements from hip93 & hip84 before applying any boost
+        // hip93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
+        // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
+        let final_boost_info = if radio_key.is_wifi()
+            && rp.location_trust_score_multiplier < dec!(0.75)
+            || !verified_radio_thresholds.is_verified(hotspot, cbsd_id)
+        {
+            BoostedHex {
+                location: boosted_hex_info.location,
+                multiplier: NonZeroU32::new(1).unwrap(),
+            }
+        } else {
+            boosted_hex_info
+        };
+
+        rp.reward_points.push(CoverageRewardPointsWithMultiplier {
+            coverage_points: points,
+            boosted_hex: final_boost_info,
+        });
     }
 }
 
@@ -457,7 +480,7 @@ impl HotspotPoints {
             * self
                 .radio_points
                 .values()
-                .fold(Decimal::ZERO, |sum, radio| sum + radio.points())
+                .fold(Decimal::ZERO, |sum, radio| sum + radio.coverage_points())
     }
 }
 
@@ -472,6 +495,7 @@ impl CoveragePoints {
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtests: &SpeedtestAverages,
         boosted_hexes: &BoostedHexes,
+        verified_radio_thresholds: &VerifiedRadioThresholds,
         reward_period: &Range<DateTime<Utc>>,
     ) -> Result<Self, sqlx::Error> {
         let mut heartbeats = std::pin::pin!(heartbeats);
@@ -517,7 +541,13 @@ impl CoveragePoints {
             coverage_points
                 .get_mut(&hotspot)
                 .unwrap()
-                .add_coverage_entry(radio_key, points, boosted_hex_info)
+                .add_coverage_entry(
+                    radio_key,
+                    hotspot,
+                    points,
+                    boosted_hex_info,
+                    verified_radio_thresholds,
+                )
         }
         Ok(Self { coverage_points })
     }
@@ -598,10 +628,7 @@ fn new_radio_reward(
     speedtest_multiplier: Decimal,
     radio_points: RadioPoints,
 ) -> (u64, proto::MobileRewardShare) {
-    let poc_reward = poc_rewards_per_share
-        * speedtest_multiplier
-        * radio_points.location_trust_score_multiplier
-        * radio_points.points;
+    let poc_reward = radio_points.poc_reward(poc_rewards_per_share, speedtest_multiplier);
     let hotspot_key: Vec<u8> = hotspot_key.clone().into();
     let cbsd_id = cbsd_id.unwrap_or_default();
     let poc_reward = poc_reward
@@ -609,12 +636,12 @@ fn new_radio_reward(
         .to_u64()
         .unwrap_or(0);
     let boosted_hexes = radio_points
-        .boosted_hexes
+        .reward_points
         .iter()
-        .filter(|boosted_hex| boosted_hex.multiplier > 1)
-        .map(|boosted_hex| proto::BoostedHex {
-            location: boosted_hex.location,
-            multiplier: boosted_hex.multiplier,
+        .filter(|radio_points| radio_points.boosted_hex.multiplier > NonZeroU32::new(1).unwrap())
+        .map(|radio_points| proto::BoostedHex {
+            location: radio_points.boosted_hex.location,
+            multiplier: radio_points.boosted_hex.multiplier.get(),
         })
         .collect();
     (
@@ -627,7 +654,7 @@ fn new_radio_reward(
                     hotspot_key,
                     cbsd_id,
                     poc_reward,
-                    coverage_points: radio_points.points.to_u64().unwrap_or(0),
+                    coverage_points: radio_points.coverage_points().to_u64().unwrap_or(0),
                     seniority_timestamp: radio_points.seniority.encode_timestamp(),
                     coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
                     location_trust_score_multiplier: (radio_points.location_trust_score_multiplier
@@ -978,6 +1005,7 @@ mod test {
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
+            footfall: Assignment::C,
         }]
     }
 
@@ -1361,6 +1389,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
+            &VerifiedRadioThresholds::default(),
             &epoch,
         )
         .await
@@ -1532,6 +1561,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
+            &VerifiedRadioThresholds::default(),
             &epoch,
         )
         .await
@@ -1663,6 +1693,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
+            &VerifiedRadioThresholds::default(),
             &epoch,
         )
         .await
@@ -1792,6 +1823,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
+            &VerifiedRadioThresholds::default(),
             &epoch,
         )
         .await
@@ -1854,8 +1886,19 @@ mod test {
                         location_trust_score_multiplier: dec!(1.0),
                         seniority: DateTime::default(),
                         coverage_object: Uuid::new_v4(),
-                        points: dec!(10.0),
-                        boosted_hexes: vec![],
+                        reward_points: vec![CoverageRewardPointsWithMultiplier {
+                            coverage_points: CoverageRewardPoints {
+                                boost_multiplier: NonZeroU32::new(1).unwrap(),
+                                coverage_points: dec!(10.0),
+                                urbanized: Assignment::A,
+                                footfall: Assignment::A,
+                                rank: None,
+                            },
+                            boosted_hex: BoostedHex {
+                                location: 0,
+                                multiplier: NonZeroU32::new(1).unwrap(),
+                            },
+                        }],
                     },
                 )]
                 .into_iter()
@@ -1873,18 +1916,16 @@ mod test {
                             location_trust_score_multiplier: dec!(1.0),
                             seniority: DateTime::default(),
                             coverage_object: Uuid::new_v4(),
-                            points: dec!(-1.0),
-                            boosted_hexes: vec![],
+                            reward_points: vec![],
                         },
                     ),
                     (
                         Some(c3),
                         RadioPoints {
                             location_trust_score_multiplier: dec!(1.0),
-                            points: dec!(0.0),
+                            reward_points: vec![],
                             seniority: DateTime::default(),
                             coverage_object: Uuid::new_v4(),
-                            boosted_hexes: vec![],
                         },
                     ),
                 ]
