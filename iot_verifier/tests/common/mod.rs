@@ -21,7 +21,7 @@ use iot_config::{
 };
 use iot_verifier::{
     entropy::Entropy,
-    last_beacon::LastBeacon,
+    last_beacon_reciprocity::LastBeaconReciprocity,
     last_witness::LastWitness,
     poc_report::{InsertBindings, IotStatus, Report, ReportType},
 };
@@ -311,7 +311,7 @@ pub async fn inject_last_beacon(
     gateway: PublicKeyBinary,
     ts: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    LastBeacon::update_last_timestamp(&mut *txn, &gateway, ts).await
+    LastBeaconReciprocity::update_last_timestamp(&mut *txn, &gateway, ts).await
 }
 
 #[allow(dead_code)]

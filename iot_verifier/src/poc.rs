@@ -3,6 +3,7 @@ use crate::{
     gateway_cache::{GatewayCache, GatewayCacheError},
     hex_density::HexDensityMap,
     last_beacon::LastBeacon,
+    last_beacon_reciprocity::LastBeaconReciprocity,
     last_witness::LastWitness,
     region_cache::RegionCache,
     witness_updater::WitnessUpdater,
@@ -148,7 +149,7 @@ impl Poc {
         };
         // we have beaconer info, proceed to verifications
         let last_beacon = LastBeacon::get(&self.pool, &beaconer_pub_key).await?;
-        match do_beacon_verifications(
+        let result = match do_beacon_verifications(
             deny_list,
             self.entropy_start,
             self.entropy_end,
@@ -164,24 +165,35 @@ impl Poc {
                     .get(beaconer_metadata.location)
                     .await
                     .unwrap_or(*DEFAULT_TX_SCALE);
-                // update 'last beacon' timestamp if the beacon has passed regular validations
-                // but only if there has been at least one witness report
-                if !self.witness_reports.is_empty() {
-                    LastBeacon::update_last_timestamp(
-                        &self.pool,
-                        &beaconer_pub_key,
-                        self.beacon_report.received_timestamp,
-                    )
-                    .await?
-                }
-                Ok(VerifyBeaconResult::valid(beaconer_info, tx_scale))
+                VerifyBeaconResult::valid(beaconer_info, tx_scale)
             }
-            Err(invalid_response) => Ok(VerifyBeaconResult::invalid(
+            Err(invalid_response) => VerifyBeaconResult::invalid(
                 invalid_response.reason,
                 invalid_response.details,
                 beaconer_info,
-            )),
+            ),
+        };
+        let mut txn = self.pool.begin().await?;
+        // update 'last beacon' timestamp irrespective of whether the beacon is valid or not
+        LastBeacon::update_last_timestamp(
+            &mut txn,
+            &beaconer_pub_key,
+            self.beacon_report.received_timestamp,
+        )
+        .await?;
+        // update 'last beacon reciprocity' timestamp if the beacon has passed regular validations
+        // and has at least one witness report
+        if result.result == VerificationStatus::Valid && !self.witness_reports.is_empty() {
+            LastBeaconReciprocity::update_last_timestamp(
+                &mut txn,
+                &beaconer_pub_key,
+                self.beacon_report.received_timestamp,
+            )
+            .await?
         }
+        txn.commit().await?;
+
+        Ok(result)
     }
 
     pub async fn verify_witnesses(
