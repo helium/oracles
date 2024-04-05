@@ -38,6 +38,7 @@ pub struct PriceGenerator {
     stale_price_duration: Duration,
     latest_price_file: PathBuf,
     file_sink: Option<file_sink::FileSinkClient>,
+    pyth_price_interval: std::time::Duration,
 }
 
 impl ManagedTask for PriceGenerator {
@@ -94,6 +95,7 @@ impl PriceGenerator {
             latest_price_file: PathBuf::from_str(&settings.cache)?
                 .join(format!("{token_type:?}.latest")),
             file_sink: Some(file_sink),
+            pyth_price_interval: settings.pyth_price_interval().to_std()?,
         })
     }
 
@@ -234,7 +236,7 @@ impl PriceGenerator {
         let mut account = self.client.get_account(price_key).await?;
         let price_oracle = pyth_sdk_solana::load_price_feed_from_account(price_key, &mut account)?;
         let curr_price = price_oracle
-            .get_ema_price_no_older_than(Utc::now().timestamp(), self.interval_duration.as_secs())
+            .get_ema_price_no_older_than(Utc::now().timestamp(), self.pyth_price_interval.as_secs())
             .ok_or_else(|| anyhow!("No new price in the given interval"))?;
 
         if curr_price.price < 0 {
