@@ -4751,6 +4751,7 @@ name = "mobile-verifier"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-compression",
  "async-trait",
  "backon",
  "base64 0.21.7",
@@ -4790,6 +4791,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tonic",
  "tracing",
  "tracing-subscriber",

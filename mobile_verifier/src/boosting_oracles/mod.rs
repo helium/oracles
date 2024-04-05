@@ -20,7 +20,7 @@ pub mod assignment;
 pub mod footfall;
 pub mod urbanization;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 use std::path::Path;
 use std::pin::pin;
 use std::sync::Arc;
@@ -59,11 +59,12 @@ pub struct DataSetDownloaderDaemon<T, A, B> {
     data_sets: HexBoostData<A, B>,
     store: FileStore,
     oracle_boosting_sink: FileSinkClient,
+    data_set_directory: PathBuf,
 }
 
 #[derive(FromRow)]
 pub struct NewDataSet {
-    file_name: String,
+    filename: String,
     time_to_use: DateTime<Utc>,
     status: DataSetStatus,
 }
@@ -114,6 +115,7 @@ where
         data_sets: HexBoostData<A, B>,
         store: FileStore,
         oracle_boosting_sink: FileSinkClient,
+        data_set_directory: PathBuf,
     ) -> Self {
         Self {
             pool,
@@ -121,10 +123,36 @@ where
             data_sets,
             store,
             oracle_boosting_sink,
+            data_set_directory,
         }
     }
 
+    fn get_data_set_path(&self, time_to_use: DateTime<Utc>) -> PathBuf {
+        let path = PathBuf::from(format!(
+            "{}.{}.res10.h3tree",
+            T::TYPE.to_prefix(),
+            time_to_use.timestamp()
+        ));
+        let mut dir = self.data_set_directory.clone();
+        dir.push(path);
+        dir
+    }
+
     pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        // Get the first data set:
+        if let Some(time_to_use) =
+            sqlx::query_scalar(
+                "SELECT time_to_use FROM data_sets WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
+            )
+            .bind(T::TYPE)
+            .fetch_optional(&self.pool)
+            .await?
+        {
+            let data_set_path = self.get_data_set_path(time_to_use);
+            tracing::info!("Found initial {} data set: {}", T::TYPE.to_prefix(), data_set_path.to_string_lossy());
+            self.data_set.lock().await.update(&data_set_path, time_to_use)?;
+        }
+
         // Another option I considered instead of polling was to use ENOTIFY, but that seemed
         // not as good, as it would hog a pool connection.
         //
@@ -137,32 +165,35 @@ where
             let mut data_set = self.data_set.lock().await;
             let curr_data_set = data_set.timestamp();
             let latest_data_set: Option<NewDataSet> = sqlx::query_as(
-                "SELECT file_name, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = 'urbanization' AND COALESCE(time_to_use > $1, TRUE) AND time_to_use <= $2 ORDER BY time_to_use DESC LIMIT 1"
+                "SELECT filename, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = $1 AND COALESCE(time_to_use > $2, TRUE) AND time_to_use <= $3 ORDER BY time_to_use DESC LIMIT 1"
             )
+                .bind(T::TYPE)
                 .bind(curr_data_set)
                 .bind(Utc::now())
                 .fetch_optional(&self.pool)
                 .await?;
 
             if let Some(latest_data_set) = latest_data_set {
-                let path = format!(
-                    "{}.{}.res10.h3tree",
-                    T::TYPE.to_prefix(),
-                    latest_data_set.time_to_use.timestamp()
-                );
+                let path = self.get_data_set_path(latest_data_set.time_to_use);
 
                 // Download the file if it hasn't been downloaded already:
                 if !latest_data_set.status.is_downloaded() {
-                    tracing::info!("Downloading new data set: {path}");
+                    tracing::info!("Downloading new data set: {}", path.to_string_lossy());
                     // TODO: abstract this out to a function
-                    let mut bytes = self.store.get(latest_data_set.file_name.clone()).await?;
-                    let mut file = File::open(Path::new(&path)).await?;
+                    let stream = self.store.get_raw(latest_data_set.filename.clone()).await?;
+                    let mut bytes = tokio_util::codec::FramedRead::new(
+                        async_compression::tokio::bufread::GzipDecoder::new(
+                            tokio_util::io::StreamReader::new(stream)
+                        ),
+                        tokio_util::codec::BytesCodec::new(),
+                    );
+                    let mut file = File::create(&path).await?;
                     while let Some(bytes) = bytes.next().await.transpose()? {
                         file.write_all(&bytes).await?;
                     }
                     // Set the status to be downloaded
-                    sqlx::query("UPDATE data_sets SET status = 'downloaded' WHERE file_name = $1")
-                        .bind(&latest_data_set.file_name)
+                    sqlx::query("UPDATE data_sets SET status = 'downloaded' WHERE filename = $1")
+                        .bind(&latest_data_set.filename)
                         .execute(&self.pool)
                         .await?;
                 }
@@ -180,8 +211,8 @@ where
                 )
                 .await?;
 
-                sqlx::query("UPDATE data_sets SET status = 'processed' WHERE file_name = $1")
-                    .bind(latest_data_set.file_name)
+                sqlx::query("UPDATE data_sets SET status = 'processed' WHERE filename = $1")
+                    .bind(latest_data_set.filename)
                     .execute(&self.pool)
                     .await?;
 
@@ -266,7 +297,7 @@ impl CheckForNewDataSetDaemon {
 
         let prefix = self.data_set.to_prefix();
         let mut latest_file_date: Option<DateTime<Utc>> =
-            sqlx::query_scalar("SELECT time_to_use FROM data_sets ORDER BY time_to_use WHERE data_set = $1 DESC LIMIT 1")
+            sqlx::query_scalar("SELECT time_to_use FROM data_sets WHERE data_set = $1 ORDER BY time_to_use DESC LIMIT 1")
                 .bind(self.data_set)
             .fetch_optional(&self.pool)
             .await?;
@@ -280,9 +311,11 @@ impl CheckForNewDataSetDaemon {
                     break;
                 }
                 _ = tokio::time::sleep(poll_duration.to_std()?) => {
+                    // tracing::info!("Checking file store for new data sets");
                     let mut new_data_sets = self.store.list(prefix, latest_file_date, None);
                     while let Some(new_data_set) = new_data_sets.next().await.transpose()? {
-                        sqlx::query(
+                        tracing::info!("Found new data set: {}, {:#?}", new_data_set.key, new_data_set);
+                        sqlx::query( 
                             r#"
                             INSERT INTO data_sets (filename, data_set, time_to_use, status)
                             VALUES ($1, $2, $3, 'pending')

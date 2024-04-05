@@ -1,7 +1,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -36,6 +36,7 @@ pub struct Settings {
     /// beyond which its location weight will be reduced
     #[serde(default = "default_max_asserted_distance_deviation")]
     pub max_asserted_distance_deviation: u32,
+    pub data_sets_directory: PathBuf,
     // Geofencing settings
     pub usa_and_mexico_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]

@@ -245,6 +245,7 @@ impl Cmd {
             hex_boost_data.clone(),
             data_sets_file_store.clone(),
             oracle_boosting_reports.clone(),
+            settings.data_sets_directory.clone(),
         );
         let footfall_data_set_downloader = DataSetDownloaderDaemon::new(
             pool.clone(),
@@ -252,6 +253,7 @@ impl Cmd {
             hex_boost_data.clone(),
             data_sets_file_store.clone(),
             oracle_boosting_reports,
+            settings.data_sets_directory.clone(),
         );
         let check_for_urbanization_data_sets = CheckForNewDataSetDaemon::new(
             pool.clone(),
