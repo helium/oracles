@@ -20,10 +20,10 @@ pub mod assignment;
 pub mod footfall;
 pub mod urbanization;
 
-use std::{collections::HashMap, path::PathBuf};
 use std::path::Path;
 use std::pin::pin;
 use std::sync::Arc;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
     boosting_oracles::assignment::footfall_and_urbanization_multiplier, coverage::SignalLevel,
@@ -183,7 +183,7 @@ where
                     let stream = self.store.get_raw(latest_data_set.filename.clone()).await?;
                     let mut bytes = tokio_util::codec::FramedRead::new(
                         async_compression::tokio::bufread::GzipDecoder::new(
-                            tokio_util::io::StreamReader::new(stream)
+                            tokio_util::io::StreamReader::new(stream),
                         ),
                         tokio_util::codec::BytesCodec::new(),
                     );
@@ -315,7 +315,7 @@ impl CheckForNewDataSetDaemon {
                     let mut new_data_sets = self.store.list(prefix, latest_file_date, None);
                     while let Some(new_data_set) = new_data_sets.next().await.transpose()? {
                         tracing::info!("Found new data set: {}, {:#?}", new_data_set.key, new_data_set);
-                        sqlx::query( 
+                        sqlx::query(
                             r#"
                             INSERT INTO data_sets (filename, data_set, time_to_use, status)
                             VALUES ($1, $2, $3, 'pending')
