@@ -1,9 +1,11 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
-use anchor_client::{RequestBuilder, RequestNamespace};
-use anchor_lang::{InstructionData, ToAccountMetas};
+use anchor_client::RequestBuilder;
 use async_trait::async_trait;
 use file_store::hex_boost::BoostedHexActivation;
-use helium_anchor_gen::hexboosting::{self, accounts, instruction};
+use helium_anchor_gen::{
+    anchor_lang::{InstructionData, ToAccountMetas},
+    hexboosting::{self, accounts, instruction},
+};
 use serde::Deserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::instruction::Instruction;
@@ -72,12 +74,13 @@ impl SolanaNetwork for SolanaRpc {
         batch: &[BoostedHexActivation],
     ) -> Result<Self::Transaction, Self::Error> {
         let instructions = {
+            let rt_handle = tokio::runtime::Handle::current();
             let mut request = RequestBuilder::from(
                 hexboosting::id(),
                 &self.cluster,
                 std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
                 Some(CommitmentConfig::confirmed()),
-                RequestNamespace::Global,
+                &rt_handle,
             );
             for update in batch {
                 let account = accounts::StartBoostV0 {
