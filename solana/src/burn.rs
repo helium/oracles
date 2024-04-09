@@ -1,10 +1,9 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
-use anchor_client::{RequestBuilder, RequestNamespace};
-use anchor_lang::ToAccountMetas;
+use anchor_client::RequestBuilder;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use helium_anchor_gen::{
-    anchor_lang::AccountDeserialize,
+    anchor_lang::{AccountDeserialize, ToAccountMetas},
     data_credits::{self, accounts, instruction},
     helium_sub_daos::{self, DaoV0, SubDaoV0},
 };
@@ -216,12 +215,13 @@ impl SolanaNetwork for SolanaRpc {
 
         // This is Sync land: anything async in here will error.
         let instructions = {
+            let rt_handle = tokio::runtime::Handle::current();
             let request = RequestBuilder::from(
                 data_credits::id(),
                 &self.cluster,
                 std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
                 Some(CommitmentConfig::confirmed()),
-                RequestNamespace::Global,
+                &rt_handle,
             );
 
             let args = instruction::BurnDelegatedDataCreditsV0 {
