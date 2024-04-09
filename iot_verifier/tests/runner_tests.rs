@@ -193,6 +193,64 @@ async fn valid_beacon_and_witness(pool: PgPool) -> anyhow::Result<()> {
         PublicKeyBinary::from(valid_witness.pub_key.clone()),
         PublicKeyBinary::from_str(common::WITNESS1).unwrap()
     );
+    // assert the witness reports status
+    assert_eq!(
+        valid_witness_report.status,
+        VerificationStatus::Valid as i32
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn confirm_valid_reports_unmodified(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let now = ctx.entropy_ts;
+
+    // test with a valid beacon and a valid witness
+    // confirm the s3 reports are passed through unmodified
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER1, ctx.entropy_ts);
+    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, ctx.entropy_ts);
+    common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
+    common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
+
+    // inject last beacons and witness reports into the DB
+    // avoid the reports declared invalid due to reciprocity check
+    // when setting the last time consider the beacon interval setup
+    let mut txn = pool.begin().await?;
+    common::inject_last_beacon(
+        &mut txn,
+        beacon_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_witness(
+        &mut txn,
+        beacon_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_beacon(
+        &mut txn,
+        witness_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_witness(
+        &mut txn,
+        witness_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    txn.commit().await?;
+
+    ctx.runner.handle_db_tick().await?;
+
+    let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
+    assert_eq!(1, valid_poc.selected_witnesses.len());
+    assert_eq!(0, valid_poc.unselected_witnesses.len());
+    let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
+    let valid_witness_report = valid_poc.selected_witnesses[0].clone();
+    let valid_witness = valid_witness_report.report.unwrap();
     // assert the beacon and witness reports outputted to filestore
     // are unmodified from those submitted
     assert_eq!(
@@ -203,10 +261,423 @@ async fn valid_beacon_and_witness(pool: PgPool) -> anyhow::Result<()> {
         valid_witness,
         LoraWitnessReportReqV1::from(witness_to_inject.clone())
     );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn confirm_invalid_reports_unmodified(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let now = Utc::now();
+
+    // test with an invalid beacon and a valid witness
+    // confirm the s3 reports are passed through unmodified
+    let beacon_to_inject =
+        common::create_valid_beacon_report(common::UNKNOWN_GATEWAY1, ctx.entropy_ts);
+    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, ctx.entropy_ts);
+    common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
+    common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
+
+    let mut txn = pool.begin().await?;
+    common::inject_last_beacon(
+        &mut txn,
+        witness_to_inject.report.pub_key.clone(),
+        now - ChronoDuration::hours(1),
+    )
+    .await?;
+    common::inject_last_witness(
+        &mut txn,
+        witness_to_inject.report.pub_key.clone(),
+        now - ChronoDuration::hours(1),
+    )
+    .await?;
+    txn.commit().await?;
+
+    ctx.runner.handle_db_tick().await?;
+
+    let invalid_beacon_report = ctx.invalid_beacons.receive_invalid_beacon().await;
+    let invalid_witness_report = ctx.invalid_witnesses.receive_invalid_witness().await;
+    let invalid_beacon = invalid_beacon_report.report.clone().unwrap();
+    let invalid_witness = invalid_witness_report.clone().report.unwrap();
+    // assert the beacon and witness reports outputted to filestore
+    // are unmodified from those submitted
+    assert_eq!(
+        invalid_beacon,
+        LoraBeaconReportReqV1::from(beacon_to_inject.clone())
+    );
+    assert_eq!(
+        invalid_witness,
+        LoraWitnessReportReqV1::from(witness_to_inject.clone())
+    );
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn confirm_valid_beacon_invalid_witness_reports_unmodified(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let now = ctx.entropy_ts;
+
+    // test with an valid beacon and an  invalid witness
+    // confirm the s3 reports are passed through unmodified
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER3, ctx.entropy_ts);
+    let witness_to_inject =
+        common::create_valid_witness_report(common::NO_METADATA_GATEWAY1, ctx.entropy_ts);
+    common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
+    common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
+
+    let mut txn = pool.begin().await?;
+    common::inject_last_beacon(
+        &mut txn,
+        beacon_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_witness(
+        &mut txn,
+        beacon_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_beacon(
+        &mut txn,
+        witness_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_witness(
+        &mut txn,
+        witness_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    txn.commit().await?;
+
+    ctx.runner.handle_db_tick().await?;
+
+    let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
+    assert_eq!(0, valid_poc.selected_witnesses.len());
+    assert_eq!(1, valid_poc.unselected_witnesses.len());
+    let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
+    let invalid_witness_report = valid_poc.unselected_witnesses[0].clone();
+    let invalid_witness = invalid_witness_report.report.clone().unwrap();
+    // assert the beacon and witness reports outputted to filestore
+    // are unmodified from those submitted
+    assert_eq!(
+        valid_beacon,
+        LoraBeaconReportReqV1::from(beacon_to_inject.clone())
+    );
+    assert_eq!(
+        invalid_witness,
+        LoraWitnessReportReqV1::from(witness_to_inject.clone())
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn valid_beacon_irregular_schedule_with_witness(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let now = ctx.entropy_ts;
+
+    // submit a valid beacon and a valid witness
+    // then test with a second beacon from same beaconer
+    // this will fail as it is too soon after the first
+    // only one beacon per window is allowed
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER1, ctx.entropy_ts);
+    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, ctx.entropy_ts);
+    common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
+    common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
+
+    // inject last beacons and witness reports into the DB
+    // avoid the reports declared invalid due to reciprocity check
+    // when setting the last time consider the beacon interval setup
+    let mut txn = pool.begin().await?;
+    common::inject_last_beacon(
+        &mut txn,
+        beacon_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_witness(
+        &mut txn,
+        beacon_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_beacon(
+        &mut txn,
+        witness_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_witness(
+        &mut txn,
+        witness_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    txn.commit().await?;
+
+    ctx.runner.handle_db_tick().await?;
+
+    let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
+    assert_eq!(1, valid_poc.selected_witnesses.len());
+    assert_eq!(0, valid_poc.unselected_witnesses.len());
+    let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
+    let valid_witness_report = valid_poc.selected_witnesses[0].clone();
+    let valid_witness = valid_witness_report.report.unwrap();
+    // assert the pubkeys in the outputted reports
+    // match those which we injected
+    assert_eq!(
+        PublicKeyBinary::from(valid_beacon.pub_key.clone()),
+        PublicKeyBinary::from_str(common::BEACONER1).unwrap()
+    );
+    assert_eq!(
+        PublicKeyBinary::from(valid_witness.pub_key.clone()),
+        PublicKeyBinary::from_str(common::WITNESS1).unwrap()
+    );
     // assert the witness reports status
     assert_eq!(
         valid_witness_report.status,
         VerificationStatus::Valid as i32
+    );
+
+    // submit the second beacon report
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER1, ctx.entropy_ts);
+    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, ctx.entropy_ts);
+    common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
+    common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
+    ctx.runner.handle_db_tick().await?;
+
+    let invalid_beacon_report = ctx.invalid_beacons.receive_invalid_beacon().await;
+    let invalid_witness_report = ctx.invalid_witnesses.receive_invalid_witness().await;
+    let invalid_beacon = invalid_beacon_report.report.clone().unwrap();
+    let invalid_witness = invalid_witness_report.clone().report.unwrap();
+    // assert the pubkeys in the outputted reports
+    // match those which we injected
+    assert_eq!(
+        PublicKeyBinary::from(invalid_beacon.pub_key.clone()),
+        PublicKeyBinary::from_str(common::BEACONER1).unwrap()
+    );
+    assert_eq!(
+        PublicKeyBinary::from(invalid_witness.pub_key.clone()),
+        PublicKeyBinary::from_str(common::WITNESS1).unwrap()
+    );
+    // assert the invalid details
+    assert_eq!(
+        InvalidReason::IrregularInterval as i32,
+        invalid_beacon_report.reason
+    );
+    assert_eq!(
+        InvalidReason::IrregularInterval as i32,
+        invalid_witness_report.reason
+    );
+    assert_eq!(
+        InvalidParticipantSide::Beaconer as i32,
+        invalid_witness_report.participant_side
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn valid_beacon_irregular_schedule_no_witness(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let now = ctx.entropy_ts;
+
+    // submit a valid beacon and no witnesses
+    // then test with a second beacon from same beaconer
+    // this will fail as it is too soon after the first
+    // only one beacon per window is allowed
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER1, ctx.entropy_ts);
+    common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
+
+    // inject last beacons reports into the DB
+    // avoid the reports declared invalid due to reciprocity check
+    // when setting the last time consider the beacon interval setup
+    let mut txn = pool.begin().await?;
+    common::inject_last_beacon(
+        &mut txn,
+        beacon_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_witness(
+        &mut txn,
+        beacon_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    txn.commit().await?;
+
+    ctx.runner.handle_db_tick().await?;
+
+    let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
+    assert_eq!(0, valid_poc.selected_witnesses.len());
+    assert_eq!(0, valid_poc.unselected_witnesses.len());
+    let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
+    // assert the pubkeys in the outputted reports
+    // match those which we injected
+    assert_eq!(
+        PublicKeyBinary::from(valid_beacon.pub_key.clone()),
+        PublicKeyBinary::from_str(common::BEACONER1).unwrap()
+    );
+    // assert the beacon report outputted to filestore
+    // are unmodified from those submitted
+    assert_eq!(
+        valid_beacon,
+        LoraBeaconReportReqV1::from(beacon_to_inject.clone())
+    );
+
+    // submit the second beacon report
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER1, ctx.entropy_ts);
+    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, ctx.entropy_ts);
+    common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
+    common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
+    ctx.runner.handle_db_tick().await?;
+
+    let invalid_beacon_report = ctx.invalid_beacons.receive_invalid_beacon().await;
+    let invalid_witness_report = ctx.invalid_witnesses.receive_invalid_witness().await;
+    let invalid_beacon = invalid_beacon_report.report.clone().unwrap();
+    let invalid_witness = invalid_witness_report.clone().report.unwrap();
+    // assert the pubkeys in the outputted reports
+    // match those which we injected
+    assert_eq!(
+        PublicKeyBinary::from(invalid_beacon.pub_key.clone()),
+        PublicKeyBinary::from_str(common::BEACONER1).unwrap()
+    );
+    assert_eq!(
+        PublicKeyBinary::from(invalid_witness.pub_key.clone()),
+        PublicKeyBinary::from_str(common::WITNESS1).unwrap()
+    );
+    // assert the invalid details
+    assert_eq!(
+        InvalidReason::IrregularInterval as i32,
+        invalid_beacon_report.reason
+    );
+    assert_eq!(
+        InvalidReason::IrregularInterval as i32,
+        invalid_witness_report.reason
+    );
+    assert_eq!(
+        InvalidParticipantSide::Beaconer as i32,
+        invalid_witness_report.participant_side
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn invalid_beacon_irregular_schedule_with_witness(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let now = ctx.entropy_ts;
+
+    // submit an invalid beacon and a valid witness
+    // beacon is invalid due to expired entropy
+    // then test with a second beacon from same beaconer
+    // this will fail as it is too soon after the first
+    // only one beacon per window is allowed
+    // even if the first beacon is invalid
+    let beacon_to_inject = common::create_valid_beacon_report(
+        common::BEACONER1,
+        ctx.entropy_ts - Duration::from_secs(100),
+    );
+    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, ctx.entropy_ts);
+    common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
+    common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
+
+    // inject last beacons and witness reports into the DB
+    // avoid the reports declared invalid due to reciprocity check
+    // when setting the last time consider the beacon interval setup
+    let mut txn = pool.begin().await?;
+    common::inject_last_beacon(
+        &mut txn,
+        beacon_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_witness(
+        &mut txn,
+        beacon_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_beacon(
+        &mut txn,
+        witness_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    common::inject_last_witness(
+        &mut txn,
+        witness_to_inject.report.pub_key.clone(),
+        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+    )
+    .await?;
+    txn.commit().await?;
+
+    ctx.runner.handle_db_tick().await?;
+
+    let invalid_beacon_report = ctx.invalid_beacons.receive_invalid_beacon().await;
+    let invalid_witness_report = ctx.invalid_witnesses.receive_invalid_witness().await;
+    let invalid_beacon = invalid_beacon_report.report.clone().unwrap();
+    let invalid_witness = invalid_witness_report.clone().report.unwrap();
+    // assert the pubkeys in the outputted reports
+    // match those which we injected
+    assert_eq!(
+        PublicKeyBinary::from(invalid_beacon.pub_key.clone()),
+        PublicKeyBinary::from_str(common::BEACONER1).unwrap()
+    );
+    assert_eq!(
+        PublicKeyBinary::from(invalid_witness.pub_key.clone()),
+        PublicKeyBinary::from_str(common::WITNESS1).unwrap()
+    );
+    // assert the invalid details
+    assert_eq!(
+        InvalidReason::EntropyExpired as i32,
+        invalid_beacon_report.reason
+    );
+    assert_eq!(
+        InvalidReason::EntropyExpired as i32,
+        invalid_witness_report.reason
+    );
+    assert_eq!(
+        InvalidParticipantSide::Beaconer as i32,
+        invalid_witness_report.participant_side
+    );
+
+    // submit the second beacon report
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER1, ctx.entropy_ts);
+    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, ctx.entropy_ts);
+    common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
+    common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
+    ctx.runner.handle_db_tick().await?;
+
+    let invalid_beacon_report = ctx.invalid_beacons.receive_invalid_beacon().await;
+    let invalid_witness_report = ctx.invalid_witnesses.receive_invalid_witness().await;
+    let invalid_beacon = invalid_beacon_report.report.clone().unwrap();
+    let invalid_witness = invalid_witness_report.clone().report.unwrap();
+    // assert the pubkeys in the outputted reports
+    // match those which we injected
+    assert_eq!(
+        PublicKeyBinary::from(invalid_beacon.pub_key.clone()),
+        PublicKeyBinary::from_str(common::BEACONER1).unwrap()
+    );
+    assert_eq!(
+        PublicKeyBinary::from(invalid_witness.pub_key.clone()),
+        PublicKeyBinary::from_str(common::WITNESS1).unwrap()
+    );
+    // assert the invalid details
+    assert_eq!(
+        InvalidReason::IrregularInterval as i32,
+        invalid_beacon_report.reason
+    );
+    assert_eq!(
+        InvalidReason::IrregularInterval as i32,
+        invalid_witness_report.reason
+    );
+    assert_eq!(
+        InvalidParticipantSide::Beaconer as i32,
+        invalid_witness_report.participant_side
     );
     Ok(())
 }
@@ -250,7 +721,6 @@ async fn valid_beacon_gateway_not_found(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(1, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
     let invalid_witness_report = valid_poc.unselected_witnesses[0].clone();
-    let invalid_witness = invalid_witness_report.report.clone().unwrap();
     // assert the pubkeys in the outputted reports
     // match those which we injected
     assert_eq!(
@@ -269,16 +739,6 @@ async fn valid_beacon_gateway_not_found(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(
         InvalidParticipantSide::Witness as i32,
         invalid_witness_report.participant_side
-    );
-    // assert the beacon and witness reports outputted to filestore
-    // are unmodified from those submitted
-    assert_eq!(
-        valid_beacon,
-        LoraBeaconReportReqV1::from(beacon_to_inject.clone())
-    );
-    assert_eq!(
-        invalid_witness,
-        LoraWitnessReportReqV1::from(witness_to_inject.clone())
     );
     // assert the witness reports status
     assert_eq!(
@@ -336,7 +796,6 @@ async fn invalid_witness_no_metadata(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(1, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
     let invalid_witness_report = valid_poc.unselected_witnesses[0].clone();
-    let invalid_witness = invalid_witness_report.report.clone().unwrap();
     // assert the pubkeys in the outputted reports
     // match those which we injected
     assert_eq!(
@@ -360,16 +819,6 @@ async fn invalid_witness_no_metadata(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(
         InvalidParticipantSide::Witness as i32,
         invalid_witness_report.participant_side
-    );
-    // assert the beacon and witness reports outputted to filestore
-    // are unmodified from those submitted
-    assert_eq!(
-        valid_beacon,
-        LoraBeaconReportReqV1::from(beacon_to_inject.clone())
-    );
-    assert_eq!(
-        invalid_witness,
-        LoraWitnessReportReqV1::from(witness_to_inject.clone())
     );
 
     Ok(())
@@ -433,16 +882,6 @@ async fn invalid_beacon_no_gateway_found(pool: PgPool) -> anyhow::Result<()> {
         InvalidParticipantSide::Beaconer as i32,
         invalid_witness_report.participant_side
     );
-    // assert the beacon and witness reports outputted to filestore
-    // are unmodified from those submitted
-    assert_eq!(
-        invalid_beacon,
-        LoraBeaconReportReqV1::from(beacon_to_inject.clone())
-    );
-    assert_eq!(
-        invalid_witness,
-        LoraWitnessReportReqV1::from(witness_to_inject.clone())
-    );
 
     Ok(())
 }
@@ -460,7 +899,6 @@ async fn invalid_beacon_gateway_not_found_no_witnesses(pool: PgPool) -> anyhow::
     ctx.runner.handle_db_tick().await?;
 
     let invalid_beacon_report = ctx.invalid_beacons.receive_invalid_beacon().await;
-    let invalid_beacon = invalid_beacon_report.report.clone().unwrap();
     // assert the pubkeys in the outputted reports
     // match those which we injected
     assert_eq!(
@@ -471,12 +909,6 @@ async fn invalid_beacon_gateway_not_found_no_witnesses(pool: PgPool) -> anyhow::
     assert_eq!(
         InvalidReason::GatewayNotFound as i32,
         invalid_beacon_report.reason
-    );
-    // assert the beacon report outputted to filestore
-    // is unmodified from those submitted
-    assert_eq!(
-        invalid_beacon,
-        LoraBeaconReportReqV1::from(beacon_to_inject.clone())
     );
 
     Ok(())
@@ -570,16 +1002,6 @@ async fn valid_beacon_and_witness_no_beacon_reciprocity(pool: PgPool) -> anyhow:
         InvalidParticipantSide::Beaconer as i32,
         invalid_witness.participant_side
     );
-    // assert the beacon and witness reports outputted to filestore
-    // are unmodified from those submitted
-    assert_eq!(
-        invalid_beacon.report.unwrap(),
-        LoraBeaconReportReqV1::from(beacon_to_inject.clone())
-    );
-    assert_eq!(
-        invalid_witness.report.unwrap(),
-        LoraWitnessReportReqV1::from(witness_to_inject.clone())
-    );
     Ok(())
 }
 
@@ -620,7 +1042,6 @@ async fn valid_beacon_and_witness_no_witness_reciprocity(pool: PgPool) -> anyhow
     assert_eq!(1, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
     let invalid_witness_report = valid_poc.unselected_witnesses[0].clone();
-    let invalid_witness = invalid_witness_report.report.clone().unwrap();
     // assert the pubkeys in the outputted reports
     // match those which we injected
     assert_eq!(
@@ -644,16 +1065,6 @@ async fn valid_beacon_and_witness_no_witness_reciprocity(pool: PgPool) -> anyhow
     assert_eq!(
         InvalidParticipantSide::Witness as i32,
         invalid_witness_report.participant_side
-    );
-    // assert the beacon and witness reports outputted to filestore
-    // are unmodified from those submitted
-    assert_eq!(
-        valid_beacon,
-        LoraBeaconReportReqV1::from(beacon_to_inject.clone())
-    );
-    assert_eq!(
-        invalid_witness,
-        LoraWitnessReportReqV1::from(witness_to_inject.clone())
     );
     Ok(())
 }

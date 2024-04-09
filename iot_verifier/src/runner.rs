@@ -1,7 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache,
     hex_density::HexDensityMap,
-    last_beacon::LastBeacon,
+    last_beacon_reciprocity::LastBeaconReciprocity,
     poc::{Poc, VerifyBeaconResult},
     poc_report::Report,
     region_cache::RegionCache,
@@ -567,8 +567,9 @@ where
         &self,
         report: &IotVerifiedWitnessReport,
     ) -> anyhow::Result<bool> {
-        let last_beacon = LastBeacon::get(&self.pool, &report.report.pub_key).await?;
-        Ok(last_beacon.map_or(false, |lw| {
+        let last_beacon_recip =
+            LastBeaconReciprocity::get(&self.pool, &report.report.pub_key).await?;
+        Ok(last_beacon_recip.map_or(false, |lw| {
             report.received_timestamp - lw.timestamp < *RECIPROCITY_WINDOW
         }))
     }
