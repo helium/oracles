@@ -131,9 +131,9 @@ impl Cmd {
         let (valid_sessions, valid_sessions_server) = FileSinkBuilder::new(
             FileType::ValidDataTransferSession,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_valid_data_transfer_session"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(true)
         .create()
         .await?;
@@ -141,9 +141,9 @@ impl Cmd {
         let (invalid_sessions, invalid_sessions_server) = FileSinkBuilder::new(
             FileType::InvalidDataTransferSessionIngestReport,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_invalid_data_transfer_session"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;

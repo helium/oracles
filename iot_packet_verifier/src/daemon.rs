@@ -140,9 +140,9 @@ impl Cmd {
         let (valid_packets, valid_packets_server) = FileSinkBuilder::new(
             FileType::IotValidPacket,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_valid_packets"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -150,9 +150,9 @@ impl Cmd {
         let (invalid_packets, invalid_packets_server) = FileSinkBuilder::new(
             FileType::InvalidPacket,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;

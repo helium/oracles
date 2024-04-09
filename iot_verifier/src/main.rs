@@ -120,9 +120,9 @@ impl Server {
         let (rewards_sink, gateway_rewards_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::IotRewardShare,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_gateway_reward_shares"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -132,9 +132,9 @@ impl Server {
             file_sink::FileSinkBuilder::new(
                 FileType::RewardManifest,
                 store_base_path,
+                file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_iot_reward_manifest"),
             )
-            .file_upload(Some(file_upload.clone()))
             .auto_commit(false)
             .create()
             .await?;
@@ -178,9 +178,9 @@ impl Server {
             file_sink::FileSinkBuilder::new(
                 FileType::NonRewardablePacket,
                 store_base_path,
+                file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_non_rewardable_packet"),
             )
-            .file_upload(Some(file_upload.clone()))
             .roll_time(ChronoDuration::minutes(5))
             .create()
             .await?;
@@ -214,9 +214,9 @@ impl Server {
             file_sink::FileSinkBuilder::new(
                 FileType::IotInvalidBeaconReport,
                 store_base_path,
+                file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon"),
             )
-            .file_upload(Some(file_upload.clone()))
             .auto_commit(false)
             .create()
             .await?;
@@ -225,9 +225,9 @@ impl Server {
             file_sink::FileSinkBuilder::new(
                 FileType::IotInvalidWitnessReport,
                 store_base_path,
+                file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
             )
-            .file_upload(Some(file_upload.clone()))
             .auto_commit(false)
             .create()
             .await?;
@@ -255,9 +255,9 @@ impl Server {
             file_sink::FileSinkBuilder::new(
                 FileType::IotInvalidBeaconReport,
                 store_base_path,
+                file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon_report"),
             )
-            .file_upload(Some(file_upload.clone()))
             .roll_time(ChronoDuration::minutes(5))
             .create()
             .await?;
@@ -266,9 +266,9 @@ impl Server {
             file_sink::FileSinkBuilder::new(
                 FileType::IotInvalidWitnessReport,
                 store_base_path,
+                file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
             )
-            .file_upload(Some(file_upload.clone()))
             .roll_time(ChronoDuration::minutes(5))
             .create()
             .await?;
@@ -276,9 +276,9 @@ impl Server {
         let (runner_poc_sink, runner_poc_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::IotPoc,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_valid_poc"),
         )
-        .file_upload(Some(file_upload.clone()))
         .roll_time(ChronoDuration::minutes(2))
         .create()
         .await?;

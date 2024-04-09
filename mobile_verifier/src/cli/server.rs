@@ -86,9 +86,9 @@ impl Cmd {
         let (valid_heartbeats, valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
             FileType::ValidatedHeartbeat,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_heartbeat"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -98,9 +98,9 @@ impl Cmd {
         let (seniority_updates, seniority_updates_server) = file_sink::FileSinkBuilder::new(
             FileType::SeniorityUpdate,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_seniority_update"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -159,9 +159,9 @@ impl Cmd {
         let (speedtests_avg, speedtests_avg_server) = file_sink::FileSinkBuilder::new(
             FileType::SpeedtestAvg,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -170,9 +170,9 @@ impl Cmd {
         let (speedtests_validity, speedtests_validity_server) = file_sink::FileSinkBuilder::new(
             FileType::VerifiedSpeedtest,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_verified_speedtest"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -199,9 +199,9 @@ impl Cmd {
         let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
             FileType::CoverageObject,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -212,9 +212,9 @@ impl Cmd {
             file_sink::FileSinkBuilder::new(
                 FileType::OracleBoostingReport,
                 store_base_path,
+                file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
             )
-            .file_upload(Some(file_upload.clone()))
             .auto_commit(false)
             .roll_time(Duration::minutes(15))
             .create()
@@ -236,9 +236,9 @@ impl Cmd {
         let (mobile_rewards, mobile_rewards_server) = file_sink::FileSinkBuilder::new(
             FileType::MobileRewardShare,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -246,9 +246,9 @@ impl Cmd {
         let (reward_manifests, reward_manifests_server) = file_sink::FileSinkBuilder::new(
             FileType::RewardManifest,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
         )
-        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -279,9 +279,9 @@ impl Cmd {
             file_sink::FileSinkBuilder::new(
                 FileType::VerifiedSubscriberLocationIngestReport,
                 store_base_path,
+                file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_verified_subscriber_location"),
             )
-            .file_upload(Some(file_upload.clone()))
             .auto_commit(false)
             .create()
             .await?;
@@ -308,9 +308,9 @@ impl Cmd {
             file_sink::FileSinkBuilder::new(
                 FileType::VerifiedRadioThresholdIngestReport,
                 store_base_path,
+                file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_verified_radio_threshold"),
             )
-            .file_upload(Some(file_upload.clone()))
             .auto_commit(false)
             .create()
             .await?;
@@ -336,12 +336,12 @@ impl Cmd {
             file_sink::FileSinkBuilder::new(
                 FileType::VerifiedInvalidatedRadioThresholdIngestReport,
                 store_base_path,
+                file_upload.clone(),
                 concat!(
                     env!("CARGO_PKG_NAME"),
                     "_verified_invalidated_radio_threshold"
                 ),
             )
-            .file_upload(Some(file_upload.clone()))
             .auto_commit(false)
             .create()
             .await?;

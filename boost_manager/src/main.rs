@@ -102,9 +102,9 @@ impl Server {
         let (updated_hexes_sink, updated_hexes_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::BoostedHexUpdate,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_boosted_hex_update"),
         )
-        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(5))
         .create()
         .await?;
