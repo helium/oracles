@@ -1,8 +1,7 @@
 use crate::{
     boosting_oracles::{
-        assignment::urbanization_multiplier, Assignment, DiskTreeLike, Urbanization,
+        assignment::footfall_and_urbanization_multiplier, Assignment, HexAssignment, HexBoostData,
     },
-    geofence::GeofenceValidator,
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized,
 };
@@ -37,6 +36,7 @@ use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BinaryHeap, HashMap},
+    num::NonZeroU32,
     pin::pin,
     sync::Arc,
     time::Instant,
@@ -66,25 +66,29 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
-pub struct CoverageDaemon<DT, GF> {
+pub struct CoverageDaemon<Urban, Foot>
+where
+    Urban: HexAssignment,
+    Foot: HexAssignment,
+{
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
-    urbanization: Urbanization<DT, GF>,
+    hex_boost_data: HexBoostData<Urban, Foot>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     initial_boosting_reports: Option<Vec<OracleBoostingReportV1>>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
 }
 
-impl<DT, GF> CoverageDaemon<DT, GF>
+impl<Urban, Foot> CoverageDaemon<Urban, Foot>
 where
-    DT: DiskTreeLike,
-    GF: GeofenceValidator<u64>,
+    Urban: HexAssignment,
+    Foot: HexAssignment,
 {
     pub async fn new(
         pool: PgPool,
         auth_client: AuthorizationClient,
-        urbanization: Urbanization<DT, GF>,
+        hex_boost_data: HexBoostData<Urban, Foot>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
         oracle_boosting_sink: FileSinkClient,
@@ -93,7 +97,7 @@ where
 
         let unassigned_hexes = UnassignedHex::fetch(&pool);
         let initial_boosting_reports = Some(
-            set_oracle_boosting_assignments(unassigned_hexes, &urbanization, &pool)
+            set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool)
                 .await?
                 .collect(),
         );
@@ -101,7 +105,7 @@ where
         Ok(Self {
             pool,
             auth_client,
-            urbanization,
+            hex_boost_data,
             coverage_objs,
             coverage_obj_sink,
             oracle_boosting_sink,
@@ -165,7 +169,7 @@ where
         // done in two steps to improve the testability of the assignments.
         let unassigned_hexes = UnassignedHex::fetch(&self.pool);
         let boosting_reports =
-            set_oracle_boosting_assignments(unassigned_hexes, &self.urbanization, &self.pool)
+            set_oracle_boosting_assignments(unassigned_hexes, &self.hex_boost_data, &self.pool)
                 .await?;
         self.oracle_boosting_sink
             .write_all(boosting_reports)
@@ -188,64 +192,25 @@ pub struct UnassignedHex {
 impl UnassignedHex {
     pub fn fetch(pool: &PgPool) -> impl Stream<Item = sqlx::Result<Self>> + '_ {
         sqlx::query_as(
-            "SELECT uuid, hex, signal_level, signal_power FROM hexes WHERE urbanized IS NULL",
+            "SELECT uuid, hex, signal_level, signal_power FROM hexes WHERE urbanized IS NULL OR footfall IS NULL",
         )
         .fetch(pool)
     }
+
+    fn to_location_string(&self) -> String {
+        format!("{:x}", self.hex)
+    }
 }
 
-pub async fn set_oracle_boosting_assignments<'a>(
-    unassigned_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
-    urbanization: &Urbanization<impl DiskTreeLike, impl GeofenceValidator<u64>>,
-    pool: &'a PgPool,
+pub async fn set_oracle_boosting_assignments(
+    unassigned_urbinization_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
+    hex_boost_data: &HexBoostData<impl HexAssignment, impl HexAssignment>,
+    pool: &PgPool,
 ) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
-    const NUMBER_OF_FIELDS_IN_QUERY: u16 = 5;
-    const ASSIGNMENTS_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
-
     let now = Utc::now();
-    let mut boost_results = HashMap::<Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
-    let mut unassigned_hexes = pin!(unassigned_hexes.try_chunks(ASSIGNMENTS_MAX_BATCH_ENTRIES));
 
-    while let Some(hexes) = unassigned_hexes.try_next().await? {
-        let hexes: anyhow::Result<Vec<_>> = hexes
-            .into_iter()
-            .map(|hex| {
-                let urbanized = urbanization.hex_assignment(hex.hex)?;
-                let location = format!("{:x}", hex.hex);
-                let assignment_multiplier = (urbanization_multiplier(urbanized) * dec!(1000))
-                    .to_u32()
-                    .unwrap_or(0);
-
-                boost_results.entry(hex.uuid).or_default().push(
-                    proto::OracleBoostingHexAssignment {
-                        location,
-                        urbanized: urbanized.into(),
-                        assignment_multiplier,
-                    },
-                );
-
-                Ok((hex, urbanized))
-            })
-            .collect();
-
-        QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized)")
-            .push_values(hexes?, |mut b, (hex, urbanized)| {
-                b.push_bind(hex.uuid)
-                    .push_bind(hex.hex as i64)
-                    .push_bind(hex.signal_level)
-                    .push_bind(hex.signal_power)
-                    .push_bind(urbanized);
-            })
-            .push(
-                r#"
-                ON CONFLICT (uuid, hex) DO UPDATE SET
-                  urbanized = EXCLUDED.urbanized
-                "#,
-            )
-            .build()
-            .execute(pool)
-            .await?;
-    }
+    let boost_results =
+        initialize_unassigned_hexes(unassigned_urbinization_hexes, hex_boost_data, pool).await?;
 
     Ok(boost_results
         .into_iter()
@@ -258,10 +223,76 @@ pub async fn set_oracle_boosting_assignments<'a>(
         ))
 }
 
-impl<DT, GF> ManagedTask for CoverageDaemon<DT, GF>
+async fn initialize_unassigned_hexes(
+    unassigned_urbinization_hexes: impl Stream<Item = Result<UnassignedHex, sqlx::Error>>,
+    hex_boost_data: &HexBoostData<impl HexAssignment, impl HexAssignment>,
+    pool: &Pool<Postgres>,
+) -> Result<HashMap<Uuid, Vec<proto::OracleBoostingHexAssignment>>, anyhow::Error> {
+    const NUMBER_OF_FIELDS_IN_QUERY: u16 = 6;
+    const ASSIGNMENTS_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
+
+    let mut boost_results = HashMap::<Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
+
+    let mut unassigned_hexes =
+        pin!(unassigned_urbinization_hexes.try_chunks(ASSIGNMENTS_MAX_BATCH_ENTRIES));
+
+    while let Some(hexes) = unassigned_hexes.try_next().await? {
+        let hexes: anyhow::Result<Vec<_>> = hexes
+            .into_iter()
+            .map(|hex| {
+                let cell = hextree::Cell::from_raw(hex.hex)?;
+                let urbanized = hex_boost_data.urbanization.assignment(cell)?;
+                let footfall = hex_boost_data.footfall.assignment(cell)?;
+
+                let location = hex.to_location_string();
+                let assignment_multiplier =
+                    (footfall_and_urbanization_multiplier(footfall, urbanized) * dec!(1000))
+                        .to_u32()
+                        .unwrap_or(0);
+
+                boost_results.entry(hex.uuid).or_default().push(
+                    proto::OracleBoostingHexAssignment {
+                        location,
+                        urbanized: urbanized.into(),
+                        footfall: footfall.into(),
+                        assignment_multiplier,
+                    },
+                );
+
+                Ok((hex, urbanized, footfall))
+            })
+            .collect();
+
+        QueryBuilder::new(
+            "INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized, footfall)",
+        )
+        .push_values(hexes?, |mut b, (hex, urbanized, footfall)| {
+            b.push_bind(hex.uuid)
+                .push_bind(hex.hex as i64)
+                .push_bind(hex.signal_level)
+                .push_bind(hex.signal_power)
+                .push_bind(urbanized)
+                .push_bind(footfall);
+        })
+        .push(
+            r#"
+            ON CONFLICT (uuid, hex) DO UPDATE SET
+                urbanized = EXCLUDED.urbanized,
+                footfall = EXCLUDED.footfall
+            "#,
+        )
+        .build()
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(boost_results)
+}
+
+impl<Urban, Foot> ManagedTask for CoverageDaemon<Urban, Foot>
 where
-    DT: DiskTreeLike,
-    GF: GeofenceValidator<u64>,
+    Urban: HexAssignment + 'static,
+    Foot: HexAssignment + 'static,
 {
     fn start_task(
         self: Box<Self>,
@@ -421,6 +452,7 @@ pub struct HexCoverage {
     pub coverage_claim_time: DateTime<Utc>,
     pub inserted_at: DateTime<Utc>,
     pub urbanized: Assignment,
+    pub footfall: Assignment,
 }
 
 #[derive(Eq, Debug)]
@@ -430,6 +462,7 @@ struct IndoorCoverageLevel {
     hotspot: PublicKeyBinary,
     signal_level: SignalLevel,
     urbanized: Assignment,
+    footfall: Assignment,
 }
 
 impl PartialEq for IndoorCoverageLevel {
@@ -468,6 +501,7 @@ struct OutdoorCoverageLevel {
     signal_power: i32,
     signal_level: SignalLevel,
     urbanized: Assignment,
+    footfall: Assignment,
 }
 
 impl PartialEq for OutdoorCoverageLevel {
@@ -506,9 +540,42 @@ impl OutdoorCoverageLevel {
 #[derive(PartialEq, Debug)]
 pub struct CoverageReward {
     pub radio_key: OwnedKeyType,
-    pub points: Decimal,
+    pub points: CoverageRewardPoints,
     pub hotspot: PublicKeyBinary,
     pub boosted_hex_info: BoostedHex,
+}
+
+impl CoverageReward {
+    fn has_rewards(&self) -> bool {
+        self.points.points() > Decimal::ZERO
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct CoverageRewardPoints {
+    pub boost_multiplier: NonZeroU32,
+    pub coverage_points: Decimal,
+    pub urbanized: Assignment,
+    pub footfall: Assignment,
+    pub rank: Option<Decimal>,
+}
+
+impl CoverageRewardPoints {
+    pub fn points(&self) -> Decimal {
+        let oracle_multiplier = if self.boost_multiplier.get() > 1 {
+            dec!(1.0)
+        } else {
+            footfall_and_urbanization_multiplier(self.footfall, self.urbanized)
+        };
+
+        let points = self.coverage_points * oracle_multiplier;
+
+        if let Some(rank) = self.rank {
+            points * rank
+        } else {
+            points
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -569,7 +636,7 @@ impl CoveredHexStream for Pool<Postgres> {
         Ok(
             sqlx::query_as(
                 r#"
-                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, h.signal_power, co.coverage_claim_time, co.inserted_at, h.urbanized
+                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, h.signal_power, co.coverage_claim_time, co.inserted_at, h.urbanized, h.footfall
                 FROM coverage_objects co
                     INNER JOIN hexes h on co.uuid = h.uuid
                 WHERE co.radio_key = $1
@@ -697,7 +764,7 @@ impl CoveredHexes {
             .chain(outdoor_wifi_rewards)
             .chain(indoor_cbrs_rewards)
             .chain(indoor_wifi_rewards)
-            .filter(|r| r.points > Decimal::ZERO)
+            .filter(CoverageReward::has_rewards)
     }
 }
 
@@ -717,6 +784,7 @@ fn insert_indoor_coverage(
             signal_level: hex_coverage.signal_level,
             hotspot: hotspot.clone(),
             urbanized: hex_coverage.urbanized,
+            footfall: hex_coverage.footfall,
         })
 }
 
@@ -735,6 +803,7 @@ fn insert_outdoor_coverage(
             signal_power: hex_coverage.signal_power,
             hotspot: hotspot.clone(),
             urbanized: hex_coverage.urbanized,
+            footfall: hex_coverage.footfall,
         });
 }
 
@@ -752,14 +821,16 @@ fn into_outdoor_rewards(
             .map(move |(cl, rank)| {
                 let boost_multiplier = boosted_hexes
                     .get_current_multiplier(hex.into(), epoch_start)
-                    .unwrap_or(1);
-                let oracle_multiplier = if boost_multiplier > 1 {
-                    dec!(1.0)
-                } else {
-                    urbanization_multiplier(cl.urbanized)
-                };
+                    .unwrap_or(NonZeroU32::new(1).unwrap());
+
                 CoverageReward {
-                    points: cl.coverage_points() * oracle_multiplier * rank,
+                    points: CoverageRewardPoints {
+                        boost_multiplier,
+                        coverage_points: cl.coverage_points(),
+                        urbanized: cl.urbanized,
+                        footfall: cl.footfall,
+                        rank: Some(rank),
+                    },
                     hotspot: cl.hotspot,
                     radio_key: cl.radio_key,
                     boosted_hex_info: BoostedHex {
@@ -787,14 +858,16 @@ fn into_indoor_rewards(
                     .map(move |cl| {
                         let boost_multiplier = boosted_hexes
                             .get_current_multiplier(hex.into(), epoch_start)
-                            .unwrap_or(1);
-                        let oracle_multiplier = if boost_multiplier > 1 {
-                            dec!(1.0)
-                        } else {
-                            urbanization_multiplier(cl.urbanized)
-                        };
+                            .unwrap_or(NonZeroU32::new(1).unwrap());
+
                         CoverageReward {
-                            points: cl.coverage_points() * oracle_multiplier,
+                            points: CoverageRewardPoints {
+                                boost_multiplier,
+                                coverage_points: cl.coverage_points(),
+                                urbanized: cl.urbanized,
+                                footfall: cl.footfall,
+                                rank: None,
+                            },
                             hotspot: cl.hotspot,
                             radio_key: cl.radio_key,
                             boosted_hex_info: BoostedHex {
@@ -1001,10 +1074,16 @@ mod test {
             vec![CoverageReward {
                 radio_key: OwnedKeyType::Cbrs("3".to_string()),
                 hotspot: owner,
-                points: dec!(400),
+                points: CoverageRewardPoints {
+                    coverage_points: dec!(400),
+                    boost_multiplier: NonZeroU32::new(1).unwrap(),
+                    urbanized: Assignment::A,
+                    footfall: Assignment::A,
+                    rank: None
+                },
                 boosted_hex_info: BoostedHex {
                     location: 0x8a1fb46622dffff_u64,
-                    multiplier: 1,
+                    multiplier: NonZeroU32::new(1).unwrap(),
                 },
             }]
         );
@@ -1034,6 +1113,7 @@ mod test {
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
+            footfall: Assignment::A,
         }
     }
 
@@ -1112,10 +1192,16 @@ mod test {
             vec![CoverageReward {
                 radio_key: OwnedKeyType::Cbrs("10".to_string()),
                 hotspot: owner.clone(),
-                points: dec!(400),
+                points: CoverageRewardPoints {
+                    coverage_points: dec!(400),
+                    boost_multiplier: NonZeroU32::new(1).unwrap(),
+                    urbanized: Assignment::A,
+                    footfall: Assignment::A,
+                    rank: None
+                },
                 boosted_hex_info: BoostedHex {
                     location: 0x8a1fb46622dffff_u64,
-                    multiplier: 1,
+                    multiplier: NonZeroU32::new(1).unwrap(),
                 },
             }]
         );
@@ -1150,28 +1236,46 @@ mod test {
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("5".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(16),
+                    points: CoverageRewardPoints {
+                        coverage_points: dec!(16),
+                        rank: Some(dec!(1.0)),
+                        boost_multiplier: NonZeroU32::new(1).unwrap(),
+                        urbanized: Assignment::A,
+                        footfall: Assignment::A
+                    },
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
+                        multiplier: NonZeroU32::new(1).unwrap(),
                     },
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("4".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(8),
+                    points: CoverageRewardPoints {
+                        coverage_points: dec!(16),
+                        rank: Some(dec!(0.50)),
+                        boost_multiplier: NonZeroU32::new(1).unwrap(),
+                        urbanized: Assignment::A,
+                        footfall: Assignment::A
+                    },
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
+                        multiplier: NonZeroU32::new(1).unwrap(),
                     },
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("3".to_string()),
                     hotspot: owner,
-                    points: dec!(4),
+                    points: CoverageRewardPoints {
+                        coverage_points: dec!(16),
+                        rank: Some(dec!(0.25)),
+                        boost_multiplier: NonZeroU32::new(1).unwrap(),
+                        urbanized: Assignment::A,
+                        footfall: Assignment::A
+                    },
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
+                        multiplier: NonZeroU32::new(1).unwrap(),
                     },
                 }
             ]
@@ -1316,6 +1420,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-3".to_string()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1325,6 +1430,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-4".to_string()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1334,6 +1440,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-1".to_string()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1351,6 +1458,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("ico1-1".to_string()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1368,6 +1476,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Wifi(outdoor_wifi_owner3.clone()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1377,6 +1486,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Wifi(outdoor_wifi_owner4.clone()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1386,6 +1496,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Wifi(outdoor_wifi_owner1.clone()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1403,6 +1514,7 @@ mod test {
                 .find(|r| r.radio_key == OwnedKeyType::Wifi(indoor_wifi_owner1.clone()))
                 .unwrap()
                 .points
+                .points()
         );
 
         assert_eq!(
@@ -1431,6 +1543,7 @@ mod test {
             coverage_claim_time: coverage_claim_time.unwrap_or(DateTime::<Utc>::MIN_UTC),
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
+            footfall: Assignment::A,
         }
     }
 
@@ -1449,6 +1562,7 @@ mod test {
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
+            footfall: Assignment::A,
         }
     }
 
@@ -1467,6 +1581,7 @@ mod test {
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
+            footfall: Assignment::A,
         }
     }
 
@@ -1485,6 +1600,7 @@ mod test {
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
+            footfall: Assignment::A,
         }
     }
 }

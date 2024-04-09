@@ -56,6 +56,13 @@ pub struct Settings {
     /// How long to use a stale price in minutes
     #[serde(default = "default_stale_price_minutes")]
     pub stale_price_minutes: u64,
+    /// Interval when retrieving a pyth price from on chain
+    #[serde(default = "default_pyth_price_interval")]
+    pub pyth_price_interval_in_seconds: u64,
+}
+
+pub fn default_pyth_price_interval() -> u64 {
+    60 * 60 * 2
 }
 
 pub fn default_source() -> String {
@@ -107,6 +114,10 @@ impl Settings {
 
     pub fn interval(&self) -> Duration {
         Duration::seconds(self.interval)
+    }
+
+    pub fn pyth_price_interval(&self) -> Duration {
+        Duration::seconds(self.pyth_price_interval_in_seconds as i64)
     }
 
     pub fn stale_price_duration(&self) -> Duration {

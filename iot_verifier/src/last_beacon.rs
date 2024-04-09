@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgRow, FromRow, Row};
+use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct LastBeacon {
@@ -86,14 +86,11 @@ impl LastBeacon {
         Ok(height)
     }
 
-    pub async fn update_last_timestamp<'c, E>(
-        executor: E,
+    pub async fn update_last_timestamp(
+        txn: &mut Transaction<'_, Postgres>,
         id: &PublicKeyBinary,
         timestamp: DateTime<Utc>,
-    ) -> anyhow::Result<()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
+    ) -> anyhow::Result<()> {
         let _ = sqlx::query(
             r#"
             insert into last_beacon (id, timestamp)
@@ -104,7 +101,7 @@ impl LastBeacon {
         )
         .bind(id.as_ref())
         .bind(timestamp)
-        .execute(executor)
+        .execute(txn)
         .await?;
         Ok(())
     }

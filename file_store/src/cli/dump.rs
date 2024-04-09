@@ -1,12 +1,15 @@
 use crate::{
     cli::print_json,
+    coverage::CoverageObject,
     file_source,
     heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     iot_packet::IotValidPacket,
+    mobile_radio_invalidated_threshold::VerifiedInvalidatedRadioThresholdIngestReport,
+    mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
     mobile_session::{DataTransferSessionIngestReport, InvalidDataTransferIngestReport},
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
-    traits::MsgDecode,
+    traits::{MsgDecode, TimestampDecode},
     wifi_heartbeat::WifiHeartbeatIngestReport,
     FileType, Result, Settings,
 };
@@ -23,8 +26,10 @@ use helium_proto::{
         },
         poc_mobile::{
             mobile_reward_share::Reward, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
-            Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare, RadioRewardShare,
-            SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
+            CoverageObjectV1, Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare,
+            OracleBoostingReportV1, RadioRewardShare, SpeedtestAvg, SpeedtestIngestReportV1,
+            SpeedtestReqV1, VerifiedInvalidatedRadioThresholdIngestReportV1,
+            VerifiedRadioThresholdIngestReportV1,
         },
         router::PacketRouterPacketReportV1,
     },
@@ -52,6 +57,16 @@ impl Cmd {
         while let Some(result) = file_stream.next().await {
             let msg = result?;
             match self.file_type {
+                FileType::VerifiedRadioThresholdIngestReport => {
+                    let dec_msg = VerifiedRadioThresholdIngestReportV1::decode(msg)?;
+                    let report = VerifiedRadioThresholdIngestReport::try_from(dec_msg)?;
+                    print_json(&report)?;
+                }
+                FileType::VerifiedInvalidatedRadioThresholdIngestReport => {
+                    let dec_msg = VerifiedInvalidatedRadioThresholdIngestReportV1::decode(msg)?;
+                    let report = VerifiedInvalidatedRadioThresholdIngestReport::try_from(dec_msg)?;
+                    print_json(&report)?;
+                }
                 FileType::BoostedHexUpdate => {
                     let dec_msg = BoostedHexUpdateProto::decode(msg)?;
                     let update = dec_msg.update.unwrap();
@@ -318,7 +333,53 @@ impl Cmd {
                         "status": report.status,
                         "recv_timestamp": report.report.received_timestamp}))?;
                 }
-                _ => (),
+                FileType::OracleBoostingReport => {
+                    #[derive(serde::Serialize)]
+                    enum Assignment {
+                        A,
+                        B,
+                        C,
+                    }
+
+                    #[derive(serde::Serialize)]
+                    struct OracleBoostingHexAssignment {
+                        location: String,
+                        assignment_multiplier: u32,
+                        urbanized: Assignment,
+                    }
+
+                    let report = OracleBoostingReportV1::decode(msg)?;
+                    let assignments: Vec<_> = report
+                        .assignments
+                        .into_iter()
+                        .map(|assignment| OracleBoostingHexAssignment {
+                            location: assignment.location,
+                            assignment_multiplier: assignment.assignment_multiplier,
+                            urbanized: match assignment.urbanized {
+                                0 => Assignment::A,
+                                1 => Assignment::B,
+                                _ => Assignment::C,
+                            },
+                        })
+                        .collect();
+
+                    print_json(&json!({
+                    "coverage_object": uuid::Uuid::from_slice(report.coverage_object.as_slice()).unwrap(),
+                    "assignments": assignments,
+                    "timestamp": report.timestamp.to_timestamp()?,
+                    }))?
+                }
+                FileType::CoverageObject => {
+                    let coverage = CoverageObjectV1::decode(msg)?;
+                    let coverage = CoverageObject::try_from(coverage.coverage_object.unwrap())?;
+                    print_json(&json!({
+                        "pub_key": coverage.pub_key,
+                        "uuid": coverage.uuid,
+                        "coverage_claim_time": coverage.coverage_claim_time,
+                        "coverage": coverage.coverage,
+                    }))?;
+                }
+                missing_filetype => println!("No dump for {missing_filetype}"),
             }
         }
 

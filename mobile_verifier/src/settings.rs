@@ -43,6 +43,7 @@ pub struct Settings {
     #[serde(default = "default_fencing_resolution")]
     pub usa_fencing_resolution: u8,
     pub urbanization_data_set: PathBuf,
+    pub footfall_data_set: PathBuf,
 }
 
 fn default_fencing_resolution() -> u8 {

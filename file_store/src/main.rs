@@ -1,6 +1,6 @@
 use clap::Parser;
 use file_store::{
-    cli::{bucket, dump, info},
+    cli::{bucket, dump, dump_mobile_rewards, info},
     Result, Settings,
 };
 use std::path;
@@ -29,6 +29,7 @@ pub enum Cmd {
     Info(info::Cmd),
     Dump(dump::Cmd),
     Bucket(Box<bucket::Cmd>),
+    DumpMobileRewards(dump_mobile_rewards::Cmd),
 }
 
 impl Cmd {
@@ -37,6 +38,7 @@ impl Cmd {
             Cmd::Info(cmd) => cmd.run(&settings).await,
             Cmd::Dump(cmd) => cmd.run(&settings).await,
             Cmd::Bucket(cmd) => cmd.run(&settings).await,
+            Cmd::DumpMobileRewards(cmd) => cmd.run(&settings).await,
         }
     }
 }
