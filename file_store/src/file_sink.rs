@@ -1,7 +1,4 @@
-use crate::{
-    file_upload::{self, FileUpload},
-    Error, Result,
-};
+use crate::{file_upload::FileUpload, Error, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
@@ -66,22 +63,25 @@ pub struct FileSinkBuilder {
     tmp_path: PathBuf,
     max_size: usize,
     roll_time: Duration,
-    deposits: Option<file_upload::MessageSender>,
-    file_upload: Option<FileUpload>,
+    file_upload: FileUpload,
     auto_commit: bool,
     metric: &'static str,
 }
 
 impl FileSinkBuilder {
-    pub fn new(prefix: impl ToString, target_path: &Path, metric: &'static str) -> Self {
+    pub fn new(
+        prefix: impl ToString,
+        target_path: &Path,
+        file_upload: FileUpload,
+        metric: &'static str,
+    ) -> Self {
         Self {
             prefix: prefix.to_string(),
             target_path: target_path.to_path_buf(),
             tmp_path: target_path.join("tmp"),
             max_size: 50_000_000,
             roll_time: Duration::minutes(DEFAULT_SINK_ROLL_MINS),
-            deposits: None,
-            file_upload: None,
+            file_upload,
             auto_commit: true,
             metric,
         }
@@ -101,22 +101,6 @@ impl FileSinkBuilder {
     pub fn tmp_path(self, path: &Path) -> Self {
         Self {
             tmp_path: path.to_path_buf(),
-            ..self
-        }
-    }
-
-    pub fn deposits(self, deposits: Option<file_upload::MessageSender>) -> Self {
-        Self {
-            deposits,
-            file_upload: None,
-            ..self
-        }
-    }
-
-    pub fn file_upload(self, file_upload: Option<FileUpload>) -> Self {
-        Self {
-            file_upload,
-            deposits: None,
             ..self
         }
     }
@@ -150,7 +134,6 @@ impl FileSinkBuilder {
             tmp_path: self.tmp_path,
             prefix: self.prefix,
             max_size: self.max_size,
-            deposits: self.deposits,
             file_upload: self.file_upload,
             roll_time: self.roll_time,
             messages: rx,
@@ -268,8 +251,7 @@ pub struct FileSink {
     roll_time: Duration,
 
     messages: MessageReceiver,
-    deposits: Option<file_upload::MessageSender>,
-    file_upload: Option<FileUpload>,
+    file_upload: FileUpload,
     staged_files: Vec<PathBuf>,
     auto_commit: bool,
 
@@ -310,41 +292,20 @@ impl FileSink {
         fs::create_dir_all(&self.target_path).await?;
         fs::create_dir_all(&self.tmp_path).await?;
 
-        // Notify all existing completed sinks via deposits
-        if let Some(deposits) = &self.deposits {
-            let mut dir = fs::read_dir(&self.target_path).await?;
-            loop {
-                match dir.next_entry().await {
-                    Ok(Some(entry))
-                        if entry
-                            .file_name()
-                            .to_string_lossy()
-                            .starts_with(&self.prefix) =>
-                    {
-                        file_upload::upload_file(deposits, &entry.path()).await?;
-                    }
-                    Ok(None) => break,
-                    _ => continue,
-                }
-            }
-        }
-
         // Notify all existing completed sinks via file uploads
-        if let Some(file_uploads) = &self.file_upload {
-            let mut dir = fs::read_dir(&self.target_path).await?;
-            loop {
-                match dir.next_entry().await {
-                    Ok(Some(entry))
-                        if entry
-                            .file_name()
-                            .to_string_lossy()
-                            .starts_with(&self.prefix) =>
-                    {
-                        file_upload::upload_file(&file_uploads.sender, &entry.path()).await?;
-                    }
-                    Ok(None) => break,
-                    _ => continue,
+        let mut dir = fs::read_dir(&self.target_path).await?;
+        loop {
+            match dir.next_entry().await {
+                Ok(Some(entry))
+                    if entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(&self.prefix) =>
+                {
+                    self.file_upload.upload_file(&entry.path()).await?;
                 }
+                Ok(None) => break,
+                _ => continue,
             }
         }
 
@@ -511,12 +472,7 @@ impl FileSink {
         let target_path = self.target_path.join(target_filename);
 
         fs::rename(&sink_path, &target_path).await?;
-        if let Some(deposits) = &self.deposits {
-            file_upload::upload_file(deposits, &target_path).await?;
-        }
-        if let Some(file_upload) = &self.file_upload {
-            file_upload.upload_file(&target_path).await?;
-        };
+        self.file_upload.upload_file(&target_path).await?;
 
         Ok(())
     }
@@ -571,7 +527,7 @@ pub fn file_name(path_buf: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{file_source, FileInfo, FileType};
+    use crate::{file_source, file_upload, FileInfo, FileType};
     use futures::stream::StreamExt;
     use std::str::FromStr;
     use tempfile::TempDir;
@@ -581,13 +537,21 @@ mod tests {
     async fn writes_a_framed_gzip_encoded_file() {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let (file_upload_tx, _file_upload_rx) = file_upload::message_channel();
+        let file_upload = FileUpload {
+            sender: file_upload_tx,
+        };
 
-        let (file_sink_client, file_sink_server) =
-            FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), "fake_metric")
-                .roll_time(chrono::Duration::milliseconds(100))
-                .create()
-                .await
-                .expect("failed to create file sink");
+        let (file_sink_client, file_sink_server) = FileSinkBuilder::new(
+            FileType::EntropyReport,
+            tmp_dir.path(),
+            file_upload,
+            "fake_metric",
+        )
+        .roll_time(chrono::Duration::milliseconds(100))
+        .create()
+        .await
+        .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
             file_sink_server
@@ -622,15 +586,21 @@ mod tests {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (file_upload_tx, mut file_upload_rx) = file_upload::message_channel();
+        let file_upload = FileUpload {
+            sender: file_upload_tx,
+        };
 
-        let (file_sink_client, file_sink_server) =
-            FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), "fake_metric")
-                .roll_time(chrono::Duration::milliseconds(100))
-                .auto_commit(false)
-                .deposits(Some(file_upload_tx))
-                .create()
-                .await
-                .expect("failed to create file sink");
+        let (file_sink_client, file_sink_server) = FileSinkBuilder::new(
+            FileType::EntropyReport,
+            tmp_dir.path(),
+            file_upload,
+            "fake_metric",
+        )
+        .roll_time(chrono::Duration::milliseconds(100))
+        .auto_commit(false)
+        .create()
+        .await
+        .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
             file_sink_server

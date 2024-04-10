@@ -356,9 +356,9 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let (beacon_report_sink, beacon_report_sink_server) = file_sink::FileSinkBuilder::new(
         FileType::IotBeaconIngestReport,
         store_base_path,
+        file_upload.clone(),
         concat!(env!("CARGO_PKG_NAME"), "_beacon_report"),
     )
-    .file_upload(Some(file_upload.clone()))
     .roll_time(Duration::minutes(5))
     .create()
     .await?;
@@ -367,9 +367,9 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let (witness_report_sink, witness_report_sink_server) = file_sink::FileSinkBuilder::new(
         FileType::IotWitnessIngestReport,
         store_base_path,
+        file_upload.clone(),
         concat!(env!("CARGO_PKG_NAME"), "_witness_report"),
     )
-    .file_upload(Some(file_upload.clone()))
     .roll_time(Duration::minutes(5))
     .create()
     .await?;

@@ -88,9 +88,9 @@ impl Server {
         let (price_sink, price_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::PriceReport,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
         )
-        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(PRICE_SINK_ROLL_MINS))
         .create()
         .await?;

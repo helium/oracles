@@ -68,22 +68,20 @@ impl Server {
         });
 
         // Initialize uploader
-        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload =
-            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
-
         let store_base_path = path::Path::new(&settings.cache);
 
         // entropy
         let mut entropy_generator = EntropyGenerator::new(&settings.source).await?;
         let entropy_watch = entropy_generator.receiver();
 
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
         let (entropy_sink, entropy_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::EntropyReport,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
         )
-        .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(ENTROPY_SINK_ROLL_MINS))
         .create()
         .await?;
@@ -102,7 +100,9 @@ impl Server {
             entropy_sink_server
                 .run(shutdown.clone())
                 .map_err(Error::from),
-            file_upload.run(shutdown.clone()).map_err(Error::from),
+            file_upload_server
+                .run(shutdown.clone())
+                .map_err(Error::from),
         )
         .map(|_| ())
     }
