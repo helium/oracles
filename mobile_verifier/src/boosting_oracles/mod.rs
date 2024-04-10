@@ -473,6 +473,10 @@ pub async fn set_oracle_boosting_assignments<'a>(
             })
             .collect();
 
+        let mut transaction = pool.begin().await?;
+        sqlx::query("LOCK TABLE hexes")
+            .execute(&mut transaction)
+            .await?;
         QueryBuilder::new(
             "INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized, footfall)",
         )
@@ -492,8 +496,9 @@ pub async fn set_oracle_boosting_assignments<'a>(
                 "#,
         )
         .build()
-        .execute(pool)
+        .execute(&mut transaction)
         .await?;
+        transaction.commit().await?;
     }
 
     Ok(boost_results
