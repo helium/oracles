@@ -2,6 +2,10 @@ use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
+    mobile_radio_invalidated_threshold::{
+        InvalidatedRadioThresholdIngestReport, InvalidatedRadioThresholdReportReq,
+        VerifiedInvalidatedRadioThresholdIngestReport,
+    },
     mobile_radio_threshold::{
         RadioThresholdIngestReport, RadioThresholdReportReq, VerifiedRadioThresholdIngestReport,
     },
@@ -11,7 +15,10 @@ use futures_util::TryFutureExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
-    poc_mobile::{RadioThresholdReportVerificationStatus, VerifiedRadioThresholdIngestReportV1},
+    poc_mobile::{
+        InvalidatedRadioThresholdReportVerificationStatus, RadioThresholdReportVerificationStatus,
+        VerifiedInvalidatedRadioThresholdIngestReportV1, VerifiedRadioThresholdIngestReportV1,
+    },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
 use sqlx::{FromRow, PgPool, Postgres, Row, Transaction};
@@ -22,7 +29,9 @@ use tokio::sync::mpsc::Receiver;
 pub struct RadioThresholdIngestor<AV> {
     pool: PgPool,
     reports_receiver: Receiver<FileInfoStream<RadioThresholdIngestReport>>,
+    invalid_reports_receiver: Receiver<FileInfoStream<InvalidatedRadioThresholdIngestReport>>,
     verified_report_sink: FileSinkClient,
+    verified_invalid_report_sink: FileSinkClient,
     authorization_verifier: AV,
 }
 
@@ -50,13 +59,17 @@ where
     pub fn new(
         pool: sqlx::Pool<Postgres>,
         reports_receiver: Receiver<FileInfoStream<RadioThresholdIngestReport>>,
+        invalid_reports_receiver: Receiver<FileInfoStream<InvalidatedRadioThresholdIngestReport>>,
         verified_report_sink: FileSinkClient,
+        verified_invalid_report_sink: FileSinkClient,
         authorization_verifier: AV,
     ) -> Self {
         Self {
             pool,
             reports_receiver,
+            invalid_reports_receiver,
             verified_report_sink,
+            verified_invalid_report_sink,
             authorization_verifier,
         }
     }
@@ -69,6 +82,9 @@ where
                 _ = shutdown.clone() => break,
                 Some(file) = self.reports_receiver.recv() => {
                     self.process_file(file).await?;
+                }
+                Some(file) = self.invalid_reports_receiver.recv() => {
+                    self.process_invalid_file(file).await?;
                 }
             }
         }
@@ -122,6 +138,47 @@ where
         Ok(())
     }
 
+    async fn process_invalid_file(
+        &self,
+        file_info_stream: FileInfoStream<InvalidatedRadioThresholdIngestReport>,
+    ) -> anyhow::Result<()> {
+        let mut transaction = self.pool.begin().await?;
+        file_info_stream
+            .into_stream(&mut transaction)
+            .await?
+            .map(anyhow::Ok)
+            .try_fold(transaction, |mut transaction, ingest_report| async move {
+                // verify the report
+                let verified_report_status = self.verify_invalid_report(&ingest_report.report).await;
+
+                // if the report is valid then delete the thresholds from the DB
+                if verified_report_status == InvalidatedRadioThresholdReportVerificationStatus::InvalidatedThresholdReportStatusValid {
+                     delete(&ingest_report, &mut transaction).await?;
+                }
+
+                // write out paper trail of verified report, valid or invalid
+                let verified_report_proto: VerifiedInvalidatedRadioThresholdIngestReportV1 =
+                    VerifiedInvalidatedRadioThresholdIngestReport {
+                        report: ingest_report,
+                        status: verified_report_status,
+                        timestamp: Utc::now(),
+                    }
+                        .into();
+                self.verified_invalid_report_sink
+                    .write(
+                        verified_report_proto,
+                        &[("report_status", verified_report_status.as_str_name())],
+                    )
+                    .await?;
+                Ok(transaction)
+            })
+            .await?
+            .commit()
+            .await?;
+        self.verified_report_sink.commit().await?;
+        Ok(())
+    }
+
     async fn verify_report(
         &self,
         report: &RadioThresholdReportReq,
@@ -138,6 +195,16 @@ where
             report_validity
         };
         Ok(final_validity)
+    }
+
+    async fn verify_invalid_report(
+        &self,
+        report: &InvalidatedRadioThresholdReportReq,
+    ) -> InvalidatedRadioThresholdReportVerificationStatus {
+        if !self.verify_known_carrier_key(&report.carrier_pub_key).await {
+            return InvalidatedRadioThresholdReportVerificationStatus::InvalidatedThresholdReportStatusInvalidCarrierKey;
+        };
+        InvalidatedRadioThresholdReportVerificationStatus::InvalidatedThresholdReportStatusValid
     }
 
     async fn do_report_verifications(
@@ -250,4 +317,21 @@ pub async fn verified_radio_thresholds(
         map.insert(row.hotspot_pubkey, row.cbsd_id.filter(|s| !s.is_empty()));
     }
     Ok(map)
+}
+
+pub async fn delete(
+    ingest_report: &InvalidatedRadioThresholdIngestReport,
+    db: &mut Transaction<'_, Postgres>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+            DELETE FROM radio_threshold
+            WHERE hotspot_pubkey = $1 AND (cbsd_id is null or cbsd_id = $2)
+        "#,
+    )
+    .bind(ingest_report.report.hotspot_pubkey.to_string())
+    .bind(ingest_report.report.cbsd_id.clone())
+    .execute(&mut *db)
+    .await?;
+    Ok(())
 }

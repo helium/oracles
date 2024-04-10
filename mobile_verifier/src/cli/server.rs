@@ -6,7 +6,6 @@ use crate::{
     heartbeats::{
         cbrs::HeartbeatDaemon as CellHeartbeatDaemon, wifi::HeartbeatDaemon as WifiHeartbeatDaemon,
     },
-    invalidated_radio_threshold::InvalidatedRadioThresholdIngestor,
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
     speedtests::SpeedtestDaemon,
@@ -304,6 +303,16 @@ impl Cmd {
                 .create()
                 .await?;
 
+        // invalidated radio threshold reports
+        let (invalidated_radio_threshold_ingest, invalidated_radio_threshold_ingest_server) =
+            file_source::continuous_source::<InvalidatedRadioThresholdIngestReport, _>()
+                .state(pool.clone())
+                .store(report_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::InvalidatedRadioThresholdIngestReport.to_string())
+                .create()
+                .await?;
+
         let (verified_radio_threshold, verified_radio_threshold_server) =
             file_sink::FileSinkBuilder::new(
                 FileType::VerifiedRadioThresholdIngestReport,
@@ -314,23 +323,6 @@ impl Cmd {
             .auto_commit(false)
             .create()
             .await?;
-
-        let radio_threshold_ingestor = RadioThresholdIngestor::new(
-            pool.clone(),
-            radio_threshold_ingest,
-            verified_radio_threshold,
-            auth_client.clone(),
-        );
-
-        // invalidated radio threshold reports
-        let (invalidated_radio_threshold_ingest, invalidated_radio_threshold_ingest_server) =
-            file_source::continuous_source::<InvalidatedRadioThresholdIngestReport, _>()
-                .state(pool.clone())
-                .store(report_ingest.clone())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .prefix(FileType::InvalidatedRadioThresholdIngestReport.to_string())
-                .create()
-                .await?;
 
         let (verified_invalidated_radio_threshold, verified_invalidated_radio_threshold_server) =
             file_sink::FileSinkBuilder::new(
@@ -346,9 +338,11 @@ impl Cmd {
             .create()
             .await?;
 
-        let invalidated_radio_threshold_ingestor = InvalidatedRadioThresholdIngestor::new(
+        let radio_threshold_ingestor = RadioThresholdIngestor::new(
             pool.clone(),
+            radio_threshold_ingest,
             invalidated_radio_threshold_ingest,
+            verified_radio_threshold,
             verified_invalidated_radio_threshold,
             auth_client.clone(),
         );
@@ -380,7 +374,6 @@ impl Cmd {
             .add_task(subscriber_location_ingestor)
             .add_task(radio_threshold_ingestor)
             .add_task(verified_radio_threshold_server)
-            .add_task(invalidated_radio_threshold_ingestor)
             .add_task(verified_invalidated_radio_threshold_server)
             .add_task(data_session_ingest_server)
             .add_task(price_daemon)
