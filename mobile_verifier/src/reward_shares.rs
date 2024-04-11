@@ -1006,6 +1006,7 @@ mod test {
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
             footfall: Assignment::C,
+            landtype: Assignment::A,
         }]
     }
 
@@ -1892,6 +1893,7 @@ mod test {
                                 coverage_points: dec!(10.0),
                                 urbanized: Assignment::A,
                                 footfall: Assignment::A,
+                                landtype: Assignment::A,
                                 rank: None,
                             },
                             boosted_hex: BoostedHex {

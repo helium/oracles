@@ -174,10 +174,11 @@ pub struct MockHexAssignments;
 
 #[allow(dead_code)]
 impl MockHexAssignments {
-    pub fn best() -> HexBoostData<impl HexAssignment, impl HexAssignment> {
+    pub fn best() -> HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment> {
         HexBoostData {
             urbanization: Assignment::A,
             footfall: Assignment::A,
+            landtype: Assignment::A,
         }
     }
 }

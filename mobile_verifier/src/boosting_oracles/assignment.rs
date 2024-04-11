@@ -28,6 +28,19 @@ impl From<Assignment> for i32 {
     }
 }
 
+impl TryFrom<i32> for Assignment {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Assignment::A),
+            1 => Ok(Assignment::B),
+            2 => Ok(Assignment::C),
+            other => Err(anyhow::anyhow!("could not make Assignment from {other}")),
+        }
+    }
+}
+
 impl fmt::Display for Assignment {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Assignment::*;
@@ -59,7 +72,6 @@ pub fn footfall_and_urbanization_multiplier(
     }
 }
 
-#[allow(dead_code)]
 pub fn boosting_oracles_multiplier(
     footfall: Assignment,
     landtype: Assignment,

@@ -1,6 +1,6 @@
 use crate::{
     boosting_oracles::{
-        assignment::footfall_and_urbanization_multiplier, Assignment, HexAssignment, HexBoostData,
+        assignment::boosting_oracles_multiplier, Assignment, HexAssignment, HexBoostData,
     },
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized,
@@ -66,29 +66,26 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
-pub struct CoverageDaemon<Urban, Foot>
-where
-    Urban: HexAssignment,
-    Foot: HexAssignment,
-{
+pub struct CoverageDaemon<Urban, Foot, Land> {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
-    hex_boost_data: HexBoostData<Urban, Foot>,
+    hex_boost_data: HexBoostData<Urban, Foot, Land>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     initial_boosting_reports: Option<Vec<OracleBoostingReportV1>>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
 }
 
-impl<Urban, Foot> CoverageDaemon<Urban, Foot>
+impl<Urban, Foot, Land> CoverageDaemon<Urban, Foot, Land>
 where
     Urban: HexAssignment,
     Foot: HexAssignment,
+    Land: HexAssignment,
 {
     pub async fn new(
         pool: PgPool,
         auth_client: AuthorizationClient,
-        hex_boost_data: HexBoostData<Urban, Foot>,
+        hex_boost_data: HexBoostData<Urban, Foot, Land>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
         oracle_boosting_sink: FileSinkClient,
@@ -192,7 +189,14 @@ pub struct UnassignedHex {
 impl UnassignedHex {
     pub fn fetch(pool: &PgPool) -> impl Stream<Item = sqlx::Result<Self>> + '_ {
         sqlx::query_as(
-            "SELECT uuid, hex, signal_level, signal_power FROM hexes WHERE urbanized IS NULL OR footfall IS NULL",
+            "SELECT
+                uuid, hex, signal_level, signal_power
+            FROM
+                hexes
+            WHERE
+                urbanized IS NULL
+                OR footfall IS NULL
+                OR landtype IS NULL",
         )
         .fetch(pool)
     }
@@ -204,7 +208,7 @@ impl UnassignedHex {
 
 pub async fn set_oracle_boosting_assignments(
     unassigned_urbinization_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
-    hex_boost_data: &HexBoostData<impl HexAssignment, impl HexAssignment>,
+    hex_boost_data: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
     pool: &PgPool,
 ) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
     let now = Utc::now();
@@ -225,7 +229,7 @@ pub async fn set_oracle_boosting_assignments(
 
 async fn initialize_unassigned_hexes(
     unassigned_urbinization_hexes: impl Stream<Item = Result<UnassignedHex, sqlx::Error>>,
-    hex_boost_data: &HexBoostData<impl HexAssignment, impl HexAssignment>,
+    hex_boost_data: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
     pool: &Pool<Postgres>,
 ) -> Result<HashMap<Uuid, Vec<proto::OracleBoostingHexAssignment>>, anyhow::Error> {
     const NUMBER_OF_FIELDS_IN_QUERY: u16 = 6;
@@ -243,10 +247,11 @@ async fn initialize_unassigned_hexes(
                 let cell = hextree::Cell::from_raw(hex.hex)?;
                 let urbanized = hex_boost_data.urbanization.assignment(cell)?;
                 let footfall = hex_boost_data.footfall.assignment(cell)?;
+                let landtype = hex_boost_data.landtype.assignment(cell)?;
 
                 let location = hex.to_location_string();
                 let assignment_multiplier =
-                    (footfall_and_urbanization_multiplier(footfall, urbanized) * dec!(1000))
+                    (boosting_oracles_multiplier(footfall, landtype, urbanized) * dec!(1000))
                         .to_u32()
                         .unwrap_or(0);
 
@@ -255,30 +260,33 @@ async fn initialize_unassigned_hexes(
                         location,
                         urbanized: urbanized.into(),
                         footfall: footfall.into(),
+                        landtype: landtype.into(),
                         assignment_multiplier,
                     },
                 );
 
-                Ok((hex, urbanized, footfall))
+                Ok((hex, urbanized, footfall, landtype))
             })
             .collect();
 
         QueryBuilder::new(
-            "INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized, footfall)",
+            "INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized, footfall, landtype)",
         )
-        .push_values(hexes?, |mut b, (hex, urbanized, footfall)| {
+        .push_values(hexes?, |mut b, (hex, urbanized, footfall, landtype)| {
             b.push_bind(hex.uuid)
                 .push_bind(hex.hex as i64)
                 .push_bind(hex.signal_level)
                 .push_bind(hex.signal_power)
                 .push_bind(urbanized)
-                .push_bind(footfall);
+                .push_bind(footfall)
+                .push_bind(landtype);
         })
         .push(
             r#"
             ON CONFLICT (uuid, hex) DO UPDATE SET
                 urbanized = EXCLUDED.urbanized,
-                footfall = EXCLUDED.footfall
+                footfall = EXCLUDED.footfall,
+                landtype = EXCLUDED.landtype
             "#,
         )
         .build()
@@ -289,10 +297,11 @@ async fn initialize_unassigned_hexes(
     Ok(boost_results)
 }
 
-impl<Urban, Foot> ManagedTask for CoverageDaemon<Urban, Foot>
+impl<Urban, Foot, Land> ManagedTask for CoverageDaemon<Urban, Foot, Land>
 where
     Urban: HexAssignment + 'static,
     Foot: HexAssignment + 'static,
+    Land: HexAssignment + 'static,
 {
     fn start_task(
         self: Box<Self>,
@@ -453,6 +462,7 @@ pub struct HexCoverage {
     pub inserted_at: DateTime<Utc>,
     pub urbanized: Assignment,
     pub footfall: Assignment,
+    pub landtype: Assignment,
 }
 
 #[derive(Eq, Debug)]
@@ -463,6 +473,7 @@ struct IndoorCoverageLevel {
     signal_level: SignalLevel,
     urbanized: Assignment,
     footfall: Assignment,
+    landtype: Assignment,
 }
 
 impl PartialEq for IndoorCoverageLevel {
@@ -502,6 +513,7 @@ struct OutdoorCoverageLevel {
     signal_level: SignalLevel,
     urbanized: Assignment,
     footfall: Assignment,
+    landtype: Assignment,
 }
 
 impl PartialEq for OutdoorCoverageLevel {
@@ -557,6 +569,7 @@ pub struct CoverageRewardPoints {
     pub coverage_points: Decimal,
     pub urbanized: Assignment,
     pub footfall: Assignment,
+    pub landtype: Assignment,
     pub rank: Option<Decimal>,
 }
 
@@ -565,7 +578,8 @@ impl CoverageRewardPoints {
         let oracle_multiplier = if self.boost_multiplier.get() > 1 {
             dec!(1.0)
         } else {
-            footfall_and_urbanization_multiplier(self.footfall, self.urbanized)
+            //footfall_and_urbanization_multiplier(self.footfall, self.urbanized)
+            boosting_oracles_multiplier(self.footfall, self.urbanized, self.landtype)
         };
 
         let points = self.coverage_points * oracle_multiplier;
@@ -636,7 +650,7 @@ impl CoveredHexStream for Pool<Postgres> {
         Ok(
             sqlx::query_as(
                 r#"
-                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, h.signal_power, co.coverage_claim_time, co.inserted_at, h.urbanized, h.footfall
+                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, h.signal_power, co.coverage_claim_time, co.inserted_at, h.urbanized, h.footfall, h.landtype
                 FROM coverage_objects co
                     INNER JOIN hexes h on co.uuid = h.uuid
                 WHERE co.radio_key = $1
@@ -785,6 +799,7 @@ fn insert_indoor_coverage(
             hotspot: hotspot.clone(),
             urbanized: hex_coverage.urbanized,
             footfall: hex_coverage.footfall,
+            landtype: hex_coverage.landtype,
         })
 }
 
@@ -804,6 +819,7 @@ fn insert_outdoor_coverage(
             hotspot: hotspot.clone(),
             urbanized: hex_coverage.urbanized,
             footfall: hex_coverage.footfall,
+            landtype: hex_coverage.landtype,
         });
 }
 
@@ -829,6 +845,7 @@ fn into_outdoor_rewards(
                         coverage_points: cl.coverage_points(),
                         urbanized: cl.urbanized,
                         footfall: cl.footfall,
+                        landtype: cl.landtype,
                         rank: Some(rank),
                     },
                     hotspot: cl.hotspot,
@@ -866,6 +883,7 @@ fn into_indoor_rewards(
                                 coverage_points: cl.coverage_points(),
                                 urbanized: cl.urbanized,
                                 footfall: cl.footfall,
+                                landtype: cl.landtype,
                                 rank: None,
                             },
                             hotspot: cl.hotspot,
@@ -1079,6 +1097,7 @@ mod test {
                     boost_multiplier: NonZeroU32::new(1).unwrap(),
                     urbanized: Assignment::A,
                     footfall: Assignment::A,
+                    landtype: Assignment::A,
                     rank: None
                 },
                 boosted_hex_info: BoostedHex {
@@ -1114,6 +1133,7 @@ mod test {
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
             footfall: Assignment::A,
+            landtype: Assignment::A,
         }
     }
 
@@ -1197,6 +1217,7 @@ mod test {
                     boost_multiplier: NonZeroU32::new(1).unwrap(),
                     urbanized: Assignment::A,
                     footfall: Assignment::A,
+                    landtype: Assignment::A,
                     rank: None
                 },
                 boosted_hex_info: BoostedHex {
@@ -1241,7 +1262,8 @@ mod test {
                         rank: Some(dec!(1.0)),
                         boost_multiplier: NonZeroU32::new(1).unwrap(),
                         urbanized: Assignment::A,
-                        footfall: Assignment::A
+                        footfall: Assignment::A,
+                        landtype: Assignment::A
                     },
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
@@ -1256,7 +1278,8 @@ mod test {
                         rank: Some(dec!(0.50)),
                         boost_multiplier: NonZeroU32::new(1).unwrap(),
                         urbanized: Assignment::A,
-                        footfall: Assignment::A
+                        footfall: Assignment::A,
+                        landtype: Assignment::A
                     },
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
@@ -1271,7 +1294,8 @@ mod test {
                         rank: Some(dec!(0.25)),
                         boost_multiplier: NonZeroU32::new(1).unwrap(),
                         urbanized: Assignment::A,
-                        footfall: Assignment::A
+                        footfall: Assignment::A,
+                        landtype: Assignment::A
                     },
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
@@ -1544,6 +1568,7 @@ mod test {
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
             footfall: Assignment::A,
+            landtype: Assignment::A,
         }
     }
 
@@ -1563,6 +1588,7 @@ mod test {
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
             footfall: Assignment::A,
+            landtype: Assignment::A,
         }
     }
 
@@ -1582,6 +1608,7 @@ mod test {
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
             footfall: Assignment::A,
+            landtype: Assignment::A,
         }
     }
 
@@ -1601,6 +1628,7 @@ mod test {
             inserted_at: DateTime::<Utc>::MIN_UTC,
             urbanized: Assignment::A,
             footfall: Assignment::A,
+            landtype: Assignment::A,
         }
     }
 }

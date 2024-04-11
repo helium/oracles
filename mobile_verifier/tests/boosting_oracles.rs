@@ -1,3 +1,4 @@
+use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::RadioHexSignalLevel,
@@ -5,6 +6,7 @@ use file_store::{
     speedtest::CellSpeedtest,
 };
 use futures::stream::{self, StreamExt};
+use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, OracleBoostingHexAssignment, SignalLevel,
@@ -24,6 +26,7 @@ use mobile_verifier::{
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     GatewayResolution, GatewayResolver,
 };
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::{
@@ -126,59 +129,63 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     let uuid = Uuid::new_v4();
     let cbsd_id = "P27-SCE4255W120200039521XGB0102".to_string();
 
-    let hex1 = OracleBoostingHexAssignment {
-        location: "8c2681a3064d9ff".to_string(),
-        assignment_multiplier: 1000,
-        urbanized: Assignment::A.into(),
-        footfall: Assignment::A.into(),
-    };
-    let hex2 = OracleBoostingHexAssignment {
-        location: "8c2681a3064d1ff".to_string(),
-        assignment_multiplier: 1000,
-        urbanized: Assignment::B.into(),
-        footfall: Assignment::A.into(),
-    };
-    let hex3 = OracleBoostingHexAssignment {
-        location: "8c450e64dc899ff".to_string(),
-        assignment_multiplier: 0,
-        urbanized: Assignment::C.into(),
-        footfall: Assignment::A.into(),
-    };
-    let hex4 = OracleBoostingHexAssignment {
-        location: "8c2681a3064dbff".to_string(),
-        assignment_multiplier: 750,
-        urbanized: Assignment::A.into(),
-        footfall: Assignment::B.into(),
-    };
-    let hex5 = OracleBoostingHexAssignment {
-        location: "8c2681a339365ff".to_string(),
-        assignment_multiplier: 500,
-        urbanized: Assignment::B.into(),
-        footfall: Assignment::B.into(),
-    };
-    let hex6 = OracleBoostingHexAssignment {
-        location: "8c450e64dc89dff".to_string(),
-        assignment_multiplier: 0,
-        urbanized: Assignment::C.into(),
-        footfall: Assignment::B.into(),
-    };
-    let hex7 = OracleBoostingHexAssignment {
-        location: "8c2681a3066b3ff".to_string(),
-        assignment_multiplier: 400,
-        urbanized: Assignment::A.into(),
-        footfall: Assignment::C.into(),
-    };
-    let hex8 = OracleBoostingHexAssignment {
-        location: "8c2681a3066b7ff".to_string(),
-        assignment_multiplier: 100,
-        urbanized: Assignment::B.into(),
-        footfall: Assignment::C.into(),
-    };
-    let hex9 = OracleBoostingHexAssignment {
-        location: "8c450e64dc883ff".to_string(),
-        assignment_multiplier: 0,
-        urbanized: Assignment::C.into(),
-        footfall: Assignment::C.into(),
+    fn new_hex_assingment(
+        cell: &mut CellIndex,
+        footfall: Assignment,
+        landtype: Assignment,
+        urbanized: Assignment,
+        assignment_multiplier: u32,
+    ) -> OracleBoostingHexAssignment {
+        let loc = cell.to_string();
+        *cell = cell.succ().unwrap();
+        OracleBoostingHexAssignment {
+            location: loc,
+            assignment_multiplier,
+            urbanized: urbanized.into(),
+            footfall: footfall.into(),
+            landtype: landtype.into(),
+        }
+    }
+
+    let hexes = {
+        let mut cell = CellIndex::try_from(0x8c2681a3064d9ff)?;
+        use Assignment::*;
+        vec![
+            // yellow
+            new_hex_assingment(&mut cell, A, A, A, 1000),
+            new_hex_assingment(&mut cell, A, B, A, 1000),
+            new_hex_assingment(&mut cell, A, C, A, 1000),
+            // orange
+            new_hex_assingment(&mut cell, A, A, B, 1000),
+            new_hex_assingment(&mut cell, A, B, B, 1000),
+            new_hex_assingment(&mut cell, A, C, B, 1000),
+            // light green
+            new_hex_assingment(&mut cell, B, A, A, 700),
+            new_hex_assingment(&mut cell, B, B, A, 700),
+            new_hex_assingment(&mut cell, B, C, A, 700),
+            // green
+            new_hex_assingment(&mut cell, B, A, B, 500),
+            new_hex_assingment(&mut cell, B, B, B, 500),
+            new_hex_assingment(&mut cell, B, C, B, 500),
+            // light blue
+            new_hex_assingment(&mut cell, C, A, A, 400),
+            new_hex_assingment(&mut cell, C, B, A, 300),
+            new_hex_assingment(&mut cell, C, C, A, 50),
+            // dark blue
+            new_hex_assingment(&mut cell, C, A, B, 200),
+            new_hex_assingment(&mut cell, C, B, B, 150),
+            new_hex_assingment(&mut cell, C, C, B, 30),
+            // gray
+            new_hex_assingment(&mut cell, A, A, C, 0),
+            new_hex_assingment(&mut cell, A, B, C, 0),
+            new_hex_assingment(&mut cell, A, C, C, 0),
+            new_hex_assingment(&mut cell, B, A, C, 0),
+            new_hex_assingment(&mut cell, B, B, C, 0),
+            new_hex_assingment(&mut cell, B, C, C, 0),
+            new_hex_assingment(&mut cell, C, A, C, 0),
+            new_hex_assingment(&mut cell, C, B, C, 0),
+            new_hex_assingment(&mut cell, C, C, C, 0),
+        ]
     };
 
     let coverage_object = file_store::coverage::CoverageObject {
@@ -188,40 +195,32 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
         coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
         indoor: true,
         signature: Vec::new(),
-        coverage: vec![
-            signal_level(&hex1.location, SignalLevel::High)?,
-            signal_level(&hex2.location, SignalLevel::High)?,
-            signal_level(&hex3.location, SignalLevel::High)?,
-            signal_level(&hex4.location, SignalLevel::High)?,
-            signal_level(&hex5.location, SignalLevel::High)?,
-            signal_level(&hex6.location, SignalLevel::High)?,
-            signal_level(&hex7.location, SignalLevel::High)?,
-            signal_level(&hex8.location, SignalLevel::High)?,
-            signal_level(&hex9.location, SignalLevel::High)?,
-        ],
+        coverage: hexes
+            .iter()
+            .map(|hex| signal_level(&hex.location, SignalLevel::High).unwrap())
+            .collect(),
         trust_score: 1000,
     };
 
-    let mut footfall = HashMap::new();
-    footfall.insert(hex_cell(&hex1.location), true);
-    footfall.insert(hex_cell(&hex2.location), true);
-    footfall.insert(hex_cell(&hex3.location), true);
-    footfall.insert(hex_cell(&hex4.location), false);
-    footfall.insert(hex_cell(&hex5.location), false);
-    footfall.insert(hex_cell(&hex6.location), false);
-
+    let mut footfall = HashMap::<hextree::Cell, Assignment>::new();
+    let mut landtype = HashMap::<hextree::Cell, Assignment>::new();
     let mut urbanized = HashSet::new();
-    urbanized.insert(hex_cell(&hex1.location));
-    urbanized.insert(hex_cell(&hex4.location));
-    urbanized.insert(hex_cell(&hex7.location));
-
     let mut geofence = HashSet::new();
-    geofence.insert(hex_cell(&hex1.location));
-    geofence.insert(hex_cell(&hex2.location));
-    geofence.insert(hex_cell(&hex4.location));
-    geofence.insert(hex_cell(&hex5.location));
-    geofence.insert(hex_cell(&hex7.location));
-    geofence.insert(hex_cell(&hex8.location));
+    for hex in hexes.iter() {
+        match hex.urbanized.try_into()? {
+            Assignment::A => {
+                urbanized.insert(hex_cell(&hex.location));
+                geofence.insert(hex_cell(&hex.location));
+            }
+            Assignment::B => {
+                geofence.insert(hex_cell(&hex.location));
+            }
+            Assignment::C => (),
+        }
+
+        footfall.insert(hex_cell(&hex.location), hex.footfall.try_into()?);
+        landtype.insert(hex_cell(&hex.location), hex.landtype.try_into()?);
+    }
 
     let mut transaction = pool.begin().await?;
     CoverageObject {
@@ -234,82 +233,118 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
 
     let unassigned_hexes = UnassignedHex::fetch(&pool);
     let urbanization = UrbanizationData::new(urbanized, geofence);
-    let hex_boost_data = HexBoostData::new(urbanization, footfall);
+    let hex_boost_data = HexBoostData::new(urbanization, footfall, landtype);
     let oba = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool)
         .await?
         .collect::<Vec<_>>();
 
     assert_eq!(oba.len(), 1);
-    assert_eq!(
-        oba[0].assignments,
-        vec![hex1, hex2, hex3, hex4, hex5, hex6, hex7, hex8, hex9]
-    );
+    assert_eq!(oba[0].assignments, hexes);
 
     Ok(())
 }
 
 #[sqlx::test]
-async fn test_footfall_and_urbanization(pool: PgPool) -> anyhow::Result<()> {
+async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Result<()> {
     let start: DateTime<Utc> = "2022-01-01 00:00:00.000000000 UTC".parse()?;
     let end: DateTime<Utc> = "2022-01-02 00:00:00.000000000 UTC".parse()?;
+
+    struct TestHex {
+        loc: String,
+        landtype: Assignment,
+        footfall: Assignment,
+        urbanized: Assignment,
+        expected_score: Decimal,
+    }
+
+    impl TestHex {
+        fn new(
+            cell: &mut CellIndex,
+            footfall: Assignment,
+            landtype: Assignment,
+            urbanized: Assignment,
+            expected_score: usize,
+        ) -> Self {
+            let loc = cell.to_string();
+            *cell = cell.succ().unwrap();
+            Self {
+                loc,
+                landtype,
+                footfall,
+                urbanized,
+                expected_score: Decimal::from(expected_score),
+            }
+        }
+    }
+
+    let hexes = {
+        let mut cell = CellIndex::try_from(0x8c2681a3064d9ff)?;
+        use Assignment::*;
+        vec![
+            // yellow
+            TestHex::new(&mut cell, A, A, A, 400),
+            TestHex::new(&mut cell, A, B, A, 400),
+            TestHex::new(&mut cell, A, C, A, 400),
+            // orange
+            TestHex::new(&mut cell, A, A, B, 400),
+            TestHex::new(&mut cell, A, B, B, 400),
+            TestHex::new(&mut cell, A, C, B, 400),
+            // light green
+            TestHex::new(&mut cell, B, A, A, 280),
+            TestHex::new(&mut cell, B, B, A, 280),
+            TestHex::new(&mut cell, B, C, A, 280),
+            // green
+            TestHex::new(&mut cell, B, A, B, 200),
+            TestHex::new(&mut cell, B, B, B, 200),
+            TestHex::new(&mut cell, B, C, B, 200),
+            // light blue
+            TestHex::new(&mut cell, C, A, A, 160),
+            TestHex::new(&mut cell, C, B, A, 120),
+            TestHex::new(&mut cell, C, C, A, 20),
+            // dark blue
+            TestHex::new(&mut cell, C, A, B, 80),
+            TestHex::new(&mut cell, C, B, B, 60),
+            TestHex::new(&mut cell, C, C, B, 12),
+            // gray
+            TestHex::new(&mut cell, A, A, C, 0),
+            TestHex::new(&mut cell, A, B, C, 0),
+            TestHex::new(&mut cell, A, C, C, 0),
+            TestHex::new(&mut cell, B, A, C, 0),
+            TestHex::new(&mut cell, B, B, C, 0),
+            TestHex::new(&mut cell, B, C, C, 0),
+            TestHex::new(&mut cell, C, A, C, 0),
+            TestHex::new(&mut cell, C, B, C, 0),
+            TestHex::new(&mut cell, C, C, C, 0),
+        ]
+    };
+    let sum = hexes.iter().map(|h| h.expected_score).sum::<Decimal>();
+
+    assert_eq!(27, hexes.len());
+    assert_eq!(dec!(4292), sum);
+
+    let mut footfall = HashMap::new();
+    let mut urbanized = HashSet::new();
+    let mut geofence = HashSet::new();
+    let mut landtype = HashMap::new();
+    for hex in hexes.iter() {
+        match hex.urbanized {
+            Assignment::A => {
+                urbanized.insert(hex_cell(&hex.loc));
+                geofence.insert(hex_cell(&hex.loc));
+            }
+            Assignment::B => {
+                geofence.insert(hex_cell(&hex.loc));
+            }
+            Assignment::C => (),
+        }
+
+        footfall.insert(hex_cell(&hex.loc), hex.footfall);
+        landtype.insert(hex_cell(&hex.loc), hex.landtype);
+    }
 
     let uuid = Uuid::new_v4();
     let cbsd_id = "P27-SCE4255W120200039521XGB0102".to_string();
     let owner: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
-    let hex1 = OracleBoostingHexAssignment {
-        location: "8c2681a3064d9ff".to_string(),
-        assignment_multiplier: 1000,
-        urbanized: Assignment::A.into(),
-        footfall: Assignment::A.into(),
-    };
-    let hex2 = OracleBoostingHexAssignment {
-        location: "8c2681a3064d1ff".to_string(),
-        assignment_multiplier: 1000,
-        urbanized: Assignment::B.into(),
-        footfall: Assignment::A.into(),
-    };
-    let hex3 = OracleBoostingHexAssignment {
-        location: "8c450e64dc899ff".to_string(),
-        assignment_multiplier: 0,
-        urbanized: Assignment::C.into(),
-        footfall: Assignment::A.into(),
-    };
-    let hex4 = OracleBoostingHexAssignment {
-        location: "8c2681a3064dbff".to_string(),
-        assignment_multiplier: 750,
-        urbanized: Assignment::A.into(),
-        footfall: Assignment::B.into(),
-    };
-    let hex5 = OracleBoostingHexAssignment {
-        location: "8c2681a339365ff".to_string(),
-        assignment_multiplier: 500,
-        urbanized: Assignment::B.into(),
-        footfall: Assignment::B.into(),
-    };
-    let hex6 = OracleBoostingHexAssignment {
-        location: "8c450e64dc89dff".to_string(),
-        assignment_multiplier: 0,
-        urbanized: Assignment::C.into(),
-        footfall: Assignment::B.into(),
-    };
-    let hex7 = OracleBoostingHexAssignment {
-        location: "8c2681a3066b3ff".to_string(),
-        assignment_multiplier: 400,
-        urbanized: Assignment::A.into(),
-        footfall: Assignment::C.into(),
-    };
-    let hex8 = OracleBoostingHexAssignment {
-        location: "8c2681a3066b7ff".to_string(),
-        assignment_multiplier: 100,
-        urbanized: Assignment::B.into(),
-        footfall: Assignment::C.into(),
-    };
-    let hex9 = OracleBoostingHexAssignment {
-        location: "8c450e64dc883ff".to_string(),
-        assignment_multiplier: 0,
-        urbanized: Assignment::C.into(),
-        footfall: Assignment::C.into(),
-    };
 
     let coverage_object = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -318,40 +353,12 @@ async fn test_footfall_and_urbanization(pool: PgPool) -> anyhow::Result<()> {
         coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
         indoor: true,
         signature: Vec::new(),
-        coverage: vec![
-            signal_level(&hex1.location, SignalLevel::High)?,
-            signal_level(&hex2.location, SignalLevel::High)?,
-            signal_level(&hex3.location, SignalLevel::High)?,
-            signal_level(&hex4.location, SignalLevel::High)?,
-            signal_level(&hex5.location, SignalLevel::High)?,
-            signal_level(&hex6.location, SignalLevel::High)?,
-            signal_level(&hex7.location, SignalLevel::High)?,
-            signal_level(&hex8.location, SignalLevel::High)?,
-            signal_level(&hex9.location, SignalLevel::High)?,
-        ],
+        coverage: hexes
+            .iter()
+            .map(|hex| signal_level(&hex.loc, SignalLevel::High).unwrap())
+            .collect(),
         trust_score: 1000,
     };
-
-    let mut footfall = HashMap::new();
-    footfall.insert(hex_cell(&hex1.location), true);
-    footfall.insert(hex_cell(&hex2.location), true);
-    footfall.insert(hex_cell(&hex3.location), true);
-    footfall.insert(hex_cell(&hex4.location), false);
-    footfall.insert(hex_cell(&hex5.location), false);
-    footfall.insert(hex_cell(&hex6.location), false);
-
-    let mut urbanized = HashSet::new();
-    urbanized.insert(hex_cell(&hex1.location));
-    urbanized.insert(hex_cell(&hex4.location));
-    urbanized.insert(hex_cell(&hex7.location));
-
-    let mut geofence = HashSet::new();
-    geofence.insert(hex_cell(&hex1.location));
-    geofence.insert(hex_cell(&hex2.location));
-    geofence.insert(hex_cell(&hex4.location));
-    geofence.insert(hex_cell(&hex5.location));
-    geofence.insert(hex_cell(&hex7.location));
-    geofence.insert(hex_cell(&hex8.location));
 
     let mut transaction = pool.begin().await?;
     CoverageObject {
@@ -364,7 +371,7 @@ async fn test_footfall_and_urbanization(pool: PgPool) -> anyhow::Result<()> {
 
     let unassigned_hexes = UnassignedHex::fetch(&pool);
     let urbanization = UrbanizationData::new(urbanized, geofence);
-    let hex_boost_data = HexBoostData::new(urbanization, footfall);
+    let hex_boost_data = HexBoostData::new(urbanization, footfall, landtype);
     let _ = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool).await?;
 
     let heartbeats = heartbeats(12, start, &owner, &cbsd_id, 0.0, 0.0, uuid);
@@ -424,23 +431,50 @@ async fn test_footfall_and_urbanization(pool: PgPool) -> anyhow::Result<()> {
         &VerifiedRadioThresholds::default(),
         &epoch,
     )
-    .await?;
+    .await
+    .context("aggregating points")?;
 
-    // Hex  | Assignment  | Points Equation | Sum
-    // --------------------------------------------
-    // hex1 | A, A        | 400 * 1    | 400
-    // hex2 | A, B        | 400 * 1    | 400
-    // hex3 | B, A        | 400 * 0.75 | 300
-    // hex4 | B, B        | 400 * 0.50 | 200
-    // hex5 | C, A        | 400 * 0.40 | 160
-    // hex6 | C, B        | 400 * 0.10 | 40
-    // hex7 | A, C        | 400 * 0.00 | 0
-    // hex8 | B, C        | 400 * 0.00 | 0
-    // hex9 | C, C        | 400 * 0.00 | 0
-    // -------------------------------------------
-    //                                 = 1,500
+    //        (Footfall, Landtype, Urbanized)
+    // Hex   | Assignment | Points Equation | Sum
+    // -----------------------------------------------
+    // == yellow
+    // hex1  | A, A, A    | 400 * 1         | 400
+    // hex2  | A, B, A    | 400 * 1         | 400
+    // hex3  | A, C, A    | 400 * 1         | 400
+    // == orange
+    // hex4  | A, A, B    | 400 * 1         | 400
+    // hex5  | A, B, B    | 400 * 1         | 400
+    // hex6  | A, C, B    | 400 * 1         | 400
+    // == light green
+    // hex7  | B, A, A    | 400 * 0.70      | 280
+    // hex8  | B, B, A    | 400 * 0.70      | 280
+    // hex9  | B, C, A    | 400 * 0.70      | 280
+    // == green
+    // hex10 | B, A, B    | 400 * 0.50      | 200
+    // hex11 | B, B, B    | 400 * 0.50      | 200
+    // hex12 | B, C, B    | 400 * 0.50      | 200
+    // == light blue
+    // hex13 | C, A, A    | 400 * 0.40     | 160
+    // hex14 | C, B, A    | 400 * 0.30     | 120
+    // hex15 | C, C, A    | 400 * 0.05     | 20
+    // == dark blue
+    // hex16 | C, A, B    | 400 * 0.20     | 80
+    // hex17 | C, B, B    | 400 * 0.15     | 60
+    // hex18 | C, C, B    | 400 * 0.03     | 12
+    // == gray
+    // hex19 | A, A, C    | 400 * 0.00     | 0
+    // hex20 | A, B, C    | 400 * 0.00     | 0
+    // hex21 | A, C, C    | 400 * 0.00     | 0
+    // hex22 | B, A, C    | 400 * 0.00     | 0
+    // hex23 | B, B, C    | 400 * 0.00     | 0
+    // hex24 | B, C, C    | 400 * 0.00     | 0
+    // hex25 | C, A, C    | 400 * 0.00     | 0
+    // hex26 | C, B, C    | 400 * 0.00     | 0
+    // hex27 | C, C, C    | 400 * 0.00     | 0
+    // -----------------------------------------------
+    //                                     = 4,292
 
-    assert_eq!(coverage_points.hotspot_points(&owner), dec!(1500));
+    assert_eq!(coverage_points.hotspot_points(&owner), dec!(4292.0));
 
     Ok(())
 }
