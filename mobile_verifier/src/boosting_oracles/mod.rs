@@ -1,7 +1,5 @@
 pub mod assignment;
 
-use std::collections::HashMap;
-
 use crate::{
     geofence::{Geofence, GeofenceValidator},
     Settings,
@@ -9,41 +7,39 @@ use crate::{
 pub use assignment::{Assignment, HexAssignments};
 use hextree::disktree::DiskTreeMap;
 
-pub fn make_hex_boost_data(
-    settings: &Settings,
-    usa_geofence: Geofence,
-) -> anyhow::Result<impl BoostedHexAssignments> {
-    let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
-    let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
-    let landtype_disktree = DiskTreeMap::open(&settings.landtype_data_set)?;
-
-    let urbanization = UrbanizationData::new(urban_disktree, usa_geofence);
-    let footfall_data = FootfallData::new(footfall_disktree);
-    let landtype_data = LandTypeData::new(landtype_disktree);
-
-    let hex_boost_data = HexBoostData::new(urbanization, footfall_data, landtype_data);
-
-    Ok(hex_boost_data)
-}
-
 pub trait BoostedHexAssignments: Send + Sync {
     fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments>;
 }
 
-trait HexAssignment: Send + Sync {
-    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
+pub struct HexBoostData {
+    urbanized: DiskTreeMap,
+    usa_geofence: Geofence,
+    footfall: DiskTreeMap,
+    landtype: DiskTreeMap,
 }
 
-impl<U, F, L> BoostedHexAssignments for HexBoostData<U, F, L>
-where
-    U: HexAssignment,
-    F: HexAssignment,
-    L: HexAssignment,
-{
+pub fn make_hex_boost_data(
+    settings: &Settings,
+    usa_geofence: Geofence,
+) -> anyhow::Result<HexBoostData> {
+    let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
+    let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
+    let landtype_disktree = DiskTreeMap::open(&settings.landtype_data_set)?;
+
+    let hex_boost_data = HexBoostData {
+        urbanized: urban_disktree,
+        usa_geofence,
+        footfall: footfall_disktree,
+        landtype: landtype_disktree,
+    };
+
+    Ok(hex_boost_data)
+}
+impl BoostedHexAssignments for HexBoostData {
     fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
-        let footfall = self.footfall.assignment(cell)?;
-        let urbanized = self.urbanization.assignment(cell)?;
-        let landtype = self.landtype.assignment(cell)?;
+        let footfall = self.footfall_assignment(cell)?;
+        let urbanized = self.urbanized_assignment(cell)?;
+        let landtype = self.landtype_assignment(cell)?;
 
         Ok(HexAssignments {
             footfall,
@@ -53,53 +49,42 @@ where
     }
 }
 
-pub struct HexBoostData<Urban, Foot, Land> {
-    pub urbanization: Urban,
-    pub footfall: Foot,
-    pub landtype: Land,
-}
+impl HexBoostData {
+    fn urbanized_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        if !self.usa_geofence.in_valid_region(&cell) {
+            return Ok(Assignment::C);
+        }
 
-pub struct UrbanizationData<Urban, Geo> {
-    urbanized: Urban,
-    usa_geofence: Geo,
-}
-
-pub struct FootfallData<Foot> {
-    footfall: Foot,
-}
-
-pub struct LandTypeData<Land> {
-    landtype: Land,
-}
-
-impl<Urban, Foot, Land> HexBoostData<Urban, Foot, Land> {
-    pub fn new(urbanization: Urban, footfall: Foot, landtype: Land) -> Self {
-        Self {
-            urbanization,
-            footfall,
-            landtype,
+        match self.urbanized.get(cell)?.is_some() {
+            true => Ok(Assignment::A),
+            false => Ok(Assignment::B),
         }
     }
-}
 
-impl<Urban, Geo> UrbanizationData<Urban, Geo> {
-    pub fn new(urbanized: Urban, usa_geofence: Geo) -> Self {
-        Self {
-            urbanized,
-            usa_geofence,
+    fn footfall_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        let Some((_, vals)) = self.footfall.get(cell)? else {
+            return Ok(Assignment::C);
+        };
+
+        match vals {
+            &[x] if x >= 1 => Ok(Assignment::A),
+            &[0] => Ok(Assignment::B),
+            other => anyhow::bail!("unexpected footfall disktree data: {cell:?} {other:?}"),
         }
     }
-}
 
-impl<Foot> FootfallData<Foot> {
-    pub fn new(footfall: Foot) -> Self {
-        Self { footfall }
-    }
-}
+    fn landtype_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        let Some((_, vals)) = self.landtype.get(cell)? else {
+            return Ok(Assignment::C);
+        };
 
-impl<Land> LandTypeData<Land> {
-    pub fn new(landtype: Land) -> Self {
-        Self { landtype }
+        anyhow::ensure!(
+            vals.len() == 1,
+            "unexpected landtype disktree data: {cell:?} {vals:?}"
+        );
+
+        let cover = WorldCover::try_from(vals[0])?;
+        Ok(cover.into())
     }
 }
 
@@ -118,86 +103,6 @@ impl DiskTreeLike for std::collections::HashSet<hextree::Cell> {
         match self.contains(&cell) {
             true => Ok(Some((cell, &[]))),
             false => Ok(None),
-        }
-    }
-}
-
-impl<Urban, Geo> HexAssignment for UrbanizationData<Urban, Geo>
-where
-    Urban: DiskTreeLike,
-    Geo: GeofenceValidator<hextree::Cell>,
-{
-    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        if !self.usa_geofence.in_valid_region(&cell) {
-            return Ok(Assignment::C);
-        }
-
-        match self.urbanized.get(cell)?.is_some() {
-            true => Ok(Assignment::A),
-            false => Ok(Assignment::B),
-        }
-    }
-}
-
-impl<Foot> HexAssignment for FootfallData<Foot>
-where
-    Foot: DiskTreeLike,
-{
-    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        let Some((_, vals)) = self.footfall.get(cell)? else {
-            return Ok(Assignment::C);
-        };
-
-        match vals {
-            &[x] if x >= 1 => Ok(Assignment::A),
-            &[0] => Ok(Assignment::B),
-            other => anyhow::bail!("unexpected footfall disktree data: {cell:?} {other:?}"),
-        }
-    }
-}
-
-impl<Land> HexAssignment for LandTypeData<Land>
-where
-    Land: DiskTreeLike,
-{
-    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        let Some((_, vals)) = self.landtype.get(cell)? else {
-            return Ok(Assignment::C);
-        };
-
-        let cover = match vals {
-            &[x] => WorldCover::try_from(x).map_err(|_| {
-                anyhow::anyhow!("unexpected landtype disktree value: {cell:?} {x:?}")
-            })?,
-            other => anyhow::bail!("unexpected landtype disktree data: {cell:?} {other:?}"),
-        };
-
-        Ok(Assignment::from(cover))
-    }
-}
-
-impl HexAssignment for LandTypeData<Assignment> {
-    fn assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        Ok(self.landtype)
-    }
-}
-
-impl HexAssignment for HashMap<hextree::Cell, bool> {
-    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        let assignment = match self.get(&cell) {
-            Some(true) => Assignment::A,
-            Some(false) => Assignment::B,
-            None => Assignment::C,
-        };
-        Ok(assignment)
-    }
-}
-
-impl HexAssignment for HashMap<hextree::Cell, Assignment> {
-    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        match self.get(&cell) {
-            Some(val) => Ok(*val),
-            None => anyhow::bail!("{cell:?} not found"),
         }
     }
 }
@@ -244,7 +149,6 @@ impl std::fmt::Display for WorldCover {
 }
 
 impl WorldCover {
-    #[allow(dead_code)]
     pub(crate) fn to_str(self) -> &'static str {
         match self {
             WorldCover::Tree => "TreeCover",
@@ -263,8 +167,8 @@ impl WorldCover {
 }
 
 impl TryFrom<u8> for WorldCover {
-    type Error = ();
-    fn try_from(other: u8) -> Result<WorldCover, ()> {
+    type Error = anyhow::Error;
+    fn try_from(other: u8) -> anyhow::Result<WorldCover, Self::Error> {
         let val = match other {
             10 => WorldCover::Tree,
             20 => WorldCover::Shrub,
@@ -277,7 +181,7 @@ impl TryFrom<u8> for WorldCover {
             90 => WorldCover::Wet,
             95 => WorldCover::Mangrove,
             100 => WorldCover::Moss,
-            _ => return Err(()),
+            other => anyhow::bail!("unexpected landtype disktree value: {other:?}"),
         };
         Ok(val)
     }

@@ -1,5 +1,5 @@
 use crate::{
-    boosting_oracles::{assignment::HexAssignments, BoostedHexAssignments},
+    boosting_oracles::{assignment::HexAssignments, BoostedHexAssignments, HexBoostData},
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized,
 };
@@ -64,24 +64,21 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
-pub struct CoverageDaemon<Hex> {
+pub struct CoverageDaemon {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
-    hex_boost_data: Hex,
+    hex_boost_data: HexBoostData,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     initial_boosting_reports: Option<Vec<OracleBoostingReportV1>>,
     coverage_obj_sink: FileSinkClient,
     oracle_boosting_sink: FileSinkClient,
 }
 
-impl<Hex> CoverageDaemon<Hex>
-where
-    Hex: BoostedHexAssignments,
-{
+impl CoverageDaemon {
     pub async fn new(
         pool: PgPool,
         auth_client: AuthorizationClient,
-        hex_boost_data: Hex,
+        hex_boost_data: HexBoostData,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
         oracle_boosting_sink: FileSinkClient,
@@ -290,10 +287,7 @@ async fn initialize_unassigned_hexes(
     Ok(boost_results)
 }
 
-impl<Hex> ManagedTask for CoverageDaemon<Hex>
-where
-    Hex: BoostedHexAssignments + 'static,
-{
+impl ManagedTask for CoverageDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,

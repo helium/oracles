@@ -170,14 +170,36 @@ pub fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
-pub struct MockHexAssignments;
+type MockAssignmentMap = HashMap<hextree::Cell, Assignment>;
+
+#[derive(Default)]
+pub struct MockHexAssignments {
+    footfall: MockAssignmentMap,
+    urbanized: MockAssignmentMap,
+    landtype: MockAssignmentMap,
+}
+
+impl MockHexAssignments {
+    #[allow(dead_code)]
+    pub fn new(
+        footfall: MockAssignmentMap,
+        urbanized: MockAssignmentMap,
+        landtype: MockAssignmentMap,
+    ) -> Self {
+        Self {
+            footfall,
+            urbanized,
+            landtype,
+        }
+    }
+}
 
 impl BoostedHexAssignments for MockHexAssignments {
-    fn assignments(&self, _cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
+    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
         Ok(HexAssignments {
-            footfall: Assignment::A,
-            urbanized: Assignment::A,
-            landtype: Assignment::A,
+            footfall: self.footfall.get(&cell).cloned().unwrap_or(Assignment::A),
+            urbanized: self.urbanized.get(&cell).cloned().unwrap_or(Assignment::A),
+            landtype: self.landtype.get(&cell).cloned().unwrap_or(Assignment::A),
         })
     }
 }
