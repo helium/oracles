@@ -1421,7 +1421,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=madninja/pin_tonic#a7a3fe49fb14d800c8ee641f9d7678ba6bdcdf58"
+source = "git+https://github.com/helium/proto?branch=master#e8d84a8a4a05f069a3ce4f90d67a525aa92b52f9"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3385,7 +3385,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=madninja/pin_tonic#a7a3fe49fb14d800c8ee641f9d7678ba6bdcdf58"
+source = "git+https://github.com/helium/proto?branch=master#e8d84a8a4a05f069a3ce4f90d67a525aa92b52f9"
 dependencies = [
  "bytes",
  "prost",
