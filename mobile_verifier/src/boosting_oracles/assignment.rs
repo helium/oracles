@@ -6,8 +6,8 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct HexAssignments {
     pub footfall: Assignment,
-    pub urbanized: Assignment,
     pub landtype: Assignment,
+    pub urbanized: Assignment,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, sqlx::Type)]
