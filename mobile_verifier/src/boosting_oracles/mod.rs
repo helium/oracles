@@ -83,33 +83,33 @@ impl HexBoostData {
             "unexpected landtype disktree data: {cell:?} {vals:?}"
         );
 
-        let cover = WorldCover::try_from(vals[0])?;
+        let cover = Landtype::try_from(vals[0])?;
         Ok(cover.into())
     }
 }
 
-impl From<WorldCover> for Assignment {
-    fn from(value: WorldCover) -> Self {
+impl From<Landtype> for Assignment {
+    fn from(value: Landtype) -> Self {
         match value {
-            WorldCover::Built => Assignment::A,
+            Landtype::Built => Assignment::A,
             //
-            WorldCover::Tree => Assignment::B,
-            WorldCover::Shrub => Assignment::B,
-            WorldCover::Grass => Assignment::B,
+            Landtype::Tree => Assignment::B,
+            Landtype::Shrub => Assignment::B,
+            Landtype::Grass => Assignment::B,
             //
-            WorldCover::Bare => Assignment::C,
-            WorldCover::Crop => Assignment::C,
-            WorldCover::Frozen => Assignment::C,
-            WorldCover::Water => Assignment::C,
-            WorldCover::Wet => Assignment::C,
-            WorldCover::Mangrove => Assignment::C,
-            WorldCover::Moss => Assignment::C,
+            Landtype::Bare => Assignment::C,
+            Landtype::Crop => Assignment::C,
+            Landtype::Frozen => Assignment::C,
+            Landtype::Water => Assignment::C,
+            Landtype::Wet => Assignment::C,
+            Landtype::Mangrove => Assignment::C,
+            Landtype::Moss => Assignment::C,
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WorldCover {
+pub enum Landtype {
     Tree = 10,
     Shrub = 20,
     Grass = 30,
@@ -123,45 +123,45 @@ pub enum WorldCover {
     Moss = 100,
 }
 
-impl std::fmt::Display for WorldCover {
+impl std::fmt::Display for Landtype {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.to_str())
     }
 }
 
-impl WorldCover {
+impl Landtype {
     pub(crate) fn to_str(self) -> &'static str {
         match self {
-            WorldCover::Tree => "TreeCover",
-            WorldCover::Shrub => "Shrubland",
-            WorldCover::Grass => "Grassland",
-            WorldCover::Crop => "Cropland",
-            WorldCover::Built => "BuiltUp",
-            WorldCover::Bare => "BareOrSparseVeg",
-            WorldCover::Frozen => "SnowAndIce",
-            WorldCover::Water => "Water",
-            WorldCover::Wet => "HerbaceousWetland",
-            WorldCover::Mangrove => "Mangroves",
-            WorldCover::Moss => "MossAndLichen",
+            Landtype::Tree => "TreeCover",
+            Landtype::Shrub => "Shrubland",
+            Landtype::Grass => "Grassland",
+            Landtype::Crop => "Cropland",
+            Landtype::Built => "BuiltUp",
+            Landtype::Bare => "BareOrSparseVeg",
+            Landtype::Frozen => "SnowAndIce",
+            Landtype::Water => "Water",
+            Landtype::Wet => "HerbaceousWetland",
+            Landtype::Mangrove => "Mangroves",
+            Landtype::Moss => "MossAndLichen",
         }
     }
 }
 
-impl TryFrom<u8> for WorldCover {
+impl TryFrom<u8> for Landtype {
     type Error = anyhow::Error;
-    fn try_from(other: u8) -> anyhow::Result<WorldCover, Self::Error> {
+    fn try_from(other: u8) -> anyhow::Result<Landtype, Self::Error> {
         let val = match other {
-            10 => WorldCover::Tree,
-            20 => WorldCover::Shrub,
-            30 => WorldCover::Grass,
-            40 => WorldCover::Crop,
-            50 => WorldCover::Built,
-            60 => WorldCover::Bare,
-            70 => WorldCover::Frozen,
-            80 => WorldCover::Water,
-            90 => WorldCover::Wet,
-            95 => WorldCover::Mangrove,
-            100 => WorldCover::Moss,
+            10 => Landtype::Tree,
+            20 => Landtype::Shrub,
+            30 => Landtype::Grass,
+            40 => Landtype::Crop,
+            50 => Landtype::Built,
+            60 => Landtype::Bare,
+            70 => Landtype::Frozen,
+            80 => Landtype::Water,
+            90 => Landtype::Wet,
+            95 => Landtype::Mangrove,
+            100 => Landtype::Moss,
             other => anyhow::bail!("unexpected landtype disktree value: {other:?}"),
         };
         Ok(val)
