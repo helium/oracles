@@ -88,25 +88,6 @@ impl HexBoostData {
     }
 }
 
-trait DiskTreeLike: Send + Sync {
-    fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>>;
-}
-
-impl DiskTreeLike for DiskTreeMap {
-    fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>> {
-        self.get(cell)
-    }
-}
-
-impl DiskTreeLike for std::collections::HashSet<hextree::Cell> {
-    fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>> {
-        match self.contains(&cell) {
-            true => Ok(Some((cell, &[]))),
-            false => Ok(None),
-        }
-    }
-}
-
 impl From<WorldCover> for Assignment {
     fn from(value: WorldCover) -> Self {
         match value {
