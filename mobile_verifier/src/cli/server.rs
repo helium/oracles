@@ -108,7 +108,8 @@ impl Cmd {
         let usa_region_paths = settings.usa_region_paths()?;
         tracing::info!(?usa_region_paths, "usa_geofence_regions");
 
-        let usa_geofence = Geofence::new(usa_region_paths, settings.usa_fencing_resolution()?)?;
+        let usa_geofence =
+            Geofence::from_paths(usa_region_paths, settings.usa_fencing_resolution()?)?;
 
         let cbrs_heartbeat_daemon = CellHeartbeatDaemon::new(
             pool.clone(),
@@ -128,7 +129,7 @@ impl Cmd {
             "usa_and_mexico_geofence_regions"
         );
 
-        let usa_and_mexico_geofence = Geofence::new(
+        let usa_and_mexico_geofence = Geofence::from_paths(
             usa_and_mexico_region_paths,
             settings.usa_and_mexico_fencing_resolution()?,
         )?;
