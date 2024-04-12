@@ -76,13 +76,13 @@ impl TryFrom<PacketRouterPacketReportV1> for PacketRouterPacketReport {
     type Error = Error;
 
     fn try_from(v: PacketRouterPacketReportV1) -> Result<Self> {
-        let data_rate = DataRate::from_i32(v.datarate).ok_or_else(|| {
+        let data_rate = DataRate::try_from(v.datarate).map_err(|_| {
             DecodeError::unsupported_datarate("iot_packet_router_packet_report_v1", v.datarate)
         })?;
-        let region = Region::from_i32(v.region).ok_or_else(|| {
+        let region = Region::try_from(v.region).map_err(|_| {
             DecodeError::unsupported_region("iot_packet_router_packet_report_v1", v.region)
         })?;
-        let packet_type = PacketType::from_i32(v.r#type).ok_or_else(|| {
+        let packet_type = PacketType::try_from(v.r#type).map_err(|_| {
             DecodeError::unsupported_packet_type("iot_packet_router_packet_report_v1", v.r#type)
         })?;
         let received_timestamp = v.timestamp()?;

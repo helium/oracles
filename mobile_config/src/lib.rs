@@ -39,9 +39,9 @@ pub enum KeyRole {
 
 impl KeyRole {
     pub fn from_i32(v: i32) -> anyhow::Result<Self> {
-        ProtoKeyRole::from_i32(v)
+        ProtoKeyRole::try_from(v)
             .map(|kr| kr.into())
-            .ok_or_else(|| anyhow::anyhow!("unsupported key role {}", v))
+            .map_err(|_| anyhow::anyhow!("unsupported key role {}", v))
     }
 }
 

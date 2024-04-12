@@ -86,7 +86,7 @@ impl MsgTimestamp<u64> for InvalidDataTransferIngestReport {
 impl TryFrom<InvalidDataTransferIngestReportV1> for InvalidDataTransferIngestReport {
     type Error = Error;
     fn try_from(v: InvalidDataTransferIngestReportV1) -> Result<Self> {
-        let reason = DataTransferIngestReportStatus::from_i32(v.reason).ok_or_else(|| {
+        let reason = DataTransferIngestReportStatus::try_from(v.reason).map_err(|_| {
             DecodeError::unsupported_status_reason("invalid_data_transfer_session_reason", v.reason)
         })?;
         Ok(Self {
