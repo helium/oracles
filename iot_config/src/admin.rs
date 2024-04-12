@@ -94,9 +94,9 @@ pub enum KeyType {
 
 impl KeyType {
     pub fn from_i32(v: i32) -> anyhow::Result<Self> {
-        ProtoKeyType::from_i32(v)
+        ProtoKeyType::try_from(v)
             .map(|kt| kt.into())
-            .ok_or_else(|| anyhow!("unsupported key type {}", v))
+            .map_err(|_| anyhow!("unsupported key type {}", v))
     }
 }
 

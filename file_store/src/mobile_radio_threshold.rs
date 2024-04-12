@@ -138,13 +138,12 @@ impl From<RadioThresholdIngestReport> for RadioThresholdIngestReportV1 {
 impl TryFrom<VerifiedRadioThresholdIngestReportV1> for VerifiedRadioThresholdIngestReport {
     type Error = Error;
     fn try_from(v: VerifiedRadioThresholdIngestReportV1) -> Result<Self> {
-        let status =
-            RadioThresholdReportVerificationStatus::from_i32(v.status).ok_or_else(|| {
-                DecodeError::unsupported_status_reason(
-                    "verified_radio_threshold_ingest_report_v1",
-                    v.status,
-                )
-            })?;
+        let status = RadioThresholdReportVerificationStatus::try_from(v.status).map_err(|_| {
+            DecodeError::unsupported_status_reason(
+                "verified_radio_threshold_ingest_report_v1",
+                v.status,
+            )
+        })?;
         Ok(Self {
             report: v
                 .report

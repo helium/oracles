@@ -158,17 +158,17 @@ impl Indexer {
                         r.discovery_location_amount,
                     )),
                     Some(MobileReward::ServiceProviderReward(r)) => {
-                        if let Some(sp) = ServiceProvider::from_i32(r.service_provider_id) {
-                            Ok((
-                                RewardKey {
-                                    key: sp.to_string(),
-                                    reward_type: RewardType::MobileServiceProvider,
-                                },
-                                r.amount,
-                            ))
-                        } else {
-                            bail!("failed to decode service provider")
-                        }
+                        ServiceProvider::try_from(r.service_provider_id)
+                            .map(|sp| {
+                                Ok((
+                                    RewardKey {
+                                        key: sp.to_string(),
+                                        reward_type: RewardType::MobileServiceProvider,
+                                    },
+                                    r.amount,
+                                ))
+                            })
+                            .map_err(|_| anyhow!("failed to decode service provider"))?
                     }
                     Some(MobileReward::UnallocatedReward(r)) => Ok((
                         RewardKey {

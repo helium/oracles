@@ -60,7 +60,7 @@ sqlx = {version = "0", features = [
   "runtime-tokio-rustls"
 ]}
 helium-anchor-gen = {git = "https://github.com/helium/helium-anchor-gen.git"}
-helium-crypto = {version = "0.8.1", features=["sqlx-postgres", "multisig"]}
+helium-crypto = {version = "0.8.4", features=["sqlx-postgres", "multisig"]}
 hextree = {git = "https://github.com/jaykickliter/HexTree", branch = "main", features = ["disktree"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 solana-client = "1.16"
@@ -78,7 +78,7 @@ rust_decimal = "1"
 rust_decimal_macros = "1"
 base64 = ">=0.21"
 sha2 = "0.10"
-tonic = {version = "0", features = ["tls", "tls-roots"]}
+tonic = {version = "0.10", features = ["tls", "tls-roots"]}
 http = "<=0.2"
 triggered = "0"
 futures = "*"

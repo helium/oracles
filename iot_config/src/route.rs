@@ -1073,9 +1073,9 @@ pub struct UnsupportedFlowTypeError(i32);
 
 impl FlowType {
     fn from_i32(v: i32) -> Result<Self, UnsupportedFlowTypeError> {
-        proto::FlowTypeV1::from_i32(v)
+        proto::FlowTypeV1::try_from(v)
             .map(|ft| ft.into())
-            .ok_or(UnsupportedFlowTypeError(v))
+            .map_err(|_| UnsupportedFlowTypeError(v))
     }
 }
 
@@ -1151,7 +1151,7 @@ impl From<proto::Protocol> for Protocol {
                 let mut mapping = BTreeMap::new();
                 for entry in gwmp.mapping {
                     let region =
-                        proto::Region::from_i32(entry.region).unwrap_or(proto::Region::Us915);
+                        proto::Region::try_from(entry.region).unwrap_or(proto::Region::Us915);
                     mapping.insert(region, entry.port);
                 }
                 Protocol::Gwmp(Gwmp { mapping })
