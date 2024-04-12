@@ -697,11 +697,10 @@ pub fn get_scheduled_tokens_for_oracles(duration: Duration) -> Decimal {
 mod test {
     use super::*;
     use crate::{
-        boosting_oracles::Assignment,
+        boosting_oracles::assignment::HexAssignments,
         cell_type::CellType,
         coverage::{CoveredHexStream, HexCoverage, Seniority},
-        data_session::HotspotDataSession,
-        data_session::{self, HotspotReward},
+        data_session::{self, HotspotDataSession, HotspotReward},
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
         reward_shares,
         speedtests::Speedtest,
@@ -1004,9 +1003,7 @@ mod test {
             signal_power: 0,
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
-            urbanized: Assignment::A,
-            footfall: Assignment::C,
-            landtype: Assignment::A,
+            assignments: HexAssignments::test_best(),
         }]
     }
 
@@ -1891,9 +1888,7 @@ mod test {
                             coverage_points: CoverageRewardPoints {
                                 boost_multiplier: NonZeroU32::new(1).unwrap(),
                                 coverage_points: dec!(10.0),
-                                urbanized: Assignment::A,
-                                footfall: Assignment::A,
-                                landtype: Assignment::A,
+                                hex_assignments: HexAssignments::test_best(),
                                 rank: None,
                             },
                             boosted_hex: BoostedHex {

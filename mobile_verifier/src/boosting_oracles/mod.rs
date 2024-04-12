@@ -6,13 +6,13 @@ use crate::{
     geofence::{Geofence, GeofenceValidator},
     Settings,
 };
-pub use assignment::Assignment;
+pub use assignment::{Assignment, HexAssignments};
 use hextree::disktree::DiskTreeMap;
 
 pub fn make_hex_boost_data(
     settings: &Settings,
     usa_geofence: Geofence,
-) -> anyhow::Result<HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>> {
+) -> anyhow::Result<impl BoostedHexAssignments> {
     let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
     let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
     let landtype_disktree = DiskTreeMap::open(&settings.landtype_data_set)?;
@@ -26,8 +26,31 @@ pub fn make_hex_boost_data(
     Ok(hex_boost_data)
 }
 
-pub trait HexAssignment: Send + Sync {
+pub trait BoostedHexAssignments: Send + Sync {
+    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments>;
+}
+
+trait HexAssignment: Send + Sync {
     fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
+}
+
+impl<U, F, L> BoostedHexAssignments for HexBoostData<U, F, L>
+where
+    U: HexAssignment,
+    F: HexAssignment,
+    L: HexAssignment,
+{
+    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
+        let footfall = self.footfall.assignment(cell)?;
+        let urbanized = self.urbanization.assignment(cell)?;
+        let landtype = self.landtype.assignment(cell)?;
+
+        Ok(HexAssignments {
+            footfall,
+            urbanized,
+            landtype,
+        })
+    }
 }
 
 pub struct HexBoostData<Urban, Foot, Land> {
@@ -156,12 +179,6 @@ where
 impl HexAssignment for LandTypeData<Assignment> {
     fn assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
         Ok(self.landtype)
-    }
-}
-
-impl HexAssignment for Assignment {
-    fn assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        Ok(*self)
     }
 }
 
