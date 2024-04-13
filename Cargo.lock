@@ -475,7 +475,7 @@ dependencies = [
  "ark-std",
  "derivative",
  "hashbrown 0.13.1",
- "itertools 0.10.5",
+ "itertools",
  "num-traits",
  "zeroize",
 ]
@@ -492,7 +492,7 @@ dependencies = [
  "ark-std",
  "derivative",
  "digest 0.10.7",
- "itertools 0.10.5",
+ "itertools",
  "num-bigint 0.4.3",
  "num-traits",
  "paste",
@@ -1421,7 +1421,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=mj/landtype#e23e25956f9a75941d6c1fd243e4eb0366cf3075"
+source = "git+https://github.com/helium/proto?branch=mj/landtype#d70a0a653ccb5e97cbeec8f9d175a82c487bfa9f"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -1431,7 +1431,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
 ]
 
@@ -3385,7 +3385,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=mj/landtype#e23e25956f9a75941d6c1fd243e4eb0366cf3075"
+source = "git+https://github.com/helium/proto?branch=mj/landtype#d70a0a653ccb5e97cbeec8f9d175a82c487bfa9f"
 dependencies = [
  "bytes",
  "prost",
@@ -3616,7 +3616,7 @@ dependencies = [
  "httpdate",
  "itoa 1.0.9",
  "pin-project-lite",
- "socket2 0.5.5",
+ "socket2 0.4.9",
  "tokio",
  "tower-service",
  "tracing",
@@ -3938,7 +3938,7 @@ dependencies = [
  "helium-proto",
  "http-serde",
  "iot-config",
- "itertools 0.12.0",
+ "itertools",
  "lazy_static",
  "metrics",
  "once_cell",
@@ -3978,15 +3978,6 @@ name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25db6b064527c5d482d0423354fcd07a89a2dfe07b67892e62411946db7f07b0"
 dependencies = [
  "either",
 ]
@@ -5333,7 +5324,7 @@ checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
  "heck 0.4.0",
- "itertools 0.12.0",
+ "itertools",
  "log",
  "multimap",
  "once_cell",
@@ -5353,7 +5344,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19de2de2a00075bf566bee3bd4db014b11587e84184d3f7a791bc17f1a8e9e48"
 dependencies = [
  "anyhow",
- "itertools 0.12.0",
+ "itertools",
  "proc-macro2 1.0.69",
  "quote 1.0.33",
  "syn 2.0.38",
@@ -6474,7 +6465,7 @@ dependencies = [
  "futures",
  "helium-anchor-gen",
  "helium-crypto",
- "itertools 0.12.0",
+ "itertools",
  "metrics",
  "serde",
  "sha2 0.10.6",
@@ -6773,7 +6764,7 @@ dependencies = [
  "console_log",
  "curve25519-dalek",
  "getrandom 0.2.10",
- "itertools 0.10.5",
+ "itertools",
  "js-sys",
  "lazy_static",
  "libc",
@@ -6813,7 +6804,7 @@ dependencies = [
  "bincode",
  "eager",
  "enum-iterator",
- "itertools 0.10.5",
+ "itertools",
  "libc",
  "log",
  "num-derive",
@@ -6865,7 +6856,7 @@ dependencies = [
  "async-mutex",
  "async-trait",
  "futures",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "quinn",
@@ -6995,7 +6986,7 @@ dependencies = [
  "ed25519-dalek-bip32",
  "generic-array",
  "hmac 0.12.1",
- "itertools 0.10.5",
+ "itertools",
  "js-sys",
  "lazy_static",
  "libsecp256k1",
@@ -7052,7 +7043,7 @@ dependencies = [
  "futures-util",
  "histogram",
  "indexmap 1.9.3",
- "itertools 0.10.5",
+ "itertools",
  "libc",
  "log",
  "nix",
@@ -7205,7 +7196,7 @@ dependencies = [
  "byteorder",
  "curve25519-dalek",
  "getrandom 0.1.16",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "merlin",
  "num-derive",
@@ -7329,7 +7320,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f87e292b4291f154971a43c3774364e2cbcaec599d3f5bf6fa9d122885dbc38a"
 dependencies = [
- "itertools 0.10.5",
+ "itertools",
  "nom",
  "unicode_categories",
 ]
@@ -8681,7 +8672,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "twox-hash",
  "xorf",
