@@ -70,31 +70,31 @@ impl HexAssignments {
 
         use Assignment::*;
         match (footfall, landtype, urbanized) {
-            // POI ≥ 1 Urbanized
+            // yellow - POI ≥ 1 Urbanized
             (A, A, A) => dec!(1.00),
             (A, B, A) => dec!(1.00),
             (A, C, A) => dec!(1.00),
-            // POI ≥ 1 Not Urbanized
+            // orange - POI ≥ 1 Not Urbanized
             (A, A, B) => dec!(1.00),
             (A, B, B) => dec!(1.00),
             (A, C, B) => dec!(1.00),
-            // Point of Interest Urbanized
+            // light green - Point of Interest Urbanized
             (B, A, A) => dec!(0.70),
             (B, B, A) => dec!(0.70),
             (B, C, A) => dec!(0.70),
-            // Point of Interest Not Urbanized
+            // dark green - Point of Interest Not Urbanized
             (B, A, B) => dec!(0.50),
             (B, B, B) => dec!(0.50),
             (B, C, B) => dec!(0.50),
-            // No POI Urbanized
+            // light blue - No POI Urbanized
             (C, A, A) => dec!(0.40),
             (C, B, A) => dec!(0.30),
             (C, C, A) => dec!(0.05),
-            // No POI Not Urbanized
+            // dark blue - No POI Not Urbanized
             (C, A, B) => dec!(0.20),
             (C, B, B) => dec!(0.15),
             (C, C, B) => dec!(0.03),
-            // Outside of USA
+            // gray - Outside of USA
             (_, _, C) => dec!(0.00),
         }
     }

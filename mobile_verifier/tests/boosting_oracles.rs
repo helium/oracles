@@ -146,34 +146,35 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     }
 
     let hexes = {
+        // NOTE(mj): Cell is mutated in constructor to keep elements aligned for readability
         let mut cell = CellIndex::try_from(0x8c2681a3064d9ff)?;
         use Assignment::*;
         vec![
-            // yellow
+            // yellow - POI ≥ 1 Urbanized
             new_hex_assingment(&mut cell, A, A, A, 1000),
             new_hex_assingment(&mut cell, A, B, A, 1000),
             new_hex_assingment(&mut cell, A, C, A, 1000),
-            // orange
+            // orange - POI ≥ 1 Not Urbanized
             new_hex_assingment(&mut cell, A, A, B, 1000),
             new_hex_assingment(&mut cell, A, B, B, 1000),
             new_hex_assingment(&mut cell, A, C, B, 1000),
-            // light green
+            // light green - Point of Interest Urbanized
             new_hex_assingment(&mut cell, B, A, A, 700),
             new_hex_assingment(&mut cell, B, B, A, 700),
             new_hex_assingment(&mut cell, B, C, A, 700),
-            // green
+            // dark green - Point of Interest Not Urbanized
             new_hex_assingment(&mut cell, B, A, B, 500),
             new_hex_assingment(&mut cell, B, B, B, 500),
             new_hex_assingment(&mut cell, B, C, B, 500),
-            // light blue
+            // light blue - No POI Urbanized
             new_hex_assingment(&mut cell, C, A, A, 400),
             new_hex_assingment(&mut cell, C, B, A, 300),
             new_hex_assingment(&mut cell, C, C, A, 50),
-            // dark blue
+            // dark blue - No POI Not Urbanized
             new_hex_assingment(&mut cell, C, A, B, 200),
             new_hex_assingment(&mut cell, C, B, B, 150),
             new_hex_assingment(&mut cell, C, C, B, 30),
-            // gray
+            // gray - Outside of USA
             new_hex_assingment(&mut cell, A, A, C, 0),
             new_hex_assingment(&mut cell, A, B, C, 0),
             new_hex_assingment(&mut cell, A, C, C, 0),
@@ -264,34 +265,35 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     }
 
     let hexes = {
+        // NOTE(mj): Cell is mutated in constructor to keep elements aligned for readability
         let mut cell = CellIndex::try_from(0x8c2681a3064d9ff)?;
         use Assignment::*;
         vec![
-            // yellow
+            // yellow - POI ≥ 1 Urbanized
             TestHex::new(&mut cell, A, A, A, 400),
             TestHex::new(&mut cell, A, B, A, 400),
             TestHex::new(&mut cell, A, C, A, 400),
-            // orange
+            // orange - POI ≥ 1 Not Urbanized
             TestHex::new(&mut cell, A, A, B, 400),
             TestHex::new(&mut cell, A, B, B, 400),
             TestHex::new(&mut cell, A, C, B, 400),
-            // light green
+            // light green - Point of Interest Urbanized
             TestHex::new(&mut cell, B, A, A, 280),
             TestHex::new(&mut cell, B, B, A, 280),
             TestHex::new(&mut cell, B, C, A, 280),
-            // green
+            // dark green - Point of Interest Not Urbanized
             TestHex::new(&mut cell, B, A, B, 200),
             TestHex::new(&mut cell, B, B, B, 200),
             TestHex::new(&mut cell, B, C, B, 200),
-            // light blue
+            // light blue - No POI Urbanized
             TestHex::new(&mut cell, C, A, A, 160),
             TestHex::new(&mut cell, C, B, A, 120),
             TestHex::new(&mut cell, C, C, A, 20),
-            // dark blue
+            // dark blue - No POI Not Urbanized
             TestHex::new(&mut cell, C, A, B, 80),
             TestHex::new(&mut cell, C, B, B, 60),
             TestHex::new(&mut cell, C, C, B, 12),
-            // gray
+            // gray - Outside of USA
             TestHex::new(&mut cell, A, A, C, 0),
             TestHex::new(&mut cell, A, B, C, 0),
             TestHex::new(&mut cell, A, C, C, 0),
@@ -411,31 +413,31 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     //        (Footfall, Landtype, Urbanized)
     // Hex   | Assignment | Points Equation | Sum
     // -----------------------------------------------
-    // == yellow
+    // == yellow - POI ≥ 1 Urbanized
     // hex1  | A, A, A    | 400 * 1         | 400
     // hex2  | A, B, A    | 400 * 1         | 400
     // hex3  | A, C, A    | 400 * 1         | 400
-    // == orange
+    // == orange - POI ≥ 1 Not Urbanized
     // hex4  | A, A, B    | 400 * 1         | 400
     // hex5  | A, B, B    | 400 * 1         | 400
     // hex6  | A, C, B    | 400 * 1         | 400
-    // == light green
+    // == light green - Point of Interest Urbanized
     // hex7  | B, A, A    | 400 * 0.70      | 280
     // hex8  | B, B, A    | 400 * 0.70      | 280
     // hex9  | B, C, A    | 400 * 0.70      | 280
-    // == green
+    // == dark green - Point of Interest Not Urbanized
     // hex10 | B, A, B    | 400 * 0.50      | 200
     // hex11 | B, B, B    | 400 * 0.50      | 200
     // hex12 | B, C, B    | 400 * 0.50      | 200
-    // == light blue
+    // == light blue - No POI Urbanized
     // hex13 | C, A, A    | 400 * 0.40     | 160
     // hex14 | C, B, A    | 400 * 0.30     | 120
     // hex15 | C, C, A    | 400 * 0.05     | 20
-    // == dark blue
+    // == dark blue - No POI Not Urbanized
     // hex16 | C, A, B    | 400 * 0.20     | 80
     // hex17 | C, B, B    | 400 * 0.15     | 60
     // hex18 | C, C, B    | 400 * 0.03     | 12
-    // == gray
+    // == gray - Outside of USA
     // hex19 | A, A, C    | 400 * 0.00     | 0
     // hex20 | A, B, C    | 400 * 0.00     | 0
     // hex21 | A, C, C    | 400 * 0.00     | 0
