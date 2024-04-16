@@ -175,7 +175,7 @@ where
             .await?
             .commit()
             .await?;
-        self.verified_report_sink.commit().await?;
+        self.verified_invalid_report_sink.commit().await?;
         Ok(())
     }
 
