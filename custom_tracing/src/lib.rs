@@ -9,6 +9,8 @@ use tracing_subscriber::{
     EnvFilter, Registry,
 };
 
+pub mod axum_layer;
+
 pub async fn init(og_filter: String, file: String) -> Result<()> {
     let (filtered_layer, reload_handle) =
         reload::Layer::new(tracing_subscriber::EnvFilter::new(og_filter.clone()));
