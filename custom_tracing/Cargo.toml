@@ -20,4 +20,4 @@ tracing-subscriber = { version = "0", default-features = true, features = [
 ] }
 tower-http = { version = "0", features = ["trace"] }
 tower-layer = "0"
-axum = "0.7"
+axum = { version = "0.7", features = ["tracing"] }
