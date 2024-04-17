@@ -225,7 +225,7 @@ async fn initialize_unassigned_hexes(
     hex_boost_data: &impl BoostedHexAssignments,
     pool: &Pool<Postgres>,
 ) -> Result<HashMap<Uuid, Vec<proto::OracleBoostingHexAssignment>>, anyhow::Error> {
-    const NUMBER_OF_FIELDS_IN_QUERY: u16 = 6;
+    const NUMBER_OF_FIELDS_IN_QUERY: u16 = 7;
     const ASSIGNMENTS_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
 
     let mut boost_results = HashMap::<Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
