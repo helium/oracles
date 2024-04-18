@@ -36,7 +36,7 @@ metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 task-manager = { path = "../task_manager" }
 rand = { workspace = true }
-custom-tracing = { path = "../custom_tracing" }
+custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 # TODO: Remove once layer is created in ^
 tower-http = { workspace = true }
 
