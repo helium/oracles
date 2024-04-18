@@ -2,6 +2,7 @@ use anyhow::Result;
 use futures::{channel::mpsc::channel, SinkExt, StreamExt};
 use notify::{event::DataChange, Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{fs, path::Path};
+use tracing::Span;
 use tracing_subscriber::{
     layer::SubscriberExt,
     reload::{self, Handle},
@@ -32,6 +33,11 @@ pub async fn init(og_filter: String, file: String) -> Result<()> {
     });
 
     Ok(())
+}
+
+pub fn record(field: &str, value: &str) {
+    Span::current().record(field, &tracing::field::display(value));
+    ()
 }
 
 #[derive(Clone)]
