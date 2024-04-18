@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 use ingest::{server_iot, server_mobile, Mode, Settings};
 use std::path;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -41,10 +40,7 @@ pub struct Server {}
 
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
-        tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(&settings.log))
-            .with(tracing_subscriber::fmt::layer())
-            .init();
+        custom_tracing::init(settings.log.clone(), "tracing".to_string()).await?;
 
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
