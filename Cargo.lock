@@ -2332,6 +2332,8 @@ dependencies = [
  "anyhow",
  "axum 0.7.4",
  "futures",
+ "helium-proto",
+ "http 0.2.11",
  "notify",
  "tokio",
  "tower-http",

@@ -10,8 +10,10 @@ use tracing_subscriber::{
     EnvFilter, Registry,
 };
 
-#[cfg(feature = "http")]
-pub mod axum_layer;
+#[cfg(feature = "grpc")]
+pub mod grpc_layer;
+#[cfg(feature = "http-1")]
+pub mod http_layer;
 
 pub async fn init(og_filter: String, file: String) -> Result<()> {
     let (filtered_layer, reload_handle) =
