@@ -10,6 +10,7 @@ use tracing_subscriber::{
     EnvFilter, Registry,
 };
 
+#[cfg(feature = "http")]
 pub mod axum_layer;
 
 pub async fn init(og_filter: String, file: String) -> Result<()> {
