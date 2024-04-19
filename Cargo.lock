@@ -4492,6 +4492,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "poc-metrics",
  "prost",
+ "rand 0.8.5",
  "retainer",
  "serde",
  "serde_json",
