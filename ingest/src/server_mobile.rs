@@ -26,11 +26,6 @@ use tonic::{
     metadata::{Ascii, MetadataValue},
     transport, Request, Response, Status,
 };
-use tower_http::{
-    trace::{DefaultOnFailure, DefaultOnResponse, TraceLayer},
-    LatencyUnit,
-};
-use tracing::Level;
 
 const INGEST_WAIT_DURATION_MINUTES: i64 = 15;
 
@@ -59,21 +54,8 @@ impl ManagedTask for GrpcServer {
         let api_token = self.api_token.clone();
         let address = self.address;
         Box::pin(async move {
-            let tracing_layer = TraceLayer::new_for_grpc()
-                .make_span_with(make_span)
-                .on_response(
-                    DefaultOnResponse::new()
-                        .level(Level::DEBUG)
-                        .latency_unit(LatencyUnit::Micros),
-                )
-                .on_failure(
-                    DefaultOnFailure::new()
-                        .level(Level::WARN)
-                        .latency_unit(LatencyUnit::Micros),
-                );
-
             transport::Server::builder()
-                .layer(tracing_layer)
+                .layer(custom_tracing::grpc_layer::new(make_span))
                 .layer(poc_metrics::request_layer!("ingest_server_grpc_connection"))
                 .add_service(poc_mobile::Server::with_interceptor(
                     *self,
