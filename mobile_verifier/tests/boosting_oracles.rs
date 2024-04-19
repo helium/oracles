@@ -205,9 +205,9 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     let mut urbanized = HashMap::<hextree::Cell, Assignment>::new();
     let mut landtype = HashMap::<hextree::Cell, Assignment>::new();
     for hex in hexes.iter() {
-        urbanized.insert(hex_cell(&hex.location), hex.urbanized.try_into()?);
-        footfall.insert(hex_cell(&hex.location), hex.footfall.try_into()?);
-        landtype.insert(hex_cell(&hex.location), hex.landtype.try_into()?);
+        urbanized.insert(hex_cell(&hex.location), hex.urbanized().into());
+        footfall.insert(hex_cell(&hex.location), hex.footfall().into());
+        landtype.insert(hex_cell(&hex.location), hex.landtype().into());
     }
 
     let mut transaction = pool.begin().await?;

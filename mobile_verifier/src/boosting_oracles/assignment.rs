@@ -1,4 +1,4 @@
-use helium_proto::services::poc_mobile::oracle_boosting_hex_assignment;
+use helium_proto::services::poc_mobile::oracle_boosting_hex_assignment::Assignment as ProtoAssignment;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::fmt;
@@ -19,7 +19,7 @@ pub enum Assignment {
     C,
 }
 
-impl From<Assignment> for oracle_boosting_hex_assignment::Assignment {
+impl From<Assignment> for ProtoAssignment {
     fn from(assignment: Assignment) -> Self {
         match assignment {
             Assignment::A => Self::A,
@@ -31,19 +31,16 @@ impl From<Assignment> for oracle_boosting_hex_assignment::Assignment {
 
 impl From<Assignment> for i32 {
     fn from(assignment: Assignment) -> i32 {
-        oracle_boosting_hex_assignment::Assignment::from(assignment) as i32
+        ProtoAssignment::from(assignment) as i32
     }
 }
 
-impl TryFrom<i32> for Assignment {
-    type Error = anyhow::Error;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+impl From<ProtoAssignment> for Assignment {
+    fn from(value: ProtoAssignment) -> Self {
         match value {
-            0 => Ok(Assignment::A),
-            1 => Ok(Assignment::B),
-            2 => Ok(Assignment::C),
-            other => Err(anyhow::anyhow!("could not make Assignment from {other}")),
+            ProtoAssignment::A => Assignment::A,
+            ProtoAssignment::B => Assignment::B,
+            ProtoAssignment::C => Assignment::C,
         }
     }
 }
