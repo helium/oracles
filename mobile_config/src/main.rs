@@ -73,7 +73,7 @@ impl Daemon {
 
         let listen_addr = settings.listen_addr()?;
 
-        let (key_cache_updater, key_cache) = KeyCache::new(settings, &pool).await?;
+        let (key_cache_updater, key_cache) = KeyCache::from_settings(settings, &pool).await?;
 
         let admin_svc =
             AdminService::new(settings, key_cache.clone(), key_cache_updater, pool.clone())?;

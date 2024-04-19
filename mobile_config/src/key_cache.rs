@@ -13,7 +13,13 @@ pub struct KeyCache {
 }
 
 impl KeyCache {
-    pub async fn new(
+    pub fn new(stored_keys: CacheKeys) -> (watch::Sender<CacheKeys>, Self) {
+        let (cache_sender, cache_receiver) = watch::channel(stored_keys);
+
+        (cache_sender, Self { cache_receiver })
+    }
+
+    pub async fn from_settings(
         settings: &Settings,
         db: impl sqlx::PgExecutor<'_> + Copy,
     ) -> anyhow::Result<(watch::Sender<CacheKeys>, Self)> {
@@ -22,9 +28,7 @@ impl KeyCache {
         let mut stored_keys = db::fetch_stored_keys(db).await?;
         stored_keys.insert((config_admin, KeyRole::Administrator));
 
-        let (cache_sender, cache_receiver) = watch::channel(stored_keys);
-
-        Ok((cache_sender, Self { cache_receiver }))
+        Ok(Self::new(stored_keys))
     }
 
     pub fn verify_signature<R>(&self, signer: &PublicKey, request: &R) -> anyhow::Result<()>
