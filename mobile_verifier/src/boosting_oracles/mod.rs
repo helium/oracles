@@ -220,39 +220,6 @@ mod tests {
         let no_poi_grass_outside_us = hextree::Cell::from_raw(0x8c2681a306525ff)?;
         let no_poi_water_outside_us = hextree::Cell::from_raw(0x8c2681a306527ff)?;
 
-        let all_cells = vec![
-            poi_built_urbanized,
-            poi_grass_urbanized,
-            poi_water_urbanized,
-            poi_built_not_urbanized,
-            poi_grass_not_urbanized,
-            poi_water_not_urbanized,
-            poi_no_data_built_urbanized,
-            poi_no_data_grass_urbanized,
-            poi_no_data_water_urbanized,
-            poi_no_data_built_not_urbanized,
-            poi_no_data_grass_not_urbanized,
-            poi_no_data_water_not_urbanized,
-            no_poi_built_urbanized,
-            no_poi_grass_urbanized,
-            no_poi_water_urbanized,
-            no_poi_built_not_urbanized,
-            no_poi_grass_not_urbanized,
-            no_poi_water_not_urbanized,
-            poi_built_outside_us,
-            poi_grass_outside_us,
-            poi_water_outside_us,
-            poi_no_data_built_outside_us,
-            poi_no_data_grass_outside_us,
-            poi_no_data_water_outside_us,
-            no_poi_built_outside_us,
-            no_poi_grass_outside_us,
-            no_poi_water_outside_us,
-        ];
-        for cell in all_cells {
-            println!("Cell: {cell:?}");
-        }
-
         // Footfall Data
         // POI         - footfalls > 1 for a POI across hexes
         // POI No Data - No footfalls for a POI across any hexes
