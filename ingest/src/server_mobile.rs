@@ -112,6 +112,8 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
+        custom_tracing::record("pub_key", bs58::encode(event.pub_key.clone()).into_string());
+
         let report = self
             .verify_public_key(event.pub_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
@@ -133,6 +135,8 @@ impl poc_mobile::PocMobile for GrpcServer {
     ) -> GrpcResult<CellHeartbeatRespV1> {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+
+        custom_tracing::record("pub_key", bs58::encode(event.pub_key.clone()).into_string());
 
         let report = self
             .verify_public_key(event.pub_key.as_ref())
@@ -156,6 +160,8 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
+        custom_tracing::record("pub_key", bs58::encode(event.pub_key.clone()).into_string());
+
         let report = self
             .verify_public_key(event.pub_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
@@ -177,6 +183,8 @@ impl poc_mobile::PocMobile for GrpcServer {
     ) -> GrpcResult<DataTransferSessionRespV1> {
         let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+
+        custom_tracing::record("pub_key", bs58::encode(event.pub_key.clone()).into_string());
 
         let report = self
             .verify_public_key(event.pub_key.as_ref())
@@ -202,6 +210,16 @@ impl poc_mobile::PocMobile for GrpcServer {
         let event = request.into_inner();
         let subscriber_id = event.subscriber_id.clone();
         let timestamp_millis = event.timestamp;
+
+        custom_tracing::record(
+            "pub_key",
+            bs58::encode(event.carrier_pub_key.clone()).into_string(),
+        );
+
+        custom_tracing::record(
+            "subscriber_id",
+            bs58::encode(subscriber_id.clone()).into_string(),
+        );
 
         let report = self
             .verify_public_key(event.carrier_pub_key.as_ref())
@@ -236,6 +254,11 @@ impl poc_mobile::PocMobile for GrpcServer {
         let hotspot_pubkey = event.hotspot_pubkey.clone();
         let cbsd_id = event.cbsd_id.clone();
         let threshold_timestamp = event.threshold_timestamp;
+
+        custom_tracing::record(
+            "pub_key",
+            bs58::encode(hotspot_pubkey.clone()).into_string(),
+        );
 
         let report = self
             .verify_public_key(event.carrier_pub_key.as_ref())
@@ -272,6 +295,11 @@ impl poc_mobile::PocMobile for GrpcServer {
         let cbsd_id = event.cbsd_id.clone();
         let invalidated_timestamp = event.timestamp;
 
+        custom_tracing::record(
+            "pub_key",
+            bs58::encode(hotspot_pubkey.clone()).into_string(),
+        );
+
         let report = self
             .verify_public_key(event.carrier_pub_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
@@ -306,6 +334,8 @@ impl poc_mobile::PocMobile for GrpcServer {
     ) -> GrpcResult<CoverageObjectRespV1> {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+
+        custom_tracing::record("pub_key", bs58::encode(event.pub_key.clone()).into_string());
 
         let report = self
             .verify_public_key(event.pub_key.as_ref())
