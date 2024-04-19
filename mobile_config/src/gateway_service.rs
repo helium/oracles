@@ -47,6 +47,23 @@ impl GatewayService {
         Err(Status::permission_denied("unauthorized request signature"))
     }
 
+    fn verify_request_signature_for_info<R>(
+        &self,
+        address: &PublicKey,
+        signer: &PublicKey,
+        request: &R,
+    ) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        if address == signer && request.verify(signer).is_ok() {
+            tracing::debug!(%signer, "self authorized");
+            return Ok(());
+        }
+
+        self.verify_request_signature(signer, request)
+    }
+
     fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
         self.signing_key
             .sign(response)
@@ -61,7 +78,8 @@ impl mobile_config::Gateway for GatewayService {
         telemetry::count_request("gateway", "info");
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request)?;
+        let address = verify_public_key(&request.address)?;
+        self.verify_request_signature_for_info(&address, &signer, &request)?;
 
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info");
