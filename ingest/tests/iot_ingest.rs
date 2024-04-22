@@ -2,7 +2,7 @@ use std::{net::SocketAddr, str::FromStr};
 
 use backon::{ExponentialBuilder, Retryable};
 use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
-use helium_crypto::{KeyTag, KeyType, Keypair, Network, PublicKey, Sign};
+use helium_crypto::{KeyTag, Keypair, Network, PublicKey, Sign};
 use helium_proto::services::poc_lora::{
     lora_stream_request_v1::Request as StreamRequest,
     lora_stream_response_v1::Response as StreamResponse, poc_lora_client::PocLoraClient,
@@ -555,13 +555,7 @@ fn create_test_server(
 }
 
 fn generate_keypair() -> Keypair {
-    Keypair::generate(
-        KeyTag {
-            network: Network::MainNet,
-            key_type: KeyType::Ed25519,
-        },
-        &mut OsRng,
-    )
+    Keypair::generate(KeyTag::default(), &mut OsRng)
 }
 
 fn seconds(s: u64) -> std::time::Duration {
