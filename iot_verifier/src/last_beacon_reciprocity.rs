@@ -31,6 +31,23 @@ impl LastBeaconReciprocity {
         .await?)
     }
 
+    pub async fn get_all_since<'c, E>(
+        executor: E,
+        timestamp: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<Self>>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres> + 'c,
+    {
+        Ok(
+            sqlx::query_as::<_, Self>(
+                r#" select * from last_beacon_recip where timestamp >= $1; "#,
+            )
+            .bind(timestamp)
+            .fetch_all(executor)
+            .await?,
+        )
+    }
+
     pub async fn update_last_timestamp(
         txn: &mut Transaction<'_, Postgres>,
         id: &PublicKeyBinary,
