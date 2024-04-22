@@ -123,6 +123,7 @@ impl Daemon {
         TaskManager::builder()
             .add_task(grpc_server)
             .add_task(db_cleaner)
+            .build()
             .start()
             .await
     }

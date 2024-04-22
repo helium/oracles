@@ -17,16 +17,25 @@ pub struct TaskManager {
     tasks: Vec<Box<dyn ManagedTask>>,
 }
 
+impl ManagedTask for TaskManager {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.do_start(Box::pin(shutdown)))
+    }
+}
+
 pub struct TaskManagerBuilder {
     tasks: Vec<Box<dyn ManagedTask>>,
 }
 
-pub struct StopableLocalFuture {
+struct StoppableLocalFuture {
     shutdown_trigger: triggered::Trigger,
     future: LocalBoxFuture<'static, anyhow::Result<()>>,
 }
 
-impl Future for StopableLocalFuture {
+impl Future for StoppableLocalFuture {
     type Output = anyhow::Result<()>;
 
     fn poll(
@@ -69,31 +78,27 @@ impl TaskManager {
         self.tasks.push(Box::new(task));
     }
 
-    pub async fn start(self, listener: Option<triggered::Listener>) -> anyhow::Result<()> {
-        let shutdown_triggers = create_triggers(self.tasks.len());
+    pub async fn start(self) -> anyhow::Result<()> {
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
+        let shutdown = Box::pin(
+            futures::future::select(
+                Box::pin(async move { sigterm.recv().await }),
+                Box::pin(signal::ctrl_c()),
+            )
+            .map(|_| ()),
+        );
+        self.do_start(shutdown).await
+    }
 
-        let mut futures = start_futures(shutdown_triggers.clone(), self.tasks);
-
-        let mut shutdown: LocalBoxFuture<'static, ()> = match listener {
-            None => {
-                let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-                Box::pin(
-                    futures::future::select(
-                        Box::pin(async move { sigterm.recv().await }),
-                        Box::pin(signal::ctrl_c()),
-                    )
-                    .map(|_| ()),
-                )
-            }
-            Some(listener) => Box::pin(listener),
-        };
+    async fn do_start(self, mut shutdown: LocalBoxFuture<'static, ()>) -> anyhow::Result<()> {
+        let mut futures = start_futures(self.tasks);
 
         loop {
             if futures.is_empty() {
                 break;
             }
 
-            let mut select = select_all(futures.into_iter());
+            let mut select = select_all(futures);
 
             tokio::select! {
                 _ = &mut shutdown => {
@@ -124,37 +129,22 @@ impl TaskManagerBuilder {
     pub fn build(self) -> TaskManager {
         TaskManager { tasks: self.tasks }
     }
-
-    pub fn start_with_listener(
-        self,
-        listener: triggered::Listener,
-    ) -> impl Future<Output = anyhow::Result<()>> {
-        self.build().start(Some(listener))
-    }
-
-    pub fn start(self) -> impl Future<Output = anyhow::Result<()>> {
-        self.build().start(None)
-    }
 }
 
-fn start_futures(
-    shutdown_triggers: Vec<(triggered::Trigger, triggered::Listener)>,
-    tasks: Vec<Box<dyn ManagedTask>>,
-) -> Vec<StopableLocalFuture> {
-    shutdown_triggers
+fn start_futures(tasks: Vec<Box<dyn ManagedTask>>) -> Vec<StoppableLocalFuture> {
+    tasks
         .into_iter()
-        .zip(tasks)
-        .map(
-            |((shutdown_trigger, shutdown_listener), task)| StopableLocalFuture {
-                shutdown_trigger,
-                future: task.start_task(shutdown_listener),
-            },
-        )
+        .map(|task| {
+            let (trigger, listener) = triggered::trigger();
+            StoppableLocalFuture {
+                shutdown_trigger: trigger,
+                future: task.start_task(listener),
+            }
+        })
         .collect()
 }
 
-#[allow(clippy::manual_try_fold)]
-async fn stop_all(futures: Vec<StopableLocalFuture>) -> anyhow::Result<()> {
+async fn stop_all(futures: Vec<StoppableLocalFuture>) -> anyhow::Result<()> {
     #[allow(clippy::manual_try_fold)]
     futures::stream::iter(futures.into_iter().rev())
         .then(|local| async move {
@@ -167,41 +157,12 @@ async fn stop_all(futures: Vec<StopableLocalFuture>) -> anyhow::Result<()> {
         .collect()
 }
 
-fn create_triggers(n: usize) -> Vec<(triggered::Trigger, triggered::Listener)> {
-    (0..n).fold(Vec::new(), |mut vec, _| {
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        vec.push((shutdown_trigger, shutdown_listener));
-        vec
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::anyhow;
     use futures::TryFutureExt;
     use tokio::sync::mpsc;
-
-    struct NestedTask {
-        task: TestTask,
-        children: Vec<TestTask>,
-    }
-
-    impl ManagedTask for NestedTask {
-        fn start_task(
-            self: Box<Self>,
-            shutdown_listener: triggered::Listener,
-        ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-            let NestedTask { task, children } = *self;
-
-            let mut builder = children
-                .into_iter()
-                .fold(TaskManager::builder(), |b, child| b.add_task(child));
-
-            builder = builder.add_task(task);
-            Box::pin(builder.start_with_listener(shutdown_listener))
-        }
-    }
 
     struct TestTask {
         name: &'static str,
@@ -249,6 +210,7 @@ mod tests {
                 result: Ok(()),
                 sender: sender.clone(),
             })
+            .build()
             .start()
             .await;
 
@@ -280,6 +242,7 @@ mod tests {
                 result: Ok(()),
                 sender: sender.clone(),
             })
+            .build()
             .start()
             .await;
 
@@ -312,6 +275,7 @@ mod tests {
                 result: Err(anyhow!("second")),
                 sender: sender.clone(),
             })
+            .build()
             .start()
             .await;
 
@@ -323,40 +287,6 @@ mod tests {
 
     #[tokio::test]
     async fn nested_tasks_will_stop_parent_then_move_up() {
-        let (sender, mut receiver) = mpsc::channel(5);
-
-        let result = TaskManager::builder()
-            .add_task(TestTask {
-                name: "task-1",
-                delay: 200,
-                result: Ok(()),
-                sender: sender.clone(),
-            })
-            .add_task(NestedTask {
-                children: vec![TestTask {
-                    name: "nested-task-1",
-                    delay: 100,
-                    result: Err(anyhow!("error")),
-                    sender: sender.clone(),
-                }],
-                task: TestTask {
-                    name: "parent-task-2",
-                    delay: 300,
-                    result: Ok(()),
-                    sender: sender.clone(),
-                },
-            })
-            .start()
-            .await;
-
-        assert_eq!(Some("nested-task-1"), receiver.recv().await);
-        assert_eq!(Some("parent-task-2"), receiver.recv().await);
-        assert_eq!(Some("task-1"), receiver.recv().await);
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn nested_tasks_will_stop_parent_then_move_up_2() {
         let (sender, mut receiver) = mpsc::channel(10);
 
         let result = TaskManager::builder()
@@ -366,56 +296,57 @@ mod tests {
                 result: Ok(()),
                 sender: sender.clone(),
             })
-            .add_task(NestedTask {
-                children: vec![
-                    TestTask {
+            .add_task(
+                TaskManager::builder()
+                    .add_task(TestTask {
                         name: "task-2-1",
                         delay: 500,
                         result: Ok(()),
                         sender: sender.clone(),
-                    },
-                    TestTask {
+                    })
+                    .add_task(TestTask {
                         name: "task-2-2",
                         delay: 100,
                         result: Err(anyhow!("error")),
                         sender: sender.clone(),
-                    },
-                    TestTask {
+                    })
+                    .add_task(TestTask {
                         name: "task-2-3",
                         delay: 500,
                         result: Ok(()),
                         sender: sender.clone(),
-                    },
-                ],
-                task: TestTask {
-                    name: "task-2",
-                    delay: 500,
-                    result: Ok(()),
-                    sender: sender.clone(),
-                },
-            })
-            .add_task(NestedTask {
-                children: vec![
-                    TestTask {
+                    })
+                    .add_task(TestTask {
+                        name: "task-2",
+                        delay: 500,
+                        result: Ok(()),
+                        sender: sender.clone(),
+                    })
+                    .build(),
+            )
+            .add_task(
+                TaskManager::builder()
+                    .add_task(TestTask {
                         name: "task-3-1",
                         delay: 1000,
                         result: Ok(()),
                         sender: sender.clone(),
-                    },
-                    TestTask {
+                    })
+                    .add_task(TestTask {
                         name: "task-3-2",
                         delay: 1000,
                         result: Ok(()),
                         sender: sender.clone(),
-                    },
-                ],
-                task: TestTask {
-                    name: "task-3",
-                    delay: 1000,
-                    result: Ok(()),
-                    sender: sender.clone(),
-                },
-            })
+                    })
+                    .add_task(TestTask {
+                        name: "task-3",
+                        delay: 1000,
+                        result: Ok(()),
+                        sender: sender.clone(),
+                    })
+                    .build(),
+            )
+            .build()
             .start()
             .await;
 

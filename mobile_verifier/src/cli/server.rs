@@ -389,6 +389,7 @@ impl Cmd {
             .add_task(radio_threshold_ingest_server)
             .add_task(invalidated_radio_threshold_ingest_server)
             .add_task(data_session_ingestor)
+            .build()
             .start()
             .await
     }

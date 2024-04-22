@@ -107,7 +107,11 @@ impl Daemon {
             hex_boosting_svc,
         };
 
-        TaskManager::builder().add_task(grpc_server).start().await
+        TaskManager::builder()
+            .add_task(grpc_server)
+            .build()
+            .start()
+            .await
     }
 }
 
