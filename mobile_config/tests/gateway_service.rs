@@ -79,13 +79,7 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
 }
 
 fn make_keypair() -> Keypair {
-    Keypair::generate(
-        KeyTag {
-            network: helium_crypto::Network::MainNet,
-            key_type: helium_crypto::KeyType::Ed25519,
-        },
-        &mut rand::rngs::OsRng,
-    )
+    Keypair::generate(KeyTag::default(), &mut rand::rngs::OsRng)
 }
 
 fn make_signed_info_request(address: &PublicKey, signer: &Keypair) -> proto::GatewayInfoReqV1 {

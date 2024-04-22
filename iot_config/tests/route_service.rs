@@ -3,7 +3,7 @@ use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use backon::{ExponentialBuilder, Retryable};
 use chrono::Utc;
 use futures::{Future, StreamExt, TryFutureExt};
-use helium_crypto::{KeyTag, KeyType as CryptoKeyType, Keypair, Network, PublicKey, Sign};
+use helium_crypto::{KeyTag, Keypair, PublicKey, Sign};
 use helium_proto::services::iot_config::{
     self as proto, config_org_client::OrgClient, config_route_client::RouteClient, RouteStreamReqV1,
 };
@@ -487,13 +487,7 @@ fn socket_addr(port: u64) -> anyhow::Result<SocketAddr> {
 }
 
 fn generate_keypair() -> Keypair {
-    Keypair::generate(
-        KeyTag {
-            network: Network::MainNet,
-            key_type: CryptoKeyType::Ed25519,
-        },
-        &mut OsRng,
-    )
+    Keypair::generate(KeyTag::default(), &mut OsRng)
 }
 
 fn get_port() -> u64 {
