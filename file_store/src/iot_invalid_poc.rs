@@ -68,10 +68,9 @@ impl TryFrom<LoraInvalidBeaconReportV1> for IotInvalidBeaconReport {
     type Error = Error;
     fn try_from(v: LoraInvalidBeaconReportV1) -> Result<Self> {
         let inv_reason = v.reason;
-        let invalid_reason: InvalidReason =
-            InvalidReason::from_i32(inv_reason).ok_or_else(|| {
-                DecodeError::unsupported_invalid_reason("iot_invalid_beacon_report_v1", inv_reason)
-            })?;
+        let invalid_reason: InvalidReason = InvalidReason::try_from(inv_reason).map_err(|_| {
+            DecodeError::unsupported_invalid_reason("iot_invalid_beacon_report_v1", inv_reason)
+        })?;
         Ok(Self {
             received_timestamp: v.timestamp()?,
             reason: invalid_reason,
@@ -107,13 +106,12 @@ impl TryFrom<LoraInvalidWitnessReportV1> for IotInvalidWitnessReport {
     type Error = Error;
     fn try_from(v: LoraInvalidWitnessReportV1) -> Result<Self> {
         let inv_reason = v.reason;
-        let invalid_reason: InvalidReason =
-            InvalidReason::from_i32(inv_reason).ok_or_else(|| {
-                DecodeError::unsupported_invalid_reason("iot_invalid_witness_report_v1", inv_reason)
-            })?;
+        let invalid_reason: InvalidReason = InvalidReason::try_from(inv_reason).map_err(|_| {
+            DecodeError::unsupported_invalid_reason("iot_invalid_witness_report_v1", inv_reason)
+        })?;
         let participant_side = v.participant_side;
-        let side: InvalidParticipantSide = InvalidParticipantSide::from_i32(participant_side)
-            .ok_or_else(|| {
+        let side: InvalidParticipantSide = InvalidParticipantSide::try_from(participant_side)
+            .map_err(|_| {
                 DecodeError::unsupported_participant_side(
                     "iot_invalid_witness_report_v1",
                     participant_side,

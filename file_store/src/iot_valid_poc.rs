@@ -168,17 +168,17 @@ impl TryFrom<LoraVerifiedWitnessReportV1> for IotVerifiedWitnessReport {
     type Error = Error;
     fn try_from(v: LoraVerifiedWitnessReportV1) -> Result<Self> {
         let received_timestamp = v.timestamp()?;
-        let status = VerificationStatus::from_i32(v.status).ok_or_else(|| {
+        let status = VerificationStatus::try_from(v.status).map_err(|_| {
             DecodeError::unsupported_status_reason("iot_verified_witness_report_v1", v.status)
         })?;
-        let invalid_reason = InvalidReason::from_i32(v.invalid_reason).ok_or_else(|| {
+        let invalid_reason = InvalidReason::try_from(v.invalid_reason).map_err(|_| {
             DecodeError::unsupported_invalid_reason(
                 "iot_verified_witness_report_v1",
                 v.invalid_reason,
             )
         })?;
         let participant_side =
-            InvalidParticipantSide::from_i32(v.participant_side).ok_or_else(|| {
+            InvalidParticipantSide::try_from(v.participant_side).map_err(|_| {
                 DecodeError::unsupported_participant_side(
                     "iot_verified_witness_report_v1",
                     v.participant_side,

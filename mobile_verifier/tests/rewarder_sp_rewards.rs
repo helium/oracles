@@ -76,7 +76,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     if let Ok((sp_reward, unallocated_reward)) = rewards {
         assert_eq!(
             SP_1.to_string(),
-            ServiceProvider::from_i32(sp_reward.service_provider_id)
+            ServiceProvider::try_from(sp_reward.service_provider_id)
                 .unwrap()
                 .to_string()
         );

@@ -107,7 +107,7 @@ impl TryFrom<RadioHexSignalLevelProto> for RadioHexSignalLevel {
 
     fn try_from(v: RadioHexSignalLevelProto) -> Result<Self> {
         Ok(Self {
-            signal_level: SignalLevel::from_i32(v.signal_level).ok_or_else(|| {
+            signal_level: SignalLevel::try_from(v.signal_level).map_err(|_| {
                 DecodeError::unsupported_signal_level("coverage_object_req_v1", v.signal_level)
             })?,
             signal_power: v.signal_power,

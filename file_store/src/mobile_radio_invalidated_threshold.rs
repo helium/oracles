@@ -49,7 +49,7 @@ impl MsgDecode for VerifiedInvalidatedRadioThresholdIngestReport {
 impl TryFrom<InvalidatedRadioThresholdReportReqV1> for InvalidatedRadioThresholdReportReq {
     type Error = Error;
     fn try_from(v: InvalidatedRadioThresholdReportReqV1) -> Result<Self> {
-        let reason = InvalidatedThresholdReason::from_i32(v.reason).ok_or_else(|| {
+        let reason = InvalidatedThresholdReason::try_from(v.reason).map_err(|_| {
             DecodeError::unsupported_invalidated_reason(
                 "invalidated_radio_threshold_report_req_v1",
                 v.reason,
@@ -146,8 +146,8 @@ impl TryFrom<VerifiedInvalidatedRadioThresholdIngestReportV1>
 {
     type Error = Error;
     fn try_from(v: VerifiedInvalidatedRadioThresholdIngestReportV1) -> Result<Self> {
-        let status = InvalidatedRadioThresholdReportVerificationStatus::from_i32(v.status)
-            .ok_or_else(|| {
+        let status = InvalidatedRadioThresholdReportVerificationStatus::try_from(v.status)
+            .map_err(|_| {
                 DecodeError::unsupported_status_reason(
                     "verified_invalidated_radio_threshold_ingest_report_v1",
                     v.status,

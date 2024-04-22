@@ -129,7 +129,7 @@ impl From<SubscriberLocationIngestReport> for SubscriberLocationIngestReportV1 {
 impl TryFrom<VerifiedSubscriberLocationIngestReportV1> for VerifiedSubscriberLocationIngestReport {
     type Error = Error;
     fn try_from(v: VerifiedSubscriberLocationIngestReportV1) -> Result<Self> {
-        let status = SubscriberReportVerificationStatus::from_i32(v.status).ok_or_else(|| {
+        let status = SubscriberReportVerificationStatus::try_from(v.status).map_err(|_| {
             DecodeError::unsupported_status_reason(
                 "verified_subscriber_location_ingest_report_v1",
                 v.status,

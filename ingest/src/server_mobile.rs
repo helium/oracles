@@ -326,9 +326,9 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let (heartbeat_report_sink, heartbeat_report_sink_server) = file_sink::FileSinkBuilder::new(
         FileType::CbrsHeartbeatIngestReport,
         store_base_path,
+        file_upload.clone(),
         concat!(env!("CARGO_PKG_NAME"), "_heartbeat_report"),
     )
-    .file_upload(Some(file_upload.clone()))
     .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
     .create()
     .await?;
@@ -337,9 +337,9 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         file_sink::FileSinkBuilder::new(
             FileType::WifiHeartbeatIngestReport,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_wifi_heartbeat_report"),
         )
-        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;
@@ -348,9 +348,9 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let (speedtest_report_sink, speedtest_report_sink_server) = file_sink::FileSinkBuilder::new(
         FileType::CellSpeedtestIngestReport,
         store_base_path,
+        file_upload.clone(),
         concat!(env!("CARGO_PKG_NAME"), "_speedtest_report"),
     )
-    .file_upload(Some(file_upload.clone()))
     .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
     .create()
     .await?;
@@ -359,12 +359,12 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         file_sink::FileSinkBuilder::new(
             FileType::DataTransferSessionIngestReport,
             store_base_path,
+            file_upload.clone(),
             concat!(
                 env!("CARGO_PKG_NAME"),
                 "_mobile_data_transfer_session_report"
             ),
         )
-        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;
@@ -373,9 +373,9 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         file_sink::FileSinkBuilder::new(
             FileType::SubscriberLocationIngestReport,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_subscriber_location_report"),
         )
-        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;
@@ -384,9 +384,9 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         file_sink::FileSinkBuilder::new(
             FileType::RadioThresholdIngestReport,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_radio_threshold_ingest_report"),
         )
-        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;
@@ -395,12 +395,12 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         file_sink::FileSinkBuilder::new(
             FileType::InvalidatedRadioThresholdIngestReport,
             store_base_path,
+            file_upload.clone(),
             concat!(
                 env!("CARGO_PKG_NAME"),
                 "_invalidated_radio_threshold_ingest_report"
             ),
         )
-        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;
@@ -409,9 +409,9 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         file_sink::FileSinkBuilder::new(
             FileType::CoverageObjectIngestReport,
             store_base_path,
+            file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_coverage_object_report"),
         )
-        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;

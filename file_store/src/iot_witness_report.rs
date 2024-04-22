@@ -78,8 +78,8 @@ impl TryFrom<LoraWitnessReportReqV1> for IotWitnessReport {
     type Error = Error;
     fn try_from(v: LoraWitnessReportReqV1) -> Result<Self> {
         let dr = v.datarate;
-        let data_rate: DataRate = DataRate::from_i32(dr)
-            .ok_or_else(|| DecodeError::unsupported_datarate("iot_witness_report_req_v1", dr))?;
+        let data_rate: DataRate = DataRate::try_from(dr)
+            .map_err(|_| DecodeError::unsupported_datarate("iot_witness_report_req_v1", dr))?;
         let timestamp = v.timestamp()?;
 
         Ok(Self {

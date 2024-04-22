@@ -188,7 +188,7 @@ impl iot_config::Gateway for GatewayService {
         let address: &PublicKeyBinary = &pubkey.into();
         tracing::debug!(pubkey = %address, "fetching region params");
 
-        let default_region = Region::from_i32(request.region).ok_or_else(|| {
+        let default_region = Region::try_from(request.region).map_err(|_| {
             Status::invalid_argument(format!("invalid lora region {}", request.region))
         })?;
 
