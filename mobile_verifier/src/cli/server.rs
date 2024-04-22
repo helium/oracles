@@ -1,7 +1,6 @@
 use crate::{
     boosting_oracles::{
-        footfall::Footfall, CheckForNewDataSetDaemon, DataSetDownloaderDaemon, HexBoostData,
-        Urbanization,
+        footfall::Footfall, urbanization::Urbanization, DataSetDownloaderDaemon, HexBoostData,
     },
     coverage::CoverageDaemon,
     data_session::DataSessionIngestor,
@@ -246,7 +245,8 @@ impl Cmd {
             data_sets_file_store.clone(),
             oracle_boosting_reports.clone(),
             settings.data_sets_directory.clone(),
-        );
+        )
+        .await?;
         let footfall_data_set_downloader = DataSetDownloaderDaemon::new(
             pool.clone(),
             hex_boost_data.footfall.clone(),
@@ -254,18 +254,8 @@ impl Cmd {
             data_sets_file_store.clone(),
             oracle_boosting_reports,
             settings.data_sets_directory.clone(),
-        );
-        let check_for_urbanization_data_sets = CheckForNewDataSetDaemon::new(
-            pool.clone(),
-            data_sets_file_store.clone(),
-            crate::boosting_oracles::DataSetType::Urbanization,
-        );
-        let check_for_footfall_data_sets = CheckForNewDataSetDaemon::new(
-            pool.clone(),
-            data_sets_file_store,
-            crate::boosting_oracles::DataSetType::Footfall,
-        );
-
+        )
+        .await?;
         // Mobile rewards
         let reward_period_hours = settings.rewards;
         let (mobile_rewards, mobile_rewards_server) = file_sink::FileSinkBuilder::new(
@@ -433,8 +423,6 @@ impl Cmd {
             .add_task(data_session_ingestor)
             .add_task(urbanization_data_set_downloader)
             .add_task(footfall_data_set_downloader)
-            .add_task(check_for_urbanization_data_sets)
-            .add_task(check_for_footfall_data_sets)
             .start()
             .await
     }

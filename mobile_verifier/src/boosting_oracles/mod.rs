@@ -1,21 +1,3 @@
-//! Module for handling the downloading of new data sets from S3.
-//!
-//! We've split this task into two parts, the CheckForNewDataSetsDaemon and the DataSetDownloaderDaemon.
-//! As their names imply, the CheckForNewDataSetsDaemon is responsible for checking S3 for new files for
-//! a given data set and inserting those new data sets into the `data_sets` table as [DataSetStatus::Pending].
-//! The DataSetDownloaderDaemon is responsible for checking the `data_sets` table and downloading any new
-//! data sets and processing them.
-//!
-//! It seems unnecessary to split this task into two separate daemons, why not have one daemon that handles
-//! both? Well, firstly, it's not two daemons, it's actually four (when all data sets are implemented), since
-//! CheckForNewDataSetsDaemon only handles one type of data set. And yes, it is unnecessary, as it would be
-//! possible in theory to put everything into one daemon that continuously polls S3 and checks if needs to
-//! download new files and if some files need to be processed.
-//!
-//! But it would be extremely complicated. For one thing, the DataSetDownloaderDaemon needs to update the
-//! data sets at a particular time, specified by the data set's timestamp. Keeping tracking of everything
-//! in one place would make things more prone to bugs, and the implementation becomes a lot simpler.
-
 pub mod assignment;
 pub mod footfall;
 pub mod urbanization;
@@ -54,12 +36,12 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
 
 pub struct DataSetDownloaderDaemon<T, A, B> {
     pool: PgPool,
-    // Later: footfall and landtype
     data_set: Arc<Mutex<T>>,
     data_sets: HexBoostData<A, B>,
     store: FileStore,
     oracle_boosting_sink: FileSinkClient,
     data_set_directory: PathBuf,
+    latest_file_date: Option<DateTime<Utc>>,
 }
 
 #[derive(FromRow)]
@@ -109,22 +91,28 @@ where
     A: HexAssignment,
     B: HexAssignment,
 {
-    pub fn new(
+    pub async fn new(
         pool: PgPool,
         data_set: Arc<Mutex<T>>,
         data_sets: HexBoostData<A, B>,
         store: FileStore,
         oracle_boosting_sink: FileSinkClient,
         data_set_directory: PathBuf,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        let latest_file_date: Option<DateTime<Utc>> =
+            sqlx::query_scalar("SELECT time_to_use FROM data_sets WHERE data_set = $1 ORDER BY time_to_use DESC LIMIT 1")
+                .bind(T::TYPE)
+            .fetch_optional(&pool)
+            .await?;
+        Ok(Self {
             pool,
             data_set,
             data_sets,
             store,
             oracle_boosting_sink,
             data_set_directory,
-        }
+            latest_file_date,
+        })
     }
 
     fn get_data_set_path(&self, time_to_use: DateTime<Utc>) -> PathBuf {
@@ -138,7 +126,86 @@ where
         dir
     }
 
-    pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+    pub async fn check_for_available_data_sets(&mut self) -> anyhow::Result<()> {
+        let mut new_data_sets = self
+            .store
+            .list(T::TYPE.to_prefix(), self.latest_file_date, None);
+        while let Some(new_data_set) = new_data_sets.next().await.transpose()? {
+            tracing::info!(
+                "Found new data set: {}, {:#?}",
+                new_data_set.key,
+                new_data_set
+            );
+            sqlx::query(
+                r#"
+                INSERT INTO data_sets (filename, data_set, time_to_use, status)
+                VALUES ($1, $2, $3, 'pending')
+                "#,
+            )
+            .bind(new_data_set.key)
+            .bind(T::TYPE)
+            .bind(new_data_set.timestamp)
+            .execute(&self.pool)
+            .await?;
+            self.latest_file_date = Some(new_data_set.timestamp);
+        }
+        Ok(())
+    }
+
+    pub async fn process_data_sets(&self) -> anyhow::Result<()> {
+        tracing::info!("Checking for new data sets");
+        let mut data_set = self.data_set.lock().await;
+        let curr_data_set = data_set.timestamp();
+        let latest_data_set: Option<NewDataSet> = sqlx::query_as(
+                "SELECT filename, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = $1 AND COALESCE(time_to_use > $2, TRUE) AND time_to_use <= $3 ORDER BY time_to_use DESC LIMIT 1"
+            )
+                .bind(T::TYPE)
+                .bind(curr_data_set)
+                .bind(Utc::now())
+                .fetch_optional(&self.pool)
+                .await?;
+
+        if let Some(latest_data_set) = latest_data_set {
+            let path = self.get_data_set_path(latest_data_set.time_to_use);
+
+            // Download the file if it hasn't been downloaded already:
+            if !latest_data_set.status.is_downloaded() {
+                download_data_set(&self.store, &latest_data_set.filename, &path).await?;
+                // Set the status to be downloaded
+                sqlx::query("UPDATE data_sets SET status = 'downloaded' WHERE filename = $1")
+                    .bind(&latest_data_set.filename)
+                    .execute(&self.pool)
+                    .await?;
+            }
+
+            // Now that we've downloaded the file, load it into the data set
+            data_set.update(Path::new(&path), latest_data_set.time_to_use)?;
+
+            drop(data_set);
+
+            // Update the hexes
+            let boosting_reports = set_oracle_boosting_assignments(
+                UnassignedHex::fetch_all(&self.pool),
+                &self.data_sets,
+                &self.pool,
+            )
+            .await?;
+
+            sqlx::query("UPDATE data_sets SET status = 'processed' WHERE filename = $1")
+                .bind(latest_data_set.filename)
+                .execute(&self.pool)
+                .await?;
+
+            self.oracle_boosting_sink
+                .write_all(boosting_reports)
+                .await?;
+            self.oracle_boosting_sink.commit().await?;
+            tracing::info!("Data set download complete");
+        }
+        Ok(())
+    }
+
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         // Get the first data set:
         if let Some(time_to_use) =
             sqlx::query_scalar(
@@ -153,76 +220,9 @@ where
             self.data_set.lock().await.update(&data_set_path, time_to_use)?;
         }
 
-        // Another option I considered instead of polling was to use ENOTIFY, but that seemed
-        // not as good, as it would hog a pool connection.
-        //
-        // We set the poll duration to 30 minutes since that seems fine.
-        let poll_duration = Duration::minutes(30);
+        let poll_duration = Duration::minutes(5);
 
         loop {
-            // Find the latest urbanization file
-            tracing::info!("Checking for new data sets");
-            let mut data_set = self.data_set.lock().await;
-            let curr_data_set = data_set.timestamp();
-            let latest_data_set: Option<NewDataSet> = sqlx::query_as(
-                "SELECT filename, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = $1 AND COALESCE(time_to_use > $2, TRUE) AND time_to_use <= $3 ORDER BY time_to_use DESC LIMIT 1"
-            )
-                .bind(T::TYPE)
-                .bind(curr_data_set)
-                .bind(Utc::now())
-                .fetch_optional(&self.pool)
-                .await?;
-
-            if let Some(latest_data_set) = latest_data_set {
-                let path = self.get_data_set_path(latest_data_set.time_to_use);
-
-                // Download the file if it hasn't been downloaded already:
-                if !latest_data_set.status.is_downloaded() {
-                    tracing::info!("Downloading new data set: {}", path.to_string_lossy());
-                    // TODO: abstract this out to a function
-                    let stream = self.store.get_raw(latest_data_set.filename.clone()).await?;
-                    let mut bytes = tokio_util::codec::FramedRead::new(
-                        async_compression::tokio::bufread::GzipDecoder::new(
-                            tokio_util::io::StreamReader::new(stream),
-                        ),
-                        tokio_util::codec::BytesCodec::new(),
-                    );
-                    let mut file = File::create(&path).await?;
-                    while let Some(bytes) = bytes.next().await.transpose()? {
-                        file.write_all(&bytes).await?;
-                    }
-                    // Set the status to be downloaded
-                    sqlx::query("UPDATE data_sets SET status = 'downloaded' WHERE filename = $1")
-                        .bind(&latest_data_set.filename)
-                        .execute(&self.pool)
-                        .await?;
-                }
-
-                // Now that we've downloaded the file, load it into the data set
-                data_set.update(Path::new(&path), latest_data_set.time_to_use)?;
-
-                drop(data_set);
-
-                // Update the hexes
-                let boosting_reports = set_oracle_boosting_assignments(
-                    UnassignedHex::fetch_all(&self.pool),
-                    &self.data_sets,
-                    &self.pool,
-                )
-                .await?;
-
-                sqlx::query("UPDATE data_sets SET status = 'processed' WHERE filename = $1")
-                    .bind(latest_data_set.filename)
-                    .execute(&self.pool)
-                    .await?;
-
-                self.oracle_boosting_sink
-                    .write_all(boosting_reports)
-                    .await?;
-                self.oracle_boosting_sink.commit().await?;
-                tracing::info!("Data set download complete");
-            }
-
             // We don't want to shut down in the middle of downloading a data set, so we hold off until
             // we are sleeping
             #[rustfmt::skip]
@@ -233,6 +233,8 @@ where
                     break;
                 }
                 _ = tokio::time::sleep(poll_duration.to_std()?) => {
+                    self.check_for_available_data_sets().await?;
+                    self.process_data_sets().await?;
                     continue;
                 }
             }
@@ -240,6 +242,27 @@ where
 
         Ok(())
     }
+}
+
+async fn download_data_set(
+    store: &FileStore,
+    in_file_name: &str,
+    out_path: &Path,
+) -> anyhow::Result<()> {
+    tracing::info!("Downloading new data set: {}", out_path.to_string_lossy());
+    // TODO: abstract this out to a function
+    let stream = store.get_raw(in_file_name).await?;
+    let mut bytes = tokio_util::codec::FramedRead::new(
+        async_compression::tokio::bufread::GzipDecoder::new(tokio_util::io::StreamReader::new(
+            stream,
+        )),
+        tokio_util::codec::BytesCodec::new(),
+    );
+    let mut file = File::create(&out_path).await?;
+    while let Some(bytes) = bytes.next().await.transpose()? {
+        file.write_all(&bytes).await?;
+    }
+    Ok(())
 }
 
 #[derive(Copy, Clone, sqlx::Type)]
@@ -258,81 +281,6 @@ impl DataSetType {
             Self::Footfall => "footfall",
             Self::Landtype => "landtype",
         }
-    }
-}
-
-// Better name welcome
-pub struct CheckForNewDataSetDaemon {
-    pool: PgPool,
-    store: FileStore,
-    data_set: DataSetType,
-}
-
-impl ManagedTask for CheckForNewDataSetDaemon {
-    fn start_task(
-        self: Box<Self>,
-        shutdown: triggered::Listener,
-    ) -> futures::prelude::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
-        )
-    }
-}
-
-impl CheckForNewDataSetDaemon {
-    pub fn new(pool: PgPool, store: FileStore, data_set: DataSetType) -> Self {
-        Self {
-            pool,
-            data_set,
-            store,
-        }
-    }
-
-    pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        // We should check for new data sets more often than we download them. 15 minutes seems fine.
-        let poll_duration = Duration::minutes(15);
-
-        let prefix = self.data_set.to_prefix();
-        let mut latest_file_date: Option<DateTime<Utc>> =
-            sqlx::query_scalar("SELECT time_to_use FROM data_sets WHERE data_set = $1 ORDER BY time_to_use DESC LIMIT 1")
-                .bind(self.data_set)
-            .fetch_optional(&self.pool)
-            .await?;
-
-        loop {
-            #[rustfmt::skip]
-            tokio::select! {
-                biased;
-                _ = shutdown.clone() => {
-                    tracing::info!("CheckForNewDataSetDaemon shutting down");
-                    break;
-                }
-                _ = tokio::time::sleep(poll_duration.to_std()?) => {
-                    // tracing::info!("Checking file store for new data sets");
-                    let mut new_data_sets = self.store.list(prefix, latest_file_date, None);
-                    while let Some(new_data_set) = new_data_sets.next().await.transpose()? {
-                        tracing::info!("Found new data set: {}, {:#?}", new_data_set.key, new_data_set);
-                        sqlx::query(
-                            r#"
-                            INSERT INTO data_sets (filename, data_set, time_to_use, status)
-                            VALUES ($1, $2, $3, 'pending')
-                            "#,
-                        )
-                        .bind(new_data_set.key)
-                        .bind(self.data_set)
-                        .bind(new_data_set.timestamp)
-                        .execute(&self.pool)
-                        .await?;
-                        latest_file_date = Some(new_data_set.timestamp);
-                    }
-                }
-            }
-        }
-
-        Ok(())
     }
 }
 
