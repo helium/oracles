@@ -57,15 +57,14 @@ where
     A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
     B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
 {
-    pub async fn setup(
-        task_manager: &mut TaskManager,
+    pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
         carrier_service_verifier: A,
         hex_boosting_info_resolver: B,
         speedtests_avg: FileSinkClient,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
         let reward_period_hours = settings.rewards;
@@ -101,12 +100,12 @@ where
             speedtests_avg,
         );
 
-        task_manager.add(price_daemon);
-        task_manager.add(mobile_rewards_server);
-        task_manager.add(reward_manifests_server);
-        task_manager.add(rewarder);
-
-        Ok(())
+        Ok(TaskManager::builder()
+            .add_task(price_daemon)
+            .add_task(mobile_rewards_server)
+            .add_task(reward_manifests_server)
+            .add_task(rewarder)
+            .build())
     }
 
     #[allow(clippy::too_many_arguments)]

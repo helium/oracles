@@ -1,4 +1,5 @@
 use crate::{
+    boosting_oracles,
     coverage::CoverageDaemon,
     data_session::DataSessionIngestor,
     geofence::Geofence,
@@ -100,92 +101,92 @@ impl Cmd {
             settings.usa_and_mexico_fencing_resolution()?,
         )?;
 
-        let mut task_manager = TaskManager::new();
-        task_manager.add(file_upload_server);
-        task_manager.add(valid_heartbeats_server);
-        task_manager.add(seniority_updates_server);
-        task_manager.add(speedtests_avg_server);
-
-        CbrsHeartbeatDaemon::setup(
-            &mut task_manager,
-            pool.clone(),
-            settings,
-            report_ingest.clone(),
-            gateway_client.clone(),
-            valid_heartbeats.clone(),
-            seniority_updates.clone(),
-            usa_geofence.clone(),
-        )
-        .await?;
-
-        WifiHeartbeatDaemon::setup(
-            &mut task_manager,
-            pool.clone(),
-            settings,
-            report_ingest.clone(),
-            gateway_client.clone(),
-            valid_heartbeats,
-            seniority_updates,
-            usa_and_mexico_geofence,
-        )
-        .await?;
-
-        SpeedtestDaemon::setup(
-            &mut task_manager,
-            pool.clone(),
-            settings,
-            file_upload.clone(),
-            report_ingest.clone(),
-            speedtests_avg.clone(),
-            gateway_client,
-        )
-        .await?;
-
-        CoverageDaemon::setup(
-            &mut task_manager,
-            pool.clone(),
-            settings,
-            file_upload.clone(),
-            report_ingest.clone(),
-            auth_client.clone(),
-            usa_geofence,
-        )
-        .await?;
-
-        SubscriberLocationIngestor::setup(
-            &mut task_manager,
-            pool.clone(),
-            settings,
-            file_upload.clone(),
-            report_ingest.clone(),
-            auth_client.clone(),
-            entity_client,
-        )
-        .await?;
-
-        RadioThresholdIngestor::setup(
-            &mut task_manager,
-            pool.clone(),
-            settings,
-            file_upload.clone(),
-            report_ingest,
-            auth_client,
-        )
-        .await?;
-
-        DataSessionIngestor::setup(&mut task_manager, pool.clone(), settings).await?;
-
-        Rewarder::setup(
-            &mut task_manager,
-            pool,
-            settings,
-            file_upload,
-            carrier_client,
-            hex_boosting_client,
-            speedtests_avg,
-        )
-        .await?;
-
-        task_manager.start().await
+        TaskManager::builder()
+            .add_task(file_upload_server)
+            .add_task(valid_heartbeats_server)
+            .add_task(seniority_updates_server)
+            .add_task(speedtests_avg_server)
+            .add_task(
+                CbrsHeartbeatDaemon::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    report_ingest.clone(),
+                    gateway_client.clone(),
+                    valid_heartbeats.clone(),
+                    seniority_updates.clone(),
+                    usa_geofence.clone(),
+                )
+                .await?,
+            )
+            .add_task(
+                WifiHeartbeatDaemon::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    report_ingest.clone(),
+                    gateway_client.clone(),
+                    valid_heartbeats,
+                    seniority_updates,
+                    usa_and_mexico_geofence,
+                )
+                .await?,
+            )
+            .add_task(
+                SpeedtestDaemon::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    file_upload.clone(),
+                    report_ingest.clone(),
+                    speedtests_avg.clone(),
+                    gateway_client,
+                )
+                .await?,
+            )
+            .add_task(
+                CoverageDaemon::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    file_upload.clone(),
+                    report_ingest.clone(),
+                    auth_client.clone(),
+                    boosting_oracles::make_hex_boost_data(settings, usa_geofence)?,
+                )
+                .await?,
+            )
+            .add_task(
+                SubscriberLocationIngestor::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    file_upload.clone(),
+                    report_ingest.clone(),
+                    auth_client.clone(),
+                    entity_client,
+                )
+                .await?,
+            )
+            .add_task(
+                RadioThresholdIngestor::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    file_upload.clone(),
+                    report_ingest,
+                    auth_client,
+                )
+                .await?,
+            )
+            .add_task(DataSessionIngestor::create_managed_task(pool.clone(), settings).await?)
+            .add_task(
+                Rewarder::create_managed_task(
+                    pool,
+                    settings,
+                    file_upload,
+                    carrier_client,
+                    hex_boosting_client,
+                    speedtests_avg,
+                )
+                .await?,
+            )
+            .build()
+            .start()
+            .await
     }
 }

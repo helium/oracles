@@ -62,15 +62,14 @@ impl<GIR> SpeedtestDaemon<GIR>
 where
     GIR: GatewayInfoResolver,
 {
-    pub async fn setup(
-        task_manager: &mut TaskManager,
+    pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
         speedtests_avg: FileSinkClient,
         gateway_resolver: GIR,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<impl ManagedTask> {
         let (speedtests_validity, speedtests_validity_server) = file_sink::FileSinkBuilder::new(
             FileType::VerifiedSpeedtest,
             settings.store_base_path(),
@@ -99,11 +98,11 @@ where
             speedtests_validity,
         );
 
-        task_manager.add(speedtests_validity_server);
-        task_manager.add(speedtests_server);
-        task_manager.add(speedtest_daemon);
-
-        Ok(())
+        Ok(TaskManager::builder()
+            .add_task(speedtests_validity_server)
+            .add_task(speedtests_server)
+            .add_task(speedtest_daemon)
+            .build())
     }
 
     pub fn new(

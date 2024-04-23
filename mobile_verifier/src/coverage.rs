@@ -1,6 +1,5 @@
 use crate::{
-    boosting_oracles::{self, assignment::HexAssignments, BoostedHexAssignments, HexBoostData},
-    geofence::Geofence,
+    boosting_oracles::{BoostedHexAssignments, HexAssignments, HexBoostData},
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized, Settings,
 };
@@ -79,15 +78,14 @@ pub struct CoverageDaemon {
 }
 
 impl CoverageDaemon {
-    pub async fn setup(
-        task_manager: &mut TaskManager,
+    pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
         auth_client: AuthorizationClient,
-        geofence: Geofence,
-    ) -> anyhow::Result<()> {
+        hex_boost_data: HexBoostData,
+    ) -> anyhow::Result<impl ManagedTask> {
         let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
             FileType::CoverageObject,
             settings.store_base_path(),
@@ -121,7 +119,7 @@ impl CoverageDaemon {
                 .create()
                 .await?;
 
-        let hex_boost_data = boosting_oracles::make_hex_boost_data(settings, geofence)?;
+        // let hex_boost_data = boosting_oracles::make_hex_boost_data(settings, geofence)?;
         let coverage_daemon = CoverageDaemon::new(
             pool,
             auth_client,
@@ -132,12 +130,12 @@ impl CoverageDaemon {
         )
         .await?;
 
-        task_manager.add(valid_coverage_objs_server);
-        task_manager.add(oracle_boosting_reports_server);
-        task_manager.add(coverage_objs_server);
-        task_manager.add(coverage_daemon);
-
-        Ok(())
+        Ok(TaskManager::builder()
+            .add_task(valid_coverage_objs_server)
+            .add_task(oracle_boosting_reports_server)
+            .add_task(coverage_objs_server)
+            .add_task(coverage_daemon)
+            .build())
     }
 
     pub async fn new(

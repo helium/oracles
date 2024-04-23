@@ -39,11 +39,10 @@ pub struct ServiceProviderDataSession {
 pub type HotspotMap = HashMap<PublicKeyBinary, HotspotReward>;
 
 impl DataSessionIngestor {
-    pub async fn setup(
-        task_manager: &mut TaskManager,
+    pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<impl ManagedTask> {
         let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
         // data transfers
         let (data_session_ingest, data_session_ingest_server) =
@@ -57,10 +56,10 @@ impl DataSessionIngestor {
 
         let data_session_ingestor = DataSessionIngestor::new(pool.clone(), data_session_ingest);
 
-        task_manager.add(data_session_ingest_server);
-        task_manager.add(data_session_ingestor);
-
-        Ok(())
+        Ok(TaskManager::builder()
+            .add_task(data_session_ingest_server)
+            .add_task(data_session_ingestor)
+            .build())
     }
 
     pub fn new(

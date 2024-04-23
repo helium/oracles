@@ -41,8 +41,7 @@ where
     GFV: GeofenceValidator<Heartbeat>,
 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn setup(
-        task_manager: &mut TaskManager,
+    pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_store: FileStore,
@@ -50,7 +49,7 @@ where
         valid_heartbeats: FileSinkClient,
         seniority_updates: FileSinkClient,
         geofence: GFV,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<impl ManagedTask> {
         // Wifi Heartbeats
         let (wifi_heartbeats, wifi_heartbeats_server) =
             file_source::continuous_source::<WifiHeartbeatIngestReport, _>()
@@ -73,10 +72,10 @@ where
             geofence,
         );
 
-        task_manager.add(wifi_heartbeats_server);
-        task_manager.add(wifi_heartbeat_daemon);
-
-        Ok(())
+        Ok(TaskManager::builder()
+            .add_task(wifi_heartbeats_server)
+            .add_task(wifi_heartbeat_daemon)
+            .build())
     }
 
     #[allow(clippy::too_many_arguments)]

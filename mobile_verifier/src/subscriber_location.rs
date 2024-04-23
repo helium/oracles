@@ -44,15 +44,14 @@ where
     AV: AuthorizationVerifier + Send + Sync + 'static,
     EV: EntityVerifier + Send + Sync + 'static,
 {
-    pub async fn setup(
-        task_manager: &mut TaskManager,
+    pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
         authorization_verifier: AV,
         entity_verifier: EV,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<impl ManagedTask> {
         let (verified_subscriber_location, verified_subscriber_location_server) =
             file_sink::FileSinkBuilder::new(
                 FileType::VerifiedSubscriberLocationIngestReport,
@@ -81,11 +80,11 @@ where
             verified_subscriber_location,
         );
 
-        task_manager.add(verified_subscriber_location_server);
-        task_manager.add(subscriber_location_ingest_server);
-        task_manager.add(subscriber_location_ingestor);
-
-        Ok(())
+        Ok(TaskManager::builder()
+            .add_task(verified_subscriber_location_server)
+            .add_task(subscriber_location_ingest_server)
+            .add_task(subscriber_location_ingestor)
+            .build())
     }
 
     pub fn new(
