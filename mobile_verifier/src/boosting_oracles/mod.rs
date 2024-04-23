@@ -76,7 +76,14 @@ where
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> futures::prelude::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
+        let handle = tokio::spawn(async move {
+            #[rustfmt::skip]
+            tokio::select! {
+                biased;
+                _ = shutdown.clone() => Ok(()),
+                result = self.run() => result,
+            }
+        });
         Box::pin(
             handle
                 .map_err(anyhow::Error::from)
@@ -181,6 +188,7 @@ where
             // Now that we've downloaded the file, load it into the data set
             data_set.update(Path::new(&path), latest_data_set.time_to_use)?;
 
+            // Release the lock as it is no longer needed
             drop(data_set);
 
             // Update the hexes
@@ -205,7 +213,7 @@ where
         Ok(())
     }
 
-    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+    pub async fn run(mut self) -> anyhow::Result<()> {
         // Get the first data set:
         if let Some(time_to_use) =
             sqlx::query_scalar(
@@ -223,24 +231,10 @@ where
         let poll_duration = Duration::minutes(5);
 
         loop {
-            // We don't want to shut down in the middle of downloading a data set, so we hold off until
-            // we are sleeping
-            #[rustfmt::skip]
-            tokio::select! {
-                biased;
-                _ = shutdown.clone() => {
-                    tracing::info!("DataSetDownloaderDaemon shutting down");
-                    break;
-                }
-                _ = tokio::time::sleep(poll_duration.to_std()?) => {
-                    self.check_for_available_data_sets().await?;
-                    self.process_data_sets().await?;
-                    continue;
-                }
-            }
+            self.check_for_available_data_sets().await?;
+            self.process_data_sets().await?;
+            tokio::time::sleep(poll_duration.to_std()?).await;
         }
-
-        Ok(())
     }
 }
 

@@ -157,51 +157,6 @@ where
     }
 }
 
-/*
-#[derive(FromRow)]
-pub struct UnassignedHex {
-    uuid: Uuid,
-    #[sqlx(try_from = "i64")]
-    hex: u64,
-    signal_level: SignalLevel,
-    signal_power: i32,
-}
-
-impl UnassignedHex {
-    pub fn fetch(pool: &PgPool) -> impl Stream<Item = sqlx::Result<Self>> + '_ {
-        sqlx::query_as(
-            "SELECT uuid, hex, signal_level, signal_power FROM hexes WHERE urbanized IS NULL OR footfall IS NULL",
-        )
-        .fetch(pool)
-    }
-
-    fn to_location_string(&self) -> String {
-        format!("{:x}", self.hex)
-    }
-}
-
-pub async fn set_oracle_boosting_assignments(
-    unassigned_urbinization_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
-    hex_boost_data: &HexBoostData<impl HexAssignment, impl HexAssignment>,
-    pool: &PgPool,
-) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
-    let now = Utc::now();
-
-    let boost_results =
-        initialize_unassigned_hexes(unassigned_urbinization_hexes, hex_boost_data, pool).await?;
-
-    Ok(boost_results
-        .into_iter()
-        .map(
-            move |(coverage_object, assignments)| proto::OracleBoostingReportV1 {
-                coverage_object: Vec::from(coverage_object.into_bytes()),
-                assignments,
-                timestamp: now.encode_timestamp(),
-            },
-        ))
-}
-*/
-
 impl<Urban, Foot> ManagedTask for CoverageDaemon<Urban, Foot>
 where
     Urban: DataSet,
