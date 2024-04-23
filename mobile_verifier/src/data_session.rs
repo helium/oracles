@@ -1,5 +1,10 @@
 use chrono::{DateTime, Utc};
-use file_store::{file_info_poller::FileInfoStream, mobile_transfer::ValidDataTransferSession};
+use file_store::{
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_source,
+    mobile_transfer::ValidDataTransferSession,
+    FileStore, FileType,
+};
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
@@ -7,10 +12,12 @@ use futures::{
 use helium_crypto::PublicKeyBinary;
 use helium_proto::ServiceProvider;
 use rust_decimal::Decimal;
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
-use task_manager::ManagedTask;
+use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
+
+use crate::Settings;
 
 pub struct DataSessionIngestor {
     pub receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
@@ -32,6 +39,30 @@ pub struct ServiceProviderDataSession {
 pub type HotspotMap = HashMap<PublicKeyBinary, HotspotReward>;
 
 impl DataSessionIngestor {
+    pub async fn setup(
+        task_manager: &mut TaskManager,
+        pool: Pool<Postgres>,
+        settings: &Settings,
+    ) -> anyhow::Result<()> {
+        let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
+        // data transfers
+        let (data_session_ingest, data_session_ingest_server) =
+            file_source::continuous_source::<ValidDataTransferSession, _>()
+                .state(pool.clone())
+                .store(data_transfer_ingest)
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::ValidDataTransferSession.to_string())
+                .create()
+                .await?;
+
+        let data_session_ingestor = DataSessionIngestor::new(pool.clone(), data_session_ingest);
+
+        task_manager.add(data_session_ingest_server);
+        task_manager.add(data_session_ingestor);
+
+        Ok(())
+    }
+
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,

@@ -1,11 +1,14 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient,
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_sink::{self, FileSinkClient},
+    file_source,
+    file_upload::FileUpload,
     mobile_subscriber::{
         SubscriberLocationIngestReport, SubscriberLocationReq,
         VerifiedSubscriberLocationIngestReport,
     },
+    FileStore, FileType,
 };
 use futures::{StreamExt, TryStreamExt};
 use futures_util::TryFutureExt;
@@ -17,10 +20,12 @@ use helium_proto::services::poc_mobile::{
 use mobile_config::client::{
     authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
 };
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::{ops::Range, time::Instant};
-use task_manager::ManagedTask;
+use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
+
+use crate::Settings;
 
 const SUBSCRIBER_REWARD_PERIOD_IN_DAYS: i64 = 1;
 
@@ -36,9 +41,53 @@ pub struct SubscriberLocationIngestor<AV, EV> {
 
 impl<AV, EV> SubscriberLocationIngestor<AV, EV>
 where
-    AV: AuthorizationVerifier,
-    EV: EntityVerifier,
+    AV: AuthorizationVerifier + Send + Sync + 'static,
+    EV: EntityVerifier + Send + Sync + 'static,
 {
+    pub async fn setup(
+        task_manager: &mut TaskManager,
+        pool: Pool<Postgres>,
+        settings: &Settings,
+        file_upload: FileUpload,
+        file_store: FileStore,
+        authorization_verifier: AV,
+        entity_verifier: EV,
+    ) -> anyhow::Result<()> {
+        let (verified_subscriber_location, verified_subscriber_location_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::VerifiedSubscriberLocationIngestReport,
+                settings.store_base_path(),
+                file_upload.clone(),
+                concat!(env!("CARGO_PKG_NAME"), "_verified_subscriber_location"),
+            )
+            .auto_commit(false)
+            .create()
+            .await?;
+
+        let (subscriber_location_ingest, subscriber_location_ingest_server) =
+            file_source::continuous_source::<SubscriberLocationIngestReport, _>()
+                .state(pool.clone())
+                .store(file_store.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::SubscriberLocationIngestReport.to_string())
+                .create()
+                .await?;
+
+        let subscriber_location_ingestor = SubscriberLocationIngestor::new(
+            pool,
+            authorization_verifier,
+            entity_verifier,
+            subscriber_location_ingest,
+            verified_subscriber_location,
+        );
+
+        task_manager.add(verified_subscriber_location_server);
+        task_manager.add(subscriber_location_ingest_server);
+        task_manager.add(subscriber_location_ingestor);
+
+        Ok(())
+    }
+
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         authorization_verifier: AV,

@@ -1,9 +1,15 @@
-use crate::speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE};
+use crate::{
+    speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE},
+    Settings,
+};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient,
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_sink::{self, FileSinkClient},
+    file_source,
+    file_upload::FileUpload,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    FileStore, FileType,
 };
 use futures::{
     stream::{StreamExt, TryStreamExt},
@@ -15,9 +21,9 @@ use helium_proto::services::poc_mobile::{
     VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
 use mobile_config::client::gateway_client::GatewayInfoResolver;
-use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
+use sqlx::{postgres::PgRow, FromRow, Pool, Postgres, Row, Transaction};
 use std::{collections::HashMap, time::Instant};
-use task_manager::ManagedTask;
+use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
@@ -56,6 +62,50 @@ impl<GIR> SpeedtestDaemon<GIR>
 where
     GIR: GatewayInfoResolver,
 {
+    pub async fn setup(
+        task_manager: &mut TaskManager,
+        pool: Pool<Postgres>,
+        settings: &Settings,
+        file_upload: FileUpload,
+        file_store: FileStore,
+        speedtests_avg: FileSinkClient,
+        gateway_resolver: GIR,
+    ) -> anyhow::Result<()> {
+        let (speedtests_validity, speedtests_validity_server) = file_sink::FileSinkBuilder::new(
+            FileType::VerifiedSpeedtest,
+            settings.store_base_path(),
+            file_upload,
+            concat!(env!("CARGO_PKG_NAME"), "_verified_speedtest"),
+        )
+        .auto_commit(false)
+        .roll_time(Duration::minutes(15))
+        .create()
+        .await?;
+
+        let (speedtests, speedtests_server) =
+            file_source::continuous_source::<CellSpeedtestIngestReport, _>()
+                .state(pool.clone())
+                .store(file_store)
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::CellSpeedtestIngestReport.to_string())
+                .create()
+                .await?;
+
+        let speedtest_daemon = SpeedtestDaemon::new(
+            pool.clone(),
+            gateway_resolver,
+            speedtests,
+            speedtests_avg,
+            speedtests_validity,
+        );
+
+        task_manager.add(speedtests_validity_server);
+        task_manager.add(speedtests_server);
+        task_manager.add(speedtest_daemon);
+
+        Ok(())
+    }
+
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         gateway_info_resolver: GIR,
