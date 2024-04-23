@@ -640,7 +640,7 @@ fn new_radio_reward(
         .iter()
         .filter(|radio_points| radio_points.boosted_hex.multiplier > NonZeroU32::new(1).unwrap())
         .map(|radio_points| proto::BoostedHex {
-            location: radio_points.boosted_hex.location,
+            location: radio_points.boosted_hex.location.into_raw(),
             multiplier: radio_points.boosted_hex.multiplier.get(),
         })
         .collect();
@@ -713,6 +713,7 @@ mod test {
     use helium_proto::{
         services::poc_mobile::mobile_reward_share::Reward as MobileReward, ServiceProvider,
     };
+    use hextree::Cell;
     use prost::Message;
     use std::collections::HashMap;
     use uuid::Uuid;
@@ -994,9 +995,11 @@ mod test {
     fn simple_hex_coverage<'a>(key: impl Into<KeyType<'a>>, hex: u64) -> Vec<HexCoverage> {
         let key = key.into();
         let radio_key = key.to_owned();
+        let hex = hex.try_into().expect("valid h3 cell");
+
         vec![HexCoverage {
             uuid: Uuid::new_v4(),
-            hex: hex as i64,
+            hex,
             indoor: true,
             radio_key,
             signal_level: crate::coverage::SignalLevel::Low,
@@ -1892,7 +1895,7 @@ mod test {
                                 rank: None,
                             },
                             boosted_hex: BoostedHex {
-                                location: 0,
+                                location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                                 multiplier: NonZeroU32::new(1).unwrap(),
                             },
                         }],

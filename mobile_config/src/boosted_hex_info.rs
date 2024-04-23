@@ -2,7 +2,9 @@ use crate::client::{hex_boosting_client::HexBoostingInfoResolver, ClientError};
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampDecode;
 use futures::stream::{BoxStream, StreamExt};
+use helium_proto::services::poc_mobile::BoostedHex as BoostedHexProto;
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
+use hextree::Cell;
 use solana_sdk::pubkey::Pubkey;
 use std::{collections::HashMap, convert::TryFrom, num::NonZeroU32};
 
@@ -14,7 +16,7 @@ lazy_static::lazy_static! {
 
 #[derive(Clone, Debug)]
 pub struct BoostedHexInfo {
-    pub location: u64,
+    pub location: Cell,
     pub start_ts: Option<DateTime<Utc>>,
     pub end_ts: Option<DateTime<Utc>>,
     pub period_length: Duration,
@@ -39,7 +41,7 @@ impl TryFrom<BoostedHexInfoProto> for BoostedHexInfo {
         let boosted_hex_pubkey: Pubkey = Pubkey::try_from(v.boosted_hex_pubkey.as_slice())?;
         let boost_config_pubkey: Pubkey = Pubkey::try_from(v.boost_config_pubkey.as_slice())?;
         Ok(Self {
-            location: v.location,
+            location: v.location.try_into()?,
             start_ts,
             end_ts,
             period_length,
@@ -63,7 +65,7 @@ impl TryFrom<BoostedHexInfo> for BoostedHexInfoProto {
             .map(|v| v.get())
             .collect::<Vec<_>>();
         Ok(Self {
-            location: v.location,
+            location: v.location.into_raw(),
             start_ts,
             end_ts,
             period_length: v.period_length.num_seconds() as u32,
@@ -102,13 +104,28 @@ impl BoostedHexInfo {
 
 #[derive(Debug, Clone, Default)]
 pub struct BoostedHexes {
-    pub hexes: HashMap<u64, BoostedHexInfo>,
+    pub hexes: HashMap<Cell, BoostedHexInfo>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct BoostedHex {
-    pub location: u64,
+    pub location: Cell,
     pub multiplier: NonZeroU32,
+}
+
+impl TryFrom<BoostedHexProto> for BoostedHex {
+    type Error = anyhow::Error;
+
+    fn try_from(value: BoostedHexProto) -> Result<Self, Self::Error> {
+        let location = Cell::from_raw(value.location)?;
+        let multiplier = NonZeroU32::new(value.multiplier)
+            .ok_or_else(|| anyhow::anyhow!("multiplier cannot be 0"))?;
+
+        Ok(Self {
+            location,
+            multiplier,
+        })
+    }
 }
 
 impl BoostedHexes {
@@ -134,7 +151,7 @@ impl BoostedHexes {
         Ok(Self { hexes: map })
     }
 
-    pub fn is_boosted(&self, location: &u64) -> bool {
+    pub fn is_boosted(&self, location: &Cell) -> bool {
         self.hexes.contains_key(location)
     }
 
@@ -153,7 +170,7 @@ impl BoostedHexes {
         Ok(Self { hexes: map })
     }
 
-    pub fn get_current_multiplier(&self, location: u64, ts: DateTime<Utc>) -> Option<NonZeroU32> {
+    pub fn get_current_multiplier(&self, location: Cell, ts: DateTime<Utc>) -> Option<NonZeroU32> {
         self.hexes
             .get(&location)
             .and_then(|info| info.current_multiplier(ts).ok()?)
@@ -164,6 +181,7 @@ pub(crate) mod db {
     use super::{to_end_ts, to_start_ts, BoostedHexInfo};
     use chrono::{DateTime, Duration, Utc};
     use futures::stream::{Stream, StreamExt};
+    use hextree::Cell;
     use solana_sdk::pubkey::Pubkey;
     use sqlx::{PgExecutor, Row};
     use std::num::NonZeroU32;
@@ -236,8 +254,12 @@ pub(crate) mod db {
             let boosted_hex_pubkey = Pubkey::from_str(row.get::<&str, &str>("boosted_hex_pubkey"))
                 .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
             let version = row.get::<i32, &str>("version") as u32;
+
+            let location = Cell::try_from(row.get::<i64, &str>("location"))
+                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+
             Ok(Self {
-                location: row.get::<i64, &str>("location") as u64,
+                location,
                 start_ts,
                 end_ts,
                 period_length,
@@ -270,6 +292,7 @@ fn to_end_ts(
 mod tests {
     use super::*;
     use chrono::NaiveDateTime;
+    use hextree::Cell;
     use std::str::FromStr;
 
     const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
@@ -295,7 +318,7 @@ mod tests {
         };
 
         let msg = BoostedHexInfo::try_from(proto)?;
-        assert_eq!(631252734740306943, msg.location);
+        assert_eq!(Cell::from_raw(631252734740306943)?, msg.location);
         assert_eq!(None, msg.start_ts);
         assert_eq!(None, msg.end_ts);
         assert_eq!(2592000, msg.period_length.num_seconds());
@@ -336,7 +359,7 @@ mod tests {
         };
 
         let msg = BoostedHexInfo::try_from(proto)?;
-        assert_eq!(631252734740306943, msg.location);
+        assert_eq!(Cell::from_raw(631252734740306943)?, msg.location);
         assert_eq!(parse_dt("2024-03-14 01:00:00"), msg.start_ts.unwrap());
         assert_eq!(parse_dt("2024-07-12 01:00:00"), msg.end_ts.unwrap());
         assert_eq!(2592000, msg.period_length.num_seconds());

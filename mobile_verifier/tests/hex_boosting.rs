@@ -13,6 +13,7 @@ use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, HeartbeatValidity, RadioReward, SeniorityUpdateReason, SignalLevel,
     UnallocatedReward,
 };
+use hextree::Cell;
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
@@ -123,7 +124,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let boosted_hexes = vec![
         BoostedHexInfo {
             // hotspot 1's location
-            location: 0x8a1fb466d2dffff_u64,
+            location: Cell::from_raw(0x8a1fb466d2dffff_u64)?,
             start_ts: Some(start_ts_1),
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
@@ -134,7 +135,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
         },
         BoostedHexInfo {
             // hotspot 2's location
-            location: 0x8a1fb49642dffff_u64,
+            location: Cell::from_raw(0x8a1fb49642dffff_u64)?,
             start_ts: Some(start_ts_2),
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
@@ -145,7 +146,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
         },
         BoostedHexInfo {
             // hotspot 3's location
-            location: 0x8c2681a306607ff_u64,
+            location: Cell::from_raw(0x8c2681a306607ff_u64)?,
             start_ts: None,
             end_ts: None,
             period_length: boost_period_length,
@@ -291,7 +292,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
     let boosted_hexes = vec![
         BoostedHexInfo {
             // hotspot 1's location
-            location: 0x8a1fb466d2dffff_u64,
+            location: Cell::from_raw(0x8a1fb466d2dffff_u64)?,
             start_ts: Some(start_ts_1),
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
@@ -302,7 +303,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
         },
         BoostedHexInfo {
             // hotspot 2's location
-            location: 0x8a1fb49642dffff_u64,
+            location: Cell::from_raw(0x8a1fb49642dffff_u64)?,
             start_ts: Some(start_ts_2),
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
@@ -313,7 +314,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
         },
         BoostedHexInfo {
             // hotspot 3's location
-            location: 0x8c2681a306607ff_u64,
+            location: Cell::from_raw(0x8c2681a306607ff_u64)?,
             start_ts: None,
             end_ts: None,
             period_length: boost_period_length,
@@ -439,7 +440,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     let boosted_hexes = vec![
         BoostedHexInfo {
             // hotspot 1's first covered location
-            location: 0x8a1fb46622dffff_u64,
+            location: Cell::from_raw(0x8a1fb46622dffff_u64)?,
             start_ts: Some(start_ts_1),
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
@@ -450,7 +451,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         },
         BoostedHexInfo {
             // hotspot 1's second covered location
-            location: 0x8a1fb46622d7fff_u64,
+            location: Cell::from_raw(0x8a1fb46622d7fff_u64)?,
             start_ts: Some(start_ts_1),
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
@@ -461,7 +462,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         },
         BoostedHexInfo {
             // hotspot 2's location
-            location: 0x8a1fb49642dffff_u64,
+            location: Cell::from_raw(0x8a1fb49642dffff_u64)?,
             start_ts: Some(start_ts_2),
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
@@ -472,7 +473,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         },
         BoostedHexInfo {
             // hotspot 3's location
-            location: 0x8c2681a306607ff_u64,
+            location: Cell::from_raw(0x8c2681a306607ff_u64)?,
             start_ts: Some(start_ts_3),
             end_ts: Some(end_ts_3),
             period_length: boost_period_length,
@@ -610,7 +611,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
 
     let boosted_hexes = vec![
         BoostedHexInfo {
-            location: 0x8a1fb466d2dffff_u64,
+            location: Cell::from_raw(0x8a1fb466d2dffff_u64)?,
             start_ts: Some(start_ts_1),
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
@@ -620,7 +621,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             version: 0,
         },
         BoostedHexInfo {
-            location: 0x8a1fb49642dffff_u64,
+            location: Cell::from_raw(0x8a1fb49642dffff_u64)?,
             start_ts: Some(start_ts_2),
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
@@ -721,7 +722,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     let boosted_hexes = vec![
         BoostedHexInfo {
             // hotspot 1's location
-            location: 0x8a1fb466d2dffff_u64,
+            location: Cell::from_raw(0x8a1fb466d2dffff_u64)?,
             start_ts: Some(start_ts_1),
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
@@ -732,7 +733,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         },
         BoostedHexInfo {
             // hotspot 3's location
-            location: 0x8c2681a306607ff_u64,
+            location: Cell::from_raw(0x8c2681a306607ff_u64)?,
             start_ts: None,
             end_ts: None,
             period_length: boost_period_length,
@@ -885,7 +886,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     let boosted_hexes = vec![
         BoostedHexInfo {
             // hotspot 1's first covered location
-            location: 0x8a1fb46622dffff_u64,
+            location: Cell::from_raw(0x8a1fb46622dffff_u64)?,
             start_ts: Some(start_ts_1),
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
@@ -896,7 +897,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         },
         BoostedHexInfo {
             // hotspot 1's second covered location
-            location: 0x8a1fb46622d7fff_u64,
+            location: Cell::from_raw(0x8a1fb46622d7fff_u64)?,
             start_ts: Some(start_ts_1),
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
@@ -907,7 +908,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         },
         BoostedHexInfo {
             // hotspot 2's location
-            location: 0x8a1fb49642dffff_u64,
+            location: Cell::from_raw(0x8a1fb49642dffff_u64)?,
             start_ts: Some(start_ts_2),
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
@@ -918,7 +919,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         },
         BoostedHexInfo {
             // hotspot 3's location
-            location: 0x8c2681a306607ff_u64,
+            location: Cell::from_raw(0x8c2681a306607ff_u64)?,
             start_ts: Some(start_ts_3),
             end_ts: Some(end_ts_3),
             period_length: boost_period_length,

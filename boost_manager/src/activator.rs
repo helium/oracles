@@ -6,14 +6,11 @@ use file_store::{
 };
 use futures::{future::LocalBoxFuture, stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::{
-    services::poc_mobile::{
-        mobile_reward_share::Reward as MobileReward, BoostedHex as BoostedHexProto,
-        MobileRewardShare,
-    },
+    services::poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
     Message,
 };
 use mobile_config::{
-    boosted_hex_info::BoostedHexes,
+    boosted_hex_info::{BoostedHex, BoostedHexes},
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
 use poc_metrics::record_duration;
@@ -118,7 +115,8 @@ where
             let share = MobileRewardShare::decode(msg)?;
             if let Some(MobileReward::RadioReward(r)) = share.reward {
                 for hex in r.boosted_hexes.into_iter() {
-                    process_boosted_hex(txn, manifest_time, &boosted_hexes, &hex).await?
+                    process_boosted_hex(txn, manifest_time, &boosted_hexes, &hex.try_into()?)
+                        .await?
                 }
             }
         }
@@ -130,14 +128,14 @@ pub async fn process_boosted_hex(
     txn: &mut Transaction<'_, Postgres>,
     manifest_time: DateTime<Utc>,
     boosted_hexes: &BoostedHexes,
-    hex: &BoostedHexProto,
+    hex: &BoostedHex,
 ) -> Result<()> {
     match boosted_hexes.hexes.get(&hex.location) {
         Some(info) => {
             if info.start_ts.is_none() {
                 db::insert_activated_hex(
                     txn,
-                    hex.location,
+                    hex.location.into_raw(),
                     &info.boosted_hex_pubkey.to_string(),
                     &info.boost_config_pubkey.to_string(),
                     manifest_time,
