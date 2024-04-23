@@ -28,7 +28,11 @@ async fn initialize_session_and_send_beacon_and_witness() {
         .run_until(async move {
             tokio::task::spawn_local(async move {
                 let server = create_test_server(port, beacon_client, witness_client, None, None);
-                TaskManager::builder().add_task(server).start().await
+                TaskManager::builder()
+                    .add_task(server)
+                    .build()
+                    .start()
+                    .await
             });
 
             let pub_key = generate_keypair();
@@ -77,7 +81,11 @@ async fn stream_stops_after_incorrectly_signed_init_request() {
         .run_until(async move {
             tokio::task::spawn_local(async move {
                 let server = create_test_server(port, beacon_client, witness_client, None, None);
-                TaskManager::builder().add_task(server).start().await
+                TaskManager::builder()
+                    .add_task(server)
+                    .build()
+                    .start()
+                    .await
             });
 
             let pub_key = generate_keypair();
@@ -111,7 +119,11 @@ async fn stream_stops_after_incorrectly_signed_beacon() {
         .run_until(async move {
             tokio::task::spawn_local(async move {
                 let server = create_test_server(port, beacon_client, witness_client, None, None);
-                TaskManager::builder().add_task(server).start().await
+                TaskManager::builder()
+                    .add_task(server)
+                    .build()
+                    .start()
+                    .await
             });
 
             let pub_key = generate_keypair();
@@ -148,7 +160,11 @@ async fn stream_stops_after_incorrect_beacon_pubkey() {
         .run_until(async move {
             tokio::task::spawn_local(async move {
                 let server = create_test_server(port, beacon_client, witness_client, None, None);
-                TaskManager::builder().add_task(server).start().await
+                TaskManager::builder()
+                    .add_task(server)
+                    .build()
+                    .start()
+                    .await
             });
 
             let pub_key = generate_keypair();
@@ -188,7 +204,11 @@ async fn stream_stops_after_incorrectly_signed_witness() {
         .run_until(async move {
             tokio::task::spawn_local(async move {
                 let server = create_test_server(port, beacon_client, witness_client, None, None);
-                TaskManager::builder().add_task(server).start().await
+                TaskManager::builder()
+                    .add_task(server)
+                    .build()
+                    .start()
+                    .await
             });
 
             let pub_key = generate_keypair();
@@ -225,7 +245,11 @@ async fn stream_stops_after_incorrect_witness_pubkey() {
         .run_until(async move {
             tokio::task::spawn_local(async move {
                 let server = create_test_server(port, beacon_client, witness_client, None, None);
-                TaskManager::builder().add_task(server).start().await
+                TaskManager::builder()
+                    .add_task(server)
+                    .build()
+                    .start()
+                    .await
             });
 
             let pub_key = generate_keypair();
@@ -265,7 +289,11 @@ async fn stream_stop_if_client_attempts_to_initiliaze_2nd_session() {
         .run_until(async move {
             tokio::task::spawn_local(async move {
                 let server = create_test_server(port, beacon_client, witness_client, None, None);
-                TaskManager::builder().add_task(server).start().await
+                TaskManager::builder()
+                    .add_task(server)
+                    .build()
+                    .start()
+                    .await
             });
 
             let pub_key = generate_keypair();
@@ -316,7 +344,11 @@ async fn stream_stops_if_init_not_sent_within_timeout() {
             tokio::task::spawn_local(async move {
                 let server =
                     create_test_server(port, beacon_client, witness_client, Some(500), None);
-                TaskManager::builder().add_task(server).start().await
+                TaskManager::builder()
+                    .add_task(server)
+                    .build()
+                    .start()
+                    .await
             });
 
             let mut client = connect_and_stream(port).await;
@@ -338,7 +370,11 @@ async fn stream_stops_on_session_timeout() {
             tokio::task::spawn_local(async move {
                 let server =
                     create_test_server(port, beacon_client, witness_client, Some(500), Some(900));
-                TaskManager::builder().add_task(server).start().await
+                TaskManager::builder()
+                    .add_task(server)
+                    .build()
+                    .start()
+                    .await
             });
 
             let mut client = connect_and_stream(port).await;

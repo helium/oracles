@@ -110,6 +110,7 @@ impl Server {
             .add_task(hnt_price_generator)
             .add_task(mobile_price_generator)
             .add_task(iot_price_generator)
+            .build()
             .start()
             .await
     }

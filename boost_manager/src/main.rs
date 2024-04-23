@@ -139,6 +139,7 @@ impl Server {
             .add_task(watcher)
             .add_task(updater)
             .add_task(purger)
+            .build()
             .start()
             .await
     }

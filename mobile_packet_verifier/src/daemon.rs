@@ -186,6 +186,7 @@ impl Cmd {
             .add_task(reports_server)
             .add_task(event_id_purger)
             .add_task(daemon)
+            .build()
             .start()
             .await
     }

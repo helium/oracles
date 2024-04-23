@@ -393,6 +393,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(beacon_report_sink_server)
         .add_task(witness_report_sink_server)
         .add_task(grpc_server)
+        .build()
         .start()
         .await
 }
