@@ -4,14 +4,17 @@ use crate::{
         UnassignedHex,
     },
     heartbeats::{HbType, KeyType, OwnedKeyType},
-    IsAuthorized,
+    IsAuthorized, Settings,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::{self, CoverageObjectIngestReport},
-    file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient,
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_sink::{self, FileSinkClient},
+    file_source,
+    file_upload::FileUpload,
     traits::TimestampEncode,
+    FileStore, FileType,
 };
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
@@ -39,7 +42,7 @@ use std::{
     sync::Arc,
     time::Instant,
 };
-use task_manager::ManagedTask;
+use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
@@ -79,22 +82,81 @@ where
     Land: DataSet,
     Urban: DataSet,
 {
-    pub async fn new(
+    pub async fn create_managed_task(
+        pool: Pool<Postgres>,
+        settings: &Settings,
+        file_upload: FileUpload,
+        file_store: FileStore,
+        auth_client: AuthorizationClient,
+        hex_boost_data: HexBoostData<Foot, Land, Urban>,
+    ) -> anyhow::Result<impl ManagedTask> {
+        let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
+            FileType::CoverageObject,
+            settings.store_base_path(),
+            file_upload.clone(),
+            concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
+        )
+        .auto_commit(false)
+        .roll_time(Duration::minutes(15))
+        .create()
+        .await?;
+
+        // Oracle boosting reports
+        let (oracle_boosting_reports, oracle_boosting_reports_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::OracleBoostingReport,
+                settings.store_base_path(),
+                file_upload,
+                concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
+            )
+            .auto_commit(false)
+            .roll_time(Duration::minutes(15))
+            .create()
+            .await?;
+
+        let (coverage_objs, coverage_objs_server) =
+            file_source::continuous_source::<CoverageObjectIngestReport, _>()
+                .state(pool.clone())
+                .store(file_store)
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::CoverageObjectIngestReport.to_string())
+                .create()
+                .await?;
+
+        // let hex_boost_data = boosting_oracles::make_hex_boost_data(settings, geofence)?;
+        let coverage_daemon = CoverageDaemon::new(
+            pool,
+            auth_client,
+            hex_boost_data,
+            coverage_objs,
+            valid_coverage_objs,
+            oracle_boosting_reports,
+        );
+
+        Ok(TaskManager::builder()
+            .add_task(valid_coverage_objs_server)
+            .add_task(oracle_boosting_reports_server)
+            .add_task(coverage_objs_server)
+            .add_task(coverage_daemon)
+            .build())
+    }
+
+    pub fn new(
         pool: PgPool,
         auth_client: AuthorizationClient,
         hex_boost_data: HexBoostData<Foot, Land, Urban>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
         oracle_boosting_sink: FileSinkClient,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             pool,
             auth_client,
             hex_boost_data,
             coverage_objs,
             coverage_obj_sink,
             oracle_boosting_sink,
-        })
+        }
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {

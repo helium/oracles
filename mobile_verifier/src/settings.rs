@@ -139,4 +139,8 @@ impl Settings {
             self.usa_and_mexico_fencing_resolution,
         )?)
     }
+
+    pub fn store_base_path(&self) -> &std::path::Path {
+        std::path::Path::new(&self.cache)
+    }
 }
