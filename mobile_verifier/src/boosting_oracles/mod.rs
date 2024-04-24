@@ -217,16 +217,18 @@ where
     pub async fn run(mut self) -> anyhow::Result<()> {
         // Get the first data set:
         if let Some(time_to_use) =
-            sqlx::query_scalar(
-                "SELECT time_to_use FROM data_sets WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
-            )
-            .bind(T::TYPE)
-            .fetch_optional(&self.pool)
-            .await?
+            db::fetch_time_of_latest_processed_data_set(&self.pool, T::TYPE).await?
         {
             let data_set_path = self.get_data_set_path(time_to_use);
-            tracing::info!("Found initial {} data set: {}", T::TYPE.to_prefix(), data_set_path.to_string_lossy());
-            self.data_set.lock().await.update(&data_set_path, time_to_use)?;
+            tracing::info!(
+                "Found initial {} data set: {}",
+                T::TYPE.to_prefix(),
+                data_set_path.to_string_lossy()
+            );
+            self.data_set
+                .lock()
+                .await
+                .update(&data_set_path, time_to_use)?;
         }
 
         let poll_duration = Duration::minutes(5);
@@ -338,6 +340,18 @@ pub mod db {
             .execute(pool)
             .await?;
         Ok(())
+    }
+
+    pub async fn fetch_time_of_latest_processed_data_set(
+        pool: &PgPool,
+        data_set_type: DataSetType,
+    ) -> sqlx::Result<Option<DateTime<Utc>>> {
+        sqlx::query_scalar(
+                "SELECT time_to_use FROM data_sets WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
+            )
+            .bind(data_set_type)
+            .fetch_optional(pool)
+            .await
     }
 
     /// Check if there are any pending or downloaded files prior to the given reward period
