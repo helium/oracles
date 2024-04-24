@@ -225,6 +225,22 @@ impl BoostedHexes {
     pub fn insert(&mut self, info: BoostedHexInfo) {
         self.hexes.entry(info.location).or_default().push(info);
     }
+
+    pub fn count(&self) -> usize {
+        self.hexes.len()
+    }
+
+    pub fn iter_hexes(&self) -> impl Iterator<Item = &BoostedHexInfo> {
+        self.hexes.values()
+    }
+
+    pub fn get(&self, location: &Cell) -> Option<&BoostedHexInfo> {
+        self.hexes.get(location)
+    }
+
+    pub fn insert(&mut self, info: BoostedHexInfo) {
+        self.hexes.insert(info.location, info);
+    }
 }
 
 pub(crate) mod db {
