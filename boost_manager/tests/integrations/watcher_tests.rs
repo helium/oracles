@@ -2,7 +2,10 @@ use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient};
 use boost_manager::watcher::{self, Watcher};
 use chrono::{Duration as ChronoDuration, Duration, Utc};
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
-use mobile_config::boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo};
+use mobile_config::{
+    boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo, BoostedHexInfoStream},
+    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
+};
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{num::NonZeroU32, str::FromStr};

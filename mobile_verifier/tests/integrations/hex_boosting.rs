@@ -11,7 +11,10 @@ use helium_proto::services::poc_mobile::{
     UnallocatedReward,
 };
 use hextree::Cell;
-use mobile_config::boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo};
+use mobile_config::{
+    boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo, BoostedHexInfoStream},
+    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
+};
 use mobile_verifier::{
     cell_type::CellType,
     coverage::{set_oracle_boosting_assignments, CoverageObject, UnassignedHex},
