@@ -104,7 +104,7 @@ impl BoostedHexInfo {
 
 #[derive(Debug, Clone, Default)]
 pub struct BoostedHexes {
-    pub hexes: HashMap<Cell, BoostedHexInfo>,
+    hexes: HashMap<Cell, BoostedHexInfo>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -174,6 +174,22 @@ impl BoostedHexes {
         self.hexes
             .get(&location)
             .and_then(|info| info.current_multiplier(ts))
+    }
+
+    pub fn count(&self) -> usize {
+        self.hexes.len()
+    }
+
+    pub fn iter_hexes(&self) -> impl Iterator<Item = &BoostedHexInfo> {
+        self.hexes.values()
+    }
+
+    pub fn get(&self, location: &Cell) -> Option<&BoostedHexInfo> {
+        self.hexes.get(location)
+    }
+
+    pub fn insert(&mut self, info: BoostedHexInfo) {
+        self.hexes.insert(info.location, info);
     }
 }
 
