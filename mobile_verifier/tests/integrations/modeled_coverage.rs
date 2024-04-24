@@ -845,46 +845,37 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let mut boosted_hexes = BoostedHexes::default();
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8a1fb466d2dffff)?,
-        BoostedHexInfo {
-            location: Cell::from_raw(0x8a1fb466d2dffff)?,
-            start_ts: None,
-            end_ts: None,
-            period_length: Duration::hours(1),
-            multipliers: vec![NonZeroU32::new(1).unwrap()],
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
-            version: 0,
-        },
-    );
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8a1fb49642dffff)?,
-        BoostedHexInfo {
-            location: Cell::from_raw(0x8a1fb49642dffff)?,
-            start_ts: None,
-            end_ts: None,
-            period_length: Duration::hours(1),
-            multipliers: vec![NonZeroU32::new(2).unwrap()],
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
-            version: 0,
-        },
-    );
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8c2681a306607ff)?,
-        BoostedHexInfo {
-            // hotspot 1's location
-            location: Cell::from_raw(0x8c2681a306607ff)?,
-            start_ts: None,
-            end_ts: None,
-            period_length: Duration::hours(1),
-            multipliers: vec![NonZeroU32::new(3).unwrap()],
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
-            version: 0,
-        },
-    );
+    boosted_hexes.insert(BoostedHexInfo {
+        location: Cell::from_raw(0x8a1fb466d2dffff)?,
+        start_ts: None,
+        end_ts: None,
+        period_length: Duration::hours(1),
+        multipliers: vec![NonZeroU32::new(1).unwrap()],
+        boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+        boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+        version: 0,
+    });
+    boosted_hexes.insert(BoostedHexInfo {
+        location: Cell::from_raw(0x8a1fb49642dffff)?,
+        start_ts: None,
+        end_ts: None,
+        period_length: Duration::hours(1),
+        multipliers: vec![NonZeroU32::new(2).unwrap()],
+        boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+        boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+        version: 0,
+    });
+    boosted_hexes.insert(BoostedHexInfo {
+        // hotspot 1's location
+        location: Cell::from_raw(0x8c2681a306607ff)?,
+        start_ts: None,
+        end_ts: None,
+        period_length: Duration::hours(1),
+        multipliers: vec![NonZeroU32::new(3).unwrap()],
+        boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+        boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+        version: 0,
+    });
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);

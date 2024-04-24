@@ -130,7 +130,7 @@ pub async fn process_boosted_hex(
     boosted_hexes: &BoostedHexes,
     hex: &BoostedHex,
 ) -> Result<()> {
-    match boosted_hexes.hexes.get(&hex.location) {
+    match boosted_hexes.get(&hex.location) {
         Some(info) => {
             if info.start_ts.is_none() {
                 db::insert_activated_hex(
