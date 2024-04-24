@@ -1421,7 +1421,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=mj/landtype#d70a0a653ccb5e97cbeec8f9d175a82c487bfa9f"
+source = "git+https://github.com/helium/proto?branch=master#fdb83a38fbe8aead4ff6cb39d1e996f0ad0646b7"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -1431,7 +1431,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -3385,7 +3385,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=mj/landtype#d70a0a653ccb5e97cbeec8f9d175a82c487bfa9f"
+source = "git+https://github.com/helium/proto?branch=master#fdb83a38fbe8aead4ff6cb39d1e996f0ad0646b7"
 dependencies = [
  "bytes",
  "prost",
@@ -3616,7 +3616,7 @@ dependencies = [
  "httpdate",
  "itoa 1.0.9",
  "pin-project-lite",
- "socket2 0.4.9",
+ "socket2 0.5.5",
  "tokio",
  "tower-service",
  "tracing",
@@ -8672,7 +8672,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
  "twox-hash",
  "xorf",
