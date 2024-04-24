@@ -16,6 +16,7 @@ pub struct Burner<P, S> {
     balances: BalanceStore,
     burn_period: Duration,
     solana: S,
+    retry_delay: Duration,
 }
 
 impl<P, S> ManagedTask for Burner<P, S>
@@ -57,12 +58,14 @@ impl<P, S> Burner<P, S> {
         balances: &BalanceCache<S>,
         burn_period: Duration,
         solana: S,
+        retry_delay: Duration,
     ) -> Self {
         Self {
             pending_tables,
             balances: balances.balances(),
             burn_period,
             solana,
+            retry_delay,
         }
     }
 }
@@ -117,7 +120,7 @@ where
         // handle retries, if we encounter a blockhash not found error
         // resign the txn with the latest blockhash before next retry attempt
         let mut attempt = 1;
-        const MAX_ATTEMPTS: u64 = 10;
+        const MAX_ATTEMPTS: u32 = 10;
         loop {
             match self.solana.submit_transaction(&signed_txn).await {
                 Ok(_) => {
@@ -138,7 +141,7 @@ where
                 }
                 Err(_) if attempt < MAX_ATTEMPTS => {
                     attempt += 1;
-                    tokio::time::sleep(Duration::from_secs(attempt)).await;
+                    tokio::time::sleep(self.retry_delay * attempt).await;
                     continue;
                 }
                 Err(err) => {

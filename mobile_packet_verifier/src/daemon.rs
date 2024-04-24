@@ -157,7 +157,7 @@ impl Cmd {
         .create()
         .await?;
 
-        let burner = Burner::new(valid_sessions, solana);
+        let burner = Burner::new(valid_sessions, solana, settings.txn_retry_delay);
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 

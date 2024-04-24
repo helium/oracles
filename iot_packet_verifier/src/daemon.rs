@@ -129,6 +129,7 @@ impl Cmd {
             &balances,
             settings.burn_period,
             solana.clone(),
+            settings.txn_retry_delay,
         );
 
         let (file_upload, file_upload_server) =

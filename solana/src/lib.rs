@@ -41,7 +41,6 @@ pub trait IsErrorBlockhashNotFound {
 
 impl IsErrorBlockhashNotFound for SolanaRpcError {
     fn is_error_blockhash_not_found(&self) -> bool {
-        // matches!(self, SolanaRpcError::RpcClientError(ClientError::BlockhashNotFound))
         matches!(
             self,
             SolanaRpcError::RpcClientError(ClientError {

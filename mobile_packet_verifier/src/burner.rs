@@ -33,13 +33,15 @@ impl PayerTotals {
 pub struct Burner<S> {
     valid_sessions: FileSinkClient,
     solana: S,
+    retry_delay: Duration,
 }
 
 impl<S> Burner<S> {
-    pub fn new(valid_sessions: FileSinkClient, solana: S) -> Self {
+    pub fn new(valid_sessions: FileSinkClient, solana: S, retry_delay: Duration) -> Self {
         Self {
             valid_sessions,
             solana,
+            retry_delay,
         }
     }
 }
@@ -153,7 +155,7 @@ where
         // handle retries, if we encounter a blockhash not found error
         // resign the txn with the latest blockhash before next retry attempt
         let mut attempt = 1;
-        const MAX_ATTEMPTS: u64 = 10;
+        const MAX_ATTEMPTS: u32 = 10;
         loop {
             match self.solana.submit_transaction(&signed_txn).await {
                 Ok(_) => {
@@ -173,7 +175,7 @@ where
                 }
                 Err(_) if attempt < MAX_ATTEMPTS => {
                     attempt += 1;
-                    tokio::time::sleep(Duration::from_secs(attempt)).await;
+                    tokio::time::sleep(self.retry_delay * attempt).await;
                     continue;
                 }
                 Err(err) => {

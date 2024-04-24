@@ -454,6 +454,7 @@ async fn test_end_to_end() {
         &balance_cache,
         Duration::default(), // Burn period does not matter, we manually burn
         solana_network.clone(),
+        Duration::from_secs(1),
     );
 
     // Orgs:

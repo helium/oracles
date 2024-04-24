@@ -41,7 +41,7 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_retention_period")]
     pub retention_period: Duration,
     #[serde(with = "humantime_serde", default = "default_txn_retry_delay")]
-    txn_retry_delay: Duration,
+    pub txn_retry_delay: Duration,
 }
 
 fn default_txn_retry_delay() -> Duration {

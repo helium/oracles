@@ -125,7 +125,7 @@ impl Server {
             settings.activation_check_interval,
             settings.txn_batch_size(),
             solana,
-            settings.txn_retry_delay(),
+            settings.txn_retry_delay,
         )?;
 
         let purger = Purger::new(pool.clone(), settings.retention_period);
