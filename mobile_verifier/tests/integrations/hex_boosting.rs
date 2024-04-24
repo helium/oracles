@@ -11,7 +11,10 @@ use helium_proto::services::poc_mobile::{
     UnallocatedReward,
 };
 use hextree::Cell;
-use mobile_config::boosted_hex_info::BoostedHexInfo;
+use mobile_config::{
+    boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo, BoostedHexInfoStream},
+    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
+};
 use mobile_verifier::{
     cell_type::CellType,
     coverage::{set_oracle_boosting_assignments, CoverageObject, UnassignedHex},
@@ -104,6 +107,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 2's location
@@ -115,6 +119,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -126,6 +131,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -272,6 +278,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 2's location
@@ -283,6 +290,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -294,6 +302,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -420,6 +429,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 1's second covered location
@@ -431,6 +441,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 2's location
@@ -442,6 +453,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -453,6 +465,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -591,6 +604,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             location: Cell::from_raw(0x8a1fb49642dffff_u64)?,
@@ -601,6 +615,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -702,6 +717,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -713,6 +729,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -866,6 +883,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 1's second covered location
@@ -877,6 +895,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 2's location
@@ -888,6 +907,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -899,6 +919,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 

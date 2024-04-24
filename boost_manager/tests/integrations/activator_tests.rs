@@ -1,6 +1,8 @@
 use boost_manager::{activator, db, OnChainStatus};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Timelike, Utc};
-use mobile_config::boosted_hex_info::{BoostedHex, BoostedHexInfo, BoostedHexes};
+use mobile_config::boosted_hex_info::{
+    BoostedHex, BoostedHexDeviceType, BoostedHexInfo, BoostedHexes,
+};
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{num::NonZeroU32, str::FromStr};
@@ -50,6 +52,7 @@ impl TestContext {
                 boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
                 boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
                 version: 0,
+                device_type: BoostedHexDeviceType::All,
             },
             BoostedHexInfo {
                 location: 0x8a1fb49642dffff_u64.try_into().expect("valid h3 cell"),
@@ -60,6 +63,7 @@ impl TestContext {
                 boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
                 boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
                 version: 0,
+                device_type: BoostedHexDeviceType::All,
             },
             BoostedHexInfo {
                 // hotspot 3's location
@@ -71,6 +75,7 @@ impl TestContext {
                 boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
                 boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
                 version: 0,
+                device_type: BoostedHexDeviceType::All,
             },
         ];
         Ok(Self {
