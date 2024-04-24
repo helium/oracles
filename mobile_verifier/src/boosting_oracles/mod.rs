@@ -106,11 +106,7 @@ where
         oracle_boosting_sink: FileSinkClient,
         data_set_directory: PathBuf,
     ) -> anyhow::Result<Self> {
-        let latest_file_date: Option<DateTime<Utc>> =
-            sqlx::query_scalar("SELECT time_to_use FROM data_sets WHERE data_set = $1 ORDER BY time_to_use DESC LIMIT 1")
-                .bind(T::TYPE)
-            .fetch_optional(&pool)
-            .await?;
+        let latest_file_date = db::fetch_latest_file_date(&pool, T::TYPE).await?;
         Ok(Self {
             pool,
             data_set,
@@ -143,16 +139,12 @@ where
                 new_data_set.key,
                 new_data_set
             );
-            sqlx::query(
-                r#"
-                INSERT INTO data_sets (filename, data_set, time_to_use, status)
-                VALUES ($1, $2, $3, 'pending')
-                "#,
+            db::insert_new_data_set(
+                &self.pool,
+                &new_data_set.key,
+                T::TYPE,
+                new_data_set.timestamp,
             )
-            .bind(new_data_set.key)
-            .bind(T::TYPE)
-            .bind(new_data_set.timestamp)
-            .execute(&self.pool)
             .await?;
             self.latest_file_date = Some(new_data_set.timestamp);
         }
@@ -162,54 +154,63 @@ where
     pub async fn process_data_sets(&self) -> anyhow::Result<()> {
         tracing::info!("Checking for new data sets");
         let mut data_set = self.data_set.lock().await;
-        let curr_data_set = data_set.timestamp();
-        let latest_data_set: Option<NewDataSet> = sqlx::query_as(
-                "SELECT filename, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = $1 AND COALESCE(time_to_use > $2, TRUE) AND time_to_use <= $3 ORDER BY time_to_use DESC LIMIT 1"
-            )
-                .bind(T::TYPE)
-                .bind(curr_data_set)
-                .bind(Utc::now())
-                .fetch_optional(&self.pool)
+        let latest_unprocessed_data_set =
+            db::fetch_latest_unprocessed_data_set(&self.pool, T::TYPE, data_set.timestamp())
                 .await?;
 
-        if let Some(latest_data_set) = latest_data_set {
-            let path = self.get_data_set_path(latest_data_set.time_to_use);
+        let Some(latest_unprocessed_data_set) = latest_unprocessed_data_set else {
+            return Ok(());
+        };
 
-            // Download the file if it hasn't been downloaded already:
-            if !latest_data_set.status.is_downloaded() {
-                download_data_set(&self.store, &latest_data_set.filename, &path).await?;
-                // Set the status to be downloaded
-                sqlx::query("UPDATE data_sets SET status = 'downloaded' WHERE filename = $1")
-                    .bind(&latest_data_set.filename)
-                    .execute(&self.pool)
-                    .await?;
-            }
+        // If there is an unprocessed data set, download it (if we need to) and process it.
 
-            // Now that we've downloaded the file, load it into the data set
-            data_set.update(Path::new(&path), latest_data_set.time_to_use)?;
+        let path = self.get_data_set_path(latest_unprocessed_data_set.time_to_use);
 
-            // Release the lock as it is no longer needed
-            drop(data_set);
-
-            // Update the hexes
-            let boosting_reports = set_oracle_boosting_assignments(
-                UnassignedHex::fetch_all(&self.pool),
-                &self.data_sets,
+        // Download the file if it hasn't been downloaded already:
+        if !latest_unprocessed_data_set.status.is_downloaded() {
+            download_data_set(&self.store, &latest_unprocessed_data_set.filename, &path).await?;
+            db::set_data_set_status(
                 &self.pool,
+                &latest_unprocessed_data_set.filename,
+                DataSetStatus::Downloaded,
             )
             .await?;
-
-            sqlx::query("UPDATE data_sets SET status = 'processed' WHERE filename = $1")
-                .bind(latest_data_set.filename)
-                .execute(&self.pool)
-                .await?;
-
-            self.oracle_boosting_sink
-                .write_all(boosting_reports)
-                .await?;
-            self.oracle_boosting_sink.commit().await?;
-            tracing::info!("Data set download complete");
+            tracing::info!(
+                data_set = latest_unprocessed_data_set.filename,
+                "Data set download complete"
+            );
         }
+
+        // Now that we've downloaded the file, load it into the data set
+        data_set.update(Path::new(&path), latest_unprocessed_data_set.time_to_use)?;
+
+        // Release the lock as it is no longer needed
+        drop(data_set);
+
+        // Update the hexes
+        let boosting_reports = set_oracle_boosting_assignments(
+            UnassignedHex::fetch_all(&self.pool),
+            &self.data_sets,
+            &self.pool,
+        )
+        .await?;
+
+        db::set_data_set_status(
+            &self.pool,
+            &latest_unprocessed_data_set.filename,
+            DataSetStatus::Processed,
+        )
+        .await?;
+
+        self.oracle_boosting_sink
+            .write_all(boosting_reports)
+            .await?;
+        self.oracle_boosting_sink.commit().await?;
+        tracing::info!(
+            data_set = latest_unprocessed_data_set.filename,
+            "Data set processing complete"
+        );
+
         Ok(())
     }
 
@@ -278,17 +279,79 @@ impl DataSetType {
     }
 }
 
-/// Check if there are any pending or downloaded files prior to the given reward period
-pub async fn check_for_unprocessed_data_sets(
-    pool: &PgPool,
-    period_end: DateTime<Utc>,
-) -> sqlx::Result<bool> {
-    sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM data_sets WHERE time_to_use <= $1 AND status != 'processed'",
-    )
-    .bind(period_end)
-    .fetch_one(pool)
-    .await
+pub mod db {
+    use super::*;
+
+    pub async fn fetch_latest_file_date(
+        pool: &PgPool,
+        data_set_type: DataSetType,
+    ) -> sqlx::Result<Option<DateTime<Utc>>> {
+        sqlx::query_scalar("SELECT time_to_use FROM data_sets WHERE data_set = $1 ORDER BY time_to_use DESC LIMIT 1")
+            .bind(data_set_type)
+            .fetch_optional(pool)
+            .await
+    }
+
+    pub async fn insert_new_data_set(
+        pool: &PgPool,
+        filename: &str,
+        data_set_type: DataSetType,
+        time_to_use: DateTime<Utc>,
+    ) -> sqlx::Result<()> {
+        sqlx::query(
+            r#"
+                INSERT INTO data_sets (filename, data_set, time_to_use, status)
+                VALUES ($1, $2, $3, 'pending')
+                "#,
+        )
+        .bind(filename)
+        .bind(data_set_type)
+        .bind(time_to_use)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn fetch_latest_unprocessed_data_set(
+        pool: &PgPool,
+        data_set_type: DataSetType,
+        since: Option<DateTime<Utc>>,
+    ) -> sqlx::Result<Option<NewDataSet>> {
+        sqlx::query_as(
+                "SELECT filename, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = $1 AND COALESCE(time_to_use > $2, TRUE) AND time_to_use <= $3 ORDER BY time_to_use DESC LIMIT 1"
+            )
+            .bind(data_set_type)
+            .bind(since)
+            .bind(Utc::now())
+            .fetch_optional(pool)
+            .await
+    }
+
+    pub async fn set_data_set_status(
+        pool: &PgPool,
+        filename: &str,
+        status: DataSetStatus,
+    ) -> sqlx::Result<()> {
+        sqlx::query("UPDATE data_sets SET status = $1 WHERE filename = $2")
+            .bind(status)
+            .bind(filename)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Check if there are any pending or downloaded files prior to the given reward period
+    pub async fn check_for_unprocessed_data_sets(
+        pool: &PgPool,
+        period_end: DateTime<Utc>,
+    ) -> sqlx::Result<bool> {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM data_sets WHERE time_to_use <= $1 AND status != 'processed'",
+        )
+        .bind(period_end)
+        .fetch_one(pool)
+        .await
+    }
 }
 
 pub trait HexAssignment: Send + Sync + 'static {

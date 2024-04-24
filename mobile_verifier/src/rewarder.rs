@@ -1,5 +1,5 @@
 use crate::{
-    boosting_oracles::check_for_unprocessed_data_sets,
+    boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
     radio_threshold,
