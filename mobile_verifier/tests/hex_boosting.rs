@@ -64,7 +64,7 @@ async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
     let unassigned_hexes = UnassignedHex::fetch(pool);
     let _ = set_oracle_boosting_assignments(
         unassigned_hexes,
-        &common::MockHexAssignments::best(),
+        &common::MockHexAssignments::default(),
         pool,
     )
     .await?;

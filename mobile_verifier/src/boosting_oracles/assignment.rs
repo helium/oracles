@@ -1,7 +1,14 @@
-use helium_proto::services::poc_mobile::oracle_boosting_hex_assignment;
+use helium_proto::services::poc_mobile::oracle_boosting_hex_assignment::Assignment as ProtoAssignment;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::fmt;
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct HexAssignments {
+    pub footfall: Assignment,
+    pub landtype: Assignment,
+    pub urbanized: Assignment,
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, sqlx::Type)]
 #[sqlx(type_name = "oracle_assignment")]
@@ -12,7 +19,7 @@ pub enum Assignment {
     C,
 }
 
-impl From<Assignment> for oracle_boosting_hex_assignment::Assignment {
+impl From<Assignment> for ProtoAssignment {
     fn from(assignment: Assignment) -> Self {
         match assignment {
             Assignment::A => Self::A,
@@ -24,7 +31,17 @@ impl From<Assignment> for oracle_boosting_hex_assignment::Assignment {
 
 impl From<Assignment> for i32 {
     fn from(assignment: Assignment) -> i32 {
-        oracle_boosting_hex_assignment::Assignment::from(assignment) as i32
+        ProtoAssignment::from(assignment) as i32
+    }
+}
+
+impl From<ProtoAssignment> for Assignment {
+    fn from(value: ProtoAssignment) -> Self {
+        match value {
+            ProtoAssignment::A => Assignment::A,
+            ProtoAssignment::B => Assignment::B,
+            ProtoAssignment::C => Assignment::C,
+        }
     }
 }
 
@@ -40,59 +57,53 @@ impl fmt::Display for Assignment {
     }
 }
 
-pub fn footfall_and_urbanization_multiplier(
-    footfall: Assignment,
-    urbanization: Assignment,
-) -> Decimal {
-    use Assignment::*;
+impl HexAssignments {
+    pub fn boosting_multiplier(&self) -> Decimal {
+        let HexAssignments {
+            footfall,
+            urbanized,
+            landtype,
+        } = self;
 
-    match (footfall, urbanization) {
-        (A, A) => dec!(1.0),
-        (A, B) => dec!(1.0),
-        (B, A) => dec!(0.75),
-        (B, B) => dec!(0.50),
-        (C, A) => dec!(0.40),
-        (C, B) => dec!(0.10),
-        (A, C) => dec!(0.00),
-        (B, C) => dec!(0.00),
-        (C, C) => dec!(0.00),
+        use Assignment::*;
+        match (footfall, landtype, urbanized) {
+            // yellow - POI ≥ 1 Urbanized
+            (A, A, A) => dec!(1.00),
+            (A, B, A) => dec!(1.00),
+            (A, C, A) => dec!(1.00),
+            // orange - POI ≥ 1 Not Urbanized
+            (A, A, B) => dec!(1.00),
+            (A, B, B) => dec!(1.00),
+            (A, C, B) => dec!(1.00),
+            // light green - Point of Interest Urbanized
+            (B, A, A) => dec!(0.70),
+            (B, B, A) => dec!(0.70),
+            (B, C, A) => dec!(0.70),
+            // dark green - Point of Interest Not Urbanized
+            (B, A, B) => dec!(0.50),
+            (B, B, B) => dec!(0.50),
+            (B, C, B) => dec!(0.50),
+            // light blue - No POI Urbanized
+            (C, A, A) => dec!(0.40),
+            (C, B, A) => dec!(0.30),
+            (C, C, A) => dec!(0.05),
+            // dark blue - No POI Not Urbanized
+            (C, A, B) => dec!(0.20),
+            (C, B, B) => dec!(0.15),
+            (C, C, B) => dec!(0.03),
+            // gray - Outside of USA
+            (_, _, C) => dec!(0.00),
+        }
     }
 }
 
-#[allow(dead_code)]
-pub fn boosting_oracles_multiplier(
-    footfall: Assignment,
-    landtype: Assignment,
-    urbanization: Assignment,
-) -> Decimal {
-    use Assignment::*;
-
-    match (footfall, landtype, urbanization) {
-        // POI ≥ 1 Urbanized
-        (A, A, A) => dec!(1.00),
-        (A, B, A) => dec!(1.00),
-        (A, C, A) => dec!(1.00),
-        // POI ≥ 1 Not Urbanized
-        (A, A, B) => dec!(1.00),
-        (A, B, B) => dec!(1.00),
-        (A, C, B) => dec!(1.00),
-        // Point of Interest Urbanized
-        (B, A, A) => dec!(0.70),
-        (B, B, A) => dec!(0.70),
-        (B, C, A) => dec!(0.70),
-        // Point of Interest Not Urbanized
-        (B, A, B) => dec!(0.50),
-        (B, B, B) => dec!(0.50),
-        (B, C, B) => dec!(0.50),
-        // No POI Urbanized
-        (C, A, A) => dec!(0.40),
-        (C, B, A) => dec!(0.30),
-        (C, C, A) => dec!(0.05),
-        // No POI Not Urbanized
-        (C, A, B) => dec!(0.20),
-        (C, B, B) => dec!(0.15),
-        (C, C, B) => dec!(0.03),
-        // Outside of USA
-        (_, _, C) => dec!(0.00),
+#[cfg(test)]
+impl HexAssignments {
+    pub fn test_best() -> Self {
+        Self {
+            footfall: Assignment::A,
+            urbanized: Assignment::A,
+            landtype: Assignment::A,
+        }
     }
 }

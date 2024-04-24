@@ -415,7 +415,7 @@ async fn process_input(
     let unassigned_hexes = UnassignedHex::fetch(pool);
     let _ = set_oracle_boosting_assignments(
         unassigned_hexes,
-        &common::MockHexAssignments::best(),
+        &common::MockHexAssignments::default(),
         pool,
     )
     .await?;

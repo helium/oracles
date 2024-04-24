@@ -44,6 +44,7 @@ pub struct Settings {
     pub usa_fencing_resolution: u8,
     pub urbanization_data_set: PathBuf,
     pub footfall_data_set: PathBuf,
+    pub landtype_data_set: PathBuf,
 }
 
 fn default_fencing_resolution() -> u8 {

@@ -22,11 +22,19 @@ pub struct Geofence {
 }
 
 impl Geofence {
-    pub fn new(paths: Vec<std::path::PathBuf>, resolution: Resolution) -> anyhow::Result<Self> {
-        Ok(Self {
-            regions: Arc::new(valid_mapping_regions(paths)?),
+    pub fn new(hextree: HexTreeSet, resolution: Resolution) -> Self {
+        Self {
+            regions: Arc::new(hextree),
             resolution,
-        })
+        }
+    }
+
+    pub fn from_paths(
+        paths: Vec<std::path::PathBuf>,
+        resolution: Resolution,
+    ) -> anyhow::Result<Self> {
+        let hextree = valid_mapping_regions(paths)?;
+        Ok(Self::new(hextree, resolution))
     }
 }
 

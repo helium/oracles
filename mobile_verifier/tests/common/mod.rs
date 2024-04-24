@@ -7,7 +7,7 @@ use helium_proto::{
     Message,
 };
 use mobile_config::boosted_hex_info::BoostedHexInfo;
-use mobile_verifier::boosting_oracles::{Assignment, HexAssignment, HexBoostData};
+use mobile_verifier::boosting_oracles::{Assignment, BoostedHexAssignments, HexAssignments};
 use std::collections::HashMap;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 
@@ -170,14 +170,36 @@ pub fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
-pub struct MockHexAssignments;
+type MockAssignmentMap = HashMap<hextree::Cell, Assignment>;
 
-#[allow(dead_code)]
+#[derive(Default)]
+pub struct MockHexAssignments {
+    footfall: MockAssignmentMap,
+    urbanized: MockAssignmentMap,
+    landtype: MockAssignmentMap,
+}
+
 impl MockHexAssignments {
-    pub fn best() -> HexBoostData<impl HexAssignment, impl HexAssignment> {
-        HexBoostData {
-            urbanization: Assignment::A,
-            footfall: Assignment::A,
+    #[allow(dead_code)]
+    pub fn new(
+        footfall: MockAssignmentMap,
+        urbanized: MockAssignmentMap,
+        landtype: MockAssignmentMap,
+    ) -> Self {
+        Self {
+            footfall,
+            urbanized,
+            landtype,
         }
+    }
+}
+
+impl BoostedHexAssignments for MockHexAssignments {
+    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
+        Ok(HexAssignments {
+            footfall: self.footfall.get(&cell).cloned().unwrap_or(Assignment::A),
+            urbanized: self.urbanized.get(&cell).cloned().unwrap_or(Assignment::A),
+            landtype: self.landtype.get(&cell).cloned().unwrap_or(Assignment::A),
+        })
     }
 }
