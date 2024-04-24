@@ -78,11 +78,11 @@ impl TryFrom<BoostedHexInfo> for BoostedHexInfoProto {
 }
 
 impl BoostedHexInfo {
-    pub fn current_multiplier(&self, ts: DateTime<Utc>) -> anyhow::Result<Option<NonZeroU32>> {
+    pub fn current_multiplier(&self, ts: DateTime<Utc>) -> Option<NonZeroU32> {
         if self.end_ts.is_some() && ts >= self.end_ts.unwrap() {
             // end time has been set and the current time is after the end time, so return None
             // to indicate that the hex is no longer boosted
-            return Ok(None);
+            return None;
         };
         if self.start_ts.is_some() {
             // start time has previously been set, so we can calculate the current multiplier
@@ -93,11 +93,11 @@ impl BoostedHexInfo {
                 .num_seconds()
                 .checked_div(self.period_length.num_seconds())
                 .unwrap_or(0) as usize;
-            Ok(Some(self.multipliers[index]))
+            Some(self.multipliers[index])
         } else {
             // start time has not been previously set, assume this is the first time rewarding this hex
             // and use the first multiplier
-            Ok(Some(self.multipliers[0]))
+            Some(self.multipliers[0])
         }
     }
 }
@@ -173,7 +173,7 @@ impl BoostedHexes {
     pub fn get_current_multiplier(&self, location: Cell, ts: DateTime<Utc>) -> Option<NonZeroU32> {
         self.hexes
             .get(&location)
-            .and_then(|info| info.current_multiplier(ts).ok()?)
+            .and_then(|info| info.current_multiplier(ts))
     }
 }
 
