@@ -3,23 +3,27 @@ use crate::{
     coverage::{CoverageClaimTimeCache, CoverageObjectCache},
     geofence::GeofenceValidator,
     heartbeats::LocationCache,
-    GatewayResolver,
+    GatewayResolver, Settings,
 };
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient,
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_sink::FileSinkClient,
+    file_source,
     wifi_heartbeat::WifiHeartbeatIngestReport,
+    FileStore, FileType,
 };
 use futures::{stream::StreamExt, TryFutureExt};
 use retainer::Cache;
+use sqlx::{Pool, Postgres};
 use std::{
     sync::Arc,
     time::{self, Instant},
 };
-use task_manager::ManagedTask;
+use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-pub struct HeartbeatDaemon<GIR, GFV> {
+pub struct WifiHeartbeatDaemon<GIR, GFV> {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
@@ -31,11 +35,49 @@ pub struct HeartbeatDaemon<GIR, GFV> {
     geofence: GFV,
 }
 
-impl<GIR, GFV> HeartbeatDaemon<GIR, GFV>
+impl<GIR, GFV> WifiHeartbeatDaemon<GIR, GFV>
 where
     GIR: GatewayResolver,
     GFV: GeofenceValidator<Heartbeat>,
 {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_managed_task(
+        pool: Pool<Postgres>,
+        settings: &Settings,
+        file_store: FileStore,
+        gateway_resolver: GIR,
+        valid_heartbeats: FileSinkClient,
+        seniority_updates: FileSinkClient,
+        geofence: GFV,
+    ) -> anyhow::Result<impl ManagedTask> {
+        // Wifi Heartbeats
+        let (wifi_heartbeats, wifi_heartbeats_server) =
+            file_source::continuous_source::<WifiHeartbeatIngestReport, _>()
+                .state(pool.clone())
+                .store(file_store)
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::WifiHeartbeatIngestReport.to_string())
+                .create()
+                .await?;
+
+        let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
+            pool,
+            gateway_resolver,
+            wifi_heartbeats,
+            settings.modeled_coverage_start(),
+            settings.max_asserted_distance_deviation,
+            settings.max_distance_from_coverage,
+            valid_heartbeats,
+            seniority_updates,
+            geofence,
+        );
+
+        Ok(TaskManager::builder()
+            .add_task(wifi_heartbeats_server)
+            .add_task(wifi_heartbeat_daemon)
+            .build())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
@@ -143,7 +185,7 @@ where
     }
 }
 
-impl<GIR, GFV> ManagedTask for HeartbeatDaemon<GIR, GFV>
+impl<GIR, GFV> ManagedTask for WifiHeartbeatDaemon<GIR, GFV>
 where
     GIR: GatewayResolver,
     GFV: GeofenceValidator<Heartbeat>,

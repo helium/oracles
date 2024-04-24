@@ -1,7 +1,9 @@
 use chrono::{DateTime, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient,
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_sink::{self, FileSinkClient},
+    file_source,
+    file_upload::FileUpload,
     mobile_radio_invalidated_threshold::{
         InvalidatedRadioThresholdIngestReport, InvalidatedRadioThresholdReportReq,
         VerifiedInvalidatedRadioThresholdIngestReport,
@@ -9,6 +11,7 @@ use file_store::{
     mobile_radio_threshold::{
         RadioThresholdIngestReport, RadioThresholdReportReq, VerifiedRadioThresholdIngestReport,
     },
+    FileStore, FileType,
 };
 use futures::{StreamExt, TryStreamExt};
 use futures_util::TryFutureExt;
@@ -21,10 +24,12 @@ use helium_proto::services::{
     },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
-use sqlx::{FromRow, PgPool, Postgres, Row, Transaction};
+use sqlx::{FromRow, PgPool, Pool, Postgres, Row, Transaction};
 use std::{collections::HashSet, ops::Range};
-use task_manager::ManagedTask;
+use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
+
+use crate::Settings;
 
 pub struct RadioThresholdIngestor<AV> {
     pool: PgPool,
@@ -54,8 +59,77 @@ where
 
 impl<AV> RadioThresholdIngestor<AV>
 where
-    AV: AuthorizationVerifier,
+    AV: AuthorizationVerifier + Send + Sync + 'static,
 {
+    pub async fn create_managed_task(
+        pool: Pool<Postgres>,
+        settings: &Settings,
+        file_upload: FileUpload,
+        file_store: FileStore,
+        authorization_verifier: AV,
+    ) -> anyhow::Result<impl ManagedTask> {
+        let (verified_radio_threshold, verified_radio_threshold_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::VerifiedRadioThresholdIngestReport,
+                settings.store_base_path(),
+                file_upload.clone(),
+                concat!(env!("CARGO_PKG_NAME"), "_verified_radio_threshold"),
+            )
+            .auto_commit(false)
+            .create()
+            .await?;
+
+        let (verified_invalidated_radio_threshold, verified_invalidated_radio_threshold_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::VerifiedInvalidatedRadioThresholdIngestReport,
+                settings.store_base_path(),
+                file_upload.clone(),
+                concat!(
+                    env!("CARGO_PKG_NAME"),
+                    "_verified_invalidated_radio_threshold"
+                ),
+            )
+            .auto_commit(false)
+            .create()
+            .await?;
+
+        let (radio_threshold_ingest, radio_threshold_ingest_server) =
+            file_source::continuous_source::<RadioThresholdIngestReport, _>()
+                .state(pool.clone())
+                .store(file_store.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::RadioThresholdIngestReport.to_string())
+                .create()
+                .await?;
+
+        // invalidated radio threshold reports
+        let (invalidated_radio_threshold_ingest, invalidated_radio_threshold_ingest_server) =
+            file_source::continuous_source::<InvalidatedRadioThresholdIngestReport, _>()
+                .state(pool.clone())
+                .store(file_store.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::InvalidatedRadioThresholdIngestReport.to_string())
+                .create()
+                .await?;
+
+        let radio_threshold_ingestor = RadioThresholdIngestor::new(
+            pool.clone(),
+            radio_threshold_ingest,
+            invalidated_radio_threshold_ingest,
+            verified_radio_threshold,
+            verified_invalidated_radio_threshold,
+            authorization_verifier,
+        );
+
+        Ok(TaskManager::builder()
+            .add_task(verified_radio_threshold_server)
+            .add_task(verified_invalidated_radio_threshold_server)
+            .add_task(radio_threshold_ingest_server)
+            .add_task(invalidated_radio_threshold_ingest_server)
+            .add_task(radio_threshold_ingestor)
+            .build())
+    }
+
     pub fn new(
         pool: sqlx::Pool<Postgres>,
         reports_receiver: Receiver<FileInfoStream<RadioThresholdIngestReport>>,

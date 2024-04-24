@@ -5,12 +5,17 @@ use crate::{
     reward_shares::{self, CoveragePoints, MapperShares, ServiceProviderShares, TransferRewards},
     speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_location, telemetry,
+    subscriber_location, telemetry, Settings,
 };
 use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
-use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
+use file_store::{
+    file_sink::{self, FileSinkClient},
+    file_upload::FileUpload,
+    traits::TimestampEncode,
+    FileType,
+};
 use futures_util::TryFutureExt;
 use helium_proto::services::{
     poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
@@ -30,7 +35,7 @@ use rust_decimal::{prelude::*, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::ops::Range;
-use task_manager::ManagedTask;
+use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
@@ -49,9 +54,60 @@ pub struct Rewarder<A, B> {
 
 impl<A, B> Rewarder<A, B>
 where
-    A: CarrierServiceVerifier<Error = ClientError>,
-    B: HexBoostingInfoResolver<Error = ClientError>,
+    A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
+    B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
 {
+    pub async fn create_managed_task(
+        pool: Pool<Postgres>,
+        settings: &Settings,
+        file_upload: FileUpload,
+        carrier_service_verifier: A,
+        hex_boosting_info_resolver: B,
+        speedtests_avg: FileSinkClient,
+    ) -> anyhow::Result<impl ManagedTask> {
+        let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
+
+        let reward_period_hours = settings.rewards;
+        let (mobile_rewards, mobile_rewards_server) = file_sink::FileSinkBuilder::new(
+            FileType::MobileRewardShare,
+            settings.store_base_path(),
+            file_upload.clone(),
+            concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
+        )
+        .auto_commit(false)
+        .create()
+        .await?;
+
+        let (reward_manifests, reward_manifests_server) = file_sink::FileSinkBuilder::new(
+            FileType::RewardManifest,
+            settings.store_base_path(),
+            file_upload,
+            concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
+        )
+        .auto_commit(false)
+        .create()
+        .await?;
+
+        let rewarder = Rewarder::new(
+            pool.clone(),
+            carrier_service_verifier,
+            hex_boosting_info_resolver,
+            Duration::hours(reward_period_hours),
+            Duration::minutes(settings.reward_offset_minutes),
+            mobile_rewards,
+            reward_manifests,
+            price_tracker,
+            speedtests_avg,
+        );
+
+        Ok(TaskManager::builder()
+            .add_task(price_daemon)
+            .add_task(mobile_rewards_server)
+            .add_task(reward_manifests_server)
+            .add_task(rewarder)
+            .build())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
