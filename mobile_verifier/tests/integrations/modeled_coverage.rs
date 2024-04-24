@@ -13,7 +13,7 @@ use helium_proto::services::{
     poc_mobile::{CoverageObjectValidity, LocationSource, SignalLevel},
 };
 use hextree::Cell;
-use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
+use mobile_config::boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
@@ -850,6 +850,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
         boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
         version: 0,
+        device_type: BoostedHexDeviceType::All,
     });
     boosted_hexes.insert(BoostedHexInfo {
         location: Cell::from_raw(0x8a1fb49642dffff)?,
@@ -860,6 +861,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
         boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
         version: 0,
+        device_type: BoostedHexDeviceType::All,
     });
     boosted_hexes.insert(BoostedHexInfo {
         // hotspot 1's location
@@ -871,6 +873,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
         boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
         version: 0,
+        device_type: BoostedHexDeviceType::All,
     });
 
     let reward_period = start..end;

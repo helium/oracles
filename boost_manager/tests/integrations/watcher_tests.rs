@@ -2,7 +2,10 @@ use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient};
 use boost_manager::watcher::{self, Watcher};
 use chrono::{Duration as ChronoDuration, Duration, Utc};
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
-use mobile_config::boosted_hex_info::BoostedHexInfo;
+use mobile_config::{
+    boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo, BoostedHexInfoStream},
+    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
+};
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{num::NonZeroU32, str::FromStr};
@@ -45,6 +48,7 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             location: 0x8a1fb49642dffff_u64.try_into().expect("valid h3 cell"),
@@ -55,6 +59,7 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 

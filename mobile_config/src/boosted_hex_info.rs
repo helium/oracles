@@ -3,6 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampDecode;
 use futures::stream::{BoxStream, StreamExt};
 use helium_proto::services::poc_mobile::BoostedHex as BoostedHexProto;
+use helium_proto::BoostedHexDeviceTypeV1 as BoostedHexDeviceTypeProto;
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
 use hextree::Cell;
 use solana_sdk::pubkey::Pubkey;
@@ -24,12 +25,14 @@ pub struct BoostedHexInfo {
     pub boosted_hex_pubkey: Pubkey,
     pub boost_config_pubkey: Pubkey,
     pub version: u32,
+    pub device_type: BoostedHexDeviceType,
 }
 
 impl TryFrom<BoostedHexInfoProto> for BoostedHexInfo {
     type Error = anyhow::Error;
     fn try_from(v: BoostedHexInfoProto) -> anyhow::Result<Self> {
         let period_length = Duration::seconds(v.period_length as i64);
+        let device_type = v.device_type();
         let multipliers = v
             .multipliers
             .into_iter()
@@ -49,6 +52,7 @@ impl TryFrom<BoostedHexInfoProto> for BoostedHexInfo {
             boosted_hex_pubkey,
             boost_config_pubkey,
             version: v.version,
+            device_type: device_type.into(),
         })
     }
 }
@@ -73,6 +77,7 @@ impl TryFrom<BoostedHexInfo> for BoostedHexInfoProto {
             boosted_hex_pubkey: v.boosted_hex_pubkey.to_bytes().into(),
             boost_config_pubkey: v.boost_config_pubkey.to_bytes().into(),
             version: v.version,
+            device_type: v.device_type.into(),
         })
     }
 }
@@ -99,6 +104,53 @@ impl BoostedHexInfo {
             // and use the first multiplier
             Some(self.multipliers[0])
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum BoostedHexDeviceType {
+    All,
+    CbrsIndoor,
+    CbrsOutdoor,
+    WifiIndoor,
+    WifiOutdoor,
+}
+
+impl From<BoostedHexDeviceTypeProto> for BoostedHexDeviceType {
+    fn from(device_type_proto: BoostedHexDeviceTypeProto) -> Self {
+        match device_type_proto {
+            BoostedHexDeviceTypeProto::All => Self::All,
+            BoostedHexDeviceTypeProto::CbrsIndoor => Self::CbrsIndoor,
+            BoostedHexDeviceTypeProto::CbrsOutdoor => Self::CbrsOutdoor,
+            BoostedHexDeviceTypeProto::WifiIndoor => Self::WifiIndoor,
+            BoostedHexDeviceTypeProto::WifiOutdoor => Self::WifiOutdoor,
+        }
+    }
+}
+
+impl From<BoostedHexDeviceType> for BoostedHexDeviceTypeProto {
+    fn from(device_type: BoostedHexDeviceType) -> Self {
+        match device_type {
+            BoostedHexDeviceType::All => Self::All,
+            BoostedHexDeviceType::CbrsIndoor => Self::CbrsIndoor,
+            BoostedHexDeviceType::CbrsOutdoor => Self::CbrsOutdoor,
+            BoostedHexDeviceType::WifiIndoor => Self::WifiIndoor,
+            BoostedHexDeviceType::WifiOutdoor => Self::WifiOutdoor,
+        }
+    }
+}
+
+impl From<BoostedHexDeviceType> for i32 {
+    fn from(device_type: BoostedHexDeviceType) -> Self {
+        BoostedHexDeviceTypeProto::from(device_type) as i32
+    }
+}
+
+impl TryFrom<i32> for BoostedHexDeviceType {
+    type Error = helium_proto::DecodeError;
+
+    fn try_from(db_value: i32) -> Result<Self, Self::Error> {
+        Ok(BoostedHexDeviceTypeProto::try_from(db_value)?.into())
     }
 }
 
@@ -280,6 +332,12 @@ pub(crate) mod db {
             let location = Cell::try_from(row.get::<i64, &str>("location"))
                 .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
 
+            let device_type = match row.get::<Option<i32>, &str>("device_type") {
+                None => super::BoostedHexDeviceType::All,
+                Some(val) => super::BoostedHexDeviceType::try_from(val)
+                    .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+            };
+
             Ok(Self {
                 location,
                 start_ts,
@@ -289,6 +347,7 @@ pub(crate) mod db {
                 boosted_hex_pubkey,
                 boost_config_pubkey,
                 version,
+                device_type,
             })
         }
     }
@@ -337,6 +396,7 @@ mod tests {
                 .to_bytes()
                 .to_vec(),
             version: 1,
+            device_type: BoostedHexDeviceTypeProto::All.into(),
         };
 
         let msg = BoostedHexInfo::try_from(proto)?;
@@ -378,6 +438,7 @@ mod tests {
                 .to_bytes()
                 .to_vec(),
             version: 1,
+            device_type: BoostedHexDeviceTypeProto::All.into(),
         };
 
         let msg = BoostedHexInfo::try_from(proto)?;
@@ -413,6 +474,7 @@ mod tests {
             boosted_hex_pubkey: BOOST_HEX_PUBKEY.as_bytes().to_vec(),
             boost_config_pubkey: BOOST_HEX_CONFIG_PUBKEY.as_bytes().to_vec(),
             version: 1,
+            device_type: BoostedHexDeviceTypeProto::All.into(),
         };
         assert_eq!(
             "multipliers cannot contain values of 0",
