@@ -1,6 +1,7 @@
 use crate::{
     boosting_oracles::{
-        footfall::Footfall, urbanization::Urbanization, DataSetDownloaderDaemon, HexBoostData,
+        footfall::Footfall, landtype::Landtype, urbanization::Urbanization,
+        DataSetDownloaderDaemon, HexBoostData,
     },
     coverage::CoverageDaemon,
     data_session::DataSessionIngestor,
@@ -110,7 +111,8 @@ impl Cmd {
         let usa_region_paths = settings.usa_region_paths()?;
         tracing::info!(?usa_region_paths, "usa_geofence_regions");
 
-        let usa_geofence = Geofence::new(usa_region_paths, settings.usa_fencing_resolution()?)?;
+        let usa_geofence =
+            Geofence::from_paths(usa_region_paths, settings.usa_fencing_resolution()?)?;
 
         let cbrs_heartbeat_daemon = CellHeartbeatDaemon::new(
             pool.clone(),
@@ -130,7 +132,7 @@ impl Cmd {
             "usa_and_mexico_geofence_regions"
         );
 
-        let usa_and_mexico_geofence = Geofence::new(
+        let usa_and_mexico_geofence = Geofence::from_paths(
             usa_and_mexico_region_paths,
             settings.usa_and_mexico_fencing_resolution()?,
         )?;
@@ -223,7 +225,8 @@ impl Cmd {
 
         let urbanization: Urbanization<DiskTreeMap, _> = Urbanization::new(usa_geofence);
         let footfall: Footfall<DiskTreeMap> = Footfall::new();
-        let hex_boost_data = HexBoostData::new(urbanization, footfall);
+        let landtype: Landtype<DiskTreeMap> = Landtype::new();
+        let hex_boost_data = HexBoostData::new(footfall, landtype, urbanization);
 
         let coverage_daemon = CoverageDaemon::new(
             pool.clone(),
@@ -237,18 +240,27 @@ impl Cmd {
 
         // Data sets and downloaders
         let data_sets_file_store = FileStore::from_settings(&settings.data_sets).await?;
-        let urbanization_data_set_downloader = DataSetDownloaderDaemon::new(
+        let footfall_data_set_downloader = DataSetDownloaderDaemon::new(
             pool.clone(),
-            hex_boost_data.urbanization.clone(),
+            hex_boost_data.footfall.clone(),
             hex_boost_data.clone(),
             data_sets_file_store.clone(),
             oracle_boosting_reports.clone(),
             settings.data_sets_directory.clone(),
         )
         .await?;
-        let footfall_data_set_downloader = DataSetDownloaderDaemon::new(
+        let landtype_data_set_downloader = DataSetDownloaderDaemon::new(
             pool.clone(),
-            hex_boost_data.footfall.clone(),
+            hex_boost_data.landtype.clone(),
+            hex_boost_data.clone(),
+            data_sets_file_store.clone(),
+            oracle_boosting_reports.clone(),
+            settings.data_sets_directory.clone(),
+        )
+        .await?;
+        let urbanization_data_set_downloader = DataSetDownloaderDaemon::new(
+            pool.clone(),
+            hex_boost_data.urbanization.clone(),
             hex_boost_data.clone(),
             data_sets_file_store.clone(),
             oracle_boosting_reports,
@@ -414,8 +426,10 @@ impl Cmd {
             .add_task(radio_threshold_ingest_server)
             .add_task(invalidated_radio_threshold_ingest_server)
             .add_task(data_session_ingestor)
-            .add_task(urbanization_data_set_downloader)
+            .add_task(landtype_data_set_downloader)
             .add_task(footfall_data_set_downloader)
+            .add_task(urbanization_data_set_downloader)
+            .build()
             .start()
             .await
     }

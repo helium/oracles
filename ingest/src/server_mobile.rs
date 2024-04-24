@@ -454,6 +454,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(invalidated_radio_threshold_report_sink_server)
         .add_task(coverage_object_report_sink_server)
         .add_task(grpc_server)
+        .build()
         .start()
         .await
 }

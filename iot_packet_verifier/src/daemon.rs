@@ -207,6 +207,7 @@ impl Cmd {
             .add_task(verifier_daemon)
             .add_task(burner)
             .add_task(report_files_server)
+            .build()
             .start()
             .await
     }

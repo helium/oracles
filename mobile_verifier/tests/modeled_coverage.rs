@@ -1,5 +1,6 @@
 mod common;
 use chrono::{DateTime, Duration, Utc};
+use common::MockHexAssignments;
 use file_store::{
     coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
     heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
@@ -411,12 +412,8 @@ async fn process_input(
     transaction.commit().await?;
 
     let unassigned_hexes = UnassignedHex::fetch_unassigned(pool);
-    let _ = set_oracle_boosting_assignments(
-        unassigned_hexes,
-        &common::MockHexAssignments::best(),
-        pool,
-    )
-    .await?;
+    let _ = set_oracle_boosting_assignments(unassigned_hexes, &MockHexAssignments::best(), pool)
+        .await?;
 
     let mut transaction = pool.begin().await?;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(

@@ -1,0 +1,1 @@
+ALTER TABLE hexes ADD COLUMN landtype oracle_assignment;

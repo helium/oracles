@@ -17,6 +17,13 @@ impl<F> Footfall<F> {
             timestamp: None,
         }
     }
+
+    pub fn new_mock(footfall: F) -> Self {
+        Self {
+            footfall: Some(footfall),
+            timestamp: None,
+        }
+    }
 }
 
 impl<F> Default for Footfall<F> {

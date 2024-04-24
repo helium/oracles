@@ -2,6 +2,7 @@ mod common;
 use crate::common::{MockFileSinkReceiver, MockHexBoostingClient};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
+use common::MockHexAssignments;
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     mobile_radio_threshold::{RadioThresholdIngestReport, RadioThresholdReportReq},
@@ -63,12 +64,8 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
 
 async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
     let unassigned_hexes = UnassignedHex::fetch_unassigned(pool);
-    let _ = set_oracle_boosting_assignments(
-        unassigned_hexes,
-        &common::MockHexAssignments::best(),
-        pool,
-    )
-    .await?;
+    let _ = set_oracle_boosting_assignments(unassigned_hexes, &MockHexAssignments::best(), pool)
+        .await?;
     Ok(())
 }
 

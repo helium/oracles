@@ -173,14 +173,36 @@ pub fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
-pub struct MockHexAssignments;
+type MockAssignmentMap = HashMap<hextree::Cell, Assignment>;
 
+#[derive(Default)]
 #[allow(dead_code)]
+pub struct MockHexAssignments {
+    footfall: MockAssignmentMap,
+    urbanized: MockAssignmentMap,
+    landtype: MockAssignmentMap,
+}
+
 impl MockHexAssignments {
-    pub fn best() -> HexBoostData<impl HexAssignment, impl HexAssignment> {
+    #[allow(dead_code)]
+    pub fn best() -> HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment> {
         HexBoostData {
-            urbanization: Arc::new(Mutex::new(Assignment::A)),
             footfall: Arc::new(Mutex::new(Assignment::A)),
+            landtype: Arc::new(Mutex::new(Assignment::A)),
+            urbanization: Arc::new(Mutex::new(Assignment::A)),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn new(
+        footfall: MockAssignmentMap,
+        urbanized: MockAssignmentMap,
+        landtype: MockAssignmentMap,
+    ) -> Self {
+        Self {
+            footfall,
+            urbanized,
+            landtype,
         }
     }
 }
