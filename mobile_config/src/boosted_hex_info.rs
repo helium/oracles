@@ -105,9 +105,13 @@ impl BoostedHexInfo {
             Some(self.multipliers[0])
         }
     }
+
+    fn matches_device_type(&self, device_type: &BoostedHexDeviceType) -> bool {
+        self.device_type == *device_type || self.device_type == BoostedHexDeviceType::All
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoostedHexDeviceType {
     All,
     CbrsIndoor,
@@ -154,11 +158,6 @@ impl TryFrom<i32> for BoostedHexDeviceType {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct BoostedHexes {
-    hexes: HashMap<Cell, BoostedHexInfo>,
-}
-
 #[derive(PartialEq, Debug, Clone)]
 pub struct BoostedHex {
     pub location: Cell,
@@ -180,27 +179,33 @@ impl TryFrom<BoostedHexProto> for BoostedHex {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct BoostedHexes {
+    hexes: HashMap<Cell, Vec<BoostedHexInfo>>,
+}
+
 impl BoostedHexes {
     pub fn new(hexes: Vec<BoostedHexInfo>) -> Self {
-        let hexes = hexes
-            .into_iter()
-            .map(|info| (info.location, info))
-            .collect();
-        Self { hexes }
+        let mut me = Self::default();
+        for hex in hexes {
+            me.insert(hex);
+        }
+        me
     }
 
     pub async fn get_all(
         hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     ) -> anyhow::Result<Self> {
-        let mut map = HashMap::new();
         let mut stream = hex_service_client
             .clone()
             .stream_boosted_hexes_info()
             .await?;
+
+        let mut me = Self::default();
         while let Some(info) = stream.next().await {
-            map.insert(info.location, info);
+            me.insert(info);
         }
-        Ok(Self { hexes: map })
+        Ok(me)
     }
 
     pub fn is_boosted(&self, location: &Cell) -> bool {
@@ -211,21 +216,34 @@ impl BoostedHexes {
         hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
         timestamp: DateTime<Utc>,
     ) -> anyhow::Result<Self> {
-        let mut map = HashMap::new();
         let mut stream = hex_service_client
             .clone()
             .stream_modified_boosted_hexes_info(timestamp)
             .await?;
+
+        let mut me = Self::default();
         while let Some(info) = stream.next().await {
-            map.insert(info.location, info);
+            me.insert(info);
         }
-        Ok(Self { hexes: map })
+        Ok(me)
     }
 
-    pub fn get_current_multiplier(&self, location: Cell, ts: DateTime<Utc>) -> Option<NonZeroU32> {
-        self.hexes
-            .get(&location)
-            .and_then(|info| info.current_multiplier(ts))
+    pub fn get_current_multiplier(
+        &self,
+        location: Cell,
+        device_type: BoostedHexDeviceType,
+        ts: DateTime<Utc>,
+    ) -> Option<NonZeroU32> {
+        let current_multiplier = self
+            .hexes
+            .get(&location)?
+            .iter()
+            .filter(|info| info.matches_device_type(&device_type))
+            .flat_map(|info| info.current_multiplier(ts))
+            .map(|x| x.get())
+            .sum::<u32>();
+
+        NonZeroU32::new(current_multiplier)
     }
 
     pub fn count(&self) -> usize {
@@ -233,15 +251,15 @@ impl BoostedHexes {
     }
 
     pub fn iter_hexes(&self) -> impl Iterator<Item = &BoostedHexInfo> {
-        self.hexes.values()
+        self.hexes.values().flatten()
     }
 
-    pub fn get(&self, location: &Cell) -> Option<&BoostedHexInfo> {
+    pub fn get(&self, location: &Cell) -> Option<&Vec<BoostedHexInfo>> {
         self.hexes.get(location)
     }
 
     pub fn insert(&mut self, info: BoostedHexInfo) {
-        self.hexes.insert(info.location, info);
+        self.hexes.entry(info.location).or_default().push(info);
     }
 }
 
@@ -378,6 +396,66 @@ mod tests {
 
     const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
     const BOOST_HEX_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
+
+    #[test]
+    fn boosted_hexes_accumulate_multipliers() -> anyhow::Result<()> {
+        let cell = Cell::from_raw(631252734740306943)?;
+        let now = Utc::now();
+
+        let hexes = vec![
+            BoostedHexInfo {
+                location: cell,
+                start_ts: None,
+                end_ts: None,
+                period_length: Duration::seconds(2592000),
+                multipliers: vec![NonZeroU32::new(2).unwrap()],
+                boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)?,
+                boost_config_pubkey: Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY)?,
+                version: 0,
+                device_type: BoostedHexDeviceType::All,
+            },
+            BoostedHexInfo {
+                location: cell,
+                start_ts: None,
+                end_ts: None,
+                period_length: Duration::seconds(2592000),
+                multipliers: vec![NonZeroU32::new(3).unwrap()],
+                boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)?,
+                boost_config_pubkey: Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY)?,
+                version: 0,
+                device_type: BoostedHexDeviceType::CbrsIndoor,
+            },
+            // Expired boosts should not be considered
+            BoostedHexInfo {
+                location: cell,
+                start_ts: Some(now - Duration::days(60)),
+                end_ts: Some(now - Duration::days(30)),
+                period_length: Duration::seconds(2592000),
+                multipliers: vec![NonZeroU32::new(999).unwrap()],
+                boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)?,
+                boost_config_pubkey: Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY)?,
+                version: 0,
+                device_type: BoostedHexDeviceType::All,
+            },
+        ];
+
+        let boosted_hexes = BoostedHexes::new(hexes);
+        let boosts = boosted_hexes.get(&cell).expect("boosts for test cell");
+        assert_eq!(boosts.len(), 3, "a hex can be boosted multiple times");
+
+        assert_eq!(
+            boosted_hexes.get_current_multiplier(cell, BoostedHexDeviceType::CbrsIndoor, now),
+            NonZeroU32::new(5),
+            "Specific boosts stack with ::ALL"
+        );
+        assert_eq!(
+            boosted_hexes.get_current_multiplier(cell, BoostedHexDeviceType::WifiIndoor, now),
+            NonZeroU32::new(2),
+            "Missing boosts still return ::ALL"
+        );
+
+        Ok(())
+    }
 
     #[test]
     fn boosted_hex_from_proto_valid_not_started() -> anyhow::Result<()> {
