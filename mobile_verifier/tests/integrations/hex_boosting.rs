@@ -592,7 +592,6 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     ];
     let start_ts_2 = epoch.start - (boost_period_length * multipliers2.len() as i32);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
-    dbg!(epoch.start, start_ts_2, end_ts_2);
 
     let boosted_hexes = vec![
         BoostedHexInfo {
@@ -1140,7 +1139,7 @@ async fn seed_heartbeats_v2(
 ) -> anyhow::Result<()> {
     for n in 0..24 {
         let hotspot_key1: PublicKeyBinary = HOTSPOT_1.to_string().parse().unwrap();
-        println!("0x8a1fb466d2dffff_u64 as u64: {}", 0x8a1fb466d2dffff_u64);
+
         let cov_obj_1 = create_multi_coverage_object(
             ts + ChronoDuration::hours(n),
             None,
@@ -1346,7 +1345,7 @@ async fn seed_heartbeats_v4(
 ) -> anyhow::Result<()> {
     for n in 0..24 {
         let hotspot_key1: PublicKeyBinary = HOTSPOT_1.to_string().parse().unwrap();
-        println!("0x8a1fb466d2dffff_u64 as u64: {}", 0x8a1fb466d2dffff_u64);
+
         let cov_obj_1 = create_multi_coverage_object(
             ts + ChronoDuration::hours(n),
             None,
