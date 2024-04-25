@@ -131,16 +131,18 @@ pub async fn process_boosted_hex(
     hex: &BoostedHex,
 ) -> Result<()> {
     match boosted_hexes.get(&hex.location) {
-        Some(info) => {
-            if info.start_ts.is_none() {
-                db::insert_activated_hex(
-                    txn,
-                    hex.location.into_raw(),
-                    &info.boosted_hex_pubkey.to_string(),
-                    &info.boost_config_pubkey.to_string(),
-                    manifest_time,
-                )
-                .await?;
+        Some(hexes) => {
+            for info in hexes {
+                if info.start_ts.is_none() {
+                    db::insert_activated_hex(
+                        txn,
+                        hex.location.into_raw(),
+                        &info.boosted_hex_pubkey.to_string(),
+                        &info.boost_config_pubkey.to_string(),
+                        manifest_time,
+                    )
+                    .await?;
+                }
             }
         }
         None => {

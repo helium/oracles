@@ -28,7 +28,7 @@ use helium_proto::services::{
 };
 use hextree::Cell;
 use mobile_config::{
-    boosted_hex_info::{BoostedHex, BoostedHexes},
+    boosted_hex_info::{BoostedHex, BoostedHexDeviceType, BoostedHexes},
     client::AuthorizationClient,
 };
 use retainer::{entry::CacheReadGuard, Cache};
@@ -549,6 +549,13 @@ impl IndoorCoverageLevel {
             _ => dec!(0),
         }
     }
+
+    fn device_type(&self) -> BoostedHexDeviceType {
+        match self.radio_key {
+            OwnedKeyType::Cbrs(_) => BoostedHexDeviceType::CbrsIndoor,
+            OwnedKeyType::Wifi(_) => BoostedHexDeviceType::WifiIndoor,
+        }
+    }
 }
 
 #[derive(Eq, Debug)]
@@ -590,6 +597,13 @@ impl OutdoorCoverageLevel {
             SignalLevel::Medium => dec!(8),
             SignalLevel::Low => dec!(4),
             SignalLevel::None => dec!(0),
+        }
+    }
+
+    fn device_type(&self) -> BoostedHexDeviceType {
+        match self.radio_key {
+            OwnedKeyType::Cbrs(_) => BoostedHexDeviceType::CbrsOutdoor,
+            OwnedKeyType::Wifi(_) => BoostedHexDeviceType::WifiOutdoor,
         }
     }
 }
@@ -877,7 +891,7 @@ fn into_outdoor_rewards(
             .zip(OUTDOOR_REWARD_WEIGHTS)
             .map(move |(cl, rank)| {
                 let boost_multiplier = boosted_hexes
-                    .get_current_multiplier(hex, epoch_start)
+                    .get_current_multiplier(hex, cl.device_type(), epoch_start)
                     .unwrap_or(NonZeroU32::new(1).unwrap());
 
                 CoverageReward {
@@ -913,7 +927,7 @@ fn into_indoor_rewards(
                     .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
                     .map(move |cl| {
                         let boost_multiplier = boosted_hexes
-                            .get_current_multiplier(hex, epoch_start)
+                            .get_current_multiplier(hex, cl.device_type(), epoch_start)
                             .unwrap_or(NonZeroU32::new(1).unwrap());
 
                         CoverageReward {
