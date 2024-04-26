@@ -7,6 +7,7 @@ use helium_proto::BoostedHexDeviceTypeV1 as BoostedHexDeviceTypeProto;
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
 use hextree::Cell;
 use solana_sdk::pubkey::Pubkey;
+use std::str::FromStr;
 use std::{collections::HashMap, convert::TryFrom, num::NonZeroU32};
 
 pub type BoostedHexInfoStream = BoxStream<'static, BoostedHexInfo>;
@@ -30,6 +31,7 @@ pub struct BoostedHexInfo {
 
 impl TryFrom<BoostedHexInfoProto> for BoostedHexInfo {
     type Error = anyhow::Error;
+
     fn try_from(v: BoostedHexInfoProto) -> anyhow::Result<Self> {
         let period_length = Duration::seconds(v.period_length as i64);
         let device_type = v.device_type();
@@ -158,6 +160,20 @@ impl TryFrom<i32> for BoostedHexDeviceType {
     }
 }
 
+impl FromStr for BoostedHexDeviceType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "cbrsIndoor" => Ok(Self::CbrsIndoor),
+            "cbrsOutdoor" => Ok(Self::CbrsOutdoor),
+            "wifiIndoor" => Ok(Self::WifiIndoor),
+            "wifiOutdoor" => Ok(Self::WifiOutdoor),
+            unknown => anyhow::bail!("unknown device type value: {unknown}"),
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub struct BoostedHex {
     pub location: Cell,
@@ -240,7 +256,7 @@ impl BoostedHexes {
             .iter()
             .filter(|info| info.matches_device_type(&device_type))
             .flat_map(|info| info.current_multiplier(ts))
-            .map(|x| x.get())
+            .map(|non_zero| non_zero.get())
             .sum::<u32>();
 
         NonZeroU32::new(current_multiplier)
@@ -271,6 +287,7 @@ pub(crate) mod db {
     use solana_sdk::pubkey::Pubkey;
     use sqlx::{PgExecutor, Row};
     use std::num::NonZeroU32;
+    use std::ops::Deref;
     use std::str::FromStr;
 
     const GET_BOOSTED_HEX_INFO_SQL: &str = r#"
@@ -281,7 +298,8 @@ pub(crate) mod db {
                 hexes.boosts_by_period as multipliers,
                 hexes.address as boosted_hex_pubkey, 
                 config.address as boost_config_pubkey,
-                hexes.version
+                hexes.version,
+                hexes.device_type
             from boosted_hexes hexes
             join boost_configs config on hexes.boost_config = config.address
         "#;
@@ -295,7 +313,8 @@ pub(crate) mod db {
                 hexes.boosts_by_period as multipliers,
                 hexes.address as boosted_hex_pubkey, 
                 config.address as boost_config_pubkey,
-                hexes.version
+                hexes.version,
+                hexes.device_type
             from boosted_hexes hexes
             join boost_configs config on hexes.boost_config = config.address
             where hexes.refreshed_at > $1
@@ -344,10 +363,12 @@ pub(crate) mod db {
             let location = Cell::try_from(row.get::<i64, &str>("location"))
                 .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
 
-            let device_type = match row.get::<Option<i32>, &str>("device_type") {
+            type MaybeJsonb = Option<sqlx::types::Json<String>>;
+            let device_type_jsonb = row.get::<MaybeJsonb, &str>("device_type");
+            let device_type = match device_type_jsonb {
                 None => super::BoostedHexDeviceType::All,
-                Some(val) => super::BoostedHexDeviceType::try_from(val)
-                    .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+                Some(val) => super::BoostedHexDeviceType::from_str(val.deref())
+                    .map_err(|e| sqlx::Error::Decode(e.into()))?,
             };
 
             Ok(Self {
@@ -386,6 +407,7 @@ mod tests {
     use super::*;
     use chrono::NaiveDateTime;
     use hextree::Cell;
+    use sqlx::PgPool;
     use std::str::FromStr;
 
     const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
@@ -552,6 +574,147 @@ mod tests {
             "multipliers cannot contain values of 0",
             BoostedHexInfo::try_from(proto).err().unwrap().to_string()
         );
+        Ok(())
+    }
+
+    #[sqlx::test]
+    #[ignore = "for manual metadata db testing"]
+    async fn parse_boosted_hex_info_from_database(pool: PgPool) -> anyhow::Result<()> {
+        let boost_config_address = Pubkey::new_unique();
+        let now = Utc::now();
+
+        // NOTE(mj): Table creation taken from a dump of the metadata db.
+        // device_type was added to boosted_hexes as a jsonb field because the
+        // mobile_hotspot_infos table has a device_type column that maps to an
+        // enum, and it is a nullable jsonb column.
+        const CREATE_BOOSTED_HEXES_TABLE: &str = r#"
+            CREATE TABLE
+                boosted_hexes (
+                    address character varying(255) NOT NULL PRIMARY KEY,
+                    boost_config character varying(255) NULL,
+                    location numeric NULL,
+                    start_ts numeric NULL,
+                    reserved numeric[] NULL,
+                    bump_seed integer NULL,
+                    boosts_by_period bytea NULL,
+                    version integer NULL,
+                    refreshed_at timestamp with time zone NULL,
+                    created_at timestamp with time zone NOT NULL,
+                    device_type jsonb
+                )
+        "#;
+
+        const CREATE_BOOST_CONFIG_TABLE: &str = r#"
+            CREATE TABLE
+                boost_configs (
+                    address character varying(255) NOT NULL PRIMARY KEY,
+                    price_oracle character varying(255) NULL,
+                    payment_mint character varying(255) NULL,
+                    sub_dao character varying(255) NULL,
+                    rent_reclaim_authority character varying(255) NULL,
+                    boost_price numeric NULL,
+                    period_length integer NULL,
+                    minimum_periods integer NULL,
+                    bump_seed integer NULL,
+                    start_authority character varying(255) NULL,
+                    refreshed_at timestamp with time zone NULL,
+                    created_at timestamp with time zone NOT NULL
+                )
+        "#;
+
+        sqlx::query(CREATE_BOOSTED_HEXES_TABLE)
+            .execute(&pool)
+            .await?;
+        sqlx::query(CREATE_BOOST_CONFIG_TABLE)
+            .execute(&pool)
+            .await?;
+
+        const INSERT_BOOST_CONFIG: &str = r#"
+            INSERT INTO boost_configs (
+                "boost_price", "bump_seed", "minimum_periods", "period_length", "refreshed_at",
+
+                -- pubkeys
+                "price_oracle",
+                "payment_mint",
+                "rent_reclaim_authority",
+                "start_authority",
+                "sub_dao",
+
+                -- our values
+                "address",
+                "created_at"
+            )
+            VALUES (
+                '5000', 250, 6, 2592000, '2024-03-12 21:13:52.692+00',
+
+                $1, $2, $3, $4, $5, $6, $7
+            )
+        "#;
+
+        const INSERT_BOOSTED_HEX: &str = r#"
+            INSERT INTO boosted_hexes (
+                "boosts_by_period", "bump_seed", "location", "refreshed_at", "reserved", "start_ts", "version",
+
+                -- our values
+                "address",
+                "boost_config",
+                "created_at",
+                "device_type"
+            )
+            VALUES (
+                'ZGRkZGRk', 1, '631798453297853439', '2024-03-12 21:13:53.773+00', '{0,0,0,0,0,0,0,0}', '1708304400', 1,
+
+                $1, $2, $3, $4
+            )
+        "#;
+
+        // Insert boost config that boosted hexes will point to.
+        sqlx::query(INSERT_BOOST_CONFIG)
+            .bind(Pubkey::new_unique().to_string()) // price_oracle
+            .bind(Pubkey::new_unique().to_string()) // payment_mint
+            .bind(Pubkey::new_unique().to_string()) // rent_reclaim_authority
+            .bind(Pubkey::new_unique().to_string()) // start_authority
+            .bind(Pubkey::new_unique().to_string()) // sub_dao
+            // --
+            .bind(boost_config_address.to_string()) // address
+            .bind(now) // created_at
+            .execute(&pool)
+            .await?;
+
+        // Legacy boosted hex with NULL device_type
+        sqlx::query(INSERT_BOOSTED_HEX)
+            .bind(Pubkey::new_unique().to_string()) // address
+            .bind(boost_config_address.to_string()) // boost_config
+            .bind(now) // created_at
+            .bind(None as Option<serde_json::Value>) // device_type
+            .execute(&pool)
+            .await?;
+
+        // Boosted hex with new device types
+        for device_type in &["cbrsIndoor", "cbrsOutdoor", "wifiIndoor", "wifiOutdoor"] {
+            sqlx::query(INSERT_BOOSTED_HEX)
+                .bind(Pubkey::new_unique().to_string()) // address
+                .bind(boost_config_address.to_string()) // boost_config
+                .bind(now) // created_at
+                .bind(serde_json::json!(device_type)) // device_type
+                .execute(&pool)
+                .await?;
+        }
+
+        let count: i64 = sqlx::query_scalar("select count(*) from boosted_hexes")
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(5, count, "there should be 1 of each type of boosted hex");
+
+        let mut infos = super::db::all_info_stream(&pool);
+        let mut print_count = 0;
+        while let Some(_info) = infos.next().await {
+            // println!("info: {_info:?}");
+            print_count += 1;
+        }
+
+        assert_eq!(5, print_count, "not all rows were able to parse");
+
         Ok(())
     }
 
