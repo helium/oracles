@@ -3447,7 +3447,7 @@ dependencies = [
 [[package]]
 name = "hextree"
 version = "0.3.1"
-source = "git+https://github.com/jaykickliter/HexTree?branch=main#bbc9fcf5b0cdfe0b6e99cec8d798d338819e985b"
+source = "git+https://github.com/jaykickliter/HexTree?branch=main#f3ac30814f15bf1c98714a40c3b094429dc8b1b2"
 dependencies = [
  "byteorder",
  "memmap",
