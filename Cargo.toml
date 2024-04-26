@@ -66,7 +66,7 @@ helium-crypto = { version = "0.8.4", features = ["sqlx-postgres", "multisig"] }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
-helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
+helium-proto = { git = "https://github.com/helium/proto", branch = "mj/hip-109-boost-by-device-type", features = [
   "services",
 ] }
 solana-client = "1.16"
@@ -78,7 +78,7 @@ reqwest = { version = "0", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-beacon = { git = "https://github.com/helium/proto", branch = "master" }
+beacon = { git = "https://github.com/helium/proto", branch = "mj/hip-109-boost-by-device-type" }
 humantime = "2"
 metrics = ">=0.22"
 metrics-exporter-prometheus = "0"

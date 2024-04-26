@@ -1421,7 +1421,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#fdb83a38fbe8aead4ff6cb39d1e996f0ad0646b7"
+source = "git+https://github.com/helium/proto?branch=mj/hip-109-boost-by-device-type#fc0da24fb494eabbe60f7e13b0bd663c9e3583a6"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3446,7 +3446,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#fdb83a38fbe8aead4ff6cb39d1e996f0ad0646b7"
+source = "git+https://github.com/helium/proto?branch=mj/hip-109-boost-by-device-type#fc0da24fb494eabbe60f7e13b0bd663c9e3583a6"
 dependencies = [
  "bytes",
  "prost",
