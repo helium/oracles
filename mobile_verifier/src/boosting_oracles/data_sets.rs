@@ -244,7 +244,6 @@ async fn download_data_set(
     out_path: &Path,
 ) -> anyhow::Result<()> {
     tracing::info!("Downloading new data set: {}", out_path.to_string_lossy());
-    // TODO: abstract this out to a function
     let stream = store.get_raw(in_file_name).await?;
     let mut bytes = tokio_util::codec::FramedRead::new(
         async_compression::tokio::bufread::GzipDecoder::new(tokio_util::io::StreamReader::new(
