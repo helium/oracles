@@ -114,9 +114,9 @@ where
         while let Some(msg) = reward_shares.try_next().await? {
             let share = MobileRewardShare::decode(msg)?;
             if let Some(MobileReward::RadioReward(r)) = share.reward {
-                for hex in r.boosted_hexes.into_iter() {
-                    process_boosted_hex(txn, manifest_time, &boosted_hexes, &hex.try_into()?)
-                        .await?
+                for hex_proto in r.boosted_hexes.into_iter() {
+                    let boosted_hex = hex_proto.try_into()?;
+                    process_boosted_hex(txn, manifest_time, &boosted_hexes, &boosted_hex).await?
                 }
             }
         }
