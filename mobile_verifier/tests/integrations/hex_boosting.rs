@@ -14,10 +14,7 @@ use helium_proto::services::{
     },
 };
 use hextree::Cell;
-use mobile_config::{
-    boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo, BoostedHexInfoStream},
-    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
-};
+use mobile_config::boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo};
 use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
@@ -1312,6 +1309,163 @@ fn rounded(num: Decimal) -> u64 {
     num.to_u64().unwrap_or_default()
 }
 
+#[sqlx::test]
+async fn test_poc_boosted_hex_stack_multiplier(pool: PgPool) -> anyhow::Result<()> {
+    // This test seeds the database with 2 identically performing radios on
+    // neighboring hexes. Both are eligible for boosted rewards.
+    //
+    // In the first pass, no hexes are boosted, to ensure the radios are equal.
+    // In the second pass, 1 radio is boosted with 2 boosts.
+    //  - legacy boost,   BoostType::All
+    //  - specific boost, BoostType::CbrsIndoor
+    // Rewards are checked to ensure the 2 boosts accumulate correctly.
+
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
+
+    let now = Utc::now();
+    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let boosted_pubkey = PublicKeyBinary::from_str(HOTSPOT_1)?;
+    let unboosted_pubkey = PublicKeyBinary::from_str(HOTSPOT_2)?;
+
+    let boosted_location = Cell::from_raw(0x8a1fb466d2dffff)?;
+    let unboosted_location = Cell::from_raw(0x8a1fb46622d7fff)?;
+
+    let boostable_radios = vec![
+        HexBoostableRadio::cbrs_indoor(boosted_pubkey, boosted_location),
+        HexBoostableRadio::cbrs_indoor(unboosted_pubkey, unboosted_location),
+    ];
+
+    let mut txn = pool.begin().await?;
+    for radio in boostable_radios {
+        radio.seed(epoch.start, &mut txn).await?;
+    }
+    txn.commit().await?;
+    update_assignments(&pool).await?;
+
+    // First pass with no boosted hexes, radios perform the same
+    {
+        let hex_boosting_client = MockHexBoostingClient::new(vec![]);
+        let (_, poc_rewards) = tokio::join!(
+            rewarder::reward_poc_and_dc(
+                &pool,
+                &hex_boosting_client,
+                &mobile_rewards_client,
+                &speedtest_avg_client,
+                &epoch,
+                dec!(0.0001)
+            ),
+            async {
+                let one = mobile_rewards.receive_radio_reward().await;
+                let two = mobile_rewards.receive_radio_reward().await;
+
+                mobile_rewards.assert_no_messages();
+
+                [one, two]
+            },
+        );
+
+        let [radio_one, radio_two] = &poc_rewards;
+        assert_eq!(
+            radio_one.coverage_points, radio_two.coverage_points,
+            "radios perform equally unboosted"
+        );
+        assert_eq!(
+            radio_one.poc_reward, radio_two.poc_reward,
+            "radios earn equally unboosted"
+        );
+
+        // Make sure there were no unallocated rewards
+        let total = poc_rewards.iter().map(|r| r.poc_reward).sum::<u64>();
+        assert_eq!(
+            reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+                .to_u64()
+                .unwrap(),
+            total,
+            "allocated equals scheduled output"
+        );
+    }
+
+    // Second pass with boosted hex, first radio will be setup to receive 10x boost
+    {
+        let base = BoostedHexInfo {
+            location: boosted_location,
+            start_ts: None,
+            end_ts: None,
+            period_length: Duration::days(30),
+            multipliers: vec![],
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)?,
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY)?,
+            version: 0,
+            device_type: BoostedHexDeviceType::All,
+        };
+
+        let boosted_hexes = vec![
+            BoostedHexInfo {
+                multipliers: vec![NonZeroU32::new(3).unwrap()],
+                device_type: BoostedHexDeviceType::All,
+                ..base.clone()
+            },
+            BoostedHexInfo {
+                multipliers: vec![NonZeroU32::new(7).unwrap()],
+                device_type: BoostedHexDeviceType::CbrsIndoor,
+                ..base.clone()
+            },
+        ];
+
+        let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+        let (_, mut poc_rewards) = tokio::join!(
+            rewarder::reward_poc_and_dc(
+                &pool,
+                &hex_boosting_client,
+                &mobile_rewards_client,
+                &speedtest_avg_client,
+                &epoch,
+                dec!(0.0001)
+            ),
+            async move {
+                let one = mobile_rewards.receive_radio_reward().await;
+                let two = mobile_rewards.receive_radio_reward().await;
+
+                mobile_rewards.assert_no_messages();
+
+                [one, two]
+            },
+        );
+
+        // sort by rewards ascending
+        poc_rewards.sort_by_key(|r| r.poc_reward);
+        let [unboosted, boosted] = &poc_rewards;
+
+        let boosted_hex = boosted.boosted_hexes.first().expect("boosted hex");
+        assert_eq!(10, boosted_hex.multiplier);
+
+        assert_eq!(
+            10,
+            boosted.coverage_points / unboosted.coverage_points,
+            "boosted radio should have 10x coverage_points"
+        );
+        assert_eq!(
+            10,
+            boosted.poc_reward / unboosted.poc_reward,
+            "boosted radio should have 10x poc_rewards"
+        );
+
+        // Make sure there were no unallocated rewards
+        let total = poc_rewards.iter().map(|r| r.poc_reward).sum::<u64>();
+        assert_eq!(
+            reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+                .to_u64()
+                .unwrap(),
+            total,
+            "allocated equals scheduled output"
+        );
+    }
+
+    Ok(())
+}
+
 async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
 ) -> anyhow::Result<(Vec<RadioRewardV2>, UnallocatedReward)> {
@@ -1923,4 +2077,113 @@ fn get_poc_allocation_buckets(epoch_duration: Duration) -> (Decimal, Decimal) {
     let regular_poc = regular_poc + data_transfer;
 
     (regular_poc, boosted_poc)
+}
+
+/// Hex Boostable Radio Checklist:
+/// - Coverage Object: 1
+/// - Seniority Update: 1
+/// - Heartbeats: 12
+/// - Speedtests: 2
+/// - Radio Threshold: 1
+struct HexBoostableRadio {
+    pubkey: PublicKeyBinary,
+    cbsd_id: Option<String>,
+    hb_type: HbType,
+    is_indoor: bool,
+    location: Cell,
+    heartbeat_count: i64,
+}
+
+impl HexBoostableRadio {
+    fn cbrs_indoor(pubkey: PublicKeyBinary, location: Cell) -> Self {
+        Self::new(pubkey, BoostedHexDeviceType::CbrsIndoor, location)
+    }
+
+    fn new(pubkey: PublicKeyBinary, boost_type: BoostedHexDeviceType, location: Cell) -> Self {
+        let (hb_type, is_indoor, cbsd_id) = match boost_type {
+            BoostedHexDeviceType::All => panic!("a radio cannot be all types at once"),
+            BoostedHexDeviceType::CbrsIndoor => {
+                (HbType::Cbrs, true, Some(format!("cbsd-indoor-{pubkey}")))
+            }
+            BoostedHexDeviceType::CbrsOutdoor => {
+                (HbType::Cbrs, false, Some(format!("cbsd-outdoor-{pubkey}")))
+            }
+            BoostedHexDeviceType::WifiIndoor => (HbType::Wifi, true, None),
+            BoostedHexDeviceType::WifiOutdoor => (HbType::Wifi, false, None),
+        };
+        Self {
+            pubkey,
+            cbsd_id,
+            hb_type,
+            is_indoor,
+            location,
+            heartbeat_count: 12,
+        }
+    }
+
+    async fn seed(
+        self,
+        timestamp: DateTime<Utc>,
+        txn: &mut Transaction<'_, Postgres>,
+    ) -> anyhow::Result<()> {
+        let cov_obj = create_coverage_object(
+            timestamp,
+            self.cbsd_id.clone(),
+            self.pubkey.clone(),
+            self.location.into_raw(),
+            self.is_indoor,
+        );
+        for n in 0..=self.heartbeat_count {
+            let time_ahead = timestamp + ChronoDuration::hours(n);
+            let time_behind = timestamp - ChronoDuration::hours(24);
+
+            let wifi_heartbeat = ValidatedHeartbeat {
+                heartbeat: Heartbeat {
+                    hb_type: self.hb_type,
+                    hotspot_key: self.pubkey.clone(),
+                    cbsd_id: self.cbsd_id.clone(),
+                    operation_mode: true,
+                    lat: 0.0,
+                    lon: 0.0,
+                    coverage_object: Some(cov_obj.coverage_object.uuid),
+                    location_validation_timestamp: Some(time_behind),
+                    timestamp: time_ahead,
+                },
+                cell_type: CellType::NovaGenericWifiIndoor,
+                distance_to_asserted: Some(10),
+                coverage_meta: None,
+                location_trust_score_multiplier: dec!(1.0),
+                validity: HeartbeatValidity::Valid,
+            };
+
+            let speedtest = CellSpeedtest {
+                pubkey: self.pubkey.clone(),
+                serial: format!("serial-{}", self.pubkey),
+                timestamp: timestamp - ChronoDuration::hours(n * 4),
+                upload_speed: 100_000_000,
+                download_speed: 100_000_000,
+                latency: 49,
+            };
+
+            save_seniority_object(time_ahead, &wifi_heartbeat, txn).await?;
+            wifi_heartbeat.save(txn).await?;
+            speedtests::save_speedtest(&speedtest, txn).await?;
+        }
+        cov_obj.save(txn).await?;
+
+        let report = RadioThresholdIngestReport {
+            received_timestamp: Default::default(),
+            report: RadioThresholdReportReq {
+                hotspot_pubkey: self.pubkey.clone(),
+                cbsd_id: self.cbsd_id.clone(),
+                bytes_threshold: 1_000_000,
+                subscriber_threshold: 3,
+                threshold_timestamp: timestamp,
+                carrier_pub_key: CARRIER_HOTSPOT_KEY.parse().unwrap(),
+            },
+        };
+        radio_threshold::save(&report, txn).await?;
+
+        Ok(())
+    }
 }
