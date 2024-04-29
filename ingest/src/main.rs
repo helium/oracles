@@ -40,7 +40,7 @@ pub struct Server {}
 
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
-        custom_tracing::init(settings.log.clone(), "tracing".to_string()).await?;
+        custom_tracing::init(settings.log.clone(), settings.tracing.clone()).await?;
 
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
