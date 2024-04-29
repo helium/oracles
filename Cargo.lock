@@ -4581,6 +4581,7 @@ dependencies = [
  "clap 4.4.8",
  "config",
  "db-store",
+ "derive_builder",
  "file-store",
  "flate2",
  "futures",

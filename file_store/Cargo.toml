@@ -45,7 +45,7 @@ base64 = {workspace = true}
 beacon = {workspace = true}
 sqlx = {workspace = true, optional = true}
 async-trait = {workspace = true}
-derive_builder = "0"
+derive_builder = {workspace = true}
 retainer = {workspace = true}
 uuid = {workspace = true}
 h3o = {workspace = true}

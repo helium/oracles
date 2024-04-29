@@ -119,7 +119,11 @@ impl Cmd {
         let urbanization: Urbanization<DiskTreeMap, _> = Urbanization::new(usa_geofence.clone());
         let footfall: Footfall<DiskTreeMap> = Footfall::new();
         let landtype: Landtype<DiskTreeMap> = Landtype::new();
-        let hex_boost_data = HexBoostData::new(footfall, landtype, urbanization);
+        let hex_boost_data = HexBoostData::builder()
+            .footfall(footfall)
+            .landtype(landtype)
+            .urbanization(urbanization)
+            .build()?;
 
         // Data sets and downloaders
         let data_sets_file_store = FileStore::from_settings(&settings.data_sets).await?;

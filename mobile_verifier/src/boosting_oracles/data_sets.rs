@@ -103,7 +103,22 @@ where
         oracle_boosting_sink: FileSinkClient,
         data_set_directory: PathBuf,
     ) -> anyhow::Result<Self> {
-        let latest_file_date = db::fetch_latest_file_date(&pool, T::TYPE).await?;
+        // Get the first data set:
+        let latest_file_date = if let Some(time_to_use) =
+            db::fetch_time_of_latest_processed_data_set(&pool, T::TYPE).await?
+        {
+            let data_set_path = get_data_set_path(&data_set_directory, T::TYPE, time_to_use);
+            tracing::info!(
+                "Found initial {} data set: {}",
+                T::TYPE.to_prefix(),
+                data_set_path.to_string_lossy()
+            );
+            data_set.lock().await.update(&data_set_path, time_to_use)?;
+            Some(time_to_use)
+        } else {
+            db::fetch_latest_file_date(&pool, T::TYPE).await?
+        };
+
         Ok(Self {
             pool,
             data_set,
@@ -113,17 +128,6 @@ where
             data_set_directory,
             latest_file_date,
         })
-    }
-
-    fn get_data_set_path(&self, time_to_use: DateTime<Utc>) -> PathBuf {
-        let path = PathBuf::from(format!(
-            "{}.{}.res10.h3tree",
-            T::TYPE.to_prefix(),
-            time_to_use.timestamp()
-        ));
-        let mut dir = self.data_set_directory.clone();
-        dir.push(path);
-        dir
     }
 
     pub async fn check_for_available_data_sets(&mut self) -> anyhow::Result<()> {
@@ -161,7 +165,11 @@ where
 
         // If there is an unprocessed data set, download it (if we need to) and process it.
 
-        let path = self.get_data_set_path(latest_unprocessed_data_set.time_to_use);
+        let path = get_data_set_path(
+            &self.data_set_directory,
+            T::TYPE,
+            latest_unprocessed_data_set.time_to_use,
+        );
 
         // Download the file if it hasn't been downloaded already:
         if !latest_unprocessed_data_set.status.is_downloaded() {
@@ -212,22 +220,6 @@ where
     }
 
     pub async fn run(mut self) -> anyhow::Result<()> {
-        // Get the first data set:
-        if let Some(time_to_use) =
-            db::fetch_time_of_latest_processed_data_set(&self.pool, T::TYPE).await?
-        {
-            let data_set_path = self.get_data_set_path(time_to_use);
-            tracing::info!(
-                "Found initial {} data set: {}",
-                T::TYPE.to_prefix(),
-                data_set_path.to_string_lossy()
-            );
-            self.data_set
-                .lock()
-                .await
-                .update(&data_set_path, time_to_use)?;
-        }
-
         let poll_duration = Duration::minutes(5);
 
         loop {
@@ -236,6 +228,21 @@ where
             tokio::time::sleep(poll_duration.to_std()?).await;
         }
     }
+}
+
+fn get_data_set_path(
+    data_set_directory: &Path,
+    data_set_type: DataSetType,
+    time_to_use: DateTime<Utc>,
+) -> PathBuf {
+    let path = PathBuf::from(format!(
+        "{}.{}.res10.h3tree",
+        data_set_type.to_prefix(),
+        time_to_use.timestamp()
+    ));
+    let mut dir = data_set_directory.to_path_buf();
+    dir.push(path);
+    dir
 }
 
 async fn download_data_set(

@@ -31,10 +31,20 @@ impl HexAssignment for Assignment {
     }
 }
 
+#[derive(derive_builder::Builder)]
+#[builder(pattern = "owned")]
 pub struct HexBoostData<Foot, Land, Urban> {
+    #[builder(setter(custom))]
     pub footfall: Arc<Mutex<Foot>>,
+    #[builder(setter(custom))]
     pub landtype: Arc<Mutex<Land>>,
+    #[builder(setter(custom))]
     pub urbanization: Arc<Mutex<Urban>>,
+}
+impl<F, L, U> HexBoostData<F, L, U> {
+    pub fn builder() -> HexBoostDataBuilder<F, L, U> {
+        HexBoostDataBuilder::default()
+    }
 }
 
 impl<F, L, U> Clone for HexBoostData<F, L, U> {
@@ -47,13 +57,20 @@ impl<F, L, U> Clone for HexBoostData<F, L, U> {
     }
 }
 
-impl<Foot, Land, Urban> HexBoostData<Foot, Land, Urban> {
-    pub fn new(footfall: Foot, landtype: Land, urbanization: Urban) -> Self {
-        Self {
-            urbanization: Arc::new(Mutex::new(urbanization)),
-            footfall: Arc::new(Mutex::new(footfall)),
-            landtype: Arc::new(Mutex::new(landtype)),
-        }
+impl<Foot, Land, Urban> HexBoostDataBuilder<Foot, Land, Urban> {
+    pub fn footfall(mut self, foot: Foot) -> Self {
+        self.footfall = Some(Arc::new(Mutex::new(foot)));
+        self
+    }
+
+    pub fn landtype(mut self, land: Land) -> Self {
+        self.landtype = Some(Arc::new(Mutex::new(land)));
+        self
+    }
+
+    pub fn urbanization(mut self, urban: Urban) -> Self {
+        self.urbanization = Some(Arc::new(Mutex::new(urban)));
+        self
     }
 }
 
@@ -274,7 +291,11 @@ mod tests {
             Urbanization::new_mock(DiskTreeMap::with_buf(urbanized_buf)?, usa_geofence);
 
         // Let the testing commence
-        let data = HexBoostData::new(footfall, landtype, urbanization);
+        let data = HexBoostData::builder()
+            .footfall(footfall)
+            .landtype(landtype)
+            .urbanization(urbanization)
+            .build()?;
 
         // NOTE(mj): formatting ignored to make it easier to see the expected change in assignments.
         // NOTE(mj): The semicolon at the end of the block is there to keep rust from

@@ -217,7 +217,11 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     transaction.commit().await?;
 
     let unassigned_hexes = UnassignedHex::fetch_unassigned(&pool);
-    let hex_boost_data = HexBoostData::new(footfall, landtype, urbanized);
+    let hex_boost_data = HexBoostData::builder()
+        .footfall(footfall)
+        .landtype(landtype)
+        .urbanization(urbanized)
+        .build()?;
     let oba = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool)
         .await?
         .collect::<Vec<_>>();
@@ -344,7 +348,11 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     transaction.commit().await?;
 
     let unassigned_hexes = UnassignedHex::fetch_unassigned(&pool);
-    let hex_boost_data = HexBoostData::new(footfall, landtype, urbanized);
+    let hex_boost_data = HexBoostData::builder()
+        .footfall(footfall)
+        .landtype(landtype)
+        .urbanization(urbanized)
+        .build()?;
     let _ = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool).await?;
 
     let heartbeats = heartbeats(12, start, &owner, &cbsd_id, 0.0, 0.0, uuid);
