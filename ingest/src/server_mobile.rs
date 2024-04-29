@@ -55,7 +55,7 @@ impl ManagedTask for GrpcServer {
         let address = self.address;
         Box::pin(async move {
             transport::Server::builder()
-                .layer(custom_tracing::grpc_layer::new(make_span))
+                .layer(custom_tracing::grpc_layer::new_with_span(make_span))
                 .layer(poc_metrics::request_layer!("ingest_server_grpc_connection"))
                 .add_service(poc_mobile::Server::with_interceptor(
                     *self,
