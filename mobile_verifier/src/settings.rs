@@ -20,6 +20,8 @@ pub struct Settings {
     pub ingest: file_store::Settings,
     pub data_transfer_ingest: file_store::Settings,
     pub output: file_store::Settings,
+    /// S3 bucket from which new data sets are downloaded for oracle boosting
+    /// assignments
     pub data_sets: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     pub price_tracker: price::price_tracker::Settings,
@@ -36,6 +38,7 @@ pub struct Settings {
     /// beyond which its location weight will be reduced
     #[serde(default = "default_max_asserted_distance_deviation")]
     pub max_asserted_distance_deviation: u32,
+    /// Directory in which new oracle boosting data sets are downloaded into
     pub data_sets_directory: PathBuf,
     // Geofencing settings
     pub usa_and_mexico_geofence_regions: String,
