@@ -405,7 +405,7 @@ pub async fn set_oracle_boosting_assignments<'a>(
     data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
     pool: &'a PgPool,
 ) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
-    const NUMBER_OF_FIELDS_IN_QUERY: u16 = 5;
+    const NUMBER_OF_FIELDS_IN_QUERY: u16 = 7;
     const ASSIGNMENTS_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
 
     let now = Utc::now();
