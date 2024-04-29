@@ -7,10 +7,10 @@ use tower_http::{
 };
 use tracing::{Level, Span};
 
-pub fn new(
-    make_span: fn(&Request<Body>) -> Span,
-) -> TraceLayer<SharedClassifier<GrpcErrorsAsFailures>, for<'a> fn(&'a http::Request<Body>) -> Span>
-{
+type GrpcLayer =
+    TraceLayer<SharedClassifier<GrpcErrorsAsFailures>, for<'a> fn(&'a http::Request<Body>) -> Span>;
+
+pub fn new(make_span: fn(&Request<Body>) -> Span) -> GrpcLayer {
     TraceLayer::new_for_grpc()
         .make_span_with(make_span)
         .on_response(

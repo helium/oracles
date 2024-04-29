@@ -43,7 +43,6 @@ where
     T: ToString,
 {
     Span::current().record(field, &tracing::field::display(value.to_string()));
-    ()
 }
 
 #[derive(Clone)]
