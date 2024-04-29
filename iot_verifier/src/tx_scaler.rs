@@ -1,7 +1,7 @@
 use crate::{
     gateway_updater::MessageReceiver,
     hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap},
-    last_beacon::LastBeacon,
+    last_beacon_reciprocity::LastBeaconReciprocity,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::future::LocalBoxFuture;
@@ -103,7 +103,7 @@ impl Server {
     ) -> anyhow::Result<HashMap<PublicKeyBinary, DateTime<Utc>>> {
         let interactivity_deadline = now - Duration::minutes(HIP_17_INTERACTIVITY_LIMIT);
         Ok(
-            LastBeacon::get_all_since(&self.pool, interactivity_deadline)
+            LastBeaconReciprocity::get_all_since(&self.pool, interactivity_deadline)
                 .await?
                 .into_iter()
                 .map(|beacon| (beacon.id, beacon.timestamp))
