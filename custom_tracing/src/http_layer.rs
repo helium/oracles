@@ -6,7 +6,7 @@ use tower_http::{
 };
 use tracing::{Level, Span};
 
-pub fn new(
+pub fn new_with_span(
     make_span: fn(&Request<Body>) -> Span,
 ) -> TraceLayer<
     SharedClassifier<ServerErrorsAsFailures>,
