@@ -97,7 +97,11 @@ where
         let footfall = self.footfall.lock().await;
         let landtype = self.landtype.lock().await;
         let urbanization = self.urbanization.lock().await;
-        HexAssignments::from_data_sets(cell, &*footfall, &*landtype, &*urbanization)
+        HexAssignments::builder(cell)
+            .footfall(&*footfall)
+            .landtype(&*landtype)
+            .urbanized(&*urbanization)
+            .build()
     }
 }
 

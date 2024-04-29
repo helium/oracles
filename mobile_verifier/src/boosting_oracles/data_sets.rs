@@ -421,8 +421,11 @@ pub async fn set_oracle_boosting_assignments<'a>(
             .into_iter()
             .map(|hex| {
                 let cell = hextree::Cell::try_from(hex.hex)?;
-                let assignments =
-                    HexAssignments::from_data_sets(cell, &*footfall, &*landtype, &*urbanization)?;
+                let assignments = HexAssignments::builder(cell)
+                    .footfall(&*footfall)
+                    .landtype(&*landtype)
+                    .urbanized(&*urbanization)
+                    .build()?;
                 let location = format!("{:x}", hex.hex);
                 let assignment_multiplier = (assignments.boosting_multiplier() * dec!(1000))
                     .to_u32()
