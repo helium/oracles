@@ -3869,7 +3869,6 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tonic",
- "tower-http",
  "tracing",
  "tracing-subscriber",
  "triggered",
