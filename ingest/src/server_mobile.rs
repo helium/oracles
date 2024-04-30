@@ -231,7 +231,6 @@ impl poc_mobile::PocMobile for GrpcServer {
             })
             .map_err(|status| {
                 tracing::debug!(
-                    subscriber_id = ?subscriber_id,
                     timestamp = %timestamp_millis,
                     status = %status
                 );
@@ -270,7 +269,6 @@ impl poc_mobile::PocMobile for GrpcServer {
             })
             .map_err(|status| {
                 tracing::debug!(
-                    hotspot_pubkey = ?hotspot_pubkey,
                     cbsd_id = ?cbsd_id,
                     threshold_timestamp = %threshold_timestamp,
                     status = %status
@@ -310,7 +308,6 @@ impl poc_mobile::PocMobile for GrpcServer {
             })
             .map_err(|status| {
                 tracing::debug!(
-                    hotspot_pubkey = ?hotspot_pubkey,
                     cbsd_id = ?cbsd_id,
                     invalidated_timestamp = %invalidated_timestamp,
                     status = %status
