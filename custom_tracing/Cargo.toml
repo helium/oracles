@@ -6,9 +6,10 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-notify = "6"
+notify = { version = "6", default-features = false, features = [
+    "macos_fsevent",
+] }
 anyhow = "1"
-futures = "0"
 tokio = { version = "1", features = ["rt-multi-thread", "signal"] }
 tracing = "0"
 tracing-subscriber = { version = "0", default-features = true, features = [

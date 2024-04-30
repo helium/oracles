@@ -2331,7 +2331,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.7.4",
- "futures",
  "helium-proto",
  "http 0.2.11",
  "notify",
@@ -4787,7 +4786,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6205bd8bb1e454ad2e27422015fb5e4f2bcc7e08fa8f27058670d208324a4d2d"
 dependencies = [
  "bitflags 2.5.0",
- "crossbeam-channel",
  "filetime",
  "fsevent-sys",
  "inotify",
