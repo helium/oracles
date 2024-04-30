@@ -155,6 +155,7 @@ pub const SENIORITY_UPDATE: &str = "seniority_update";
 pub const BOOSTED_HEX_UPDATE: &str = "boosted_hex_update";
 pub const ORACLE_BOOSTING_REPORT: &str = "oracle_boosting_report";
 pub const CDR_AVRO: &str = "cdr_avro";
+pub const CDR: &str = "cdr";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -205,12 +206,14 @@ pub enum FileType {
     InvalidatedRadioThresholdIngestReport,
     VerifiedInvalidatedRadioThresholdIngestReport,
     CdrAvro,
+    Cdr,
 }
 
 impl fmt::Display for FileType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::CdrAvro => CDR_AVRO,
+            Self::Cdr => CDR,
             Self::InvalidatedRadioThresholdReq => INVALIDATED_RADIO_THRESHOLD_REQ,
             Self::InvalidatedRadioThresholdIngestReport => {
                 INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT
@@ -273,6 +276,7 @@ impl FileType {
     pub fn to_str(&self) -> &'static str {
         match self {
             Self::CdrAvro => CDR_AVRO,
+            Self::Cdr => CDR,
             Self::InvalidatedRadioThresholdReq => INVALIDATED_RADIO_THRESHOLD_REQ,
             Self::InvalidatedRadioThresholdIngestReport => {
                 INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT
@@ -335,6 +339,7 @@ impl FromStr for FileType {
     fn from_str(s: &str) -> Result<Self> {
         let result = match s {
             CDR_AVRO => Self::CdrAvro,
+            CDR => Self::Cdr,
             INVALIDATED_RADIO_THRESHOLD_REQ => Self::InvalidatedRadioThresholdReq,
             INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT => {
                 Self::InvalidatedRadioThresholdIngestReport
