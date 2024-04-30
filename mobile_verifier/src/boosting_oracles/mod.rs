@@ -1,9 +1,6 @@
 pub mod assignment;
 
-use crate::{
-    geofence::{Geofence, GeofenceValidator},
-    Settings,
-};
+use crate::Settings;
 pub use assignment::{Assignment, HexAssignments};
 use hextree::disktree::DiskTreeMap;
 
@@ -13,22 +10,17 @@ pub trait BoostedHexAssignments: Send + Sync {
 
 pub struct HexBoostData {
     urbanized: DiskTreeMap,
-    usa_geofence: Geofence,
     footfall: DiskTreeMap,
     landtype: DiskTreeMap,
 }
 
-pub fn make_hex_boost_data(
-    settings: &Settings,
-    usa_geofence: Geofence,
-) -> anyhow::Result<HexBoostData> {
+pub fn make_hex_boost_data(settings: &Settings) -> anyhow::Result<HexBoostData> {
     let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
     let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
     let landtype_disktree = DiskTreeMap::open(&settings.landtype_data_set)?;
 
     let hex_boost_data = HexBoostData {
         urbanized: urban_disktree,
-        usa_geofence,
         footfall: footfall_disktree,
         landtype: landtype_disktree,
     };
@@ -51,13 +43,13 @@ impl BoostedHexAssignments for HexBoostData {
 
 impl HexBoostData {
     fn urbanized_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        if !self.usa_geofence.in_valid_region(&cell) {
-            return Ok(Assignment::C);
-        }
-
-        match self.urbanized.get(cell)?.is_some() {
-            true => Ok(Assignment::A),
-            false => Ok(Assignment::B),
+        match self.urbanized.get(cell)? {
+            Some((_, &[1])) => Ok(Assignment::A),
+            Some((_, &[0])) => Ok(Assignment::B),
+            None => Ok(Assignment::C),
+            Some((_, other)) => {
+                anyhow::bail!("unexpected urbanization disktree data: {cell:?} {other:?}")
+            }
         }
     }
 
@@ -281,15 +273,15 @@ mod tests {
         // Not Urban - nothing in the map, but in the geofence
         // Outside   - not in the geofence, urbanized hex never considered
         let mut urbanized = HexTreeMap::<u8>::new();
-        urbanized.insert(poi_built_urbanized, 0);
-        urbanized.insert(poi_grass_urbanized, 0);
-        urbanized.insert(poi_water_urbanized, 0);
-        urbanized.insert(poi_no_data_built_urbanized, 0);
-        urbanized.insert(poi_no_data_grass_urbanized, 0);
-        urbanized.insert(poi_no_data_water_urbanized, 0);
-        urbanized.insert(no_poi_built_urbanized, 0);
-        urbanized.insert(no_poi_grass_urbanized, 0);
-        urbanized.insert(no_poi_water_urbanized, 0);
+        urbanized.insert(poi_built_urbanized, 1);
+        urbanized.insert(poi_grass_urbanized, 1);
+        urbanized.insert(poi_water_urbanized, 1);
+        urbanized.insert(poi_no_data_built_urbanized, 1);
+        urbanized.insert(poi_no_data_grass_urbanized, 1);
+        urbanized.insert(poi_no_data_water_urbanized, 1);
+        urbanized.insert(no_poi_built_urbanized, 1);
+        urbanized.insert(no_poi_grass_urbanized, 1);
+        urbanized.insert(no_poi_water_urbanized, 1);
 
         let inside_usa = [
             poi_built_urbanized,
@@ -311,9 +303,9 @@ mod tests {
             no_poi_grass_not_urbanized,
             no_poi_water_not_urbanized,
         ];
-        let geofence_set: HexTreeSet = inside_usa.iter().collect();
-        let usa_geofence = Geofence::new(geofence_set, h3o::Resolution::Twelve);
-
+        for inside_usa in inside_usa.into_iter() {
+            urbanized.entry(inside_usa).or_insert(0);
+        }
         // These vectors are a standin for the file system
         let mut urbanized_buf = vec![];
         let mut footfall_buff = vec![];
@@ -331,7 +323,6 @@ mod tests {
         // Let the testing commence
         let data = HexBoostData {
             urbanized,
-            usa_geofence,
             footfall,
             landtype,
         };

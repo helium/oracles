@@ -148,7 +148,7 @@ impl Cmd {
                     file_upload.clone(),
                     report_ingest.clone(),
                     auth_client.clone(),
-                    boosting_oracles::make_hex_boost_data(settings, usa_geofence)?,
+                    boosting_oracles::make_hex_boost_data(settings)?,
                 )
                 .await?,
             )
