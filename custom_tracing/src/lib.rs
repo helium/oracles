@@ -1,5 +1,4 @@
 use anyhow::Result;
-use futures::{channel::mpsc::channel, SinkExt, StreamExt};
 use notify::{event::DataChange, Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{fs, path::Path};
 use tracing::Span;
@@ -24,16 +23,18 @@ pub async fn init(og_filter: String, file: String) -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let state = State {
-        og_filter: og_filter.clone(),
-        reload_handle,
-    };
-
     tokio::spawn(async move {
-        if let Err(e) = watch_file(state, file).await {
+        let state = State {
+            og_filter: og_filter.clone(),
+            file,
+            reload_handle,
+        };
+        if let Err(e) = state.watch().await {
             tracing::warn!("error: {:?}", e)
         }
     });
+
+    tracing::info!("custom tracing installed");
 
     Ok(())
 }
@@ -48,10 +49,57 @@ where
 #[derive(Clone)]
 pub struct State {
     pub og_filter: String,
+    pub file: String,
     pub reload_handle: Handle<EnvFilter, Registry>,
 }
 
 impl State {
+    async fn watch(&self) -> Result<()> {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+
+        let mut watcher = RecommendedWatcher::new(
+            move |res| {
+                tx.blocking_send(res).expect("Failed to send event");
+            },
+            Config::default(),
+        )?;
+
+        watcher.watch(".".as_ref(), RecursiveMode::NonRecursive)?;
+
+        while let Some(res) = rx.recv().await {
+            match res {
+                Err(e) => tracing::warn!("watch error: {:?}", e),
+                Ok(event) => match event.kind {
+                    notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        DataChange::Content,
+                    )) => {
+                        let event_path = event.paths.first().unwrap();
+
+                        if Path::new(event_path).exists() {
+                            match fs::read_to_string(event_path) {
+                                Err(_e) => tracing::warn!("failed to read file {:?}", _e),
+                                Ok(content) => {
+                                    if file_match(event_path, self.file.clone()) {
+                                        self.handle_change(content)?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    notify::EventKind::Remove(notify::event::RemoveKind::File) => {
+                        let event_path = event.paths.first().unwrap();
+                        if file_match(event_path, self.file.clone()) {
+                            self.handle_delete()?;
+                        }
+                    }
+                    _e => tracing::debug!("ignored {:?}", _e),
+                },
+            }
+        }
+
+        Ok(())
+    }
+
     fn handle_change(&self, content: String) -> Result<()> {
         if content.is_empty() {
             self.handle_delete()
@@ -76,52 +124,6 @@ impl State {
         tracing::info!(filter = new_filter, "deleted tracing file, updated");
         Ok(())
     }
-}
-
-async fn watch_file(state: State, file: String) -> Result<()> {
-    let (mut tx, mut rx) = channel(1);
-
-    let mut watcher = RecommendedWatcher::new(
-        move |res| {
-            futures::executor::block_on(async {
-                tx.send(res).await.unwrap();
-            })
-        },
-        Config::default(),
-    )?;
-
-    watcher.watch(".".as_ref(), RecursiveMode::NonRecursive)?;
-
-    while let Some(res) = rx.next().await {
-        match res {
-            Err(e) => tracing::warn!("watch error: {:?}", e),
-            Ok(event) => match event.kind {
-                notify::EventKind::Modify(notify::event::ModifyKind::Data(DataChange::Content)) => {
-                    let event_path = event.paths.first().unwrap();
-
-                    if Path::new(event_path).exists() {
-                        match fs::read_to_string(event_path) {
-                            Err(_e) => tracing::warn!("failed to read file {:?}", _e),
-                            Ok(content) => {
-                                if file_match(event_path, file.clone()) {
-                                    state.handle_change(content)?;
-                                }
-                            }
-                        }
-                    }
-                }
-                notify::EventKind::Remove(notify::event::RemoveKind::File) => {
-                    let event_path = event.paths.first().unwrap();
-                    if file_match(event_path, file.clone()) {
-                        state.handle_delete()?;
-                    }
-                }
-                _e => tracing::debug!("ignored {:?}", _e),
-            },
-        }
-    }
-
-    Ok(())
 }
 
 fn file_match(event_path: &Path, file: String) -> bool {
