@@ -6,9 +6,7 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-notify = { version = "6", default-features = false, features = [
-    "macos_fsevent",
-] }
+notify = { version = "6", default-features = false }
 anyhow = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "signal"] }
 tracing = "0"
@@ -22,6 +20,12 @@ tower-layer = { version = "0" }
 axum = { version = "0.7", features = ["tracing"], optional = true }
 helium-proto = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
+
+
+[target.'cfg(target_os = "macos")'.dependencies]
+notify = { version = "6", default-features = false, features = [
+    "macos_fsevent",
+] }
 
 
 [features]
