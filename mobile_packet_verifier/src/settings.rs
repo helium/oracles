@@ -14,6 +14,9 @@ pub struct Settings {
     /// Burn period in hours. (Default is 1)
     #[serde(default = "default_burn_period")]
     pub burn_period: i64,
+    /// Minimum burn period when error, in minutes. (Default is 15)
+    #[serde(default = "default_min_burn_period")]
+    pub min_burn_period: i64,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
@@ -54,6 +57,10 @@ pub fn default_burn_period() -> i64 {
     1
 }
 
+pub fn default_min_burn_period() -> i64 {
+    15
+}
+
 impl Settings {
     /// Load Settings from a given path. Settings are loaded from a given
     /// optional path and can be overriden with environment variables.
@@ -81,6 +88,14 @@ impl Settings {
         Utc.timestamp_opt(self.start_after as i64, 0)
             .single()
             .unwrap()
+    }
+
+    pub fn burn_period(&self) -> tokio::time::Duration {
+        tokio::time::Duration::from_secs(60 * 60 * self.burn_period as u64)
+    }
+
+    pub fn min_burn_period(&self) -> tokio::time::Duration {
+        tokio::time::Duration::from_secs(60 * self.min_burn_period as u64)
     }
 
     pub fn purger_interval(&self) -> Duration {
