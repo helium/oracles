@@ -29,8 +29,8 @@ pub async fn init(og_filter: String, file: String) -> Result<()> {
             file,
             reload_handle,
         };
-        if let Err(e) = state.watch().await {
-            tracing::warn!("error: {:?}", e)
+        if let Err(err) = state.watch().await {
+            tracing::warn!(?err, "tracing error watching configuration for update")
         }
     });
 
