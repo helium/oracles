@@ -13,7 +13,7 @@ pub struct Settings {
     /// "ingest=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
-    /// File name to be watch by custom tracing
+    /// File name to be watched by custom tracing
     #[serde(default = "default_tracing")]
     pub tracing: String,
     /// Mode to run the server in (iot or mobile). Required
