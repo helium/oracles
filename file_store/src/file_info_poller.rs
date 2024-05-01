@@ -144,7 +144,7 @@ where
 
 impl<T, S, P> ManagedTask for FileInfoPollerServer<T, S, P>
 where
-    T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
+    T: Send + Sync + 'static,
     S: FileInfoPollerState,
     P: FileInfoPollerParser<T>,
 {
@@ -164,7 +164,7 @@ where
 
 impl<T, S, P> FileInfoPollerServer<T, S, P>
 where
-    T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
+    T: Send + Sync + 'static,
     S: FileInfoPollerState,
     P: FileInfoPollerParser<T>,
 {
