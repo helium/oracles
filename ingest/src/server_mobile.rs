@@ -492,6 +492,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .await
 }
 
-fn pub_key_to_b58(pub_key: &Vec<u8>) -> String {
+fn pub_key_to_b58(pub_key: &[u8]) -> String {
     bs58::encode(pub_key).into_string()
 }
