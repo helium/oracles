@@ -16,11 +16,11 @@ pub fn new_with_span(make_span: fn(&Request<Body>) -> Span) -> GrpcLayer {
         .on_response(
             DefaultOnResponse::new()
                 .level(Level::DEBUG)
-                .latency_unit(LatencyUnit::Micros),
+                .latency_unit(LatencyUnit::Millis),
         )
         .on_failure(
             DefaultOnFailure::new()
                 .level(Level::WARN)
-                .latency_unit(LatencyUnit::Micros),
+                .latency_unit(LatencyUnit::Millis),
         )
 }
