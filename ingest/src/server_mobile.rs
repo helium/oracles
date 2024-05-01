@@ -112,7 +112,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        custom_tracing::record("pub_key", bs58::encode(event.pub_key.clone()).into_string());
+        custom_tracing::record("pub_key", pub_key_to_b58(event.pub_key.clone()));
 
         let report = self
             .verify_public_key(event.pub_key.as_ref())
@@ -136,7 +136,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        custom_tracing::record("pub_key", bs58::encode(event.pub_key.clone()).into_string());
+        custom_tracing::record("pub_key", pub_key_to_b58(event.pub_key.clone()));
 
         let report = self
             .verify_public_key(event.pub_key.as_ref())
@@ -160,7 +160,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        custom_tracing::record("pub_key", bs58::encode(event.pub_key.clone()).into_string());
+        custom_tracing::record("pub_key", pub_key_to_b58(event.pub_key.clone()));
 
         let report = self
             .verify_public_key(event.pub_key.as_ref())
@@ -184,7 +184,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        custom_tracing::record("pub_key", bs58::encode(event.pub_key.clone()).into_string());
+        custom_tracing::record("pub_key", pub_key_to_b58(event.pub_key.clone()));
 
         let report = self
             .verify_public_key(event.pub_key.as_ref())
@@ -332,7 +332,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        custom_tracing::record("pub_key", bs58::encode(event.pub_key.clone()).into_string());
+        custom_tracing::record("pub_key", pub_key_to_b58(event.pub_key.clone()));
 
         let report = self
             .verify_public_key(event.pub_key.as_ref())
@@ -493,4 +493,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .build()
         .start()
         .await
+}
+
+fn pub_key_to_b58(pub_key: Vec<u8>) -> String {
+    bs58::encode(pub_key).into_string()
 }
