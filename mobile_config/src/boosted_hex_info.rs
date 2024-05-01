@@ -110,6 +110,10 @@ impl BoostedHexInfo {
     fn matches_device_type(&self, device_type: &BoostedHexDeviceType) -> bool {
         self.device_type == *device_type || self.device_type == BoostedHexDeviceType::All
     }
+
+    fn is_expired(&self, ts: &DateTime<Utc>) -> bool {
+        self.end_ts.is_some_and(|end| &end < ts)
+    }
 }
 
 fn device_type_from_str(s: &str) -> anyhow::Result<BoostedHexDeviceType> {
@@ -246,6 +250,7 @@ impl BoostedHexes {
 pub(crate) mod db {
     use super::{to_end_ts, to_start_ts, BoostedHexInfo};
     use chrono::{DateTime, Duration, Utc};
+    use futures::future;
     use futures::stream::{Stream, StreamExt};
     use hextree::Cell;
     use solana_sdk::pubkey::Pubkey;
@@ -284,12 +289,20 @@ pub(crate) mod db {
             where hexes.refreshed_at > $1
         "#;
 
-    pub fn all_info_stream<'a>(
+    pub fn all_info_stream_with_time_now<'a>(
         db: impl PgExecutor<'a> + 'a,
+    ) -> impl Stream<Item = BoostedHexInfo> + 'a {
+        all_info_stream(db, Utc::now())
+    }
+
+    fn all_info_stream<'a>(
+        db: impl PgExecutor<'a> + 'a,
+        now: DateTime<Utc>,
     ) -> impl Stream<Item = BoostedHexInfo> + 'a {
         sqlx::query_as::<_, BoostedHexInfo>(GET_BOOSTED_HEX_INFO_SQL)
             .fetch(db)
             .filter_map(|info| async move { info.ok() })
+            .filter(move |info| future::ready(!info.is_expired(&now)))
             .boxed()
     }
 
@@ -593,6 +606,37 @@ mod tests {
             Ok(())
         }
 
+        #[sqlx::test]
+        async fn filter_expired_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
+            let boost_config_address = Pubkey::new_unique();
+            let now = Utc::now();
+
+            create_tables(&pool).await?;
+            insert_boost_config(&pool, &boost_config_address, now).await?;
+
+            let times = vec![
+                None,                            // unstarted
+                Some(now),                       // still boosting
+                Some(now - Duration::days(400)), // expired
+            ];
+
+            for time in times {
+                insert_boosted_hex(
+                    &pool,
+                    &boost_config_address,
+                    now,
+                    Some(serde_json::json!("cbrsIndoor")),
+                    time,
+                )
+                .await?;
+            }
+
+            assert_eq!(3, boosted_hexes_count(&pool).await?);
+            assert_eq!(2, streamed_hexes_count(&pool).await?);
+
+            Ok(())
+        }
+
         async fn create_tables(pool: &PgPool) -> anyhow::Result<()> {
             const CREATE_BOOSTED_HEXES_TABLE: &str = r#"
                 CREATE TABLE
@@ -724,7 +768,7 @@ mod tests {
 
         async fn streamed_hexes_count(pool: &PgPool) -> anyhow::Result<usize> {
             // If a row cannot be parsed, it is dropped from the stream with no erros.
-            let mut infos = super::db::all_info_stream(pool);
+            let mut infos = super::db::all_info_stream_with_time_now(pool);
             let mut count = 0;
             while let Some(_info) = infos.next().await {
                 // println!("info: {_info:?}");
