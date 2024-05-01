@@ -165,7 +165,7 @@ mod tests {
 
     use std::io::Cursor;
 
-    use hextree::{HexTreeMap, HexTreeSet};
+    use hextree::HexTreeMap;
 
     use super::*;
 
