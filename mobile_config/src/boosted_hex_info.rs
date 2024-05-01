@@ -227,6 +227,14 @@ impl BoostedHexes {
     }
 
     pub fn insert(&mut self, info: BoostedHexInfo) {
+        #[cfg(test)]
+        if info.is_expired(&Utc::now()) {
+            // mobile-config does not deliver expired boosts from the database.
+            // Tests using this struct to mimic mobile-config should uphold the
+            // same contract.
+            panic!("BoostedHexes should not contain expired boosts");
+        }
+
         self.hexes.entry(info.location).or_default().push(info);
     }
 
@@ -418,23 +426,11 @@ mod tests {
                 version: 0,
                 device_type: BoostedHexDeviceType::CbrsIndoor,
             },
-            // Expired boosts should not be considered
-            BoostedHexInfo {
-                location: cell,
-                start_ts: Some(now - Duration::days(60)),
-                end_ts: Some(now - Duration::days(30)),
-                period_length: Duration::seconds(2592000),
-                multipliers: vec![NonZeroU32::new(999).unwrap()],
-                boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)?,
-                boost_config_pubkey: Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY)?,
-                version: 0,
-                device_type: BoostedHexDeviceType::All,
-            },
         ];
 
         let boosted_hexes = BoostedHexes::new(hexes);
         let boosts = boosted_hexes.get(&cell).expect("boosts for test cell");
-        assert_eq!(boosts.len(), 3, "a hex can be boosted multiple times");
+        assert_eq!(boosts.len(), 2, "a hex can be boosted multiple times");
 
         assert_eq!(
             boosted_hexes.get_current_multiplier(cell, BoostedHexDeviceType::CbrsIndoor, now),
