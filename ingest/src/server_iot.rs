@@ -98,6 +98,7 @@ impl StreamState {
         let timestamp = Utc::now().timestamp_millis() as u64;
         match message.request {
             Some(StreamRequest::BeaconReport(report)) => {
+                custom_tracing::record("pub_key", pub_key_to_b58(&report.pub_key));
                 handle_beacon_report(
                     &self.beacon_report_sink,
                     timestamp,
@@ -108,6 +109,7 @@ impl StreamState {
                 .await
             }
             Some(StreamRequest::WitnessReport(report)) => {
+                custom_tracing::record("pub_key", pub_key_to_b58(&report.pub_key));
                 handle_witness_report(
                     &self.witness_report_sink,
                     timestamp,
@@ -117,10 +119,13 @@ impl StreamState {
                 )
                 .await
             }
-            Some(StreamRequest::SessionInit(init)) => verify_public_key(&init.pub_key)
-                .and_then(|pk| verify_network(self.required_network, pk))
-                .and_then(|pk| verify_signature(Some(&pk), init))
-                .and_then(|init| self.initialize(init)),
+            Some(StreamRequest::SessionInit(init)) => {
+                custom_tracing::record("pub_key", pub_key_to_b58(&init.pub_key));
+                verify_public_key(&init.pub_key)
+                    .and_then(|pk| verify_network(self.required_network, pk))
+                    .and_then(|pk| verify_signature(Some(&pk), init))
+                    .and_then(|init| self.initialize(init))
+            }
             None => Err(Status::aborted("stream closed")),
         }
     }
@@ -139,22 +144,19 @@ impl StreamState {
         loop {
             tokio::select! {
                 _ = tokio::time::sleep_until(self.timeout) => {
-                    let pub_key = self.pub_key_bytes.map(|b| bs58::encode(&b).into_string()).unwrap_or("".to_string());
-                    tracing::debug!(?pub_key, "stream request timed out");
+                    tracing::debug!("stream request timed out");
                     break;
                 }
                 message = in_stream.next() => {
                     match message {
                         Some(Ok(message)) => {
                             if let Err(err) = self.handle_message(message).await {
-                                let pub_key = self.pub_key_bytes.map(|b| bs58::encode(&b).into_string()).unwrap_or("".to_string());
-                                tracing::info!(?pub_key, ?err, "error while handling message during stream_requests");
+                                tracing::info!(?err, "error while handling message during stream_requests");
                                 break;
                             }
                         }
                         Some(Err(err)) => {
-                            let pub_key = self.pub_key_bytes.map(|b| bs58::encode(&b).into_string()).unwrap_or("".to_string());
-                            tracing::debug!(?pub_key, ?err, "error in streaming requests");
+                            tracing::debug!(?err, "error in streaming requests");
                             break;
                         }
                         None => {
@@ -186,6 +188,7 @@ impl ManagedTask for GrpcServer {
         let address = self.address;
         Box::pin(async move {
             let grpc_server = transport::Server::builder()
+                .layer(custom_tracing::grpc_layer::new_with_span(make_span))
                 .layer(poc_metrics::request_layer!("ingest_server_iot_connection"))
                 .add_service(poc_lora::Server::new(*self))
                 .serve(address)
@@ -202,6 +205,10 @@ impl ManagedTask for GrpcServer {
             }
         })
     }
+}
+
+fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
+    tracing::info_span!("tracing", pub_key = tracing::field::Empty)
 }
 
 fn verify_public_key(bytes: &[u8]) -> VerifyResult<PublicKey> {
@@ -289,6 +296,8 @@ impl poc_lora::PocLora for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
+        custom_tracing::record("pub_key", pub_key_to_b58(&event.pub_key));
+
         let pub_key = verify_public_key(&event.pub_key)
             .and_then(|pk| verify_network(self.required_network, pk))?;
 
@@ -311,6 +320,8 @@ impl poc_lora::PocLora for GrpcServer {
     ) -> GrpcResult<LoraWitnessReportRespV1> {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+
+        custom_tracing::record("pub_key", pub_key_to_b58(&event.pub_key));
 
         let pub_key = verify_public_key(&event.pub_key)
             .and_then(|pk| verify_network(self.required_network, pk))?;
@@ -396,4 +407,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .build()
         .start()
         .await
+}
+
+fn pub_key_to_b58(pub_key: &Vec<u8>) -> String {
+    bs58::encode(pub_key).into_string()
 }
