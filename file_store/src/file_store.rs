@@ -244,7 +244,7 @@ impl FileStore {
     }
 }
 
-fn stream_source(stream: ByteStream) -> BytesMutStream {
+pub fn stream_source(stream: ByteStream) -> BytesMutStream {
     use async_compression::tokio::bufread::GzipDecoder;
     use tokio_util::{
         codec::{length_delimited::LengthDelimitedCodec, FramedRead},
