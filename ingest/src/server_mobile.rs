@@ -112,7 +112,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        custom_tracing::record("pub_key", pub_key_to_b58(event.pub_key.clone()));
+        custom_tracing::record("pub_key", pub_key_to_b58(&event.pub_key));
 
         let report = self
             .verify_public_key(event.pub_key.as_ref())
