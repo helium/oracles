@@ -26,6 +26,7 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
+use hextree::Cell;
 use mobile_config::{
     boosted_hex_info::{BoostedHex, BoostedHexes},
     client::AuthorizationClient,
@@ -376,7 +377,8 @@ impl CoverageObject {
 #[derive(Clone, FromRow)]
 pub struct HexCoverage {
     pub uuid: Uuid,
-    pub hex: i64,
+    #[sqlx(try_from = "i64")]
+    pub hex: Cell,
     pub indoor: bool,
     pub radio_key: OwnedKeyType,
     pub signal_level: SignalLevel,
@@ -630,12 +632,15 @@ pub async fn clear_coverage_objects(
     Ok(())
 }
 
+type IndoorCellTree = HashMap<Cell, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>;
+type OutdoorCellTree = HashMap<Cell, BinaryHeap<OutdoorCoverageLevel>>;
+
 #[derive(Default, Debug)]
 pub struct CoveredHexes {
-    indoor_cbrs: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>,
-    indoor_wifi: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>,
-    outdoor_cbrs: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
-    outdoor_wifi: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
+    indoor_cbrs: IndoorCellTree,
+    indoor_wifi: IndoorCellTree,
+    outdoor_cbrs: OutdoorCellTree,
+    outdoor_wifi: OutdoorCellTree,
 }
 
 pub const MAX_INDOOR_RADIOS_PER_RES12_HEX: usize = 1;
@@ -654,7 +659,7 @@ impl CoveredHexes {
         let mut boosted = false;
 
         while let Some(hex_coverage) = covered_hexes.next().await.transpose()? {
-            boosted |= boosted_hexes.is_boosted(&(hex_coverage.hex as u64));
+            boosted |= boosted_hexes.is_boosted(&hex_coverage.hex);
             match (hex_coverage.indoor, &hex_coverage.radio_key) {
                 (true, OwnedKeyType::Cbrs(_)) => {
                     insert_indoor_coverage(&mut self.indoor_cbrs, hotspot, hex_coverage);
@@ -698,12 +703,12 @@ impl CoveredHexes {
 }
 
 fn insert_indoor_coverage(
-    indoor: &mut HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>,
+    indoor: &mut IndoorCellTree,
     hotspot: &PublicKeyBinary,
     hex_coverage: HexCoverage,
 ) {
     indoor
-        .entry(CellIndex::try_from(hex_coverage.hex as u64).unwrap())
+        .entry(hex_coverage.hex)
         .or_default()
         .entry(hex_coverage.signal_level)
         .or_default()
@@ -717,12 +722,12 @@ fn insert_indoor_coverage(
 }
 
 fn insert_outdoor_coverage(
-    outdoor: &mut HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
+    outdoor: &mut OutdoorCellTree,
     hotspot: &PublicKeyBinary,
     hex_coverage: HexCoverage,
 ) {
     outdoor
-        .entry(CellIndex::try_from(hex_coverage.hex as u64).unwrap())
+        .entry(hex_coverage.hex)
         .or_default()
         .push(OutdoorCoverageLevel {
             radio_key: hex_coverage.radio_key,
@@ -735,7 +740,7 @@ fn insert_outdoor_coverage(
 }
 
 fn into_outdoor_rewards(
-    outdoor: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
+    outdoor: OutdoorCellTree,
     boosted_hexes: &BoostedHexes,
     epoch_start: DateTime<Utc>,
 ) -> impl Iterator<Item = CoverageReward> + '_ {
@@ -747,7 +752,7 @@ fn into_outdoor_rewards(
             .zip(OUTDOOR_REWARD_WEIGHTS)
             .map(move |(cl, rank)| {
                 let boost_multiplier = boosted_hexes
-                    .get_current_multiplier(hex.into(), epoch_start)
+                    .get_current_multiplier(hex, epoch_start)
                     .unwrap_or(NonZeroU32::new(1).unwrap());
 
                 CoverageReward {
@@ -760,7 +765,7 @@ fn into_outdoor_rewards(
                     hotspot: cl.hotspot,
                     radio_key: cl.radio_key,
                     boosted_hex_info: BoostedHex {
-                        location: hex.into(),
+                        location: hex,
                         multiplier: boost_multiplier,
                     },
                 }
@@ -769,7 +774,7 @@ fn into_outdoor_rewards(
 }
 
 fn into_indoor_rewards(
-    indoor: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>,
+    indoor: IndoorCellTree,
     boosted_hexes: &BoostedHexes,
     epoch_start: DateTime<Utc>,
 ) -> impl Iterator<Item = CoverageReward> + '_ {
@@ -783,7 +788,7 @@ fn into_indoor_rewards(
                     .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
                     .map(move |cl| {
                         let boost_multiplier = boosted_hexes
-                            .get_current_multiplier(hex.into(), epoch_start)
+                            .get_current_multiplier(hex, epoch_start)
                             .unwrap_or(NonZeroU32::new(1).unwrap());
 
                         CoverageReward {
@@ -796,7 +801,7 @@ fn into_indoor_rewards(
                             hotspot: cl.hotspot,
                             radio_key: cl.radio_key,
                             boosted_hex_info: BoostedHex {
-                                location: hex.into(),
+                                location: hex,
                                 multiplier: boost_multiplier,
                             },
                         }
@@ -968,6 +973,7 @@ mod test {
     use super::*;
     use chrono::NaiveDate;
     use futures::stream::iter;
+    use hextree::Cell;
 
     /// Test to ensure that if there are multiple radios with different signal levels
     /// in a given hex, that the one with the highest signal level is chosen.
@@ -1006,7 +1012,7 @@ mod test {
                     rank: None
                 },
                 boosted_hex_info: BoostedHex {
-                    location: 0x8a1fb46622dffff_u64,
+                    location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                     multiplier: NonZeroU32::new(1).unwrap(),
                 },
             }]
@@ -1028,7 +1034,7 @@ mod test {
     ) -> HexCoverage {
         HexCoverage {
             uuid: Uuid::new_v4(),
-            hex: 0x8a1fb46622dffff_u64 as i64,
+            hex: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
             indoor: true,
             radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
             signal_level,
@@ -1122,7 +1128,7 @@ mod test {
                     rank: None
                 },
                 boosted_hex_info: BoostedHex {
-                    location: 0x8a1fb46622dffff_u64,
+                    location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                     multiplier: NonZeroU32::new(1).unwrap(),
                 },
             }]
@@ -1165,7 +1171,7 @@ mod test {
                         hex_assignments: HexAssignments::test_best(),
                     },
                     boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
+                        location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                         multiplier: NonZeroU32::new(1).unwrap(),
                     },
                 },
@@ -1179,7 +1185,7 @@ mod test {
                         hex_assignments: HexAssignments::test_best(),
                     },
                     boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
+                        location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                         multiplier: NonZeroU32::new(1).unwrap(),
                     },
                 },
@@ -1193,7 +1199,7 @@ mod test {
                         hex_assignments: HexAssignments::test_best(),
                     },
                     boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
+                        location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                         multiplier: NonZeroU32::new(1).unwrap(),
                     },
                 }
@@ -1453,7 +1459,7 @@ mod test {
     ) -> HexCoverage {
         HexCoverage {
             uuid: Uuid::new_v4(),
-            hex: 0x8a1fb46622dffff_u64 as i64,
+            hex: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
             indoor: true,
             radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
             signal_level,
@@ -1472,7 +1478,7 @@ mod test {
     ) -> HexCoverage {
         HexCoverage {
             uuid: Uuid::new_v4(),
-            hex: 0x8a1fb46622dffff_u64 as i64,
+            hex: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
             indoor: false,
             radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
             signal_power,
@@ -1490,7 +1496,7 @@ mod test {
     ) -> HexCoverage {
         HexCoverage {
             uuid: Uuid::new_v4(),
-            hex: 0x8a1fb46622dffff_u64 as i64,
+            hex: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
             indoor: false,
             radio_key: OwnedKeyType::Wifi(hotspot_key.clone()),
             signal_power,
@@ -1508,7 +1514,7 @@ mod test {
     ) -> HexCoverage {
         HexCoverage {
             uuid: Uuid::new_v4(),
-            hex: 0x8a1fb46622dffff_u64 as i64,
+            hex: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
             indoor: true,
             radio_key: OwnedKeyType::Wifi(hotspot_key.clone()),
             signal_power: 0,

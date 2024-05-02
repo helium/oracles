@@ -134,9 +134,7 @@ mod tests {
 
     use std::io::Cursor;
 
-    use hextree::{HexTreeMap, HexTreeSet};
-
-    use crate::geofence::Geofence;
+    use hextree::HexTreeMap;
 
     use self::{footfall::Footfall, landtype::Landtype};
 
@@ -246,15 +244,15 @@ mod tests {
         // Not Urban - nothing in the map, but in the geofence
         // Outside   - not in the geofence, urbanized hex never considered
         let mut urbanized = HexTreeMap::<u8>::new();
-        urbanized.insert(poi_built_urbanized, 0);
-        urbanized.insert(poi_grass_urbanized, 0);
-        urbanized.insert(poi_water_urbanized, 0);
-        urbanized.insert(poi_no_data_built_urbanized, 0);
-        urbanized.insert(poi_no_data_grass_urbanized, 0);
-        urbanized.insert(poi_no_data_water_urbanized, 0);
-        urbanized.insert(no_poi_built_urbanized, 0);
-        urbanized.insert(no_poi_grass_urbanized, 0);
-        urbanized.insert(no_poi_water_urbanized, 0);
+        urbanized.insert(poi_built_urbanized, 1);
+        urbanized.insert(poi_grass_urbanized, 1);
+        urbanized.insert(poi_water_urbanized, 1);
+        urbanized.insert(poi_no_data_built_urbanized, 1);
+        urbanized.insert(poi_no_data_grass_urbanized, 1);
+        urbanized.insert(poi_no_data_water_urbanized, 1);
+        urbanized.insert(no_poi_built_urbanized, 1);
+        urbanized.insert(no_poi_grass_urbanized, 1);
+        urbanized.insert(no_poi_water_urbanized, 1);
 
         let inside_usa = [
             poi_built_urbanized,
@@ -276,9 +274,9 @@ mod tests {
             no_poi_grass_not_urbanized,
             no_poi_water_not_urbanized,
         ];
-        let geofence_set: HexTreeSet = inside_usa.iter().collect();
-        let usa_geofence = Geofence::new(geofence_set, h3o::Resolution::Twelve);
-
+        for inside_usa in inside_usa.into_iter() {
+            urbanized.entry(inside_usa).or_insert(0);
+        }
         // These vectors are a standin for the file system
         let mut urbanized_buf = vec![];
         let mut footfall_buff = vec![];
@@ -291,8 +289,7 @@ mod tests {
 
         let footfall = Footfall::new_mock(DiskTreeMap::with_buf(footfall_buff)?);
         let landtype = Landtype::new_mock(DiskTreeMap::with_buf(landtype_buf)?);
-        let urbanization =
-            Urbanization::new_mock(DiskTreeMap::with_buf(urbanized_buf)?, usa_geofence);
+        let urbanization = Urbanization::new_mock(DiskTreeMap::with_buf(urbanized_buf)?);
 
         // Let the testing commence
         let data = HexBoostData::builder()

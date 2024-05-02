@@ -1,8 +1,7 @@
 mod common;
 use boost_manager::{activator, db, OnChainStatus};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Timelike, Utc};
-use helium_proto::services::poc_mobile::BoostedHex as BoostedHexProto;
-use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
+use mobile_config::boosted_hex_info::{BoostedHex, BoostedHexInfo, BoostedHexes};
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
@@ -44,7 +43,7 @@ impl TestContext {
 
         let boosts = vec![
             BoostedHexInfo {
-                location: 0x8a1fb466d2dffff_u64,
+                location: 0x8a1fb466d2dffff_u64.try_into().expect("valid h3 cell"),
                 start_ts: Some(start_ts_1),
                 end_ts: Some(end_ts_1),
                 period_length: boost_period_length,
@@ -54,7 +53,7 @@ impl TestContext {
                 version: 0,
             },
             BoostedHexInfo {
-                location: 0x8a1fb49642dffff_u64,
+                location: 0x8a1fb49642dffff_u64.try_into().expect("valid h3 cell"),
                 start_ts: Some(start_ts_2),
                 end_ts: Some(end_ts_2),
                 period_length: boost_period_length,
@@ -65,7 +64,7 @@ impl TestContext {
             },
             BoostedHexInfo {
                 // hotspot 3's location
-                location: 0x8c2681a306607ff_u64,
+                location: 0x8c2681a306607ff_u64.try_into().expect("valid h3 cell"),
                 start_ts: None,
                 end_ts: None,
                 period_length: boost_period_length,
@@ -101,9 +100,9 @@ async fn test_activated_hex_insert(pool: PgPool) -> anyhow::Result<()> {
         &mut txn,
         now,
         &boosted_hexes,
-        &BoostedHexProto {
-            location: 0x8c2681a306607ff_u64,
-            multiplier: 10,
+        &BoostedHex {
+            location: 0x8c2681a306607ff_u64.try_into().expect("valid h3 cell"),
+            multiplier: NonZeroU32::new(10).unwrap(),
         },
     )
     .await?;
@@ -138,9 +137,9 @@ async fn test_activated_hex_no_insert(pool: PgPool) -> anyhow::Result<()> {
         &mut txn,
         now,
         &boosted_hexes,
-        &BoostedHexProto {
-            location: 0x8a1fb49642dffff_u64,
-            multiplier: 10,
+        &BoostedHex {
+            location: 0x8a1fb49642dffff_u64.try_into().expect("valid h3 cell"),
+            multiplier: NonZeroU32::new(10).unwrap(),
         },
     )
     .await?;
@@ -172,9 +171,9 @@ async fn test_activated_dup_hex_insert(pool: PgPool) -> anyhow::Result<()> {
         &mut txn,
         now,
         &boosted_hexes,
-        &BoostedHexProto {
-            location: 0x8c2681a306607ff_u64,
-            multiplier: 10,
+        &BoostedHex {
+            location: 0x8c2681a306607ff_u64.try_into().expect("valid h3 cell"),
+            multiplier: NonZeroU32::new(10).unwrap(),
         },
     )
     .await?;
@@ -183,9 +182,9 @@ async fn test_activated_dup_hex_insert(pool: PgPool) -> anyhow::Result<()> {
         &mut txn,
         now - ChronoDuration::days(1),
         &boosted_hexes,
-        &BoostedHexProto {
-            location: 0x8c2681a306607ff_u64,
-            multiplier: 5,
+        &BoostedHex {
+            location: 0x8c2681a306607ff_u64.try_into().expect("valid h3 cell"),
+            multiplier: NonZeroU32::new(5).unwrap(),
         },
     )
     .await?;

@@ -26,6 +26,7 @@ pub struct Daemon<S, GIR, AV> {
     burner: Burner<S>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
+    min_burn_period: Duration,
     gateway_info_resolver: GIR,
     authorization_verifier: AV,
     invalid_data_session_report_sink: FileSinkClient,
@@ -45,7 +46,8 @@ impl<S, GIR, AV> Daemon<S, GIR, AV> {
             pool,
             burner,
             reports,
-            burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
+            burn_period: settings.burn_period(),
+            min_burn_period: settings.min_burn_period(),
             gateway_info_resolver,
             authorization_verifier,
             invalid_data_session_report_sink,
@@ -92,8 +94,15 @@ where
                 },
                 _ = sleep_until(burn_time) => {
                     // It's time to burn
-                    self.burner.burn(&self.pool).await?;
-                    burn_time = Instant::now() + self.burn_period;
+                    match self.burner.burn(&self.pool).await {
+                        Ok(_) => {
+                            burn_time = Instant::now() + self.burn_period;
+                        }
+                        Err(e) => {
+                            burn_time = Instant::now() + self.min_burn_period;
+                            tracing::warn!("failed to burn {e:?}, re running burn in {:?} min", self.min_burn_period);
+                        }
+                    }
                 }
                 _ = shutdown.clone() => return Ok(()),
             }

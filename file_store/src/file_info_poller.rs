@@ -1,4 +1,5 @@
-use crate::{traits::MsgDecode, Error, FileInfo, FileStore, Result};
+use crate::{file_store, traits::MsgDecode, Error, FileInfo, FileStore, Result};
+use aws_sdk_s3::types::ByteStream;
 use chrono::{DateTime, Duration, Utc};
 use derive_builder::Builder;
 use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
@@ -27,6 +28,11 @@ pub trait FileInfoPollerState: Send + Sync + 'static {
     async fn exists(&self, process_name: &str, file_info: &FileInfo) -> Result<bool>;
 
     async fn clean(&self, process_name: &str, file_type: &str) -> Result;
+}
+
+#[async_trait::async_trait]
+pub trait FileInfoPollerParser<T>: Send + Sync + 'static {
+    async fn parse(&self, stream: ByteStream) -> Result<Vec<T>>;
 }
 
 #[async_trait::async_trait]
@@ -79,12 +85,13 @@ pub enum LookbackBehavior {
 
 #[derive(Debug, Clone, Builder)]
 #[builder(pattern = "owned")]
-pub struct FileInfoPollerConfig<T, S> {
+pub struct FileInfoPollerConfig<T, S, P> {
     #[builder(default = "Duration::seconds(DEFAULT_POLL_DURATION_SECS)")]
     poll_duration: Duration,
     state: S,
     store: FileStore,
     prefix: String,
+    parser: P,
     lookback: LookbackBehavior,
     #[builder(default = "Duration::minutes(10)")]
     offset: Duration,
@@ -97,8 +104,8 @@ pub struct FileInfoPollerConfig<T, S> {
 }
 
 #[derive(Clone)]
-pub struct FileInfoPollerServer<T, S> {
-    config: FileInfoPollerConfig<T, S>,
+pub struct FileInfoPollerServer<T, S, P> {
+    config: FileInfoPollerConfig<T, S, P>,
     sender: Sender<FileInfoStream<T>>,
     file_queue: VecDeque<FileInfo>,
     latest_file_timestamp: Option<DateTime<Utc>>,
@@ -106,12 +113,15 @@ pub struct FileInfoPollerServer<T, S> {
 }
 
 type FileInfoStreamReceiver<T> = Receiver<FileInfoStream<T>>;
-impl<T, S> FileInfoPollerConfigBuilder<T, S>
+impl<T, S, P> FileInfoPollerConfigBuilder<T, S, P>
 where
     T: Clone,
     S: FileInfoPollerState,
+    P: FileInfoPollerParser<T>,
 {
-    pub async fn create(self) -> Result<(FileInfoStreamReceiver<T>, FileInfoPollerServer<T, S>)> {
+    pub async fn create(
+        self,
+    ) -> Result<(FileInfoStreamReceiver<T>, FileInfoPollerServer<T, S, P>)> {
         let config = self.build()?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
         let latest_file_timestamp = config
@@ -132,10 +142,11 @@ where
     }
 }
 
-impl<T, S> ManagedTask for FileInfoPollerServer<T, S>
+impl<T, S, P> ManagedTask for FileInfoPollerServer<T, S, P>
 where
-    T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
+    T: Send + Sync + 'static,
     S: FileInfoPollerState,
+    P: FileInfoPollerParser<T>,
 {
     fn start_task(
         self: Box<Self>,
@@ -151,10 +162,11 @@ where
     }
 }
 
-impl<T, S> FileInfoPollerServer<T, S>
+impl<T, S, P> FileInfoPollerServer<T, S, P>
 where
-    T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
+    T: Send + Sync + 'static,
     S: FileInfoPollerState,
+    P: FileInfoPollerParser<T>,
 {
     pub async fn start(
         self,
@@ -218,8 +230,11 @@ where
                 _ = cleanup_trigger.tick() => self.clean(&self.cache).await?,
                 result = futures::future::try_join(sender.reserve().map_err(Error::from), self.get_next_file()) => {
                     let (permit, file) = result?;
-                    let data = parse_file(&self.config.store, process_name.clone(), file.clone()).await?;
-                    permit.send(data);
+                    let byte_stream = self.config.store.get_raw(file.clone()).await?;
+                    let data = self.config.parser.parse(byte_stream).await?;
+                    let file_info_stream = FileInfoStream::new(process_name.clone(), file.clone(), data);
+
+                    permit.send(file_info_stream);
                     cache_file(&self.cache, &file).await;
                 }
             }
@@ -266,42 +281,39 @@ where
     }
 }
 
-async fn parse_file<T>(
-    store: &FileStore,
-    process_name: String,
-    file: FileInfo,
-) -> Result<FileInfoStream<T>>
+pub struct ProtoFileInfoPollerParser;
+
+#[async_trait::async_trait]
+impl<T> FileInfoPollerParser<T> for ProtoFileInfoPollerParser
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
-    let stream: Vec<T> = store
-        .stream_file(file.clone())
-        .await?
-        .filter_map(|msg| async {
-            msg.map_err(|err| {
-                tracing::error!(
-                    "Error streaming entry in file of type {}: {err:?}",
-                    std::any::type_name::<T>()
-                );
-                err
-            })
-            .ok()
-        })
-        .filter_map(|msg| async {
-            <T as MsgDecode>::decode(msg)
-                .map_err(|err| {
+    async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
+        Ok(file_store::stream_source(byte_stream)
+            .filter_map(|msg| async {
+                msg.map_err(|err| {
                     tracing::error!(
-                        "Error in decoding message of type {}: {err:?}",
+                        "Error streaming entry in file of type {}: {err:?}",
                         std::any::type_name::<T>()
                     );
                     err
                 })
                 .ok()
-        })
-        .collect()
-        .await;
-
-    Ok(FileInfoStream::new(process_name, file, stream))
+            })
+            .filter_map(|msg| async {
+                <T as MsgDecode>::decode(msg)
+                    .map_err(|err| {
+                        tracing::error!(
+                            "Error in decoding message of type {}: {err:?}",
+                            std::any::type_name::<T>()
+                        );
+                        err
+                    })
+                    .ok()
+            })
+            .collect()
+            .await)
+    }
 }
 
 fn create_cache() -> MemoryFileCache {

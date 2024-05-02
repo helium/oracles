@@ -4,36 +4,29 @@ use chrono::{DateTime, Utc};
 use hextree::disktree::DiskTreeMap;
 
 use super::{Assignment, DataSet, DataSetType, DiskTreeLike, HexAssignment};
-use crate::geofence::GeofenceValidator;
 
-pub struct Urbanization<DT, GF> {
+pub struct Urbanization<DT> {
     urbanized: Option<DT>,
     timestamp: Option<DateTime<Utc>>,
-    usa_geofence: GF,
 }
 
-impl<DT, GF> Urbanization<DT, GF> {
-    pub fn new(usa_geofence: GF) -> Self {
+impl<DT> Urbanization<DT> {
+    pub fn new() -> Self {
         Self {
             urbanized: None,
             timestamp: None,
-            usa_geofence,
         }
     }
 
-    pub fn new_mock(urbanized: DT, usa_geofence: GF) -> Self {
+    pub fn new_mock(urbanized: DT) -> Self {
         Self {
             urbanized: Some(urbanized),
-            usa_geofence,
             timestamp: None,
         }
     }
 }
 
-impl<GF> DataSet for Urbanization<DiskTreeMap, GF>
-where
-    GF: GeofenceValidator<hextree::Cell> + Send + Sync + 'static,
-{
+impl DataSet for Urbanization<DiskTreeMap> {
     const TYPE: DataSetType = DataSetType::Urbanization;
 
     fn timestamp(&self) -> Option<DateTime<Utc>> {
@@ -51,22 +44,21 @@ where
     }
 }
 
-impl<Urban, Geo> HexAssignment for Urbanization<Urban, Geo>
+impl<Urban> HexAssignment for Urbanization<Urban>
 where
     Urban: DiskTreeLike + Send + Sync + 'static,
-    Geo: GeofenceValidator<hextree::Cell> + Send + Sync + 'static,
 {
     fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
         let Some(ref urbanized) = self.urbanized else {
             anyhow::bail!("No urbanization data set has been loaded");
         };
-
-        if !self.usa_geofence.in_valid_region(&cell) {
-            Ok(Assignment::C)
-        } else if urbanized.get(cell)?.is_some() {
-            Ok(Assignment::A)
-        } else {
-            Ok(Assignment::B)
+        match urbanized.get(cell)? {
+            Some((_, &[1])) => Ok(Assignment::A),
+            Some((_, &[0])) => Ok(Assignment::B),
+            None => Ok(Assignment::C),
+            Some((_, other)) => {
+                anyhow::bail!("unexpected urbanization disktree data: {cell:?} {other:?}")
+            }
         }
     }
 }

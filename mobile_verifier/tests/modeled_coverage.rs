@@ -13,6 +13,7 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{CoverageObjectValidity, SignalLevel},
 };
+use hextree::Cell;
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
@@ -840,9 +841,9 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
 
     let mut boosted_hexes = BoostedHexes::default();
     boosted_hexes.hexes.insert(
-        0x8a1fb466d2dffff_u64,
+        Cell::from_raw(0x8a1fb466d2dffff)?,
         BoostedHexInfo {
-            location: 0x8a1fb466d2dffff_u64,
+            location: Cell::from_raw(0x8a1fb466d2dffff)?,
             start_ts: None,
             end_ts: None,
             period_length: Duration::hours(1),
@@ -853,9 +854,9 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         },
     );
     boosted_hexes.hexes.insert(
-        0x8a1fb49642dffff_u64,
+        Cell::from_raw(0x8a1fb49642dffff)?,
         BoostedHexInfo {
-            location: 0x8a1fb49642dffff_u64,
+            location: Cell::from_raw(0x8a1fb49642dffff)?,
             start_ts: None,
             end_ts: None,
             period_length: Duration::hours(1),
@@ -866,10 +867,10 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         },
     );
     boosted_hexes.hexes.insert(
-        0x8c2681a306607ff_u64,
+        Cell::from_raw(0x8c2681a306607ff)?,
         BoostedHexInfo {
             // hotspot 1's location
-            location: 0x8c2681a306607ff_u64,
+            location: Cell::from_raw(0x8c2681a306607ff)?,
             start_ts: None,
             end_ts: None,
             period_length: Duration::hours(1),

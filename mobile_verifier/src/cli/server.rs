@@ -116,7 +116,7 @@ impl Cmd {
             .create()
             .await?;
 
-        let urbanization: Urbanization<DiskTreeMap, _> = Urbanization::new(usa_geofence.clone());
+        let urbanization: Urbanization<DiskTreeMap> = Urbanization::new();
         let footfall: Footfall<DiskTreeMap> = Footfall::new();
         let landtype: Landtype<DiskTreeMap> = Landtype::new();
         let hex_boost_data = HexBoostData::builder()

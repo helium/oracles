@@ -65,7 +65,7 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
 
     let boosted_hexes = vec![
         BoostedHexInfo {
-            location: 0x8a1fb466d2dffff_u64,
+            location: 0x8a1fb466d2dffff_u64.try_into().expect("valid h3 cell"),
             start_ts: Some(start_ts_1),
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
@@ -75,7 +75,7 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
             version: 0,
         },
         BoostedHexInfo {
-            location: 0x8a1fb49642dffff_u64,
+            location: 0x8a1fb49642dffff_u64.try_into().expect("valid h3 cell"),
             start_ts: Some(start_ts_2),
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
