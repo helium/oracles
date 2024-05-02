@@ -22,7 +22,6 @@ use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
     data_session,
-    geofence::GeofenceValidator,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder, speedtests,
 };
@@ -55,15 +54,6 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
         _timestamp: DateTime<Utc>,
     ) -> Result<BoostedHexInfoStream, ClientError> {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-}
-
-#[derive(Clone)]
-struct MockGeofence;
-
-impl GeofenceValidator<hextree::Cell> for MockGeofence {
-    fn in_valid_region(&self, _cell: &hextree::Cell) -> bool {
-        true
     }
 }
 

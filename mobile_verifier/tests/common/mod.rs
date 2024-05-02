@@ -21,11 +21,6 @@ pub struct MockCarrierServiceClient {
     pub valid_sps: ValidSpMap,
 }
 
-#[derive(Debug, Clone)]
-pub struct MockHexBoostingClient {
-    pub boosted_hexes: Vec<BoostedHexInfo>,
-}
-
 pub struct MockFileSinkReceiver {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage>,
 }

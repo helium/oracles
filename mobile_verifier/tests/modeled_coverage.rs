@@ -38,14 +38,8 @@ use uuid::Uuid;
 #[derive(Clone)]
 struct MockGeofence;
 
-impl GeofenceValidator<Heartbeat> for MockGeofence {
+impl GeofenceValidator for MockGeofence {
     fn in_valid_region(&self, _heartbeat: &Heartbeat) -> bool {
-        true
-    }
-}
-
-impl GeofenceValidator<hextree::Cell> for MockGeofence {
-    fn in_valid_region(&self, _cell: &hextree::Cell) -> bool {
         true
     }
 }

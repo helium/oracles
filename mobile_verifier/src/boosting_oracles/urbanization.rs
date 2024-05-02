@@ -26,6 +26,12 @@ impl<DT> Urbanization<DT> {
     }
 }
 
+impl<DT> Default for Urbanization<DT> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DataSet for Urbanization<DiskTreeMap> {
     const TYPE: DataSetType = DataSetType::Urbanization;
 
