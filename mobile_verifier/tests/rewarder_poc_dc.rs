@@ -1,20 +1,14 @@
 mod common;
-use crate::common::MockFileSinkReceiver;
-use async_trait::async_trait;
+use crate::common::{MockFileSinkReceiver, MockHexBoostingClient};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     speedtest::CellSpeedtest,
 };
-use futures_util::{stream, StreamExt as FuturesStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, GatewayReward, HeartbeatValidity, RadioReward, SeniorityUpdateReason,
     SignalLevel, UnallocatedReward, UnallocatedRewardType,
-};
-use mobile_config::{
-    boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
-    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
 use mobile_verifier::{
     cell_type::CellType,
@@ -32,34 +26,6 @@ const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11uJHS2YaEWJqgqC7yza9uvSmpv5FWoMQXiP8WbxBGgNUmifUJf";
 const HOTSPOT_3: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
 const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
-
-#[derive(Debug, Clone)]
-pub struct MockHexBoostingClient {
-    pub boosted_hexes: Vec<BoostedHexInfo>,
-}
-
-impl MockHexBoostingClient {
-    fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
-        Self { boosted_hexes }
-    }
-}
-
-#[async_trait]
-impl HexBoostingInfoResolver for MockHexBoostingClient {
-    type Error = ClientError;
-
-    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-
-    async fn stream_modified_boosted_hexes_info(
-        &mut self,
-        _timestamp: DateTime<Utc>,
-    ) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-}
-
 #[sqlx::test]
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();

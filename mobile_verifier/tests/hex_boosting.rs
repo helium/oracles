@@ -1,23 +1,19 @@
 mod common;
 use crate::common::MockFileSinkReceiver;
-use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
+use common::MockHexBoostingClient;
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     mobile_radio_threshold::{RadioThresholdIngestReport, RadioThresholdReportReq},
     speedtest::CellSpeedtest,
 };
-use futures_util::{stream, StreamExt as FuturesStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, HeartbeatValidity, RadioReward, SeniorityUpdateReason, SignalLevel,
     UnallocatedReward,
 };
 use hextree::Cell;
-use mobile_config::{
-    boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
-    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
-};
+use mobile_config::boosted_hex_info::BoostedHexInfo;
 use mobile_verifier::{
     cell_type::CellType,
     coverage::{set_oracle_boosting_assignments, CoverageObject, UnassignedHex},
@@ -38,33 +34,6 @@ const HOTSPOT_4: &str = "11fEisW6J38vnS6qL65QyxnnNV5jfukFhuFiD4uteo4eUgDSShK";
 const CARRIER_HOTSPOT_KEY: &str = "11hd7HoicRgBPjBGcqcT2Y9hRQovdZeff5eKFMbCSuDYQmuCiF1";
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
-
-#[derive(Debug, Clone)]
-pub struct MockHexBoostingClient {
-    pub boosted_hexes: Vec<BoostedHexInfo>,
-}
-
-impl MockHexBoostingClient {
-    fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
-        Self { boosted_hexes }
-    }
-}
-
-#[async_trait]
-impl HexBoostingInfoResolver for MockHexBoostingClient {
-    type Error = ClientError;
-
-    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-
-    async fn stream_modified_boosted_hexes_info(
-        &mut self,
-        _timestamp: DateTime<Utc>,
-    ) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-}
 
 async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
     let unassigned_hexes = UnassignedHex::fetch(pool);
