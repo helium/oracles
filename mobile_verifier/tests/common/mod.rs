@@ -22,7 +22,6 @@ pub struct MockCarrierServiceClient {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct MockHexBoostingClient {
     pub boosted_hexes: Vec<BoostedHexInfo>,
 }

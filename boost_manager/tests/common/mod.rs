@@ -6,6 +6,7 @@ use mobile_config::boosted_hex_info::BoostedHexInfo;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct MockHexBoostingClient {
     pub boosted_hexes: Vec<BoostedHexInfo>,
 }
