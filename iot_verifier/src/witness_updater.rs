@@ -24,7 +24,7 @@ struct Telemetry {
 
 impl Telemetry {
     fn new() -> Self {
-        let gauge = metrics::register_gauge!("iot_verifier_witness_updater_queue");
+        let gauge = metrics::gauge!("iot_verifier_witness_updater_queue");
         gauge.set(0.0);
         Self { queue_gauge: gauge }
     }

@@ -43,7 +43,7 @@ macro_rules! record_duration {
     ( $metric_name:expr, $e:expr ) => {{
         let timer = std::time::Instant::now();
         let res = $e;
-        ::metrics::histogram!($metric_name, timer.elapsed());
+        ::metrics::histogram!($metric_name).record(timer.elapsed());
         res
     }};
 }
@@ -120,7 +120,7 @@ where
         let metric_name_time = self.metric_name_time;
 
         let timer = std::time::Instant::now();
-        metrics::increment_gauge!(metric_name_count, 1.0);
+        metrics::gauge!(metric_name_count).increment(1.0);
 
         let clone = self.inner.clone();
         // take the service that was ready
@@ -128,11 +128,11 @@ where
 
         Box::pin(async move {
             let res = inner.call(req).await;
-            metrics::decrement_gauge!(metric_name_count, 1.0);
+            metrics::gauge!(metric_name_count).decrement(1.0);
             let elapsed_time = timer.elapsed();
             tracing::debug!("request processed in {elapsed_time:?}");
             // TODO What units to use? Is f64 seconds appropriate?
-            ::metrics::histogram!(metric_name_time, elapsed_time.as_secs_f64());
+            metrics::histogram!(metric_name_time).record(elapsed_time.as_secs_f64());
             res
         })
     }
