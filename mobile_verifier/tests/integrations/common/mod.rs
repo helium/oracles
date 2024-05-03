@@ -15,22 +15,19 @@ use mobile_config::{
 use mobile_verifier::boosting_oracles::{Assignment, BoostedHexAssignments, HexAssignments};
 use std::collections::HashMap;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
-use tonic::async_trait;
 
 #[derive(Debug, Clone)]
 pub struct MockHexBoostingClient {
     boosted_hexes: Vec<BoostedHexInfo>,
 }
 
-// this fn is actually used but clippy is unhappy bc it's only used in tests...
-#[allow(dead_code)]
 impl MockHexBoostingClient {
     pub fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
         Self { boosted_hexes }
     }
 }
 
-#[async_trait]
+#[async_trait::async_trait]
 impl HexBoostingInfoResolver for MockHexBoostingClient {
     type Error = ClientError;
 
@@ -50,7 +47,6 @@ pub struct MockFileSinkReceiver {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage>,
 }
 
-#[allow(dead_code)]
 impl MockFileSinkReceiver {
     pub async fn receive(&mut self) -> Option<Vec<u8>> {
         match timeout(seconds(2), self.receiver.recv()).await {
@@ -82,14 +78,14 @@ impl MockFileSinkReceiver {
         };
     }
 
-    pub async fn receive_speedtest_avg(&mut self) -> SpeedtestAvg {
-        match self.receive().await {
-            Some(bytes) => {
-                SpeedtestAvg::decode(bytes.as_slice()).expect("Not a valid speedtest average")
-            }
-            None => panic!("failed to receive speedtest average"),
-        }
-    }
+    // pub async fn receive_speedtest_avg(&mut self) -> SpeedtestAvg {
+    //     match self.receive().await {
+    //         Some(bytes) => {
+    //             SpeedtestAvg::decode(bytes.as_slice()).expect("Not a valid speedtest average")
+    //         }
+    //         None => panic!("failed to receive speedtest average"),
+    //     }
+    // }
 
     pub async fn get_all_speedtest_avgs(&mut self) -> Vec<SpeedtestAvg> {
         self.get_all()
@@ -177,7 +173,6 @@ impl MockFileSinkReceiver {
     }
 }
 
-#[allow(dead_code)]
 pub fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
     let (tx, rx) = tokio::sync::mpsc::channel(20);
     (
@@ -203,7 +198,6 @@ pub struct MockHexAssignments {
 }
 
 impl MockHexAssignments {
-    #[allow(dead_code)]
     pub fn new(
         footfall: MockAssignmentMap,
         urbanized: MockAssignmentMap,
