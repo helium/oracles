@@ -153,7 +153,7 @@ where
     }
 
     pub async fn process_data_sets(&self) -> anyhow::Result<()> {
-        tracing::info!("Checking for new data sets");
+        tracing::info!("Checking for new {} data sets", T::TYPE.to_prefix());
         let mut data_set = self.data_set.lock().await;
         let latest_unprocessed_data_set =
             db::fetch_latest_unprocessed_data_set(&self.pool, T::TYPE, data_set.timestamp())
@@ -305,9 +305,9 @@ pub mod db {
     ) -> sqlx::Result<()> {
         sqlx::query(
             r#"
-                INSERT INTO data_sets (filename, data_set, time_to_use, status)
-                VALUES ($1, $2, $3, 'pending')
-                "#,
+            INSERT INTO data_sets (filename, data_set, time_to_use, status)
+            VALUES ($1, $2, $3, 'pending')
+            "#,
         )
         .bind(filename)
         .bind(data_set_type)
@@ -323,13 +323,13 @@ pub mod db {
         since: Option<DateTime<Utc>>,
     ) -> sqlx::Result<Option<NewDataSet>> {
         sqlx::query_as(
-                "SELECT filename, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = $1 AND COALESCE(time_to_use > $2, TRUE) AND time_to_use <= $3 ORDER BY time_to_use DESC LIMIT 1"
-            )
-            .bind(data_set_type)
-            .bind(since)
-            .bind(Utc::now())
-            .fetch_optional(pool)
-            .await
+            "SELECT filename, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = $1 AND COALESCE(time_to_use > $2, TRUE) AND time_to_use <= $3 ORDER BY time_to_use DESC LIMIT 1"
+        )
+        .bind(data_set_type)
+        .bind(since)
+        .bind(Utc::now())
+        .fetch_optional(pool)
+        .await
     }
 
     pub async fn set_data_set_status(
@@ -350,11 +350,11 @@ pub mod db {
         data_set_type: DataSetType,
     ) -> sqlx::Result<Option<DateTime<Utc>>> {
         sqlx::query_scalar(
-                "SELECT time_to_use FROM data_sets WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
-            )
-            .bind(data_set_type)
-            .fetch_optional(pool)
-            .await
+            "SELECT time_to_use FROM data_sets WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
+        )
+        .bind(data_set_type)
+        .fetch_optional(pool)
+        .await
     }
 
     /// Check if there are any pending or downloaded files prior to the given reward period
