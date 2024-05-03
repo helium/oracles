@@ -1,5 +1,4 @@
-mod common;
-use crate::common::MockFileSinkReceiver;
+use crate::common::{self, MockFileSinkReceiver};
 use chrono::{Duration as ChronoDuration, Utc};
 use helium_proto::services::poc_lora::UnallocatedReward;
 use iot_verifier::{reward_share, rewarder};
