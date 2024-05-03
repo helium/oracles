@@ -6,7 +6,7 @@ use std::{
 };
 
 use chrono::{DateTime, Duration, Utc};
-use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
+use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileInfo, FileStore};
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::prelude::ToPrimitive;
@@ -184,14 +184,12 @@ where
                 data_set = latest_unprocessed_data_set.filename,
                 "Data set download complete"
             );
-            /*
             delete_old_data_sets(
                 &self.data_set_directory,
                 T::TYPE,
                 latest_unprocessed_data_set.time_to_use,
             )
             .await?;
-            */
         }
 
         // Now that we've downloaded the file, load it into the data set
@@ -201,18 +199,12 @@ where
         drop(data_set);
 
         // Update the hexes
-        if self.data_sets.is_ready().await {
-            let boosting_reports = set_oracle_boosting_assignments(
-                UnassignedHex::fetch_all(&self.pool),
-                &self.data_sets,
-                &self.pool,
-            )
-            .await?;
-            self.oracle_boosting_sink
-                .write_all(boosting_reports)
-                .await?;
-            self.oracle_boosting_sink.commit().await?;
-        }
+        let boosting_reports = set_oracle_boosting_assignments(
+            UnassignedHex::fetch_all(&self.pool),
+            &self.data_sets,
+            &self.pool,
+        )
+        .await?;
 
         db::set_data_set_status(
             &self.pool,
@@ -225,6 +217,11 @@ where
             data_set = latest_unprocessed_data_set.filename,
             "Data set processing complete"
         );
+
+        self.oracle_boosting_sink
+            .write_all(boosting_reports)
+            .await?;
+        self.oracle_boosting_sink.commit().await?;
 
         Ok(())
     }
@@ -255,7 +252,6 @@ fn get_data_set_path(
     dir
 }
 
-/*
 async fn delete_old_data_sets(
     data_set_directory: &Path,
     data_set_type: DataSetType,
@@ -271,7 +267,6 @@ async fn delete_old_data_sets(
     }
     Ok(())
 }
-*/
 
 async fn download_data_set(
     store: &FileStore,
