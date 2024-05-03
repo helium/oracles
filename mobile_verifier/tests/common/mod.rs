@@ -1,4 +1,6 @@
+use chrono::{DateTime, Utc};
 use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
+use futures::{stream, StreamExt};
 use helium_proto::{
     services::poc_mobile::{
         mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare, RadioReward,
@@ -6,21 +8,42 @@ use helium_proto::{
     },
     Message,
 };
-use mobile_config::boosted_hex_info::BoostedHexInfo;
+use mobile_config::{
+    boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
+    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
+};
 use mobile_verifier::boosting_oracles::{Assignment, BoostedHexAssignments, HexAssignments};
 use std::collections::HashMap;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
-
-pub type ValidSpMap = HashMap<String, String>;
-
-#[derive(Debug, Clone)]
-pub struct MockCarrierServiceClient {
-    pub valid_sps: ValidSpMap,
-}
+use tonic::async_trait;
 
 #[derive(Debug, Clone)]
 pub struct MockHexBoostingClient {
-    pub boosted_hexes: Vec<BoostedHexInfo>,
+    boosted_hexes: Vec<BoostedHexInfo>,
+}
+
+// this fn is actually used but clippy is unhappy bc it's only used in tests...
+#[allow(dead_code)]
+impl MockHexBoostingClient {
+    pub fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
+        Self { boosted_hexes }
+    }
+}
+
+#[async_trait]
+impl HexBoostingInfoResolver for MockHexBoostingClient {
+    type Error = ClientError;
+
+    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
+        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
+    }
+
+    async fn stream_modified_boosted_hexes_info(
+        &mut self,
+        _timestamp: DateTime<Utc>,
+    ) -> Result<BoostedHexInfoStream, ClientError> {
+        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
+    }
 }
 
 pub struct MockFileSinkReceiver {

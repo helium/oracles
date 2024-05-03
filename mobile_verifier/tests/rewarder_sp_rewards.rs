@@ -11,8 +11,6 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
 
-use common::MockCarrierServiceClient;
-use common::ValidSpMap;
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use mobile_verifier::{data_session, reward_shares, rewarder};
 
@@ -25,6 +23,13 @@ const HOTSPOT_2: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 const PAYER_1: &str = "11uJHS2YaEWJqgqC7yza9uvSmpv5FWoMQXiP8WbxBGgNUmifUJf";
 const PAYER_2: &str = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp";
 const SP_1: &str = "Helium Mobile";
+
+pub type ValidSpMap = HashMap<String, String>;
+
+#[derive(Debug, Clone)]
+pub struct MockCarrierServiceClient {
+    pub valid_sps: ValidSpMap,
+}
 
 impl MockCarrierServiceClient {
     fn new(valid_sps: ValidSpMap) -> Self {

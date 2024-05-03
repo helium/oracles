@@ -1,5 +1,5 @@
 mod common;
-use crate::common::{MockFileSinkReceiver, MockHexBoostingClient};
+use crate::common::MockFileSinkReceiver;
 use async_trait::async_trait;
 use boost_manager::watcher::{self, Watcher};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
@@ -15,6 +15,11 @@ use std::{num::NonZeroU32, str::FromStr};
 
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
+
+#[derive(Debug, Clone)]
+pub struct MockHexBoostingClient {
+    pub boosted_hexes: Vec<BoostedHexInfo>,
+}
 
 impl MockHexBoostingClient {
     fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
