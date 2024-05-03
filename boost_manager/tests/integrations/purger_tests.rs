@@ -1,4 +1,3 @@
-mod common;
 use boost_manager::purger;
 use boost_manager::OnChainStatus;
 use chrono::{DateTime, Duration, Utc};

@@ -24,11 +24,6 @@ pub struct MockSolanaConnection {
     error: Option<String>,
 }
 
-#[derive(Clone, Debug)]
-pub struct MockSignature {
-    pub signature: String,
-}
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("not found")]
