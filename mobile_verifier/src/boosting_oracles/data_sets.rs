@@ -6,7 +6,7 @@ use std::{
 };
 
 use chrono::{DateTime, Duration, Utc};
-use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileInfo, FileStore};
+use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::prelude::ToPrimitive;
