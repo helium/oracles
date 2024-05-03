@@ -14,14 +14,17 @@ use tokio::{
     time::timeout,
 };
 
+#[allow(dead_code)]
 pub type ValidSpMap = HashMap<String, String>;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct MockCarrierServiceClient {
     pub valid_sps: ValidSpMap,
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct MockHexBoostingClient {
     pub boosted_hexes: Vec<BoostedHexInfo>,
 }
