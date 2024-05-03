@@ -6,7 +6,7 @@ use std::{
 };
 
 use chrono::{DateTime, Duration, Utc};
-use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
+use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileInfo, FileStore};
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::prelude::ToPrimitive;
@@ -64,9 +64,9 @@ impl DataSetStatus {
 impl<T, A, B, C> ManagedTask for DataSetDownloaderDaemon<T, A, B, C>
 where
     T: DataSet,
-    A: HexAssignment,
-    B: HexAssignment,
-    C: HexAssignment,
+    A: DataSet,
+    B: DataSet,
+    C: DataSet,
 {
     fn start_task(
         self: Box<Self>,
@@ -91,9 +91,9 @@ where
 impl<T, A, B, C> DataSetDownloaderDaemon<T, A, B, C>
 where
     T: DataSet,
-    A: HexAssignment,
-    B: HexAssignment,
-    C: HexAssignment,
+    A: DataSet,
+    B: DataSet,
+    C: DataSet,
 {
     pub async fn new(
         pool: PgPool,
@@ -184,6 +184,14 @@ where
                 data_set = latest_unprocessed_data_set.filename,
                 "Data set download complete"
             );
+            /*
+            delete_old_data_sets(
+                &self.data_set_directory,
+                T::TYPE,
+                latest_unprocessed_data_set.time_to_use,
+            )
+            .await?;
+            */
         }
 
         // Now that we've downloaded the file, load it into the data set
@@ -193,12 +201,18 @@ where
         drop(data_set);
 
         // Update the hexes
-        let boosting_reports = set_oracle_boosting_assignments(
-            UnassignedHex::fetch_all(&self.pool),
-            &self.data_sets,
-            &self.pool,
-        )
-        .await?;
+        if self.data_sets.is_ready().await {
+            let boosting_reports = set_oracle_boosting_assignments(
+                UnassignedHex::fetch_all(&self.pool),
+                &self.data_sets,
+                &self.pool,
+            )
+            .await?;
+            self.oracle_boosting_sink
+                .write_all(boosting_reports)
+                .await?;
+            self.oracle_boosting_sink.commit().await?;
+        }
 
         db::set_data_set_status(
             &self.pool,
@@ -207,10 +221,6 @@ where
         )
         .await?;
 
-        self.oracle_boosting_sink
-            .write_all(boosting_reports)
-            .await?;
-        self.oracle_boosting_sink.commit().await?;
         tracing::info!(
             data_set = latest_unprocessed_data_set.filename,
             "Data set processing complete"
@@ -244,6 +254,24 @@ fn get_data_set_path(
     dir.push(path);
     dir
 }
+
+/*
+async fn delete_old_data_sets(
+    data_set_directory: &Path,
+    data_set_type: DataSetType,
+    time_to_use: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let mut data_sets = tokio::fs::read_dir(data_set_directory).await?;
+    while let Some(data_set) = data_sets.next_entry().await? {
+        let file_info: FileInfo = data_set.file_name().to_string_lossy().parse()?;
+        if file_info.prefix == data_set_type.to_prefix() && file_info.timestamp < time_to_use {
+            tracing::info!(data_set = file_info.key, "Deleting old data set file");
+            tokio::fs::remove_file(data_set.file_name()).await?;
+        }
+    }
+    Ok(())
+}
+*/
 
 async fn download_data_set(
     store: &FileStore,
@@ -450,10 +478,6 @@ pub async fn set_oracle_boosting_assignments<'a>(
             })
             .collect();
 
-        let mut transaction = pool.begin().await?;
-        sqlx::query("LOCK TABLE hexes")
-            .execute(&mut transaction)
-            .await?;
         QueryBuilder::new(
             "INSERT INTO hexes (uuid, hex, signal_level, signal_power, footfall, landtype, urbanized)",
         )
@@ -475,9 +499,8 @@ pub async fn set_oracle_boosting_assignments<'a>(
                 "#,
         )
         .build()
-        .execute(&mut transaction)
+        .execute(pool)
         .await?;
-        transaction.commit().await?;
     }
 
     Ok(boost_results
