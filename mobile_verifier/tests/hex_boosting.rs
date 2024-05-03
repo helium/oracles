@@ -1,5 +1,5 @@
 mod common;
-use crate::common::{MockFileSinkReceiver, MockHexBoostingClient};
+use crate::common::MockFileSinkReceiver;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
@@ -38,6 +38,11 @@ const HOTSPOT_4: &str = "11fEisW6J38vnS6qL65QyxnnNV5jfukFhuFiD4uteo4eUgDSShK";
 const CARRIER_HOTSPOT_KEY: &str = "11hd7HoicRgBPjBGcqcT2Y9hRQovdZeff5eKFMbCSuDYQmuCiF1";
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
+
+#[derive(Debug, Clone)]
+pub struct MockHexBoostingClient {
+    pub boosted_hexes: Vec<BoostedHexInfo>,
+}
 
 impl MockHexBoostingClient {
     fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {

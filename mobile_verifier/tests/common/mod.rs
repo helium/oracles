@@ -6,22 +6,9 @@ use helium_proto::{
     },
     Message,
 };
-use mobile_config::boosted_hex_info::BoostedHexInfo;
 use mobile_verifier::boosting_oracles::{Assignment, BoostedHexAssignments, HexAssignments};
 use std::collections::HashMap;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
-
-pub type ValidSpMap = HashMap<String, String>;
-
-#[derive(Debug, Clone)]
-pub struct MockCarrierServiceClient {
-    pub valid_sps: ValidSpMap,
-}
-
-#[derive(Debug, Clone)]
-pub struct MockHexBoostingClient {
-    pub boosted_hexes: Vec<BoostedHexInfo>,
-}
 
 pub struct MockFileSinkReceiver {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage>,

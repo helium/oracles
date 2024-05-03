@@ -1,5 +1,5 @@
 mod common;
-use crate::common::{MockFileSinkReceiver, MockHexBoostingClient};
+use crate::common::MockFileSinkReceiver;
 use async_trait::async_trait;
 use boost_manager::watcher::{self, Watcher};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
@@ -16,9 +16,12 @@ use std::{num::NonZeroU32, str::FromStr};
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
 
+#[derive(Debug, Clone)]
+pub struct MockHexBoostingClient(pub Vec<BoostedHexInfo>);
+
 impl MockHexBoostingClient {
-    fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
-        Self { boosted_hexes }
+    pub fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
+        Self(boosted_hexes)
     }
 }
 
@@ -27,14 +30,14 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
     type Error = ClientError;
 
     async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
+        Ok(stream::iter(self.0.clone()).boxed())
     }
 
     async fn stream_modified_boosted_hexes_info(
         &mut self,
         _timestamp: DateTime<Utc>,
     ) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
+        Ok(stream::iter(self.0.clone()).boxed())
     }
 }
 

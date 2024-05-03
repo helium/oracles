@@ -1,5 +1,5 @@
 mod common;
-use crate::common::{MockFileSinkReceiver, MockHexBoostingClient};
+use crate::common::MockFileSinkReceiver;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store::{
@@ -20,7 +20,6 @@ use mobile_verifier::{
     cell_type::CellType,
     coverage::{set_oracle_boosting_assignments, CoverageObject, UnassignedHex},
     data_session,
-    geofence::GeofenceValidator,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder, speedtests,
 };
@@ -33,6 +32,11 @@ const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11uJHS2YaEWJqgqC7yza9uvSmpv5FWoMQXiP8WbxBGgNUmifUJf";
 const HOTSPOT_3: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
 const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
+
+#[derive(Debug, Clone)]
+pub struct MockHexBoostingClient {
+    pub boosted_hexes: Vec<BoostedHexInfo>,
+}
 
 impl MockHexBoostingClient {
     fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
@@ -53,15 +57,6 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
         _timestamp: DateTime<Utc>,
     ) -> Result<BoostedHexInfoStream, ClientError> {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-}
-
-#[derive(Clone)]
-struct MockGeofence;
-
-impl GeofenceValidator<hextree::Cell> for MockGeofence {
-    fn in_valid_region(&self, _cell: &hextree::Cell) -> bool {
-        true
     }
 }
 
