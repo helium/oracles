@@ -43,7 +43,6 @@ pub struct MockFileSinkReceiver {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage>,
 }
 
-#[allow(dead_code)]
 impl MockFileSinkReceiver {
     pub async fn receive(&mut self) -> Option<Vec<u8>> {
         match timeout(seconds(2), self.receiver.recv()).await {
@@ -58,15 +57,6 @@ impl MockFileSinkReceiver {
                 None
             }
         }
-    }
-
-    pub async fn get_all(&mut self) -> Vec<Vec<u8>> {
-        let mut buf = Vec::new();
-        while let Ok(SinkMessage::Data(on_write_tx, msg)) = self.receiver.try_recv() {
-            let _ = on_write_tx.send(Ok(()));
-            buf.push(msg);
-        }
-        buf
     }
 
     pub fn assert_no_messages(&mut self) {
@@ -91,7 +81,6 @@ impl MockFileSinkReceiver {
     }
 }
 
-#[allow(dead_code)]
 pub fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
     let (tx, rx) = tokio::sync::mpsc::channel(20);
     (

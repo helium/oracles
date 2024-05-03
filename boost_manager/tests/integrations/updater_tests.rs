@@ -13,10 +13,9 @@ const BOOSTED_HEX3_PUBKEY: &str = "11hd7HoicRgBPjBGcqcT2Y9hRQovdZeff5eKFMbCSuDYQ
 const BOOSTED_HEX_CONFIG_PUBKEY: &str = "112QhnxqU8QZ3jUXpoRk51quuQVft9Pf5P5zzDDvLxj7Q9QqbMh7";
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct MockTransaction {
     signature: Signature,
-    activations: Vec<BoostedHexActivation>,
+    _activations: Vec<BoostedHexActivation>,
 }
 
 pub struct MockSolanaConnection {
@@ -57,7 +56,7 @@ impl SolanaNetwork for MockSolanaConnection {
     ) -> Result<Self::Transaction, Self::Error> {
         Ok(MockTransaction {
             signature: Signature::new_unique(),
-            activations: batch.to_owned(),
+            _activations: batch.to_owned(),
         })
     }
 
