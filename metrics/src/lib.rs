@@ -12,32 +12,26 @@ use std::{
 };
 use tower::{Layer, Service};
 
+pub mod client_requests;
 mod error;
 pub mod settings;
 
 pub fn start_metrics(settings: &Settings) -> Result {
     let socket: SocketAddr = settings.endpoint.parse()?;
-    PrometheusBuilder::new()
-        .with_http_listener(socket)
-        .install()?;
-    Ok(())
+    install(socket)
 }
 
-/// Install the Prometheus export gateway
-pub fn install_metrics() {
-    let endpoint =
-        std::env::var("METRICS_SCRAPE_ENDPOINT").unwrap_or_else(|_| String::from("0.0.0.0:9000"));
-    let socket: SocketAddr = endpoint
-        .parse()
-        .expect("Invalid METRICS_SCRAPE_ENDPOINT value");
+fn install(socket_addr: SocketAddr) -> Result {
     if let Err(e) = PrometheusBuilder::new()
-        .with_http_listener(socket)
+        .with_http_listener(socket_addr)
         .install()
     {
         tracing::error!(target: "poc", "Failed to install Prometheus scrape endpoint: {e}");
     } else {
-        tracing::info!(target: "poc", "Metrics scrape endpoint listening on {endpoint}");
+        tracing::info!(target: "poc", "Metrics scrape endpoint listening on {socket_addr}");
     }
+
+    Ok(())
 }
 
 /// Measure the duration of a block and record it
