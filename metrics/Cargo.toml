@@ -11,5 +11,11 @@ tower = "0.4"
 thiserror = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+reqwest = { workspace = true }

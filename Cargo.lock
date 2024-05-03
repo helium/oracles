@@ -5151,12 +5151,16 @@ dependencies = [
 name = "poc-metrics"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "metrics",
  "metrics-exporter-prometheus",
+ "reqwest",
  "serde",
  "thiserror",
+ "tokio",
  "tower",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
