@@ -41,9 +41,9 @@ pub async fn init(og_filter: String, file: String) -> Result<()> {
 
 pub fn record<T>(field: &str, value: T)
 where
-    T: ToString,
+    T: std::fmt::Display,
 {
-    Span::current().record(field, &tracing::field::display(value.to_string()));
+    Span::current().record(field, &tracing::field::display(value));
 }
 
 #[derive(Clone)]
