@@ -87,9 +87,10 @@ impl State {
                         }
                     }
                     notify::EventKind::Remove(notify::event::RemoveKind::File) => {
-                        let event_path = event.paths.first().unwrap();
-                        if file_match(event_path, self.file.clone()) {
-                            self.handle_delete()?;
+                        if let Some(event_path) = event.paths.first() {
+                            if file_match(event_path, self.file.clone()) {
+                                self.handle_delete()?;
+                            }
                         }
                     }
                     _event => tracing::debug!(?_event, "tracing config watcher ignored unhandled message"),
