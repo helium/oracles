@@ -180,17 +180,16 @@ pub fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
-type MockAssignmentMap = HashMap<hextree::Cell, Assignment>;
-
-pub fn mock_hex_boost_data_default(
-) -> HexBoostData<MockAssignmentMap, MockAssignmentMap, MockAssignmentMap> {
+pub fn mock_hex_boost_data_default() -> HexBoostData<Assignment, Assignment, Assignment> {
     HexBoostData::builder()
-        .urbanization(MockAssignmentMap::default())
-        .footfall(MockAssignmentMap::default())
-        .landtype(MockAssignmentMap::default())
+        .urbanization(Assignment::A)
+        .footfall(Assignment::A)
+        .landtype(Assignment::A)
         .build()
         .unwrap()
 }
+
+type MockAssignmentMap = HashMap<hextree::Cell, Assignment>;
 
 #[allow(dead_code)]
 pub fn mock_hex_boost_data(
