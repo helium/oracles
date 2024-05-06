@@ -143,9 +143,9 @@ where
 
     async fn check_failed_activations(&self) -> Result<()> {
         let num_marked_failed = db::update_failed_activations(&self.pool).await?;
-        metrics::counter!("failed_activations", num_marked_failed);
+        metrics::counter!("failed_activations").increment(num_marked_failed);
         let total_failed_count = db::get_failed_activations_count(&self.pool).await?;
-        metrics::gauge!("db_failed_row_count", total_failed_count as f64);
+        metrics::gauge!("db_failed_row_count").set(total_failed_count as f64);
         if total_failed_count > 0 {
             tracing::warn!("{} failed status activations ", total_failed_count);
         };
@@ -159,7 +159,7 @@ where
         summed_activations_count: u64,
     ) -> Result<()> {
         tracing::info!("processed batch of {} activations successfully", batch_size);
-        metrics::counter!("success_activations", summed_activations_count);
+        metrics::counter!("success_activations").increment(summed_activations_count);
         db::update_success_batch(&self.pool, ids).await?;
         Ok(())
     }

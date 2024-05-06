@@ -6,11 +6,11 @@ macro_rules! query_exec_timed {
     ( $name:literal, $query:expr, $meth:ident, $exec:expr ) => {{
         match poc_metrics::record_duration!(concat!($name, "_duration"), $query.$meth($exec).await) {
             Ok(x) => {
-                metrics::increment_counter!(concat!($name, "_count"), "status" => "ok");
+                metrics::counter!(concat!($name, "_count"), "status" => "ok").increment(1);
                 Ok(x)
             }
             Err(e) => {
-                metrics::increment_counter!(concat!($name, "_count"), "status" => "error");
+                metrics::counter!(concat!($name, "_count"), "status" => "error").increment(1);
                 Err(Error::SqlError(e))
             }
         }

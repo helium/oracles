@@ -12,32 +12,26 @@ use std::{
 };
 use tower::{Layer, Service};
 
+pub mod client_requests;
 mod error;
 pub mod settings;
 
 pub fn start_metrics(settings: &Settings) -> Result {
     let socket: SocketAddr = settings.endpoint.parse()?;
-    PrometheusBuilder::new()
-        .with_http_listener(socket)
-        .install()?;
-    Ok(())
+    install(socket)
 }
 
-/// Install the Prometheus export gateway
-pub fn install_metrics() {
-    let endpoint =
-        std::env::var("METRICS_SCRAPE_ENDPOINT").unwrap_or_else(|_| String::from("0.0.0.0:9000"));
-    let socket: SocketAddr = endpoint
-        .parse()
-        .expect("Invalid METRICS_SCRAPE_ENDPOINT value");
+fn install(socket_addr: SocketAddr) -> Result {
     if let Err(e) = PrometheusBuilder::new()
-        .with_http_listener(socket)
+        .with_http_listener(socket_addr)
         .install()
     {
         tracing::error!(target: "poc", "Failed to install Prometheus scrape endpoint: {e}");
     } else {
-        tracing::info!(target: "poc", "Metrics scrape endpoint listening on {endpoint}");
+        tracing::info!(target: "poc", "Metrics scrape endpoint listening on {socket_addr}");
     }
+
+    Ok(())
 }
 
 /// Measure the duration of a block and record it
@@ -49,7 +43,7 @@ macro_rules! record_duration {
     ( $metric_name:expr, $e:expr ) => {{
         let timer = std::time::Instant::now();
         let res = $e;
-        ::metrics::histogram!($metric_name, timer.elapsed());
+        ::metrics::histogram!($metric_name).record(timer.elapsed());
         res
     }};
 }
@@ -126,7 +120,7 @@ where
         let metric_name_time = self.metric_name_time;
 
         let timer = std::time::Instant::now();
-        metrics::increment_gauge!(metric_name_count, 1.0);
+        metrics::gauge!(metric_name_count).increment(1.0);
 
         let clone = self.inner.clone();
         // take the service that was ready
@@ -134,11 +128,11 @@ where
 
         Box::pin(async move {
             let res = inner.call(req).await;
-            metrics::decrement_gauge!(metric_name_count, 1.0);
+            metrics::gauge!(metric_name_count).decrement(1.0);
             let elapsed_time = timer.elapsed();
             tracing::debug!("request processed in {elapsed_time:?}");
             // TODO What units to use? Is f64 seconds appropriate?
-            ::metrics::histogram!(metric_name_time, elapsed_time.as_secs_f64());
+            metrics::histogram!(metric_name_time).record(elapsed_time.as_secs_f64());
             res
         })
     }

@@ -73,7 +73,6 @@ impl DataSessionIngestor {
         tracing::info!("starting DataSessionIngestor");
         tokio::spawn(async move {
             loop {
-                #[rustfmt::skip]
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {
@@ -81,12 +80,10 @@ impl DataSessionIngestor {
                         break;
                     }
                     Some(file) = self.receiver.recv() => {
-			let start = Instant::now();
-			self.process_file(file).await?;
-			metrics::histogram!(
-			    "valid_data_transfer_session_processing_time",
-			    start.elapsed()
-			);
+                        let start = Instant::now();
+                        self.process_file(file).await?;
+                        metrics::histogram!("valid_data_transfer_session_processing_time")
+                            .record(start.elapsed());
                     }
                 }
             }
@@ -115,7 +112,8 @@ impl DataSessionIngestor {
             .try_fold(transaction, |mut transaction, report| async move {
                 let data_session = HotspotDataSession::from_valid_data_session(report, file_ts);
                 data_session.save(&mut transaction).await?;
-                metrics::increment_counter!("oracles_mobile_verifier_ingest_hotspot_data_session");
+                metrics::counter!("oracles_mobile_verifier_ingest_hotspot_data_session")
+                    .increment(1);
                 Ok(transaction)
             })
             .await?

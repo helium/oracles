@@ -14,19 +14,19 @@ const GATEWAY_CHAIN_LOOKUP_DURATION_METRIC: &str =
     concat!(env!("CARGO_PKG_NAME"), "-", "gateway-info-lookup-duration");
 
 pub fn initialize() {
-    metrics::gauge!(STREAM_METRIC, 0.0);
+    metrics::gauge!(STREAM_METRIC).set(0.0);
 }
 
 pub fn count_request(service: &'static str, rpc: &'static str) {
-    metrics::increment_counter!(RPC_METRIC, "service" => service, "rpc" => rpc);
+    metrics::counter!(RPC_METRIC, "service" => service, "rpc" => rpc).increment(1);
 }
 
 pub fn count_gateway_info_lookup(result: &'static str) {
-    metrics::increment_counter!(GATEWAY_CHAIN_LOOKUP_METRIC, "result" => result);
+    metrics::counter!(GATEWAY_CHAIN_LOOKUP_METRIC, "result" => result).increment(1);
 }
 
 pub fn gauge_hexes(cells: usize) {
-    metrics::gauge!(REGION_HEX_METRIC, cells as f64);
+    metrics::gauge!(REGION_HEX_METRIC).set(cells as f64);
 }
 
 pub fn count_region_lookup(
@@ -35,37 +35,38 @@ pub fn count_region_lookup(
 ) {
     let reported_region =
         reported_region.map_or_else(|| "LOOKUP_FAILED".to_string(), |region| region.to_string());
-    metrics::increment_counter!(
+    metrics::counter!(
         REGION_LOOKUP_METRIC,
         // per metrics docs, &str should be preferred for performance; should the regions be
         // mapped through a match of region => &'static str of the name?
         "default_region" => default_region.to_string(), "reported_region" => reported_region
-    );
+    )
+    .increment(1);
 }
 
 pub fn duration_gateway_info_lookup(start: std::time::Instant) {
-    metrics::histogram!(GATEWAY_CHAIN_LOOKUP_DURATION_METRIC, start.elapsed());
+    metrics::histogram!(GATEWAY_CHAIN_LOOKUP_DURATION_METRIC).record(start.elapsed());
 }
 
 pub fn count_skf_updates(adds: usize, removes: usize) {
-    metrics::counter!(SKF_ADD_COUNT_METRIC, adds as u64);
-    metrics::counter!(SKF_REMOVE_COUNT_METRIC, removes as u64);
+    metrics::counter!(SKF_ADD_COUNT_METRIC).increment(adds as u64);
+    metrics::counter!(SKF_REMOVE_COUNT_METRIC).increment(removes as u64);
 }
 
 pub fn count_eui_updates(adds: usize, removes: usize) {
-    metrics::counter!(EUI_ADD_COUNT_METRIC, adds as u64);
-    metrics::counter!(EUI_REMOVE_COUNT_METRIC, removes as u64);
+    metrics::counter!(EUI_ADD_COUNT_METRIC).increment(adds as u64);
+    metrics::counter!(EUI_REMOVE_COUNT_METRIC).increment(removes as u64);
 }
 
 pub fn count_devaddr_updates(adds: usize, removes: usize) {
-    metrics::counter!(DEVADDR_ADD_COUNT_METRIC, adds as u64);
-    metrics::counter!(DEVADDR_REMOVE_COUNT_METRIC, removes as u64);
+    metrics::counter!(DEVADDR_ADD_COUNT_METRIC).increment(adds as u64);
+    metrics::counter!(DEVADDR_REMOVE_COUNT_METRIC).increment(removes as u64);
 }
 
 pub fn route_stream_subscribe() {
-    metrics::increment_gauge!(STREAM_METRIC, 1.0);
+    metrics::gauge!(STREAM_METRIC).increment(1.0);
 }
 
 pub fn route_stream_unsubscribe() {
-    metrics::decrement_gauge!(STREAM_METRIC, 1.0);
+    metrics::gauge!(STREAM_METRIC).decrement(1.0);
 }

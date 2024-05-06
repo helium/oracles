@@ -141,9 +141,9 @@ impl SolanaNetwork for SolanaRpc {
         if self.payers_to_monitor.contains(payer) {
             metrics::gauge!(
                 "balance",
-                account_layout.amount as f64,
                 "payer" => payer.to_string()
-            );
+            )
+            .set(account_layout.amount as f64);
         }
 
         Ok(account_layout.amount)
