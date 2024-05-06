@@ -68,7 +68,7 @@ impl State {
 
         while let Some(res) = rx.recv().await {
             match res {
-                Err(e) => tracing::warn!("watch error: {:?}", e),
+                Err(err) => tracing::warn!(?err, "tracing config watcher configuration file error"),
                 Ok(event) => match event.kind {
                     notify::EventKind::Modify(notify::event::ModifyKind::Data(
                         DataChange::Content,
