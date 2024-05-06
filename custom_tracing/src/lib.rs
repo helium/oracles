@@ -92,7 +92,7 @@ impl State {
                             self.handle_delete()?;
                         }
                     }
-                    _e => tracing::debug!("ignored {:?}", _e),
+                    _event => tracing::debug!(?_event, "tracing config watcher ignored unhandled message"),
                 },
             }
         }
