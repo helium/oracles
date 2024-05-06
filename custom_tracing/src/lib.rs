@@ -128,6 +128,9 @@ impl State {
 }
 
 fn file_match(event_path: &Path, file: String) -> bool {
-    let split = event_path.to_str().unwrap().split('/');
-    *split.last().unwrap() == file
+    event_path
+        .to_str()
+        .map(|path| path.split('/'))
+        .map(|path| path.last().is_some_and(|file_name| file_name == file))
+        .unwrap_or_default()
 }
