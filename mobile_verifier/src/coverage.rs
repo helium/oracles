@@ -1,8 +1,5 @@
 use crate::{
-    boosting_oracles::{
-        assignment::HexAssignments, set_oracle_boosting_assignments, DataSet, HexBoostData,
-        UnassignedHex,
-    },
+    boosting_oracles::assignment::HexAssignments,
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized, Settings,
 };
@@ -44,7 +41,7 @@ use std::{
     time::Instant,
 };
 use task_manager::{ManagedTask, TaskManager};
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 use uuid::Uuid;
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
@@ -68,28 +65,22 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
-pub struct CoverageDaemon<Foot, Land, Urban> {
+pub struct CoverageDaemon {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
-    hex_boost_data: HexBoostData<Foot, Land, Urban>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     coverage_obj_sink: FileSinkClient,
-    oracle_boosting_sink: FileSinkClient,
+    new_coverage_object_signal: Sender<()>,
 }
 
-impl<Foot, Land, Urban> CoverageDaemon<Foot, Land, Urban>
-where
-    Foot: DataSet,
-    Land: DataSet,
-    Urban: DataSet,
-{
+impl CoverageDaemon {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
         auth_client: AuthorizationClient,
-        hex_boost_data: HexBoostData<Foot, Land, Urban>,
+        new_coverage_object_signal: Sender<()>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
             FileType::CoverageObject,
@@ -101,19 +92,6 @@ where
         .roll_time(Duration::minutes(15))
         .create()
         .await?;
-
-        // Oracle boosting reports
-        let (oracle_boosting_reports, oracle_boosting_reports_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::OracleBoostingReport,
-                settings.store_base_path(),
-                file_upload,
-                concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
-            )
-            .auto_commit(false)
-            .roll_time(Duration::minutes(15))
-            .create()
-            .await?;
 
         let (coverage_objs, coverage_objs_server) =
             file_source::continuous_source::<CoverageObjectIngestReport, _>()
@@ -128,15 +106,13 @@ where
         let coverage_daemon = CoverageDaemon::new(
             pool,
             auth_client,
-            hex_boost_data,
             coverage_objs,
             valid_coverage_objs,
-            oracle_boosting_reports,
+            new_coverage_object_signal,
         );
 
         Ok(TaskManager::builder()
             .add_task(valid_coverage_objs_server)
-            .add_task(oracle_boosting_reports_server)
             .add_task(coverage_objs_server)
             .add_task(coverage_daemon)
             .build())
@@ -145,18 +121,16 @@ where
     pub fn new(
         pool: PgPool,
         auth_client: AuthorizationClient,
-        hex_boost_data: HexBoostData<Foot, Land, Urban>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
-        oracle_boosting_sink: FileSinkClient,
+        new_coverage_object_signal: Sender<()>,
     ) -> Self {
         Self {
             pool,
             auth_client,
-            hex_boost_data,
             coverage_objs,
             coverage_obj_sink,
-            oracle_boosting_sink,
+            new_coverage_object_signal,
         }
     }
 
@@ -203,30 +177,14 @@ where
         self.coverage_obj_sink.commit().await?;
         transaction.commit().await?;
 
-        // After writing all of the coverage objects, we set their oracle boosting assignments.
-        // If the data sets are not ready, we leave everything as NULL.
-        if !self.hex_boost_data.is_ready().await {
-            return Ok(());
-        }
-        let unassigned_hexes = UnassignedHex::fetch_unassigned(&self.pool);
-        let boosting_reports =
-            set_oracle_boosting_assignments(unassigned_hexes, &self.hex_boost_data, &self.pool)
-                .await?;
-        self.oracle_boosting_sink
-            .write_all(boosting_reports)
-            .await?;
-        self.oracle_boosting_sink.commit().await?;
+        // Tell the data set manager to update the assignments
+        self.new_coverage_object_signal.send(()).await?;
 
         Ok(())
     }
 }
 
-impl<Foot, Land, Urban> ManagedTask for CoverageDaemon<Foot, Land, Urban>
-where
-    Foot: DataSet,
-    Land: DataSet,
-    Urban: DataSet,
-{
+impl ManagedTask for CoverageDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,

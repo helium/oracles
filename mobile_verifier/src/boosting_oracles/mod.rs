@@ -5,14 +5,12 @@ pub mod landtype;
 pub mod urbanization;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use crate::boosting_oracles::assignment::HexAssignments;
 pub use assignment::Assignment;
 pub use data_sets::*;
 
 use hextree::disktree::DiskTreeMap;
-use tokio::sync::Mutex;
 pub use urbanization::Urbanization;
 
 pub trait HexAssignment: Send + Sync + 'static {
@@ -34,43 +32,13 @@ impl HexAssignment for Assignment {
 #[derive(derive_builder::Builder)]
 #[builder(pattern = "owned")]
 pub struct HexBoostData<Foot, Land, Urban> {
-    #[builder(setter(custom))]
-    pub footfall: Arc<Mutex<Foot>>,
-    #[builder(setter(custom))]
-    pub landtype: Arc<Mutex<Land>>,
-    #[builder(setter(custom))]
-    pub urbanization: Arc<Mutex<Urban>>,
+    pub footfall: Foot,
+    pub landtype: Land,
+    pub urbanization: Urban,
 }
 impl<F, L, U> HexBoostData<F, L, U> {
     pub fn builder() -> HexBoostDataBuilder<F, L, U> {
         HexBoostDataBuilder::default()
-    }
-}
-
-impl<F, L, U> Clone for HexBoostData<F, L, U> {
-    fn clone(&self) -> Self {
-        Self {
-            footfall: self.footfall.clone(),
-            landtype: self.landtype.clone(),
-            urbanization: self.urbanization.clone(),
-        }
-    }
-}
-
-impl<Foot, Land, Urban> HexBoostDataBuilder<Foot, Land, Urban> {
-    pub fn footfall(mut self, foot: Foot) -> Self {
-        self.footfall = Some(Arc::new(Mutex::new(foot)));
-        self
-    }
-
-    pub fn landtype(mut self, land: Land) -> Self {
-        self.landtype = Some(Arc::new(Mutex::new(land)));
-        self
-    }
-
-    pub fn urbanization(mut self, urban: Urban) -> Self {
-        self.urbanization = Some(Arc::new(Mutex::new(urban)));
-        self
     }
 }
 
@@ -80,10 +48,8 @@ where
     Land: DataSet,
     Urban: DataSet,
 {
-    pub async fn is_ready(&self) -> bool {
-        self.urbanization.lock().await.is_ready()
-            && self.footfall.lock().await.is_ready()
-            && self.landtype.lock().await.is_ready()
+    pub fn is_ready(&self) -> bool {
+        self.urbanization.is_ready() && self.footfall.is_ready() && self.landtype.is_ready()
     }
 }
 
@@ -94,13 +60,10 @@ where
     Urban: HexAssignment,
 {
     pub async fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
-        let footfall = self.footfall.lock().await;
-        let landtype = self.landtype.lock().await;
-        let urbanization = self.urbanization.lock().await;
         HexAssignments::builder(cell)
-            .footfall(&*footfall)
-            .landtype(&*landtype)
-            .urbanized(&*urbanization)
+            .footfall(&self.footfall)
+            .landtype(&self.landtype)
+            .urbanized(&self.urbanization)
             .build()
     }
 }

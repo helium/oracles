@@ -2,23 +2,29 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     pin::pin,
-    sync::Arc,
 };
 
 use chrono::{DateTime, Duration, Utc};
-use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileInfo, FileStore};
+use file_store::{
+    file_sink::{self, FileSinkClient},
+    file_upload::FileUpload,
+    traits::TimestampEncode,
+    FileInfo, FileStore, FileType,
+};
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile as proto;
+use hextree::disktree::DiskTreeMap;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, QueryBuilder};
-use task_manager::ManagedTask;
-use tokio::{fs::File, io::AsyncWriteExt, sync::Mutex};
+use task_manager::{ManagedTask, TaskManager};
+use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Receiver};
 
-use crate::{boosting_oracles::assignment::HexAssignments, coverage::SignalLevel};
+use crate::{boosting_oracles::assignment::HexAssignments, coverage::SignalLevel, Settings};
 
-use super::{HexAssignment, HexBoostData};
+use super::{footfall::Footfall, landtype::Landtype, HexAssignment, HexBoostData, Urbanization};
 
+#[async_trait::async_trait]
 pub trait DataSet: HexAssignment + Send + Sync + 'static {
     const TYPE: DataSetType;
 
@@ -27,16 +33,78 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
     fn update(&mut self, path: &Path, time_to_use: DateTime<Utc>) -> anyhow::Result<()>;
 
     fn is_ready(&self) -> bool;
+
+    async fn fetch_first_data_set(
+        &mut self,
+        pool: &PgPool,
+        data_set_directory: &Path,
+    ) -> anyhow::Result<()> {
+        let Some(first_data_set) = db::fetch_latest_processed_data_set(pool, Self::TYPE).await?
+        else {
+            return Ok(());
+        };
+        let path = get_data_set_path(data_set_directory, Self::TYPE, first_data_set.time_to_use);
+        self.update(Path::new(&path), first_data_set.time_to_use)?;
+        Ok(())
+    }
+
+    async fn check_for_available_data_sets(
+        &self,
+        store: &FileStore,
+        pool: &PgPool,
+    ) -> anyhow::Result<()> {
+        let mut new_data_sets = store.list(Self::TYPE.to_prefix(), self.timestamp(), None);
+        while let Some(new_data_set) = new_data_sets.next().await.transpose()? {
+            db::insert_new_data_set(pool, &new_data_set.key, Self::TYPE, new_data_set.timestamp)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn fetch_next_available_data_set(
+        &mut self,
+        store: &FileStore,
+        pool: &PgPool,
+        data_set_directory: &Path,
+    ) -> anyhow::Result<Option<NewDataSet>> {
+        self.check_for_available_data_sets(store, pool).await?;
+
+        tracing::info!("Checking for new {} data sets", Self::TYPE.to_prefix());
+        let latest_unprocessed_data_set =
+            db::fetch_latest_unprocessed_data_set(pool, Self::TYPE, self.timestamp()).await?;
+
+        let Some(latest_unprocessed_data_set) = latest_unprocessed_data_set else {
+            return Ok(None);
+        };
+
+        let path = get_data_set_path(
+            data_set_directory,
+            Self::TYPE,
+            latest_unprocessed_data_set.time_to_use,
+        );
+
+        if !latest_unprocessed_data_set.status.is_downloaded() {
+            download_data_set(store, &latest_unprocessed_data_set.filename, &path).await?;
+            latest_unprocessed_data_set.mark_as_downloaded(pool).await?;
+            tracing::info!(
+                data_set = latest_unprocessed_data_set.filename,
+                "Data set download complete"
+            );
+        }
+
+        self.update(Path::new(&path), latest_unprocessed_data_set.time_to_use)?;
+
+        Ok(Some(latest_unprocessed_data_set))
+    }
 }
 
-pub struct DataSetDownloaderDaemon<T, A, B, C> {
+pub struct DataSetDownloaderDaemon<A, B, C> {
     pool: PgPool,
-    data_set: Arc<Mutex<T>>,
     data_sets: HexBoostData<A, B, C>,
     store: FileStore,
     oracle_boosting_sink: FileSinkClient,
     data_set_directory: PathBuf,
-    latest_file_date: Option<DateTime<Utc>>,
+    new_coverage_object_signal: Receiver<()>,
 }
 
 #[derive(FromRow)]
@@ -44,6 +112,18 @@ pub struct NewDataSet {
     filename: String,
     time_to_use: DateTime<Utc>,
     status: DataSetStatus,
+}
+
+impl NewDataSet {
+    async fn mark_as_downloaded(&self, pool: &PgPool) -> anyhow::Result<()> {
+        db::set_data_set_status(pool, &self.filename, DataSetStatus::Downloaded).await?;
+        Ok(())
+    }
+
+    async fn mark_as_processed(&self, pool: &PgPool) -> anyhow::Result<()> {
+        db::set_data_set_status(pool, &self.filename, DataSetStatus::Processed).await?;
+        Ok(())
+    }
 }
 
 #[derive(Copy, Clone, sqlx::Type)]
@@ -61,9 +141,8 @@ impl DataSetStatus {
     }
 }
 
-impl<T, A, B, C> ManagedTask for DataSetDownloaderDaemon<T, A, B, C>
+impl<A, B, C> ManagedTask for DataSetDownloaderDaemon<A, B, C>
 where
-    T: DataSet,
     A: DataSet,
     B: DataSet,
     C: DataSet,
@@ -88,140 +167,138 @@ where
     }
 }
 
-impl<T, A, B, C> DataSetDownloaderDaemon<T, A, B, C>
+impl
+    DataSetDownloaderDaemon<Footfall<DiskTreeMap>, Landtype<DiskTreeMap>, Urbanization<DiskTreeMap>>
+{
+    pub async fn create_managed_task(
+        pool: PgPool,
+        settings: &Settings,
+        file_upload: FileUpload,
+        new_coverage_object_signal: Receiver<()>,
+    ) -> anyhow::Result<impl ManagedTask> {
+        let (oracle_boosting_reports, oracle_boosting_reports_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::OracleBoostingReport,
+                settings.store_base_path(),
+                file_upload.clone(),
+                concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
+            )
+            .auto_commit(false)
+            .roll_time(Duration::minutes(15))
+            .create()
+            .await?;
+
+        let urbanization: Urbanization<DiskTreeMap> = Urbanization::new();
+        let footfall: Footfall<DiskTreeMap> = Footfall::new();
+        let landtype: Landtype<DiskTreeMap> = Landtype::new();
+        let hex_boost_data = HexBoostData::builder()
+            .footfall(footfall)
+            .landtype(landtype)
+            .urbanization(urbanization)
+            .build()?;
+
+        let data_set_downloader = Self::new(
+            pool,
+            hex_boost_data,
+            FileStore::from_settings(&settings.data_sets).await?,
+            oracle_boosting_reports,
+            settings.data_sets_directory.clone(),
+            new_coverage_object_signal,
+        );
+
+        Ok(TaskManager::builder()
+            .add_task(oracle_boosting_reports_server)
+            .add_task(data_set_downloader)
+            .build())
+    }
+}
+
+impl<A, B, C> DataSetDownloaderDaemon<A, B, C>
 where
-    T: DataSet,
     A: DataSet,
     B: DataSet,
     C: DataSet,
 {
-    pub async fn new(
+    pub fn new(
         pool: PgPool,
-        data_set: Arc<Mutex<T>>,
         data_sets: HexBoostData<A, B, C>,
         store: FileStore,
         oracle_boosting_sink: FileSinkClient,
         data_set_directory: PathBuf,
-    ) -> anyhow::Result<Self> {
-        // Get the first data set:
-        let latest_file_date = if let Some(time_to_use) =
-            db::fetch_time_of_latest_processed_data_set(&pool, T::TYPE).await?
-        {
-            let data_set_path = get_data_set_path(&data_set_directory, T::TYPE, time_to_use);
-            tracing::info!(
-                "Found initial {} data set: {}",
-                T::TYPE.to_prefix(),
-                data_set_path.to_string_lossy()
-            );
-            data_set.lock().await.update(&data_set_path, time_to_use)?;
-            Some(time_to_use)
-        } else {
-            db::fetch_latest_file_date(&pool, T::TYPE).await?
-        };
-
-        Ok(Self {
+        new_coverage_object_signal: Receiver<()>,
+    ) -> Self {
+        Self {
             pool,
-            data_set,
             data_sets,
             store,
             oracle_boosting_sink,
             data_set_directory,
-            latest_file_date,
-        })
-    }
-
-    pub async fn check_for_available_data_sets(&mut self) -> anyhow::Result<()> {
-        let mut new_data_sets = self
-            .store
-            .list(T::TYPE.to_prefix(), self.latest_file_date, None);
-        while let Some(new_data_set) = new_data_sets.next().await.transpose()? {
-            tracing::info!(
-                "Found new data set: {}, {:#?}",
-                new_data_set.key,
-                new_data_set
-            );
-            db::insert_new_data_set(
-                &self.pool,
-                &new_data_set.key,
-                T::TYPE,
-                new_data_set.timestamp,
-            )
-            .await?;
-            self.latest_file_date = Some(new_data_set.timestamp);
+            new_coverage_object_signal,
         }
-        Ok(())
     }
 
-    pub async fn process_data_sets(&self) -> anyhow::Result<()> {
-        tracing::info!("Checking for new {} data sets", T::TYPE.to_prefix());
-        let mut data_set = self.data_set.lock().await;
-        let latest_unprocessed_data_set =
-            db::fetch_latest_unprocessed_data_set(&self.pool, T::TYPE, data_set.timestamp())
-                .await?;
+    async fn check_for_new_data_sets(&mut self) -> anyhow::Result<()> {
+        let new_urbanized = self
+            .data_sets
+            .urbanization
+            .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
+            .await?;
+        let new_footfall = self
+            .data_sets
+            .footfall
+            .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
+            .await?;
+        let new_landtype = self
+            .data_sets
+            .landtype
+            .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
+            .await?;
 
-        let Some(latest_unprocessed_data_set) = latest_unprocessed_data_set else {
-            return Ok(());
-        };
-
-        // If there is an unprocessed data set, download it (if we need to) and process it.
-
-        let path = get_data_set_path(
-            &self.data_set_directory,
-            T::TYPE,
-            latest_unprocessed_data_set.time_to_use,
-        );
-
-        // Download the file if it hasn't been downloaded already:
-        if !latest_unprocessed_data_set.status.is_downloaded() {
-            download_data_set(&self.store, &latest_unprocessed_data_set.filename, &path).await?;
-            db::set_data_set_status(
+        // If all of the data sets are ready and there is at least one new one, re-process all
+        // hex assignments:
+        let new_data_set =
+            new_urbanized.is_some() || new_footfall.is_some() || new_landtype.is_some();
+        if self.data_sets.is_ready() && new_data_set {
+            tracing::info!("Processing new data sets");
+            let boosting_reports = set_oracle_boosting_assignments(
+                UnassignedHex::fetch_all(&self.pool),
+                &self.data_sets,
                 &self.pool,
-                &latest_unprocessed_data_set.filename,
-                DataSetStatus::Downloaded,
             )
             .await?;
-            tracing::info!(
-                data_set = latest_unprocessed_data_set.filename,
-                "Data set download complete"
-            );
+            self.oracle_boosting_sink
+                .write_all(boosting_reports)
+                .await?;
+        }
+
+        // Mark the new data sets as processed and delete the old ones
+        if let Some(new_urbanized) = new_urbanized {
+            new_urbanized.mark_as_processed(&self.pool).await?;
             delete_old_data_sets(
                 &self.data_set_directory,
-                T::TYPE,
-                latest_unprocessed_data_set.time_to_use,
+                DataSetType::Urbanization,
+                new_urbanized.time_to_use,
             )
             .await?;
         }
-
-        // Now that we've downloaded the file, load it into the data set
-        data_set.update(Path::new(&path), latest_unprocessed_data_set.time_to_use)?;
-
-        // Release the lock as it is no longer needed
-        drop(data_set);
-
-        // Update the hexes
-        let boosting_reports = set_oracle_boosting_assignments(
-            UnassignedHex::fetch_all(&self.pool),
-            &self.data_sets,
-            &self.pool,
-        )
-        .await?;
-
-        db::set_data_set_status(
-            &self.pool,
-            &latest_unprocessed_data_set.filename,
-            DataSetStatus::Processed,
-        )
-        .await?;
-
-        tracing::info!(
-            data_set = latest_unprocessed_data_set.filename,
-            "Data set processing complete"
-        );
-
-        self.oracle_boosting_sink
-            .write_all(boosting_reports)
+        if let Some(new_footfall) = new_footfall {
+            new_footfall.mark_as_processed(&self.pool).await?;
+            delete_old_data_sets(
+                &self.data_set_directory,
+                DataSetType::Footfall,
+                new_footfall.time_to_use,
+            )
             .await?;
-        self.oracle_boosting_sink.commit().await?;
+        }
+        if let Some(new_landtype) = new_landtype {
+            new_landtype.mark_as_processed(&self.pool).await?;
+            delete_old_data_sets(
+                &self.data_set_directory,
+                DataSetType::Landtype,
+                new_landtype.time_to_use,
+            )
+            .await?;
+        }
 
         Ok(())
     }
@@ -229,10 +306,39 @@ where
     pub async fn run(mut self) -> anyhow::Result<()> {
         let poll_duration = Duration::minutes(5);
 
+        self.data_sets
+            .urbanization
+            .fetch_first_data_set(&self.pool, &self.data_set_directory)
+            .await?;
+        self.data_sets
+            .footfall
+            .fetch_first_data_set(&self.pool, &self.data_set_directory)
+            .await?;
+        self.data_sets
+            .landtype
+            .fetch_first_data_set(&self.pool, &self.data_set_directory)
+            .await?;
+
         loop {
-            self.check_for_available_data_sets().await?;
-            self.process_data_sets().await?;
-            tokio::time::sleep(poll_duration.to_std()?).await;
+            #[rustfmt::skip]
+            tokio::select! {
+                _ = self.new_coverage_object_signal.recv() => {
+                    // If we see a new coverage object, we want to assign only those hexes
+                    // that don't have an assignment
+                    let boosting_reports = set_oracle_boosting_assignments(
+                        UnassignedHex::fetch_unassigned(&self.pool),
+                        &self.data_sets,
+                        &self.pool,
+                    )
+                        .await?;
+                    self.oracle_boosting_sink
+                        .write_all(boosting_reports)
+                        .await?;
+                },
+                _ = tokio::time::sleep(poll_duration.to_std()?) => {
+                    self.check_for_new_data_sets().await?;
+                }
+            }
         }
     }
 }
@@ -330,6 +436,7 @@ pub mod db {
             r#"
             INSERT INTO data_sets (filename, data_set, time_to_use, status)
             VALUES ($1, $2, $3, 'pending')
+            ON CONFLICT DO NOTHING
             "#,
         )
         .bind(filename)
@@ -351,6 +458,18 @@ pub mod db {
         .bind(data_set_type)
         .bind(since)
         .bind(Utc::now())
+        .fetch_optional(pool)
+        .await
+    }
+
+    pub async fn fetch_latest_processed_data_set(
+        pool: &PgPool,
+        data_set_type: DataSetType,
+    ) -> sqlx::Result<Option<NewDataSet>> {
+        sqlx::query_as(
+            "SELECT filename, time_to_use, status FROM data_sets WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
+        )
+        .bind(data_set_type)
         .fetch_optional(pool)
         .await
     }
@@ -385,12 +504,19 @@ pub mod db {
         pool: &PgPool,
         period_end: DateTime<Utc>,
     ) -> sqlx::Result<bool> {
-        sqlx::query_scalar(
-            "SELECT COUNT(*) > 0 FROM data_sets WHERE time_to_use <= $1 AND status != 'processed'",
+        Ok(
+            sqlx::query_scalar(
+                "SELECT COUNT(*) > 0 FROM data_sets WHERE time_to_use <= $1 AND status != 'processed'",
+            )
+            .bind(period_end)
+            .fetch_one(pool)
+            .await?
+            || sqlx::query_scalar(
+                "SELECT COUNT(*) > 0 from hexes where urbanized IS NULL OR footfall IS NULL OR landtype IS NULL"
+            )
+            .fetch_one(pool)
+            .await?
         )
-        .bind(period_end)
-        .fetch_one(pool)
-        .await
     }
 }
 
@@ -435,19 +561,15 @@ pub async fn set_oracle_boosting_assignments<'a>(
     let mut boost_results = HashMap::<uuid::Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
     let mut unassigned_hexes = pin!(unassigned_hexes.try_chunks(ASSIGNMENTS_MAX_BATCH_ENTRIES));
 
-    let urbanization = data_sets.urbanization.lock().await;
-    let footfall = data_sets.footfall.lock().await;
-    let landtype = data_sets.landtype.lock().await;
-
     while let Some(hexes) = unassigned_hexes.try_next().await? {
         let hexes: anyhow::Result<Vec<_>> = hexes
             .into_iter()
             .map(|hex| {
                 let cell = hextree::Cell::try_from(hex.hex)?;
                 let assignments = HexAssignments::builder(cell)
-                    .footfall(&*footfall)
-                    .landtype(&*landtype)
-                    .urbanized(&*urbanization)
+                    .footfall(&data_sets.footfall)
+                    .landtype(&data_sets.landtype)
+                    .urbanized(&data_sets.urbanization)
                     .build()?;
                 let location = format!("{:x}", hex.hex);
                 let assignment_multiplier = (assignments.boosting_multiplier() * dec!(1000))

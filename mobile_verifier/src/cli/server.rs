@@ -1,8 +1,5 @@
 use crate::{
-    boosting_oracles::{
-        footfall::Footfall, landtype::Landtype, urbanization::Urbanization,
-        DataSetDownloaderDaemon, HexBoostData,
-    },
+    boosting_oracles::DataSetDownloaderDaemon,
     coverage::CoverageDaemon,
     data_session::DataSessionIngestor,
     geofence::Geofence,
@@ -20,12 +17,12 @@ use file_store::{
     file_upload::{self},
     FileStore, FileType,
 };
-use hextree::disktree::DiskTreeMap;
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
     CarrierServiceClient, GatewayClient,
 };
 use task_manager::TaskManager;
+use tokio::sync::mpsc::channel;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
@@ -104,67 +101,12 @@ impl Cmd {
             settings.usa_and_mexico_fencing_resolution()?,
         )?;
 
-        let (oracle_boosting_reports, oracle_boosting_reports_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::OracleBoostingReport,
-                store_base_path,
-                file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
-            )
-            .auto_commit(false)
-            .roll_time(Duration::minutes(15))
-            .create()
-            .await?;
-
-        let urbanization: Urbanization<DiskTreeMap> = Urbanization::new();
-        let footfall: Footfall<DiskTreeMap> = Footfall::new();
-        let landtype: Landtype<DiskTreeMap> = Landtype::new();
-        let hex_boost_data = HexBoostData::builder()
-            .footfall(footfall)
-            .landtype(landtype)
-            .urbanization(urbanization)
-            .build()?;
-
-        // Data sets and downloaders
-        let data_sets_file_store = FileStore::from_settings(&settings.data_sets).await?;
-        let footfall_data_set_downloader = DataSetDownloaderDaemon::new(
-            pool.clone(),
-            hex_boost_data.footfall.clone(),
-            hex_boost_data.clone(),
-            data_sets_file_store.clone(),
-            oracle_boosting_reports.clone(),
-            settings.data_sets_directory.clone(),
-        )
-        .await?;
-
-        let landtype_data_set_downloader = DataSetDownloaderDaemon::new(
-            pool.clone(),
-            hex_boost_data.landtype.clone(),
-            hex_boost_data.clone(),
-            data_sets_file_store.clone(),
-            oracle_boosting_reports.clone(),
-            settings.data_sets_directory.clone(),
-        )
-        .await?;
-
-        let urbanization_data_set_downloader = DataSetDownloaderDaemon::new(
-            pool.clone(),
-            hex_boost_data.urbanization.clone(),
-            hex_boost_data.clone(),
-            data_sets_file_store.clone(),
-            oracle_boosting_reports,
-            settings.data_sets_directory.clone(),
-        )
-        .await?;
+        let (new_coverage_obj_signal_tx, new_coverage_obj_signal_rx) = channel(10);
 
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_heartbeats_server)
             .add_task(seniority_updates_server)
-            .add_task(oracle_boosting_reports_server)
-            .add_task(landtype_data_set_downloader)
-            .add_task(footfall_data_set_downloader)
-            .add_task(urbanization_data_set_downloader)
             .add_task(speedtests_avg_server)
             .add_task(
                 CbrsHeartbeatDaemon::create_managed_task(
@@ -208,7 +150,16 @@ impl Cmd {
                     file_upload.clone(),
                     report_ingest.clone(),
                     auth_client.clone(),
-                    hex_boost_data,
+                    new_coverage_obj_signal_tx,
+                )
+                .await?,
+            )
+            .add_task(
+                DataSetDownloaderDaemon::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    file_upload.clone(),
+                    new_coverage_obj_signal_rx,
                 )
                 .await?,
             )

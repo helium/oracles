@@ -32,6 +32,7 @@ impl<DT> Default for Urbanization<DT> {
     }
 }
 
+#[async_trait::async_trait]
 impl DataSet for Urbanization<DiskTreeMap> {
     const TYPE: DataSetType = DataSetType::Urbanization;
 

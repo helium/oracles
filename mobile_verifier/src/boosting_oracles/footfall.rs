@@ -32,6 +32,7 @@ impl<F> Default for Footfall<F> {
     }
 }
 
+#[async_trait::async_trait]
 impl DataSet for Footfall<DiskTreeMap> {
     const TYPE: DataSetType = DataSetType::Footfall;
 

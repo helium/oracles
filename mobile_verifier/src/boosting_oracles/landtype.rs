@@ -32,6 +32,7 @@ impl<L> Default for Landtype<L> {
     }
 }
 
+#[async_trait::async_trait]
 impl DataSet for Landtype<DiskTreeMap> {
     const TYPE: DataSetType = DataSetType::Landtype;
 
