@@ -122,7 +122,7 @@ impl State {
         self.reload_handle
             .modify(|filter| *filter = tracing_subscriber::EnvFilter::new(new_filter.clone()))?;
 
-        tracing::info!(filter = new_filter, "deleted tracing file, updated");
+        tracing::info!(filter = new_filter, "tracing config watcher file deleted, reverting to rustlog filter");
         Ok(())
     }
 }
