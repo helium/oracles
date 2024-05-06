@@ -106,7 +106,7 @@ impl State {
             self.handle_delete()
         } else {
             match tracing_subscriber::EnvFilter::try_new(content.clone()) {
-                Err(_e) => tracing::warn!(filter = content, "failed to parse filter {:?}", _e),
+                Err(_err) => tracing::warn!(filter = content, ?_err, "tracing config watcher failed to parse filter"),
                 Ok(new_filter) => {
                     self.reload_handle.modify(|filter| *filter = new_filter)?;
                     tracing::info!(filter = content, "updated");
