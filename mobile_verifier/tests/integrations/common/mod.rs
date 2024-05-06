@@ -78,15 +78,6 @@ impl MockFileSinkReceiver {
         };
     }
 
-    // pub async fn receive_speedtest_avg(&mut self) -> SpeedtestAvg {
-    //     match self.receive().await {
-    //         Some(bytes) => {
-    //             SpeedtestAvg::decode(bytes.as_slice()).expect("Not a valid speedtest average")
-    //         }
-    //         None => panic!("failed to receive speedtest average"),
-    //     }
-    // }
-
     pub async fn get_all_speedtest_avgs(&mut self) -> Vec<SpeedtestAvg> {
         self.get_all()
             .await
