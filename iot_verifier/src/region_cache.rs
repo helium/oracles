@@ -49,12 +49,12 @@ where
     ) -> Result<RegionParamsInfo, RegionCacheError<G::Error>> {
         match self.cache.get(&region).await {
             Some(hit) => {
-                metrics::increment_counter!("oracles_iot_verifier_region_params_cache_hit");
+                metrics::counter!("oracles_iot_verifier_region_params_cache_hit").increment(1);
                 Ok(hit.value().clone())
             }
             _ => match self.gateways.clone().resolve_region_params(region).await {
                 Ok(res) => {
-                    metrics::increment_counter!("oracles_iot_verifier_region_params_cache_miss");
+                    metrics::counter!("oracles_iot_verifier_region_params_cache_miss").increment(1);
                     self.cache
                         .insert(region, res.clone(), self.refresh_interval)
                         .await;

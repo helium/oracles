@@ -93,10 +93,10 @@ impl Timing {
         if let Some(name) = self.name {
             metrics::histogram!(
                 histogram_name,
-                self.start.elapsed().as_secs_f64(),
                 "name" => name,
                 "result" => self.result
             )
+            .record(self.start.elapsed().as_secs_f64())
         }
     }
 }

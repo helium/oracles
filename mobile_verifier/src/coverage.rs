@@ -178,16 +178,16 @@ impl CoverageDaemon {
         self.oracle_boosting_sink.commit().await?;
 
         loop {
-            #[rustfmt::skip]
             tokio::select! {
                 _ = shutdown.clone() => {
                     tracing::info!("CoverageDaemon shutting down");
                     break;
                 }
                 Some(file) = self.coverage_objs.recv() => {
-		    let start = Instant::now();
-		    self.process_file(file).await?;
-		    metrics::histogram!("coverage_object_processing_time", start.elapsed());
+                    let start = Instant::now();
+                    self.process_file(file).await?;
+                    metrics::histogram!("coverage_object_processing_time")
+                        .record(start.elapsed());
                 }
             }
         }

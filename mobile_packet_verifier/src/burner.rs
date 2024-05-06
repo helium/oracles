@@ -96,13 +96,15 @@ where
             tracing::info!(%total_dcs, %payer, "Burning DC");
             if self.burn_data_credits(&payer, total_dcs).await.is_err() {
                 // We have failed to burn data credits:
-                metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "false");
+                metrics::counter!("burned", "payer" => payer.to_string(), "success" => "false")
+                    .increment(total_dcs);
                 continue;
             }
 
             // We succesfully managed to burn data credits:
 
-            metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "true");
+            metrics::counter!("burned", "payer" => payer.to_string(), "success" => "true")
+                .increment(total_dcs);
 
             // Delete from the data transfer session and write out to S3
 

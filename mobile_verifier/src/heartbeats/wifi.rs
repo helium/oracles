@@ -119,7 +119,6 @@ where
         let location_cache = LocationCache::new(&self.pool);
 
         loop {
-            #[rustfmt::skip]
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
@@ -127,15 +126,16 @@ where
                     break;
                 }
                 Some(file) = self.heartbeats.recv() => {
-		    let start = Instant::now();
-		    self.process_file(
+                    let start = Instant::now();
+                    self.process_file(
                         file,
                         &heartbeat_cache,
                         &coverage_claim_time_cache,
                         &coverage_object_cache,
                         &location_cache
-		    ).await?;
-		    metrics::histogram!("wifi_heartbeat_processing_time", start.elapsed());
+                    ).await?;
+                    metrics::histogram!("wifi_heartbeat_processing_time")
+                        .record(start.elapsed());
                 }
             }
         }

@@ -14,7 +14,7 @@ async fn run(size_name: String, idle_name: String, pool: sqlx::Pool<sqlx::Postgr
     loop {
         trigger.tick().await;
 
-        metrics::gauge!(size_name.clone(), pool.size() as f64);
-        metrics::gauge!(idle_name.clone(), pool.num_idle() as f64);
+        metrics::gauge!(size_name.clone()).set(pool.size() as f64);
+        metrics::gauge!(idle_name.clone()).set(pool.num_idle() as f64);
     }
 }

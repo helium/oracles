@@ -18,7 +18,7 @@ impl PocEntropy for EntropyServer {
         _request: tonic::Request<EntropyReqV1>,
     ) -> Result<tonic::Response<EntropyReportV1>, tonic::Status> {
         let entropy = &*self.entropy_watch.borrow();
-        metrics::increment_counter!("entropy_server_get_count");
+        metrics::counter!("entropy_server_get_count").increment(1);
         Ok(tonic::Response::new(entropy.into()))
     }
 }
