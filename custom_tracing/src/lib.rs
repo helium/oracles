@@ -109,7 +109,7 @@ impl State {
                 Err(_err) => tracing::warn!(filter = content, ?_err, "tracing config watcher failed to parse filter"),
                 Ok(new_filter) => {
                     self.reload_handle.modify(|filter| *filter = new_filter)?;
-                    tracing::info!(filter = content, "updated");
+                    tracing::info!(filter = content, "custom tracing config updated");
                 }
             }
             Ok(())
