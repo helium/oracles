@@ -14,7 +14,7 @@ pub mod grpc_layer;
 #[cfg(feature = "http-1")]
 pub mod http_layer;
 
-pub async fn init(og_filter: String, tracing_config_file: String) -> Result<()> {
+pub async fn init(og_filter: String, tracing_cfg_file: String) -> Result<()> {
     let (filtered_layer, reload_handle) =
         reload::Layer::new(tracing_subscriber::EnvFilter::new(og_filter.clone()));
 
@@ -26,7 +26,7 @@ pub async fn init(og_filter: String, tracing_config_file: String) -> Result<()> 
     tokio::spawn(async move {
         let state = State {
             og_filter: og_filter.clone(),
-            tracing_config_file,
+            tracing_cfg_file,
             reload_handle,
         };
         if let Err(err) = state.watch().await {
@@ -49,7 +49,7 @@ where
 #[derive(Clone)]
 pub struct State {
     pub og_filter: String,
-    pub tracing_config_file: String,
+    pub tracing_cfg_file: String,
     pub reload_handle: Handle<EnvFilter, Registry>,
 }
 
@@ -81,8 +81,7 @@ impl State {
                                         "tracing config watcher failed to read file"
                                     ),
                                     Ok(content) => {
-                                        if file_match(event_path, self.tracing_config_file.clone())
-                                        {
+                                        if file_match(event_path, self.tracing_cfg_file.clone()) {
                                             self.handle_change(content)?;
                                         }
                                     }
@@ -92,7 +91,7 @@ impl State {
                     }
                     notify::EventKind::Remove(notify::event::RemoveKind::File) => {
                         if let Some(event_path) = event.paths.first() {
-                            if file_match(event_path, self.tracing_config_file.clone()) {
+                            if file_match(event_path, self.tracing_cfg_file.clone()) {
                                 self.handle_delete()?;
                             }
                         }
