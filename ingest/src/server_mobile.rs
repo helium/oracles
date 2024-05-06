@@ -251,10 +251,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let cbsd_id = event.cbsd_id.clone();
         let threshold_timestamp = event.threshold_timestamp;
 
-        custom_tracing::record(
-            "pub_key",
-            pub_key_to_b58(&hotspot_pubkey),
-        );
+        custom_tracing::record("pub_key", pub_key_to_b58(&hotspot_pubkey));
 
         let report = self
             .verify_public_key(event.carrier_pub_key.as_ref())
@@ -290,10 +287,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let cbsd_id = event.cbsd_id.clone();
         let invalidated_timestamp = event.timestamp;
 
-        custom_tracing::record(
-            "pub_key",
-            pub_key_to_b58(&hotspot_pubkey),
-        );
+        custom_tracing::record("pub_key", pub_key_to_b58(&hotspot_pubkey));
 
         let report = self
             .verify_public_key(event.carrier_pub_key.as_ref())
