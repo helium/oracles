@@ -113,8 +113,12 @@ jobs:
   tests:
     needs: build
     runs-on: oracles-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [boost_manager,custom_tracing,db_store,denylist,file_store,ingest,iot_config,iot_config,iot_packet_verifier,iot_verifier,metrics,mobile_config,mobile_config_cli,mobile_packet_verifier,mobile_verifier,poc_entropy,price,reward_index,reward_scheduler,solana,task_manager]
     concurrency: 
-      group: ${{ github.workflow }}-${{ github.ref }}-tests
+      group: ${{ github.workflow }}-${{ github.ref }}-tests-${{ matrix.package }}
       cancel-in-progress: true
     services:
       postgres:
@@ -154,4 +158,4 @@ jobs:
       - name: Run unit and integration tests
         env:
           DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
-        run: cargo test -r -- --include-ignored
+        run: cargo test -r -p ${{ matrix.package }}  -- --include-ignored
