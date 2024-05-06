@@ -253,7 +253,7 @@ impl poc_mobile::PocMobile for GrpcServer {
 
         custom_tracing::record(
             "pub_key",
-            bs58::encode(hotspot_pubkey.clone()).into_string(),
+            pub_key_to_b58(&hotspot_pubkey),
         );
 
         let report = self
