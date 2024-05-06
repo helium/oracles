@@ -12,7 +12,7 @@ use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
-use mobile_verifier::boosting_oracles::{Assignment, BoostedHexAssignments, HexAssignments};
+use mobile_verifier::boosting_oracles::{Assignment, HexBoostData};
 use std::collections::HashMap;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 
@@ -182,24 +182,26 @@ pub fn seconds(s: u64) -> std::time::Duration {
 
 type MockAssignmentMap = HashMap<hextree::Cell, Assignment>;
 
-#[derive(Default)]
+pub fn mock_hex_boost_data_default(
+) -> HexBoostData<MockAssignmentMap, MockAssignmentMap, MockAssignmentMap> {
+    HexBoostData::builder()
+        .urbanization(MockAssignmentMap::default())
+        .footfall(MockAssignmentMap::default())
+        .landtype(MockAssignmentMap::default())
+        .build()
+        .unwrap()
+}
+
 #[allow(dead_code)]
-pub struct MockHexAssignments {
+pub fn mock_hex_boost_data(
     footfall: MockAssignmentMap,
     urbanized: MockAssignmentMap,
     landtype: MockAssignmentMap,
-}
-
-impl MockHexAssignments {
-    pub fn new(
-        footfall: MockAssignmentMap,
-        urbanized: MockAssignmentMap,
-        landtype: MockAssignmentMap,
-    ) -> Self {
-        Self {
-            footfall,
-            urbanized,
-            landtype,
-        }
-    }
+) -> HexBoostData<MockAssignmentMap, MockAssignmentMap, MockAssignmentMap> {
+    HexBoostData::builder()
+        .footfall(footfall)
+        .urbanization(urbanized)
+        .landtype(landtype)
+        .build()
+        .unwrap()
 }

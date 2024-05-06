@@ -1,6 +1,5 @@
 use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use common::MockHexAssignments;
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     speedtest::CellSpeedtest,
@@ -268,8 +267,12 @@ async fn seed_heartbeats(
 
 async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
     let unassigned_hexes = UnassignedHex::fetch_unassigned(pool);
-    let _ = set_oracle_boosting_assignments(unassigned_hexes, &MockHexAssignments::best(), pool)
-        .await?;
+    let _ = set_oracle_boosting_assignments(
+        unassigned_hexes,
+        &common::mock_hex_boost_data_default(),
+        pool,
+    )
+    .await?;
     Ok(())
 }
 
