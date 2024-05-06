@@ -177,8 +177,8 @@ impl CoverageDaemon {
         self.coverage_obj_sink.commit().await?;
         transaction.commit().await?;
 
-        // Tell the data set manager to update the assignments
-        self.new_coverage_object_signal.send(()).await?;
+        // Tell the data set manager to update the assignments. 
+        self.new_coverage_object_signal.try_send(())?;
 
         Ok(())
     }

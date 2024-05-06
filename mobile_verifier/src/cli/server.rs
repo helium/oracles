@@ -101,7 +101,7 @@ impl Cmd {
             settings.usa_and_mexico_fencing_resolution()?,
         )?;
 
-        let (new_coverage_obj_signal_tx, new_coverage_obj_signal_rx) = channel(10);
+        let (new_coverage_obj_signal_tx, new_coverage_obj_signal_rx) = channel(1);
 
         TaskManager::builder()
             .add_task(file_upload_server)
