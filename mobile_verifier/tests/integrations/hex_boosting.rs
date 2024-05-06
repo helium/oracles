@@ -1,7 +1,5 @@
-mod common;
-use crate::common::MockFileSinkReceiver;
+use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
-use common::MockHexBoostingClient;
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     mobile_radio_threshold::{RadioThresholdIngestReport, RadioThresholdReportReq},

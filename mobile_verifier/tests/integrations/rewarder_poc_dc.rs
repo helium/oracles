@@ -1,5 +1,4 @@
-mod common;
-use crate::common::{MockFileSinkReceiver, MockHexBoostingClient};
+use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use common::MockHexAssignments;
 use file_store::{
@@ -28,6 +27,7 @@ const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11uJHS2YaEWJqgqC7yza9uvSmpv5FWoMQXiP8WbxBGgNUmifUJf";
 const HOTSPOT_3: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
 const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
+
 #[sqlx::test]
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();

@@ -11,12 +11,9 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
 
+use crate::common::{self, MockFileSinkReceiver};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use mobile_verifier::{data_session, reward_shares, rewarder};
-
-use crate::common::MockFileSinkReceiver;
-
-mod common;
 
 const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";

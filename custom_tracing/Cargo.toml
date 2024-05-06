@@ -1,0 +1,34 @@
+[package]
+name = "custom-tracing"
+version = "0.1.0"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+notify = { version = "6", default-features = false }
+anyhow = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "signal"] }
+tracing = "0"
+tracing-subscriber = { version = "0", default-features = true, features = [
+    "env-filter",
+    "registry",
+    "fmt",
+] }
+tower-http = { version = "0", features = ["trace"] }
+tower-layer = { version = "0" }
+axum = { version = "0.7", features = ["tracing"], optional = true }
+helium-proto = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+
+
+[target.'cfg(target_os = "macos")'.dependencies]
+notify = { version = "6", default-features = false, features = [
+    "macos_fsevent",
+] }
+
+
+[features]
+default = []
+http-1 = ["axum"]
+grpc = ["helium-proto", "http"]

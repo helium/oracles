@@ -1,47 +1,14 @@
-mod common;
-use crate::common::MockFileSinkReceiver;
-use async_trait::async_trait;
+use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient};
 use boost_manager::watcher::{self, Watcher};
-use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
-use futures_util::{stream, StreamExt as FuturesStreamExt};
+use chrono::{Duration as ChronoDuration, Duration, Utc};
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
-use mobile_config::{
-    boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
-    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
-};
+use mobile_config::boosted_hex_info::BoostedHexInfo;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{num::NonZeroU32, str::FromStr};
 
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
-
-#[derive(Debug, Clone)]
-pub struct MockHexBoostingClient {
-    pub boosted_hexes: Vec<BoostedHexInfo>,
-}
-
-impl MockHexBoostingClient {
-    fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
-        Self { boosted_hexes }
-    }
-}
-
-#[async_trait]
-impl HexBoostingInfoResolver for MockHexBoostingClient {
-    type Error = ClientError;
-
-    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-
-    async fn stream_modified_boosted_hexes_info(
-        &mut self,
-        _timestamp: DateTime<Utc>,
-    ) -> Result<BoostedHexInfoStream, ClientError> {
-        Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-}
 
 #[sqlx::test]
 async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<()> {
