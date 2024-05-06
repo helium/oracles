@@ -213,7 +213,7 @@ impl poc_mobile::PocMobile for GrpcServer {
 
         custom_tracing::record(
             "pub_key",
-            bs58::encode(event.carrier_pub_key.clone()).into_string(),
+            bs58::encode(&event.carrier_pub_key).into_string(),
         );
 
         custom_tracing::record("subscriber_id", bs58::encode(&subscriber_id).into_string());
