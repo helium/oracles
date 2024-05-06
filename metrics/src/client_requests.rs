@@ -38,6 +38,11 @@ use tracing::{field::Visit, instrument::Instrumented, span, Instrument, Subscrib
 use tracing_subscriber::{filter, layer, registry::LookupSpan, Layer};
 
 const SPAN_NAME: &str = "metrics::timing";
+const RESULT_FIELD: &str = "result";
+const NAME_FIELD: &str = "name";
+const SUCCESS: &str = "ok";
+const ERROR: &str = "error";
+const UNKNOWN: &str = "unknown";
 
 pub fn client_request_timing_layer<S>(histogram_name: &'static str) -> impl layer::Layer<S>
 where
@@ -64,10 +69,15 @@ where
         self,
         name: &'static str,
     ) -> Instrumented<Inspect<Self, impl FnOnce(&Result<A, B>)>> {
+        // NOTE(mj): `tracing::info_span!(SPAN_NAME, {NAME_FIELD} = name, {RESULT_FIELD} = tracing::field::Empty);`
+        //
+        // Results in the error "format must be a string literal". Maybe one day
+        // this will be fixed in the tracing macro so we can use it likes the
+        // docs say.
         let span = tracing::info_span!(SPAN_NAME, name, result = tracing::field::Empty);
         let inner_span = span.clone();
         self.inspect(move |res| {
-            inner_span.record("result", res.as_ref().ok().map_or("error", |_| "ok"));
+            inner_span.record(RESULT_FIELD, res.as_ref().ok().map_or(ERROR, |_| SUCCESS));
         })
         .instrument(span)
     }
@@ -85,7 +95,7 @@ impl Timing {
         Self {
             name: None,
             start: Instant::now(),
-            result: "unknown".to_string(),
+            result: UNKNOWN.to_string(),
         }
     }
 
@@ -93,8 +103,8 @@ impl Timing {
         if let Some(name) = self.name {
             metrics::histogram!(
                 histogram_name,
-                "name" => name,
-                "result" => self.result
+                NAME_FIELD => name,
+                RESULT_FIELD => self.result
             )
             .record(self.start.elapsed().as_secs_f64())
         }
@@ -105,8 +115,8 @@ impl Visit for Timing {
     fn record_debug(&mut self, _field: &tracing::field::Field, _value: &dyn std::fmt::Debug) {}
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
         match field.name() {
-            "name" => self.name = Some(value.to_string()),
-            "result" => self.result = value.to_string(),
+            NAME_FIELD => self.name = Some(value.to_string()),
+            RESULT_FIELD => self.result = value.to_string(),
             _ => (),
         }
     }
