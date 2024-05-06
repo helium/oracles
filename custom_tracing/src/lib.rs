@@ -14,7 +14,7 @@ pub mod grpc_layer;
 #[cfg(feature = "http-1")]
 pub mod http_layer;
 
-pub async fn init(og_filter: String, file: String) -> Result<()> {
+pub async fn init(og_filter: String, tracing_config_file: String) -> Result<()> {
     let (filtered_layer, reload_handle) =
         reload::Layer::new(tracing_subscriber::EnvFilter::new(og_filter.clone()));
 
@@ -26,7 +26,7 @@ pub async fn init(og_filter: String, file: String) -> Result<()> {
     tokio::spawn(async move {
         let state = State {
             og_filter: og_filter.clone(),
-            file,
+            tracing_config_file,
             reload_handle,
         };
         if let Err(err) = state.watch().await {
@@ -49,7 +49,7 @@ where
 #[derive(Clone)]
 pub struct State {
     pub og_filter: String,
-    pub file: String,
+    pub tracing_config_file: String,
     pub reload_handle: Handle<EnvFilter, Registry>,
 }
 
@@ -74,12 +74,15 @@ impl State {
                         DataChange::Content,
                     )) => {
                         if let Some(event_path) = event.paths.first() {
-
                             if Path::new(event_path).exists() {
                                 match fs::read_to_string(event_path) {
-                                    Err(_err) => tracing::warn!(?_err, "tracing config watcher failed to read file"),
+                                    Err(_err) => tracing::warn!(
+                                        ?_err,
+                                        "tracing config watcher failed to read file"
+                                    ),
                                     Ok(content) => {
-                                        if file_match(event_path, self.file.clone()) {
+                                        if file_match(event_path, self.tracing_config_file.clone())
+                                        {
                                             self.handle_change(content)?;
                                         }
                                     }
@@ -89,12 +92,14 @@ impl State {
                     }
                     notify::EventKind::Remove(notify::event::RemoveKind::File) => {
                         if let Some(event_path) = event.paths.first() {
-                            if file_match(event_path, self.file.clone()) {
+                            if file_match(event_path, self.tracing_config_file.clone()) {
                                 self.handle_delete()?;
                             }
                         }
                     }
-                    _event => tracing::debug!(?_event, "tracing config watcher ignored unhandled message"),
+                    _event => {
+                        tracing::debug!(?_event, "tracing config watcher ignored unhandled message")
+                    }
                 },
             }
         }
@@ -107,7 +112,11 @@ impl State {
             self.handle_delete()
         } else {
             match tracing_subscriber::EnvFilter::try_new(content.clone()) {
-                Err(_err) => tracing::warn!(filter = content, ?_err, "tracing config watcher failed to parse filter"),
+                Err(_err) => tracing::warn!(
+                    filter = content,
+                    ?_err,
+                    "tracing config watcher failed to parse filter"
+                ),
                 Ok(new_filter) => {
                     self.reload_handle.modify(|filter| *filter = new_filter)?;
                     tracing::info!(filter = content, "custom tracing config updated");
@@ -123,7 +132,10 @@ impl State {
         self.reload_handle
             .modify(|filter| *filter = tracing_subscriber::EnvFilter::new(new_filter.clone()))?;
 
-        tracing::info!(filter = new_filter, "tracing config watcher file deleted, reverting to rustlog filter");
+        tracing::info!(
+            filter = new_filter,
+            "tracing config watcher file deleted, reverting to rustlog filter"
+        );
         Ok(())
     }
 }
