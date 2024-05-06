@@ -73,14 +73,15 @@ impl State {
                     notify::EventKind::Modify(notify::event::ModifyKind::Data(
                         DataChange::Content,
                     )) => {
-                        let event_path = event.paths.first().unwrap();
+                        if let Some(event_path) = event.paths.first() {
 
-                        if Path::new(event_path).exists() {
-                            match fs::read_to_string(event_path) {
-                                Err(_e) => tracing::warn!("failed to read file {:?}", _e),
-                                Ok(content) => {
-                                    if file_match(event_path, self.file.clone()) {
-                                        self.handle_change(content)?;
+                            if Path::new(event_path).exists() {
+                                match fs::read_to_string(event_path) {
+                                    Err(_err) => tracing::warn!(?_err, "tracing config watcher failed to read file"),
+                                    Ok(content) => {
+                                        if file_match(event_path, self.file.clone()) {
+                                            self.handle_change(content)?;
+                                        }
                                     }
                                 }
                             }
