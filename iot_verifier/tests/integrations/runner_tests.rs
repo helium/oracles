@@ -1,7 +1,6 @@
-mod common;
+use crate::common::{self, MockFileSinkReceiver};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, TimeZone, Utc};
-use common::MockFileSinkReceiver;
 use denylist::DenyList;
 use futures_util::{stream, StreamExt as FuturesStreamExt};
 use helium_crypto::PublicKeyBinary;

@@ -1,5 +1,4 @@
-mod common;
-use crate::common::MockFileSinkReceiver;
+use crate::common::{self, MockFileSinkReceiver};
 use chrono::{Duration as ChronoDuration, Utc};
 use helium_proto::services::poc_mobile::{UnallocatedReward, UnallocatedRewardType};
 use mobile_verifier::{reward_shares, rewarder};

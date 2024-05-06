@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 use chrono::{Duration as ChronoDuration, TimeZone, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{

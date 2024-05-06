@@ -263,7 +263,6 @@ pub async fn aggregate_location_shares(
     Ok(location_shares)
 }
 
-#[allow(dead_code)]
 pub async fn clear_location_shares(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     timestamp: &DateTime<Utc>,

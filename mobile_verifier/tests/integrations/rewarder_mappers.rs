@@ -1,5 +1,4 @@
-mod common;
-use crate::common::MockFileSinkReceiver;
+use crate::common::{self, MockFileSinkReceiver};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store::mobile_subscriber::{SubscriberLocationIngestReport, SubscriberLocationReq};
 use helium_crypto::PublicKeyBinary;

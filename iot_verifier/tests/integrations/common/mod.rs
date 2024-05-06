@@ -44,7 +44,6 @@ pub struct MockFileSinkReceiver {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage>,
 }
 
-#[allow(dead_code)]
 impl MockFileSinkReceiver {
     pub async fn receive(&mut self) -> Option<Vec<u8>> {
         match timeout(seconds(2), self.receiver.recv()).await {
@@ -142,7 +141,6 @@ fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
-#[allow(dead_code)]
 pub fn create_valid_beacon_report(
     pubkey: &str,
     received_timestamp: DateTime<Utc>,
@@ -165,7 +163,6 @@ pub fn create_valid_beacon_report(
     )
 }
 
-#[allow(dead_code)]
 pub fn create_valid_witness_report(
     pubkey: &str,
     received_timestamp: DateTime<Utc>,
@@ -186,7 +183,6 @@ pub fn create_valid_witness_report(
     )
 }
 
-#[allow(dead_code)]
 pub fn beacon_report_to_ingest_report(
     report: IotBeaconReport,
     received_timestamp: DateTime<Utc>,
@@ -197,7 +193,6 @@ pub fn beacon_report_to_ingest_report(
     }
 }
 
-#[allow(dead_code)]
 pub fn witness_report_to_ingest_report(
     report: IotWitnessReport,
     received_timestamp: DateTime<Utc>,
@@ -208,7 +203,6 @@ pub fn witness_report_to_ingest_report(
     }
 }
 
-#[allow(dead_code)]
 pub async fn inject_beacon_report(
     pool: PgPool,
     beacon: IotBeaconIngestReport,
@@ -237,7 +231,6 @@ pub async fn inject_beacon_report(
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn inject_invalid_beacon_report(
     pool: PgPool,
     beacon: IotBeaconIngestReport,
@@ -266,7 +259,6 @@ pub async fn inject_invalid_beacon_report(
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn inject_witness_report(
     pool: PgPool,
     witness: IotWitnessIngestReport,
@@ -295,7 +287,6 @@ pub async fn inject_witness_report(
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn inject_entropy_report(pool: PgPool, ts: DateTime<Utc>) -> anyhow::Result<()> {
     let data = REMOTE_ENTROPY.to_vec();
     let id = hash(&data).as_bytes().to_vec();
@@ -305,7 +296,6 @@ pub async fn inject_entropy_report(pool: PgPool, ts: DateTime<Utc>) -> anyhow::R
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn inject_last_beacon(
     txn: &mut Transaction<'_, Postgres>,
     gateway: PublicKeyBinary,
@@ -314,7 +304,6 @@ pub async fn inject_last_beacon(
     LastBeaconReciprocity::update_last_timestamp(&mut *txn, &gateway, ts).await
 }
 
-#[allow(dead_code)]
 pub async fn inject_last_witness(
     txn: &mut Transaction<'_, Postgres>,
     gateway: PublicKeyBinary,
@@ -323,7 +312,6 @@ pub async fn inject_last_witness(
     LastWitness::update_last_timestamp(&mut *txn, &gateway, ts).await
 }
 
-#[allow(dead_code)]
 pub fn valid_gateway() -> GatewayInfo {
     GatewayInfo {
         address: PublicKeyBinary::from_str(BEACONER1).unwrap(),
@@ -332,7 +320,6 @@ pub fn valid_gateway() -> GatewayInfo {
     }
 }
 
-#[allow(dead_code)]
 pub fn valid_gateway_stream() -> Vec<GatewayInfo> {
     vec![
         GatewayInfo {
@@ -413,7 +400,6 @@ pub fn valid_gateway_stream() -> Vec<GatewayInfo> {
     ]
 }
 
-#[allow(dead_code)]
 pub fn valid_region_params() -> RegionParamsInfo {
     let region_params =
         beacon::RegionParams::from_bytes(ProtoRegion::Eu868.into(), 60, EU868_PARAMS, 0)
