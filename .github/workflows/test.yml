@@ -158,7 +158,7 @@ jobs:
       - name: Run unit and integration tests
         env:
           DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
-        run: cargo test -r -p ${{ matrix.package }}  -- --include-ignored
+        run: cargo test -p ${{ matrix.package }}  -- --include-ignored
   release:
     needs: build
     runs-on: oracles-20.04
