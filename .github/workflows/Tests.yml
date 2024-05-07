@@ -17,7 +17,7 @@ env:
 jobs:
 
   build:
-    runs-on: oracles-20.04
+    runs-on: ubuntu-latest
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-build
       cancel-in-progress: true
@@ -49,7 +49,7 @@ jobs:
 
   fmt:
     needs: build
-    runs-on: oracles-20.04
+    runs-on: ubuntu-latest
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-fmt
       cancel-in-progress: true
@@ -80,7 +80,7 @@ jobs:
         run: cargo fmt  -- --check
   clippy:
     needs: build
-    runs-on: oracles-20.04
+    runs-on: ubuntu-latest
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-clippy
       cancel-in-progress: true
@@ -112,7 +112,7 @@ jobs:
 
   tests:
     needs: build
-    runs-on: oracles-20.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
