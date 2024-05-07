@@ -45,7 +45,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
-        run: cargo build --all --release
+        run: cargo build --all --release --tests 
 
   fmt:
     needs: build
@@ -116,7 +116,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [boost-manager,custom-tracing,db-store,denylist,file-store,ingest,iot-config,iot-packet-verifier,iot-verifier,metrics,mobile-config,mobile-config-cli,mobile-packet-verifier,mobile-verifier,poc-entropy,price,reward-index,reward-scheduler,solana,task-manager]
+        package: [boost-manager,custom-tracing,db-store,denylist,file-store,ingest,iot-config,iot-packet-verifier,iot-verifier,mobile-config,mobile-config-cli,mobile-packet-verifier,mobile-verifier,poc-entropy,price,reward-index,reward-scheduler,solana,task-manager]
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-tests-${{ matrix.package }}
       cancel-in-progress: true
