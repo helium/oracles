@@ -113,6 +113,7 @@ jobs:
     runs-on: oracles-20.04
     strategy:
       fail-fast: false
+      max-parallel: 5
       matrix:
         package: [boost-manager,custom-tracing,db-store,denylist,file-store,ingest,iot-config,iot-packet-verifier,iot-verifier,mobile-config,mobile-config-cli,mobile-packet-verifier,mobile-verifier,poc-entropy,price,reward-index,reward-scheduler,solana,task-manager]
     concurrency: 
