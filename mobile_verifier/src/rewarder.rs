@@ -391,7 +391,7 @@ async fn reward_poc(
 
     speedtest_averages.write_all(speedtest_avg_sink).await?;
 
-    let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
+    let boosted_hexes = BoostedHexes::get_active(hex_service_client).await?;
 
     let verified_radio_thresholds =
         radio_threshold::verified_radio_thresholds(pool, reward_period).await?;

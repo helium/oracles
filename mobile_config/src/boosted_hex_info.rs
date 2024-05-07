@@ -149,15 +149,21 @@ pub struct BoostedHexes {
 }
 
 impl BoostedHexes {
-    pub fn new(hexes: Vec<BoostedHexInfo>) -> Self {
+    pub fn test_new_active(hexes: Vec<BoostedHexInfo>) -> anyhow::Result<Self> {
         let mut me = Self::default();
         for hex in hexes {
+            if hex.end_ts.is_some_and(|end| end < Utc::now()) {
+                // mobile-config does not deliver expired boosts from the database.
+                // Tests using this struct to mimic mobile-config should uphold the
+                // same contract.
+                panic!("Active BoostedHexes should not contain expired boosts");
+            }
             me.insert(hex);
         }
-        me
+        Ok(me)
     }
 
-    pub async fn get_all(
+    pub async fn get_active(
         hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     ) -> anyhow::Result<Self> {
         let mut stream = hex_service_client
@@ -222,15 +228,7 @@ impl BoostedHexes {
         self.hexes.get(location)
     }
 
-    pub fn insert(&mut self, info: BoostedHexInfo) {
-        #[cfg(test)]
-        if info.end_ts.is_some_and(|end| end < Utc::now()) {
-            // mobile-config does not deliver expired boosts from the database.
-            // Tests using this struct to mimic mobile-config should uphold the
-            // same contract.
-            panic!("BoostedHexes should not contain expired boosts");
-        }
-
+    fn insert(&mut self, info: BoostedHexInfo) {
         self.hexes.entry(info.location).or_default().push(info);
     }
 }
@@ -432,7 +430,7 @@ mod tests {
             },
         ];
 
-        let boosted_hexes = BoostedHexes::new(hexes);
+        let boosted_hexes = BoostedHexes::test_new_active(hexes)?;
         let boosts = boosted_hexes.get(&cell).expect("boosts for test cell");
         assert_eq!(boosts.len(), 2, "a hex can be boosted multiple times");
 
