@@ -319,6 +319,18 @@ where
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
             .await?;
 
+        // Attempt to fill in any unassigned hexes. This is for the edge case in
+        // which we shutdown before a coverage object updates.
+        let boosting_reports = set_oracle_boosting_assignments(
+            UnassignedHex::fetch_unassigned(&self.pool),
+            &self.data_sets,
+            &self.pool,
+        )
+        .await?;
+        self.oracle_boosting_sink
+            .write_all(boosting_reports)
+            .await?;
+
         loop {
             #[rustfmt::skip]
             tokio::select! {

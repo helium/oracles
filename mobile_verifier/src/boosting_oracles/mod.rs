@@ -59,7 +59,7 @@ where
     Land: HexAssignment,
     Urban: HexAssignment,
 {
-    pub async fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
+    pub fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
         HexAssignments::builder(cell)
             .footfall(&self.footfall)
             .landtype(&self.landtype)
@@ -103,8 +103,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_hex_boost_data() -> anyhow::Result<()> {
+    #[test]
+    fn test_hex_boost_data() -> anyhow::Result<()> {
         // This test will break if any of the logic deriving Assignments from
         // the underlying DiskTreeMap's changes.
 
@@ -268,41 +268,41 @@ mod tests {
         {
             use Assignment::*;
             // yellow
-            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: A }, data.assignments(poi_built_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: A }, data.assignments(poi_grass_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: A }, data.assignments(poi_water_urbanized).await?);
+            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: A }, data.assignments(poi_built_urbanized)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: A }, data.assignments(poi_grass_urbanized)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: A }, data.assignments(poi_water_urbanized)?);
             // orange
-            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: B }, data.assignments(poi_built_not_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: B }, data.assignments(poi_grass_not_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: B }, data.assignments(poi_water_not_urbanized).await?);
+            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: B }, data.assignments(poi_built_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: B }, data.assignments(poi_grass_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: B }, data.assignments(poi_water_not_urbanized)?);
             // light green
-            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: A }, data.assignments(poi_no_data_built_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: A }, data.assignments(poi_no_data_grass_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: A }, data.assignments(poi_no_data_water_urbanized).await?);
+            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: A }, data.assignments(poi_no_data_built_urbanized)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: A }, data.assignments(poi_no_data_grass_urbanized)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: A }, data.assignments(poi_no_data_water_urbanized)?);
             // green
-            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: B }, data.assignments(poi_no_data_built_not_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: B }, data.assignments(poi_no_data_grass_not_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: B }, data.assignments(poi_no_data_water_not_urbanized).await?);
+            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: B }, data.assignments(poi_no_data_built_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: B }, data.assignments(poi_no_data_grass_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: B }, data.assignments(poi_no_data_water_not_urbanized)?);
             // light blue
-            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: A }, data.assignments(no_poi_built_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: A }, data.assignments(no_poi_grass_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: A }, data.assignments(no_poi_water_urbanized).await?);
+            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: A }, data.assignments(no_poi_built_urbanized)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: A }, data.assignments(no_poi_grass_urbanized)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: A }, data.assignments(no_poi_water_urbanized)?);
             // dark blue
-            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: B }, data.assignments(no_poi_built_not_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: B }, data.assignments(no_poi_grass_not_urbanized).await?);
-            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: B }, data.assignments(no_poi_water_not_urbanized).await?);
+            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: B }, data.assignments(no_poi_built_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: B }, data.assignments(no_poi_grass_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: B }, data.assignments(no_poi_water_not_urbanized)?);
             // gray
-            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: C }, data.assignments(poi_built_outside_us).await?);
-            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: C }, data.assignments(poi_grass_outside_us).await?);
-            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: C }, data.assignments(poi_water_outside_us).await?);
-            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: C }, data.assignments(poi_no_data_built_outside_us).await?);
-            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: C }, data.assignments(poi_no_data_grass_outside_us).await?);
-            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: C }, data.assignments(poi_no_data_water_outside_us).await?);
-            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: C }, data.assignments(no_poi_built_outside_us).await?);
-            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: C }, data.assignments(no_poi_grass_outside_us).await?);
-            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C }, data.assignments(no_poi_water_outside_us).await?);
+            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: C }, data.assignments(poi_built_outside_us)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: C }, data.assignments(poi_grass_outside_us)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: C }, data.assignments(poi_water_outside_us)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: C }, data.assignments(poi_no_data_built_outside_us)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: C }, data.assignments(poi_no_data_grass_outside_us)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: C }, data.assignments(poi_no_data_water_outside_us)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: C }, data.assignments(no_poi_built_outside_us)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: C }, data.assignments(no_poi_grass_outside_us)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C }, data.assignments(no_poi_water_outside_us)?);
             // never inserted
-            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C }, data.assignments(unknown_cell).await?);
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C }, data.assignments(unknown_cell)?);
         };
 
         Ok(())
