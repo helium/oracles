@@ -163,7 +163,7 @@ jobs:
     needs: build
     runs-on: oracles-20.04
     concurrency: 
-      group: ${{ github.workflow }}-${{ github.ref }}-clippy
+      group: ${{ github.workflow }}-${{ github.ref }}-release
       cancel-in-progress: true
     steps:
       - name: Checkout
