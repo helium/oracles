@@ -520,19 +520,30 @@ pub mod db {
         pool: &PgPool,
         period_end: DateTime<Utc>,
     ) -> sqlx::Result<bool> {
-        Ok(
-            sqlx::query_scalar(
-                "SELECT COUNT(*) > 0 FROM data_sets WHERE time_to_use <= $1 AND status != 'processed'",
+        Ok(sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM data_sets WHERE time_to_use <= $1 AND status != 'processed'",
+        )
+        .bind(period_end)
+        .fetch_one(pool)
+        .await?
+            || sqlx::query_scalar(
+                r#"
+                SELECT COUNT(*) > 0 FROM coverage_objects
+                WHERE inserted_at < $1 AND uuid IN (
+                        SELECT
+                           DISTINCT uuid
+                        FROM
+                           hexes
+                        WHERE
+                           urbanized IS NULL
+                           OR footfall IS NULL
+                           OR landtype IS NULL
+                )
+                "#,
             )
             .bind(period_end)
             .fetch_one(pool)
-            .await?
-            || sqlx::query_scalar(
-                "SELECT COUNT(*) > 0 from hexes where urbanized IS NULL OR footfall IS NULL OR landtype IS NULL"
-            )
-            .fetch_one(pool)
-            .await?
-        )
+            .await?)
     }
 }
 
