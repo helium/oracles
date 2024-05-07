@@ -17,7 +17,7 @@ env:
 jobs:
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: oracles-20.04
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-build
       cancel-in-progress: true
@@ -27,8 +27,6 @@ jobs:
 
       - name: Rust install
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
 
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
@@ -49,7 +47,7 @@ jobs:
 
   fmt:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: oracles-20.04
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-fmt
       cancel-in-progress: true
@@ -60,7 +58,7 @@ jobs:
       - name: Rust install
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
+          components: rustfmt
 
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
@@ -80,7 +78,7 @@ jobs:
         run: cargo fmt  -- --check
   clippy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: oracles-20.04
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-clippy
       cancel-in-progress: true
@@ -91,7 +89,7 @@ jobs:
       - name: Rust install
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
+          components: clippy
 
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
@@ -112,7 +110,7 @@ jobs:
 
   tests:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: oracles-20.04
     strategy:
       fail-fast: false
       matrix:
@@ -138,11 +136,9 @@ jobs:
 
       - name: Rust install
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
 
-      - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
+      # - name: Install protoc
+      #   run: sudo apt-get install -y protobuf-compiler
 
       - name: Cache
         uses: actions/cache@v4
