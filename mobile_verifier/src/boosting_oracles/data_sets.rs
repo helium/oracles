@@ -339,15 +339,17 @@ where
                 _ = self.new_coverage_object_signal.recv() => {
                     // If we see a new coverage object, we want to assign only those hexes
                     // that don't have an assignment
-                    let boosting_reports = set_oracle_boosting_assignments(
-                        UnassignedHex::fetch_unassigned(&self.pool),
-                        &self.data_sets,
-                        &self.pool,
-                    )
+                    if self.data_sets.is_ready() {
+                        let boosting_reports = set_oracle_boosting_assignments(
+                            UnassignedHex::fetch_unassigned(&self.pool),
+                            &self.data_sets,
+                            &self.pool,
+                        )
                         .await?;
-                    self.oracle_boosting_sink
-                        .write_all(boosting_reports)
-                        .await?;
+                        self.oracle_boosting_sink
+                            .write_all(boosting_reports)
+                            .await?;
+                    }
                 },
                 _ = tokio::time::sleep(poll_duration.to_std()?) => {
                     self.check_for_new_data_sets().await?;
