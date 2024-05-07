@@ -45,7 +45,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
-        run: cargo build --all --release --tests 
+        run: cargo build --all --tests 
 
   fmt:
     needs: build
@@ -159,3 +159,34 @@ jobs:
         env:
           DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
         run: cargo test -r -p ${{ matrix.package }}  -- --include-ignored
+  release:
+    needs: build
+    runs-on: oracles-20.04
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-clippy
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust install
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
+      - name: Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --all --release 
