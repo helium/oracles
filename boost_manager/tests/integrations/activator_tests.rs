@@ -87,7 +87,7 @@ impl TestContext {
 async fn test_activated_hex_insert(pool: PgPool) -> anyhow::Result<()> {
     let now = Utc::now();
     let ctx = TestContext::setup(now)?;
-    let boosted_hexes = BoostedHexes::new(ctx.boosted_hexes);
+    let boosted_hexes = BoostedHexes::test_new_active(ctx.boosted_hexes)?;
 
     // test a boosted hex derived from radio rewards
     // with a non set start date, will result in a row being
@@ -117,7 +117,7 @@ async fn test_activated_hex_insert(pool: PgPool) -> anyhow::Result<()> {
 async fn test_activated_hex_no_insert(pool: PgPool) -> anyhow::Result<()> {
     let now = Utc::now();
     let ctx = TestContext::setup(now)?;
-    let boosted_hexes = BoostedHexes::new(ctx.boosted_hexes);
+    let boosted_hexes = BoostedHexes::test_new_active(ctx.boosted_hexes)?;
 
     // test a boosted hex derived from radio rewards
     // with an active start date, will result in no row being
@@ -143,7 +143,7 @@ async fn test_activated_hex_no_insert(pool: PgPool) -> anyhow::Result<()> {
 async fn test_activated_dup_hex_insert(pool: PgPool) -> anyhow::Result<()> {
     let now = Utc::now().with_second(0).unwrap();
     let ctx = TestContext::setup(now)?;
-    let boosted_hexes = BoostedHexes::new(ctx.boosted_hexes);
+    let boosted_hexes = BoostedHexes::test_new_active(ctx.boosted_hexes)?;
 
     // test with DUPLICATE boosted hexes derived from radio rewards
     // with a non set start date, will result in a single row being

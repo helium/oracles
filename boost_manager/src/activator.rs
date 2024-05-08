@@ -96,7 +96,7 @@ where
         manifest: RewardManifest,
     ) -> Result<()> {
         // get latest boosted hexes info from mobile config
-        let boosted_hexes = BoostedHexes::get_all(&self.hex_boosting_client).await?;
+        let boosted_hexes = BoostedHexes::get_active(&self.hex_boosting_client).await?;
 
         // get the rewards file from the manifest
         let manifest_time = manifest.end_timestamp;
