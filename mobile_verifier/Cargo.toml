@@ -54,6 +54,7 @@ uuid = {workspace = true}
 task-manager = {path = "../task_manager"}
 solana-sdk = {workspace = true}
 derive_builder = {workspace = true}
+regex = "1"
 
 [dev-dependencies]
 backon = "0"

@@ -4686,6 +4686,7 @@ dependencies = [
  "price",
  "prost",
  "rand 0.8.5",
+ "regex",
  "retainer",
  "reward-scheduler",
  "rust_decimal",

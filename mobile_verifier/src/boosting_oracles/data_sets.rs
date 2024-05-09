@@ -8,12 +8,14 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{self, FileSinkClient},
     file_upload::FileUpload,
-    traits::TimestampEncode,
-    FileInfo, FileStore, FileType,
+    traits::{TimestampDecode, TimestampEncode},
+    FileStore, FileType,
 };
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile as proto;
 use hextree::disktree::DiskTreeMap;
+use lazy_static::lazy_static;
+use regex::Regex;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, QueryBuilder};
@@ -183,7 +185,7 @@ impl
                 file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
             )
-            .auto_commit(false)
+            .auto_commit(true)
             .roll_time(Duration::minutes(15))
             .create()
             .await?;
@@ -374,6 +376,10 @@ fn get_data_set_path(
     dir
 }
 
+lazy_static! {
+    static ref RE: Regex = Regex::new(r"([a-z,_]+).(\d+)(.res10.h3tree)?").unwrap();
+}
+
 async fn delete_old_data_sets(
     data_set_directory: &Path,
     data_set_type: DataSetType,
@@ -381,9 +387,16 @@ async fn delete_old_data_sets(
 ) -> anyhow::Result<()> {
     let mut data_sets = tokio::fs::read_dir(data_set_directory).await?;
     while let Some(data_set) = data_sets.next_entry().await? {
-        let file_info: FileInfo = data_set.file_name().to_string_lossy().parse()?;
-        if file_info.prefix == data_set_type.to_prefix() && file_info.timestamp < time_to_use {
-            tracing::info!(data_set = file_info.key, "Deleting old data set file");
+        let file_name = data_set.file_name();
+        let file_name = file_name.to_string_lossy();
+        let Some(cap) = RE.captures(&*file_name) else {
+            tracing::warn!("Could not determine data set file type: {}", file_name);
+            continue;
+        };
+        let prefix = &cap[1];
+        let timestamp = cap[2].parse::<u64>()?.to_timestamp_millis()?;
+        if prefix == data_set_type.to_prefix() && timestamp < time_to_use {
+            tracing::info!(data_set = &*file_name, "Deleting old data set file");
             tokio::fs::remove_file(data_set.file_name()).await?;
         }
     }
