@@ -139,7 +139,7 @@ where
             beacon_max_retries,
             witness_max_retries,
             deny_list_latest_url,
-            deny_list_trigger_interval: settings.denylist.trigger_interval(),
+            deny_list_trigger_interval: settings.denylist.trigger_interval,
             deny_list,
             invalid_beacon_sink,
             invalid_witness_sink,
