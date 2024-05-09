@@ -4041,6 +4041,7 @@ dependencies = [
  "clap 4.4.8",
  "cmake",
  "config",
+ "custom-tracing",
  "db-store",
  "denylist",
  "file-store",
