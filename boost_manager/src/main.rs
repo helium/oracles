@@ -13,7 +13,6 @@ use mobile_config::client::hex_boosting_client::HexBoostingClient;
 use solana::start_boost::SolanaRpc;
 use std::path::{self, PathBuf};
 use task_manager::TaskManager;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
