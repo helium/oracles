@@ -10,6 +10,9 @@ pub struct Settings {
     /// "iot_packet_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+    /// File name to be watched by custom tracing
+    #[serde(default = "default_tracing_cfg_file")]
+    pub tracing_cfg_file: String,
     /// Cache location for generated verified reports
     pub cache: String,
     /// Data credit burn period in minutes. Default is 1.
@@ -44,6 +47,10 @@ pub fn default_burn_period() -> Duration {
 
 pub fn default_log() -> String {
     "iot_packet_verifier=debug".to_string()
+}
+
+pub fn default_tracing_cfg_file() -> String {
+    "tracing.cfg".to_string()
 }
 
 pub fn default_minimum_allowed_balance() -> u64 {

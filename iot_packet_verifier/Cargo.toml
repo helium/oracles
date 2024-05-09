@@ -7,32 +7,37 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = {workspace = true}
-async-trait = {workspace = true}
-clap = {workspace = true}
-config = {workspace = true}
-chrono = {workspace = true}
-db-store = {path = "../db_store"}
-futures = {workspace = true}
-futures-util = {workspace = true}
-file-store = {path = "../file_store"}
-helium-proto = {workspace = true}
-helium-crypto = {workspace = true, features = ["sqlx-postgres", "multisig", "solana"]}
-iot-config = {path = "../iot_config"}
-metrics = {workspace = true}
-poc-metrics = {path = "../metrics"}
-prost = {workspace = true}
-serde = {workspace = true}
-sqlx = {workspace = true}
-solana = {path = "../solana"}
-solana-sdk = {workspace = true}
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
+chrono = { workspace = true }
+db-store = { path = "../db_store" }
+futures = { workspace = true }
+futures-util = { workspace = true }
+file-store = { path = "../file_store" }
+helium-proto = { workspace = true }
+helium-crypto = { workspace = true, features = [
+    "sqlx-postgres",
+    "multisig",
+    "solana",
+] }
+iot-config = { path = "../iot_config" }
+metrics = { workspace = true }
+poc-metrics = { path = "../metrics" }
+prost = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+solana = { path = "../solana" }
+solana-sdk = { workspace = true }
 task-manager = { path = "../task_manager" }
-thiserror = {workspace = true}
-tokio = {workspace = true}
-tonic = {workspace = true}
-tracing = {workspace = true}
-tracing-subscriber = {workspace = true}
-triggered = {workspace = true}
-http = {workspace = true}
-http-serde = {workspace = true}
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+triggered = { workspace = true }
+http = { workspace = true }
+http-serde = { workspace = true }
 humantime-serde = { workspace = true }
+custom-tracing = { path = "../custom_tracing" }
