@@ -50,6 +50,8 @@ impl mobile_config::Authorization for AuthorizationService {
     ) -> GrpcResult<AuthorizationVerifyResV1> {
         let request = request.into_inner();
         telemetry::count_request("authorization", "verify");
+        custom_tracing::record("pub_key", pub_key_to_b58(&request.pubkey));
+        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -82,6 +84,7 @@ impl mobile_config::Authorization for AuthorizationService {
     ) -> GrpcResult<AuthorizationListResV1> {
         let request = request.into_inner();
         telemetry::count_request("authorization", "list");
+        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -116,4 +119,8 @@ impl From<NetworkKeyRole> for KeyRole {
             NetworkKeyRole::MobilePcs => KeyRole::Pcs,
         }
     }
+}
+
+fn pub_key_to_b58(pub_key: &[u8]) -> String {
+    bs58::encode(pub_key).into_string()
 }
