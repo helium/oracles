@@ -85,6 +85,8 @@ impl Server {
             file_upload::FileUpload::from_settings_tm(&settings.output).await?;
         let store_base_path = path::Path::new(&settings.cache);
 
+        let reward_check_interval = chrono::Duration::from_std(settings.reward_check_interval)?;
+
         // setup the received for the rewards manifest files
         let file_store = FileStore::from_settings(&settings.verifier).await?;
         let (manifest_receiver, manifest_server) =
@@ -93,8 +95,8 @@ impl Server {
                 .store(file_store)
                 .prefix(FileType::RewardManifest.to_string())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .poll_duration(settings.reward_check_interval())
-                .offset(settings.reward_check_interval() * 2)
+                .poll_duration(reward_check_interval)
+                .offset(reward_check_interval * 2)
                 .create()
                 .await?;
 
@@ -124,12 +126,12 @@ impl Server {
         let updater = Updater::new(
             pool.clone(),
             settings.enable_solana_integration,
-            settings.activation_check_interval(),
+            settings.activation_check_interval,
             settings.txn_batch_size(),
             solana,
         )?;
 
-        let purger = Purger::new(pool.clone(), settings.retention_period());
+        let purger = Purger::new(pool.clone(), settings.retention_period);
 
         TaskManager::builder()
             .add_task(file_upload_server)

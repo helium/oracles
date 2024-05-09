@@ -1,7 +1,8 @@
 use crate::OnChainStatus;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use file_store::hex_boost::BoostedHexActivation;
 use sqlx::{postgres::PgRow, FromRow, Pool, Postgres, Row, Transaction};
+use std::time::Duration;
 
 const MAX_RETRIES: i32 = 10;
 const MAX_BATCH_COUNT: i32 = 200;

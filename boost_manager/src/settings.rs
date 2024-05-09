@@ -1,5 +1,6 @@
-use chrono::{DateTime, Duration as ChronoDuration, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, Environment, File};
+use humantime_serde::re::humantime;
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
 
@@ -11,13 +12,16 @@ pub struct Settings {
     pub log: String,
     /// Cache location for generated verified reports
     pub cache: String,
-    /// Reward files check interval in seconds. (Default is 900; 15 minutes)
-    #[serde(default = "default_reward_check_interval")]
-    pub reward_check_interval: i64,
-    /// Hex Activation check  interval in seconds. (Default is 900; 15 minutes)
+    /// Reward files check interval in seconds. (Default is 15 minutes)
+    #[serde(with = "humantime_serde", default = "default_reward_check_interval")]
+    pub reward_check_interval: Duration,
+    /// Hex Activation check  interval in seconds. (Default is 15 minutes)
     /// determines how often we will check the DB for queued txns to solana
-    #[serde(default = "default_activation_check_interval")]
-    pub activation_check_interval: i64,
+    #[serde(
+        with = "humantime_serde",
+        default = "default_activation_check_interval"
+    )]
+    pub activation_check_interval: Duration,
     pub database: db_store::Settings,
     pub verifier: file_store::Settings,
     pub mobile_config_client: mobile_config::ClientSettings,
@@ -32,24 +36,24 @@ pub struct Settings {
     #[serde(default = "default_txn_batch_size")]
     pub txn_batch_size: u32,
     // default retention period in seconds
-    #[serde(default = "default_retention_period")]
-    pub retention_period: i64,
+    #[serde(with = "humantime_serde", default = "default_retention_period")]
+    pub retention_period: Duration,
 }
 
-fn default_retention_period() -> i64 {
-    86400 * 7 // 7 days
+fn default_retention_period() -> Duration {
+    humantime::parse_duration("7 days").unwrap()
 }
 
 fn default_txn_batch_size() -> u32 {
     18
 }
 
-fn default_reward_check_interval() -> i64 {
-    900
+fn default_reward_check_interval() -> Duration {
+    humantime::parse_duration("15 minutes").unwrap()
 }
 
-fn default_activation_check_interval() -> i64 {
-    900
+fn default_activation_check_interval() -> Duration {
+    humantime::parse_duration("15 minutes").unwrap()
 }
 
 pub fn default_start_after() -> u64 {
@@ -81,18 +85,6 @@ impl Settings {
             .add_source(Environment::with_prefix("MI").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn reward_check_interval(&self) -> ChronoDuration {
-        ChronoDuration::seconds(self.reward_check_interval)
-    }
-
-    pub fn activation_check_interval(&self) -> Duration {
-        Duration::from_secs(self.activation_check_interval as u64)
-    }
-
-    pub fn retention_period(&self) -> ChronoDuration {
-        ChronoDuration::seconds(self.retention_period)
     }
 
     pub fn txn_batch_size(&self) -> usize {
