@@ -54,10 +54,7 @@ pub struct Server {}
 
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
-        tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(&settings.log))
-            .with(tracing_subscriber::fmt::layer())
-            .init();
+        custom_tracing::init(settings.log.clone(), settings.tracing_cfg_file.clone()).await?;
 
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
