@@ -80,6 +80,7 @@ reqwest = { version = "0", default-features = false, features = [
 ] }
 beacon = { git = "https://github.com/helium/proto", branch = "master" }
 humantime = "2"
+humantime-serde = "1"
 metrics = ">=0.22"
 metrics-exporter-prometheus = "0"
 tracing = "0"
