@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 use iot_packet_verifier::{daemon, settings::Settings};
 use std::path::PathBuf;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
