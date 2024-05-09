@@ -3897,6 +3897,7 @@ dependencies = [
  "helium-crypto",
  "helium-proto",
  "http 0.2.11",
+ "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
