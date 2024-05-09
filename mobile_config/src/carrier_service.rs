@@ -61,7 +61,7 @@ impl mobile_config::CarrierService for CarrierService {
     ) -> GrpcResult<CarrierKeyToEntityResV1> {
         let request = request.into_inner();
         telemetry::count_request("carrier_service", "key_to_entity");
-        custom_tracing::record("pub_key", pub_key_to_b58(&request.pubkey));
+        custom_tracing::record("pub_key", &request.pubkey);
         custom_tracing::record("signer", pub_key_to_b58(&request.signer));
 
         let signer = verify_public_key(&request.signer)?;
