@@ -18,7 +18,7 @@ use futures_util::TryFutureExt;
 use iot_config::client::{org_client::Orgs, OrgClient};
 use solana::burn::SolanaRpc;
 use sqlx::{Pool, Postgres};
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::{mpsc::Receiver, Mutex};
 
@@ -199,7 +199,7 @@ impl Cmd {
                         solana,
                         balance_store,
                         minimum_allowed_balance,
-                        Duration::from_secs(60 * monitor_funds_period),
+                        monitor_funds_period,
                         shutdown,
                     )
                     .map_err(anyhow::Error::from)

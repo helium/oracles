@@ -4007,6 +4007,7 @@ dependencies = [
  "helium-proto",
  "http 0.2.11",
  "http-serde",
+ "humantime-serde",
  "iot-config",
  "metrics",
  "poc-metrics",

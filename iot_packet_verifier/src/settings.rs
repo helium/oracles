@@ -1,7 +1,8 @@
 use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
+use humantime_serde::re::humantime;
 use serde::Deserialize;
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -12,8 +13,8 @@ pub struct Settings {
     /// Cache location for generated verified reports
     pub cache: String,
     /// Data credit burn period in minutes. Default is 1.
-    #[serde(default = "default_burn_period")]
-    pub burn_period: u64,
+    #[serde(with = "humantime_serde", default = "default_burn_period")]
+    pub burn_period: Duration,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub iot_config_client: iot_config::client::Settings,
@@ -37,8 +38,8 @@ pub fn default_start_after() -> u64 {
     0
 }
 
-pub fn default_burn_period() -> u64 {
-    1
+pub fn default_burn_period() -> Duration {
+    humantime::parse_duration("1 minute").unwrap()
 }
 
 pub fn default_log() -> String {
