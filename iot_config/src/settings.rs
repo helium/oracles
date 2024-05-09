@@ -9,6 +9,9 @@ pub struct Settings {
     /// "iot_config=info"
     #[serde(default = "default_log")]
     pub log: String,
+    /// File name to be watched by custom tracing
+    #[serde(default = "default_tracing_cfg_file")]
+    pub tracing_cfg_file: String,
     /// Listen address. Required. Default is 0.0.0.0:8080
     #[serde(default = "default_listen_addr")]
     pub listen: SocketAddr,
