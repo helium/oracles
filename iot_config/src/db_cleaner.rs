@@ -1,6 +1,7 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
 use sqlx::{Pool, Postgres, Transaction};
+use std::time::Duration;
 use task_manager::ManagedTask;
 
 const SLEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
