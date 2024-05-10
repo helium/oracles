@@ -5977,6 +5977,7 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto",
+ "humantime-serde",
  "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
