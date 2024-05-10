@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
 use humantime_serde::re::humantime;
 use serde::Deserialize;
@@ -27,7 +27,7 @@ pub struct Settings {
     pub solana: Option<solana::burn::Settings>,
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
-    pub start_after: u64,
+    pub start_after: DateTime<Utc>,
     #[serde(with = "humantime_serde", default = "default_purger_interval")]
     pub purger_interval: Duration,
     #[serde(with = "humantime_serde", default = "default_purger_max_age")]
@@ -42,8 +42,8 @@ fn default_purger_max_age() -> Duration {
     humantime::parse_duration("24 hours").unwrap()
 }
 
-fn default_start_after() -> u64 {
-    0
+fn default_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 fn default_log() -> String {
@@ -79,11 +79,5 @@ impl Settings {
             .add_source(Environment::with_prefix("MOBILE_PACKET_VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn start_after(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.start_after as i64, 0)
-            .single()
-            .unwrap()
     }
 }

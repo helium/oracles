@@ -169,7 +169,7 @@ impl Cmd {
                     Utc.timestamp_millis_opt(0).unwrap(),
                 ))
                 .prefix(FileType::DataTransferSessionIngestReport.to_string())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .create()
                 .await?;
 
