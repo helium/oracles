@@ -31,7 +31,7 @@ pub struct Settings {
     /// Number of minutes we should sleep before checking to re-enable
     /// any disabled orgs.
     #[serde(default = "default_monitor_funds_period")]
-    pub monitor_funds_period: u64,
+    pub monitor_funds_period: Duration,
 }
 
 pub fn default_start_after() -> DateTime<Utc> {
@@ -50,8 +50,8 @@ pub fn default_minimum_allowed_balance() -> u64 {
     3_500_000
 }
 
-pub fn default_monitor_funds_period() -> u64 {
-    30
+pub fn default_monitor_funds_period() -> Duration {
+    humantime::parse_duration("30 minutes").unwrap()
 }
 
 impl Settings {
