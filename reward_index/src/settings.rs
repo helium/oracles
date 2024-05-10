@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
 use serde::Deserialize;
@@ -38,15 +39,15 @@ pub struct Settings {
     pub operation_fund_key: Option<String>,
     pub unallocated_reward_entity_key: Option<String>,
     #[serde(default = "default_start_after")]
-    pub start_after: u64,
+    pub start_after: DateTime<Utc>,
 }
 
 fn default_interval() -> Duration {
     humantime::parse_duration("15 minutes").unwrap()
 }
 
-fn default_start_after() -> u64 {
-    0
+fn default_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 fn default_log() -> String {
