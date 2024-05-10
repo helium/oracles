@@ -1,7 +1,8 @@
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
+use humantime_serde::re::humantime;
 use serde::Deserialize;
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -11,12 +12,12 @@ pub struct Settings {
     pub log: String,
     /// Cache location for generated verified reports
     pub cache: String,
-    /// Burn period in hours. (Default is 1)
-    #[serde(default = "default_burn_period")]
-    pub burn_period: i64,
-    /// Minimum burn period when error, in minutes. (Default is 15)
-    #[serde(default = "default_min_burn_period")]
-    pub min_burn_period: i64,
+    /// Burn period in hours. (Default is 1 hour)
+    #[serde(with = "humantime_serde", default = "default_burn_period")]
+    pub burn_period: Duration,
+    /// Minimum burn period when error. (Default is 15 minutes)
+    #[serde(with = "humantime_serde", default = "default_min_burn_period")]
+    pub min_burn_period: Duration,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
@@ -27,38 +28,34 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
-    #[serde(default = "default_purger_interval_in_hours")]
-    pub purger_interval_in_hours: u64,
-    #[serde(default = "default_purger_max_age_in_hours")]
-    pub purger_max_age_in_hours: u64,
+    #[serde(with = "humantime_serde", default = "default_purger_interval")]
+    pub purger_interval: Duration,
+    #[serde(with = "humantime_serde", default = "default_purger_max_age")]
+    pub purger_max_age: Duration,
 }
 
-pub fn default_purger_interval_in_hours() -> u64 {
-    1
+fn default_purger_interval() -> Duration {
+    humantime::parse_duration("1 hour").unwrap()
 }
 
-pub fn default_purger_max_age_in_hours() -> u64 {
-    24
+fn default_purger_max_age() -> Duration {
+    humantime::parse_duration("24 hours").unwrap()
 }
 
-pub fn default_start_after() -> u64 {
+fn default_start_after() -> u64 {
     0
 }
 
-pub fn default_url() -> http::Uri {
-    http::Uri::from_static("http://127.0.0.1:8080")
-}
-
-pub fn default_log() -> String {
+fn default_log() -> String {
     "mobile_packet_verifier=debug,poc_store=info".to_string()
 }
 
-pub fn default_burn_period() -> i64 {
-    1
+fn default_burn_period() -> Duration {
+    humantime::parse_duration("1 hour").unwrap()
 }
 
-pub fn default_min_burn_period() -> i64 {
-    15
+fn default_min_burn_period() -> Duration {
+    humantime::parse_duration("15 minutes").unwrap()
 }
 
 impl Settings {
@@ -88,21 +85,5 @@ impl Settings {
         Utc.timestamp_opt(self.start_after as i64, 0)
             .single()
             .unwrap()
-    }
-
-    pub fn burn_period(&self) -> tokio::time::Duration {
-        tokio::time::Duration::from_secs(60 * 60 * self.burn_period as u64)
-    }
-
-    pub fn min_burn_period(&self) -> tokio::time::Duration {
-        tokio::time::Duration::from_secs(60 * self.min_burn_period as u64)
-    }
-
-    pub fn purger_interval(&self) -> Duration {
-        Duration::hours(self.purger_interval_in_hours as i64)
-    }
-
-    pub fn purger_max_age(&self) -> Duration {
-        Duration::hours(self.purger_max_age_in_hours as i64)
     }
 }

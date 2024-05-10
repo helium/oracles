@@ -35,3 +35,4 @@ triggered = {workspace = true}
 http = {workspace = true}
 http-serde = {workspace = true}
 sha2 = {workspace = true}
+humantime-serde = { workspace=true }
