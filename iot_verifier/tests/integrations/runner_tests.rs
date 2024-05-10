@@ -1,6 +1,6 @@
 use crate::common::{self, MockFileSinkReceiver};
 use async_trait::async_trait;
-use chrono::{DateTime, Duration as ChronoDuration, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use denylist::DenyList;
 use futures_util::{stream, StreamExt as FuturesStreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -23,7 +23,9 @@ use sqlx::PgPool;
 use std::{self, str::FromStr, time::Duration};
 
 lazy_static! {
-    static ref BEACON_INTERVAL: ChronoDuration = ChronoDuration::seconds(21600);
+    static ref BEACON_INTERVAL: Duration = Duration::from_secs(21600);
+    static ref BEACON_INTERVAL_PLUS_TWO_HOURS: Duration =
+        *BEACON_INTERVAL + Duration::from_secs(2 * 60 * 60);
 }
 #[derive(Debug, Clone)]
 pub struct MockIotConfigClient {
@@ -65,7 +67,7 @@ struct TestContext {
 }
 
 impl TestContext {
-    async fn setup(pool: PgPool, beacon_interval: ChronoDuration) -> anyhow::Result<Self> {
+    async fn setup(pool: PgPool, beacon_interval: Duration) -> anyhow::Result<Self> {
         // setup file sinks
         let (invalid_beacon_client, invalid_beacons) = common::create_file_sink();
         let (invalid_witness_client, invalid_witnesses) = common::create_file_sink();
@@ -82,7 +84,7 @@ impl TestContext {
         let deny_list: DenyList = vec![PublicKeyBinary::from_str(common::DENIED_PUBKEY1).unwrap()]
             .try_into()
             .unwrap();
-        let refresh_interval = ChronoDuration::seconds(30);
+        let refresh_interval = Duration::from_secs(30);
         let (gateway_updater_receiver, _gateway_updater_server) =
             GatewayUpdater::new(refresh_interval, iot_config_client.clone()).await?;
         let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
@@ -115,7 +117,7 @@ impl TestContext {
         // and all beacon and witness reports will be created
         // with a received_ts based on an offset from this ts
         let entropy_ts = Utc.timestamp_millis_opt(common::ENTROPY_TIMESTAMP).unwrap();
-        let report_ts = entropy_ts + ChronoDuration::minutes(1);
+        let report_ts = entropy_ts + Duration::from_secs(60);
         // add the entropy to the DB
         common::inject_entropy_report(pool.clone(), entropy_ts).await?;
 
@@ -151,25 +153,25 @@ async fn valid_beacon_and_witness(pool: PgPool) -> anyhow::Result<()> {
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_beacon(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     txn.commit().await?;
@@ -219,25 +221,25 @@ async fn confirm_valid_reports_unmodified(pool: PgPool) -> anyhow::Result<()> {
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_beacon(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     txn.commit().await?;
@@ -280,13 +282,13 @@ async fn confirm_invalid_reports_unmodified(pool: PgPool) -> anyhow::Result<()> 
     common::inject_last_beacon(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - ChronoDuration::hours(1),
+        now - chrono::Duration::hours(1).to_std()?,
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - ChronoDuration::hours(1),
+        now - chrono::Duration::hours(1).to_std()?,
     )
     .await?;
     txn.commit().await?;
@@ -330,25 +332,25 @@ async fn confirm_valid_beacon_invalid_witness_reports_unmodified(
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_beacon(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     txn.commit().await?;
@@ -395,25 +397,25 @@ async fn valid_beacon_irregular_schedule_with_witness(pool: PgPool) -> anyhow::R
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_beacon(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     txn.commit().await?;
@@ -498,13 +500,13 @@ async fn valid_beacon_irregular_schedule_no_witness(pool: PgPool) -> anyhow::Res
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     txn.commit().await?;
@@ -591,25 +593,25 @@ async fn invalid_beacon_irregular_schedule_with_witness(pool: PgPool) -> anyhow:
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_beacon(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     txn.commit().await?;
@@ -702,13 +704,13 @@ async fn valid_beacon_gateway_not_found(pool: PgPool) -> anyhow::Result<()> {
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     txn.commit().await?;
@@ -765,25 +767,25 @@ async fn invalid_witness_no_metadata(pool: PgPool) -> anyhow::Result<()> {
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_beacon(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     txn.commit().await?;
@@ -841,13 +843,13 @@ async fn invalid_beacon_no_gateway_found(pool: PgPool) -> anyhow::Result<()> {
     common::inject_last_beacon(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - ChronoDuration::hours(1),
+        now - chrono::Duration::hours(1),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - ChronoDuration::hours(1),
+        now - chrono::Duration::hours(1),
     )
     .await?;
     txn.commit().await?;
@@ -932,7 +934,7 @@ async fn invalid_beacon_bad_payload(pool: PgPool) -> anyhow::Result<()> {
     ctx.runner.handle_db_tick().await?;
     tokio::time::sleep(Duration::from_secs(3)).await;
     let mut txn = pool.begin().await?;
-    let beacon_report = Report::get_stale_beacons(&mut txn, ChronoDuration::seconds(1)).await?;
+    let beacon_report = Report::get_stale_beacons(&mut txn, Duration::from_secs(1)).await?;
     // max attempts is 2, once that is exceeded the report is no longer retried
     // so even tho we called handle_db_tick 5 times above, the report was only retried twice
     assert_eq!(2, beacon_report[0].attempts);
@@ -963,13 +965,13 @@ async fn valid_beacon_and_witness_no_beacon_reciprocity(pool: PgPool) -> anyhow:
     common::inject_last_beacon(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     txn.commit().await?;
@@ -1022,13 +1024,13 @@ async fn valid_beacon_and_witness_no_witness_reciprocity(pool: PgPool) -> anyhow
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (*BEACON_INTERVAL + ChronoDuration::hours(2)),
+        now - (*BEACON_INTERVAL_PLUS_TWO_HOURS),
     )
     .await?;
     txn.commit().await?;
@@ -1070,7 +1072,7 @@ async fn valid_beacon_and_witness_no_witness_reciprocity(pool: PgPool) -> anyhow
 
 #[sqlx::test]
 async fn valid_new_gateway_witness_first_reciprocity(pool: PgPool) -> anyhow::Result<()> {
-    let test_beacon_interval = ChronoDuration::seconds(5);
+    let test_beacon_interval = Duration::from_secs(5);
     let mut ctx = TestContext::setup(pool.clone(), test_beacon_interval).await?;
     let now = ctx.entropy_ts;
 
@@ -1099,13 +1101,13 @@ async fn valid_new_gateway_witness_first_reciprocity(pool: PgPool) -> anyhow::Re
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (test_beacon_interval + ChronoDuration::seconds(10)),
+        now - (test_beacon_interval + Duration::from_secs(10)),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (test_beacon_interval + ChronoDuration::seconds(10)),
+        now - (test_beacon_interval + Duration::from_secs(10)),
     )
     .await?;
     txn.commit().await?;
@@ -1198,13 +1200,13 @@ async fn valid_new_gateway_witness_first_reciprocity(pool: PgPool) -> anyhow::Re
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (test_beacon_interval + ChronoDuration::seconds(10)),
+        now - (test_beacon_interval + Duration::from_secs(10)),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (test_beacon_interval + ChronoDuration::seconds(10)),
+        now - (test_beacon_interval + Duration::from_secs(10)),
     )
     .await?;
     txn.commit().await?;
@@ -1238,7 +1240,7 @@ async fn valid_new_gateway_witness_first_reciprocity(pool: PgPool) -> anyhow::Re
 
 #[sqlx::test]
 async fn valid_new_gateway_beacon_first_reciprocity(pool: PgPool) -> anyhow::Result<()> {
-    let test_beacon_interval = ChronoDuration::seconds(5);
+    let test_beacon_interval = Duration::from_secs(5);
     let mut ctx = TestContext::setup(pool.clone(), test_beacon_interval).await?;
     let now = ctx.entropy_ts;
 
@@ -1295,13 +1297,13 @@ async fn valid_new_gateway_beacon_first_reciprocity(pool: PgPool) -> anyhow::Res
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (test_beacon_interval + ChronoDuration::seconds(10)),
+        now - (test_beacon_interval + Duration::from_secs(10)),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (test_beacon_interval + ChronoDuration::seconds(10)),
+        now - (test_beacon_interval + Duration::from_secs(10)),
     )
     .await?;
     txn.commit().await?;
@@ -1340,7 +1342,7 @@ async fn valid_new_gateway_beacon_first_reciprocity(pool: PgPool) -> anyhow::Res
     tokio::time::sleep(Duration::from_secs(6)).await;
     let beacon_to_inject = common::create_valid_beacon_report(
         common::BEACONER5,
-        ctx.entropy_ts + ChronoDuration::seconds(5),
+        ctx.entropy_ts + Duration::from_secs(5),
     );
     let witness_to_inject = common::create_valid_witness_report(common::WITNESS2, ctx.entropy_ts);
     common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
@@ -1351,13 +1353,13 @@ async fn valid_new_gateway_beacon_first_reciprocity(pool: PgPool) -> anyhow::Res
     common::inject_last_beacon(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (test_beacon_interval + ChronoDuration::seconds(10)),
+        now - (test_beacon_interval + Duration::from_secs(10)),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         witness_to_inject.report.pub_key.clone(),
-        now - (test_beacon_interval + ChronoDuration::seconds(10)),
+        now - (test_beacon_interval + Duration::from_secs(10)),
     )
     .await?;
     txn.commit().await?;
@@ -1392,7 +1394,7 @@ async fn valid_new_gateway_beacon_first_reciprocity(pool: PgPool) -> anyhow::Res
 
 #[sqlx::test]
 async fn valid_lone_wolf_beacon(pool: PgPool) -> anyhow::Result<()> {
-    let test_beacon_interval = ChronoDuration::seconds(5);
+    let test_beacon_interval = Duration::from_secs(5);
     let mut ctx = TestContext::setup(pool.clone(), test_beacon_interval).await?;
     let now = ctx.entropy_ts;
 
@@ -1446,13 +1448,13 @@ async fn valid_lone_wolf_beacon(pool: PgPool) -> anyhow::Result<()> {
     common::inject_last_beacon(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (test_beacon_interval + ChronoDuration::seconds(10)),
+        now - (test_beacon_interval + Duration::from_secs(10)),
     )
     .await?;
     common::inject_last_witness(
         &mut txn,
         beacon_to_inject.report.pub_key.clone(),
-        now - (test_beacon_interval + ChronoDuration::seconds(10)),
+        now - (test_beacon_interval + Duration::from_secs(10)),
     )
     .await?;
     txn.commit().await?;
@@ -1494,7 +1496,7 @@ async fn valid_lone_wolf_beacon(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn valid_two_isolated_gateways_beaconing_and_witnessing(pool: PgPool) -> anyhow::Result<()> {
-    let test_beacon_interval = ChronoDuration::seconds(5);
+    let test_beacon_interval = Duration::from_secs(5);
     let mut ctx = TestContext::setup(pool.clone(), test_beacon_interval).await?;
 
     // simulate two gateways with no recent activity coming online and
@@ -1576,11 +1578,11 @@ async fn valid_two_isolated_gateways_beaconing_and_witnessing(pool: PgPool) -> a
 
     let beacon_to_inject = common::create_valid_beacon_report(
         common::BEACONER1,
-        ctx.entropy_ts + ChronoDuration::seconds(5),
+        ctx.entropy_ts + chrono::Duration::seconds(5),
     );
     let witness_to_inject = common::create_valid_witness_report(
         common::WITNESS1,
-        ctx.entropy_ts + ChronoDuration::seconds(5),
+        ctx.entropy_ts + chrono::Duration::seconds(5),
     );
     common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
     common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;

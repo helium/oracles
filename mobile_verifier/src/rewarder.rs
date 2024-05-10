@@ -138,10 +138,10 @@ where
             let last_rewarded_end_time = last_rewarded_end_time(&self.pool).await?;
             let next_rewarded_end_time = next_rewarded_end_time(&self.pool).await?;
             let scheduler = Scheduler::new(
-                self.reward_period_duration,
+                self.reward_period_duration.to_std()?,
                 last_rewarded_end_time,
                 next_rewarded_end_time,
-                self.reward_offset,
+                self.reward_offset.to_std()?,
             );
             let now = Utc::now();
             let sleep_duration = if scheduler.should_reward(now) {

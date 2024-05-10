@@ -3,16 +3,17 @@ use crate::{
     hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap},
     last_beacon_reciprocity::LastBeaconReciprocity,
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use futures::future::LocalBoxFuture;
 use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use task_manager::ManagedTask;
 
 // The number in minutes within which the gateway has registered a beacon
 // to the oracle for inclusion in transmit scaling density calculations
-const HIP_17_INTERACTIVITY_LIMIT: i64 = 3600;
+// 60 hours
+const HIP_17_INTERACTIVITY_LIMIT: Duration = Duration::from_secs(60 * 60 * 60);
 
 pub struct Server {
     pub hex_density_map: HexDensityMap,
@@ -101,7 +102,7 @@ impl Server {
         &self,
         now: DateTime<Utc>,
     ) -> anyhow::Result<HashMap<PublicKeyBinary, DateTime<Utc>>> {
-        let interactivity_deadline = now - Duration::minutes(HIP_17_INTERACTIVITY_LIMIT);
+        let interactivity_deadline = now - HIP_17_INTERACTIVITY_LIMIT;
         Ok(
             LastBeaconReciprocity::get_all_since(&self.pool, interactivity_deadline)
                 .await?

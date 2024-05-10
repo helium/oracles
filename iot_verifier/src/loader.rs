@@ -6,7 +6,7 @@ use crate::{
     Settings,
 };
 use chrono::DateTime;
-use chrono::{Duration as ChronoDuration, Utc};
+use chrono::Utc;
 use file_store::{
     iot_beacon_report::IotBeaconIngestReport,
     iot_witness_report::IotWitnessIngestReport,
@@ -15,8 +15,9 @@ use file_store::{
 };
 use futures::{future::LocalBoxFuture, stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
+use humantime_serde::re::humantime;
 use sqlx::PgPool;
-use std::{hash::Hasher, ops::DerefMut, str::FromStr};
+use std::{hash::Hasher, ops::DerefMut, str::FromStr, time::Duration};
 use task_manager::ManagedTask;
 use tokio::{
     sync::Mutex,
@@ -31,9 +32,9 @@ pub struct Loader {
     ingest_store: FileStore,
     pool: PgPool,
     poll_time: time::Duration,
-    window_width: ChronoDuration,
-    ingestor_rollup_time: ChronoDuration,
-    max_lookback_age: ChronoDuration,
+    window_width: Duration,
+    ingestor_rollup_time: Duration,
+    max_lookback_age: Duration,
     gateway_cache: GatewayCache,
 }
 
@@ -67,17 +68,13 @@ impl Loader {
     ) -> Result<Self, NewLoaderError> {
         tracing::info!("from_settings verifier loader");
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
-        let poll_time = settings.poc_loader_poll_time();
-        let window_width = settings.poc_loader_window_width();
-        let ingestor_rollup_time = settings.ingestor_rollup_time();
-        let max_lookback_age = settings.loader_window_max_lookback_age();
         Ok(Self {
             pool,
             ingest_store,
-            poll_time,
-            window_width,
-            ingestor_rollup_time,
-            max_lookback_age,
+            poll_time: settings.poc_loader_poll_time,
+            window_width: settings.poc_loader_window_width,
+            ingestor_rollup_time: settings.ingestor_rollup_time,
+            max_lookback_age: settings.loader_window_max_lookback_age,
             gateway_cache,
         })
     }
@@ -121,10 +118,11 @@ impl Loader {
             .max(window_max_lookback);
         let before_max = after + self.window_width;
         let before = (now - (self.window_width * 3)).min(before_max);
-        let cur_window_width = before - after;
+        let cur_window_width = (before - after).to_std()?;
         tracing::info!(
             "sliding window, after: {after}, before: {before}, cur width: {:?}, required width: {:?}",
-            cur_window_width.num_minutes(), self.window_width.num_minutes()
+            humantime::format_duration(cur_window_width),
+            humantime::format_duration(self.window_width)
         );
         // if the current window width is less than our expected width
         // then do nothing
@@ -195,12 +193,13 @@ impl Loader {
         // to account for the potential of the ingestor write time for
         // witness reports being out of sync with that of beacon files
         // for witnesses we do need the filter but not the arc
+        let two_minutes = Duration::from_secs(120);
         match self
             .process_events(
                 FileType::IotWitnessIngestReport,
                 &self.ingest_store,
-                after - (self.ingestor_rollup_time + ChronoDuration::seconds(120)),
-                before + (self.ingestor_rollup_time + ChronoDuration::seconds(120)),
+                after - (self.ingestor_rollup_time + two_minutes),
+                before + (self.ingestor_rollup_time + two_minutes),
                 None,
                 Some(&filter),
             )

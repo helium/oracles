@@ -4047,6 +4047,7 @@ dependencies = [
  "helium-crypto",
  "helium-proto",
  "http-serde",
+ "humantime-serde",
  "iot-config",
  "itertools",
  "lazy_static",
