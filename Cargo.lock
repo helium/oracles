@@ -4703,6 +4703,7 @@ dependencies = [
  "hextree",
  "http-serde",
  "humantime",
+ "humantime-serde",
  "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",

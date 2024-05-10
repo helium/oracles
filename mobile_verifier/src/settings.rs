@@ -1,7 +1,11 @@
 use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
+use humantime_serde::re::humantime;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -11,11 +15,11 @@ pub struct Settings {
     pub log: String,
     /// Cache location for generated verified reports
     pub cache: String,
-    /// Reward period in hours. (Default is 24)
-    #[serde(default = "default_reward_period")]
-    pub rewards: i64,
-    #[serde(default = "default_reward_offset_minutes")]
-    pub reward_offset_minutes: i64,
+    /// Reward period in hours. (Default is 24 hours)
+    #[serde(with = "humantime_serde", default = "default_reward_period")]
+    pub reward_period: Duration,
+    #[serde(with = "humantime_serde", default = "default_reward_offset_minutes")]
+    pub reward_offset: Duration,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub data_transfer_ingest: file_store::Settings,
@@ -51,29 +55,29 @@ fn default_fencing_resolution() -> u8 {
     7
 }
 
-pub fn default_max_distance_from_coverage() -> u32 {
+fn default_max_distance_from_coverage() -> u32 {
     // Default is 2 km
     2000
 }
 
-pub fn default_max_asserted_distance_deviation() -> u32 {
+fn default_max_asserted_distance_deviation() -> u32 {
     100
 }
 
-pub fn default_log() -> String {
+fn default_log() -> String {
     "mobile_verifier=debug,poc_store=info".to_string()
 }
 
-pub fn default_start_after() -> u64 {
+fn default_start_after() -> u64 {
     0
 }
 
-pub fn default_reward_period() -> i64 {
-    24
+fn default_reward_period() -> Duration {
+    humantime::parse_duration("24 hours").unwrap()
 }
 
-pub fn default_reward_offset_minutes() -> i64 {
-    30
+fn default_reward_offset_minutes() -> Duration {
+    humantime::parse_duration("30 minutes").unwrap()
 }
 
 impl Settings {

@@ -8,7 +8,7 @@ use crate::{
     subscriber_location, telemetry, Settings,
 };
 use anyhow::bail;
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{
     file_sink::{self, FileSinkClient},
@@ -34,7 +34,7 @@ use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::ops::Range;
+use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
 
@@ -67,7 +67,6 @@ where
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
-        let reward_period_hours = settings.rewards;
         let (mobile_rewards, mobile_rewards_server) = file_sink::FileSinkBuilder::new(
             FileType::MobileRewardShare,
             settings.store_base_path(),
@@ -92,8 +91,8 @@ where
             pool.clone(),
             carrier_service_verifier,
             hex_boosting_info_resolver,
-            Duration::hours(reward_period_hours),
-            Duration::minutes(settings.reward_offset_minutes),
+            settings.reward_period,
+            settings.reward_offset,
             mobile_rewards,
             reward_manifests,
             price_tracker,
@@ -138,10 +137,10 @@ where
             let last_rewarded_end_time = last_rewarded_end_time(&self.pool).await?;
             let next_rewarded_end_time = next_rewarded_end_time(&self.pool).await?;
             let scheduler = Scheduler::new(
-                self.reward_period_duration.to_std()?,
+                self.reward_period_duration,
                 last_rewarded_end_time,
                 next_rewarded_end_time,
-                self.reward_offset.to_std()?,
+                self.reward_offset,
             );
             let now = Utc::now();
             let sleep_duration = if scheduler.should_reward(now) {
@@ -149,7 +148,7 @@ where
                     self.reward(&scheduler).await?;
                     continue;
                 } else {
-                    Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
+                    chrono::Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
                 }
             } else {
                 scheduler.sleep_duration(now)?
