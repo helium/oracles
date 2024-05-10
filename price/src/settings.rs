@@ -37,6 +37,9 @@ pub struct Settings {
     /// "price=debug"
     #[serde(default = "default_log")]
     pub log: String,
+    /// File name to be watched by custom tracing
+    #[serde(default = "default_tracing_cfg_file")]
+    pub tracing_cfg_file: String,
     /// Source URL for price data. Required
     #[serde(default = "default_source")]
     pub source: String,
