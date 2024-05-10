@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
 use serde::Deserialize;
@@ -31,7 +31,7 @@ pub struct Settings {
     pub enable_solana_integration: bool,
     pub solana: Option<solana::start_boost::Settings>,
     #[serde(default = "default_start_after")]
-    pub start_after: u64,
+    pub start_after: DateTime<Utc>,
     // the number of records to fit per solana txn
     #[serde(default = "default_txn_batch_size")]
     pub txn_batch_size: u32,
@@ -56,8 +56,8 @@ fn default_activation_check_interval() -> Duration {
     humantime::parse_duration("15 minutes").unwrap()
 }
 
-pub fn default_start_after() -> u64 {
-    0
+pub fn default_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 pub fn default_log() -> String {
@@ -89,11 +89,5 @@ impl Settings {
 
     pub fn txn_batch_size(&self) -> usize {
         self.txn_batch_size as usize
-    }
-
-    pub fn start_after(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.start_after as i64, 0)
-            .single()
-            .unwrap()
     }
 }

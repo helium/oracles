@@ -94,7 +94,7 @@ impl Server {
                 .state(pool.clone())
                 .store(file_store)
                 .prefix(FileType::RewardManifest.to_string())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .poll_duration(reward_check_interval)
                 .offset(reward_check_interval * 2)
                 .create()

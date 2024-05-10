@@ -3,7 +3,7 @@ log = "boost_manager=info,solana=debug"
 # Cache location for generated boost manager outputs; Required
 cache = "/tmp/oracles/boost-manager"
 
-start_after = 1702602001
+start_after = "2024-12-15 01:00:00Z"
 
 enable_solana_integration = true
 
