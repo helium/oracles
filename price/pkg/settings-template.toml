@@ -6,7 +6,7 @@
 source = "https://api.devnet.solana.com"
 
 # Price tick interval (secs). Default = 60s. Optional.
-interval = 60
+interval = "60 seconds"
 
 # Cache folder to use. Default blow
 #

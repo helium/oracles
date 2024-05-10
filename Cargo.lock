@@ -5414,6 +5414,7 @@ dependencies = [
  "futures-util",
  "helium-anchor-gen",
  "helium-proto",
+ "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",

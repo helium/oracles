@@ -32,3 +32,4 @@ triggered = {workspace = true}
 solana-client = {workspace = true}
 solana-sdk = {workspace = true}
 task-manager = {path = "../task_manager"}
+humantime-serde = { workspace = true }
