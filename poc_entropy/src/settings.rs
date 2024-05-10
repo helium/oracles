@@ -8,6 +8,9 @@ pub struct Settings {
     /// "poc_entropy=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+    /// File name to be watched by custom tracing
+    #[serde(default = "default_tracing_cfg_file")]
+    pub tracing_cfg_file: String,
     /// Listen address for http requests for entropy. Default "0.0.0.0:8080"
     #[serde(default = "default_listen_addr")]
     pub listen: String,
@@ -24,6 +27,10 @@ pub struct Settings {
 
 pub fn default_log() -> String {
     "poc_entropy=debug,poc_store=info".to_string()
+}
+
+pub fn default_tracing_cfg_file() -> String {
+    "tracing.cfg".to_string()
 }
 
 pub fn default_cache() -> String {

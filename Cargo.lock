@@ -5335,6 +5335,7 @@ dependencies = [
  "chrono",
  "clap 4.4.8",
  "config",
+ "custom-tracing",
  "file-store",
  "futures",
  "futures-util",

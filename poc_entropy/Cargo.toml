@@ -7,27 +7,27 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = {workspace = true}
-config = {workspace = true}
-clap = {workspace = true}
-thiserror = {workspace = true}
-serde =  {workspace = true}
-serde_json = {workspace = true}
-base64 = {workspace = true}
-blake3 = {workspace = true}
-http = {workspace = true}
-tonic = {workspace = true}
+anyhow = { workspace = true }
+config = { workspace = true }
+clap = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+blake3 = { workspace = true }
+http = { workspace = true }
+tonic = { workspace = true }
 hyper = "0"
 jsonrpsee = { version = "0", features = ["async-client", "http-client"] }
-tower = {version = "0.4" }
-triggered = {workspace = true}
-futures = {workspace = true}
-futures-util = {workspace = true}
-prost = {workspace = true}
+tower = { version = "0.4" }
+triggered = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+prost = { workspace = true }
 bs58 = "0"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-metrics = {workspace = true }
+metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
@@ -35,3 +35,4 @@ helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
+custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
