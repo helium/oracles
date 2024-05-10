@@ -13,6 +13,9 @@ pub struct Settings {
     /// "mobile_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+    /// File name to be watched by custom tracing
+    #[serde(default = "default_tracing_cfg_file")]
+    pub tracing_cfg_file: String,
     /// Cache location for generated verified reports
     pub cache: String,
     /// Reward period in hours. (Default is 24 hours)
