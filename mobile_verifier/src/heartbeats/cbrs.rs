@@ -56,7 +56,7 @@ where
             file_source::continuous_source::<CbrsHeartbeatIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
                 .queue_size(1)
                 .create()
@@ -66,7 +66,7 @@ where
             pool,
             gateway_resolver,
             cbrs_heartbeats,
-            settings.modeled_coverage_start(),
+            settings.modeled_coverage_start,
             settings.max_asserted_distance_deviation,
             settings.max_distance_from_coverage,
             valid_heartbeats,

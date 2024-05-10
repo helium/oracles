@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
 use humantime_serde::re::humantime;
 use serde::Deserialize;
@@ -28,8 +28,8 @@ pub struct Settings {
     pub price_tracker: price::price_tracker::Settings,
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
-    pub start_after: u64,
-    pub modeled_coverage_start: u64,
+    pub start_after: DateTime<Utc>,
+    pub modeled_coverage_start: DateTime<Utc>,
     /// Max distance in meters between the heartbeat and all of the hexes in
     /// its respective coverage object
     #[serde(default = "default_max_distance_from_coverage")]
@@ -68,8 +68,8 @@ fn default_log() -> String {
     "mobile_verifier=debug,poc_store=info".to_string()
 }
 
-fn default_start_after() -> u64 {
-    0
+fn default_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 fn default_reward_period() -> Duration {
@@ -101,18 +101,6 @@ impl Settings {
             .add_source(Environment::with_prefix("VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn start_after(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.start_after as i64, 0)
-            .single()
-            .unwrap()
-    }
-
-    pub fn modeled_coverage_start(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.modeled_coverage_start as i64, 0)
-            .single()
-            .unwrap()
     }
 
     pub fn usa_region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {

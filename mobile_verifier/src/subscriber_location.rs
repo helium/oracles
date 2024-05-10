@@ -67,7 +67,7 @@ where
             file_source::continuous_source::<SubscriberLocationIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store.clone())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::SubscriberLocationIngestReport.to_string())
                 .create()
                 .await?;

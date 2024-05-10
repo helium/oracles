@@ -55,7 +55,7 @@ where
             file_source::continuous_source::<WifiHeartbeatIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::WifiHeartbeatIngestReport.to_string())
                 .create()
                 .await?;
@@ -64,7 +64,7 @@ where
             pool,
             gateway_resolver,
             wifi_heartbeats,
-            settings.modeled_coverage_start(),
+            settings.modeled_coverage_start,
             settings.max_asserted_distance_deviation,
             settings.max_distance_from_coverage,
             valid_heartbeats,

@@ -49,7 +49,7 @@ impl DataSessionIngestor {
             file_source::continuous_source::<ValidDataTransferSession, _>()
                 .state(pool.clone())
                 .store(data_transfer_ingest)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::ValidDataTransferSession.to_string())
                 .create()
                 .await?;
