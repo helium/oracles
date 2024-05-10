@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
 use humantime_serde::re::humantime;
 use serde::Deserialize;
@@ -27,15 +27,15 @@ pub struct Settings {
     pub minimum_allowed_balance: u64,
     pub solana: Option<solana::burn::Settings>,
     #[serde(default = "default_start_after")]
-    pub start_after: u64,
+    pub start_after: DateTime<Utc>,
     /// Number of minutes we should sleep before checking to re-enable
     /// any disabled orgs.
     #[serde(default = "default_monitor_funds_period")]
     pub monitor_funds_period: u64,
 }
 
-pub fn default_start_after() -> u64 {
-    0
+pub fn default_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 pub fn default_burn_period() -> Duration {
@@ -75,11 +75,5 @@ impl Settings {
             .add_source(Environment::with_prefix("PACKET_VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn start_after(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.start_after as i64, 0)
-            .single()
-            .unwrap()
     }
 }

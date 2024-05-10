@@ -167,7 +167,7 @@ impl Cmd {
             file_source::continuous_source::<PacketRouterPacketReport, _>()
                 .state(pool.clone())
                 .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::IotPacketReport.to_string())
                 .create()
                 .await?;
