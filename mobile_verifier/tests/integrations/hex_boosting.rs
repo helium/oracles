@@ -25,7 +25,7 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::{PgPool, Postgres, Transaction};
-use std::{num::NonZeroU32, str::FromStr};
+use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 use uuid::Uuid;
 
 const HOTSPOT_1: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
@@ -1466,6 +1466,99 @@ async fn test_poc_boosted_hex_stack_multiplier(pool: PgPool) -> anyhow::Result<(
     Ok(())
 }
 
+#[sqlx::test]
+async fn test_poc_boosted_hex_only_applies_to_device_type(pool: PgPool) -> anyhow::Result<()> {
+    // This tests ensures that device specific device types don't affect other device types.
+    // There are 2 hexes:
+    // - #1 BoostType::CbrsOutdoor at 5x
+    // - #2 No Boosts
+    //
+    // There are 4 radios that all qualify for hex boosting:
+    // - CbrsOutdoor in boosted hex
+    // - Cbrsoutdoor in unboosted hex
+    // - WifiOutdoor in boosted hex
+    // - WifiOutdoor in unboosted hex
+    //
+    // The boosted cbrs radio should have 5x the rewards of the unboosted cbrs radio.
+    // The wifi radios should have the same rewards.
+    //
+
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
+
+    let now = Utc::now();
+    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let boosted_cbrs_pubkey = PublicKeyBinary::from_str(HOTSPOT_1)?;
+    let unboosted_cbrs_pubkey = PublicKeyBinary::from_str(HOTSPOT_2)?;
+    let wifi_pubkey1 = PublicKeyBinary::from_str(HOTSPOT_3)?;
+    let wifi_pubkey2 = PublicKeyBinary::from_str(HOTSPOT_4)?;
+
+    let boosted_location = Cell::from_raw(0x8a1fb466d2dffff)?;
+    let unboosted_location = Cell::from_raw(0x8a1fb46622d7fff)?;
+
+    let boostable_radios = vec![
+        HexBoostableRadio::cbrs_outdoor(boosted_cbrs_pubkey.clone(), boosted_location),
+        HexBoostableRadio::cbrs_outdoor(unboosted_cbrs_pubkey.clone(), unboosted_location),
+        HexBoostableRadio::wifi_outdoor(wifi_pubkey1.clone(), boosted_location),
+        HexBoostableRadio::wifi_outdoor(wifi_pubkey2.clone(), unboosted_location),
+    ];
+
+    let mut txn = pool.begin().await?;
+    for radio in boostable_radios {
+        radio.seed(epoch.start, &mut txn).await?;
+    }
+    txn.commit().await?;
+    update_assignments(&pool).await?;
+
+    let boosted_hex = BoostedHexInfo {
+        location: boosted_location,
+        start_ts: None,
+        end_ts: None,
+        period_length: Duration::days(30),
+        multipliers: vec![NonZeroU32::new(5).unwrap()],
+        boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)?,
+        boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY)?,
+        version: 0,
+        device_type: BoostedHexDeviceType::CbrsOutdoor,
+    };
+
+    let hex_boosting_client = MockHexBoostingClient::new(vec![boosted_hex]);
+    let (_, poc_rewards_map) = tokio::join!(
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &hex_boosting_client,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &epoch,
+            dec!(0.0001)
+        ),
+        async move {
+            let one = mobile_rewards.receive_radio_reward().await;
+            let two = mobile_rewards.receive_radio_reward().await;
+            let three = mobile_rewards.receive_radio_reward().await;
+            let four = mobile_rewards.receive_radio_reward().await;
+
+            mobile_rewards.assert_no_messages();
+
+            vec![one, two, three, four]
+                .into_iter()
+                .map(|r| (r.hotspot_key.clone(), r))
+                .collect::<HashMap<_, _>>()
+        }
+    );
+
+    let boosted_cbrs = poc_rewards_map.get(boosted_cbrs_pubkey.as_ref()).unwrap();
+    let unboosted_cbrs = poc_rewards_map.get(unboosted_cbrs_pubkey.as_ref()).unwrap();
+    let wifi1 = poc_rewards_map.get(wifi_pubkey1.as_ref()).unwrap();
+    let wifi2 = poc_rewards_map.get(wifi_pubkey2.as_ref()).unwrap();
+
+    assert_eq!(5, boosted_cbrs.poc_reward / unboosted_cbrs.poc_reward,);
+    assert_eq!(wifi1.poc_reward, wifi2.poc_reward);
+
+    Ok(())
+}
+
 async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
 ) -> anyhow::Result<(Vec<RadioRewardV2>, UnallocatedReward)> {
@@ -2097,6 +2190,14 @@ struct HexBoostableRadio {
 impl HexBoostableRadio {
     fn cbrs_indoor(pubkey: PublicKeyBinary, location: Cell) -> Self {
         Self::new(pubkey, BoostedHexDeviceType::CbrsIndoor, location)
+    }
+
+    fn cbrs_outdoor(pubkey: PublicKeyBinary, location: Cell) -> Self {
+        Self::new(pubkey, BoostedHexDeviceType::CbrsOutdoor, location)
+    }
+
+    fn wifi_outdoor(pubkey: PublicKeyBinary, location: Cell) -> Self {
+        Self::new(pubkey, BoostedHexDeviceType::WifiOutdoor, location)
     }
 
     fn new(pubkey: PublicKeyBinary, boost_type: BoostedHexDeviceType, location: Cell) -> Self {
