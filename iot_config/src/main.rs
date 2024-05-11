@@ -68,8 +68,6 @@ impl Daemon {
         // Create on-chain metadata pool
         let metadata_pool = settings.metadata.connect("iot-config-metadata").await?;
 
-        let listen_addr = settings.listen_addr()?;
-
         let (auth_updater, auth_cache) = AuthCache::new(settings.admin_pubkey()?, &pool).await?;
         let (region_updater, region_map) = RegionMapReader::new(&pool).await?;
         let (delegate_key_updater, delegate_key_cache) = org::delegate_keys_cache(&pool).await?;
@@ -104,6 +102,7 @@ impl Daemon {
             region_updater,
         )?;
 
+        let listen_addr = settings.listen;
         let pubkey = settings
             .signing_keypair()
             .map(|keypair| keypair.public_key().to_string())?;
