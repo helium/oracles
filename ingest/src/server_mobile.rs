@@ -342,8 +342,6 @@ impl poc_mobile::PocMobile for GrpcServer {
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
-    let grpc_addr = settings.listen_addr()?;
-
     // Initialize uploader
     let (file_upload, file_upload_server) =
         file_upload::FileUpload::from_settings_tm(&settings.output).await?;
@@ -451,6 +449,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         bail!("expected valid api token in settings");
     };
 
+    let grpc_addr = settings.listen;
     let grpc_server = GrpcServer {
         heartbeat_report_sink,
         wifi_heartbeat_report_sink,

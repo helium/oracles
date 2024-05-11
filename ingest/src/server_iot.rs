@@ -344,8 +344,6 @@ impl poc_lora::PocLora for GrpcServer {
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
-    let grpc_addr = settings.listen_addr()?;
-
     // Initialize uploader
     let (file_upload, file_upload_server) =
         file_upload::FileUpload::from_settings_tm(&settings.output).await?;
@@ -374,6 +372,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     .create()
     .await?;
 
+    let grpc_addr = settings.listen;
     let grpc_server = GrpcServer {
         beacon_report_sink,
         witness_report_sink,
