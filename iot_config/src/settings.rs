@@ -9,6 +9,7 @@ pub struct Settings {
     /// "iot_config=info"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default = "custom_tracing::Settings::serde_default")]
     pub custom_tracing: custom_tracing::Settings,
     /// Listen address. Required. Default is 0.0.0.0:8080
     #[serde(default = "default_listen_addr")]

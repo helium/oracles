@@ -10,6 +10,7 @@ pub struct Settings {
     /// "ingest=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+   #[serde(default = "custom_tracing::Settings::serde_default")]
     pub custom_tracing: custom_tracing::Settings,
     /// Mode to run the server in (iot or mobile). Required
     pub mode: Mode,

@@ -10,3 +10,11 @@ pub struct Settings {
 pub fn default_tracing_cfg_file() -> String {
     "tracing.cfg".to_string()
 }
+
+impl Settings {
+    pub fn serde_default() -> Self {
+        Self {
+            tracing_cfg_file: default_tracing_cfg_file(),
+        }
+    }
+}
