@@ -28,9 +28,7 @@ pub struct Settings {
     /// "poc_entropy=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
-    /// File name to be watched by custom tracing
-    #[serde(default = "default_tracing_cfg_file")]
-    pub tracing_cfg_file: String,
+    pub custom_tracing: custom_tracing::Settings,
     /// Check interval in seconds. (Default is 900; 15 minutes)
     #[serde(with = "humantime_serde", default = "default_interval")]
     pub interval: Duration,
@@ -55,10 +53,6 @@ fn default_start_after() -> DateTime<Utc> {
 
 fn default_log() -> String {
     "reward_index=debug,poc_store=info".to_string()
-}
-
-pub fn default_tracing_cfg_file() -> String {
-    "tracing.cfg".to_string()
 }
 
 impl Settings {

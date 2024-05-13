@@ -40,7 +40,7 @@ impl Cmd {
         match self {
             Self::Server(cmd) => {
                 let settings = Settings::new(config)?;
-                custom_tracing::init(settings.log.clone(), settings.tracing_cfg_file.clone())
+                custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone())
                     .await?;
                 cmd.run(&settings).await
             }

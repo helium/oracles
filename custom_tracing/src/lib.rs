@@ -1,5 +1,7 @@
 use anyhow::Result;
 use notify::{event::DataChange, Config, RecommendedWatcher, RecursiveMode, Watcher};
+mod settings;
+pub use settings::Settings;
 use std::{fs, path::Path};
 use tracing::Span;
 use tracing_subscriber::{
@@ -14,7 +16,7 @@ pub mod grpc_layer;
 #[cfg(feature = "http-1")]
 pub mod http_layer;
 
-pub async fn init(og_filter: String, tracing_cfg_file: String) -> Result<()> {
+pub async fn init(og_filter: String, settings: Settings) -> Result<()> {
     let (filtered_layer, reload_handle) =
         reload::Layer::new(tracing_subscriber::EnvFilter::new(og_filter.clone()));
 
@@ -26,7 +28,7 @@ pub async fn init(og_filter: String, tracing_cfg_file: String) -> Result<()> {
     tokio::spawn(async move {
         let state = State {
             og_filter: og_filter.clone(),
-            tracing_cfg_file,
+            tracing_cfg_file: settings.tracing_cfg_file,
             reload_handle,
         };
         if let Err(err) = state.watch().await {

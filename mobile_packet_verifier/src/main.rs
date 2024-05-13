@@ -20,7 +20,7 @@ pub struct Cli {
 impl Cli {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
-        custom_tracing::init(settings.log.clone(), settings.tracing_cfg_file.clone()).await?;
+        custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
         self.cmd.run(settings).await
     }
 }

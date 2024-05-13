@@ -55,7 +55,7 @@ pub struct Daemon;
 
 impl Daemon {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
-        custom_tracing::init(settings.log.clone(), settings.tracing_cfg_file.clone()).await?;
+        custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
 
         // Install prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;

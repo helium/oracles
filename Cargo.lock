@@ -2336,6 +2336,7 @@ dependencies = [
  "helium-proto",
  "http 0.2.11",
  "notify",
+ "serde",
  "tokio",
  "tower-http",
  "tower-layer",
