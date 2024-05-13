@@ -1,4 +1,7 @@
-use std::{net::SocketAddr, str::FromStr, sync::Arc};
+use std::{
+    net::{SocketAddr, TcpListener},
+    sync::Arc,
+};
 
 use backon::{ExponentialBuilder, Retryable};
 use chrono::Utc;
@@ -13,7 +16,7 @@ use iot_config::{
     OrgService, RouteService,
 };
 use prost::Message;
-use rand::{rngs::OsRng, Rng};
+use rand::rngs::OsRng;
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinHandle;
 use tonic::{
@@ -27,7 +30,7 @@ async fn stream_sends_all_data_when_since_is_0(pool: Pool<Postgres>) {
     let admin_keypair = generate_keypair();
     let client_keypair = generate_keypair();
 
-    let port = get_port();
+    let socket_addr = get_socket_addr().expect("socket addr");
 
     let auth_cache = create_auth_cache(
         admin_keypair.public_key().clone(),
@@ -36,10 +39,10 @@ async fn stream_sends_all_data_when_since_is_0(pool: Pool<Postgres>) {
     )
     .await;
 
-    let _handle = start_server(port, signing_keypair, auth_cache, pool.clone()).await;
-    let mut client = connect_client(port).await;
+    let _handle = start_server(socket_addr, signing_keypair, auth_cache, pool.clone()).await;
+    let mut client = connect_client(socket_addr).await;
 
-    let org = create_org(port, &admin_keypair).await;
+    let org = create_org(socket_addr, &admin_keypair).await;
     let route = create_route(&mut client, &org.org.unwrap(), &admin_keypair).await;
 
     create_euis(
@@ -129,7 +132,7 @@ async fn stream_only_sends_data_modified_since(pool: Pool<Postgres>) {
     let admin_keypair = generate_keypair();
     let client_keypair = generate_keypair();
 
-    let port = get_port();
+    let socket_addr = get_socket_addr().expect("socket addr");
 
     let auth_cache = create_auth_cache(
         admin_keypair.public_key().clone(),
@@ -138,10 +141,10 @@ async fn stream_only_sends_data_modified_since(pool: Pool<Postgres>) {
     )
     .await;
 
-    let _handle = start_server(port, signing_keypair, auth_cache, pool.clone()).await;
-    let mut client = connect_client(port).await;
+    let _handle = start_server(socket_addr, signing_keypair, auth_cache, pool.clone()).await;
+    let mut client = connect_client(socket_addr).await;
 
-    let org_res_v1 = create_org(port, &admin_keypair).await;
+    let org_res_v1 = create_org(socket_addr, &admin_keypair).await;
 
     let proto::OrgResV1 { org: Some(org), .. } = org_res_v1 else {
         panic!("invalid OrgResV1")
@@ -236,7 +239,7 @@ async fn stream_updates_with_deactivate_reactivate(pool: Pool<Postgres>) {
     let admin_keypair = generate_keypair();
     let client_keypair = generate_keypair();
 
-    let port = get_port();
+    let socket_addr = get_socket_addr().expect("socket addr");
 
     let auth_cache = create_auth_cache(
         admin_keypair.public_key().clone(),
@@ -245,10 +248,9 @@ async fn stream_updates_with_deactivate_reactivate(pool: Pool<Postgres>) {
     )
     .await;
 
-    let _handle = start_server(port, signing_keypair, auth_cache, pool.clone()).await;
-    let mut client = connect_client(port).await;
-
-    let org_res_v1 = create_org(port, &admin_keypair).await;
+    let _handle = start_server(socket_addr, signing_keypair, auth_cache, pool.clone()).await;
+    let mut client = connect_client(socket_addr).await;
+    let org_res_v1 = create_org(socket_addr, &admin_keypair).await;
 
     let proto::OrgResV1 { org: Some(org), .. } = org_res_v1 else {
         panic!("invalid OrgResV1")
@@ -444,15 +446,15 @@ fn route_stream_req_v1(signer: &Keypair, since: u64) -> RouteStreamReqV1 {
     request
 }
 
-async fn connect_client(port: u64) -> RouteClient<Channel> {
-    (|| RouteClient::connect(format!("http://127.0.0.1:{port}")))
+async fn connect_client(socket_addr: SocketAddr) -> RouteClient<Channel> {
+    (|| RouteClient::connect(format!("http://{socket_addr}")))
         .retry(&ExponentialBuilder::default())
         .await
         .expect("grpc client")
 }
 
 async fn start_server(
-    port: u64,
+    socket_addr: SocketAddr,
     signing_keypair: Arc<Keypair>,
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
@@ -477,25 +479,22 @@ async fn start_server(
         transport::Server::builder()
             .add_service(proto::OrgServer::new(org_service))
             .add_service(proto::RouteServer::new(route_service))
-            .serve(socket_addr(port).expect("socket addr"))
+            .serve(socket_addr)
             .map_err(anyhow::Error::from),
     )
-}
-
-fn socket_addr(port: u64) -> anyhow::Result<SocketAddr> {
-    SocketAddr::from_str(&format!("127.0.0.1:{port}")).map_err(anyhow::Error::from)
 }
 
 fn generate_keypair() -> Keypair {
     Keypair::generate(KeyTag::default(), &mut OsRng)
 }
 
-fn get_port() -> u64 {
-    rand::thread_rng().gen_range(6000..10000)
+fn get_socket_addr() -> anyhow::Result<SocketAddr> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    Ok(listener.local_addr()?)
 }
 
-async fn create_org(port: u64, admin_keypair: &Keypair) -> proto::OrgResV1 {
-    let mut client = (|| OrgClient::connect(format!("http://127.0.0.1:{port}")))
+async fn create_org(socket_addr: SocketAddr, admin_keypair: &Keypair) -> proto::OrgResV1 {
+    let mut client = (|| OrgClient::connect(format!("http://{socket_addr}")))
         .retry(&ExponentialBuilder::default())
         .await
         .expect("org client");
