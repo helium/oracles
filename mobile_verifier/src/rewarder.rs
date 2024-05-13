@@ -92,7 +92,7 @@ where
             carrier_service_verifier,
             hex_boosting_info_resolver,
             settings.reward_period,
-            settings.reward_offset,
+            settings.reward_period_offset,
             mobile_rewards,
             reward_manifests,
             price_tracker,

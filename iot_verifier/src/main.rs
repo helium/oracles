@@ -141,8 +141,8 @@ impl Server {
             pool: pool.clone(),
             rewards_sink,
             reward_manifests_sink,
-            reward_period_hours: settings.rewards,
-            reward_offset: settings.reward_offset_minutes,
+            reward_period_hours: settings.reward_period,
+            reward_offset: settings.reward_period_offset,
             price_tracker,
         };
 

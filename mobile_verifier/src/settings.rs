@@ -18,8 +18,8 @@ pub struct Settings {
     /// Reward period in hours. (Default is 24 hours)
     #[serde(with = "humantime_serde", default = "default_reward_period")]
     pub reward_period: Duration,
-    #[serde(with = "humantime_serde", default = "default_reward_offset_minutes")]
-    pub reward_offset: Duration,
+    #[serde(with = "humantime_serde", default = "default_reward_period_offset")]
+    pub reward_period_offset: Duration,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub data_transfer_ingest: file_store::Settings,
@@ -76,7 +76,7 @@ fn default_reward_period() -> Duration {
     humantime::parse_duration("24 hours").unwrap()
 }
 
-fn default_reward_offset_minutes() -> Duration {
+fn default_reward_period_offset() -> Duration {
     humantime::parse_duration("30 minutes").unwrap()
 }
 

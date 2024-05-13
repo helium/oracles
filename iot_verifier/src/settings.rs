@@ -39,11 +39,11 @@ pub struct Settings {
     pub price_tracker: price::price_tracker::Settings,
     /// Reward period in hours. (Default to 24)
     #[serde(with = "humantime_serde", default = "default_reward_period")]
-    pub rewards: Duration,
+    pub reward_period: Duration,
     /// Reward calculation offset in minutes, rewards will be calculated at the end
-    /// of the reward period + reward_offset_minutes
-    #[serde(with = "humantime_serde", default = "default_reward_offset_minutes")]
-    pub reward_offset_minutes: Duration,
+    /// of the reward_period + reward_period_offset
+    #[serde(with = "humantime_serde", default = "default_reward_period_offset")]
+    pub reward_period_offset: Duration,
     #[serde(default = "default_max_witnesses_per_poc")]
     pub max_witnesses_per_poc: u64,
     /// The cadence at which hotspots are permitted to beacon (in seconds)
@@ -177,7 +177,7 @@ fn default_reward_period() -> Duration {
     humantime::parse_duration("24 hours").unwrap()
 }
 
-fn default_reward_offset_minutes() -> Duration {
+fn default_reward_period_offset() -> Duration {
     humantime::parse_duration("30 minutes").unwrap()
 }
 
