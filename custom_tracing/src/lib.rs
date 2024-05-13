@@ -16,6 +16,8 @@ pub mod grpc_layer;
 #[cfg(feature = "http-1")]
 pub mod http_layer;
 
+pub const DEFAULT_SPAN: &str = "tracing";
+
 pub async fn init(og_filter: String, settings: Settings) -> Result<()> {
     let (filtered_layer, reload_handle) =
         reload::Layer::new(tracing_subscriber::EnvFilter::new(og_filter.clone()));

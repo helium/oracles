@@ -73,7 +73,7 @@ impl ManagedTask for GrpcServer {
 
 fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
     tracing::info_span!(
-        "tracing",
+        custom_tracing::DEFAULT_SPAN,
         pub_key = tracing::field::Empty,
         subscriber_id = tracing::field::Empty,
     )

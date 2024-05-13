@@ -56,5 +56,5 @@ impl ApiServer {
 }
 
 fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
-    tracing::info_span!("tracing")
+    tracing::info_span!(custom_tracing::DEFAULT_SPAN)
 }

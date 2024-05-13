@@ -206,7 +206,10 @@ impl ManagedTask for GrpcServer {
 }
 
 fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
-    tracing::info_span!("tracing", pub_key = tracing::field::Empty)
+    tracing::info_span!(
+        custom_tracing::DEFAULT_SPAN,
+        pub_key = tracing::field::Empty
+    )
 }
 
 fn verify_public_key(bytes: &[u8]) -> VerifyResult<PublicKey> {
