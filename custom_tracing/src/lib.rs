@@ -25,6 +25,9 @@ pub async fn init(og_filter: String, settings: Settings) -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    let filter = og_filter.clone();
+    let cfg_file = settings.tracing_cfg_file.clone();
+
     tokio::spawn(async move {
         let state = State {
             og_filter: og_filter.clone(),
@@ -36,7 +39,7 @@ pub async fn init(og_filter: String, settings: Settings) -> Result<()> {
         }
     });
 
-    tracing::info!("custom tracing installed");
+    tracing::info!(filter, cfg_file, "custom tracing installed");
 
     Ok(())
 }
