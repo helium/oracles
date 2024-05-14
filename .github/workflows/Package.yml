@@ -1,4 +1,4 @@
-name: CI
+name: Package
 
 on:
   workflow_run:
@@ -23,12 +23,11 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-build-release
       cancel-in-progress: true
+    # if: ${{ github.event.workflow_run.conclusion == 'success' }} && contains(github.ref, 'refs/tags/')
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
 
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
@@ -49,6 +48,7 @@ jobs:
 
       - name: Debian packaging
         env:
+          # PACKAGECLOUD_API_KEY: ${{ secrets.PACKAGECLOUD_API_KEY }}
           PACKAGECLOUD_API_KEY: XXX
         run: |
           chmod +x ./.github/scripts/make_debian.sh
