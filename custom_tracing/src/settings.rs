@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Settings {
     /// File name to be watched by custom tracing
     #[serde(default = "default_tracing_cfg_file")]
@@ -9,12 +9,4 @@ pub struct Settings {
 
 pub fn default_tracing_cfg_file() -> String {
     "tracing.cfg".to_string()
-}
-
-impl Settings {
-    pub fn serde_default() -> Self {
-        Self {
-            tracing_cfg_file: default_tracing_cfg_file(),
-        }
-    }
 }

@@ -28,7 +28,7 @@ pub struct Settings {
     /// "poc_entropy=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
-    #[serde(default = "custom_tracing::Settings::serde_default")]
+    #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
     /// Check interval in seconds. (Default is 900; 15 minutes)
     #[serde(with = "humantime_serde", default = "default_interval")]
