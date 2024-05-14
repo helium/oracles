@@ -306,7 +306,7 @@ where
     }
 
     pub async fn run(mut self) -> anyhow::Result<()> {
-        let poll_duration = Duration::minutes(5);
+        let poll_duration = Duration::minutes(1);
 
         self.data_sets
             .urbanization
@@ -369,7 +369,7 @@ fn get_data_set_path(
     let path = PathBuf::from(format!(
         "{}.{}.res10.h3tree",
         data_set_type.to_prefix(),
-        time_to_use.timestamp()
+        time_to_use.timestamp_millis()
     ));
     let mut dir = data_set_directory.to_path_buf();
     dir.push(path);
@@ -396,8 +396,10 @@ async fn delete_old_data_sets(
         let prefix = &cap[1];
         let timestamp = cap[2].parse::<u64>()?.to_timestamp_millis()?;
         if prefix == data_set_type.to_prefix() && timestamp < time_to_use {
+            let mut path = data_set_directory.to_path_buf();
+            path.push(data_set.path());
             tracing::info!(data_set = &*file_name, "Deleting old data set file");
-            tokio::fs::remove_file(data_set.file_name()).await?;
+            tokio::fs::remove_file(path).await?;
         }
     }
     Ok(())
