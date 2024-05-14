@@ -1,8 +1,7 @@
-use chrono::Duration;
 use futures::{future::LocalBoxFuture, stream::StreamExt, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
 use iot_config::{client::Gateways, gateway_info::GatewayInfo};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use task_manager::ManagedTask;
 use tokio::sync::watch;
 use tokio::time;
@@ -64,11 +63,7 @@ where
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting gateway_updater");
-        let mut trigger_timer = time::interval(
-            self.refresh_interval
-                .to_std()
-                .expect("valid interval in seconds"),
-        );
+        let mut trigger_timer = time::interval(self.refresh_interval);
         loop {
             tokio::select! {
                 biased;

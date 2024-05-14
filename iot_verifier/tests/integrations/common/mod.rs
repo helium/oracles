@@ -419,11 +419,10 @@ pub const BEACONER5: &str = "112BwpY6ARmnMsPZE9iBauh6EJVDvH7MimZtvWnd99nXmmGcKeM
 
 pub const WITNESS1: &str = "13ABbtvMrRK8jgYrT3h6Y9Zu44nS6829kzsamiQn9Eefeu3VAZs";
 pub const WITNESS2: &str = "112e5E4NCpZ88ivqoXeyWwiVCC4mJFv4kMPowycNMXjoDRSP6ZnS";
-#[allow(dead_code)]
+
 pub const UNKNOWN_GATEWAY1: &str = "1YiZUsuCwxE7xyxjke1ogehv5WSuYZ9o7uM2ZKvRpytyqb8Be63";
 pub const NO_METADATA_GATEWAY1: &str = "1YpopKVbRDELWGR3nMd1MAU8a5GxP1uQSDj9AeXHEi3fHSsWGRi";
 
-#[allow(dead_code)]
 pub const DENIED_PUBKEY1: &str = "112bUGwooPd1dCDd3h3yZwskjxCzBsQNKeaJTuUF4hSgYedcsFa9";
 
 pub const LOCAL_ENTROPY: [u8; 4] = [233, 70, 25, 176];
@@ -436,7 +435,7 @@ pub const POC_DATA: [u8; 51] = [
     203, 122, 146, 49, 241, 156, 148, 74, 246, 68, 17, 8, 212, 48, 6, 152, 58, 221, 158, 186, 101,
     37, 59, 135, 126, 18, 72, 244, 65, 174,
 ];
-#[allow(dead_code)]
+
 pub const ENTROPY_TIMESTAMP: i64 = 1677163710000;
 
 const EU868_PARAMS: &[u8] = &[

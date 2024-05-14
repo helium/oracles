@@ -117,7 +117,7 @@ impl Daemon {
             admin_svc,
         };
 
-        let db_cleaner = DbCleaner::new(pool.clone(), settings.deleted_entry_retention());
+        let db_cleaner = DbCleaner::new(pool.clone(), settings.deleted_entry_retention);
 
         TaskManager::builder()
             .add_task(grpc_server)

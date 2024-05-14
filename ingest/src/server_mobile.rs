@@ -449,7 +449,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         bail!("expected valid api token in settings");
     };
 
-    let grpc_addr = settings.listen;
     let grpc_server = GrpcServer {
         heartbeat_report_sink,
         wifi_heartbeat_report_sink,
@@ -460,12 +459,13 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         invalidated_radio_threshold_report_sink,
         coverage_object_report_sink,
         required_network: settings.network,
-        address: grpc_addr,
+        address: settings.listen_addr,
         api_token,
     };
 
     tracing::info!(
-        "grpc listening on {grpc_addr} and server mode {:?}",
+        "grpc listening on {} and server mode {:?}",
+        settings.listen_addr,
         settings.mode
     );
 

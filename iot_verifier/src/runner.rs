@@ -50,7 +50,7 @@ lazy_static! {
 
 pub struct Runner<G> {
     pub pool: PgPool,
-    pub beacon_interval: ChronoDuration,
+    pub beacon_interval: Duration,
     pub max_witnesses_per_poc: u64,
     pub beacon_max_retries: u64,
     pub witness_max_retries: u64,
@@ -110,13 +110,13 @@ where
         hex_density_map: HexDensityMap,
         witness_updater: WitnessUpdater,
     ) -> anyhow::Result<Self> {
-        let beacon_interval = settings.beacon_interval()?;
+        let beacon_interval = settings.beacon_interval;
         let max_witnesses_per_poc = settings.max_witnesses_per_poc;
         let beacon_max_retries = settings.beacon_max_retries;
         let witness_max_retries = settings.witness_max_retries;
         let deny_list_latest_url = settings.denylist.denylist_url.clone();
         let mut deny_list = DenyList::new(&settings.denylist)?;
-        let region_cache = RegionCache::new(settings.region_params_refresh_interval(), gateways)?;
+        let region_cache = RegionCache::new(settings.region_params_refresh_interval, gateways)?;
         // force update to latest in order to update the tag name
         // when first run, the denylist will load the local filter
         // but we dont save the tag name so it defaults to 0
@@ -139,7 +139,7 @@ where
             beacon_max_retries,
             witness_max_retries,
             deny_list_latest_url,
-            deny_list_trigger_interval: settings.denylist.trigger_interval(),
+            deny_list_trigger_interval: settings.denylist.trigger_interval,
             deny_list,
             invalid_beacon_sink,
             invalid_witness_sink,

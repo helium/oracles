@@ -5,7 +5,7 @@
 
 # Interval for checking verifier bucket (in seconds). Default below (15 minutes)
 #
-# interval = 900
+# interval = "15 minutes"
 
 # Mode to operate the indexer in. "iot" or "mobile"
 mode = "iot"

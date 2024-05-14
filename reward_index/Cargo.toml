@@ -40,3 +40,4 @@ rust_decimal_macros = {workspace = true}
 tonic = {workspace = true}
 rand = {workspace = true}
 async-trait = {workspace = true}
+humantime-serde = { workspace = true }

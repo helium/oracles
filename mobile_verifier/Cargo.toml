@@ -51,6 +51,7 @@ retainer = {workspace = true}
 uuid = {workspace = true}
 task-manager = {path = "../task_manager"}
 solana-sdk = {workspace = true}
+humantime-serde = { workspace = true }
 
 [dev-dependencies]
 backon = "0"

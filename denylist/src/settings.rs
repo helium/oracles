@@ -1,6 +1,7 @@
 use crate::{Error, Result};
 use config::{Config, Environment, File};
 use helium_crypto::PublicKey;
+use humantime_serde::re::humantime;
 use serde::Deserialize;
 use std::{path::Path, str::FromStr, time::Duration};
 
@@ -13,9 +14,9 @@ pub struct Settings {
     /// Listen address for http requests for entropy. Default "0.0.0.0:8080"
     #[serde(default = "default_denylist_url")]
     pub denylist_url: String,
-    /// Cadence at which we poll for an updated denylist (secs)
-    #[serde(default = "default_trigger_interval")]
-    pub trigger: u64,
+    /// Cadence at which we poll for an updated denylist (Default: 6hours)
+    #[serde(with = "humantime_serde", default = "default_trigger_interval")]
+    pub trigger_interval: Duration,
     // vec of b58 helium encoded pubkeys
     // used to verify signature of denylist filters
     #[serde(default)]
@@ -30,8 +31,8 @@ pub fn default_denylist_url() -> String {
     "https://api.github.com/repos/helium/denylist/releases/latest".to_string()
 }
 
-fn default_trigger_interval() -> u64 {
-    21600
+fn default_trigger_interval() -> Duration {
+    humantime::parse_duration("6 hours").unwrap()
 }
 
 impl Settings {
@@ -56,10 +57,6 @@ impl Settings {
             .build()
             .and_then(|config| config.try_deserialize())
             .map_err(Error::from)
-    }
-
-    pub fn trigger_interval(&self) -> Duration {
-        Duration::from_secs(self.trigger)
     }
 
     pub fn sign_keys(&self) -> std::result::Result<Vec<PublicKey>, helium_crypto::Error> {

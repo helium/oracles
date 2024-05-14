@@ -9,7 +9,7 @@ use crate::{
     witness_updater::WitnessUpdater,
 };
 use beacon;
-use chrono::{DateTime, Duration, DurationRound, Utc};
+use chrono::{DateTime, DurationRound, Utc};
 use denylist::denylist::DenyList;
 use file_store::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
@@ -31,7 +31,7 @@ use iot_config::{
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use std::f64::consts::PI;
+use std::{f64::consts::PI, time::Duration};
 
 pub type GenericVerifyResult<T = ()> = Result<T, InvalidResponse>;
 
@@ -55,9 +55,9 @@ lazy_static! {
     /// would disqualify the hotspot from validating further beacons
     static ref DEFAULT_TX_SCALE: Decimal = Decimal::new(2000, 4);
     /// max permitted lag between the first witness and all subsequent witnesses
-    static ref MAX_WITNESS_LAG: Duration = Duration::milliseconds(1500);
+    static ref MAX_WITNESS_LAG: chrono::Duration = chrono::Duration::milliseconds(1500);
     /// max permitted lag between the beaconer and a witness
-    static ref MAX_BEACON_TO_WITNESS_LAG: Duration = Duration::milliseconds(4000);
+    static ref MAX_BEACON_TO_WITNESS_LAG: chrono::Duration = chrono::Duration::milliseconds(4000);
 }
 #[derive(Debug, PartialEq)]
 pub struct InvalidResponse {
@@ -98,7 +98,7 @@ impl Poc {
         entropy_start: DateTime<Utc>,
         entropy_version: i32,
     ) -> Self {
-        let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
+        let entropy_end = entropy_start + ENTROPY_LIFESPAN;
         Self {
             pool,
             beacon_interval,
@@ -158,7 +158,7 @@ impl Poc {
             &self.beacon_report,
             &beaconer_info,
             &beaconer_region_info.region_params,
-            self.beacon_interval,
+            chrono::Duration::from_std(self.beacon_interval)?,
         ) {
             Ok(()) => {
                 let tx_scale = hex_density_map
@@ -380,7 +380,7 @@ pub fn do_beacon_verifications(
     beacon_report: &IotBeaconIngestReport,
     beaconer_info: &GatewayInfo,
     beaconer_region_params: &[BlockchainRegionParamV1],
-    beacon_interval: Duration,
+    beacon_interval: chrono::Duration,
 ) -> GenericVerifyResult {
     tracing::debug!(
         "verifying beacon from beaconer: {:?}",
@@ -489,7 +489,7 @@ pub fn do_witness_verifications(
 fn verify_beacon_schedule(
     last_beacon: &Option<LastBeacon>,
     beacon_received_ts: DateTime<Utc>,
-    beacon_interval: Duration,
+    beacon_interval: chrono::Duration,
 ) -> GenericVerifyResult {
     match last_beacon {
         Some(last_beacon) => {

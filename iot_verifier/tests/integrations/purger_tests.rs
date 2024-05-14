@@ -1,5 +1,5 @@
 use crate::common;
-use chrono::{Duration as ChronoDuration, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraWitnessReportReqV1,
@@ -16,10 +16,10 @@ async fn test_purger(pool: PgPool) -> anyhow::Result<()> {
     let (invalid_witness_client, mut invalid_witnesses) = common::create_file_sink();
 
     // default stale periods after which the purger will delete reports from the db
-    let base_stale_period = ChronoDuration::seconds(0);
-    let beacon_stale_period = ChronoDuration::seconds(3);
-    let witness_stale_period = ChronoDuration::seconds(3);
-    let entropy_stale_period = ChronoDuration::seconds(3);
+    let base_stale_period = Duration::from_secs(0);
+    let beacon_stale_period = Duration::from_secs(3);
+    let witness_stale_period = Duration::from_secs(3);
+    let entropy_stale_period = Duration::from_secs(3);
 
     // create the purger
     let purger = Purger {
@@ -34,7 +34,7 @@ async fn test_purger(pool: PgPool) -> anyhow::Result<()> {
 
     // default reports timestamp
     let entropy_ts = Utc.timestamp_millis_opt(common::ENTROPY_TIMESTAMP).unwrap();
-    let report_ts = entropy_ts + ChronoDuration::minutes(1);
+    let report_ts = entropy_ts + Duration::from_secs(60);
 
     //
     // inject a beacon, witness & entropy report into the db

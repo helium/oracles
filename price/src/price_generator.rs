@@ -1,13 +1,13 @@
 use crate::{metrics::Metrics, Settings};
 use anyhow::{anyhow, bail, Error, Result};
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use file_store::file_sink;
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey as SolPubkey;
-use std::{cmp::Ordering, path::PathBuf, str::FromStr};
+use std::{cmp::Ordering, path::PathBuf, str::FromStr, time::Duration};
 use task_manager::ManagedTask;
 use tokio::{fs, time};
 
@@ -90,12 +90,12 @@ impl PriceGenerator {
             client,
             key: settings.price_key(token_type)?,
             default_price: settings.default_price(token_type)?,
-            interval_duration: settings.interval().to_std()?,
-            stale_price_duration: settings.stale_price_duration(),
+            interval_duration: settings.interval,
+            stale_price_duration: settings.stale_price_duration,
             latest_price_file: PathBuf::from_str(&settings.cache)?
                 .join(format!("{token_type:?}.latest")),
             file_sink: Some(file_sink),
-            pyth_price_interval: settings.pyth_price_interval().to_std()?,
+            pyth_price_interval: settings.pyth_price_interval,
         })
     }
 

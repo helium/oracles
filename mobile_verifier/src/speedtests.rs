@@ -85,7 +85,7 @@ where
             file_source::continuous_source::<CellSpeedtestIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::CellSpeedtestIngestReport.to_string())
                 .create()
                 .await?;

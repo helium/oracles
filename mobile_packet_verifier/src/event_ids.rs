@@ -1,5 +1,6 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use sqlx::{Pool, Postgres, Transaction};
+use std::time::Duration;
 use task_manager::ManagedTask;
 
 use crate::settings::Settings;
@@ -37,13 +38,13 @@ impl EventIdPurger {
     pub fn from_settings(conn: Pool<Postgres>, settings: &Settings) -> Self {
         Self {
             conn,
-            interval: settings.purger_interval(),
-            max_age: settings.purger_max_age(),
+            interval: settings.purger_interval,
+            max_age: settings.purger_max_age,
         }
     }
 
     pub async fn run(self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
-        let mut timer = tokio::time::interval(self.interval.to_std()?);
+        let mut timer = tokio::time::interval(self.interval);
 
         loop {
             tokio::select! {

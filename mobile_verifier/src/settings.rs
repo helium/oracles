@@ -1,7 +1,11 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
+use humantime_serde::re::humantime;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -11,11 +15,11 @@ pub struct Settings {
     pub log: String,
     /// Cache location for generated verified reports
     pub cache: String,
-    /// Reward period in hours. (Default is 24)
-    #[serde(default = "default_reward_period")]
-    pub rewards: i64,
-    #[serde(default = "default_reward_offset_minutes")]
-    pub reward_offset_minutes: i64,
+    /// Reward period in hours. (Default is 24 hours)
+    #[serde(with = "humantime_serde", default = "default_reward_period")]
+    pub reward_period: Duration,
+    #[serde(with = "humantime_serde", default = "default_reward_period_offset")]
+    pub reward_period_offset: Duration,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub data_transfer_ingest: file_store::Settings,
@@ -24,8 +28,8 @@ pub struct Settings {
     pub price_tracker: price::price_tracker::Settings,
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
-    pub start_after: u64,
-    pub modeled_coverage_start: u64,
+    pub start_after: DateTime<Utc>,
+    pub modeled_coverage_start: DateTime<Utc>,
     /// Max distance in meters between the heartbeat and all of the hexes in
     /// its respective coverage object
     #[serde(default = "default_max_distance_from_coverage")]
@@ -51,29 +55,29 @@ fn default_fencing_resolution() -> u8 {
     7
 }
 
-pub fn default_max_distance_from_coverage() -> u32 {
+fn default_max_distance_from_coverage() -> u32 {
     // Default is 2 km
     2000
 }
 
-pub fn default_max_asserted_distance_deviation() -> u32 {
+fn default_max_asserted_distance_deviation() -> u32 {
     100
 }
 
-pub fn default_log() -> String {
+fn default_log() -> String {
     "mobile_verifier=debug,poc_store=info".to_string()
 }
 
-pub fn default_start_after() -> u64 {
-    0
+fn default_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
-pub fn default_reward_period() -> i64 {
-    24
+fn default_reward_period() -> Duration {
+    humantime::parse_duration("24 hours").unwrap()
 }
 
-pub fn default_reward_offset_minutes() -> i64 {
-    30
+fn default_reward_period_offset() -> Duration {
+    humantime::parse_duration("30 minutes").unwrap()
 }
 
 impl Settings {
@@ -97,18 +101,6 @@ impl Settings {
             .add_source(Environment::with_prefix("VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn start_after(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.start_after as i64, 0)
-            .single()
-            .unwrap()
-    }
-
-    pub fn modeled_coverage_start(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.modeled_coverage_start as i64, 0)
-            .single()
-            .unwrap()
     }
 
     pub fn usa_region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {

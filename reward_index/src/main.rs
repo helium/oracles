@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::{TimeZone, Utc};
 use clap::Parser;
 use file_store::{
     file_info_poller::LookbackBehavior, file_source, reward_manifest::RewardManifest, FileStore,
@@ -76,18 +75,13 @@ impl Server {
         telemetry::initialize(&pool).await?;
 
         let file_store = FileStore::from_settings(&settings.verifier).await?;
-
         let (receiver, server) = file_source::continuous_source::<RewardManifest, _>()
             .state(pool.clone())
             .store(file_store)
             .prefix(FileType::RewardManifest.to_string())
-            .lookback(LookbackBehavior::StartAfter(
-                Utc.timestamp_opt(settings.start_after as i64, 0)
-                    .single()
-                    .unwrap(),
-            ))
-            .poll_duration(settings.interval())
-            .offset(settings.interval() * 2)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .poll_duration(settings.interval)
+            .offset(settings.interval * 2)
             .create()
             .await?;
         let source_join_handle = server.start(shutdown_listener.clone()).await?;

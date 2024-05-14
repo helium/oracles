@@ -1,7 +1,7 @@
-use chrono::Duration;
 use config::{Config, Environment, File};
+use humantime_serde::re::humantime;
 use serde::Deserialize;
-use std::{net::SocketAddr, path::Path, str::FromStr};
+use std::{net::SocketAddr, path::Path, str::FromStr, time::Duration};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -16,8 +16,8 @@ pub struct Settings {
     pub keypair: String,
     /// B58 encoded public key of the admin keypair
     pub admin: String,
-    #[serde(default = "default_deleted_entry_retention")]
-    pub deleted_entry_retention: u64,
+    #[serde(with = "humantime_serde", default = "default_deleted_entry_retention")]
+    pub deleted_entry_retention: Duration,
     pub database: db_store::Settings,
     /// Settings passed to the db_store crate for connecting to
     /// the database for Solana on-chain data
@@ -33,9 +33,8 @@ pub fn default_listen_addr() -> SocketAddr {
     "0.0.0.0:8080".parse().unwrap()
 }
 
-pub fn default_deleted_entry_retention() -> u64 {
-    // 48 hours
-    48 * 60 * 60
+pub fn default_deleted_entry_retention() -> Duration {
+    humantime::parse_duration("48 hours").unwrap()
 }
 
 impl Settings {
@@ -69,9 +68,5 @@ impl Settings {
 
     pub fn admin_pubkey(&self) -> Result<helium_crypto::PublicKey, helium_crypto::Error> {
         helium_crypto::PublicKey::from_str(&self.admin)
-    }
-
-    pub fn deleted_entry_retention(&self) -> Duration {
-        Duration::seconds(self.deleted_entry_retention as i64)
     }
 }

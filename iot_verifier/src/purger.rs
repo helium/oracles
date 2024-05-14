@@ -1,5 +1,4 @@
 use crate::{entropy::Entropy, poc_report::Report, telemetry};
-use chrono::Duration;
 use file_store::{
     file_sink::FileSinkClient,
     iot_beacon_report::IotBeaconIngestReport,
@@ -15,9 +14,9 @@ use futures::{
 use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
 };
-use lazy_static::lazy_static;
+use humantime_serde::re::humantime;
 use sqlx::{PgPool, Postgres};
-use std::ops::DerefMut;
+use std::{ops::DerefMut, time::Duration};
 use task_manager::ManagedTask;
 use tokio::{
     sync::Mutex,
@@ -26,15 +25,6 @@ use tokio::{
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
-
-lazy_static! {
-    /// the period after which a beacon report in the DB will be deemed stale
-    static ref BEACON_STALE_PERIOD: Duration = Duration::minutes(45);
-    /// the period after which a witness report in the DB will be deemed stale
-    static ref WITNESS_STALE_PERIOD: Duration = Duration::minutes(45);
-    /// the period after which an entropy entry in the DB will be deemed stale
-    static ref ENTROPY_STALE_PERIOD: Duration = Duration::minutes(60);
-}
 
 pub struct Purger {
     pub pool: PgPool,
@@ -110,7 +100,8 @@ impl Purger {
         // once the report is safely on s3 we can then proceed to purge from the db
         let beacon_stale_period = self.base_stale_period + self.beacon_stale_period;
         tracing::info!(
-            "starting query get_stale_pending_beacons with stale period: {beacon_stale_period}"
+            "starting query get_stale_pending_beacons with stale period: {}",
+            humantime::format_duration(beacon_stale_period)
         );
         let stale_beacons = Report::get_stale_beacons(&self.pool, beacon_stale_period).await?;
         tracing::info!("completed query get_stale_beacons");
@@ -132,7 +123,8 @@ impl Purger {
 
         let witness_stale_period = self.base_stale_period + self.witness_stale_period;
         tracing::info!(
-            "starting query get_stale_pending_witnesses with stale period: {witness_stale_period}"
+            "starting query get_stale_pending_witnesses with stale period: {}",
+            humantime::format_duration(witness_stale_period)
         );
         let stale_witnesses = Report::get_stale_witnesses(&self.pool, witness_stale_period).await?;
         tracing::info!("completed query get_stale_witnesses");

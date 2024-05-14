@@ -1,5 +1,4 @@
 use crate::db;
-use chrono::Duration as ChronoDuration;
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
@@ -9,7 +8,7 @@ const PURGE_INTERVAL: Duration = Duration::from_secs(30);
 
 pub struct Purger {
     pool: Pool<Postgres>,
-    retention_period: ChronoDuration,
+    retention_period: Duration,
 }
 
 impl ManagedTask for Purger {
@@ -27,7 +26,7 @@ impl ManagedTask for Purger {
 }
 
 impl Purger {
-    pub fn new(pool: Pool<Postgres>, retention_period: ChronoDuration) -> Self {
+    pub fn new(pool: Pool<Postgres>, retention_period: Duration) -> Self {
         Self {
             pool,
             retention_period,
@@ -50,7 +49,7 @@ impl Purger {
     }
 }
 
-pub async fn purge(pool: &Pool<Postgres>, retention_period: ChronoDuration) -> anyhow::Result<()> {
+pub async fn purge(pool: &Pool<Postgres>, retention_period: Duration) -> anyhow::Result<()> {
     let num_records_purged = db::purge_stale_records(pool, retention_period).await?;
     tracing::info!("purged {} stale records", num_records_purged);
     Ok(())

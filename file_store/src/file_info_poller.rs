@@ -1,11 +1,11 @@
 use crate::{file_store, traits::MsgDecode, Error, FileInfo, FileStore, Result};
 use aws_sdk_s3::types::ByteStream;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
 use futures_util::TryFutureExt;
 use retainer::Cache;
-use std::{collections::VecDeque, marker::PhantomData, sync::Arc};
+use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -85,14 +85,14 @@ pub enum LookbackBehavior {
 #[derive(Debug, Clone, Builder)]
 #[builder(pattern = "owned")]
 pub struct FileInfoPollerConfig<T, S, P> {
-    #[builder(default = "Duration::seconds(DEFAULT_POLL_DURATION_SECS)")]
+    #[builder(default = "DEFAULT_POLL_DURATION")]
     poll_duration: Duration,
     state: S,
     store: FileStore,
     prefix: String,
     parser: P,
     lookback: LookbackBehavior,
-    #[builder(default = "Duration::minutes(10)")]
+    #[builder(default = "Duration::from_secs(10 * 60)")]
     offset: Duration,
     #[builder(default = "5")]
     queue_size: usize,
@@ -262,10 +262,7 @@ where
     }
 
     fn poll_duration(&self) -> std::time::Duration {
-        self.config
-            .poll_duration
-            .to_std()
-            .unwrap_or(DEFAULT_POLL_DURATION)
+        self.config.poll_duration
     }
 
     async fn is_already_processed(&self, file_info: &FileInfo) -> Result<bool> {
