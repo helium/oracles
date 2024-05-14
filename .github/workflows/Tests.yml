@@ -155,3 +155,39 @@ jobs:
         env:
           DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
         run: cargo test -p ${{ matrix.package }}  -- --include-ignored
+  
+  build-release:
+    needs: [fmt, clippy, tests]
+    runs-on: oracles-20.04
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-build-release
+      cancel-in-progress: true
+    if: contains(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build Release
+        run: cargo build --all --release
+
+      - name: Debian packaging
+        env:
+          PACKAGECLOUD_API_KEY: ${{ secrets.PACKAGECLOUD_API_KEY }}
+        run: |
+          chmod +x ./.github/scripts/make_debian.sh
+          ./.github/scripts/make_debian.sh
