@@ -396,10 +396,8 @@ async fn delete_old_data_sets(
         let prefix = &cap[1];
         let timestamp = cap[2].parse::<u64>()?.to_timestamp_millis()?;
         if prefix == data_set_type.to_prefix() && timestamp < time_to_use {
-            let mut path = data_set_directory.to_path_buf();
-            path.push(data_set.path());
             tracing::info!(data_set = &*file_name, "Deleting old data set file");
-            tokio::fs::remove_file(path).await?;
+            tokio::fs::remove_file(data_set.path()).await?;
         }
     }
     Ok(())
