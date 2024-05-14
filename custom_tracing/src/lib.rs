@@ -53,6 +53,12 @@ where
     Span::current().record(field, &tracing::field::display(value));
 }
 
+pub fn record_b58(key: &str, pub_key: &[u8]) {
+    let b58 = bs58::encode(pub_key).into_string();
+
+    record(key, b58);
+}
+
 #[derive(Clone)]
 pub struct State {
     pub og_filter: String,

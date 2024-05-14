@@ -191,7 +191,7 @@ impl iot_config::Route for RouteService {
         let request = request.into_inner();
         telemetry::count_request("route", "list");
         custom_tracing::record("oui", request.oui);
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::Oui(request.oui))
@@ -221,7 +221,7 @@ impl iot_config::Route for RouteService {
         let request = request.into_inner();
         telemetry::count_request("route", "get");
         custom_tracing::record("route_id", &request.id);
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
@@ -251,7 +251,7 @@ impl iot_config::Route for RouteService {
         let request = request.into_inner();
         telemetry::count_request("route", "create");
         custom_tracing::record("oui", request.oui);
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::Oui(request.oui))
@@ -302,7 +302,7 @@ impl iot_config::Route for RouteService {
         let request = request.into_inner();
         telemetry::count_request("route", "update");
 
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let route: Route = request
             .clone()
@@ -350,7 +350,7 @@ impl iot_config::Route for RouteService {
         let request = request.into_inner();
         telemetry::count_request("route", "delete");
         custom_tracing::record("route_id", &request.id);
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
@@ -389,7 +389,7 @@ impl iot_config::Route for RouteService {
     async fn stream(&self, request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
         telemetry::count_request("route", "stream");
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_stream_request_signature(&signer, &request)?;
@@ -441,7 +441,7 @@ impl iot_config::Route for RouteService {
         let request = request.into_inner();
         telemetry::count_request("route", "get-euis");
         custom_tracing::record("route_id", &request.route_id);
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature_or_stream(
@@ -867,7 +867,7 @@ impl iot_config::Route for RouteService {
         let request = request.into_inner();
         telemetry::count_request("route", "update-skfs");
         custom_tracing::record("route_id", &request.route_id);
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         if request.updates.len() > SKF_UPDATE_LIMIT {
             return Err(Status::invalid_argument(
@@ -1223,8 +1223,4 @@ async fn stream_existing_skfs(
         .map_err(|err| anyhow!(err))
         .try_fold((), |acc, _| async move { Ok(acc) })
         .await
-}
-
-fn pub_key_to_b58(pub_key: &[u8]) -> String {
-    bs58::encode(pub_key).into_string()
 }

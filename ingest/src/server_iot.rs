@@ -297,7 +297,7 @@ impl poc_lora::PocLora for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        custom_tracing::record("pub_key", pub_key_to_b58(&event.pub_key));
+        custom_tracing::record_b58("pub_key", &event.pub_key);
 
         let pub_key = verify_public_key(&event.pub_key)
             .and_then(|pk| verify_network(self.required_network, pk))?;
@@ -322,7 +322,7 @@ impl poc_lora::PocLora for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        custom_tracing::record("pub_key", pub_key_to_b58(&event.pub_key));
+        custom_tracing::record_b58("pub_key", &event.pub_key);
 
         let pub_key = verify_public_key(&event.pub_key)
             .and_then(|pk| verify_network(self.required_network, pk))?;
@@ -407,8 +407,4 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .build()
         .start()
         .await
-}
-
-fn pub_key_to_b58(pub_key: &[u8]) -> String {
-    bs58::encode(pub_key).into_string()
 }

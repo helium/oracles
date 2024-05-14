@@ -215,8 +215,8 @@ impl iot_config::Org for OrgService {
     async fn create_helium(&self, request: Request<OrgCreateHeliumReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
         telemetry::count_request("org", "create-helium");
-        custom_tracing::record("pub_key", pub_key_to_b58(&request.owner));
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("pub_key", &request.owner);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -322,8 +322,8 @@ impl iot_config::Org for OrgService {
     async fn create_roamer(&self, request: Request<OrgCreateRoamerReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
         telemetry::count_request("org", "create-roamer");
-        custom_tracing::record("pub_key", pub_key_to_b58(&request.owner));
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("pub_key", &request.owner);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -407,7 +407,7 @@ impl iot_config::Org for OrgService {
         let request = request.into_inner();
         telemetry::count_request("org", "update");
         custom_tracing::record("oui", request.oui);
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         let authorizer = self
@@ -458,7 +458,7 @@ impl iot_config::Org for OrgService {
         let request = request.into_inner();
         telemetry::count_request("org", "disable");
         custom_tracing::record("oui", request.oui);
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -497,7 +497,7 @@ impl iot_config::Org for OrgService {
         let request = request.into_inner();
         telemetry::count_request("org", "enable");
         custom_tracing::record("oui", request.oui);
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -531,8 +531,4 @@ impl iot_config::Org for OrgService {
 
         Ok(Response::new(resp))
     }
-}
-
-fn pub_key_to_b58(pub_key: &[u8]) -> String {
-    bs58::encode(pub_key).into_string()
 }

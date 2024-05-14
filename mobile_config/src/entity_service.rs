@@ -56,7 +56,7 @@ impl mobile_config::Entity for EntityService {
     async fn verify(&self, request: Request<EntityVerifyReqV1>) -> GrpcResult<EntityVerifyResV1> {
         let request = request.into_inner();
         telemetry::count_request("entity", "verify");
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -75,8 +75,4 @@ impl mobile_config::Entity for EntityService {
             Err(Status::not_found("Requested entity not on-chain"))
         }
     }
-}
-
-fn pub_key_to_b58(pub_key: &[u8]) -> String {
-    bs58::encode(pub_key).into_string()
 }

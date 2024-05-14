@@ -83,8 +83,8 @@ impl iot_config::Admin for AdminService {
     async fn add_key(&self, request: Request<AdminAddKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
         telemetry::count_request("admin", "add-key");
-        custom_tracing::record("pub_key", pub_key_to_b58(&request.pubkey));
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("pub_key", &request.pubkey);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -133,8 +133,8 @@ impl iot_config::Admin for AdminService {
     async fn remove_key(&self, request: Request<AdminRemoveKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
         telemetry::count_request("admin", "remove-key");
-        custom_tracing::record("pub_key", pub_key_to_b58(&request.pubkey));
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("pub_key", &request.pubkey);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -177,7 +177,7 @@ impl iot_config::Admin for AdminService {
     ) -> GrpcResult<AdminLoadRegionResV1> {
         let request = request.into_inner();
         telemetry::count_request("admin", "load-region");
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -244,7 +244,7 @@ impl iot_config::Admin for AdminService {
     ) -> GrpcResult<RegionParamsResV1> {
         let request = request.into_inner();
         telemetry::count_request("admin", "region-params");
-        custom_tracing::record("signer", pub_key_to_b58(&request.signer));
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -266,8 +266,4 @@ impl iot_config::Admin for AdminService {
         tracing::debug!(region = region.to_string(), "returning region params");
         Ok(Response::new(resp))
     }
-}
-
-fn pub_key_to_b58(pub_key: &[u8]) -> String {
-    bs58::encode(pub_key).into_string()
 }
