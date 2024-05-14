@@ -110,7 +110,7 @@ do
     echo "write_unit_template  $oracle done"
     write_prepost_template $oracle
     echo "write_prepost_template  $oracle done"
-    run_fpm $oracle $config_path 2.16.2-666-6
+    run_fpm $oracle $config_path $VERSION
     echo "run_fpm  $oracle done"
 done
 
