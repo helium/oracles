@@ -449,7 +449,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         bail!("expected valid api token in settings");
     };
 
-    let grpc_addr = settings.listen;
     let grpc_server = GrpcServer {
         heartbeat_report_sink,
         wifi_heartbeat_report_sink,

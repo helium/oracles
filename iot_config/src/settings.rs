@@ -1,7 +1,7 @@
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
 use serde::Deserialize;
-use std::{net::SocketAddr, path::Path, str::FromStr};
+use std::{net::SocketAddr, path::Path, str::FromStr, time::Duration};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {

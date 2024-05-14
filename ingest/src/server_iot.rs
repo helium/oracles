@@ -372,7 +372,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     .create()
     .await?;
 
-    let grpc_addr = settings.listen;
     let grpc_server = GrpcServer {
         beacon_report_sink,
         witness_report_sink,
