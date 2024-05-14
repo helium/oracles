@@ -1,11 +1,7 @@
 use config::{Config, Environment, File};
 use helium_crypto::Network;
 use serde::Deserialize;
-use std::{
-    net::{AddrParseError, SocketAddr},
-    path::Path,
-    str::FromStr,
-};
+use std::{net::SocketAddr, path::Path};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -20,7 +16,7 @@ pub struct Settings {
     pub mode: Mode,
     /// Listen address. Required. Default is 0.0.0.0:9081
     #[serde(default = "default_listen_addr")]
-    pub listen: String,
+    pub listen: SocketAddr,
     /// Local folder for storing intermediate files
     pub cache: String,
     /// Network required in all public keys:  mainnet | testnet
@@ -49,8 +45,8 @@ pub fn default_session_key_offer_timeout() -> u64 {
     5
 }
 
-pub fn default_listen_addr() -> String {
-    "0.0.0.0:9081".to_string()
+pub fn default_listen_addr() -> SocketAddr {
+    "0.0.0.0:9081".parse().unwrap()
 }
 
 pub fn default_log() -> String {
@@ -95,10 +91,6 @@ impl Settings {
             .add_source(Environment::with_prefix("INGEST").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn listen_addr(&self) -> Result<SocketAddr, AddrParseError> {
-        SocketAddr::from_str(&self.listen)
     }
 
     pub fn session_key_offer_timeout(&self) -> std::time::Duration {

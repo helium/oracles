@@ -17,8 +17,7 @@ mod error;
 pub mod settings;
 
 pub fn start_metrics(settings: &Settings) -> Result {
-    let socket: SocketAddr = settings.endpoint.parse()?;
-    install(socket)
+    install(settings.endpoint)
 }
 
 fn install(socket_addr: SocketAddr) -> Result {
