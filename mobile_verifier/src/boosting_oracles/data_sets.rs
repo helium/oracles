@@ -389,7 +389,7 @@ async fn delete_old_data_sets(
     while let Some(data_set) = data_sets.next_entry().await? {
         let file_name = data_set.file_name();
         let file_name = file_name.to_string_lossy();
-        let Some(cap) = RE.captures(&*file_name) else {
+        let Some(cap) = RE.captures(&file_name) else {
             tracing::warn!("Could not determine data set file type: {}", file_name);
             continue;
         };
