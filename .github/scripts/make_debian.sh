@@ -105,10 +105,13 @@ for config_path in $( find . -name 'settings-template.toml' )
 do
     oracle=$(echo $config_path | sed -E 's!\./([^/]+)/.+$!\1!' | sed -E 's!_!-!g')
     
+    echo "starting  $oracle $config_path $VERSION"
     write_unit_template $oracle
+    echo "write_unit_template  $oracle done"
     write_prepost_template $oracle
+    echo "write_prepost_template  $oracle done"
     run_fpm $oracle $config_path $VERSION
-    echo "$oracle done"
+    echo "run_fpm  $oracle done"
 done
 
 for deb in /tmp/*.deb
