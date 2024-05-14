@@ -85,7 +85,7 @@ impl Server {
             file_upload::FileUpload::from_settings_tm(&settings.output).await?;
         let store_base_path = path::Path::new(&settings.cache);
 
-        let reward_check_interval = chrono::Duration::from_std(settings.reward_check_interval)?;
+        let reward_check_interval = settings.reward_check_interval;
 
         // setup the received for the rewards manifest files
         let file_store = FileStore::from_settings(&settings.verifier).await?;

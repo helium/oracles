@@ -75,15 +75,13 @@ impl Server {
         telemetry::initialize(&pool).await?;
 
         let file_store = FileStore::from_settings(&settings.verifier).await?;
-        let interval = chrono::Duration::from_std(settings.interval)?;
-
         let (receiver, server) = file_source::continuous_source::<RewardManifest, _>()
             .state(pool.clone())
             .store(file_store)
             .prefix(FileType::RewardManifest.to_string())
             .lookback(LookbackBehavior::StartAfter(settings.start_after))
-            .poll_duration(interval)
-            .offset(interval * 2)
+            .poll_duration(settings.interval)
+            .offset(settings.interval * 2)
             .create()
             .await?;
         let source_join_handle = server.start(shutdown_listener.clone()).await?;

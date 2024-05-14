@@ -149,9 +149,9 @@ impl Server {
         // *
         // setup entropy requirements
         // *
-        let max_lookback_age = chrono::Duration::from_std(settings.loader_window_max_lookback_age)?;
+        let max_lookback_age = settings.loader_window_max_lookback_age;
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
-        let entropy_interval = chrono::Duration::from_std(settings.entropy_interval)?;
+        let entropy_interval = settings.entropy_interval;
         let (entropy_loader_receiver, entropy_loader_server) =
             file_source::continuous_source::<EntropyReport, _>()
                 .state(pool.clone())
@@ -184,7 +184,7 @@ impl Server {
             .await?;
 
         let packet_store = FileStore::from_settings(&settings.packet_ingest).await?;
-        let packet_interval = chrono::Duration::from_std(settings.packet_interval)?;
+        let packet_interval = settings.packet_interval;
         let (pk_loader_receiver, pk_loader_server) =
             file_source::continuous_source::<IotValidPacket, _>()
                 .state(pool.clone())
