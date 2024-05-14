@@ -23,7 +23,6 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-build-release
       cancel-in-progress: true
-    # if: ${{ github.event.workflow_run.conclusion == 'success' }} && contains(github.ref, 'refs/tags/')
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v3
@@ -50,7 +49,6 @@ jobs:
 
       - name: Debian packaging
         env:
-          # PACKAGECLOUD_API_KEY: ${{ secrets.PACKAGECLOUD_API_KEY }}
           PACKAGECLOUD_API_KEY: XXX
         run: |
           chmod +x ./.github/scripts/make_debian.sh
