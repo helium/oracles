@@ -35,7 +35,7 @@ impl GatewayClient {
             signing_key: settings.signing_keypair()?,
             config_pubkey: settings.config_pubkey()?,
             batch_size: settings.batch_size,
-            cache_ttl: settings.cache_ttl(),
+            cache_ttl: settings.cache_ttl,
             cache,
         })
     }
