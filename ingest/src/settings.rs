@@ -61,10 +61,6 @@ fn default_tracing_cfg_file() -> String {
     "tracing.cfg".to_string()
 }
 
-pub fn default_sink() -> String {
-    "/var/data/ingest".to_string()
-}
-
 /// Mode to deploy the ingest engine in. Each mode exposes different submission
 /// grpc methods
 #[derive(Debug, Deserialize)]
