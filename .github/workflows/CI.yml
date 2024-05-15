@@ -188,8 +188,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run unit and integration tests
-        env:
-          DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
         run: cargo test -p ${{ matrix.package }}  -- --include-ignored
 
   build-release:
