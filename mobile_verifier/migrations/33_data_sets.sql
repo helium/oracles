@@ -1,10 +1,12 @@
-CREATE TYPE IF NOT EXISTS data_set_status AS enum (
+DROP TYPE IF EXISTS data_set_status;
+CREATE TYPE data_set_status AS enum (
        'pending',
        'downloaded',
        'processed'
 );
 
-CREATE TYPE IF NOT EXISTS data_set_type AS enum (
+DROP TYPE IF EXISTS data_set_type;
+CREATE TYPE data_set_type AS enum (
        'urbanization',
        'footfall',
        'landtype'
