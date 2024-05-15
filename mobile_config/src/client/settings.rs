@@ -28,23 +28,23 @@ pub struct Settings {
     pub cache_ttl: Duration,
 }
 
-pub fn default_connect_timeout() -> Duration {
+fn default_connect_timeout() -> Duration {
     humantime::parse_duration("5 seconds").unwrap()
 }
 
-pub fn default_rpc_timeout() -> Duration {
+fn default_rpc_timeout() -> Duration {
     humantime::parse_duration("5 seconds").unwrap()
 }
 
-pub fn default_batch_size() -> u32 {
+fn default_batch_size() -> u32 {
     100
 }
 
-pub fn default_hex_boosting_batch_size() -> u32 {
+fn default_hex_boosting_batch_size() -> u32 {
     100
 }
 
-pub fn default_cache_ttl_in_secs() -> Duration {
+fn default_cache_ttl_in_secs() -> Duration {
     humantime::parse_duration("1 hour").unwrap()
 }
 

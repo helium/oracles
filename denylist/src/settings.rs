@@ -23,11 +23,11 @@ pub struct Settings {
     pub sign_keys: Vec<String>,
 }
 
-pub fn default_log() -> String {
+fn default_log() -> String {
     "denylist=debug".to_string()
 }
 
-pub fn default_denylist_url() -> String {
+fn default_denylist_url() -> String {
     "https://api.github.com/repos/helium/denylist/releases/latest".to_string()
 }
 

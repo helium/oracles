@@ -56,11 +56,11 @@ fn default_activation_check_interval() -> Duration {
     humantime::parse_duration("15 minutes").unwrap()
 }
 
-pub fn default_start_after() -> DateTime<Utc> {
+fn default_start_after() -> DateTime<Utc> {
     DateTime::UNIX_EPOCH
 }
 
-pub fn default_log() -> String {
+fn default_log() -> String {
     "boost_manager=info".to_string()
 }
 
