@@ -46,7 +46,6 @@ jobs:
         run: cargo build --all --tests 
 
   fmt:
-    needs: build
     runs-on: oracles-20.04
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-fmt
@@ -60,22 +59,26 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
-
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
       - name: Check formatting
         run: cargo fmt  -- --check
+
+  clippy2:
+    runs-on: oracles-20.04
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-clippy2
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust install
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -Dclippy::all -D warnings
+
   clippy:
     needs: build
     runs-on: oracles-20.04
