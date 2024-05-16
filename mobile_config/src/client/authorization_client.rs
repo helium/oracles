@@ -43,7 +43,7 @@ impl AuthorizationClient {
             client: settings.connect_authorization_client(),
             signing_key: settings.signing_keypair()?,
             config_pubkey: settings.config_pubkey()?,
-            cache_ttl: settings.cache_ttl(),
+            cache_ttl: settings.cache_ttl,
             cache,
         })
     }

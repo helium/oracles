@@ -1,4 +1,5 @@
 use helium_proto::services::{mobile_config, Channel, Endpoint};
+use humantime_serde::re::humantime;
 use serde::Deserialize;
 use std::{str::FromStr, sync::Arc, time::Duration};
 
@@ -12,39 +13,39 @@ pub struct Settings {
     /// B58 encoded public key of the mobile config server for verification
     pub config_pubkey: String,
     /// Connect timeout for the mobile config client in seconds. Default 5
-    #[serde(default = "default_connect_timeout")]
-    pub connect_timeout: u64,
+    #[serde(with = "humantime_serde", default = "default_connect_timeout")]
+    pub connect_timeout: Duration,
     /// RPC timeout for mobile config client in seconds. Default 5
-    #[serde(default = "default_rpc_timeout")]
-    pub rpc_timeout: u64,
+    #[serde(with = "humantime_serde", default = "default_rpc_timeout")]
+    pub rpc_timeout: Duration,
     /// Batch size for hotspot metadata stream results. Default 100
     #[serde(default = "default_batch_size")]
     pub batch_size: u32,
     /// Batch size for hex boosting stream results. Default 100
     #[serde(default = "default_hex_boosting_batch_size")]
     pub hex_boosting_batch_size: u32,
-    #[serde(default = "default_cache_ttl_in_secs")]
-    pub cache_ttl_in_secs: u64,
+    #[serde(with = "humantime_serde", default = "default_cache_ttl_in_secs")]
+    pub cache_ttl: Duration,
 }
 
-pub fn default_connect_timeout() -> u64 {
-    5
+fn default_connect_timeout() -> Duration {
+    humantime::parse_duration("5 seconds").unwrap()
 }
 
-pub fn default_rpc_timeout() -> u64 {
-    5
+fn default_rpc_timeout() -> Duration {
+    humantime::parse_duration("5 seconds").unwrap()
 }
 
-pub fn default_batch_size() -> u32 {
+fn default_batch_size() -> u32 {
     100
 }
 
-pub fn default_hex_boosting_batch_size() -> u32 {
+fn default_hex_boosting_batch_size() -> u32 {
     100
 }
 
-pub fn default_cache_ttl_in_secs() -> u64 {
-    60 * 60
+fn default_cache_ttl_in_secs() -> Duration {
+    humantime::parse_duration("1 hour").unwrap()
 }
 
 impl Settings {
@@ -83,15 +84,11 @@ impl Settings {
     pub fn config_pubkey(&self) -> Result<helium_crypto::PublicKey, helium_crypto::Error> {
         helium_crypto::PublicKey::from_str(&self.config_pubkey)
     }
-
-    pub fn cache_ttl(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.cache_ttl_in_secs)
-    }
 }
 
 fn connect_channel(settings: &Settings) -> Channel {
     Endpoint::from(settings.url.clone())
-        .connect_timeout(Duration::from_secs(settings.connect_timeout))
-        .timeout(Duration::from_secs(settings.rpc_timeout))
+        .connect_timeout(settings.connect_timeout)
+        .timeout(settings.rpc_timeout)
         .connect_lazy()
 }
