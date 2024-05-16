@@ -75,6 +75,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
 
       - name: Clippy
         run: cargo clippy --all-targets -- -Dclippy::all -D warnings
