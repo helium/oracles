@@ -19,7 +19,7 @@ flowchart TD
     MPV("`**Mobile Packet Verifier**
         - Burns DC for data transfer (on solana)
     `")
-    MB("`**Mobile Price**
+    MP("`**Mobile Price**
         - Records Pyth price for MOBILE
     `")
     DB1[(Foundation owned db populated by helius)]
@@ -31,12 +31,15 @@ flowchart TD
         - Writes rewards to foundation db
     `")
     DB2[(Foundation owned db that stores reward totals)]
+    S[(Solana)]
     MI -- S3 --> MV
     MI -- S3 --> MPV
     MPV -- S3 --> MV
-    MB -- S3 --> MV
-    DB1 --> MB
-    MB --> MC
+    MPV -- gRPC --> MC
+    MPV --> S
+    MP <--> S
+    MP -- S3 --> MV
+    DB1 --> MC
     MC -- gRPC --> MV
     MV -- S3 --> MRI
     MRI --> DB2
