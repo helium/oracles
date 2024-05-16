@@ -3,14 +3,14 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use hextree::disktree::DiskTreeMap;
 
-use super::{Assignment, DataSet, DataSetType, DiskTreeLike, HexAssignment};
+use super::{Assignment, DataSet, DataSetType, HexAssignment};
 
-pub struct Urbanization<DT> {
-    urbanized: Option<DT>,
+pub struct Urbanization {
+    urbanized: Option<DiskTreeMap>,
     timestamp: Option<DateTime<Utc>>,
 }
 
-impl<DT> Urbanization<DT> {
+impl Urbanization {
     pub fn new() -> Self {
         Self {
             urbanized: None,
@@ -18,7 +18,7 @@ impl<DT> Urbanization<DT> {
         }
     }
 
-    pub fn new_mock(urbanized: DT) -> Self {
+    pub fn new_mock(urbanized: DiskTreeMap) -> Self {
         Self {
             urbanized: Some(urbanized),
             timestamp: None,
@@ -26,14 +26,14 @@ impl<DT> Urbanization<DT> {
     }
 }
 
-impl<DT> Default for Urbanization<DT> {
+impl Default for Urbanization {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait::async_trait]
-impl DataSet for Urbanization<DiskTreeMap> {
+impl DataSet for Urbanization {
     const TYPE: DataSetType = DataSetType::Urbanization;
 
     fn timestamp(&self) -> Option<DateTime<Utc>> {
@@ -51,10 +51,7 @@ impl DataSet for Urbanization<DiskTreeMap> {
     }
 }
 
-impl<Urban> HexAssignment for Urbanization<Urban>
-where
-    Urban: DiskTreeLike + Send + Sync + 'static,
-{
+impl HexAssignment for Urbanization {
     fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
         let Some(ref urbanized) = self.urbanized else {
             anyhow::bail!("No urbanization data set has been loaded");

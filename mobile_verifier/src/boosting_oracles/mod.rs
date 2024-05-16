@@ -10,9 +10,6 @@ use crate::boosting_oracles::assignment::HexAssignments;
 pub use assignment::Assignment;
 pub use data_sets::*;
 
-use hextree::disktree::DiskTreeMap;
-pub use urbanization::Urbanization;
-
 pub trait HexAssignment: Send + Sync + 'static {
     fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
 }
@@ -68,38 +65,14 @@ where
     }
 }
 
-trait DiskTreeLike: Send + Sync {
-    fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>>;
-}
-
-impl DiskTreeLike for DiskTreeMap {
-    fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>> {
-        self.get(cell)
-    }
-}
-
-impl DiskTreeLike for std::collections::HashSet<hextree::Cell> {
-    fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>> {
-        Ok(self.contains(&cell).then_some((cell, &[])))
-    }
-}
-
-pub struct MockDiskTree;
-
-impl DiskTreeLike for MockDiskTree {
-    fn get(&self, cell: hextree::Cell) -> hextree::Result<Option<(hextree::Cell, &[u8])>> {
-        Ok(Some((cell, &[])))
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
     use std::io::Cursor;
 
-    use hextree::HexTreeMap;
+    use hextree::{disktree::DiskTreeMap, HexTreeMap};
 
-    use self::{footfall::Footfall, landtype::Landtype};
+    use self::{footfall::Footfall, landtype::Landtype, urbanization::Urbanization};
 
     use super::*;
 

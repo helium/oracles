@@ -13,7 +13,6 @@ use file_store::{
 };
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile as proto;
-use hextree::disktree::DiskTreeMap;
 use lazy_static::lazy_static;
 use regex::Regex;
 use rust_decimal::prelude::ToPrimitive;
@@ -24,7 +23,9 @@ use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Receiver};
 
 use crate::{boosting_oracles::assignment::HexAssignments, coverage::SignalLevel, Settings};
 
-use super::{footfall::Footfall, landtype::Landtype, HexAssignment, HexBoostData, Urbanization};
+use super::{
+    footfall::Footfall, landtype::Landtype, urbanization::Urbanization, HexAssignment, HexBoostData,
+};
 
 #[async_trait::async_trait]
 pub trait DataSet: HexAssignment + Send + Sync + 'static {
@@ -169,9 +170,7 @@ where
     }
 }
 
-impl
-    DataSetDownloaderDaemon<Footfall<DiskTreeMap>, Landtype<DiskTreeMap>, Urbanization<DiskTreeMap>>
-{
+impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization> {
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
@@ -190,9 +189,9 @@ impl
             .create()
             .await?;
 
-        let urbanization: Urbanization<DiskTreeMap> = Urbanization::new();
-        let footfall: Footfall<DiskTreeMap> = Footfall::new();
-        let landtype: Landtype<DiskTreeMap> = Landtype::new();
+        let urbanization = Urbanization::new();
+        let footfall = Footfall::new();
+        let landtype = Landtype::new();
         let hex_boost_data = HexBoostData::builder()
             .footfall(footfall)
             .landtype(landtype)
@@ -548,14 +547,34 @@ pub mod db {
             .fetch_one(pool)
             .await?)
     }
+
+    pub fn fetch_all_hexes(pool: &PgPool) -> impl Stream<Item = sqlx::Result<UnassignedHex>> + '_ {
+        sqlx::query_as("SELECT uuid, hex, signal_level, signal_power FROM hexes").fetch(pool)
+    }
+
+    pub fn fetch_hexes_with_null_assignments(
+        pool: &PgPool,
+    ) -> impl Stream<Item = sqlx::Result<UnassignedHex>> + '_ {
+        sqlx::query_as(
+            "SELECT
+                uuid, hex, signal_level, signal_power
+            FROM
+                hexes
+            WHERE
+                urbanized IS NULL
+                OR footfall IS NULL
+                OR landtype IS NULL",
+        )
+        .fetch(pool)
+    }
 }
 
 pub struct AssignedCoverageObjects {
-    coverage_objs: HashMap<uuid::Uuid, Vec<AssignedHex>>,
+    pub coverage_objs: HashMap<uuid::Uuid, Vec<AssignedHex>>,
 }
 
 impl AssignedCoverageObjects {
-    async fn from_stream(
+    pub async fn assign_hex_stream(
         stream: impl Stream<Item = sqlx::Result<UnassignedHex>>,
         data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
     ) -> anyhow::Result<Self> {
@@ -566,38 +585,6 @@ impl AssignedCoverageObjects {
             coverage_objs.entry(hex.uuid).or_default().push(hex);
         }
         Ok(Self { coverage_objs })
-    }
-
-    async fn fetch_all(
-        pool: &PgPool,
-        data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
-    ) -> anyhow::Result<Self> {
-        Self::from_stream(
-            sqlx::query_as("SELECT uuid, hex, signal_level, signal_power FROM hexes").fetch(pool),
-            data_sets,
-        )
-        .await
-    }
-
-    async fn fetch_unassigned(
-        pool: &PgPool,
-        data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
-    ) -> anyhow::Result<Self> {
-        Self::from_stream(
-            sqlx::query_as(
-                "SELECT
-                uuid, hex, signal_level, signal_power
-            FROM
-                hexes
-            WHERE
-                urbanized IS NULL
-                OR footfall IS NULL
-                OR landtype IS NULL",
-            )
-            .fetch(pool),
-            data_sets,
-        )
-        .await
     }
 
     async fn write(&self, boosting_reports: &FileSinkClient) -> file_store::Result {
@@ -635,7 +622,7 @@ impl AssignedCoverageObjects {
         Ok(())
     }
 
-    async fn save(self, pool: &PgPool) -> anyhow::Result<()> {
+    pub async fn save(self, pool: &PgPool) -> anyhow::Result<()> {
         const NUMBER_OF_FIELDS_IN_QUERY: u16 = 7;
         const ASSIGNMENTS_MAX_BATCH_ENTRIES: usize =
             (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
@@ -702,11 +689,11 @@ impl UnassignedHex {
 }
 
 pub struct AssignedHex {
-    uuid: uuid::Uuid,
-    hex: u64,
-    signal_level: SignalLevel,
-    signal_power: i32,
-    assignments: HexAssignments,
+    pub uuid: uuid::Uuid,
+    pub hex: u64,
+    pub signal_level: SignalLevel,
+    pub signal_power: i32,
+    pub assignments: HexAssignments,
 }
 
 pub async fn set_all_oracle_boosting_assignments(
@@ -714,7 +701,8 @@ pub async fn set_all_oracle_boosting_assignments(
     data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
     file_sink: &FileSinkClient,
 ) -> anyhow::Result<()> {
-    let assigned_coverage_objs = AssignedCoverageObjects::fetch_all(pool, data_sets).await?;
+    let assigned_coverage_objs =
+        AssignedCoverageObjects::assign_hex_stream(db::fetch_all_hexes(pool), data_sets).await?;
     assigned_coverage_objs.write(file_sink).await?;
     assigned_coverage_objs.save(pool).await?;
     Ok(())
@@ -725,7 +713,11 @@ pub async fn set_unassigned_oracle_boosting_assignments(
     data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
     file_sink: &FileSinkClient,
 ) -> anyhow::Result<()> {
-    let assigned_coverage_objs = AssignedCoverageObjects::fetch_unassigned(pool, data_sets).await?;
+    let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
+        db::fetch_hexes_with_null_assignments(pool),
+        data_sets,
+    )
+    .await?;
     assigned_coverage_objs.write(file_sink).await?;
     assigned_coverage_objs.save(pool).await?;
     Ok(())

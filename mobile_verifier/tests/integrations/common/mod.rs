@@ -1,10 +1,14 @@
 use chrono::{DateTime, Utc};
-use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
+use file_store::{
+    file_sink::{FileSinkClient, Message as SinkMessage},
+    traits::TimestampEncode,
+};
 use futures::{stream, StreamExt};
 use helium_proto::{
     services::poc_mobile::{
-        mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare, RadioReward,
-        ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
+        mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare,
+        OracleBoostingHexAssignment, OracleBoostingReportV1, RadioReward, ServiceProviderReward,
+        SpeedtestAvg, SubscriberReward, UnallocatedReward,
     },
     Message,
 };
@@ -12,7 +16,12 @@ use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
-use mobile_verifier::boosting_oracles::{Assignment, HexBoostData};
+use mobile_verifier::boosting_oracles::{
+    AssignedCoverageObjects, Assignment, HexAssignment, HexBoostData,
+};
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 
@@ -203,4 +212,42 @@ pub fn mock_hex_boost_data(
         .landtype(landtype)
         .build()
         .unwrap()
+}
+
+pub async fn set_unassigned_oracle_boosting_assignments(
+    pool: &PgPool,
+    data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
+) -> anyhow::Result<Vec<OracleBoostingReportV1>> {
+    let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
+        mobile_verifier::boosting_oracles::data_sets::db::fetch_hexes_with_null_assignments(pool),
+        data_sets,
+    )
+    .await?;
+    let timestamp = Utc::now().encode_timestamp();
+    let mut output = Vec::new();
+    for (uuid, hexes) in assigned_coverage_objs.coverage_objs.iter() {
+        let assignments: Vec<_> = hexes
+            .iter()
+            .map(|hex| {
+                let location = format!("{:x}", hex.hex);
+                let assignment_multiplier = (hex.assignments.boosting_multiplier() * dec!(1000))
+                    .to_u32()
+                    .unwrap_or(0);
+                OracleBoostingHexAssignment {
+                    location,
+                    urbanized: hex.assignments.urbanized.into(),
+                    footfall: hex.assignments.footfall.into(),
+                    landtype: hex.assignments.landtype.into(),
+                    assignment_multiplier,
+                }
+            })
+            .collect();
+        output.push(OracleBoostingReportV1 {
+            coverage_object: Vec::from(uuid.into_bytes()),
+            assignments,
+            timestamp,
+        });
+    }
+    assigned_coverage_objs.save(pool).await?;
+    Ok(output)
 }

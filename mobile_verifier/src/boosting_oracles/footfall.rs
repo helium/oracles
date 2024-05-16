@@ -3,14 +3,14 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use hextree::disktree::DiskTreeMap;
 
-use super::{Assignment, DataSet, DataSetType, DiskTreeLike, HexAssignment};
+use super::{Assignment, DataSet, DataSetType, HexAssignment};
 
-pub struct Footfall<Foot> {
-    footfall: Option<Foot>,
+pub struct Footfall {
+    footfall: Option<DiskTreeMap>,
     timestamp: Option<DateTime<Utc>>,
 }
 
-impl<F> Footfall<F> {
+impl Footfall {
     pub fn new() -> Self {
         Self {
             footfall: None,
@@ -18,7 +18,7 @@ impl<F> Footfall<F> {
         }
     }
 
-    pub fn new_mock(footfall: F) -> Self {
+    pub fn new_mock(footfall: DiskTreeMap) -> Self {
         Self {
             footfall: Some(footfall),
             timestamp: None,
@@ -26,14 +26,14 @@ impl<F> Footfall<F> {
     }
 }
 
-impl<F> Default for Footfall<F> {
+impl Default for Footfall {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait::async_trait]
-impl DataSet for Footfall<DiskTreeMap> {
+impl DataSet for Footfall {
     const TYPE: DataSetType = DataSetType::Footfall;
 
     fn timestamp(&self) -> Option<DateTime<Utc>> {
@@ -51,10 +51,7 @@ impl DataSet for Footfall<DiskTreeMap> {
     }
 }
 
-impl<Foot> HexAssignment for Footfall<Foot>
-where
-    Foot: DiskTreeLike + Send + Sync + 'static,
-{
+impl HexAssignment for Footfall {
     fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
         let Some(ref footfall) = self.footfall else {
             anyhow::bail!("No footfall data set has been loaded");

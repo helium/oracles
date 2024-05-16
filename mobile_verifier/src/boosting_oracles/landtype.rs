@@ -3,14 +3,14 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use hextree::disktree::DiskTreeMap;
 
-use super::{Assignment, DataSet, DataSetType, DiskTreeLike, HexAssignment};
+use super::{Assignment, DataSet, DataSetType, HexAssignment};
 
-pub struct Landtype<Land> {
-    landtype: Option<Land>,
+pub struct Landtype {
+    landtype: Option<DiskTreeMap>,
     timestamp: Option<DateTime<Utc>>,
 }
 
-impl<L> Landtype<L> {
+impl Landtype {
     pub fn new() -> Self {
         Self {
             landtype: None,
@@ -18,7 +18,7 @@ impl<L> Landtype<L> {
         }
     }
 
-    pub fn new_mock(landtype: L) -> Self {
+    pub fn new_mock(landtype: DiskTreeMap) -> Self {
         Self {
             landtype: Some(landtype),
             timestamp: None,
@@ -26,14 +26,14 @@ impl<L> Landtype<L> {
     }
 }
 
-impl<L> Default for Landtype<L> {
+impl Default for Landtype {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait::async_trait]
-impl DataSet for Landtype<DiskTreeMap> {
+impl DataSet for Landtype {
     const TYPE: DataSetType = DataSetType::Landtype;
 
     fn timestamp(&self) -> Option<DateTime<Utc>> {
@@ -131,10 +131,7 @@ impl From<LandtypeValue> for Assignment {
     }
 }
 
-impl<Land> HexAssignment for Landtype<Land>
-where
-    Land: DiskTreeLike + Send + Sync + 'static,
-{
+impl HexAssignment for Landtype {
     fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
         let Some(ref landtype) = self.landtype else {
             anyhow::bail!("No landtype data set has been loaded");

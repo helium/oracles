@@ -1,4 +1,3 @@
-use crate::common;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
@@ -16,7 +15,6 @@ use hextree::Cell;
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
-    boosting_oracles::{set_oracle_boosting_assignments, UnassignedHex},
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
     heartbeats::{
@@ -33,6 +31,8 @@ use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;
+
+use crate::common;
 
 #[derive(Clone)]
 struct MockGeofence;
@@ -405,11 +405,9 @@ async fn process_input(
     }
     transaction.commit().await?;
 
-    let unassigned_hexes = UnassignedHex::fetch_unassigned(pool);
-    let _ = set_oracle_boosting_assignments(
-        unassigned_hexes,
-        &common::mock_hex_boost_data_default(),
+    let _ = common::set_unassigned_oracle_boosting_assignments(
         pool,
+        &common::mock_hex_boost_data_default(),
     )
     .await?;
 

@@ -13,7 +13,7 @@ use helium_proto::services::poc_mobile::{
 };
 use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
-    boosting_oracles::{set_oracle_boosting_assignments, Assignment, HexBoostData, UnassignedHex},
+    boosting_oracles::{Assignment, HexBoostData},
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
     heartbeats::{Heartbeat, HeartbeatReward, LocationCache, SeniorityUpdate, ValidatedHeartbeat},
@@ -28,6 +28,8 @@ use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::{collections::HashMap, pin::pin};
 use uuid::Uuid;
+
+use crate::common;
 
 #[derive(Clone)]
 struct MockGeofence;
@@ -209,15 +211,12 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     .await?;
     transaction.commit().await?;
 
-    let unassigned_hexes = UnassignedHex::fetch_unassigned(&pool);
     let hex_boost_data = HexBoostData::builder()
         .footfall(footfall)
         .landtype(landtype)
         .urbanization(urbanized)
         .build()?;
-    let oba = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool)
-        .await?
-        .collect::<Vec<_>>();
+    let oba = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
     assert_eq!(oba.len(), 1);
     assert_eq!(oba[0].assignments, hexes);
@@ -340,13 +339,12 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     .await?;
     transaction.commit().await?;
 
-    let unassigned_hexes = UnassignedHex::fetch_unassigned(&pool);
     let hex_boost_data = HexBoostData::builder()
         .footfall(footfall)
         .landtype(landtype)
         .urbanization(urbanized)
         .build()?;
-    let _ = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool).await?;
+    let _ = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
     let heartbeats = heartbeats(12, start, &owner, &cbsd_id, 0.0, 0.0, uuid);
 
