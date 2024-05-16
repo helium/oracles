@@ -13,6 +13,8 @@ pub struct Settings {
     /// "mobile_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Cache location for generated verified reports
     pub cache: String,
     /// Reward period in hours. (Default is 24 hours)

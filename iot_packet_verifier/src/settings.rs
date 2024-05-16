@@ -10,6 +10,8 @@ pub struct Settings {
     /// "iot_packet_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Cache location for generated verified reports
     pub cache: String,
     /// Data credit burn period in minutes. Default is 1.

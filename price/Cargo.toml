@@ -7,18 +7,18 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = {workspace = true}
-config = {workspace = true}
-clap = {workspace = true}
-thiserror = {workspace = true}
-serde =  {workspace = true}
-serde_json = {workspace = true}
-futures = {workspace = true}
-futures-util = {workspace = true}
-prost = {workspace = true}
+anyhow = { workspace = true }
+config = { workspace = true }
+clap = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+prost = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-metrics = {workspace = true }
+metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -27,9 +27,10 @@ helium-anchor-gen = { workspace = true }
 helium-proto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
-pyth-sdk-solana = {workspace = true}
-triggered = {workspace = true}
-solana-client = {workspace = true}
-solana-sdk = {workspace = true}
-task-manager = {path = "../task_manager"}
+pyth-sdk-solana = { workspace = true }
+triggered = { workspace = true }
+solana-client = { workspace = true }
+solana-sdk = { workspace = true }
+task-manager = { path = "../task_manager" }
 humantime-serde = { workspace = true }
+custom-tracing = { path = "../custom_tracing" }

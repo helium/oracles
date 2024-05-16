@@ -138,6 +138,8 @@ impl iot_config::Gateway for GatewayService {
     ) -> GrpcResult<GatewayLocationResV1> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "location");
+        custom_tracing::record_b58("pub_key", &request.gateway);
+        custom_tracing::record_b58("signer", &request.signer);
 
         self.verify_location_request(&request)?;
 
@@ -178,6 +180,7 @@ impl iot_config::Gateway for GatewayService {
     ) -> GrpcResult<GatewayRegionParamsResV1> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "region-params");
+        custom_tracing::record_b58("pub_key", &request.address);
         let request_start = std::time::Instant::now();
 
         let pubkey = verify_public_key(&request.address)?;
@@ -247,6 +250,8 @@ impl iot_config::Gateway for GatewayService {
     async fn info(&self, request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "info");
+        custom_tracing::record_b58("pub_key", &request.address);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;

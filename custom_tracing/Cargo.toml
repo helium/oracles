@@ -6,6 +6,7 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
 notify = { version = "6", default-features = false }
 anyhow = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "signal"] }
@@ -20,6 +21,7 @@ tower-layer = { version = "0" }
 axum = { version = "0.7", features = ["tracing"], optional = true }
 helium-proto = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
+bs58 = { version = "0.4", features = ["check"] }
 
 
 [target.'cfg(target_os = "macos")'.dependencies]

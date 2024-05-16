@@ -190,12 +190,14 @@ impl iot_config::Route for RouteService {
     async fn list(&self, request: Request<RouteListReqV1>) -> GrpcResult<RouteListResV1> {
         let request = request.into_inner();
         telemetry::count_request("route", "list");
+        custom_tracing::record("oui", request.oui);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::Oui(request.oui))
             .await?;
 
-        tracing::debug!(org = request.oui, "list routes");
+        tracing::debug!("list routes");
 
         let proto_routes: Vec<RouteV1> = route::list_routes(request.oui, &self.pool)
             .await
@@ -218,6 +220,8 @@ impl iot_config::Route for RouteService {
     async fn get(&self, request: Request<RouteGetReqV1>) -> GrpcResult<RouteResV1> {
         let request = request.into_inner();
         telemetry::count_request("route", "get");
+        custom_tracing::record("route_id", &request.id);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
@@ -246,6 +250,8 @@ impl iot_config::Route for RouteService {
     async fn create(&self, request: Request<RouteCreateReqV1>) -> GrpcResult<RouteResV1> {
         let request = request.into_inner();
         telemetry::count_request("route", "create");
+        custom_tracing::record("oui", request.oui);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::Oui(request.oui))
@@ -256,7 +262,7 @@ impl iot_config::Route for RouteService {
             .ok_or("missing route")
             .map_err(Status::invalid_argument)?
             .into();
-        tracing::debug!(org = request.oui, "route create {route:?}");
+        tracing::debug!("route create {route:?}");
 
         if route.oui != request.oui {
             tracing::warn!(
@@ -296,12 +302,17 @@ impl iot_config::Route for RouteService {
         let request = request.into_inner();
         telemetry::count_request("route", "update");
 
+        custom_tracing::record_b58("signer", &request.signer);
+
         let route: Route = request
             .clone()
             .route
             .ok_or("missing route")
             .map_err(Status::invalid_argument)?
             .into();
+
+        custom_tracing::record("route_id", &route.id);
+
         tracing::debug!(
             org = route.oui,
             route_id = route.id,
@@ -338,6 +349,8 @@ impl iot_config::Route for RouteService {
     async fn delete(&self, request: Request<RouteDeleteReqV1>) -> GrpcResult<RouteResV1> {
         let request = request.into_inner();
         telemetry::count_request("route", "delete");
+        custom_tracing::record("route_id", &request.id);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
@@ -376,6 +389,7 @@ impl iot_config::Route for RouteService {
     async fn stream(&self, request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
         telemetry::count_request("route", "stream");
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_stream_request_signature(&signer, &request)?;
@@ -426,6 +440,8 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<Self::get_euisStream> {
         let request = request.into_inner();
         telemetry::count_request("route", "get-euis");
+        custom_tracing::record("route_id", &request.route_id);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature_or_stream(
@@ -850,6 +866,8 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<RouteSkfUpdateResV1> {
         let request = request.into_inner();
         telemetry::count_request("route", "update-skfs");
+        custom_tracing::record("route_id", &request.route_id);
+        custom_tracing::record_b58("signer", &request.signer);
 
         if request.updates.len() > SKF_UPDATE_LIMIT {
             return Err(Status::invalid_argument(

@@ -8,6 +8,8 @@ pub struct Settings {
     /// "poc_entropy=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Listen address for http requests for entropy. Default "0.0.0.0:8080"
     #[serde(default = "default_listen_addr")]
     pub listen: String,

@@ -37,6 +37,8 @@ pub struct Settings {
     /// "price=debug"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Source URL for price data. Required
     #[serde(default = "default_source")]
     pub source: String,

@@ -64,6 +64,8 @@ impl mobile_config::Admin for AdminService {
     async fn add_key(&self, request: Request<AdminAddKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
         telemetry::count_request("admin", "add-key");
+        custom_tracing::record_b58("pub_key", &request.pubkey);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -101,6 +103,8 @@ impl mobile_config::Admin for AdminService {
     async fn remove_key(&self, request: Request<AdminRemoveKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
         telemetry::count_request("admin", "remove-key");
+        custom_tracing::record_b58("pub_key", &request.pubkey);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;

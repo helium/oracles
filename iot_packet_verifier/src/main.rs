@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 use iot_packet_verifier::{daemon, settings::Settings};
 use std::path::PathBuf;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -21,10 +20,7 @@ pub struct Cli {
 impl Cli {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
-        tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(&settings.log))
-            .with(tracing_subscriber::fmt::layer())
-            .init();
+        custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
         self.cmd.run(settings).await
     }
 }

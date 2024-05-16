@@ -15,7 +15,6 @@ use iot_verifier::{
 use price::PriceTracker;
 use std::path;
 use task_manager::TaskManager;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -57,10 +56,7 @@ pub struct Server {}
 
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
-        tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(&settings.log))
-            .with(tracing_subscriber::fmt::layer())
-            .init();
+        custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
 
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;

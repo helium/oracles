@@ -83,6 +83,8 @@ impl iot_config::Admin for AdminService {
     async fn add_key(&self, request: Request<AdminAddKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
         telemetry::count_request("admin", "add-key");
+        custom_tracing::record_b58("pub_key", &request.pubkey);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -103,7 +105,7 @@ impl iot_config::Admin for AdminService {
                         false
                     }
                 }) {
-                    tracing::info!(%pubkey, %key_type, "key authorized");
+                    tracing::info!(%key_type, "key authorized");
                     Ok(())
                 } else {
                     Err(anyhow!("key already registered"))
@@ -111,7 +113,7 @@ impl iot_config::Admin for AdminService {
             })
             .map_err(|err| {
                 let pubkey: PublicKeyBinary = request.pubkey.into();
-                tracing::error!(%pubkey, "pubkey add failed");
+                tracing::error!("pubkey add failed");
                 Status::internal(format!("error saving requested key: {pubkey}, {err:?}"))
             })
             .await?;
@@ -131,6 +133,8 @@ impl iot_config::Admin for AdminService {
     async fn remove_key(&self, request: Request<AdminRemoveKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
         telemetry::count_request("admin", "remove-key");
+        custom_tracing::record_b58("pub_key", &request.pubkey);
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -142,7 +146,7 @@ impl iot_config::Admin for AdminService {
                         self.auth_updater.send_modify(|cache| {
                             cache.remove(&pubkey);
                         });
-                        tracing::info!(%pubkey, %key_type,"key de-authorized");
+                        tracing::info!(%key_type,"key de-authorized");
                         Ok(())
                     }
                     None => Ok(()),
@@ -150,7 +154,7 @@ impl iot_config::Admin for AdminService {
             })
             .map_err(|_| {
                 let pubkey: PublicKeyBinary = request.pubkey.into();
-                tracing::error!(%pubkey, "pubkey remove failed");
+                tracing::error!("pubkey remove failed");
                 Status::internal(format!("error removing request key: {pubkey}"))
             })
             .await?;
@@ -173,6 +177,7 @@ impl iot_config::Admin for AdminService {
     ) -> GrpcResult<AdminLoadRegionResV1> {
         let request = request.into_inner();
         telemetry::count_request("admin", "load-region");
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -239,6 +244,7 @@ impl iot_config::Admin for AdminService {
     ) -> GrpcResult<RegionParamsResV1> {
         let request = request.into_inner();
         telemetry::count_request("admin", "region-params");
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;

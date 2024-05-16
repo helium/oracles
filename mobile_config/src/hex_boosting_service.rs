@@ -57,6 +57,7 @@ impl mobile_config::HexBoosting for HexBoostingService {
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
         telemetry::count_request("hex-boosting", "info-stream");
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -84,6 +85,7 @@ impl mobile_config::HexBoosting for HexBoostingService {
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
         telemetry::count_request("hex-boosting", "modified-info-stream");
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;

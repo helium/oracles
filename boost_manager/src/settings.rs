@@ -10,6 +10,8 @@ pub struct Settings {
     /// "poc_entropy=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Cache location for generated verified reports
     pub cache: String,
     /// Reward files check interval in seconds. (Default is 15 minutes)

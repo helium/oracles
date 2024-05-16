@@ -8,7 +8,6 @@ use futures_util::TryFutureExt;
 use reward_index::{settings::Settings, telemetry, Indexer};
 use std::path::PathBuf;
 use tokio::signal;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -27,6 +26,7 @@ pub struct Cli {
 impl Cli {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
+        custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
         self.cmd.run(settings).await
     }
 }
@@ -49,11 +49,6 @@ pub struct Server {}
 
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
-        tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(&settings.log))
-            .with(tracing_subscriber::fmt::layer())
-            .init();
-
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
         //

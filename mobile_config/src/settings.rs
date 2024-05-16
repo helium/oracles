@@ -9,6 +9,8 @@ pub struct Settings {
     /// "mobile_config=info"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Listen address. Required. Default to 0.0.0.0::8080
     #[serde(default = "default_listen_addr")]
     pub listen: SocketAddr,
