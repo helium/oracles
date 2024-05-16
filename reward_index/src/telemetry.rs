@@ -16,7 +16,7 @@ pub async fn last_reward_processed_time(
     db: &Pool<Postgres>,
     datetime: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    metrics::gauge!(LAST_REWARD_PROCESSED_TIME, datetime.timestamp() as f64);
+    metrics::gauge!(LAST_REWARD_PROCESSED_TIME).set(datetime.timestamp() as f64);
     meta::store(db, LAST_REWARD_PROCESSED_TIME, datetime.timestamp()).await?;
 
     Ok(())

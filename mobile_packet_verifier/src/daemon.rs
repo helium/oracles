@@ -46,8 +46,8 @@ impl<S, GIR, AV> Daemon<S, GIR, AV> {
             pool,
             burner,
             reports,
-            burn_period: settings.burn_period(),
-            min_burn_period: settings.min_burn_period(),
+            burn_period: settings.burn_period,
+            min_burn_period: settings.min_burn_period,
             gateway_info_resolver,
             authorization_verifier,
             invalid_data_session_report_sink,
@@ -169,7 +169,7 @@ impl Cmd {
                     Utc.timestamp_millis_opt(0).unwrap(),
                 ))
                 .prefix(FileType::DataTransferSessionIngestReport.to_string())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .create()
                 .await?;
 

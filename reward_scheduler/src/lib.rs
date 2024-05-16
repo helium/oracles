@@ -1,5 +1,5 @@
-use chrono::{DateTime, Duration, Utc};
-use std::ops::Range;
+use chrono::{DateTime, Utc};
+use std::{ops::Range, time::Duration};
 
 #[derive(Debug)]
 pub struct Scheduler {
@@ -43,7 +43,7 @@ impl Scheduler {
         let duration = if self.reward_period.end + self.reward_offset > now {
             self.reward_period.end + self.reward_offset - now
         } else if next_reward_period.end + self.reward_offset <= now {
-            Duration::zero()
+            chrono::Duration::zero()
         } else {
             (next_reward_period.end + self.reward_offset) - now
         };
@@ -63,11 +63,11 @@ mod tests {
     }
 
     fn reward_period_length() -> Duration {
-        Duration::hours(24)
+        chrono::Duration::hours(24).to_std().unwrap()
     }
 
     fn standard_duration(minutes: i64) -> Result<std::time::Duration, OutOfRangeError> {
-        Duration::minutes(minutes)
+        chrono::Duration::minutes(minutes)
             .to_std()
             .map_err(|_| OutOfRangeError)
     }
@@ -78,7 +78,7 @@ mod tests {
             reward_period_length(),
             dt(2022, 12, 1, 0, 0, 0),
             dt(2022, 12, 2, 0, 0, 0),
-            Duration::minutes(30),
+            chrono::Duration::minutes(30).to_std().unwrap(),
         );
 
         let now = dt(2022, 12, 1, 1, 0, 0);
@@ -98,7 +98,7 @@ mod tests {
             reward_period_length(),
             dt(2022, 12, 1, 0, 0, 0),
             dt(2022, 12, 2, 0, 0, 0),
-            Duration::minutes(30),
+            chrono::Duration::minutes(30).to_std().unwrap(),
         );
 
         let now = dt(2022, 12, 2, 0, 30, 0);
@@ -122,7 +122,7 @@ mod tests {
             reward_period_length(),
             dt(2022, 12, 1, 0, 0, 0),
             dt(2022, 12, 2, 0, 0, 0),
-            Duration::minutes(30),
+            chrono::Duration::minutes(30).to_std().unwrap(),
         );
 
         let now = dt(2022, 12, 2, 0, 15, 0);

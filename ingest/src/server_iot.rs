@@ -344,8 +344,6 @@ impl poc_lora::PocLora for GrpcServer {
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
-    let grpc_addr = settings.listen_addr()?;
-
     // Initialize uploader
     let (file_upload, file_upload_server) =
         file_upload::FileUpload::from_settings_tm(&settings.output).await?;
@@ -378,13 +376,14 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         beacon_report_sink,
         witness_report_sink,
         required_network: settings.network,
-        address: grpc_addr,
-        session_key_offer_timeout: settings.session_key_offer_timeout(),
-        session_key_timeout: settings.session_key_timeout(),
+        address: settings.listen_addr,
+        session_key_offer_timeout: settings.session_key_offer_timeout,
+        session_key_timeout: settings.session_key_timeout,
     };
 
     tracing::info!(
-        "grpc listening on {grpc_addr} and server mode {:?}",
+        "grpc listening on {} and server mode {:?}",
+        settings.listen_addr,
         settings.mode
     );
 

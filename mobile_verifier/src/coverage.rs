@@ -97,7 +97,7 @@ impl CoverageDaemon {
             file_source::continuous_source::<CoverageObjectIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::CoverageObjectIngestReport.to_string())
                 .create()
                 .await?;
@@ -136,16 +136,16 @@ impl CoverageDaemon {
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         loop {
-            #[rustfmt::skip]
             tokio::select! {
                 _ = shutdown.clone() => {
                     tracing::info!("CoverageDaemon shutting down");
                     break;
                 }
                 Some(file) = self.coverage_objs.recv() => {
-		    let start = Instant::now();
-		    self.process_file(file).await?;
-		    metrics::histogram!("coverage_object_processing_time", start.elapsed());
+                    let start = Instant::now();
+                    self.process_file(file).await?;
+                    metrics::histogram!("coverage_object_processing_time")
+                        .record(start.elapsed());
                 }
             }
         }
@@ -376,9 +376,11 @@ impl Ord for IndoorCoverageLevel {
 
 impl IndoorCoverageLevel {
     fn coverage_points(&self) -> Decimal {
-        match self.signal_level {
-            SignalLevel::High => dec!(400),
-            SignalLevel::Low => dec!(100),
+        match (&self.radio_key, self.signal_level) {
+            (OwnedKeyType::Wifi(_), SignalLevel::High) => dec!(400),
+            (OwnedKeyType::Wifi(_), SignalLevel::Low) => dec!(100),
+            (OwnedKeyType::Cbrs(_), SignalLevel::High) => dec!(100),
+            (OwnedKeyType::Cbrs(_), SignalLevel::Low) => dec!(25),
             _ => dec!(0),
         }
     }
@@ -418,11 +420,15 @@ impl Ord for OutdoorCoverageLevel {
 
 impl OutdoorCoverageLevel {
     fn coverage_points(&self) -> Decimal {
-        match self.signal_level {
-            SignalLevel::High => dec!(16),
-            SignalLevel::Medium => dec!(8),
-            SignalLevel::Low => dec!(4),
-            SignalLevel::None => dec!(0),
+        match (&self.radio_key, self.signal_level) {
+            (OwnedKeyType::Wifi(_), SignalLevel::High) => dec!(16),
+            (OwnedKeyType::Wifi(_), SignalLevel::Medium) => dec!(8),
+            (OwnedKeyType::Wifi(_), SignalLevel::Low) => dec!(4),
+            (OwnedKeyType::Wifi(_), SignalLevel::None) => dec!(0),
+            (OwnedKeyType::Cbrs(_), SignalLevel::High) => dec!(4),
+            (OwnedKeyType::Cbrs(_), SignalLevel::Medium) => dec!(2),
+            (OwnedKeyType::Cbrs(_), SignalLevel::Low) => dec!(1),
+            (OwnedKeyType::Cbrs(_), SignalLevel::None) => dec!(0),
         }
     }
 }
@@ -964,7 +970,7 @@ mod test {
                 radio_key: OwnedKeyType::Cbrs("3".to_string()),
                 hotspot: owner,
                 points: CoverageRewardPoints {
-                    coverage_points: dec!(400),
+                    coverage_points: dec!(100),
                     boost_multiplier: NonZeroU32::new(1).unwrap(),
                     hex_assignments: HexAssignments::test_best(),
                     rank: None
@@ -1080,7 +1086,7 @@ mod test {
                 radio_key: OwnedKeyType::Cbrs("10".to_string()),
                 hotspot: owner.clone(),
                 points: CoverageRewardPoints {
-                    coverage_points: dec!(400),
+                    coverage_points: dec!(100),
                     boost_multiplier: NonZeroU32::new(1).unwrap(),
                     hex_assignments: HexAssignments::test_best(),
                     rank: None
@@ -1123,7 +1129,7 @@ mod test {
                     radio_key: OwnedKeyType::Cbrs("5".to_string()),
                     hotspot: owner.clone(),
                     points: CoverageRewardPoints {
-                        coverage_points: dec!(16),
+                        coverage_points: dec!(4),
                         rank: Some(dec!(1.0)),
                         boost_multiplier: NonZeroU32::new(1).unwrap(),
                         hex_assignments: HexAssignments::test_best(),
@@ -1137,7 +1143,7 @@ mod test {
                     radio_key: OwnedKeyType::Cbrs("4".to_string()),
                     hotspot: owner.clone(),
                     points: CoverageRewardPoints {
-                        coverage_points: dec!(16),
+                        coverage_points: dec!(4),
                         rank: Some(dec!(0.50)),
                         boost_multiplier: NonZeroU32::new(1).unwrap(),
                         hex_assignments: HexAssignments::test_best(),
@@ -1151,7 +1157,7 @@ mod test {
                     radio_key: OwnedKeyType::Cbrs("3".to_string()),
                     hotspot: owner,
                     points: CoverageRewardPoints {
-                        coverage_points: dec!(16),
+                        coverage_points: dec!(4),
                         rank: Some(dec!(0.25)),
                         boost_multiplier: NonZeroU32::new(1).unwrap(),
                         hex_assignments: HexAssignments::test_best(),
@@ -1297,7 +1303,7 @@ mod test {
 
         // assert outdoor cbrs radios
         assert_eq!(
-            dec!(16),
+            dec!(4),
             rewards
                 .iter()
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-3".to_string()))
@@ -1307,7 +1313,7 @@ mod test {
         );
 
         assert_eq!(
-            dec!(8),
+            dec!(2),
             rewards
                 .iter()
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-4".to_string()))
@@ -1317,7 +1323,7 @@ mod test {
         );
 
         assert_eq!(
-            dec!(4),
+            dec!(1),
             rewards
                 .iter()
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("oco1-1".to_string()))
@@ -1335,7 +1341,7 @@ mod test {
 
         // assert indoor cbrs radios
         assert_eq!(
-            dec!(400),
+            dec!(100),
             rewards
                 .iter()
                 .find(|r| r.radio_key == OwnedKeyType::Cbrs("ico1-1".to_string()))

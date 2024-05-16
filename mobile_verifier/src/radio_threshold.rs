@@ -97,7 +97,7 @@ where
             file_source::continuous_source::<RadioThresholdIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store.clone())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::RadioThresholdIngestReport.to_string())
                 .create()
                 .await?;
@@ -107,7 +107,7 @@ where
             file_source::continuous_source::<InvalidatedRadioThresholdIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store.clone())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::InvalidatedRadioThresholdIngestReport.to_string())
                 .create()
                 .await?;

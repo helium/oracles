@@ -84,11 +84,9 @@ impl Server {
         // *
         // setup caches
         // *
-        let (gateway_updater_receiver, gateway_updater_server) = GatewayUpdater::new(
-            settings.gateway_refresh_interval(),
-            iot_config_client.clone(),
-        )
-        .await?;
+        let (gateway_updater_receiver, gateway_updater_server) =
+            GatewayUpdater::new(settings.gateway_refresh_interval, iot_config_client.clone())
+                .await?;
         let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
 
         // *
@@ -106,7 +104,7 @@ impl Server {
         // setup the density scaler requirements
         // *
         let density_scaler = DensityScaler::new(
-            settings.loader_window_max_lookback_age(),
+            settings.loader_window_max_lookback_age,
             pool.clone(),
             gateway_updater_receiver,
         )
@@ -143,17 +141,17 @@ impl Server {
             pool: pool.clone(),
             rewards_sink,
             reward_manifests_sink,
-            reward_period_hours: settings.rewards,
-            reward_offset: settings.reward_offset_duration(),
+            reward_period_hours: settings.reward_period,
+            reward_offset: settings.reward_period_offset,
             price_tracker,
         };
 
         // *
         // setup entropy requirements
         // *
-        let max_lookback_age = settings.loader_window_max_lookback_age();
+        let max_lookback_age = settings.loader_window_max_lookback_age;
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
-        let entropy_interval = settings.entropy_interval();
+        let entropy_interval = settings.entropy_interval;
         let (entropy_loader_receiver, entropy_loader_server) =
             file_source::continuous_source::<EntropyReport, _>()
                 .state(pool.clone())
@@ -186,7 +184,7 @@ impl Server {
             .await?;
 
         let packet_store = FileStore::from_settings(&settings.packet_ingest).await?;
-        let packet_interval = settings.packet_interval();
+        let packet_interval = settings.packet_interval;
         let (pk_loader_receiver, pk_loader_server) =
             file_source::continuous_source::<IotValidPacket, _>()
                 .state(pool.clone())
@@ -232,15 +230,11 @@ impl Server {
             .create()
             .await?;
 
-        let base_stale_period = settings.base_stale_period();
-        let beacon_stale_period = settings.beacon_stale_period();
-        let witness_stale_period = settings.witness_stale_period();
-        let entropy_stale_period = settings.entropy_stale_period();
         let purger = purger::Purger::new(
-            base_stale_period,
-            beacon_stale_period,
-            witness_stale_period,
-            entropy_stale_period,
+            settings.base_stale_period,
+            settings.beacon_stale_period,
+            settings.witness_stale_period,
+            settings.entropy_stale_period,
             pool.clone(),
             purger_invalid_beacon_sink,
             purger_invalid_witness_sink,

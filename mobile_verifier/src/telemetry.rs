@@ -13,9 +13,9 @@ pub async fn initialize(db: &Pool<Postgres>) -> anyhow::Result<()> {
 }
 
 pub fn last_rewarded_end_time(timestamp: DateTime<Utc>) {
-    metrics::gauge!(LAST_REWARDED_END_TIME, timestamp.timestamp() as f64);
+    metrics::gauge!(LAST_REWARDED_END_TIME).set(timestamp.timestamp() as f64);
 }
 
 pub fn data_transfer_rewards_scale(scale: f64) {
-    metrics::gauge!(DATA_TRANSFER_REWARDS_SCALE, scale);
+    metrics::gauge!(DATA_TRANSFER_REWARDS_SCALE).set(scale);
 }

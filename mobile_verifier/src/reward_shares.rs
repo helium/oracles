@@ -1415,31 +1415,31 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            364_298_724_954
+            260_213_374_966
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            1_366_120_218_577
+            975_800_156_122
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            45_537_340_619
+            32_526_671_870
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
         let owner5_reward = *owner_rewards
             .get(&owner5)
             .expect("Could not fetch owner5 rewards");
-        assert_eq!(owner5_reward, 182_149_362_477);
+        assert_eq!(owner5_reward, 520_426_749_934);
 
         let owner6_reward = *owner_rewards
             .get(&owner6)
             .expect("Could not fetch owner6 rewards");
-        assert_eq!(owner6_reward, 45_537_340_619);
+        assert_eq!(owner6_reward, 130_106_687_483);
 
         // confirm owner 6 reward is 0.25 of owner 5's reward
         // this is due to owner 6's hotspot not having a validation location timestamp
@@ -1449,7 +1449,7 @@ mod test {
         let owner7_reward = *owner_rewards
             .get(&owner6)
             .expect("Could not fetch owner7 rewards");
-        assert_eq!(owner7_reward, 45_537_340_619);
+        assert_eq!(owner7_reward, 130_106_687_483);
 
         // confirm owner 7 reward is 0.25 of owner 5's reward
         // owner 7's hotspot does have a validation location timestamp
@@ -1458,7 +1458,7 @@ mod test {
         assert_eq!((owner5_reward as f64 * 0.25) as u64, owner7_reward);
 
         // confirm total sum of allocated poc rewards
-        assert_eq!(allocated_poc_rewards, 2_049_180_327_865);
+        assert_eq!(allocated_poc_rewards, 2_049_180_327_858);
 
         // confirm the unallocated poc reward amounts
         let unallocated_sp_reward_amount = (total_poc_rewards
@@ -1466,7 +1466,7 @@ mod test {
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 3);
+        assert_eq!(unallocated_sp_reward_amount, 10);
     }
 
     #[tokio::test]
@@ -1583,19 +1583,17 @@ mod test {
         }
         println!("owner rewards {:?}", owner_rewards);
 
-        // These were different, now they are the same:
-
         // wifi
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-        assert_eq!(owner1_reward, 1_024_590_163_934);
+        assert_eq!(owner1_reward, 1_639_344_262_295);
 
         // sercomm
         let owner2_reward = *owner_rewards
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
-        assert_eq!(owner2_reward, 1_024_590_163_934);
+        assert_eq!(owner2_reward, 409_836_065_573);
     }
 
     #[tokio::test]
@@ -1728,7 +1726,7 @@ mod test {
         // owner 1 is a wifi indoor with a distance_to_asserted > max
         // and so gets the reduced reward scale of 0.1 ( radio reward scale of 0.4 * location scale of 0.25)
         // owner 2 is a cbrs sercomm indoor which has a reward scale of 1.0
-        assert_eq!(owner1_reward, (owner2_reward as f64 * 0.25) as u64);
+        assert_eq!(owner1_reward, owner2_reward);
     }
 
     #[tokio::test]
@@ -1850,13 +1848,13 @@ mod test {
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-        assert_eq!(owner1_reward, 1_024_590_163_934);
+        assert_eq!(owner1_reward, 1_639_344_262_295);
 
         // sercomm
         let owner2_reward = *owner_rewards
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
-        assert_eq!(owner2_reward, 1_024_590_163_934);
+        assert_eq!(owner2_reward, 409_836_065_573);
     }
 
     /// Test to ensure that rewards that are zeroed are not written out.

@@ -59,9 +59,9 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     );
     if let Ok((poc_rewards, dc_rewards, unallocated_poc_reward)) = rewards {
         // assert poc reward outputs
-        let hotspot_1_reward = 24_108_003_121_986;
-        let hotspot_2_reward = 24_108_003_121_986;
-        let hotspot_3_reward = 964_320_124_879;
+        let hotspot_1_reward = 9_758_001_263_661;
+        let hotspot_2_reward = 39_032_005_054_644;
+        let hotspot_3_reward = 390_320_050_546;
         assert_eq!(hotspot_1_reward, poc_rewards[0].poc_reward);
         assert_eq!(
             HOTSPOT_1.to_string(),

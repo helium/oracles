@@ -85,7 +85,7 @@ where
             file_source::continuous_source::<CellSpeedtestIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::CellSpeedtestIngestReport.to_string())
                 .create()
                 .await?;
@@ -123,7 +123,6 @@ where
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         loop {
-            #[rustfmt::skip]
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
@@ -131,9 +130,10 @@ where
                     break;
                 }
                 Some(file) = self.speedtests.recv() => {
-		    let start = Instant::now();
-		    self.process_file(file).await?;
-		    metrics::histogram!("speedtest_processing_time", start.elapsed());
+                    let start = Instant::now();
+                    self.process_file(file).await?;
+                    metrics::histogram!("speedtest_processing_time")
+                        .record(start.elapsed());
                 }
             }
         }

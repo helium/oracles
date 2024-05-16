@@ -49,11 +49,16 @@ pub enum BurnError<S> {
 }
 
 impl<P, S> Burner<P, S> {
-    pub fn new(pending_tables: P, balances: &BalanceCache<S>, burn_period: u64, solana: S) -> Self {
+    pub fn new(
+        pending_tables: P,
+        balances: &BalanceCache<S>,
+        burn_period: Duration,
+        solana: S,
+    ) -> Self {
         Self {
             pending_tables,
             balances: balances.balances(),
-            burn_period: Duration::from_secs(60 * burn_period),
+            burn_period,
             solana,
         }
     }
@@ -131,7 +136,7 @@ where
         payer_account.burned = payer_account.burned.saturating_sub(amount);
         payer_account.balance = payer_account.balance.saturating_sub(amount);
 
-        metrics::counter!("burned", amount, "payer" => payer.to_string());
+        metrics::counter!("burned", "payer" => payer.to_string()).increment(amount);
 
         Ok(())
     }

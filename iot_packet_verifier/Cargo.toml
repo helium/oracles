@@ -35,3 +35,4 @@ tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
 http = {workspace = true}
 http-serde = {workspace = true}
+humantime-serde = { workspace = true }

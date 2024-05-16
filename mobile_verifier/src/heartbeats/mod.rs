@@ -275,7 +275,7 @@ pub struct HeartbeatReward {
     pub coverage_object: Uuid,
 }
 
-const RESTRICTIVE_MAX_DISTANCE: i64 = 30;
+const RESTRICTIVE_MAX_DISTANCE: i64 = 50;
 
 impl HeartbeatReward {
     pub fn key(&self) -> KeyType<'_> {

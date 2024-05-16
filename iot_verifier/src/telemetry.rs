@@ -26,47 +26,47 @@ pub async fn initialize(db: &Pool<Postgres>) -> anyhow::Result<()> {
 }
 
 pub fn count_packets(count: u64) {
-    metrics::counter!(PACKET_COUNTER, count);
+    metrics::counter!(PACKET_COUNTER).increment(count);
 }
 
 pub fn count_non_rewardable_packets(count: u64) {
-    metrics::counter!(NON_REWARDABLE_PACKET_COUNTER, count);
+    metrics::counter!(NON_REWARDABLE_PACKET_COUNTER).increment(count);
 }
 
 pub fn count_loader_beacons(count: u64) {
-    metrics::counter!(LOADER_BEACON_COUNTER, count);
+    metrics::counter!(LOADER_BEACON_COUNTER).increment(count);
 }
 
 pub fn count_loader_witnesses(count: u64) {
-    metrics::counter!(LOADER_WITNESS_COUNTER, count);
+    metrics::counter!(LOADER_WITNESS_COUNTER).increment(count);
 }
 
 pub fn count_loader_dropped_beacons(count: u64, labels: &[(&'static str, &'static str)]) {
-    metrics::counter!(LOADER_DROPPED_BEACON_COUNTER, count, labels);
+    metrics::counter!(LOADER_DROPPED_BEACON_COUNTER, labels).increment(count);
 }
 
 pub fn count_loader_dropped_witnesses(count: u64, labels: &[(&'static str, &'static str)]) {
-    metrics::counter!(LOADER_DROPPED_WITNESS_COUNTER, count, labels);
+    metrics::counter!(LOADER_DROPPED_WITNESS_COUNTER, labels).increment(count);
 }
 
 pub fn num_beacons(count: u64) {
-    metrics::gauge!(BEACON_GUAGE, count as f64);
+    metrics::gauge!(BEACON_GUAGE).set(count as f64);
 }
 
 pub fn increment_num_beacons_by(count: u64) {
-    metrics::increment_gauge!(BEACON_GUAGE, count as f64);
+    metrics::gauge!(BEACON_GUAGE).increment(count as f64);
 }
 
 pub fn decrement_num_beacons() {
-    metrics::decrement_gauge!(BEACON_GUAGE, 1.0)
+    metrics::gauge!(BEACON_GUAGE).decrement(1.0)
 }
 
 pub fn increment_invalid_witnesses(labels: &[(&'static str, &'static str)]) {
-    metrics::increment_counter!(INVALID_WITNESS_COUNTER, labels);
+    metrics::counter!(INVALID_WITNESS_COUNTER, labels).increment(1);
 }
 
 pub fn last_rewarded_end_time(datetime: DateTime<Utc>) {
-    metrics::gauge!(LAST_REWARDED_END_TIME, datetime.timestamp() as f64);
+    metrics::gauge!(LAST_REWARDED_END_TIME).set(datetime.timestamp() as f64);
 }
 
 #[derive(Default)]

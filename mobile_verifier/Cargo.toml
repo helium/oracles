@@ -55,6 +55,7 @@ task-manager = {path = "../task_manager"}
 solana-sdk = {workspace = true}
 derive_builder = {workspace = true}
 regex = "1"
+humantime-serde = { workspace = true }
 
 [dev-dependencies]
 backon = "0"

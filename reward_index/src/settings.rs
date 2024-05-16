@@ -1,7 +1,8 @@
-use chrono::Duration;
+use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
+use humantime_serde::re::humantime;
 use serde::Deserialize;
-use std::{fmt, path::Path};
+use std::{fmt, path::Path, time::Duration};
 
 /// Mode to start the indexer in. Each mode uses different files from
 /// the verifier
@@ -28,8 +29,8 @@ pub struct Settings {
     #[serde(default = "default_log")]
     pub log: String,
     /// Check interval in seconds. (Default is 900; 15 minutes)
-    #[serde(default = "default_interval")]
-    pub interval: i64,
+    #[serde(with = "humantime_serde", default = "default_interval")]
+    pub interval: Duration,
     /// Mode to run the server in (iot or mobile). Required
     pub mode: Mode,
     pub database: db_store::Settings,
@@ -38,14 +39,18 @@ pub struct Settings {
     pub operation_fund_key: Option<String>,
     pub unallocated_reward_entity_key: Option<String>,
     #[serde(default = "default_start_after")]
-    pub start_after: u64,
+    pub start_after: DateTime<Utc>,
 }
 
-pub fn default_start_after() -> u64 {
-    0
+fn default_interval() -> Duration {
+    humantime::parse_duration("15 minutes").unwrap()
 }
 
-pub fn default_log() -> String {
+fn default_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
+}
+
+fn default_log() -> String {
     "reward_index=debug,poc_store=info".to_string()
 }
 
@@ -72,10 +77,6 @@ impl Settings {
             .and_then(|config| config.try_deserialize())
     }
 
-    pub fn interval(&self) -> Duration {
-        Duration::seconds(self.interval)
-    }
-
     pub fn operation_fund_key(&self) -> Option<String> {
         self.operation_fund_key.clone()
     }
@@ -83,8 +84,4 @@ impl Settings {
     pub fn unallocated_reward_entity_key(&self) -> Option<String> {
         self.unallocated_reward_entity_key.clone()
     }
-}
-
-fn default_interval() -> i64 {
-    900
 }

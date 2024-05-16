@@ -2,7 +2,7 @@ use crate::{
     reward_share::{self, GatewayShares},
     telemetry,
 };
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
 use futures::future::LocalBoxFuture;
@@ -10,22 +10,23 @@ use helium_proto::services::poc_lora as proto;
 use helium_proto::services::poc_lora::iot_reward_share::Reward as ProtoReward;
 use helium_proto::services::poc_lora::{UnallocatedReward, UnallocatedRewardType};
 use helium_proto::RewardManifest;
+use humantime_serde::re::humantime;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, PgPool, Pool, Postgres};
-use std::ops::Range;
+use std::{ops::Range, time::Duration};
 use task_manager::ManagedTask;
 use tokio::time::sleep;
 
-const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
+const REWARDS_NOT_CURRENT_DELAY_PERIOD: Duration = Duration::from_secs(5 * 60);
 
 pub struct Rewarder {
     pub pool: Pool<Postgres>,
     pub rewards_sink: file_sink::FileSinkClient,
     pub reward_manifests_sink: file_sink::FileSinkClient,
-    pub reward_period_hours: i64,
+    pub reward_period_hours: Duration,
     pub reward_offset: Duration,
     pub price_tracker: PriceTracker,
 }
@@ -44,7 +45,7 @@ impl Rewarder {
         pool: PgPool,
         rewards_sink: file_sink::FileSinkClient,
         reward_manifests_sink: file_sink::FileSinkClient,
-        reward_period_hours: i64,
+        reward_period_hours: Duration,
         reward_offset: Duration,
         price_tracker: PriceTracker,
     ) -> Self {
@@ -61,7 +62,7 @@ impl Rewarder {
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("Starting rewarder");
 
-        let reward_period_length = Duration::hours(self.reward_period_hours);
+        let reward_period_length = self.reward_period_hours;
 
         loop {
             let now = Utc::now();
@@ -87,9 +88,10 @@ impl Rewarder {
                     scheduler.sleep_duration(Utc::now())?
                 } else {
                     tracing::info!(
-                        "rewards will be retried in {REWARDS_NOT_CURRENT_DELAY_PERIOD} minutes:"
+                        "rewards will be retried in {}",
+                        humantime::format_duration(REWARDS_NOT_CURRENT_DELAY_PERIOD)
                     );
-                    Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
+                    REWARDS_NOT_CURRENT_DELAY_PERIOD
                 }
             } else {
                 scheduler.sleep_duration(Utc::now())?

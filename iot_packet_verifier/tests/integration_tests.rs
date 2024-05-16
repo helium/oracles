@@ -452,7 +452,7 @@ async fn test_end_to_end() {
     let mut burner = Burner::new(
         pending_tables.clone(),
         &balance_cache,
-        0, // Burn period does not matter, we manually burn
+        Duration::default(), // Burn period does not matter, we manually burn
         solana_network.clone(),
     );
 

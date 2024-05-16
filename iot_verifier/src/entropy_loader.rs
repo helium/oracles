@@ -63,7 +63,7 @@ impl EntropyLoader {
                     report.version as i32,
                 )
                 .await?;
-                metrics::increment_counter!("oracles_iot_verifier_loader_entropy");
+                metrics::counter!("oracles_iot_verifier_loader_entropy").increment(1);
                 Ok(transaction)
             })
             .await?

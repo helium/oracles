@@ -71,8 +71,6 @@ impl Daemon {
         // Create on-chain metadata pool
         let metadata_pool = settings.metadata.connect("mobile-config-metadata").await?;
 
-        let listen_addr = settings.listen_addr()?;
-
         let (key_cache_updater, key_cache) = KeyCache::from_settings(settings, &pool).await?;
 
         let admin_svc =
@@ -97,6 +95,7 @@ impl Daemon {
             settings.signing_keypair()?,
         );
 
+        let listen_addr = settings.listen;
         let grpc_server = GrpcServer {
             listen_addr,
             admin_svc,

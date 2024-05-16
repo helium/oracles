@@ -1,7 +1,8 @@
 use crate::entropy::ENTROPY_LIFESPAN;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
+use std::time::Duration;
 
 const REPORT_INSERT_SQL: &str = "insert into poc_report (
     id,
@@ -190,7 +191,7 @@ impl Report {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let entropy_min_time = Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
+        let entropy_min_time = Utc::now() - ENTROPY_LIFESPAN;
         Ok(sqlx::query_as::<_, Self>(
             r#"
             select poc_report.id,

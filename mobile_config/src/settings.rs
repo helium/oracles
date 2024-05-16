@@ -1,11 +1,7 @@
 use anyhow::Context;
 use config::{Config, Environment, File};
 use serde::Deserialize;
-use std::{
-    net::{AddrParseError, SocketAddr},
-    path::Path,
-    str::FromStr,
-};
+use std::{net::SocketAddr, path::Path, str::FromStr};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -15,7 +11,7 @@ pub struct Settings {
     pub log: String,
     /// Listen address. Required. Default to 0.0.0.0::8080
     #[serde(default = "default_listen_addr")]
-    pub listen: String,
+    pub listen: SocketAddr,
     /// File from which to load config server signing keypair
     pub signing_keypair: String,
     /// B58 encoded public key of the default admin keypair
@@ -33,8 +29,8 @@ pub fn default_log() -> String {
     "mobile_config=debug".to_string()
 }
 
-pub fn default_listen_addr() -> String {
-    "0.0.0.0:8080".to_string()
+pub fn default_listen_addr() -> SocketAddr {
+    "0.0.0.0:8080".parse().unwrap()
 }
 
 impl Settings {
@@ -59,10 +55,6 @@ impl Settings {
             .add_source(Environment::with_prefix("CFG").separator("__"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn listen_addr(&self) -> Result<SocketAddr, AddrParseError> {
-        SocketAddr::from_str(&self.listen)
     }
 
     pub fn signing_keypair(&self) -> anyhow::Result<helium_crypto::Keypair> {

@@ -1,9 +1,8 @@
 use anyhow::bail;
-use chrono::Duration;
 use config::{Config, Environment, File};
+use humantime_serde::re::humantime;
 use serde::Deserialize;
-use std::path::Path;
-use tokio::time;
+use std::{path::Path, time::Duration};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
@@ -17,17 +16,17 @@ pub struct Settings {
     /// if this is set, this value will be added to the entropy and report
     /// stale periods and is to prevent data being unnecessarily purged
     /// in the event the verifier is down for an extended period of time
-    #[serde(default = "default_base_stale_period")]
-    pub base_stale_period: i64,
+    #[serde(with = "humantime_serde", default = "default_base_stale_period")]
+    pub base_stale_period: Duration,
     /// the period after which a beacon report in the DB will be deemed stale
-    #[serde(default = "default_beacon_stale_period")]
-    pub beacon_stale_period: i64,
+    #[serde(with = "humantime_serde", default = "default_beacon_stale_period")]
+    pub beacon_stale_period: Duration,
     /// the period after which a witness report in the DB will be deemed stale
-    #[serde(default = "default_witness_stale_period")]
-    pub witness_stale_period: i64,
+    #[serde(with = "humantime_serde", default = "default_witness_stale_period")]
+    pub witness_stale_period: Duration,
     /// the period after which an entropy report in the DB will be deemed stale
-    #[serde(default = "default_entropy_stale_period")]
-    pub entropy_stale_period: i64,
+    #[serde(with = "humantime_serde", default = "default_entropy_stale_period")]
+    pub entropy_stale_period: Duration,
     pub database: db_store::Settings,
     pub iot_config_client: iot_config::client::Settings,
     pub ingest: file_store::Settings,
@@ -39,50 +38,55 @@ pub struct Settings {
     pub denylist: denylist::Settings,
     pub price_tracker: price::price_tracker::Settings,
     /// Reward period in hours. (Default to 24)
-    #[serde(default = "default_reward_period")]
-    pub rewards: i64,
+    #[serde(with = "humantime_serde", default = "default_reward_period")]
+    pub reward_period: Duration,
     /// Reward calculation offset in minutes, rewards will be calculated at the end
-    /// of the reward period + reward_offset_minutes
-    #[serde(default = "default_reward_offset_minutes")]
-    pub reward_offset_minutes: i64,
+    /// of the reward_period + reward_period_offset
+    #[serde(with = "humantime_serde", default = "default_reward_period_offset")]
+    pub reward_period_offset: Duration,
     #[serde(default = "default_max_witnesses_per_poc")]
     pub max_witnesses_per_poc: u64,
     /// The cadence at which hotspots are permitted to beacon (in seconds)
     /// this should be a factor of 24 so that we can have clear
     /// beaconing bucket sizes
-    #[serde(default = "default_beacon_interval")]
-    pub beacon_interval: u64,
+    #[serde(with = "humantime_serde", default = "default_beacon_interval")]
+    pub beacon_interval: Duration,
+    // FIXME: unused
     /// Trigger interval for generating a transmit scaling map
-    #[serde(default = "default_transmit_scale_interval")]
-    pub transmit_scale_interval: i64,
+    #[serde(with = "humantime_serde", default = "default_transmit_scale_interval")]
+    pub transmit_scale_interval: Duration,
     // roll up time defined in the ingestors ( in seconds )
     // ie the time after which they will write out files to s3
     // this will be used when padding out the witness
     // loader window before and after values
-    #[serde(default = "default_ingestor_rollup_time")]
-    pub ingestor_rollup_time: i64,
+    #[serde(with = "humantime_serde", default = "default_ingestor_rollup_time")]
+    pub ingestor_rollup_time: Duration,
     /// window width for the poc report loader ( in seconds )
     /// each poll the loader will load reports from start time to start time + window width
     /// NOTE: the window width should be as a minimum equal to the ingestor roll up period
     ///       any less and the verifier will potentially miss incoming reports
-    #[serde(default = "default_poc_loader_window_width")]
-    pub poc_loader_window_width: i64,
+    #[serde(with = "humantime_serde", default = "default_poc_loader_window_width")]
+    pub poc_loader_window_width: Duration,
     /// cadence for how often to look for poc reports from s3 buckets
-    #[serde(default = "default_poc_loader_poll_time")]
-    pub poc_loader_poll_time: u64,
+    #[serde(with = "humantime_serde", default = "default_poc_loader_poll_time")]
+    pub poc_loader_poll_time: Duration,
+    // FIXME: unused
     /// the lifespan of a piece of entropy
-    #[serde(default = "default_entropy_lifespan ")]
-    pub entropy_lifespan: i64,
+    #[serde(with = "humantime_serde", default = "default_entropy_lifespan ")]
+    pub entropy_lifespan: Duration,
     /// max window age for the poc report loader ( in seconds )
     /// the starting point of the window will never be older than now - max age
-    #[serde(default = "default_loader_window_max_lookback_age")]
-    pub loader_window_max_lookback_age: i64,
+    #[serde(
+        with = "humantime_serde",
+        default = "default_loader_window_max_lookback_age"
+    )]
+    pub loader_window_max_lookback_age: Duration,
     /// File store poll interval for incoming entropy reports, in seconds
-    #[serde(default = "default_entropy_interval")]
-    pub entropy_interval: i64,
-    /// File store poll interval for incoming packets, in seconds. (Default is 900; 15 minutes)
-    #[serde(default = "default_packet_interval")]
-    pub packet_interval: i64,
+    #[serde(with = "humantime_serde", default = "default_entropy_interval")]
+    pub entropy_interval: Duration,
+    /// File store poll interval for incoming packets, in seconds. (Default 15 minutes)
+    #[serde(with = "humantime_serde", default = "default_packet_interval")]
+    pub packet_interval: Duration,
     /// the max number of times a beacon report will be retried
     /// after this the report will be ignored and eventually be purged
     #[serde(default = "default_beacon_max_retries")]
@@ -92,103 +96,97 @@ pub struct Settings {
     #[serde(default = "default_witness_max_retries")]
     pub witness_max_retries: u64,
     /// interval at which gateways are refreshed
-    #[serde(default = "default_gateway_refresh_interval")]
-    pub gateway_refresh_interval: i64,
+    #[serde(with = "humantime_serde", default = "default_gateway_refresh_interval")]
+    pub gateway_refresh_interval: Duration,
     /// interval at which region params in the cache are refreshed
-    #[serde(default = "default_region_params_refresh_interval")]
-    pub region_params_refresh_interval: u64,
+    #[serde(
+        with = "humantime_serde",
+        default = "default_region_params_refresh_interval"
+    )]
+    pub region_params_refresh_interval: Duration,
 }
 
-// Default: 30 minutes
-fn default_gateway_refresh_interval() -> i64 {
-    30 * 60
+fn default_gateway_refresh_interval() -> Duration {
+    humantime::parse_duration("30 minutes").unwrap()
 }
 
-// Default: 30 minutes
-fn default_region_params_refresh_interval() -> u64 {
-    30 * 60
+fn default_region_params_refresh_interval() -> Duration {
+    humantime::parse_duration("30 minutes").unwrap()
 }
 
-// Default: 60 minutes
 // this should be at least poc_loader_window_width * 2
-pub fn default_loader_window_max_lookback_age() -> i64 {
-    60 * 60
+fn default_loader_window_max_lookback_age() -> Duration {
+    humantime::parse_duration("60 minutes").unwrap()
 }
 
-// Default: 5 minutes
-fn default_entropy_interval() -> i64 {
-    5 * 60
+fn default_entropy_interval() -> Duration {
+    humantime::parse_duration("5 minutes").unwrap()
 }
 
-// Default: 5 minutes
-pub fn default_entropy_lifespan() -> i64 {
-    5 * 60
+fn default_entropy_lifespan() -> Duration {
+    humantime::parse_duration("5 minutes").unwrap()
 }
 
-// Default: 5 minutes
-pub fn default_poc_loader_window_width() -> i64 {
-    5 * 60
+fn default_poc_loader_window_width() -> Duration {
+    humantime::parse_duration("5 minutes").unwrap()
 }
 
-// Default: 5 minutes
-pub fn default_ingestor_rollup_time() -> i64 {
-    5 * 60
+fn default_ingestor_rollup_time() -> Duration {
+    humantime::parse_duration("5 minutes").unwrap()
 }
-// Default: 5 minutes
+
 // in normal operational mode the poll time should be set same as that of the window width
 // however, if for example we are loading historic data, ie looking back 24hours, we will want
 // the loader to be catching up as quickly as possible and so we will want to poll more often
 // in order to iterate quickly over the historic data
 // the average time it takes to load the data available within with window width needs to be
 // considered here
-pub fn default_poc_loader_poll_time() -> u64 {
-    5 * 60
+fn default_poc_loader_poll_time() -> Duration {
+    humantime::parse_duration("5 minutes").unwrap()
 }
 
-// Default: 6 hours
-pub fn default_beacon_interval() -> u64 {
-    6 * 60 * 60
+fn default_beacon_interval() -> Duration {
+    humantime::parse_duration("6 hours").unwrap()
 }
 
-// Default: 30 min
-pub fn default_transmit_scale_interval() -> i64 {
-    1800
+fn default_transmit_scale_interval() -> Duration {
+    humantime::parse_duration("30 minutes").unwrap()
 }
 
-pub fn default_log() -> String {
+fn default_log() -> String {
     "iot_verifier=debug,poc_store=info".to_string()
 }
 
-pub fn default_base_stale_period() -> i64 {
-    0
+fn default_base_stale_period() -> Duration {
+    Duration::default()
 }
 
-pub fn default_beacon_stale_period() -> i64 {
-    60 * 45
+fn default_beacon_stale_period() -> Duration {
+    humantime::parse_duration("45 minutes").unwrap()
 }
 
-pub fn default_witness_stale_period() -> i64 {
-    60 * 45
+fn default_witness_stale_period() -> Duration {
+    humantime::parse_duration("45 minutes").unwrap()
 }
 
-pub fn default_entropy_stale_period() -> i64 {
-    60 * 60
+fn default_entropy_stale_period() -> Duration {
+    humantime::parse_duration("60 minutes").unwrap()
 }
 
-fn default_reward_period() -> i64 {
-    24
+fn default_reward_period() -> Duration {
+    humantime::parse_duration("24 hours").unwrap()
 }
 
-fn default_reward_offset_minutes() -> i64 {
-    30
+fn default_reward_period_offset() -> Duration {
+    humantime::parse_duration("30 minutes").unwrap()
 }
 
-pub fn default_max_witnesses_per_poc() -> u64 {
+fn default_max_witnesses_per_poc() -> u64 {
     14
 }
 
-fn default_packet_interval() -> i64 {
-    900
+fn default_packet_interval() -> Duration {
+    humantime::parse_duration("15 minutes").unwrap()
 }
 
 // runner runs at 30 sec intervals
@@ -229,64 +227,13 @@ impl Settings {
             .and_then(|config| config.try_deserialize())
     }
 
-    pub fn reward_offset_duration(&self) -> Duration {
-        Duration::minutes(self.reward_offset_minutes)
-    }
-
-    pub fn poc_loader_window_width(&self) -> Duration {
-        Duration::seconds(self.poc_loader_window_width)
-    }
-
-    pub fn ingestor_rollup_time(&self) -> Duration {
-        Duration::seconds(self.ingestor_rollup_time)
-    }
-
-    pub fn poc_loader_poll_time(&self) -> time::Duration {
-        time::Duration::from_secs(self.poc_loader_poll_time)
-    }
-
-    pub fn loader_window_max_lookback_age(&self) -> Duration {
-        Duration::seconds(self.loader_window_max_lookback_age)
-    }
-
-    pub fn entropy_lifespan(&self) -> Duration {
-        Duration::seconds(self.entropy_lifespan)
-    }
-
-    pub fn base_stale_period(&self) -> Duration {
-        Duration::seconds(self.base_stale_period)
-    }
-
-    pub fn beacon_stale_period(&self) -> Duration {
-        Duration::seconds(self.beacon_stale_period)
-    }
-
-    pub fn witness_stale_period(&self) -> Duration {
-        Duration::seconds(self.witness_stale_period)
-    }
-
-    pub fn entropy_stale_period(&self) -> Duration {
-        Duration::seconds(self.entropy_stale_period)
-    }
-
-    pub fn entropy_interval(&self) -> Duration {
-        Duration::seconds(self.entropy_interval)
-    }
-    pub fn packet_interval(&self) -> Duration {
-        Duration::seconds(self.packet_interval)
-    }
-    pub fn gateway_refresh_interval(&self) -> Duration {
-        Duration::seconds(self.gateway_refresh_interval)
-    }
-    pub fn region_params_refresh_interval(&self) -> time::Duration {
-        time::Duration::from_secs(self.region_params_refresh_interval)
-    }
     pub fn beacon_interval(&self) -> anyhow::Result<Duration> {
+        // FIXME:
         // validate the beacon_interval value is a factor of 24, if not bail out
-        if (24 * 60 * 60) % self.beacon_interval != 0 {
+        if (24 * 60 * 60) % self.beacon_interval.as_secs() != 0 {
             bail!("beacon interval is not a factor of 24")
         } else {
-            Ok(Duration::seconds(self.beacon_interval as i64))
+            Ok(self.beacon_interval)
         }
     }
 }

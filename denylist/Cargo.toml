@@ -22,3 +22,4 @@ serde_json = { workspace = true }
 config = { workspace = true }
 chrono = { workspace = true }
 xorf-generator = { git = "https://github.com/helium/xorf-generator", branch = "main" }
+humantime-serde = { workspace = true }

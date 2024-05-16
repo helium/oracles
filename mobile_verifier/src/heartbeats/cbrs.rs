@@ -56,7 +56,7 @@ where
             file_source::continuous_source::<CbrsHeartbeatIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
                 .queue_size(1)
                 .create()
@@ -66,7 +66,7 @@ where
             pool,
             gateway_resolver,
             cbrs_heartbeats,
-            settings.modeled_coverage_start(),
+            settings.modeled_coverage_start,
             settings.max_asserted_distance_deviation,
             settings.max_distance_from_coverage,
             valid_heartbeats,
@@ -122,7 +122,6 @@ where
         let location_cache = LocationCache::new(&self.pool);
 
         loop {
-            #[rustfmt::skip]
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
@@ -130,15 +129,16 @@ where
                     break;
                 }
                 Some(file) = self.heartbeats.recv() => {
-		    let start = Instant::now();
-		    self.process_file(
+                    let start = Instant::now();
+                    self.process_file(
                         file,
                         &heartbeat_cache,
                         &coverage_claim_time_cache,
                         &coverage_object_cache,
                         &location_cache,
-		    ).await?;
-		    metrics::histogram!("cbrs_heartbeat_processing_time", start.elapsed());
+                    ).await?;
+                    metrics::histogram!("cbrs_heartbeat_processing_time")
+                        .record(start.elapsed());
                 }
             }
         }

@@ -505,7 +505,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    assert_eq!(coverage_points.hotspot_points(&owner), dec!(1000));
+    assert_eq!(coverage_points.hotspot_points(&owner), dec!(250));
 
     Ok(())
 }
@@ -605,8 +605,8 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(450));
-    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(1000));
+    assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(112.5));
+    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(250));
 
     Ok(())
 }
@@ -891,7 +891,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(0));
     assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(0));
     assert_eq!(coverage_points.hotspot_points(&owner_3), dec!(0));
-    assert_eq!(coverage_points.hotspot_points(&owner_4), dec!(1000));
+    assert_eq!(coverage_points.hotspot_points(&owner_4), dec!(250));
     assert_eq!(coverage_points.hotspot_points(&owner_5), dec!(0));
     assert_eq!(coverage_points.hotspot_points(&owner_6), dec!(0));
 
@@ -960,7 +960,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    assert_eq!(coverage_points.hotspot_points(&owner), dec!(76));
+    assert_eq!(coverage_points.hotspot_points(&owner), dec!(19));
 
     Ok(())
 }
@@ -1061,9 +1061,9 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(
         coverage_points.hotspot_points(&owner_1),
-        dec!(76) * dec!(0.5)
+        dec!(19) * dec!(0.5)
     );
-    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(32));
+    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(8));
 
     Ok(())
 }
@@ -1307,7 +1307,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(0));
-    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(250));
+    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(62.5));
     assert_eq!(coverage_points.hotspot_points(&owner_3), dec!(0));
     assert_eq!(coverage_points.hotspot_points(&owner_4), dec!(0));
     assert_eq!(coverage_points.hotspot_points(&owner_5), dec!(0));

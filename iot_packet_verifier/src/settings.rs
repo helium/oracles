@@ -1,7 +1,8 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
+use humantime_serde::re::humantime;
 use serde::Deserialize;
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -12,8 +13,8 @@ pub struct Settings {
     /// Cache location for generated verified reports
     pub cache: String,
     /// Data credit burn period in minutes. Default is 1.
-    #[serde(default = "default_burn_period")]
-    pub burn_period: u64,
+    #[serde(with = "humantime_serde", default = "default_burn_period")]
+    pub burn_period: Duration,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub iot_config_client: iot_config::client::Settings,
@@ -26,19 +27,19 @@ pub struct Settings {
     pub minimum_allowed_balance: u64,
     pub solana: Option<solana::burn::Settings>,
     #[serde(default = "default_start_after")]
-    pub start_after: u64,
+    pub start_after: DateTime<Utc>,
     /// Number of minutes we should sleep before checking to re-enable
     /// any disabled orgs.
     #[serde(default = "default_monitor_funds_period")]
-    pub monitor_funds_period: u64,
+    pub monitor_funds_period: Duration,
 }
 
-pub fn default_start_after() -> u64 {
-    0
+pub fn default_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
-pub fn default_burn_period() -> u64 {
-    1
+pub fn default_burn_period() -> Duration {
+    humantime::parse_duration("1 minute").unwrap()
 }
 
 pub fn default_log() -> String {
@@ -49,8 +50,8 @@ pub fn default_minimum_allowed_balance() -> u64 {
     3_500_000
 }
 
-pub fn default_monitor_funds_period() -> u64 {
-    30
+pub fn default_monitor_funds_period() -> Duration {
+    humantime::parse_duration("30 minutes").unwrap()
 }
 
 impl Settings {
@@ -74,11 +75,5 @@ impl Settings {
             .add_source(Environment::with_prefix("PACKET_VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn start_after(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(self.start_after as i64, 0)
-            .single()
-            .unwrap()
     }
 }

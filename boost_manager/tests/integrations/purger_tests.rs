@@ -18,7 +18,7 @@ async fn test_purge(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(7, count);
 
     // do da purge
-    purger::purge(&pool, Duration::days(7)).await?;
+    purger::purge(&pool, Duration::days(7).to_std()?).await?;
 
     // assert the db contains the expected number of records post purge
     let count: i64 = sqlx::query_scalar("select count(*) from activated_hexes")

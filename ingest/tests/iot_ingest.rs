@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, str::FromStr};
+use std::net::{SocketAddr, TcpListener};
 
 use backon::{ExponentialBuilder, Retryable};
 use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
@@ -12,7 +12,7 @@ use helium_proto::services::poc_lora::{
 };
 use ingest::server_iot::GrpcServer;
 use prost::Message;
-use rand::{rngs::OsRng, Rng};
+use rand::rngs::OsRng;
 use task_manager::TaskManager;
 use tokio::{sync::mpsc::error::TryRecvError, task::LocalSet, time::timeout};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
@@ -22,12 +22,12 @@ use tonic::{transport::Channel, Streaming};
 async fn initialize_session_and_send_beacon_and_witness() {
     let (beacon_client, mut beacons) = create_file_sink();
     let (witness_client, mut witnesses) = create_file_sink();
-    let port = get_port();
+    let addr = get_socket_addr().expect("socket addr");
 
     LocalSet::new()
         .run_until(async move {
             tokio::task::spawn_local(async move {
-                let server = create_test_server(port, beacon_client, witness_client, None, None);
+                let server = create_test_server(addr, beacon_client, witness_client, None, None);
                 TaskManager::builder()
                     .add_task(server)
                     .build()
@@ -38,7 +38,7 @@ async fn initialize_session_and_send_beacon_and_witness() {
             let pub_key = generate_keypair();
             let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(port).await;
+            let mut client = connect_and_stream(addr).await;
             let offer = client.receive_offer().await;
 
             client
@@ -75,12 +75,12 @@ async fn initialize_session_and_send_beacon_and_witness() {
 async fn stream_stops_after_incorrectly_signed_init_request() {
     let (beacon_client, _) = create_file_sink();
     let (witness_client, _) = create_file_sink();
-    let port = get_port();
+    let addr = get_socket_addr().expect("socket addr");
 
     LocalSet::new()
         .run_until(async move {
             tokio::task::spawn_local(async move {
-                let server = create_test_server(port, beacon_client, witness_client, None, None);
+                let server = create_test_server(addr, beacon_client, witness_client, None, None);
                 TaskManager::builder()
                     .add_task(server)
                     .build()
@@ -91,7 +91,7 @@ async fn stream_stops_after_incorrectly_signed_init_request() {
             let pub_key = generate_keypair();
             let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(port).await;
+            let mut client = connect_and_stream(addr).await;
             let offer = client.receive_offer().await;
 
             client
@@ -113,12 +113,12 @@ async fn stream_stops_after_incorrectly_signed_init_request() {
 async fn stream_stops_after_incorrectly_signed_beacon() {
     let (beacon_client, beacons) = create_file_sink();
     let (witness_client, _) = create_file_sink();
-    let port = get_port();
+    let addr = get_socket_addr().expect("socket addr");
 
     LocalSet::new()
         .run_until(async move {
             tokio::task::spawn_local(async move {
-                let server = create_test_server(port, beacon_client, witness_client, None, None);
+                let server = create_test_server(addr, beacon_client, witness_client, None, None);
                 TaskManager::builder()
                     .add_task(server)
                     .build()
@@ -129,7 +129,7 @@ async fn stream_stops_after_incorrectly_signed_beacon() {
             let pub_key = generate_keypair();
             let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(port).await;
+            let mut client = connect_and_stream(addr).await;
             let offer = client.receive_offer().await;
 
             client
@@ -154,12 +154,12 @@ async fn stream_stops_after_incorrectly_signed_beacon() {
 async fn stream_stops_after_incorrect_beacon_pubkey() {
     let (beacon_client, beacons) = create_file_sink();
     let (witness_client, _) = create_file_sink();
-    let port = get_port();
+    let addr = get_socket_addr().expect("socket addr");
 
     LocalSet::new()
         .run_until(async move {
             tokio::task::spawn_local(async move {
-                let server = create_test_server(port, beacon_client, witness_client, None, None);
+                let server = create_test_server(addr, beacon_client, witness_client, None, None);
                 TaskManager::builder()
                     .add_task(server)
                     .build()
@@ -170,7 +170,7 @@ async fn stream_stops_after_incorrect_beacon_pubkey() {
             let pub_key = generate_keypair();
             let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(port).await;
+            let mut client = connect_and_stream(addr).await;
             let offer = client.receive_offer().await;
 
             client
@@ -198,12 +198,12 @@ async fn stream_stops_after_incorrect_beacon_pubkey() {
 async fn stream_stops_after_incorrectly_signed_witness() {
     let (beacon_client, _) = create_file_sink();
     let (witness_client, witnesses) = create_file_sink();
-    let port = get_port();
+    let addr = get_socket_addr().expect("socket addr");
 
     LocalSet::new()
         .run_until(async move {
             tokio::task::spawn_local(async move {
-                let server = create_test_server(port, beacon_client, witness_client, None, None);
+                let server = create_test_server(addr, beacon_client, witness_client, None, None);
                 TaskManager::builder()
                     .add_task(server)
                     .build()
@@ -214,7 +214,7 @@ async fn stream_stops_after_incorrectly_signed_witness() {
             let pub_key = generate_keypair();
             let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(port).await;
+            let mut client = connect_and_stream(addr).await;
             let offer = client.receive_offer().await;
 
             client
@@ -239,12 +239,12 @@ async fn stream_stops_after_incorrectly_signed_witness() {
 async fn stream_stops_after_incorrect_witness_pubkey() {
     let (beacon_client, _) = create_file_sink();
     let (witness_client, witnesses) = create_file_sink();
-    let port = get_port();
+    let addr = get_socket_addr().expect("socket addr");
 
     LocalSet::new()
         .run_until(async move {
             tokio::task::spawn_local(async move {
-                let server = create_test_server(port, beacon_client, witness_client, None, None);
+                let server = create_test_server(addr, beacon_client, witness_client, None, None);
                 TaskManager::builder()
                     .add_task(server)
                     .build()
@@ -255,7 +255,7 @@ async fn stream_stops_after_incorrect_witness_pubkey() {
             let pub_key = generate_keypair();
             let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(port).await;
+            let mut client = connect_and_stream(addr).await;
             let offer = client.receive_offer().await;
 
             client
@@ -283,12 +283,12 @@ async fn stream_stops_after_incorrect_witness_pubkey() {
 async fn stream_stop_if_client_attempts_to_initiliaze_2nd_session() {
     let (beacon_client, mut beacons) = create_file_sink();
     let (witness_client, _) = create_file_sink();
-    let port = get_port();
+    let addr = get_socket_addr().expect("socket addr");
 
     LocalSet::new()
         .run_until(async move {
             tokio::task::spawn_local(async move {
-                let server = create_test_server(port, beacon_client, witness_client, None, None);
+                let server = create_test_server(addr, beacon_client, witness_client, None, None);
                 TaskManager::builder()
                     .add_task(server)
                     .build()
@@ -299,7 +299,7 @@ async fn stream_stop_if_client_attempts_to_initiliaze_2nd_session() {
             let pub_key = generate_keypair();
             let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(port).await;
+            let mut client = connect_and_stream(addr).await;
             let offer = client.receive_offer().await;
 
             client
@@ -337,13 +337,13 @@ async fn stream_stop_if_client_attempts_to_initiliaze_2nd_session() {
 async fn stream_stops_if_init_not_sent_within_timeout() {
     let (beacon_client, _) = create_file_sink();
     let (witness_client, _) = create_file_sink();
-    let port = get_port();
+    let addr = get_socket_addr().expect("socket addr");
 
     LocalSet::new()
         .run_until(async move {
             tokio::task::spawn_local(async move {
                 let server =
-                    create_test_server(port, beacon_client, witness_client, Some(500), None);
+                    create_test_server(addr, beacon_client, witness_client, Some(500), None);
                 TaskManager::builder()
                     .add_task(server)
                     .build()
@@ -351,7 +351,7 @@ async fn stream_stops_if_init_not_sent_within_timeout() {
                     .await
             });
 
-            let mut client = connect_and_stream(port).await;
+            let mut client = connect_and_stream(addr).await;
             let _offer = client.receive_offer().await;
 
             client.assert_closed().await;
@@ -363,13 +363,13 @@ async fn stream_stops_if_init_not_sent_within_timeout() {
 async fn stream_stops_on_session_timeout() {
     let (beacon_client, mut beacons) = create_file_sink();
     let (witness_client, _) = create_file_sink();
-    let port = get_port();
+    let addr = get_socket_addr().expect("socket addr");
 
     LocalSet::new()
         .run_until(async move {
             tokio::task::spawn_local(async move {
                 let server =
-                    create_test_server(port, beacon_client, witness_client, Some(500), Some(900));
+                    create_test_server(addr, beacon_client, witness_client, Some(500), Some(900));
                 TaskManager::builder()
                     .add_task(server)
                     .build()
@@ -377,7 +377,7 @@ async fn stream_stops_on_session_timeout() {
                     .await
             });
 
-            let mut client = connect_and_stream(port).await;
+            let mut client = connect_and_stream(addr).await;
             let offer = client.receive_offer().await;
 
             let pub_key = generate_keypair();
@@ -449,8 +449,8 @@ fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
     )
 }
 
-async fn connect_and_stream(port: u64) -> TestClient {
-    let mut client = (|| PocLoraClient::connect(format!("http://127.0.0.1:{port}")))
+async fn connect_and_stream(socket_addr: SocketAddr) -> TestClient {
+    let mut client = (|| PocLoraClient::connect(format!("http://{socket_addr}")))
         .retry(&ExponentialBuilder::default())
         .await
         .expect("client connect");
@@ -572,7 +572,7 @@ impl TestClient {
 }
 
 fn create_test_server(
-    port: u64,
+    socket_addr: SocketAddr,
     beacon_file_sink: FileSinkClient,
     witness_file_sink: FileSinkClient,
     offer_timeout: Option<u64>,
@@ -584,7 +584,7 @@ fn create_test_server(
         beacon_report_sink: beacon_file_sink,
         witness_report_sink: witness_file_sink,
         required_network: Network::MainNet,
-        address: SocketAddr::from_str(&format!("127.0.0.1:{port}")).expect("socket address"),
+        address: socket_addr,
         session_key_offer_timeout: std::time::Duration::from_millis(offer_timeout),
         session_key_timeout: std::time::Duration::from_millis(timeout),
     }
@@ -598,6 +598,7 @@ fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
-fn get_port() -> u64 {
-    rand::thread_rng().gen_range(6000..10000)
+fn get_socket_addr() -> anyhow::Result<SocketAddr> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    Ok(listener.local_addr()?)
 }

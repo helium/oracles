@@ -342,8 +342,6 @@ impl poc_mobile::PocMobile for GrpcServer {
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
-    let grpc_addr = settings.listen_addr()?;
-
     // Initialize uploader
     let (file_upload, file_upload_server) =
         file_upload::FileUpload::from_settings_tm(&settings.output).await?;
@@ -461,12 +459,13 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         invalidated_radio_threshold_report_sink,
         coverage_object_report_sink,
         required_network: settings.network,
-        address: grpc_addr,
+        address: settings.listen_addr,
         api_token,
     };
 
     tracing::info!(
-        "grpc listening on {grpc_addr} and server mode {:?}",
+        "grpc listening on {} and server mode {:?}",
+        settings.listen_addr,
         settings.mode
     );
 

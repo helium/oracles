@@ -410,43 +410,43 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     // Hex   | Assignment | Points Equation | Sum
     // -----------------------------------------------
     // == yellow - POI ≥ 1 Urbanized
-    // hex1  | A, A, A    | 400 * 1         | 400
-    // hex2  | A, B, A    | 400 * 1         | 400
-    // hex3  | A, C, A    | 400 * 1         | 400
+    // hex1  | A, A, A    | 100 * 1         | 100
+    // hex2  | A, B, A    | 100 * 1         | 100
+    // hex3  | A, C, A    | 100 * 1         | 100
     // == orange - POI ≥ 1 Not Urbanized
-    // hex4  | A, A, B    | 400 * 1         | 400
-    // hex5  | A, B, B    | 400 * 1         | 400
-    // hex6  | A, C, B    | 400 * 1         | 400
+    // hex4  | A, A, B    | 100 * 1         | 100
+    // hex5  | A, B, B    | 100 * 1         | 100
+    // hex6  | A, C, B    | 100 * 1         | 100
     // == light green - Point of Interest Urbanized
-    // hex7  | B, A, A    | 400 * 0.70      | 280
-    // hex8  | B, B, A    | 400 * 0.70      | 280
-    // hex9  | B, C, A    | 400 * 0.70      | 280
+    // hex7  | B, A, A    | 100 * 0.70      | 70
+    // hex8  | B, B, A    | 100 * 0.70      | 70
+    // hex9  | B, C, A    | 100 * 0.70      | 70
     // == dark green - Point of Interest Not Urbanized
-    // hex10 | B, A, B    | 400 * 0.50      | 200
-    // hex11 | B, B, B    | 400 * 0.50      | 200
-    // hex12 | B, C, B    | 400 * 0.50      | 200
+    // hex10 | B, A, B    | 100 * 0.50      | 50
+    // hex11 | B, B, B    | 100 * 0.50      | 50
+    // hex12 | B, C, B    | 100 * 0.50      | 50
     // == light blue - No POI Urbanized
-    // hex13 | C, A, A    | 400 * 0.40     | 160
-    // hex14 | C, B, A    | 400 * 0.30     | 120
-    // hex15 | C, C, A    | 400 * 0.05     | 20
+    // hex13 | C, A, A    | 100 * 0.40     | 40
+    // hex14 | C, B, A    | 100 * 0.30     | 30
+    // hex15 | C, C, A    | 100 * 0.05     | 5
     // == dark blue - No POI Not Urbanized
-    // hex16 | C, A, B    | 400 * 0.20     | 80
-    // hex17 | C, B, B    | 400 * 0.15     | 60
-    // hex18 | C, C, B    | 400 * 0.03     | 12
+    // hex16 | C, A, B    | 100 * 0.20     | 20
+    // hex17 | C, B, B    | 100 * 0.15     | 15
+    // hex18 | C, C, B    | 100 * 0.03     | 3
     // == gray - Outside of USA
-    // hex19 | A, A, C    | 400 * 0.00     | 0
-    // hex20 | A, B, C    | 400 * 0.00     | 0
-    // hex21 | A, C, C    | 400 * 0.00     | 0
-    // hex22 | B, A, C    | 400 * 0.00     | 0
-    // hex23 | B, B, C    | 400 * 0.00     | 0
-    // hex24 | B, C, C    | 400 * 0.00     | 0
-    // hex25 | C, A, C    | 400 * 0.00     | 0
-    // hex26 | C, B, C    | 400 * 0.00     | 0
-    // hex27 | C, C, C    | 400 * 0.00     | 0
+    // hex19 | A, A, C    | 100 * 0.00     | 0
+    // hex20 | A, B, C    | 100 * 0.00     | 0
+    // hex21 | A, C, C    | 100 * 0.00     | 0
+    // hex22 | B, A, C    | 100 * 0.00     | 0
+    // hex23 | B, B, C    | 100 * 0.00     | 0
+    // hex24 | B, C, C    | 100 * 0.00     | 0
+    // hex25 | C, A, C    | 100 * 0.00     | 0
+    // hex26 | C, B, C    | 100 * 0.00     | 0
+    // hex27 | C, C, C    | 100 * 0.00     | 0
     // -----------------------------------------------
-    //                                     = 4,292
+    //                                     = 1,073
 
-    assert_eq!(coverage_points.hotspot_points(&owner), dec!(4292.0));
+    assert_eq!(coverage_points.hotspot_points(&owner), dec!(1073.0));
 
     Ok(())
 }

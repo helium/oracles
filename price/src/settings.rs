@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Result};
-use chrono::Duration;
 use config::{Config, Environment, File};
 use helium_proto::BlockchainTokenTypeV1;
+use humantime_serde::re::humantime;
 use serde::Deserialize;
 use solana_sdk::pubkey::Pubkey as SolPubkey;
-use std::{path::Path, str::FromStr};
+use std::{path::Path, str::FromStr, time::Duration};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ClusterConfig {
@@ -48,41 +48,37 @@ pub struct Settings {
     /// Metrics settings
     pub metrics: poc_metrics::Settings,
     /// Tick interval (secs). Default = 60s.
-    #[serde(default = "default_interval")]
-    pub interval: i64,
+    #[serde(with = "humantime_serde", default = "default_interval")]
+    pub interval: Duration,
     /// Cluster Configuration
-    #[serde(default = "default_cluster")]
+    #[serde(default)]
     pub cluster: ClusterConfig,
     /// How long to use a stale price in minutes
-    #[serde(default = "default_stale_price_minutes")]
-    pub stale_price_minutes: u64,
+    #[serde(with = "humantime_serde", default = "default_stale_price_duration")]
+    pub stale_price_duration: Duration,
     /// Interval when retrieving a pyth price from on chain
-    #[serde(default = "default_pyth_price_interval")]
-    pub pyth_price_interval_in_seconds: u64,
+    #[serde(with = "humantime_serde", default = "default_pyth_price_interval")]
+    pub pyth_price_interval: Duration,
 }
 
-pub fn default_pyth_price_interval() -> u64 {
-    60 * 60 * 2
+fn default_pyth_price_interval() -> Duration {
+    humantime::parse_duration("2 hours").unwrap()
 }
 
-pub fn default_source() -> String {
+fn default_source() -> String {
     "https://api.devnet.solana.com".to_string()
 }
 
-pub fn default_log() -> String {
+fn default_log() -> String {
     "price=debug".to_string()
 }
 
-pub fn default_interval() -> i64 {
-    60
+fn default_interval() -> Duration {
+    humantime::parse_duration("1 minute").unwrap()
 }
 
-pub fn default_stale_price_minutes() -> u64 {
-    12 * 60
-}
-
-pub fn default_cluster() -> ClusterConfig {
-    ClusterConfig::default()
+fn default_stale_price_duration() -> Duration {
+    humantime::parse_duration("12 hours").unwrap()
 }
 
 pub fn default_cache() -> String {
@@ -110,18 +106,6 @@ impl Settings {
             .add_source(Environment::with_prefix("price").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn interval(&self) -> Duration {
-        Duration::seconds(self.interval)
-    }
-
-    pub fn pyth_price_interval(&self) -> Duration {
-        Duration::seconds(self.pyth_price_interval_in_seconds as i64)
-    }
-
-    pub fn stale_price_duration(&self) -> Duration {
-        Duration::minutes(self.stale_price_minutes as i64)
     }
 
     pub fn price_key(&self, token_type: BlockchainTokenTypeV1) -> Result<Option<SolPubkey>> {

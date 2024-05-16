@@ -127,7 +127,7 @@ impl FileSinkBuilder {
             metric: self.metric,
         };
 
-        metrics::register_counter!(client.metric, vec![OK_LABEL]);
+        metrics::counter!(client.metric, vec![OK_LABEL]);
 
         let mut sink = FileSink {
             target_path: self.target_path,
@@ -172,22 +172,22 @@ impl FileSinkClient {
         tokio::select! {
             result = self.sender.send_timeout(Message::Data(on_write_tx, bytes), SEND_TIMEOUT) => match result {
                 Ok(_) => {
-                    metrics::increment_counter!(
+                    metrics::counter!(
                         self.metric,
                         labels
                             .chain(std::iter::once(OK_LABEL))
                             .collect::<Vec<Label>>()
-                    );
+                    ).increment(1);
                     tracing::debug!("file_sink write succeeded for {:?}", self.metric);
                     Ok(on_write_rx)
                 }
                 Err(SendTimeoutError::Closed(_)) => {
-                    metrics::increment_counter!(
+                    metrics::counter!(
                         self.metric,
                         labels
                             .chain(std::iter::once(ERROR_LABEL))
                             .collect::<Vec<Label>>()
-                    );
+                    ).increment(1);
                     tracing::error!("file_sink write failed for {:?} channel closed", self.metric);
                     Err(Error::channel())
                 }

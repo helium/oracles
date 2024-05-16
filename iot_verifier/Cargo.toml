@@ -55,3 +55,4 @@ price = { path = "../price" }
 tokio-util = { workspace = true }
 tokio-stream = { workspace = true }
 task-manager = { path = "../task_manager" }
+humantime-serde = { workspace = true }

@@ -67,7 +67,7 @@ where
             file_source::continuous_source::<SubscriberLocationIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store.clone())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::SubscriberLocationIngestReport.to_string())
                 .create()
                 .await?;
@@ -105,17 +105,14 @@ where
 
     async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         loop {
-            #[rustfmt::skip]
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,
                 Some(file) = self.reports_receiver.recv() => {
-		    let start = Instant::now();
+                    let start = Instant::now();
                     self.process_file(file).await?;
-		    metrics::histogram!(
-			"subscriber_location_processing_time",
-			start.elapsed()
-		    );
+                    metrics::histogram!("subscriber_location_processing_time")
+                        .record(start.elapsed());
                 }
             }
         }

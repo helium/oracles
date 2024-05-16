@@ -916,9 +916,9 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     );
     if let Ok((poc_rewards, unallocated_reward)) = rewards {
         // assert poc reward outputs
-        let exp_reward_1 = 23_990_403_838_464;
-        let exp_reward_2 = 23_990_403_838_464;
-        let exp_reward_3 = 1_199_520_191_923;
+        let exp_reward_1 = 24_437_429_996_945;
+        let exp_reward_2 = 24_437_429_996_945;
+        let exp_reward_3 = 305_467_874_961;
 
         assert_eq!(exp_reward_1, poc_rewards[0].poc_reward);
         assert_eq!(
@@ -961,11 +961,11 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             poc_rewards[0].boosted_hexes[0].location
         );
 
-        // hotspot1 should have 20x the reward of hotspot 3
-        assert_eq!(poc_rewards[0].poc_reward / poc_rewards[2].poc_reward, 20);
-        // hotspot1 should have 20x the reward of hotspot 3
+        // hotspot1 should have 80x the reward of hotspot 3
+        assert_eq!(poc_rewards[0].poc_reward / poc_rewards[2].poc_reward, 80);
+        // hotspot1 should have 80x the reward of hotspot 3
         // due to the 2 boosted hexes each with a 10x multiplier
-        assert_eq!(poc_rewards[1].poc_reward / poc_rewards[2].poc_reward, 20);
+        assert_eq!(poc_rewards[1].poc_reward / poc_rewards[2].poc_reward, 80);
 
         // confirm the total rewards allocated matches expectations
         let poc_sum: u64 = poc_rewards.iter().map(|r| r.poc_reward).sum();
