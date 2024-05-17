@@ -21,15 +21,15 @@ pub struct Settings {
     pub batch_size: u32,
 }
 
-pub fn default_connect_timeout() -> u64 {
+fn default_connect_timeout() -> u64 {
     5
 }
 
-pub fn default_rpc_timeout() -> u64 {
+fn default_rpc_timeout() -> u64 {
     5
 }
 
-pub fn default_batch_size() -> u32 {
+fn default_batch_size() -> u32 {
     1000
 }
 

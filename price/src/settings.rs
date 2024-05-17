@@ -37,6 +37,8 @@ pub struct Settings {
     /// "price=debug"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Source URL for price data. Required
     #[serde(default = "default_source")]
     pub source: String,
@@ -81,7 +83,7 @@ fn default_stale_price_duration() -> Duration {
     humantime::parse_duration("12 hours").unwrap()
 }
 
-pub fn default_cache() -> String {
+fn default_cache() -> String {
     "/var/data/price".to_string()
 }
 

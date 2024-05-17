@@ -71,6 +71,8 @@ impl mobile_config::Gateway for GatewayService {
     async fn info(&self, request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "info");
+        custom_tracing::record_b58("pub_key", &request.address);
+        custom_tracing::record_b58("signer", &request.signer);
 
         self.verify_request_signature_for_info(&request)?;
 
@@ -113,6 +115,7 @@ impl mobile_config::Gateway for GatewayService {
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "info-batch");
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -148,6 +151,7 @@ impl mobile_config::Gateway for GatewayService {
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "info-stream");
+        custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;

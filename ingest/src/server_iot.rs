@@ -186,6 +186,7 @@ impl ManagedTask for GrpcServer {
         let address = self.address;
         Box::pin(async move {
             let grpc_server = transport::Server::builder()
+                .layer(custom_tracing::grpc_layer::new_with_span(make_span))
                 .layer(poc_metrics::request_layer!("ingest_server_iot_connection"))
                 .add_service(poc_lora::Server::new(*self))
                 .serve(address)
@@ -202,6 +203,13 @@ impl ManagedTask for GrpcServer {
             }
         })
     }
+}
+
+fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
+    tracing::info_span!(
+        custom_tracing::DEFAULT_SPAN,
+        pub_key = tracing::field::Empty
+    )
 }
 
 fn verify_public_key(bytes: &[u8]) -> VerifyResult<PublicKey> {
@@ -289,6 +297,8 @@ impl poc_lora::PocLora for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
+        custom_tracing::record_b58("pub_key", &event.pub_key);
+
         let pub_key = verify_public_key(&event.pub_key)
             .and_then(|pk| verify_network(self.required_network, pk))?;
 
@@ -311,6 +321,8 @@ impl poc_lora::PocLora for GrpcServer {
     ) -> GrpcResult<LoraWitnessReportRespV1> {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+
+        custom_tracing::record_b58("pub_key", &event.pub_key);
 
         let pub_key = verify_public_key(&event.pub_key)
             .and_then(|pk| verify_network(self.required_network, pk))?;

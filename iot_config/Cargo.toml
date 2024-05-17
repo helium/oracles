@@ -7,42 +7,43 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = {workspace = true}
-async-trait = {workspace = true}
-base64 = {workspace = true}
-bs58 = {workspace = true}
-chrono = {workspace = true}
-clap = {workspace = true}
-config = {workspace = true}
-db-store = {path = "../db_store"}
-file-store = {path = "../file_store"}
-futures = {workspace = true}
-futures-util = {workspace = true}
-helium-crypto = {workspace = true}
-helium-proto = {workspace = true}
-hextree = {workspace = true}
-http = {workspace = true}
-http-serde = {workspace = true}
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+bs58 = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
+db-store = { path = "../db_store" }
+file-store = { path = "../file_store" }
+futures = { workspace = true }
+futures-util = { workspace = true }
+helium-crypto = { workspace = true }
+helium-proto = { workspace = true }
+hextree = { workspace = true }
+http = { workspace = true }
+http-serde = { workspace = true }
 libflate = "1"
-metrics = {workspace = true}
-metrics-exporter-prometheus = {workspace = true}
-poc-metrics = {path = "../metrics"}
-prost = {workspace = true}
-retainer = {workspace = true}
-serde = {workspace = true}
-serde_json = {workspace = true}
-sqlx = {workspace = true}
-thiserror = {workspace = true}
-tokio = {workspace = true}
-tokio-stream = {workspace = true}
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+poc-metrics = { path = "../metrics" }
+prost = { workspace = true }
+retainer = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
-tonic = {workspace = true}
-tower-http = {workspace = true}
-tracing = {workspace = true}
-tracing-subscriber = {workspace = true}
-triggered = {workspace = true}
+tonic = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+triggered = { workspace = true }
 task-manager = { path = "../task_manager" }
 humantime-serde = { workspace = true }
+custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 
 [dev-dependencies]
 rand = { workspace = true }

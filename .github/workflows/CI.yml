@@ -1,0 +1,201 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: ["main"]
+    tags: ["*"]
+
+env:
+  CARGO_INCREMENTAL: 0 # this setting is automatically applied by rust-cache but documented here for explicitness
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTFLAGS: "-D warnings"
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+
+  build:
+    runs-on: oracles-20.04
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-build
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust install
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --all --tests 
+
+  fmt:
+    runs-on: oracles-20.04
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-fmt
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust install
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt  -- --check
+
+  clippy:
+    runs-on: oracles-20.04
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-clippy
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust install
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -Dclippy::all -D warnings
+
+  tests-postgres:
+    needs: build
+    runs-on: oracles-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [boost-manager,iot-config,iot-packet-verifier,iot-verifier,mobile-config,mobile-verifier]
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-tests-postgres-${{ matrix.package }}
+      cancel-in-progress: true
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+            - 5432:5432
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust install
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run unit and integration tests
+        env:
+          DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
+        run: cargo test -p ${{ matrix.package }}  -- --include-ignored
+  
+  tests:
+    needs: build
+    runs-on: oracles-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [file-store,ingest,mobile-packet-verifier,reward-scheduler,task-manager]
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-tests-${{ matrix.package }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust install
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run unit and integration tests
+        run: cargo test -p ${{ matrix.package }}  -- --include-ignored
+
+  build-release:
+    needs: [fmt, clippy, tests, tests-postgres]
+    runs-on: oracles-20.04
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-build-release
+      cancel-in-progress: true
+    if: contains(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build Release
+        run: cargo build --all --release
+
+      - name: Debian packaging
+        env:
+          PACKAGECLOUD_API_KEY: ${{ secrets.PACKAGECLOUD_API_KEY }}
+        run: |
+          chmod +x ./.github/scripts/make_debian.sh
+          ./.github/scripts/make_debian.sh

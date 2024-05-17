@@ -11,7 +11,6 @@ use iot_config::{
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tonic::transport;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -52,10 +51,7 @@ pub struct Daemon;
 
 impl Daemon {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
-        tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(&settings.log))
-            .with(tracing_subscriber::fmt::layer())
-            .init();
+        custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
 
         // Install prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
@@ -145,7 +141,7 @@ impl ManagedTask for GrpcServer {
             let grpc_server = transport::Server::builder()
                 .http2_keepalive_interval(Some(Duration::from_secs(250)))
                 .http2_keepalive_timeout(Some(Duration::from_secs(60)))
-                .layer(tower_http::trace::TraceLayer::new_for_grpc())
+                .layer(custom_tracing::grpc_layer::new_with_span(make_span))
                 .add_service(GatewayServer::new(self.gateway_svc))
                 .add_service(OrgServer::new(self.org_svc))
                 .add_service(RouteServer::new(self.route_svc))
@@ -170,6 +166,15 @@ impl ManagedTask for GrpcServer {
             }
         })
     }
+}
+fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
+    tracing::info_span!(
+        custom_tracing::DEFAULT_SPAN,
+        pub_key = tracing::field::Empty,
+        signer = tracing::field::Empty,
+        oui = tracing::field::Empty,
+        route_id = tracing::field::Empty,
+    )
 }
 
 #[tokio::main]

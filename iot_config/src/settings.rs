@@ -9,6 +9,8 @@ pub struct Settings {
     /// "iot_config=info"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Listen address. Required. Default is 0.0.0.0:8080
     #[serde(default = "default_listen_addr")]
     pub listen: SocketAddr,
@@ -25,15 +27,15 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
 }
 
-pub fn default_log() -> String {
+fn default_log() -> String {
     "iot_config=debug".to_string()
 }
 
-pub fn default_listen_addr() -> SocketAddr {
+fn default_listen_addr() -> SocketAddr {
     "0.0.0.0:8080".parse().unwrap()
 }
 
-pub fn default_deleted_entry_retention() -> Duration {
+fn default_deleted_entry_retention() -> Duration {
     humantime::parse_duration("48 hours").unwrap()
 }
 

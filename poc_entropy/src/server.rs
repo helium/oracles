@@ -44,6 +44,7 @@ impl ApiServer {
     pub async fn run(self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         tracing::info!(listen = self.socket_addr.to_string(), "starting");
         transport::Server::builder()
+            .layer(custom_tracing::grpc_layer::new_with_span(make_span))
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(self.service)
@@ -52,4 +53,8 @@ impl ApiServer {
         tracing::info!("stopping api server");
         Ok(())
     }
+}
+
+fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
+    tracing::info_span!(custom_tracing::DEFAULT_SPAN)
 }

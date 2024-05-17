@@ -10,9 +10,8 @@ pub struct Settings {
     /// "ingest=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
-    /// File name to be watched by custom tracing
-    #[serde(default = "default_tracing_cfg_file")]
-    pub tracing_cfg_file: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Mode to run the server in (iot or mobile). Required
     pub mode: Mode,
     /// Listen address. Required. Default is 0.0.0.0:9081
@@ -41,28 +40,20 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
 }
 
-pub fn default_session_key_timeout() -> Duration {
+fn default_session_key_timeout() -> Duration {
     humantime::parse_duration("30 minutes").unwrap()
 }
 
-pub fn default_session_key_offer_timeout() -> Duration {
+fn default_session_key_offer_timeout() -> Duration {
     humantime::parse_duration("5 seconds").unwrap()
 }
 
-pub fn default_listen_addr() -> SocketAddr {
+fn default_listen_addr() -> SocketAddr {
     "0.0.0.0:9081".parse().unwrap()
 }
 
-pub fn default_log() -> String {
+fn default_log() -> String {
     "ingest=debug,poc_store=info".to_string()
-}
-
-pub fn default_tracing_cfg_file() -> String {
-    "tracing.cfg".to_string()
-}
-
-pub fn default_sink() -> String {
-    "/var/data/ingest".to_string()
 }
 
 /// Mode to deploy the ingest engine in. Each mode exposes different submission

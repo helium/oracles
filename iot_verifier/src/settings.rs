@@ -10,6 +10,8 @@ pub struct Settings {
     /// "iot_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Cache location for generated verified reports
     pub cache: String,
     /// the base_stale period in seconds
@@ -51,10 +53,6 @@ pub struct Settings {
     /// beaconing bucket sizes
     #[serde(with = "humantime_serde", default = "default_beacon_interval")]
     pub beacon_interval: Duration,
-    // FIXME: unused
-    /// Trigger interval for generating a transmit scaling map
-    #[serde(with = "humantime_serde", default = "default_transmit_scale_interval")]
-    pub transmit_scale_interval: Duration,
     // roll up time defined in the ingestors ( in seconds )
     // ie the time after which they will write out files to s3
     // this will be used when padding out the witness
@@ -70,10 +68,6 @@ pub struct Settings {
     /// cadence for how often to look for poc reports from s3 buckets
     #[serde(with = "humantime_serde", default = "default_poc_loader_poll_time")]
     pub poc_loader_poll_time: Duration,
-    // FIXME: unused
-    /// the lifespan of a piece of entropy
-    #[serde(with = "humantime_serde", default = "default_entropy_lifespan ")]
-    pub entropy_lifespan: Duration,
     /// max window age for the poc report loader ( in seconds )
     /// the starting point of the window will never be older than now - max age
     #[serde(
@@ -123,10 +117,6 @@ fn default_entropy_interval() -> Duration {
     humantime::parse_duration("5 minutes").unwrap()
 }
 
-fn default_entropy_lifespan() -> Duration {
-    humantime::parse_duration("5 minutes").unwrap()
-}
-
 fn default_poc_loader_window_width() -> Duration {
     humantime::parse_duration("5 minutes").unwrap()
 }
@@ -147,10 +137,6 @@ fn default_poc_loader_poll_time() -> Duration {
 
 fn default_beacon_interval() -> Duration {
     humantime::parse_duration("6 hours").unwrap()
-}
-
-fn default_transmit_scale_interval() -> Duration {
-    humantime::parse_duration("30 minutes").unwrap()
 }
 
 fn default_log() -> String {
@@ -228,7 +214,6 @@ impl Settings {
     }
 
     pub fn beacon_interval(&self) -> anyhow::Result<Duration> {
-        // FIXME:
         // validate the beacon_interval value is a factor of 24, if not bail out
         if (24 * 60 * 60) % self.beacon_interval.as_secs() != 0 {
             bail!("beacon interval is not a factor of 24")

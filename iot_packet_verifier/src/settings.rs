@@ -10,6 +10,8 @@ pub struct Settings {
     /// "iot_packet_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Cache location for generated verified reports
     pub cache: String,
     /// Data credit burn period in minutes. Default is 1.
@@ -34,23 +36,23 @@ pub struct Settings {
     pub monitor_funds_period: Duration,
 }
 
-pub fn default_start_after() -> DateTime<Utc> {
+fn default_start_after() -> DateTime<Utc> {
     DateTime::UNIX_EPOCH
 }
 
-pub fn default_burn_period() -> Duration {
+fn default_burn_period() -> Duration {
     humantime::parse_duration("1 minute").unwrap()
 }
 
-pub fn default_log() -> String {
+fn default_log() -> String {
     "iot_packet_verifier=debug".to_string()
 }
 
-pub fn default_minimum_allowed_balance() -> u64 {
+fn default_minimum_allowed_balance() -> u64 {
     3_500_000
 }
 
-pub fn default_monitor_funds_period() -> Duration {
+fn default_monitor_funds_period() -> Duration {
     humantime::parse_duration("30 minutes").unwrap()
 }
 

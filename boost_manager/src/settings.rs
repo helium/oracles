@@ -10,6 +10,8 @@ pub struct Settings {
     /// "poc_entropy=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Cache location for generated verified reports
     pub cache: String,
     /// Reward files check interval in seconds. (Default is 15 minutes)
@@ -56,11 +58,11 @@ fn default_activation_check_interval() -> Duration {
     humantime::parse_duration("15 minutes").unwrap()
 }
 
-pub fn default_start_after() -> DateTime<Utc> {
+fn default_start_after() -> DateTime<Utc> {
     DateTime::UNIX_EPOCH
 }
 
-pub fn default_log() -> String {
+fn default_log() -> String {
     "boost_manager=info".to_string()
 }
 

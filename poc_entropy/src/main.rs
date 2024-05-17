@@ -6,7 +6,6 @@ use futures_util::TryFutureExt;
 use poc_entropy::{entropy_generator::EntropyGenerator, server::ApiServer, Settings};
 use std::{net::SocketAddr, path};
 use tokio::{self, signal};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const ENTROPY_SINK_ROLL_MINS: i64 = 2;
 
@@ -27,6 +26,7 @@ pub struct Cli {
 impl Cli {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
+        custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
         self.cmd.run(settings).await
     }
 }
@@ -49,11 +49,6 @@ pub struct Server {}
 
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
-        tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(&settings.log))
-            .with(tracing_subscriber::fmt::layer())
-            .init();
-
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
