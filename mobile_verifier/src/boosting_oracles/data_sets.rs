@@ -1,7 +1,5 @@
 use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    pin::pin,
+    collections::HashMap, path::{Path, PathBuf}, pin::pin,
 };
 
 use chrono::{DateTime, Duration, Utc};
@@ -19,7 +17,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, QueryBuilder};
 use task_manager::{ManagedTask, TaskManager};
-use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Receiver};
+use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Receiver, time::Instant};
 
 use crate::{boosting_oracles::assignment::HexAssignments, coverage::SignalLevel, Settings};
 
@@ -329,6 +327,8 @@ where
         }
 
         loop {
+            let wakeup = Instant::now() + poll_duration.to_std()?;
+
             #[rustfmt::skip]
             tokio::select! {
                 _ = self.new_coverage_object_signal.recv() => {
@@ -342,7 +342,7 @@ where
                         ).await?;
                     }
                 },
-                _ = tokio::time::sleep(poll_duration.to_std()?) => {
+                _ = tokio::time::sleep_until(wakeup) => {
                     self.check_for_new_data_sets().await?;
                 }
             }
