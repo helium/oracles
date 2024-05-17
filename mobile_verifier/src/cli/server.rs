@@ -12,11 +12,7 @@ use crate::{
 };
 use anyhow::Result;
 use chrono::Duration;
-use file_store::{
-    file_sink,
-    file_upload::{self},
-    FileStore, FileType,
-};
+use file_store::{file_sink, file_upload, FileStore, FileType};
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
     CarrierServiceClient, GatewayClient,
