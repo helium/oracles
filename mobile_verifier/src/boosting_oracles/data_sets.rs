@@ -332,9 +332,8 @@ where
             .await?;
         }
 
+        let mut wakeup = Instant::now() + poll_duration.to_std()?;
         loop {
-            let wakeup = Instant::now() + poll_duration.to_std()?;
-
             #[rustfmt::skip]
             tokio::select! {
                 _ = self.new_coverage_object_notification.await_new_coverage_object() => {
@@ -350,6 +349,7 @@ where
                 },
                 _ = tokio::time::sleep_until(wakeup) => {
                     self.check_for_new_data_sets().await?;
+                    wakeup = Instant::now() + poll_duration.to_std()?;
                 }
             }
         }
