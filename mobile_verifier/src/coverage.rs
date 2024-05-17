@@ -41,7 +41,7 @@ use std::{
     time::Instant,
 };
 use task_manager::{ManagedTask, TaskManager};
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use uuid::Uuid;
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
@@ -70,7 +70,7 @@ pub struct CoverageDaemon {
     auth_client: AuthorizationClient,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     coverage_obj_sink: FileSinkClient,
-    new_coverage_object_signal: Sender<()>,
+    new_coverage_object_notifier: NewCoverageObjectNotifier,
 }
 
 impl CoverageDaemon {
@@ -80,7 +80,7 @@ impl CoverageDaemon {
         file_upload: FileUpload,
         file_store: FileStore,
         auth_client: AuthorizationClient,
-        new_coverage_object_signal: Sender<()>,
+        new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> anyhow::Result<impl ManagedTask> {
         let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
             FileType::CoverageObject,
@@ -108,7 +108,7 @@ impl CoverageDaemon {
             auth_client,
             coverage_objs,
             valid_coverage_objs,
-            new_coverage_object_signal,
+            new_coverage_object_notifier,
         );
 
         Ok(TaskManager::builder()
@@ -123,14 +123,14 @@ impl CoverageDaemon {
         auth_client: AuthorizationClient,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
-        new_coverage_object_signal: Sender<()>,
+        new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> Self {
         Self {
             pool,
             auth_client,
             coverage_objs,
             coverage_obj_sink,
-            new_coverage_object_signal,
+            new_coverage_object_notifier,
         }
     }
 
@@ -178,7 +178,7 @@ impl CoverageDaemon {
         transaction.commit().await?;
 
         // Tell the data set manager to update the assignments.
-        let _ = self.new_coverage_object_signal.try_send(());
+        self.new_coverage_object_notifier.notify();
 
         Ok(())
     }
@@ -196,6 +196,31 @@ impl ManagedTask for CoverageDaemon {
                 .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
         )
     }
+}
+
+pub struct NewCoverageObjectNotifier(Sender<()>);
+
+impl NewCoverageObjectNotifier {
+    fn notify(&self) {
+        let _ = self.0.try_send(());
+    }
+}
+
+pub struct NewCoverageObjectNotification(Receiver<()>);
+
+impl NewCoverageObjectNotification {
+    pub async fn await_new_coverage_object(&mut self) {
+        let _ = self.0.recv().await;
+    }
+}
+
+pub fn new_coverage_object_notification_channel(
+) -> (NewCoverageObjectNotifier, NewCoverageObjectNotification) {
+    let (tx, rx) = channel(1);
+    (
+        NewCoverageObjectNotifier(tx),
+        NewCoverageObjectNotification(rx),
+    )
 }
 
 pub struct CoverageObject {

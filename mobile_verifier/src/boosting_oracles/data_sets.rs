@@ -1,5 +1,7 @@
 use std::{
-    collections::HashMap, path::{Path, PathBuf}, pin::pin,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    pin::pin,
 };
 
 use chrono::{DateTime, Duration, Utc};
@@ -17,9 +19,13 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, QueryBuilder};
 use task_manager::{ManagedTask, TaskManager};
-use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Receiver, time::Instant};
+use tokio::{fs::File, io::AsyncWriteExt, time::Instant};
 
-use crate::{boosting_oracles::assignment::HexAssignments, coverage::SignalLevel, Settings};
+use crate::{
+    boosting_oracles::assignment::HexAssignments,
+    coverage::{NewCoverageObjectNotification, SignalLevel},
+    Settings,
+};
 
 use super::{
     footfall::Footfall, landtype::Landtype, urbanization::Urbanization, HexAssignment, HexBoostData,
@@ -105,7 +111,7 @@ pub struct DataSetDownloaderDaemon<A, B, C> {
     store: FileStore,
     oracle_boosting_sink: FileSinkClient,
     data_set_directory: PathBuf,
-    new_coverage_object_signal: Receiver<()>,
+    new_coverage_object_notification: NewCoverageObjectNotification,
 }
 
 #[derive(FromRow)]
@@ -173,7 +179,7 @@ impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization> {
         pool: PgPool,
         settings: &Settings,
         file_upload: FileUpload,
-        new_coverage_object_signal: Receiver<()>,
+        new_coverage_object_notification: NewCoverageObjectNotification,
     ) -> anyhow::Result<impl ManagedTask> {
         let (oracle_boosting_reports, oracle_boosting_reports_server) =
             file_sink::FileSinkBuilder::new(
@@ -202,7 +208,7 @@ impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization> {
             FileStore::from_settings(&settings.data_sets).await?,
             oracle_boosting_reports,
             settings.data_sets_directory.clone(),
-            new_coverage_object_signal,
+            new_coverage_object_notification,
         );
 
         Ok(TaskManager::builder()
@@ -224,7 +230,7 @@ where
         store: FileStore,
         oracle_boosting_sink: FileSinkClient,
         data_set_directory: PathBuf,
-        new_coverage_object_signal: Receiver<()>,
+        new_coverage_object_notification: NewCoverageObjectNotification,
     ) -> Self {
         Self {
             pool,
@@ -232,7 +238,7 @@ where
             store,
             oracle_boosting_sink,
             data_set_directory,
-            new_coverage_object_signal,
+            new_coverage_object_notification,
         }
     }
 
@@ -331,7 +337,7 @@ where
 
             #[rustfmt::skip]
             tokio::select! {
-                _ = self.new_coverage_object_signal.recv() => {
+                _ = self.new_coverage_object_notification.await_new_coverage_object() => {
                     // If we see a new coverage object, we want to assign only those hexes
                     // that don't have an assignment
                     if self.data_sets.is_ready() {

@@ -1,6 +1,6 @@
 use crate::{
     boosting_oracles::DataSetDownloaderDaemon,
-    coverage::CoverageDaemon,
+    coverage::{new_coverage_object_notification_channel, CoverageDaemon},
     data_session::DataSessionIngestor,
     geofence::Geofence,
     heartbeats::{cbrs::CbrsHeartbeatDaemon, wifi::WifiHeartbeatDaemon},
@@ -22,7 +22,6 @@ use mobile_config::client::{
     CarrierServiceClient, GatewayClient,
 };
 use task_manager::TaskManager;
-use tokio::sync::mpsc::channel;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
@@ -101,7 +100,8 @@ impl Cmd {
             settings.usa_and_mexico_fencing_resolution()?,
         )?;
 
-        let (new_coverage_obj_signal_tx, new_coverage_obj_signal_rx) = channel(1);
+        let (new_coverage_obj_notifier, new_coverage_obj_notification) =
+            new_coverage_object_notification_channel();
 
         TaskManager::builder()
             .add_task(file_upload_server)
@@ -150,7 +150,7 @@ impl Cmd {
                     file_upload.clone(),
                     report_ingest.clone(),
                     auth_client.clone(),
-                    new_coverage_obj_signal_tx,
+                    new_coverage_obj_notifier,
                 )
                 .await?,
             )
@@ -159,7 +159,7 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     file_upload.clone(),
-                    new_coverage_obj_signal_rx,
+                    new_coverage_obj_notification,
                 )
                 .await?,
             )
