@@ -1,0 +1,1 @@
+ALTER TABLE registered_keys ADD COLUMN IF NOT EXISTS name TEXT;
