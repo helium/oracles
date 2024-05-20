@@ -26,7 +26,6 @@ use std::collections::HashMap;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct MockHexBoostingClient {
     boosted_hexes: Vec<BoostedHexInfo>,
 }
@@ -200,7 +199,6 @@ pub fn mock_hex_boost_data_default() -> HexBoostData<Assignment, Assignment, Ass
 
 type MockAssignmentMap = HashMap<hextree::Cell, Assignment>;
 
-#[allow(dead_code)]
 pub fn mock_hex_boost_data(
     footfall: MockAssignmentMap,
     urbanized: MockAssignmentMap,
