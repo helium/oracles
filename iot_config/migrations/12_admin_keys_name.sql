@@ -1,0 +1,1 @@
+ALTER TABLE admin_keys ADD COLUMN IF NOT EXISTS name TEXT;
