@@ -1,16 +1,22 @@
-DROP TYPE IF EXISTS data_set_status;
+DO $$ BEGIN
 CREATE TYPE data_set_status AS enum (
        'pending',
        'downloaded',
        'processed'
 );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-DROP TYPE IF EXISTS data_set_type;
+DO $$ BEGIN
 CREATE TYPE data_set_type AS enum (
        'urbanization',
        'footfall',
        'landtype'
 );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 CREATE TABLE IF NOT EXISTS hex_assignment_data_set_status (
        filename TEXT PRIMARY KEY,
