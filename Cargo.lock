@@ -2133,6 +2133,10 @@ dependencies = [
 [[package]]
 name = "coverage_point_calculator"
 version = "0.1.0"
+dependencies = [
+ "hextree",
+ "rust_decimal",
+]
 
 [[package]]
 name = "cpufeatures"

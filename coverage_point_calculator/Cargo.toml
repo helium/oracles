@@ -7,3 +7,5 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
+hextree.workspace = true
+rust_decimal.workspace = true
