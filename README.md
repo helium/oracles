@@ -1,4 +1,4 @@
-# Oracles
+# Oracles [![CI](https://github.com/helium/oracles/actions/workflows/CI.yml/badge.svg)](https://github.com/helium/oracles/actions/workflows/CI.yml)
 
 ## Mobile
 
