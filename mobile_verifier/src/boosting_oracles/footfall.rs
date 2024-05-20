@@ -57,6 +57,9 @@ impl HexAssignment for Footfall {
             anyhow::bail!("No footfall data set has been loaded");
         };
 
+        // The footfall disktree maps hexes to a single byte, a value of one indicating
+        // assignment A and a value of zero indicating assignment B. If no value is present,
+        // assignment C is given.
         match footfall.get(cell)? {
             Some((_, &[x])) if x >= 1 => Ok(Assignment::A),
             Some((_, &[0])) => Ok(Assignment::B),
