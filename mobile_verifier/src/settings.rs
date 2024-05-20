@@ -46,6 +46,9 @@ pub struct Settings {
     pub max_asserted_distance_deviation: u32,
     /// Directory in which new oracle boosting data sets are downloaded into
     pub data_sets_directory: PathBuf,
+    /// Poll duration for new data sets
+    #[serde(with = "humantime_serde", default = "default_data_sets_poll_duration")]
+    pub data_sets_poll_duration: Duration,
     // Geofencing settings
     pub usa_and_mexico_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
@@ -81,6 +84,10 @@ fn default_reward_period() -> Duration {
 }
 
 fn default_reward_period_offset() -> Duration {
+    humantime::parse_duration("30 minutes").unwrap()
+}
+
+fn default_data_sets_poll_duration() -> Duration {
     humantime::parse_duration("30 minutes").unwrap()
 }
 

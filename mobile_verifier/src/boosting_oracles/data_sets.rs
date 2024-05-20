@@ -2,9 +2,10 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     pin::pin,
+    time::Duration,
 };
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use file_store::{
     file_sink::{self, FileSinkClient},
     file_upload::FileUpload,
@@ -112,6 +113,7 @@ pub struct DataSetDownloaderDaemon<A, B, C> {
     oracle_boosting_sink: FileSinkClient,
     data_set_directory: PathBuf,
     new_coverage_object_notification: NewCoverageObjectNotification,
+    poll_duration: Duration,
 }
 
 #[derive(FromRow)]
@@ -189,7 +191,7 @@ impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization> {
                 concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
             )
             .auto_commit(true)
-            .roll_time(Duration::minutes(15))
+            .roll_time(chrono::Duration::minutes(15))
             .create()
             .await?;
 
@@ -209,6 +211,7 @@ impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization> {
             oracle_boosting_reports,
             settings.data_sets_directory.clone(),
             new_coverage_object_notification,
+            settings.data_sets_poll_duration,
         );
 
         Ok(TaskManager::builder()
@@ -231,6 +234,7 @@ where
         oracle_boosting_sink: FileSinkClient,
         data_set_directory: PathBuf,
         new_coverage_object_notification: NewCoverageObjectNotification,
+        poll_duration: Duration,
     ) -> Self {
         Self {
             pool,
@@ -239,6 +243,7 @@ where
             oracle_boosting_sink,
             data_set_directory,
             new_coverage_object_notification,
+            poll_duration,
         }
     }
 
@@ -306,8 +311,6 @@ where
     }
 
     pub async fn run(mut self) -> anyhow::Result<()> {
-        let poll_duration = Duration::minutes(1);
-
         self.data_sets
             .urbanization
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
@@ -332,7 +335,7 @@ where
             .await?;
         }
 
-        let mut wakeup = Instant::now() + poll_duration.to_std()?;
+        let mut wakeup = Instant::now() + self.poll_duration;
         loop {
             #[rustfmt::skip]
             tokio::select! {
@@ -349,7 +352,7 @@ where
                 },
                 _ = tokio::time::sleep_until(wakeup) => {
                     self.check_for_new_data_sets().await?;
-                    wakeup = Instant::now() + poll_duration.to_std()?;
+                    wakeup = Instant::now() + self.poll_duration;
                 }
             }
         }
