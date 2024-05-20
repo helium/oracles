@@ -12,7 +12,7 @@ CREATE TYPE data_set_type AS enum (
        'landtype'
 );
 
-CREATE TABLE IF NOT EXISTS data_sets (
+CREATE TABLE IF NOT EXISTS hex_assignment_data_set_status (
        filename TEXT PRIMARY KEY,
        data_set data_set_type NOT NULL,
        time_to_use TIMESTAMPTZ NOT NULL,

@@ -444,7 +444,7 @@ pub mod db {
         pool: &PgPool,
         data_set_type: DataSetType,
     ) -> sqlx::Result<Option<DateTime<Utc>>> {
-        sqlx::query_scalar("SELECT time_to_use FROM data_sets WHERE data_set = $1 ORDER BY time_to_use DESC LIMIT 1")
+        sqlx::query_scalar("SELECT time_to_use FROM hex_assignment_data_set_status WHERE data_set = $1 ORDER BY time_to_use DESC LIMIT 1")
             .bind(data_set_type)
             .fetch_optional(pool)
             .await
@@ -458,7 +458,7 @@ pub mod db {
     ) -> sqlx::Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO data_sets (filename, data_set, time_to_use, status)
+            INSERT INTO hex_assignment_data_set_status (filename, data_set, time_to_use, status)
             VALUES ($1, $2, $3, 'pending')
             ON CONFLICT DO NOTHING
             "#,
@@ -477,7 +477,7 @@ pub mod db {
         since: Option<DateTime<Utc>>,
     ) -> sqlx::Result<Option<NewDataSet>> {
         sqlx::query_as(
-            "SELECT filename, time_to_use, status FROM data_sets WHERE status != 'processed' AND data_set = $1 AND COALESCE(time_to_use > $2, TRUE) AND time_to_use <= $3 ORDER BY time_to_use DESC LIMIT 1"
+            "SELECT filename, time_to_use, status FROM hex_assignment_data_set_status WHERE status != 'processed' AND data_set = $1 AND COALESCE(time_to_use > $2, TRUE) AND time_to_use <= $3 ORDER BY time_to_use DESC LIMIT 1"
         )
         .bind(data_set_type)
         .bind(since)
@@ -491,7 +491,7 @@ pub mod db {
         data_set_type: DataSetType,
     ) -> sqlx::Result<Option<NewDataSet>> {
         sqlx::query_as(
-            "SELECT filename, time_to_use, status FROM data_sets WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
+            "SELECT filename, time_to_use, status FROM hex_assignment_data_set_status WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
         )
         .bind(data_set_type)
         .fetch_optional(pool)
@@ -503,7 +503,7 @@ pub mod db {
         filename: &str,
         status: DataSetStatus,
     ) -> sqlx::Result<()> {
-        sqlx::query("UPDATE data_sets SET status = $1 WHERE filename = $2")
+        sqlx::query("UPDATE hex_assignment_data_set_status SET status = $1 WHERE filename = $2")
             .bind(status)
             .bind(filename)
             .execute(pool)
@@ -516,7 +516,7 @@ pub mod db {
         data_set_type: DataSetType,
     ) -> sqlx::Result<Option<DateTime<Utc>>> {
         sqlx::query_scalar(
-            "SELECT time_to_use FROM data_sets WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
+            "SELECT time_to_use FROM hex_assignment_data_set_status WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
         )
         .bind(data_set_type)
         .fetch_optional(pool)
@@ -529,7 +529,7 @@ pub mod db {
         period_end: DateTime<Utc>,
     ) -> sqlx::Result<bool> {
         Ok(sqlx::query_scalar(
-            "SELECT COUNT(*) > 0 FROM data_sets WHERE time_to_use <= $1 AND status != 'processed'",
+            "SELECT COUNT(*) > 0 FROM hex_assignment_data_set_status WHERE time_to_use <= $1 AND status != 'processed'",
         )
         .bind(period_end)
         .fetch_one(pool)
