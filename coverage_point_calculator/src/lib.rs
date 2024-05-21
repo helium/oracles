@@ -1,11 +1,9 @@
 #![allow(unused)]
 
-use std::num::NonZeroU16;
-
 use hextree::Cell;
 use rust_decimal::Decimal;
 
-type Multiplier = NonZeroU16;
+type Multiplier = std::num::NonZeroU32;
 type Points = u32;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -95,7 +93,17 @@ impl LocalRadio {
     pub fn coverage_points(&self) -> Points {
         let mut points = 0;
         for hex in self.hexes.iter() {
-            points += self.radio_type.coverage_points(&hex.signal_level);
+            let hex_points = self.radio_type.coverage_points(&hex.signal_level);
+
+            // When the radio is verified to receive boosted rewards we ask for
+            // the boosted value, falling back to 1 as a passthrough value.
+            let maybe_boost = if self.verified_radio_threshold {
+                hex.boosted.map_or(1, |boost| boost.get())
+            } else {
+                1
+            };
+
+            points += hex_points * maybe_boost;
         }
         points
     }
@@ -107,11 +115,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn boosted_hex() {
+        let mut indoor_wifi = LocalRadio {
+            radio_type: RadioType::IndoorWifi,
+            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            location_trust_scores: vec![Multiplier::new(1).unwrap()],
+            verified_radio_threshold: true,
+            hexes: vec![
+                LocalHex {
+                    rank: 1,
+                    signal_level: SignalLevel::High,
+                    boosted: None,
+                },
+                LocalHex {
+                    rank: 1,
+                    signal_level: SignalLevel::Low,
+                    boosted: Multiplier::new(4),
+                },
+            ],
+        };
+        // The hex with a low signal_level is boosted to the same level as a
+        // signal_level of High.
+        assert_eq!(800, indoor_wifi.coverage_points());
+
+        // When the radio is not verified for boosted rewards, the boost has no effect.
+        indoor_wifi.verified_radio_threshold = false;
+        assert_eq!(500, indoor_wifi.coverage_points());
+    }
+
+    #[test]
     fn base_radio_coverage_points() {
         let outdoor_cbrs = LocalRadio {
             radio_type: RadioType::OutdoorCbrs,
-            speedtest_multiplier: NonZeroU16::new(1).unwrap(),
-            location_trust_scores: vec![NonZeroU16::new(1).unwrap()],
+            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            location_trust_scores: vec![Multiplier::new(1).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
                 LocalHex {
@@ -139,8 +176,8 @@ mod tests {
 
         let indoor_cbrs = LocalRadio {
             radio_type: RadioType::IndoorCbrs,
-            speedtest_multiplier: NonZeroU16::new(1).unwrap(),
-            location_trust_scores: vec![NonZeroU16::new(1).unwrap()],
+            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            location_trust_scores: vec![Multiplier::new(1).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
                 LocalHex {
@@ -158,8 +195,8 @@ mod tests {
 
         let outdoor_wifi = LocalRadio {
             radio_type: RadioType::OutdoorWifi,
-            speedtest_multiplier: NonZeroU16::new(1).unwrap(),
-            location_trust_scores: vec![NonZeroU16::new(1).unwrap()],
+            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            location_trust_scores: vec![Multiplier::new(1).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
                 LocalHex {
@@ -187,8 +224,8 @@ mod tests {
 
         let indoor_wifi = LocalRadio {
             radio_type: RadioType::IndoorWifi,
-            speedtest_multiplier: NonZeroU16::new(1).unwrap(),
-            location_trust_scores: vec![NonZeroU16::new(1).unwrap()],
+            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            location_trust_scores: vec![Multiplier::new(1).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
                 LocalHex {
