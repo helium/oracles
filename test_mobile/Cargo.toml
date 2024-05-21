@@ -1,0 +1,11 @@
+[package]
+name = "test-mobile"
+version = "0.1.0"
+description = "Test All"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true }

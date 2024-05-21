@@ -7848,6 +7848,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-mobile"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tokio",
+]
+
+[[package]]
 name = "textwrap"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
