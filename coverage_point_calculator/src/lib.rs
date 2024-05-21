@@ -29,8 +29,17 @@ impl RadioType {
                 SignalLevel::Low => 4,
                 SignalLevel::None => 0,
             },
-            RadioType::IndoorCbrs => todo!(),
-            RadioType::OutdoorCbrs => todo!(),
+            RadioType::IndoorCbrs => match signal_level {
+                SignalLevel::High => 100,
+                SignalLevel::Low => 25,
+                other => panic!("indoor cbrs radios cannot have {other:?} signal levels"),
+            },
+            RadioType::OutdoorCbrs => match signal_level {
+                SignalLevel::High => 4,
+                SignalLevel::Medium => 2,
+                SignalLevel::Low => 1,
+                SignalLevel::None => 0,
+            },
         }
     }
 }
@@ -98,8 +107,56 @@ mod tests {
     use super::*;
 
     #[test]
-    fn outdoor_wifi_radio_coverage_points() {
-        let local_radio = LocalRadio {
+    fn base_radio_coverage_points() {
+        let outdoor_cbrs = LocalRadio {
+            radio_type: RadioType::OutdoorCbrs,
+            speedtest_multiplier: NonZeroU16::new(1).unwrap(),
+            location_trust_scores: vec![NonZeroU16::new(1).unwrap()],
+            verified_radio_threshold: true,
+            hexes: vec![
+                LocalHex {
+                    rank: 1,
+                    signal_level: SignalLevel::High,
+                    boosted: None,
+                },
+                LocalHex {
+                    rank: 1,
+                    signal_level: SignalLevel::Medium,
+                    boosted: None,
+                },
+                LocalHex {
+                    rank: 1,
+                    signal_level: SignalLevel::Low,
+                    boosted: None,
+                },
+                LocalHex {
+                    rank: 1,
+                    signal_level: SignalLevel::None,
+                    boosted: None,
+                },
+            ],
+        };
+
+        let indoor_cbrs = LocalRadio {
+            radio_type: RadioType::IndoorCbrs,
+            speedtest_multiplier: NonZeroU16::new(1).unwrap(),
+            location_trust_scores: vec![NonZeroU16::new(1).unwrap()],
+            verified_radio_threshold: true,
+            hexes: vec![
+                LocalHex {
+                    rank: 1,
+                    signal_level: SignalLevel::High,
+                    boosted: None,
+                },
+                LocalHex {
+                    rank: 1,
+                    signal_level: SignalLevel::Low,
+                    boosted: None,
+                },
+            ],
+        };
+
+        let outdoor_wifi = LocalRadio {
             radio_type: RadioType::OutdoorWifi,
             speedtest_multiplier: NonZeroU16::new(1).unwrap(),
             location_trust_scores: vec![NonZeroU16::new(1).unwrap()],
@@ -127,12 +184,8 @@ mod tests {
                 },
             ],
         };
-        assert_eq!(28, local_radio.coverage_points());
-    }
 
-    #[test]
-    fn indoor_wifi_radio_coverage_points() {
-        let local_radio = LocalRadio {
+        let indoor_wifi = LocalRadio {
             radio_type: RadioType::IndoorWifi,
             speedtest_multiplier: NonZeroU16::new(1).unwrap(),
             location_trust_scores: vec![NonZeroU16::new(1).unwrap()],
@@ -150,6 +203,12 @@ mod tests {
                 },
             ],
         };
-        assert_eq!(500, local_radio.coverage_points());
+
+        // When each radio contains a hex of every applicable signal_level, and
+        // multipliers are break even. These are the accumulated coverage points.
+        assert_eq!(7, outdoor_cbrs.coverage_points());
+        assert_eq!(125, indoor_cbrs.coverage_points());
+        assert_eq!(28, outdoor_wifi.coverage_points());
+        assert_eq!(500, indoor_wifi.coverage_points());
     }
 }
