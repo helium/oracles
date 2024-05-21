@@ -65,6 +65,20 @@ enum SignalLevel {
     None,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct Assignments {
+    footfall: Assignment,
+    landtype: Assignment,
+    urbanized: Assignment,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum Assignment {
+    A,
+    B,
+    C,
+}
+
 trait Coverage {
     fn radio_type(&self) -> RadioType;
     fn signal_level(&self) -> SignalLevel;
@@ -94,6 +108,7 @@ struct LocalRadio {
 struct LocalHex {
     rank: usize,
     signal_level: SignalLevel,
+    assignment: Assignments,
     boosted: Option<Multiplier>,
 }
 
@@ -110,7 +125,7 @@ impl LocalRadio {
         let location_trust_score_multiplier = self.location_trust_multiplier();
         for hex in self.hexes.iter() {
             let base_coverage_points = self.radio_type.coverage_points(&hex.signal_level);
-            let oracle_multiplier = dec!(1);
+            let assignments_multiplier = dec!(1);
             let Some(rank) = self.radio_type.rank_multiplier(hex) else {
                 // Rank falls outside what is allowed, hex is skipped
                 continue;
@@ -119,7 +134,7 @@ impl LocalRadio {
 
             // https://www.notion.so/nova-labs/POC-reward-formula-7d1f62b638b5447fbfe37a11c0a3d3c8
             let coverage_points = base_coverage_points
-                * oracle_multiplier
+                * assignments_multiplier
                 * rank
                 * hex_boost_multiplier
                 * location_trust_score_multiplier;
@@ -151,6 +166,16 @@ mod tests {
     use super::*;
     use rust_decimal_macros::dec;
 
+    impl Assignments {
+        fn best() -> Self {
+            Self {
+                footfall: Assignment::A,
+                landtype: Assignment::A,
+                urbanized: Assignment::A,
+            }
+        }
+    }
+
     #[test]
     fn outdoor_radios_consider_top_3_ranked_hexes() {
         let outdoor_wifi = LocalRadio {
@@ -162,21 +187,25 @@ mod tests {
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 2,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 3,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 42,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
             ],
@@ -200,16 +229,19 @@ mod tests {
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 2,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 42,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
             ],
@@ -234,6 +266,7 @@ mod tests {
             hexes: vec![LocalHex {
                 rank: 1,
                 signal_level: SignalLevel::High,
+                assignment: Assignments::best(),
                 boosted: None,
             }],
         };
@@ -253,11 +286,13 @@ mod tests {
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::Low,
+                    assignment: Assignments::best(),
                     boosted: Multiplier::new(4),
                 },
             ],
@@ -282,21 +317,25 @@ mod tests {
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::Medium,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::Low,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::None,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
             ],
@@ -311,11 +350,13 @@ mod tests {
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::Low,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
             ],
@@ -330,21 +371,25 @@ mod tests {
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::Medium,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::Low,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::None,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
             ],
@@ -359,11 +404,13 @@ mod tests {
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
                 LocalHex {
                     rank: 1,
                     signal_level: SignalLevel::Low,
+                    assignment: Assignments::best(),
                     boosted: None,
                 },
             ],
