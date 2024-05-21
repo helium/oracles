@@ -79,6 +79,46 @@ enum Assignment {
     C,
 }
 
+impl Assignments {
+    fn multiplier(&self) -> MaxOneMultplier {
+        let Assignments {
+            footfall,
+            urbanized,
+            landtype,
+        } = self;
+
+        use Assignment::*;
+        match (footfall, landtype, urbanized) {
+            // yellow - POI ≥ 1 Urbanized
+            (A, A, A) => dec!(1.00),
+            (A, B, A) => dec!(1.00),
+            (A, C, A) => dec!(1.00),
+            // orange - POI ≥ 1 Not Urbanized
+            (A, A, B) => dec!(1.00),
+            (A, B, B) => dec!(1.00),
+            (A, C, B) => dec!(1.00),
+            // light green - Point of Interest Urbanized
+            (B, A, A) => dec!(0.70),
+            (B, B, A) => dec!(0.70),
+            (B, C, A) => dec!(0.70),
+            // dark green - Point of Interest Not Urbanized
+            (B, A, B) => dec!(0.50),
+            (B, B, B) => dec!(0.50),
+            (B, C, B) => dec!(0.50),
+            // light blue - No POI Urbanized
+            (C, A, A) => dec!(0.40),
+            (C, B, A) => dec!(0.30),
+            (C, C, A) => dec!(0.05),
+            // dark blue - No POI Not Urbanized
+            (C, A, B) => dec!(0.20),
+            (C, B, B) => dec!(0.15),
+            (C, C, B) => dec!(0.03),
+            // gray - Outside of USA
+            (_, _, C) => dec!(0.00),
+        }
+    }
+}
+
 trait Coverage {
     fn radio_type(&self) -> RadioType;
     fn signal_level(&self) -> SignalLevel;
@@ -123,13 +163,15 @@ impl LocalRadio {
     pub fn coverage_points(&self) -> Points {
         let mut points = vec![];
         let location_trust_score_multiplier = self.location_trust_multiplier();
+
         for hex in self.hexes.iter() {
-            let base_coverage_points = self.radio_type.coverage_points(&hex.signal_level);
-            let assignments_multiplier = dec!(1);
             let Some(rank) = self.radio_type.rank_multiplier(hex) else {
-                // Rank falls outside what is allowed, hex is skipped
+                // Rank falls outside what is allowed, skip as early as possible
                 continue;
             };
+
+            let base_coverage_points = self.radio_type.coverage_points(&hex.signal_level);
+            let assignments_multiplier = hex.assignment.multiplier();
             let hex_boost_multiplier = self.hex_boosting_multiplier(&hex);
 
             // https://www.notion.so/nova-labs/POC-reward-formula-7d1f62b638b5447fbfe37a11c0a3d3c8
@@ -138,6 +180,7 @@ impl LocalRadio {
                 * rank
                 * hex_boost_multiplier
                 * location_trust_score_multiplier;
+
             points.push(coverage_points)
         }
 
@@ -174,6 +217,72 @@ mod tests {
                 urbanized: Assignment::A,
             }
         }
+    }
+
+    #[test]
+    fn oracle_boosting_assignments_apply_per_hex() {
+        fn local_hex(
+            footfall: Assignment,
+            landtype: Assignment,
+            urbanized: Assignment,
+        ) -> LocalHex {
+            LocalHex {
+                rank: 1,
+                signal_level: SignalLevel::High,
+                assignment: Assignments {
+                    footfall,
+                    landtype,
+                    urbanized,
+                },
+                boosted: None,
+            }
+        }
+
+        use Assignment::*;
+        let indoor_cbrs = LocalRadio {
+            radio_type: RadioType::IndoorCbrs,
+            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
+            verified_radio_threshold: true,
+            hexes: vec![
+                // yellow - POI ≥ 1 Urbanized
+                local_hex(A, A, A), // 100
+                local_hex(A, B, A), // 100
+                local_hex(A, C, A), // 100
+                // orange - POI ≥ 1 Not Urbanized
+                local_hex(A, A, B), // 100
+                local_hex(A, B, B), // 100
+                local_hex(A, C, B), // 100
+                // light green - Point of Interest Urbanized
+                local_hex(B, A, A), // 70
+                local_hex(B, B, A), // 70
+                local_hex(B, C, A), // 70
+                // dark green - Point of Interest Not Urbanized
+                local_hex(B, A, B), // 50
+                local_hex(B, B, B), // 50
+                local_hex(B, C, B), // 50
+                // light blue - No POI Urbanized
+                local_hex(C, A, A), // 40
+                local_hex(C, B, A), // 30
+                local_hex(C, C, A), // 5
+                // dark blue - No POI Not Urbanized
+                local_hex(C, A, B), // 20
+                local_hex(C, B, B), // 15
+                local_hex(C, C, B), // 3
+                // gray - Outside of USA
+                local_hex(A, A, C), // 0
+                local_hex(A, B, C), // 0
+                local_hex(A, C, C), // 0
+                local_hex(B, A, C), // 0
+                local_hex(B, B, C), // 0
+                local_hex(B, C, C), // 0
+                local_hex(C, A, C), // 0
+                local_hex(C, B, C), // 0
+                local_hex(C, C, C), // 0
+            ],
+        };
+
+        assert_eq!(dec!(1073), indoor_cbrs.coverage_points());
     }
 
     #[test]
