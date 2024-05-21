@@ -43,6 +43,18 @@ impl RadioType {
             },
         }
     }
+
+    fn rank_multiplier(&self, hex: &LocalHex) -> Option<MaxOneMultplier> {
+        let multipliers = match self {
+            RadioType::IndoorWifi => vec![dec!(1)],
+            RadioType::IndoorCbrs => vec![dec!(1)],
+            RadioType::OutdoorWifi => vec![dec!(1), dec!(0.5), dec!(0.25)],
+            RadioType::OutdoorCbrs => vec![dec!(1), dec!(0.5), dec!(0.25)],
+        };
+
+        // TODO: decide if rank should be 0-indexed
+        multipliers.get(hex.rank - 1).cloned()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,7 +92,7 @@ struct LocalRadio {
 
 #[derive(Debug, PartialEq)]
 struct LocalHex {
-    rank: u16,
+    rank: usize,
     signal_level: SignalLevel,
     boosted: Option<Multiplier>,
 }
@@ -99,7 +111,10 @@ impl LocalRadio {
         for hex in self.hexes.iter() {
             let base_coverage_points = self.radio_type.coverage_points(&hex.signal_level);
             let oracle_multiplier = dec!(1);
-            let rank = dec!(1);
+            let Some(rank) = self.radio_type.rank_multiplier(hex) else {
+                // Rank falls outside what is allowed, hex is skipped
+                continue;
+            };
             let hex_boost_multiplier = self.hex_boosting_multiplier(&hex);
 
             // https://www.notion.so/nova-labs/POC-reward-formula-7d1f62b638b5447fbfe37a11c0a3d3c8
@@ -120,7 +135,7 @@ impl LocalRadio {
         trust_score_sum / trust_score_count
     }
 
-    fn hex_boosting_multiplier(&self, hex: &LocalHex) -> Decimal {
+    fn hex_boosting_multiplier(&self, hex: &LocalHex) -> MaxOneMultplier {
         let maybe_boost = if self.verified_radio_threshold {
             hex.boosted.map_or(1, |boost| boost.get())
         } else {
@@ -135,6 +150,73 @@ mod tests {
 
     use super::*;
     use rust_decimal_macros::dec;
+
+    #[test]
+    fn outdoor_radios_consider_top_3_ranked_hexes() {
+        let outdoor_wifi = LocalRadio {
+            radio_type: RadioType::OutdoorWifi,
+            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
+            verified_radio_threshold: true,
+            hexes: vec![
+                LocalHex {
+                    rank: 1,
+                    signal_level: SignalLevel::High,
+                    boosted: None,
+                },
+                LocalHex {
+                    rank: 2,
+                    signal_level: SignalLevel::High,
+                    boosted: None,
+                },
+                LocalHex {
+                    rank: 3,
+                    signal_level: SignalLevel::High,
+                    boosted: None,
+                },
+                LocalHex {
+                    rank: 42,
+                    signal_level: SignalLevel::High,
+                    boosted: None,
+                },
+            ],
+        };
+
+        // rank 1  :: 1.00 * 16 == 16
+        // rank 2  :: 0.50 * 16 == 8
+        // rank 3  :: 0.25 * 16 == 4
+        // rank 42 :: 0.00 * 16 == 0
+        assert_eq!(dec!(28), outdoor_wifi.coverage_points());
+    }
+
+    #[test]
+    fn indoor_radios_only_consider_first_ranked_hexes() {
+        let indoor_wifi = LocalRadio {
+            radio_type: RadioType::IndoorWifi,
+            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
+            verified_radio_threshold: true,
+            hexes: vec![
+                LocalHex {
+                    rank: 1,
+                    signal_level: SignalLevel::High,
+                    boosted: None,
+                },
+                LocalHex {
+                    rank: 2,
+                    signal_level: SignalLevel::High,
+                    boosted: None,
+                },
+                LocalHex {
+                    rank: 42,
+                    signal_level: SignalLevel::High,
+                    boosted: None,
+                },
+            ],
+        };
+
+        assert_eq!(dec!(400), indoor_wifi.coverage_points());
+    }
 
     #[test]
     fn location_trust_score_multiplier() {
