@@ -1,0 +1,15 @@
+log = "ingest=debug,file_store=info"
+mode = "mobile"
+token = "api-token"
+listen = "0.0.0.0:9080"
+cache = "/opt/ingest/data"
+network = "mainnet"
+session_key_timeout = "30 minutes"
+
+[output]
+bucket = "mobile-ingest"
+region = "us-east-1"
+endpoint = "http://s3:4566"
+
+[metrics]
+endpoint = "0.0.0.0:19000"
