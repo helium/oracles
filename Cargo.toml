@@ -116,6 +116,7 @@ itertools = "*"
 tokio-util = "0"
 uuid = { version = "1", features = ["v4", "serde"] }
 tower-http = { version = "0", features = ["trace"] }
+derive_builder = "0"
 
 [patch.crates-io]
 sqlx = { git = "https://github.com/helium/sqlx.git", rev = "92a2268f02e0cac6fccb34d3e926347071dbb88d" }

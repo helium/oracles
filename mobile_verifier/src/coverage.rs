@@ -1,5 +1,5 @@
 use crate::{
-    boosting_oracles::{BoostedHexAssignments, HexAssignments, HexBoostData},
+    boosting_oracles::assignment::HexAssignments,
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized, Settings,
 };
@@ -21,10 +21,7 @@ use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
-    poc_mobile::{
-        self as proto, CoverageObjectValidity, OracleBoostingReportV1,
-        SignalLevel as SignalLevelProto,
-    },
+    poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
 use hextree::Cell;
 use mobile_config::{
@@ -32,7 +29,7 @@ use mobile_config::{
     client::AuthorizationClient,
 };
 use retainer::{entry::CacheReadGuard, Cache};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
 use std::{
@@ -44,7 +41,7 @@ use std::{
     time::Instant,
 };
 use task_manager::{ManagedTask, TaskManager};
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use uuid::Uuid;
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
@@ -71,11 +68,9 @@ impl From<SignalLevelProto> for SignalLevel {
 pub struct CoverageDaemon {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
-    hex_boost_data: HexBoostData,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-    initial_boosting_reports: Option<Vec<OracleBoostingReportV1>>,
     coverage_obj_sink: FileSinkClient,
-    oracle_boosting_sink: FileSinkClient,
+    new_coverage_object_notifier: NewCoverageObjectNotifier,
 }
 
 impl CoverageDaemon {
@@ -85,7 +80,7 @@ impl CoverageDaemon {
         file_upload: FileUpload,
         file_store: FileStore,
         auth_client: AuthorizationClient,
-        hex_boost_data: HexBoostData,
+        new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> anyhow::Result<impl ManagedTask> {
         let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
             FileType::CoverageObject,
@@ -97,19 +92,6 @@ impl CoverageDaemon {
         .roll_time(Duration::minutes(15))
         .create()
         .await?;
-
-        // Oracle boosting reports
-        let (oracle_boosting_reports, oracle_boosting_reports_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::OracleBoostingReport,
-                settings.store_base_path(),
-                file_upload,
-                concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
-            )
-            .auto_commit(false)
-            .roll_time(Duration::minutes(15))
-            .create()
-            .await?;
 
         let (coverage_objs, coverage_objs_server) =
             file_source::continuous_source::<CoverageObjectIngestReport, _>()
@@ -124,59 +106,35 @@ impl CoverageDaemon {
         let coverage_daemon = CoverageDaemon::new(
             pool,
             auth_client,
-            hex_boost_data,
             coverage_objs,
             valid_coverage_objs,
-            oracle_boosting_reports,
-        )
-        .await?;
+            new_coverage_object_notifier,
+        );
 
         Ok(TaskManager::builder()
             .add_task(valid_coverage_objs_server)
-            .add_task(oracle_boosting_reports_server)
             .add_task(coverage_objs_server)
             .add_task(coverage_daemon)
             .build())
     }
 
-    pub async fn new(
+    pub fn new(
         pool: PgPool,
         auth_client: AuthorizationClient,
-        hex_boost_data: HexBoostData,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient,
-        oracle_boosting_sink: FileSinkClient,
-    ) -> anyhow::Result<Self> {
-        tracing::info!("Setting initial values for the urbanization column");
-
-        let unassigned_hexes = UnassignedHex::fetch(&pool);
-        let initial_boosting_reports = Some(
-            set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool)
-                .await?
-                .collect(),
-        );
-
-        Ok(Self {
+        new_coverage_object_notifier: NewCoverageObjectNotifier,
+    ) -> Self {
+        Self {
             pool,
             auth_client,
-            hex_boost_data,
             coverage_objs,
             coverage_obj_sink,
-            oracle_boosting_sink,
-            initial_boosting_reports,
-        })
+            new_coverage_object_notifier,
+        }
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        let Some(initial_boosting_reports) = std::mem::take(&mut self.initial_boosting_reports)
-        else {
-            anyhow::bail!("Initial boosting reports is None");
-        };
-        self.oracle_boosting_sink
-            .write_all(initial_boosting_reports)
-            .await?;
-        self.oracle_boosting_sink.commit().await?;
-
         loop {
             tokio::select! {
                 _ = shutdown.clone() => {
@@ -219,136 +177,11 @@ impl CoverageDaemon {
         self.coverage_obj_sink.commit().await?;
         transaction.commit().await?;
 
-        // After writing all of the coverage objects, we set their oracle boosting assignments. This is
-        // done in two steps to improve the testability of the assignments.
-        let unassigned_hexes = UnassignedHex::fetch(&self.pool);
-        let boosting_reports =
-            set_oracle_boosting_assignments(unassigned_hexes, &self.hex_boost_data, &self.pool)
-                .await?;
-        self.oracle_boosting_sink
-            .write_all(boosting_reports)
-            .await?;
-        self.oracle_boosting_sink.commit().await?;
+        // Tell the data set manager to update the assignments.
+        self.new_coverage_object_notifier.notify();
 
         Ok(())
     }
-}
-
-#[derive(FromRow)]
-pub struct UnassignedHex {
-    uuid: Uuid,
-    #[sqlx(try_from = "i64")]
-    hex: u64,
-    signal_level: SignalLevel,
-    signal_power: i32,
-}
-
-impl UnassignedHex {
-    pub fn fetch(pool: &PgPool) -> impl Stream<Item = sqlx::Result<Self>> + '_ {
-        sqlx::query_as(
-            "SELECT
-                uuid, hex, signal_level, signal_power
-            FROM
-                hexes
-            WHERE
-                urbanized IS NULL
-                OR footfall IS NULL
-                OR landtype IS NULL",
-        )
-        .fetch(pool)
-    }
-
-    fn to_location_string(&self) -> String {
-        format!("{:x}", self.hex)
-    }
-}
-
-pub async fn set_oracle_boosting_assignments(
-    unassigned_urbinization_hexes: impl Stream<Item = sqlx::Result<UnassignedHex>>,
-    hex_boost_data: &impl BoostedHexAssignments,
-    pool: &PgPool,
-) -> anyhow::Result<impl Iterator<Item = proto::OracleBoostingReportV1>> {
-    let now = Utc::now();
-
-    let boost_results =
-        initialize_unassigned_hexes(unassigned_urbinization_hexes, hex_boost_data, pool).await?;
-
-    Ok(boost_results
-        .into_iter()
-        .map(
-            move |(coverage_object, assignments)| proto::OracleBoostingReportV1 {
-                coverage_object: Vec::from(coverage_object.into_bytes()),
-                assignments,
-                timestamp: now.encode_timestamp(),
-            },
-        ))
-}
-
-async fn initialize_unassigned_hexes(
-    unassigned_urbinization_hexes: impl Stream<Item = Result<UnassignedHex, sqlx::Error>>,
-    hex_boost_data: &impl BoostedHexAssignments,
-    pool: &Pool<Postgres>,
-) -> Result<HashMap<Uuid, Vec<proto::OracleBoostingHexAssignment>>, anyhow::Error> {
-    const NUMBER_OF_FIELDS_IN_QUERY: u16 = 7;
-    const ASSIGNMENTS_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
-
-    let mut boost_results = HashMap::<Uuid, Vec<proto::OracleBoostingHexAssignment>>::new();
-
-    let mut unassigned_hexes =
-        pin!(unassigned_urbinization_hexes.try_chunks(ASSIGNMENTS_MAX_BATCH_ENTRIES));
-
-    while let Some(hexes) = unassigned_hexes.try_next().await? {
-        let hexes: anyhow::Result<Vec<_>> = hexes
-            .into_iter()
-            .map(|hex| {
-                let cell = hextree::Cell::from_raw(hex.hex)?;
-                let assignments = hex_boost_data.assignments(cell)?;
-
-                let location = hex.to_location_string();
-                let assignment_multiplier = (assignments.boosting_multiplier() * dec!(1000))
-                    .to_u32()
-                    .unwrap_or(0);
-
-                boost_results.entry(hex.uuid).or_default().push(
-                    proto::OracleBoostingHexAssignment {
-                        location,
-                        urbanized: assignments.urbanized.into(),
-                        footfall: assignments.footfall.into(),
-                        landtype: assignments.landtype.into(),
-                        assignment_multiplier,
-                    },
-                );
-
-                Ok((hex, assignments))
-            })
-            .collect();
-
-        QueryBuilder::new(
-            "INSERT INTO hexes (uuid, hex, signal_level, signal_power, urbanized, footfall, landtype)",
-        )
-        .push_values(hexes?, |mut b, (hex, assignments)| {
-            b.push_bind(hex.uuid)
-                .push_bind(hex.hex as i64)
-                .push_bind(hex.signal_level)
-                .push_bind(hex.signal_power)
-                .push_bind(assignments.urbanized)
-                .push_bind(assignments.footfall)
-                .push_bind(assignments.landtype);
-        })
-        .push(
-            r#"
-            ON CONFLICT (uuid, hex) DO UPDATE SET
-                urbanized = EXCLUDED.urbanized,
-                footfall = EXCLUDED.footfall,
-                landtype = EXCLUDED.landtype
-            "#,
-        )
-        .build()
-        .execute(pool)
-        .await?;
-    }
-
-    Ok(boost_results)
 }
 
 impl ManagedTask for CoverageDaemon {
@@ -363,6 +196,31 @@ impl ManagedTask for CoverageDaemon {
                 .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
         )
     }
+}
+
+pub struct NewCoverageObjectNotifier(Sender<()>);
+
+impl NewCoverageObjectNotifier {
+    fn notify(&self) {
+        let _ = self.0.try_send(());
+    }
+}
+
+pub struct NewCoverageObjectNotification(Receiver<()>);
+
+impl NewCoverageObjectNotification {
+    pub async fn await_new_coverage_object(&mut self) {
+        let _ = self.0.recv().await;
+    }
+}
+
+pub fn new_coverage_object_notification_channel(
+) -> (NewCoverageObjectNotifier, NewCoverageObjectNotification) {
+    let (tx, rx) = channel(1);
+    (
+        NewCoverageObjectNotifier(tx),
+        NewCoverageObjectNotification(rx),
+    )
 }
 
 pub struct CoverageObject {

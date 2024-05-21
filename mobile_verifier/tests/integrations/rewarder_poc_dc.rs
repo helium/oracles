@@ -11,7 +11,7 @@ use helium_proto::services::poc_mobile::{
 };
 use mobile_verifier::{
     cell_type::CellType,
-    coverage::{set_oracle_boosting_assignments, CoverageObject, UnassignedHex},
+    coverage::CoverageObject,
     data_session,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder, speedtests,
@@ -265,11 +265,9 @@ async fn seed_heartbeats(
 }
 
 async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
-    let unassigned_hexes = UnassignedHex::fetch(pool);
-    let _ = set_oracle_boosting_assignments(
-        unassigned_hexes,
-        &common::MockHexAssignments::default(),
+    let _ = common::set_unassigned_oracle_boosting_assignments(
         pool,
+        &common::mock_hex_boost_data_default(),
     )
     .await?;
     Ok(())

@@ -1,4 +1,5 @@
 use crate::{
+    boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
     radio_threshold,
@@ -215,6 +216,11 @@ where
                 == 0
             {
                 tracing::info!("No speedtests found past reward period");
+                return Ok(false);
+            }
+
+            if check_for_unprocessed_data_sets(&self.pool, reward_period.end).await? {
+                tracing::info!("Data sets still need to be processed");
                 return Ok(false);
             }
         } else {

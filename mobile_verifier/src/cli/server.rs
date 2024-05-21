@@ -1,6 +1,6 @@
 use crate::{
-    boosting_oracles,
-    coverage::CoverageDaemon,
+    boosting_oracles::DataSetDownloaderDaemon,
+    coverage::{new_coverage_object_notification_channel, CoverageDaemon},
     data_session::DataSessionIngestor,
     geofence::Geofence,
     heartbeats::{cbrs::CbrsHeartbeatDaemon, wifi::WifiHeartbeatDaemon},
@@ -12,12 +12,7 @@ use crate::{
 };
 use anyhow::Result;
 use chrono::Duration;
-use file_store::{
-    file_sink,
-    file_upload::{self},
-    FileStore, FileType,
-};
-
+use file_store::{file_sink, file_upload, FileStore, FileType};
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
     CarrierServiceClient, GatewayClient,
@@ -101,6 +96,9 @@ impl Cmd {
             settings.usa_and_mexico_fencing_resolution()?,
         )?;
 
+        let (new_coverage_obj_notifier, new_coverage_obj_notification) =
+            new_coverage_object_notification_channel();
+
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_heartbeats_server)
@@ -114,7 +112,7 @@ impl Cmd {
                     gateway_client.clone(),
                     valid_heartbeats.clone(),
                     seniority_updates.clone(),
-                    usa_geofence.clone(),
+                    usa_geofence,
                 )
                 .await?,
             )
@@ -148,7 +146,16 @@ impl Cmd {
                     file_upload.clone(),
                     report_ingest.clone(),
                     auth_client.clone(),
-                    boosting_oracles::make_hex_boost_data(settings)?,
+                    new_coverage_obj_notifier,
+                )
+                .await?,
+            )
+            .add_task(
+                DataSetDownloaderDaemon::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    file_upload.clone(),
+                    new_coverage_obj_notification,
                 )
                 .await?,
             )

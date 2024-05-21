@@ -14,7 +14,7 @@ use hextree::Cell;
 use mobile_config::boosted_hex_info::BoostedHexInfo;
 use mobile_verifier::{
     cell_type::CellType,
-    coverage::{set_oracle_boosting_assignments, CoverageObject, UnassignedHex},
+    coverage::CoverageObject,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     radio_threshold, reward_shares, rewarder, speedtests,
 };
@@ -34,11 +34,9 @@ const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
 
 async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
-    let unassigned_hexes = UnassignedHex::fetch(pool);
-    let _ = set_oracle_boosting_assignments(
-        unassigned_hexes,
-        &common::MockHexAssignments::default(),
+    let _ = common::set_unassigned_oracle_boosting_assignments(
         pool,
+        &common::mock_hex_boost_data_default(),
     )
     .await?;
     Ok(())

@@ -154,6 +154,9 @@ pub const COVERAGE_OBJECT_INGEST_REPORT: &str = "coverage_object_ingest_report";
 pub const SENIORITY_UPDATE: &str = "seniority_update";
 pub const BOOSTED_HEX_UPDATE: &str = "boosted_hex_update";
 pub const ORACLE_BOOSTING_REPORT: &str = "oracle_boosting_report";
+pub const URBANIZATION_DATA_SET: &str = "urbanization";
+pub const FOOTFALL_DATA_SET: &str = "footfall";
+pub const LANDTYPE_DATA_SET: &str = "landtype";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -200,6 +203,9 @@ pub enum FileType {
     RadioThresholdReq,
     RadioThresholdIngestReport,
     VerifiedRadioThresholdIngestReport,
+    UrbanizationDataSet,
+    FootfallDataSet,
+    LandtypeDataSet,
     InvalidatedRadioThresholdReq,
     InvalidatedRadioThresholdIngestReport,
     VerifiedInvalidatedRadioThresholdIngestReport,
@@ -261,6 +267,9 @@ impl fmt::Display for FileType {
             Self::SeniorityUpdate => SENIORITY_UPDATE,
             Self::BoostedHexUpdate => BOOSTED_HEX_UPDATE,
             Self::OracleBoostingReport => ORACLE_BOOSTING_REPORT,
+            Self::UrbanizationDataSet => URBANIZATION_DATA_SET,
+            Self::FootfallDataSet => FOOTFALL_DATA_SET,
+            Self::LandtypeDataSet => LANDTYPE_DATA_SET,
         };
         f.write_str(s)
     }
@@ -322,6 +331,9 @@ impl FileType {
             Self::SeniorityUpdate => SENIORITY_UPDATE,
             Self::BoostedHexUpdate => BOOSTED_HEX_UPDATE,
             Self::OracleBoostingReport => ORACLE_BOOSTING_REPORT,
+            Self::UrbanizationDataSet => URBANIZATION_DATA_SET,
+            Self::FootfallDataSet => FOOTFALL_DATA_SET,
+            Self::LandtypeDataSet => LANDTYPE_DATA_SET,
         }
     }
 }
@@ -383,6 +395,9 @@ impl FromStr for FileType {
             SENIORITY_UPDATE => Self::SeniorityUpdate,
             BOOSTED_HEX_UPDATE => Self::BoostedHexUpdate,
             ORACLE_BOOSTING_REPORT => Self::OracleBoostingReport,
+            URBANIZATION_DATA_SET => Self::UrbanizationDataSet,
+            FOOTFALL_DATA_SET => Self::FootfallDataSet,
+            LANDTYPE_DATA_SET => Self::LandtypeDataSet,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

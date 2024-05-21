@@ -1,162 +1,67 @@
 pub mod assignment;
+pub mod data_sets;
+pub mod footfall;
+pub mod landtype;
+pub mod urbanization;
 
-use crate::Settings;
-pub use assignment::{Assignment, HexAssignments};
-use hextree::disktree::DiskTreeMap;
+use std::collections::HashMap;
 
-pub trait BoostedHexAssignments: Send + Sync {
-    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments>;
+use crate::boosting_oracles::assignment::HexAssignments;
+pub use assignment::Assignment;
+pub use data_sets::*;
+
+pub trait HexAssignment: Send + Sync + 'static {
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
 }
 
-pub struct HexBoostData {
-    urbanized: DiskTreeMap,
-    footfall: DiskTreeMap,
-    landtype: DiskTreeMap,
-}
-
-pub fn make_hex_boost_data(settings: &Settings) -> anyhow::Result<HexBoostData> {
-    let urban_disktree = DiskTreeMap::open(&settings.urbanization_data_set)?;
-    let footfall_disktree = DiskTreeMap::open(&settings.footfall_data_set)?;
-    let landtype_disktree = DiskTreeMap::open(&settings.landtype_data_set)?;
-
-    let hex_boost_data = HexBoostData {
-        urbanized: urban_disktree,
-        footfall: footfall_disktree,
-        landtype: landtype_disktree,
-    };
-
-    Ok(hex_boost_data)
-}
-impl BoostedHexAssignments for HexBoostData {
-    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
-        let footfall = self.footfall_assignment(cell)?;
-        let urbanized = self.urbanized_assignment(cell)?;
-        let landtype = self.landtype_assignment(cell)?;
-
-        Ok(HexAssignments {
-            footfall,
-            urbanized,
-            landtype,
-        })
+impl HexAssignment for HashMap<hextree::Cell, Assignment> {
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        Ok(*self.get(&cell).unwrap())
     }
 }
 
-impl HexBoostData {
-    fn urbanized_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        match self.urbanized.get(cell)? {
-            Some((_, &[1])) => Ok(Assignment::A),
-            Some((_, &[0])) => Ok(Assignment::B),
-            None => Ok(Assignment::C),
-            Some((_, other)) => {
-                anyhow::bail!("unexpected urbanization disktree data: {cell:?} {other:?}")
-            }
-        }
-    }
-
-    fn footfall_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        let Some((_, vals)) = self.footfall.get(cell)? else {
-            return Ok(Assignment::C);
-        };
-
-        match vals {
-            &[x] if x >= 1 => Ok(Assignment::A),
-            &[0] => Ok(Assignment::B),
-            other => anyhow::bail!("unexpected footfall disktree data: {cell:?} {other:?}"),
-        }
-    }
-
-    fn landtype_assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
-        let Some((_, vals)) = self.landtype.get(cell)? else {
-            return Ok(Assignment::C);
-        };
-
-        anyhow::ensure!(
-            vals.len() == 1,
-            "unexpected landtype disktree data: {cell:?} {vals:?}"
-        );
-
-        let cover = Landtype::try_from(vals[0])?;
-        Ok(cover.into())
+impl HexAssignment for Assignment {
+    fn assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        Ok(*self)
     }
 }
 
-impl From<Landtype> for Assignment {
-    fn from(value: Landtype) -> Self {
-        match value {
-            Landtype::Built => Assignment::A,
-            //
-            Landtype::Tree => Assignment::B,
-            Landtype::Shrub => Assignment::B,
-            Landtype::Grass => Assignment::B,
-            //
-            Landtype::Bare => Assignment::C,
-            Landtype::Crop => Assignment::C,
-            Landtype::Frozen => Assignment::C,
-            Landtype::Water => Assignment::C,
-            Landtype::Wet => Assignment::C,
-            Landtype::Mangrove => Assignment::C,
-            Landtype::Moss => Assignment::C,
-        }
+#[derive(derive_builder::Builder)]
+#[builder(pattern = "owned")]
+pub struct HexBoostData<Foot, Land, Urban> {
+    pub footfall: Foot,
+    pub landtype: Land,
+    pub urbanization: Urban,
+}
+impl<F, L, U> HexBoostData<F, L, U> {
+    pub fn builder() -> HexBoostDataBuilder<F, L, U> {
+        HexBoostDataBuilder::default()
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Landtype {
-    Tree = 10,
-    Shrub = 20,
-    Grass = 30,
-    Crop = 40,
-    Built = 50,
-    Bare = 60,
-    Frozen = 70,
-    Water = 80,
-    Wet = 90,
-    Mangrove = 95,
-    Moss = 100,
-}
-
-impl std::fmt::Display for Landtype {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.to_str())
+impl<Foot, Land, Urban> HexBoostData<Foot, Land, Urban>
+where
+    Foot: DataSet,
+    Land: DataSet,
+    Urban: DataSet,
+{
+    pub fn is_ready(&self) -> bool {
+        self.urbanization.is_ready() && self.footfall.is_ready() && self.landtype.is_ready()
     }
 }
 
-impl Landtype {
-    pub(crate) fn to_str(self) -> &'static str {
-        match self {
-            Landtype::Tree => "TreeCover",
-            Landtype::Shrub => "Shrubland",
-            Landtype::Grass => "Grassland",
-            Landtype::Crop => "Cropland",
-            Landtype::Built => "BuiltUp",
-            Landtype::Bare => "BareOrSparseVeg",
-            Landtype::Frozen => "SnowAndIce",
-            Landtype::Water => "Water",
-            Landtype::Wet => "HerbaceousWetland",
-            Landtype::Mangrove => "Mangroves",
-            Landtype::Moss => "MossAndLichen",
-        }
-    }
-}
-
-impl TryFrom<u8> for Landtype {
-    type Error = anyhow::Error;
-    fn try_from(other: u8) -> anyhow::Result<Landtype, Self::Error> {
-        let val = match other {
-            10 => Landtype::Tree,
-            20 => Landtype::Shrub,
-            30 => Landtype::Grass,
-            40 => Landtype::Crop,
-            50 => Landtype::Built,
-            60 => Landtype::Bare,
-            70 => Landtype::Frozen,
-            80 => Landtype::Water,
-            90 => Landtype::Wet,
-            95 => Landtype::Mangrove,
-            100 => Landtype::Moss,
-            other => anyhow::bail!("unexpected landtype disktree value: {other:?}"),
-        };
-        Ok(val)
+impl<Foot, Land, Urban> HexBoostData<Foot, Land, Urban>
+where
+    Foot: HexAssignment,
+    Land: HexAssignment,
+    Urban: HexAssignment,
+{
+    pub fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
+        HexAssignments::builder(cell)
+            .footfall(&self.footfall)
+            .landtype(&self.landtype)
+            .urbanized(&self.urbanization)
+            .build()
     }
 }
 
@@ -165,7 +70,9 @@ mod tests {
 
     use std::io::Cursor;
 
-    use hextree::HexTreeMap;
+    use hextree::{disktree::DiskTreeMap, HexTreeMap};
+
+    use self::{footfall::Footfall, landtype::Landtype, urbanization::Urbanization};
 
     use super::*;
 
@@ -316,16 +223,16 @@ mod tests {
         footfall.to_disktree(Cursor::new(&mut footfall_buff), |w, v| w.write_all(&[*v]))?;
         landtype.to_disktree(Cursor::new(&mut landtype_buf), |w, v| w.write_all(&[*v]))?;
 
-        let urbanized = DiskTreeMap::with_buf(urbanized_buf)?;
-        let footfall = DiskTreeMap::with_buf(footfall_buff)?;
-        let landtype = DiskTreeMap::with_buf(landtype_buf)?;
+        let footfall = Footfall::new_mock(DiskTreeMap::with_buf(footfall_buff)?);
+        let landtype = Landtype::new_mock(DiskTreeMap::with_buf(landtype_buf)?);
+        let urbanization = Urbanization::new_mock(DiskTreeMap::with_buf(urbanized_buf)?);
 
         // Let the testing commence
-        let data = HexBoostData {
-            urbanized,
-            footfall,
-            landtype,
-        };
+        let data = HexBoostData::builder()
+            .footfall(footfall)
+            .landtype(landtype)
+            .urbanization(urbanization)
+            .build()?;
 
         // NOTE(mj): formatting ignored to make it easier to see the expected change in assignments.
         // NOTE(mj): The semicolon at the end of the block is there to keep rust from

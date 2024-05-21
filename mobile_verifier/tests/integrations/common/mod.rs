@@ -1,10 +1,14 @@
 use chrono::{DateTime, Utc};
-use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
+use file_store::{
+    file_sink::{FileSinkClient, Message as SinkMessage},
+    traits::TimestampEncode,
+};
 use futures::{stream, StreamExt};
 use helium_proto::{
     services::poc_mobile::{
-        mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare, RadioReward,
-        ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
+        mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare,
+        OracleBoostingHexAssignment, OracleBoostingReportV1, RadioReward, ServiceProviderReward,
+        SpeedtestAvg, SubscriberReward, UnallocatedReward,
     },
     Message,
 };
@@ -12,11 +16,17 @@ use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
-use mobile_verifier::boosting_oracles::{Assignment, BoostedHexAssignments, HexAssignments};
+use mobile_verifier::boosting_oracles::{
+    AssignedCoverageObjects, Assignment, HexAssignment, HexBoostData,
+};
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct MockHexBoostingClient {
     boosted_hexes: Vec<BoostedHexInfo>,
 }
@@ -179,35 +189,65 @@ pub fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
+pub fn mock_hex_boost_data_default() -> HexBoostData<Assignment, Assignment, Assignment> {
+    HexBoostData::builder()
+        .urbanization(Assignment::A)
+        .footfall(Assignment::A)
+        .landtype(Assignment::A)
+        .build()
+        .unwrap()
+}
+
 type MockAssignmentMap = HashMap<hextree::Cell, Assignment>;
 
-#[derive(Default)]
-pub struct MockHexAssignments {
+#[allow(dead_code)]
+pub fn mock_hex_boost_data(
     footfall: MockAssignmentMap,
     urbanized: MockAssignmentMap,
     landtype: MockAssignmentMap,
+) -> HexBoostData<MockAssignmentMap, MockAssignmentMap, MockAssignmentMap> {
+    HexBoostData::builder()
+        .footfall(footfall)
+        .urbanization(urbanized)
+        .landtype(landtype)
+        .build()
+        .unwrap()
 }
 
-impl MockHexAssignments {
-    pub fn new(
-        footfall: MockAssignmentMap,
-        urbanized: MockAssignmentMap,
-        landtype: MockAssignmentMap,
-    ) -> Self {
-        Self {
-            footfall,
-            urbanized,
-            landtype,
-        }
+pub async fn set_unassigned_oracle_boosting_assignments(
+    pool: &PgPool,
+    data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
+) -> anyhow::Result<Vec<OracleBoostingReportV1>> {
+    let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
+        mobile_verifier::boosting_oracles::data_sets::db::fetch_hexes_with_null_assignments(pool),
+        data_sets,
+    )
+    .await?;
+    let timestamp = Utc::now().encode_timestamp();
+    let mut output = Vec::new();
+    for (uuid, hexes) in assigned_coverage_objs.coverage_objs.iter() {
+        let assignments: Vec<_> = hexes
+            .iter()
+            .map(|hex| {
+                let location = format!("{:x}", hex.hex);
+                let assignment_multiplier = (hex.assignments.boosting_multiplier() * dec!(1000))
+                    .to_u32()
+                    .unwrap_or(0);
+                OracleBoostingHexAssignment {
+                    location,
+                    urbanized: hex.assignments.urbanized.into(),
+                    footfall: hex.assignments.footfall.into(),
+                    landtype: hex.assignments.landtype.into(),
+                    assignment_multiplier,
+                }
+            })
+            .collect();
+        output.push(OracleBoostingReportV1 {
+            coverage_object: Vec::from(uuid.into_bytes()),
+            assignments,
+            timestamp,
+        });
     }
-}
-
-impl BoostedHexAssignments for MockHexAssignments {
-    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
-        Ok(HexAssignments {
-            footfall: self.footfall.get(&cell).cloned().unwrap_or(Assignment::A),
-            urbanized: self.urbanized.get(&cell).cloned().unwrap_or(Assignment::A),
-            landtype: self.landtype.get(&cell).cloned().unwrap_or(Assignment::A),
-        })
-    }
+    assigned_coverage_objs.save(pool).await?;
+    Ok(output)
 }

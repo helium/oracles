@@ -1,4 +1,3 @@
-use crate::common;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
@@ -16,10 +15,7 @@ use hextree::Cell;
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
-    coverage::{
-        set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
-        CoverageObjectCache, Seniority, UnassignedHex,
-    },
+    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
     heartbeats::{
         Heartbeat, HeartbeatReward, KeyType, LocationCache, SeniorityUpdate, ValidatedHeartbeat,
@@ -36,17 +32,13 @@ use sqlx::PgPool;
 use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;
 
+use crate::common;
+
 #[derive(Clone)]
 struct MockGeofence;
 
-impl GeofenceValidator<Heartbeat> for MockGeofence {
+impl GeofenceValidator for MockGeofence {
     fn in_valid_region(&self, _heartbeat: &Heartbeat) -> bool {
-        true
-    }
-}
-
-impl GeofenceValidator<hextree::Cell> for MockGeofence {
-    fn in_valid_region(&self, _cell: &hextree::Cell) -> bool {
         true
     }
 }
@@ -413,11 +405,9 @@ async fn process_input(
     }
     transaction.commit().await?;
 
-    let unassigned_hexes = UnassignedHex::fetch(pool);
-    let _ = set_oracle_boosting_assignments(
-        unassigned_hexes,
-        &common::MockHexAssignments::default(),
+    let _ = common::set_unassigned_oracle_boosting_assignments(
         pool,
+        &common::mock_hex_boost_data_default(),
     )
     .await?;
 

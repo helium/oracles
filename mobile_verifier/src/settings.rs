@@ -26,6 +26,9 @@ pub struct Settings {
     pub ingest: file_store::Settings,
     pub data_transfer_ingest: file_store::Settings,
     pub output: file_store::Settings,
+    /// S3 bucket from which new data sets are downloaded for oracle boosting
+    /// assignments
+    pub data_sets: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     pub price_tracker: price::price_tracker::Settings,
     pub config_client: mobile_config::ClientSettings,
@@ -41,6 +44,11 @@ pub struct Settings {
     /// beyond which its location weight will be reduced
     #[serde(default = "default_max_asserted_distance_deviation")]
     pub max_asserted_distance_deviation: u32,
+    /// Directory in which new oracle boosting data sets are downloaded into
+    pub data_sets_directory: PathBuf,
+    /// Poll duration for new data sets
+    #[serde(with = "humantime_serde", default = "default_data_sets_poll_duration")]
+    pub data_sets_poll_duration: Duration,
     // Geofencing settings
     pub usa_and_mexico_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
@@ -48,9 +56,6 @@ pub struct Settings {
     pub usa_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
     pub usa_fencing_resolution: u8,
-    pub urbanization_data_set: PathBuf,
-    pub footfall_data_set: PathBuf,
-    pub landtype_data_set: PathBuf,
 }
 
 fn default_fencing_resolution() -> u8 {
@@ -79,6 +84,10 @@ fn default_reward_period() -> Duration {
 }
 
 fn default_reward_period_offset() -> Duration {
+    humantime::parse_duration("30 minutes").unwrap()
+}
+
+fn default_data_sets_poll_duration() -> Duration {
     humantime::parse_duration("30 minutes").unwrap()
 }
 

@@ -1,7 +1,10 @@
+use anyhow::Result;
 use helium_proto::services::poc_mobile::oracle_boosting_hex_assignment::Assignment as ProtoAssignment;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::fmt;
+
+use super::HexAssignment;
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct HexAssignments {
@@ -58,11 +61,20 @@ impl fmt::Display for Assignment {
 }
 
 impl HexAssignments {
+    pub fn builder(cell: hextree::Cell) -> HexAssignmentsBuilder {
+        HexAssignmentsBuilder {
+            cell,
+            footfall: None,
+            landtype: None,
+            urbanized: None,
+        }
+    }
+
     pub fn boosting_multiplier(&self) -> Decimal {
         let HexAssignments {
             footfall,
-            urbanized,
             landtype,
+            urbanized,
         } = self;
 
         use Assignment::*;
@@ -94,6 +106,47 @@ impl HexAssignments {
             // gray - Outside of USA
             (_, _, C) => dec!(0.00),
         }
+    }
+}
+
+pub struct HexAssignmentsBuilder {
+    cell: hextree::Cell,
+    footfall: Option<Result<Assignment>>,
+    landtype: Option<Result<Assignment>>,
+    urbanized: Option<Result<Assignment>>,
+}
+
+impl HexAssignmentsBuilder {
+    pub fn footfall(mut self, footfall: &impl HexAssignment) -> Self {
+        self.footfall = Some(footfall.assignment(self.cell));
+        self
+    }
+
+    pub fn landtype(mut self, landtype: &impl HexAssignment) -> Self {
+        self.landtype = Some(landtype.assignment(self.cell));
+        self
+    }
+
+    pub fn urbanized(mut self, urbanized: &impl HexAssignment) -> Self {
+        self.urbanized = Some(urbanized.assignment(self.cell));
+        self
+    }
+
+    pub fn build(self) -> anyhow::Result<HexAssignments> {
+        let Some(footfall) = self.footfall else {
+            anyhow::bail!("footfall assignment not set");
+        };
+        let Some(landtype) = self.landtype else {
+            anyhow::bail!("landtype assignment not set");
+        };
+        let Some(urbanized) = self.urbanized else {
+            anyhow::bail!("urbanized assignment not set");
+        };
+        Ok(HexAssignments {
+            footfall: footfall?,
+            urbanized: urbanized?,
+            landtype: landtype?,
+        })
     }
 }
 

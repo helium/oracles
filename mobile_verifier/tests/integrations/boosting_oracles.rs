@@ -1,4 +1,3 @@
-use crate::common;
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
@@ -14,11 +13,8 @@ use helium_proto::services::poc_mobile::{
 };
 use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
-    boosting_oracles::Assignment,
-    coverage::{
-        set_oracle_boosting_assignments, CoverageClaimTimeCache, CoverageObject,
-        CoverageObjectCache, Seniority, UnassignedHex,
-    },
+    boosting_oracles::{Assignment, HexBoostData},
+    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
     heartbeats::{Heartbeat, HeartbeatReward, LocationCache, SeniorityUpdate, ValidatedHeartbeat},
     radio_threshold::VerifiedRadioThresholds,
@@ -33,17 +29,13 @@ use sqlx::PgPool;
 use std::{collections::HashMap, pin::pin};
 use uuid::Uuid;
 
+use crate::common;
+
 #[derive(Clone)]
 struct MockGeofence;
 
-impl GeofenceValidator<Heartbeat> for MockGeofence {
+impl GeofenceValidator for MockGeofence {
     fn in_valid_region(&self, _heartbeat: &Heartbeat) -> bool {
-        true
-    }
-}
-
-impl GeofenceValidator<u64> for MockGeofence {
-    fn in_valid_region(&self, _cell: &u64) -> bool {
         true
     }
 }
@@ -219,11 +211,12 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     .await?;
     transaction.commit().await?;
 
-    let unassigned_hexes = UnassignedHex::fetch(&pool);
-    let hex_boost_data = common::MockHexAssignments::new(footfall, urbanized, landtype);
-    let oba = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool)
-        .await?
-        .collect::<Vec<_>>();
+    let hex_boost_data = HexBoostData::builder()
+        .footfall(footfall)
+        .landtype(landtype)
+        .urbanization(urbanized)
+        .build()?;
+    let oba = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
     assert_eq!(oba.len(), 1);
     assert_eq!(oba[0].assignments, hexes);
@@ -346,9 +339,12 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     .await?;
     transaction.commit().await?;
 
-    let unassigned_hexes = UnassignedHex::fetch(&pool);
-    let hex_boost_data = common::MockHexAssignments::new(footfall, urbanized, landtype);
-    let _ = set_oracle_boosting_assignments(unassigned_hexes, &hex_boost_data, &pool).await?;
+    let hex_boost_data = HexBoostData::builder()
+        .footfall(footfall)
+        .landtype(landtype)
+        .urbanization(urbanized)
+        .build()?;
+    let _ = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
     let heartbeats = heartbeats(12, start, &owner, &cbsd_id, 0.0, 0.0, uuid);
 

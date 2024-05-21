@@ -39,7 +39,7 @@ pub struct CbrsHeartbeatDaemon<GIR, GFV> {
 impl<GIR, GFV> CbrsHeartbeatDaemon<GIR, GFV>
 where
     GIR: GatewayResolver,
-    GFV: GeofenceValidator<Heartbeat>,
+    GFV: GeofenceValidator,
 {
     #[allow(clippy::too_many_arguments)]
     pub async fn create_managed_task(
@@ -197,7 +197,7 @@ where
 impl<GIR, GFV> ManagedTask for CbrsHeartbeatDaemon<GIR, GFV>
 where
     GIR: GatewayResolver,
-    GFV: GeofenceValidator<Heartbeat>,
+    GFV: GeofenceValidator,
 {
     fn start_task(
         self: Box<Self>,

@@ -385,14 +385,8 @@ fn signal_level(hex: &str, signal_level: SignalLevel) -> anyhow::Result<RadioHex
 #[derive(Clone)]
 struct MockGeofence;
 
-impl GeofenceValidator<Heartbeat> for MockGeofence {
+impl GeofenceValidator for MockGeofence {
     fn in_valid_region(&self, _heartbeat: &Heartbeat) -> bool {
-        true
-    }
-}
-
-impl GeofenceValidator<u64> for MockGeofence {
-    fn in_valid_region(&self, _cell: &u64) -> bool {
         true
     }
 }

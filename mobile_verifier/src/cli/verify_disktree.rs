@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use hextree::disktree::DiskTreeMap;
 
 use crate::{
-    boosting_oracles::{Assignment, Landtype},
+    boosting_oracles::{landtype::LandtypeValue, Assignment},
     Settings,
 };
 
@@ -45,7 +45,7 @@ impl Cmd {
         match self.r#type {
             DisktreeType::Landtype => {
                 for (key, count) in value_counts {
-                    let landtype = Landtype::try_from(key);
+                    let landtype = LandtypeValue::try_from(key);
                     let assignment = landtype.as_ref().map(|lt| Assignment::from(*lt));
                     // cover is formatted twice to allow for padding a result
                     println!(
