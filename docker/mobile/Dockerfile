@@ -49,37 +49,37 @@ ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 RUN cargo build --release
 
 # Build ingest release
-FROM deps as builder-ingest
+FROM deps as builder_ingest
 COPY ingest ./ingest/
 RUN cargo build --package ingest --release
 
 # Build the mobile-config release
-FROM deps as builder-mobile_config
+FROM deps as builder_mobile_config
 COPY mobile_config ./mobile_config/
 RUN cargo build --package mobile-config --release
 
 # Build mobile-packet-verifier release
-FROM builder-mobile_config as builder-mobile_packet_verifier
+FROM builder_mobile_config as builder_mobile_packet_verifier
 COPY mobile_packet_verifier ./mobile_packet_verifier/
 RUN cargo build --package mobile-packet-verifier --release
 
 # Build mobile-verifier release
-FROM builder-mobile_config as builder-mobile_verifier
+FROM builder_mobile_config as builder_mobile_verifier
 COPY mobile_verifier ./mobile_verifier/
 RUN cargo build --package mobile-verifier --release
 
 # Build reward-index release
-FROM deps as builder-reward_index
+FROM deps as builder_reward_index
 COPY reward_index ./reward_index/
 RUN cargo build --package reward-index --release
 
 # Package Runners
 FROM debian:bookworm-slim AS runner
-COPY --from=builder-ingest                  ./target/release/ingest                 /tmp/ingest
-COPY --from=builder-mobile_config           ./target/release/mobile-config          /tmp/mobile-config
-COPY --from=builder-mobile_packet_verifier  ./target/release/mobile-packet-verifier /tmp/mobile-packet-verifier
-COPY --from=builder-mobile_verifier         ./target/release/mobile-verifier        /tmp/mobile-verifier
-COPY --from=builder-reward_index            ./target/release/reward-index           /tmp/reward-index
+COPY --from=builder_ingest                  ./target/release/ingest                 /tmp/ingest
+COPY --from=builder_mobile_config           ./target/release/mobile-config          /tmp/mobile-config
+COPY --from=builder_mobile_packet_verifier  ./target/release/mobile-packet-verifier /tmp/mobile-packet-verifier
+COPY --from=builder_mobile_verifier         ./target/release/mobile-verifier        /tmp/mobile-verifier
+COPY --from=builder_reward_index            ./target/release/reward-index           /tmp/reward-index
 COPY --from=deps                            ./target/release/price                  /tmp/price
 
 # Runners

@@ -27,7 +27,7 @@ services:
   ingest:
     build:
       context: ../..
-      dockerfile: ./Dockerfile
+      dockerfile: ./docker/mobile/Dockerfile
       args:
         - PACKAGE=ingest
     depends_on:
@@ -39,7 +39,24 @@ services:
     ports:
       - 9080:9080
     volumes:
-      - ./settings/ingest.toml:/opt/ingest/etc/settings.toml
+      - ./ingest/settings.toml:/opt/ingest/etc/settings.toml
+  
+  mobile_config:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/Dockerfile
+      args:
+        - PACKAGE=mobile-config
+    depends_on:
+        - postgres
+    stop_grace_period: 1s
+    environment:
+      - PACKAGE=mobile-config
+    ports:
+      - 9081:9081
+    volumes:
+      - ./mobile_config/settings.toml:/opt/mobile-config/etc/settings.toml
+      - ./mobile_config/keypair.bin:/opt/mobile-config/etc/keypair.bin
 
 volumes:
   postgres-data:
