@@ -1,5 +1,27 @@
 #![allow(unused)]
-
+///
+/// The coverage_points calculation in [`LocalRadio.coverage_points()`] are
+/// comprised 5 top level fields.
+///
+/// - base_coverage_points
+///   - [HIP-74][modeled-coverage]
+///   - [HIP-113][cbrs-experimental]
+/// - assignment_multiplier
+///   - [HIP-103][oracle-boosting]
+/// - rank
+///   - [HIP-105][hex-limits]
+/// - hex_boost_multiplier  
+///   - [HIP-84][provider-boosting]
+/// - location_trust_score_multiplier
+///   - [HIP-98][qos-score]
+///
+/// [modeled-coverage]: https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
+/// [cbrs-experimental]: https://github.com/helium/HIP/blob/main/0113-reward-cbrs-as-experimental.md
+/// [oracle-boosting]: https://github.com/helium/HIP/blob/main/0103-oracle-hex-boosting.md
+/// [hex-limits]: https://github.com/helium/HIP/blob/main/0105-modification-of-mobile-subdao-hex-limits.md
+/// [provider-boosting]: https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md#mechanics-and-price-of-boosting-hexes
+/// [qos-score]: https://github.com/helium/HIP/blob/main/0098-mobile-subdao-quality-of-service-requirements.md
+///
 use hextree::Cell;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -174,7 +196,6 @@ impl LocalRadio {
             let assignments_multiplier = hex.assignment.multiplier();
             let hex_boost_multiplier = self.hex_boosting_multiplier(&hex);
 
-            // https://www.notion.so/nova-labs/POC-reward-formula-7d1f62b638b5447fbfe37a11c0a3d3c8
             let coverage_points = base_coverage_points
                 * assignments_multiplier
                 * rank
