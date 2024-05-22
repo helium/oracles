@@ -1,15 +1,23 @@
 use anyhow::Result;
+use helium_crypto::{ed25519::Keypair, Network::MainNet};
+use rand::rngs::OsRng;
+use std::time::Duration;
+use tokio::time::sleep;
 
-mod common;
+mod docker;
 
 #[tokio::test]
 async fn main() -> Result<()> {
-    tokio::spawn(async move {
-        match common::setup().await {
-            Ok(_) => {}
-            Err(e) => panic!("{:?}", e),
-        }
-    });
+    let keypair = Keypair::generate(MainNet, &mut OsRng);
+
+    match docker::up().await {
+        Ok(_) => {}
+        Err(e) => panic!("{:?}", e),
+    }
+
+    sleep(Duration::from_secs(10)).await;
+
+    docker::down().await?;
 
     Ok(())
 }

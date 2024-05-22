@@ -6,6 +6,8 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
-[dependencies]
+[dev-dependencies]
 anyhow = { workspace = true }
 tokio = { workspace = true }
+rand = { workspace = true }
+helium-crypto = { workspace = true }
