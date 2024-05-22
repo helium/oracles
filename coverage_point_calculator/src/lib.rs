@@ -3,7 +3,7 @@
 /// The coverage_points calculation in [`LocalRadio.coverage_points()`] are
 /// comprised 5 top level fields.
 ///
-/// - base_coverage_points
+/// - estimated_coverage_points
 ///   - [HIP-74][modeled-coverage]
 ///   - [HIP-113][cbrs-experimental]
 /// - assignment_multiplier
@@ -39,7 +39,7 @@ enum RadioType {
 }
 
 impl RadioType {
-    fn coverage_points(&self, signal_level: &SignalLevel) -> Points {
+    fn estimated_coverage_points(&self, signal_level: &SignalLevel) -> Points {
         match self {
             RadioType::IndoorWifi => match signal_level {
                 SignalLevel::High => dec!(400),
@@ -192,11 +192,12 @@ impl LocalRadio {
                 continue;
             };
 
-            let base_coverage_points = self.radio_type.coverage_points(&hex.signal_level);
+            let estimated_coverage_points =
+                self.radio_type.estimated_coverage_points(&hex.signal_level);
             let assignments_multiplier = hex.assignment.multiplier();
             let hex_boost_multiplier = self.hex_boosting_multiplier(&hex);
 
-            let coverage_points = base_coverage_points
+            let coverage_points = estimated_coverage_points
                 * assignments_multiplier
                 * rank
                 * hex_boost_multiplier
