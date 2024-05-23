@@ -14,6 +14,8 @@
 ///   - [HIP-84][provider-boosting]
 /// - location_trust_score_multiplier
 ///   - [HIP-98][qos-score]
+/// - speedtest_multiplier
+///   - [HIP-74][modeled-coverage]
 ///
 /// [modeled-coverage]: https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
 /// [cbrs-experimental]: https://github.com/helium/HIP/blob/main/0113-reward-cbrs-as-experimental.md
@@ -141,6 +143,27 @@ impl Assignments {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum Speedtest {
+    Good,
+    Acceptable,
+    Degraded,
+    Poor,
+    Fail,
+}
+
+impl Speedtest {
+    fn multiplier(&self) -> MaxOneMultplier {
+        match self {
+            Speedtest::Good => dec!(1.00),
+            Speedtest::Acceptable => dec!(0.75),
+            Speedtest::Degraded => dec!(0.50),
+            Speedtest::Poor => dec!(0.25),
+            Speedtest::Fail => dec!(0),
+        }
+    }
+}
+
 trait Coverage {
     fn radio_type(&self) -> RadioType;
     fn signal_level(&self) -> SignalLevel;
@@ -153,14 +176,14 @@ trait CoverageMap<C: Coverage> {
 trait RewardableRadio {
     fn hex(&self) -> Cell;
     fn radio_type(&self) -> RadioType;
-    fn location_trust_scores(&self) -> Vec<Multiplier>;
+    fn location_trust_scores(&self) -> Vec<MaxOneMultplier>;
     fn verified_radio_threshold(&self) -> bool;
 }
 
 #[derive(Debug, PartialEq)]
 struct LocalRadio {
     radio_type: RadioType,
-    speedtest_multiplier: Multiplier,
+    speedtest: Speedtest,
     location_trust_scores: Vec<MaxOneMultplier>,
     verified_radio_threshold: bool,
     hexes: Vec<LocalHex>,
@@ -206,7 +229,9 @@ impl LocalRadio {
             points.push(coverage_points)
         }
 
-        points.iter().sum::<Decimal>().round_dp(2)
+        let mut coverage_points = points.iter().sum::<Decimal>();
+        coverage_points *= self.speedtest.multiplier();
+        coverage_points.round_dp(2)
     }
 
     fn location_trust_multiplier(&self) -> Decimal {
@@ -242,6 +267,35 @@ mod tests {
     }
 
     #[test]
+    fn speedtest() {
+        let mut indoor_cbrs = LocalRadio {
+            radio_type: RadioType::IndoorCbrs,
+            speedtest: Speedtest::Good,
+            location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
+            verified_radio_threshold: true,
+            hexes: vec![LocalHex {
+                rank: 1,
+                signal_level: SignalLevel::High,
+                assignment: Assignments::best(),
+                boosted: None,
+            }],
+        };
+        assert_eq!(dec!(100), indoor_cbrs.coverage_points());
+
+        indoor_cbrs.speedtest = Speedtest::Acceptable;
+        assert_eq!(dec!(75), indoor_cbrs.coverage_points());
+
+        indoor_cbrs.speedtest = Speedtest::Degraded;
+        assert_eq!(dec!(50), indoor_cbrs.coverage_points());
+
+        indoor_cbrs.speedtest = Speedtest::Poor;
+        assert_eq!(dec!(25), indoor_cbrs.coverage_points());
+
+        indoor_cbrs.speedtest = Speedtest::Fail;
+        assert_eq!(dec!(0), indoor_cbrs.coverage_points());
+    }
+
+    #[test]
     fn oracle_boosting_assignments_apply_per_hex() {
         fn local_hex(
             footfall: Assignment,
@@ -263,7 +317,7 @@ mod tests {
         use Assignment::*;
         let indoor_cbrs = LocalRadio {
             radio_type: RadioType::IndoorCbrs,
-            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -311,7 +365,7 @@ mod tests {
     fn outdoor_radios_consider_top_3_ranked_hexes() {
         let outdoor_wifi = LocalRadio {
             radio_type: RadioType::OutdoorWifi,
-            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -353,7 +407,7 @@ mod tests {
     fn indoor_radios_only_consider_first_ranked_hexes() {
         let indoor_wifi = LocalRadio {
             radio_type: RadioType::IndoorWifi,
-            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -386,7 +440,7 @@ mod tests {
         // Location scores are averaged together
         let indoor_wifi = LocalRadio {
             radio_type: RadioType::IndoorWifi,
-            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            speedtest: Speedtest::Good,
             location_trust_scores: vec![
                 MaxOneMultplier::from_f32_retain(0.1).unwrap(),
                 MaxOneMultplier::from_f32_retain(0.2).unwrap(),
@@ -410,7 +464,7 @@ mod tests {
     fn boosted_hex() {
         let mut indoor_wifi = LocalRadio {
             radio_type: RadioType::IndoorWifi,
-            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -441,7 +495,7 @@ mod tests {
     fn base_radio_coverage_points() {
         let outdoor_cbrs = LocalRadio {
             radio_type: RadioType::OutdoorCbrs,
-            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -474,7 +528,7 @@ mod tests {
 
         let indoor_cbrs = LocalRadio {
             radio_type: RadioType::IndoorCbrs,
-            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -495,7 +549,7 @@ mod tests {
 
         let outdoor_wifi = LocalRadio {
             radio_type: RadioType::OutdoorWifi,
-            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -528,7 +582,7 @@ mod tests {
 
         let indoor_wifi = LocalRadio {
             radio_type: RadioType::IndoorWifi,
-            speedtest_multiplier: Multiplier::new(1).unwrap(),
+            speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
