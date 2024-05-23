@@ -18,10 +18,13 @@ sqlx migrate run --database-url postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@$PO
 echo "#############################################"
 
 export PGPASSWORD=$POSTGRES_PASSWORD
-MOBILE_CONFIG_FILES=/postgres_seeder/mobile_config/*
 
-for file in $MOBILE_CONFIG_FILES; do
-    echo "Running $file"
-    psql -h $POSTGRES_HOST -U $POSTGRES_USER -d mobile_config -f $file
+FILES=/postgres_seeder/post_migration/*
+for file in $FILES; do
+    readarray -d "-" -t array <<<"$file"
+    db=$(echo ${array[0]} | sed 's|/postgres_seeder/post_migration/||g')
+    echo "Running $file on db $db"
+
+    psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $db -f $file
     echo "#############################################"
 done

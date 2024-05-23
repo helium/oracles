@@ -29,6 +29,8 @@ services:
     depends_on:
         postgres:
           condition: service_healthy
+    volumes:
+      - ./postgres_seeder/post_migration:/postgres_seeder/post_migration
 
   localstack:
     image: localstack/localstack:stable
@@ -78,7 +80,7 @@ services:
     volumes:
       - ./config/settings.toml:/opt/mobile-config/etc/settings.toml
       - ./config/keypair.bin:/opt/mobile-config/etc/keypair.bin
-  
+
   packet_verifier:
     build:
       context: ../..
@@ -99,6 +101,32 @@ services:
     volumes:
       - ./packet_verifier/settings.toml:/opt/mobile-packet-verifier/etc/settings.toml
       - ./packet_verifier/keypair.bin:/opt/mobile-packet-verifier/etc/keypair.bin
+  
+  verifier:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/Dockerfile
+      args:
+        - PACKAGE=mobile-verifier
+    depends_on:
+        localstack:
+          condition: service_healthy
+        config:
+          condition: service_started
+    stop_grace_period: 1s
+    environment:
+      - PACKAGE=mobile-verifier
+      - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
+    volumes:
+      - ./verifier/settings.toml:/opt/mobile-verifier/etc/settings.toml
+      - ./verifier/keypair.bin:/opt/mobile-verifier/etc/keypair.bin
+      - ./verifier/usa_and_mexico_geofence_regions:/opt/mobile-verifier/usa_and_mexico_geofence_regions
+      - ./verifier/usa_geofence_regions:/opt/mobile-verifier/usa_geofence_regions
+      - ./verifier/urbanization_data_set:/opt/mobile-verifier/urbanization_data_set
+      - ./verifier/footfall_data_set:/opt/mobile-verifier/footfall_data_set
+      - ./verifier/landtype_data_set:/opt/mobile-verifier/landtype_data_set
 
 volumes:
   postgres-data:

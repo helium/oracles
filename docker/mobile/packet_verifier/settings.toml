@@ -24,4 +24,4 @@ endpoint = "0.0.0.0:19000"
 url = "http://config:9081/"
 signing_keypair = "/opt/mobile-packet-verifier/etc/keypair.bin"
 config_pubkey = "14c5dZUZgFEVcocB3mfcjhXEVqDuafnpzghgyr2i422okXVByPr"
-# /target/release/mobile-config-cli env info --keypair=docker/mobile/packet_verifier/keypair.bin
+# ./target/release/mobile-config-cli env info --keypair=docker/mobile/packet_verifier/keypair.bin
