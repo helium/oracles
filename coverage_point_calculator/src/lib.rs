@@ -208,7 +208,13 @@ impl Speedtest {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
+pub struct CoveragePoints {
+    pub coverage_points: Decimal,
+    pub radio: RewardableRadio,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct RewardableRadio {
     pub radio_type: RadioType,
     pub speedtest: Speedtest,
@@ -226,34 +232,36 @@ pub struct CoveredHex {
 }
 
 impl RewardableRadio {
-    pub fn coverage_points(&self) -> Points {
-        let mut points = vec![];
+    pub fn to_coverage_points(self) -> CoveragePoints {
         let radio_type = &self.radio_type;
 
-        for hex in self.hexes.iter() {
+        let hex_points = self.hexes.iter().filter_map(|hex| {
             let Some(rank_multiplier) = radio_type.rank_multiplier(hex) else {
                 // Rank falls outside what is allowed, skip as early as possible
-                continue;
+                return None;
             };
 
             let estimated_coverage_points = radio_type.estimated_coverage_points(&hex.signal_level);
             let assignments_multiplier = hex.assignment.multiplier();
             let hex_boost_multiplier = self.hex_boosting_multiplier(hex);
 
-            let coverage_points = estimated_coverage_points
-                * assignments_multiplier
-                * rank_multiplier
-                * hex_boost_multiplier;
+            Some(
+                estimated_coverage_points
+                    * assignments_multiplier
+                    * rank_multiplier
+                    * hex_boost_multiplier,
+            )
+        });
 
-            points.push(coverage_points)
-        }
-
-        let base_points = points.iter().sum::<Decimal>();
+        let base_points = hex_points.sum::<Decimal>();
         let location_score = self.location_trust_multiplier();
         let speedtest = self.speedtest.multiplier();
 
         let coverage_points = base_points * location_score * speedtest;
-        coverage_points.round_dp_with_strategy(2, RoundingStrategy::ToZero)
+        CoveragePoints {
+            coverage_points: coverage_points.round_dp_with_strategy(2, RoundingStrategy::ToZero),
+            radio: self,
+        }
     }
 
     fn location_trust_multiplier(&self) -> Decimal {
@@ -302,19 +310,31 @@ mod tests {
                 boosted: None,
             }],
         };
-        assert_eq!(dec!(100), indoor_cbrs.coverage_points());
+        assert_eq!(
+            dec!(100),
+            indoor_cbrs.clone().to_coverage_points().coverage_points
+        );
 
         indoor_cbrs.speedtest = Speedtest::Acceptable;
-        assert_eq!(dec!(75), indoor_cbrs.coverage_points());
+        assert_eq!(
+            dec!(75),
+            indoor_cbrs.clone().to_coverage_points().coverage_points
+        );
 
         indoor_cbrs.speedtest = Speedtest::Degraded;
-        assert_eq!(dec!(50), indoor_cbrs.coverage_points());
+        assert_eq!(
+            dec!(50),
+            indoor_cbrs.clone().to_coverage_points().coverage_points
+        );
 
         indoor_cbrs.speedtest = Speedtest::Poor;
-        assert_eq!(dec!(25), indoor_cbrs.coverage_points());
+        assert_eq!(
+            dec!(25),
+            indoor_cbrs.clone().to_coverage_points().coverage_points
+        );
 
         indoor_cbrs.speedtest = Speedtest::Fail;
-        assert_eq!(dec!(0), indoor_cbrs.coverage_points());
+        assert_eq!(dec!(0), indoor_cbrs.to_coverage_points().coverage_points);
     }
 
     #[test]
@@ -380,7 +400,7 @@ mod tests {
             ],
         };
 
-        assert_eq!(dec!(1073), indoor_cbrs.coverage_points());
+        assert_eq!(dec!(1073), indoor_cbrs.to_coverage_points().coverage_points);
     }
 
     #[test]
@@ -422,7 +442,7 @@ mod tests {
         // rank 2  :: 0.50 * 16 == 8
         // rank 3  :: 0.25 * 16 == 4
         // rank 42 :: 0.00 * 16 == 0
-        assert_eq!(dec!(28), outdoor_wifi.coverage_points());
+        assert_eq!(dec!(28), outdoor_wifi.to_coverage_points().coverage_points);
     }
 
     #[test]
@@ -454,7 +474,7 @@ mod tests {
             ],
         };
 
-        assert_eq!(dec!(400), indoor_wifi.coverage_points());
+        assert_eq!(dec!(400), indoor_wifi.to_coverage_points().coverage_points);
     }
 
     #[test]
@@ -479,7 +499,7 @@ mod tests {
         };
 
         // Location trust scores is 1/4
-        assert_eq!(dec!(100), indoor_wifi.coverage_points());
+        assert_eq!(dec!(100), indoor_wifi.to_coverage_points().coverage_points);
     }
 
     #[test]
@@ -506,11 +526,14 @@ mod tests {
         };
         // The hex with a low signal_level is boosted to the same level as a
         // signal_level of High.
-        assert_eq!(dec!(800), indoor_wifi.coverage_points());
+        assert_eq!(
+            dec!(800),
+            indoor_wifi.clone().to_coverage_points().coverage_points
+        );
 
         // When the radio is not verified for boosted rewards, the boost has no effect.
         indoor_wifi.verified_radio_threshold = false;
-        assert_eq!(dec!(500), indoor_wifi.coverage_points());
+        assert_eq!(dec!(500), indoor_wifi.to_coverage_points().coverage_points);
     }
 
     #[test]
@@ -625,9 +648,9 @@ mod tests {
 
         // When each radio contains a hex of every applicable signal_level, and
         // multipliers are break even. These are the accumulated coverage points.
-        assert_eq!(dec!(7), outdoor_cbrs.coverage_points());
-        assert_eq!(dec!(125), indoor_cbrs.coverage_points());
-        assert_eq!(dec!(28), outdoor_wifi.coverage_points());
-        assert_eq!(dec!(500), indoor_wifi.coverage_points());
+        assert_eq!(dec!(7), outdoor_cbrs.to_coverage_points().coverage_points);
+        assert_eq!(dec!(125), indoor_cbrs.to_coverage_points().coverage_points);
+        assert_eq!(dec!(28), outdoor_wifi.to_coverage_points().coverage_points);
+        assert_eq!(dec!(500), indoor_wifi.to_coverage_points().coverage_points);
     }
 }

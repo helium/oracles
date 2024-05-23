@@ -51,7 +51,10 @@ fn base_radio_coverage_points() {
         RadioType::OutdoorCbrs,
     ] {
         let radio = calculate_single(&TestRadio(radio_type), &TestCoverageMap);
-        println!("{radio_type:?} \t--> {}", radio.coverage_points());
+        println!(
+            "{radio_type:?} \t--> {}",
+            radio.to_coverage_points().coverage_points
+        );
     }
 
     let radios = vec![
@@ -61,7 +64,7 @@ fn base_radio_coverage_points() {
         TestRadio(RadioType::OutdoorCbrs),
     ];
     let output = calculate(&radios, &TestCoverageMap)
-        .map(|r| (r.radio_type, r.coverage_points()))
+        .map(|r| (r.radio_type, r.to_coverage_points().coverage_points))
         .collect::<Vec<_>>();
     println!("{output:#?}");
 }
@@ -130,7 +133,7 @@ fn radio_unique_coverage() {
     }
 
     let coverage_points = calculate(&radios, &coverage_map)
-        .map(|r| (r.radio_type, r.coverage_points()))
+        .map(|r| (r.radio_type, r.to_coverage_points().coverage_points))
         .collect::<Vec<_>>();
     println!("{coverage_points:#?}")
 }
