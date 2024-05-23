@@ -227,7 +227,7 @@ pub struct RewardableRadio {
 pub struct CoveredHex {
     pub rank: Rank,
     pub signal_level: SignalLevel,
-    pub assignment: Assignments,
+    pub assignments: Assignments,
     pub boosted: Option<Multiplier>,
 }
 
@@ -242,7 +242,7 @@ impl RewardableRadio {
             };
 
             let estimated_coverage_points = radio_type.estimated_coverage_points(&hex.signal_level);
-            let assignments_multiplier = hex.assignment.multiplier();
+            let assignments_multiplier = hex.assignments.multiplier();
             let hex_boost_multiplier = self.hex_boosting_multiplier(hex);
 
             Some(
@@ -306,7 +306,7 @@ mod tests {
             hexes: vec![CoveredHex {
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
-                assignment: Assignments::best(),
+                assignments: Assignments::best(),
                 boosted: None,
             }],
         };
@@ -347,7 +347,7 @@ mod tests {
             CoveredHex {
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
-                assignment: Assignments {
+                assignments: Assignments {
                     footfall,
                     landtype,
                     urbanized,
@@ -414,25 +414,25 @@ mod tests {
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(2).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(3).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(42).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
             ],
@@ -456,19 +456,19 @@ mod tests {
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(2).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(42).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
             ],
@@ -493,7 +493,7 @@ mod tests {
             hexes: vec![CoveredHex {
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
-                assignment: Assignments::best(),
+                assignments: Assignments::best(),
                 boosted: None,
             }],
         };
@@ -513,13 +513,13 @@ mod tests {
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: Multiplier::new(4),
                 },
             ],
@@ -547,25 +547,25 @@ mod tests {
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Medium,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::None,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
             ],
@@ -580,13 +580,13 @@ mod tests {
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
             ],
@@ -601,25 +601,25 @@ mod tests {
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Medium,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::None,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
             ],
@@ -634,13 +634,13 @@ mod tests {
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
-                    assignment: Assignments::best(),
+                    assignments: Assignments::best(),
                     boosted: None,
                 },
             ],

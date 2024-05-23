@@ -34,7 +34,7 @@ fn base_radio_coverage_points() {
             vec![CoveredHex {
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
-                assignment: Assignments {
+                assignments: Assignments {
                     footfall: Assignment::A,
                     landtype: Assignment::A,
                     urbanized: Assignment::A,
@@ -102,7 +102,7 @@ fn radio_unique_coverage() {
     let base_hex = CoveredHex {
         rank: Rank::new(1).unwrap(),
         signal_level: SignalLevel::High,
-        assignment: Assignments {
+        assignments: Assignments {
             footfall: Assignment::A,
             landtype: Assignment::A,
             urbanized: Assignment::A,
