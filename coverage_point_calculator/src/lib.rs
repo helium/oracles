@@ -1,11 +1,16 @@
 #![allow(unused)]
 ///
+/// Many changes to the rewards algorithm are contained in and across many HIPs.
+/// The blog post [MOBILE Proof of Coverage][mobile-poc-blog] contains a more
+/// thorough explanation of many of them. It is not exhaustive, but a great
+/// place to start.
+///
 /// The coverage_points calculation in [`LocalRadio.coverage_points()`] are
-/// comprised 5 top level fields.
+/// comprised the following fields.
 ///
 /// - estimated_coverage_points
 ///   - [HIP-74][modeled-coverage]
-///   - [HIP-113][cbrs-experimental]
+///   - reduced cbrs radio coverage points [HIP-113][cbrs-experimental]
 /// - assignment_multiplier
 ///   - [HIP-103][oracle-boosting]
 /// - rank
@@ -16,13 +21,22 @@
 ///   - [HIP-98][qos-score]
 /// - speedtest_multiplier
 ///   - [HIP-74][modeled-coverage]
+///   - added "Good" speedtest tier [HIP-98][qos-score]
 ///
-/// [modeled-coverage]: https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
-/// [cbrs-experimental]: https://github.com/helium/HIP/blob/main/0113-reward-cbrs-as-experimental.md
-/// [oracle-boosting]: https://github.com/helium/HIP/blob/main/0103-oracle-hex-boosting.md
-/// [hex-limits]: https://github.com/helium/HIP/blob/main/0105-modification-of-mobile-subdao-hex-limits.md
-/// [provider-boosting]: https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md#mechanics-and-price-of-boosting-hexes
-/// [qos-score]: https://github.com/helium/HIP/blob/main/0098-mobile-subdao-quality-of-service-requirements.md
+/// [modeled-coverage]:
+///     https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
+/// [cbrs-experimental]:
+///     https://github.com/helium/HIP/blob/main/0113-reward-cbrs-as-experimental.md
+/// [oracle-boosting]:
+///     https://github.com/helium/HIP/blob/main/0103-oracle-hex-boosting.md
+/// [hex-limits]:
+///     https://github.com/helium/HIP/blob/main/0105-modification-of-mobile-subdao-hex-limits.md
+/// [provider-boosting]:
+///     https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md#mechanics-and-price-of-boosting-hexes
+/// [qos-score]:
+///     https://github.com/helium/HIP/blob/main/0098-mobile-subdao-quality-of-service-requirements.md
+/// [mobile-poc-blog]:
+///     https://docs.helium.com/mobile/proof-of-coverage
 ///
 use hextree::Cell;
 use rust_decimal::Decimal;
