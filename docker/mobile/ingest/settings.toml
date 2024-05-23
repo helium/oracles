@@ -9,7 +9,7 @@ token = "api-token"
 [output]
 bucket = "mobile-ingest"
 region = "us-east-1"
-endpoint = "http://s3:4566"
+endpoint = "http://localstack:4566"
 
 [metrics]
 endpoint = "0.0.0.0:19000"

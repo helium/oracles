@@ -2,6 +2,7 @@ log = "mobile_config=debug,file_store=info,custom_tracing=info"
 listen = "0.0.0.0:9081"
 signing_keypair = "/opt/mobile-config/etc/keypair.bin"
 admin_pubkey = "131kC5gTPFfTyzziHbh2PWz2VSdF4gDvhoC5vqCz25N7LFtDocF"
+# /target/release/mobile-config-cli env info --keypair=docker/mobile/config/keypair.bin
 
 [database]
 url = "postgres://postgres:postgres@postgres:5432/mobile_config"

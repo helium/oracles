@@ -4,6 +4,11 @@ services:
   postgres:
     image: postgres:14-alpine
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
@@ -41,22 +46,41 @@ services:
     volumes:
       - ./ingest/settings.toml:/opt/ingest/etc/settings.toml
   
-  mobile_config:
+  config:
     build:
       context: ../..
       dockerfile: ./docker/mobile/Dockerfile
       args:
         - PACKAGE=mobile-config
     depends_on:
-        - postgres
+        postgres:
+          condition: service_healthy
     stop_grace_period: 1s
     environment:
       - PACKAGE=mobile-config
     ports:
       - 9081:9081
     volumes:
-      - ./mobile_config/settings.toml:/opt/mobile-config/etc/settings.toml
-      - ./mobile_config/keypair.bin:/opt/mobile-config/etc/keypair.bin
+      - ./config/settings.toml:/opt/mobile-config/etc/settings.toml
+      - ./config/keypair.bin:/opt/mobile-config/etc/keypair.bin
+  
+  packet_verifier:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/Dockerfile
+      args:
+        - PACKAGE=mobile-packet-verifier
+    depends_on:
+        localstack:
+          condition: service_healthy
+        config:
+          condition: service_started
+    stop_grace_period: 1s
+    environment:
+      - PACKAGE=mobile-packet-verifier
+    volumes:
+      - ./packet_verifier/settings.toml:/opt/mobile-packet-verifier/etc/settings.toml
+      - ./packet_verifier/keypair.bin:/opt/mobile-packet-verifier/etc/keypair.bin
 
 volumes:
   postgres-data:
