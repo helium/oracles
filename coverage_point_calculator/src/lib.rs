@@ -42,6 +42,7 @@ use hextree::Cell;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
+pub type Rank = std::num::NonZeroUsize;
 type Multiplier = std::num::NonZeroU32;
 pub type MaxOneMultplier = Decimal;
 type Points = Decimal;
@@ -120,8 +121,7 @@ impl RadioType {
             RadioType::OutdoorCbrs => vec![dec!(1), dec!(0.5), dec!(0.25)],
         };
 
-        // TODO: decide if rank should be 0-indexed
-        multipliers.get(hex.rank - 1).cloned()
+        multipliers.get(hex.rank.get() - 1).cloned()
     }
 }
 
@@ -225,7 +225,7 @@ pub struct RewardableRadio {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoveredHex {
-    pub rank: usize,
+    pub rank: Rank,
     pub signal_level: SignalLevel,
     pub assignment: Assignments,
     pub boosted: Option<Multiplier>,
@@ -304,7 +304,7 @@ mod tests {
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![CoveredHex {
-                rank: 1,
+                rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
                 assignment: Assignments::best(),
                 boosted: None,
@@ -345,7 +345,7 @@ mod tests {
             urbanized: Assignment,
         ) -> CoveredHex {
             CoveredHex {
-                rank: 1,
+                rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
                 assignment: Assignments {
                     footfall,
@@ -412,25 +412,25 @@ mod tests {
             verified_radio_threshold: true,
             hexes: vec![
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 2,
+                    rank: Rank::new(2).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 3,
+                    rank: Rank::new(3).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 42,
+                    rank: Rank::new(42).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
@@ -454,19 +454,19 @@ mod tests {
             verified_radio_threshold: true,
             hexes: vec![
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 2,
+                    rank: Rank::new(2).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 42,
+                    rank: Rank::new(42).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
@@ -491,7 +491,7 @@ mod tests {
             ],
             verified_radio_threshold: true,
             hexes: vec![CoveredHex {
-                rank: 1,
+                rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
                 assignment: Assignments::best(),
                 boosted: None,
@@ -511,13 +511,13 @@ mod tests {
             verified_radio_threshold: true,
             hexes: vec![
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
                     assignment: Assignments::best(),
                     boosted: Multiplier::new(4),
@@ -545,25 +545,25 @@ mod tests {
             verified_radio_threshold: true,
             hexes: vec![
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Medium,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::None,
                     assignment: Assignments::best(),
                     boosted: None,
@@ -578,13 +578,13 @@ mod tests {
             verified_radio_threshold: true,
             hexes: vec![
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
                     assignment: Assignments::best(),
                     boosted: None,
@@ -599,25 +599,25 @@ mod tests {
             verified_radio_threshold: true,
             hexes: vec![
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Medium,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::None,
                     assignment: Assignments::best(),
                     boosted: None,
@@ -632,13 +632,13 @@ mod tests {
             verified_radio_threshold: true,
             hexes: vec![
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
                 CoveredHex {
-                    rank: 1,
+                    rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
                     assignment: Assignments::best(),
                     boosted: None,

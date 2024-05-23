@@ -2,7 +2,7 @@ use std::{collections::HashMap, num::NonZeroU32};
 
 use coverage_point_calculator::{
     calculate, calculate_single, Assignment, Assignments, CoverageMap, CoveredHex, MaxOneMultplier,
-    Radio, RadioType, SignalLevel, Speedtest,
+    Radio, RadioType, Rank, SignalLevel, Speedtest,
 };
 use rust_decimal_macros::dec;
 
@@ -32,7 +32,7 @@ fn base_radio_coverage_points() {
     impl CoverageMap for TestCoverageMap {
         fn hexes(&self, _radio: &impl Radio) -> Vec<CoveredHex> {
             vec![CoveredHex {
-                rank: 1,
+                rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
                 assignment: Assignments {
                     footfall: Assignment::A,
@@ -100,7 +100,7 @@ fn radio_unique_coverage() {
 
     // all radios will receive 400 coverage points
     let base_hex = CoveredHex {
-        rank: 1,
+        rank: Rank::new(1).unwrap(),
         signal_level: SignalLevel::High,
         assignment: Assignments {
             footfall: Assignment::A,
