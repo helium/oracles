@@ -179,7 +179,7 @@ impl Speedtest {
 }
 
 #[derive(Debug, PartialEq)]
-struct LocalRadio {
+struct RewardableRadio {
     radio_type: RadioType,
     speedtest: Speedtest,
     location_trust_scores: Vec<MaxOneMultplier>,
@@ -195,7 +195,7 @@ struct LocalHex {
     boosted: Option<Multiplier>,
 }
 
-impl LocalRadio {
+impl RewardableRadio {
     pub fn coverage_points(&self) -> Points {
         let mut points = vec![];
         let location_trust_score_multiplier = self.location_trust_multiplier();
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn speedtest() {
-        let mut indoor_cbrs = LocalRadio {
+        let mut indoor_cbrs = RewardableRadio {
             radio_type: RadioType::IndoorCbrs,
             speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
@@ -306,7 +306,7 @@ mod tests {
         }
 
         use Assignment::*;
-        let indoor_cbrs = LocalRadio {
+        let indoor_cbrs = RewardableRadio {
             radio_type: RadioType::IndoorCbrs,
             speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn outdoor_radios_consider_top_3_ranked_hexes() {
-        let outdoor_wifi = LocalRadio {
+        let outdoor_wifi = RewardableRadio {
             radio_type: RadioType::OutdoorWifi,
             speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn indoor_radios_only_consider_first_ranked_hexes() {
-        let indoor_wifi = LocalRadio {
+        let indoor_wifi = RewardableRadio {
             radio_type: RadioType::IndoorWifi,
             speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn location_trust_score_multiplier() {
         // Location scores are averaged together
-        let indoor_wifi = LocalRadio {
+        let indoor_wifi = RewardableRadio {
             radio_type: RadioType::IndoorWifi,
             speedtest: Speedtest::Good,
             location_trust_scores: vec![
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn boosted_hex() {
-        let mut indoor_wifi = LocalRadio {
+        let mut indoor_wifi = RewardableRadio {
             radio_type: RadioType::IndoorWifi,
             speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn base_radio_coverage_points() {
-        let outdoor_cbrs = LocalRadio {
+        let outdoor_cbrs = RewardableRadio {
             radio_type: RadioType::OutdoorCbrs,
             speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
@@ -517,7 +517,7 @@ mod tests {
             ],
         };
 
-        let indoor_cbrs = LocalRadio {
+        let indoor_cbrs = RewardableRadio {
             radio_type: RadioType::IndoorCbrs,
             speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
@@ -538,7 +538,7 @@ mod tests {
             ],
         };
 
-        let outdoor_wifi = LocalRadio {
+        let outdoor_wifi = RewardableRadio {
             radio_type: RadioType::OutdoorWifi,
             speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
@@ -571,7 +571,7 @@ mod tests {
             ],
         };
 
-        let indoor_wifi = LocalRadio {
+        let indoor_wifi = RewardableRadio {
             radio_type: RadioType::IndoorWifi,
             speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
