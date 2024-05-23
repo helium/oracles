@@ -39,15 +39,45 @@
 ///     https://docs.helium.com/mobile/proof-of-coverage
 ///
 use hextree::Cell;
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
 type Multiplier = std::num::NonZeroU32;
-type MaxOneMultplier = Decimal;
+pub type MaxOneMultplier = Decimal;
 type Points = Decimal;
 
-#[derive(Debug, Clone, PartialEq)]
-enum RadioType {
+pub trait Radio {
+    fn radio_type(&self) -> RadioType;
+    fn speedtest(&self) -> Speedtest;
+    fn location_trust_scores(&self) -> Vec<MaxOneMultplier>;
+    fn verified_radio_threshold(&self) -> bool;
+}
+
+pub trait CoverageMap {
+    fn hexes(&self, radio: &impl Radio) -> Vec<CoveredHex>;
+}
+
+pub fn calculate<'a>(
+    radios: &'a [impl Radio],
+    coverage_map: &'a impl CoverageMap,
+) -> impl Iterator<Item = RewardableRadio> + 'a {
+    radios
+        .iter()
+        .map(|radio| calculate_single(radio, coverage_map))
+}
+
+pub fn calculate_single(radio: &impl Radio, coverage_map: &impl CoverageMap) -> RewardableRadio {
+    RewardableRadio {
+        radio_type: radio.radio_type(),
+        speedtest: radio.speedtest(),
+        location_trust_scores: radio.location_trust_scores(),
+        verified_radio_threshold: radio.verified_radio_threshold(),
+        hexes: coverage_map.hexes(radio),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RadioType {
     IndoorWifi,
     OutdoorWifi,
     IndoorCbrs,
@@ -82,7 +112,7 @@ impl RadioType {
         }
     }
 
-    fn rank_multiplier(&self, hex: &LocalHex) -> Option<MaxOneMultplier> {
+    fn rank_multiplier(&self, hex: &CoveredHex) -> Option<MaxOneMultplier> {
         let multipliers = match self {
             RadioType::IndoorWifi => vec![dec!(1)],
             RadioType::IndoorCbrs => vec![dec!(1)],
@@ -95,8 +125,8 @@ impl RadioType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum SignalLevel {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SignalLevel {
     High,
     Medium,
     Low,
@@ -104,14 +134,14 @@ enum SignalLevel {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct Assignments {
-    footfall: Assignment,
-    landtype: Assignment,
-    urbanized: Assignment,
+pub struct Assignments {
+    pub footfall: Assignment,
+    pub landtype: Assignment,
+    pub urbanized: Assignment,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Assignment {
+pub enum Assignment {
     A,
     B,
     C,
@@ -157,8 +187,8 @@ impl Assignments {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum Speedtest {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Speedtest {
     Good,
     Acceptable,
     Degraded,
@@ -179,50 +209,51 @@ impl Speedtest {
 }
 
 #[derive(Debug, PartialEq)]
-struct RewardableRadio {
-    radio_type: RadioType,
-    speedtest: Speedtest,
-    location_trust_scores: Vec<MaxOneMultplier>,
-    verified_radio_threshold: bool,
-    hexes: Vec<LocalHex>,
+pub struct RewardableRadio {
+    pub radio_type: RadioType,
+    pub speedtest: Speedtest,
+    pub location_trust_scores: Vec<MaxOneMultplier>,
+    pub verified_radio_threshold: bool,
+    pub hexes: Vec<CoveredHex>,
 }
 
-#[derive(Debug, PartialEq)]
-struct LocalHex {
-    rank: usize,
-    signal_level: SignalLevel,
-    assignment: Assignments,
-    boosted: Option<Multiplier>,
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoveredHex {
+    pub rank: usize,
+    pub signal_level: SignalLevel,
+    pub assignment: Assignments,
+    pub boosted: Option<Multiplier>,
 }
 
 impl RewardableRadio {
     pub fn coverage_points(&self) -> Points {
         let mut points = vec![];
-        let location_trust_score_multiplier = self.location_trust_multiplier();
+        let radio_type = &self.radio_type;
 
         for hex in self.hexes.iter() {
-            let Some(rank) = self.radio_type.rank_multiplier(hex) else {
+            let Some(rank_multiplier) = radio_type.rank_multiplier(hex) else {
                 // Rank falls outside what is allowed, skip as early as possible
                 continue;
             };
 
-            let estimated_coverage_points =
-                self.radio_type.estimated_coverage_points(&hex.signal_level);
+            let estimated_coverage_points = radio_type.estimated_coverage_points(&hex.signal_level);
             let assignments_multiplier = hex.assignment.multiplier();
-            let hex_boost_multiplier = self.hex_boosting_multiplier(&hex);
+            let hex_boost_multiplier = self.hex_boosting_multiplier(hex);
 
             let coverage_points = estimated_coverage_points
                 * assignments_multiplier
-                * rank
-                * hex_boost_multiplier
-                * location_trust_score_multiplier;
+                * rank_multiplier
+                * hex_boost_multiplier;
 
             points.push(coverage_points)
         }
 
-        let mut coverage_points = points.iter().sum::<Decimal>();
-        coverage_points *= self.speedtest.multiplier();
-        coverage_points.round_dp(2)
+        let base_points = points.iter().sum::<Decimal>();
+        let location_score = self.location_trust_multiplier();
+        let speedtest = self.speedtest.multiplier();
+
+        let coverage_points = base_points * location_score * speedtest;
+        coverage_points.round_dp_with_strategy(2, RoundingStrategy::ToZero)
     }
 
     fn location_trust_multiplier(&self) -> Decimal {
@@ -231,7 +262,7 @@ impl RewardableRadio {
         trust_score_sum / trust_score_count
     }
 
-    fn hex_boosting_multiplier(&self, hex: &LocalHex) -> MaxOneMultplier {
+    fn hex_boosting_multiplier(&self, hex: &CoveredHex) -> MaxOneMultplier {
         let maybe_boost = if self.verified_radio_threshold {
             hex.boosted.map_or(1, |boost| boost.get())
         } else {
@@ -264,7 +295,7 @@ mod tests {
             speedtest: Speedtest::Good,
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
-            hexes: vec![LocalHex {
+            hexes: vec![CoveredHex {
                 rank: 1,
                 signal_level: SignalLevel::High,
                 assignment: Assignments::best(),
@@ -292,8 +323,8 @@ mod tests {
             footfall: Assignment,
             landtype: Assignment,
             urbanized: Assignment,
-        ) -> LocalHex {
-            LocalHex {
+        ) -> CoveredHex {
+            CoveredHex {
                 rank: 1,
                 signal_level: SignalLevel::High,
                 assignment: Assignments {
@@ -360,25 +391,25 @@ mod tests {
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 2,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 3,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 42,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
@@ -402,19 +433,19 @@ mod tests {
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 2,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 42,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
@@ -439,7 +470,7 @@ mod tests {
                 MaxOneMultplier::from_f32_retain(0.4).unwrap(),
             ],
             verified_radio_threshold: true,
-            hexes: vec![LocalHex {
+            hexes: vec![CoveredHex {
                 rank: 1,
                 signal_level: SignalLevel::High,
                 assignment: Assignments::best(),
@@ -459,13 +490,13 @@ mod tests {
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::Low,
                     assignment: Assignments::best(),
@@ -490,25 +521,25 @@ mod tests {
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::Medium,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::Low,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::None,
                     assignment: Assignments::best(),
@@ -523,13 +554,13 @@ mod tests {
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::Low,
                     assignment: Assignments::best(),
@@ -544,25 +575,25 @@ mod tests {
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::Medium,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::Low,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::None,
                     assignment: Assignments::best(),
@@ -577,13 +608,13 @@ mod tests {
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::High,
                     assignment: Assignments::best(),
                     boosted: None,
                 },
-                LocalHex {
+                CoveredHex {
                     rank: 1,
                     signal_level: SignalLevel::Low,
                     assignment: Assignments::best(),
