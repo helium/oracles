@@ -1,7 +1,6 @@
 log = "mobile_packet_verifier=debug,file_store=info,solana=info,custom_tracing=info"
 cache = "/opt/mobile-packet-verifier/data"
 enable_solana_integration = false
-start_after = 0
 
 [database]
 url = "postgres://postgres:postgres@postgres:5432/mobile_packet_verifier"
@@ -20,12 +19,6 @@ endpoint = "http://localstack:4566"
 [metrics]
 endpoint = "0.0.0.0:19000"
 
-[solana]
-rpc_url = "http://localhost:8899"
-burn_keypair = "/opt/mobile-packet-verifier/etc/burn.key"
-cluster = "devnet"
-dc_mint = "dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm"
-dnt_mint = "mb1eu7TzEc71KxDpsmsKoucSSuuoGLv1drys1oP2jh6"
 
 [config_client]
 url = "http://config:9081/"

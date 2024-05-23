@@ -23,7 +23,9 @@ services:
       context: ../..
       dockerfile: ./docker/mobile/postgres_seeder/Dockerfile
     environment:
-      - DB_URL=postgres://postgres:postgres@postgres:5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST=postgres
     depends_on:
         postgres:
           condition: service_healthy
@@ -51,6 +53,9 @@ services:
     stop_grace_period: 1s
     environment:
       - PACKAGE=ingest
+      - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
     ports:
       - 9080:9080
     volumes:
@@ -88,6 +93,9 @@ services:
     stop_grace_period: 1s
     environment:
       - PACKAGE=mobile-packet-verifier
+      - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
     volumes:
       - ./packet_verifier/settings.toml:/opt/mobile-packet-verifier/etc/settings.toml
       - ./packet_verifier/keypair.bin:/opt/mobile-packet-verifier/etc/keypair.bin
