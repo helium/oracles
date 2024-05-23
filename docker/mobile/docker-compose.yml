@@ -63,8 +63,8 @@ services:
       args:
         - PACKAGE=mobile-config
     depends_on:
-        postgres:
-          condition: service_healthy
+        postgres_seeder:
+          condition: service_completed_successfully
     stop_grace_period: 1s
     environment:
       - PACKAGE=mobile-config
