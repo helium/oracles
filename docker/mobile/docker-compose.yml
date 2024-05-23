@@ -18,6 +18,16 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres:/docker-entrypoint-initdb.d
 
+  postgres_seeder:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/postgres_seeder/Dockerfile
+    environment:
+      - DB_URL=postgres://postgres:postgres@postgres:5432
+    depends_on:
+        postgres:
+          condition: service_healthy
+
   localstack:
     image: localstack/localstack:stable
     environment:
