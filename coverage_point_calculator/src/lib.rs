@@ -178,22 +178,6 @@ impl Speedtest {
     }
 }
 
-trait Coverage {
-    fn radio_type(&self) -> RadioType;
-    fn signal_level(&self) -> SignalLevel;
-}
-
-trait CoverageMap<C: Coverage> {
-    fn get(&self, cell: Cell) -> Vec<C>;
-}
-
-trait RewardableRadio {
-    fn hex(&self) -> Cell;
-    fn radio_type(&self) -> RadioType;
-    fn location_trust_scores(&self) -> Vec<MaxOneMultplier>;
-    fn verified_radio_threshold(&self) -> bool;
-}
-
 #[derive(Debug, PartialEq)]
 struct LocalRadio {
     radio_type: RadioType,
@@ -209,13 +193,6 @@ struct LocalHex {
     signal_level: SignalLevel,
     assignment: Assignments,
     boosted: Option<Multiplier>,
-}
-
-fn calculate<C: Coverage>(
-    radio: impl RewardableRadio,
-    coverage_map: impl CoverageMap<C>,
-) -> LocalRadio {
-    todo!()
 }
 
 impl LocalRadio {
