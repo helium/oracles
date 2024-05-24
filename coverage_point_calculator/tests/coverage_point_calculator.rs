@@ -3,8 +3,8 @@ use std::{collections::HashMap, num::NonZeroU32};
 use coverage_point_calculator::{
     calculate_coverage_points, make_rewardable_radio, make_rewardable_radios,
     speedtest::{BytesPs, Millis, Speedtest},
-    Assignment, Assignments, CoverageMap, CoveredHex, MaxOneMultplier, Radio, RadioType, Rank,
-    SignalLevel,
+    Assignment, Assignments, CoverageMap, CoveredHex, LocationTrust, Meters, Radio, RadioType,
+    Rank, SignalLevel,
 };
 use rust_decimal_macros::dec;
 
@@ -33,8 +33,11 @@ fn base_radio_coverage_points() {
             ]
         }
 
-        fn location_trust_scores(&self) -> Vec<MaxOneMultplier> {
-            vec![dec!(1)]
+        fn location_trust_scores(&self) -> Vec<LocationTrust> {
+            vec![LocationTrust {
+                distance_to_asserted: Meters::new(1),
+                trust_score: dec!(1.0),
+            }]
         }
 
         fn verified_radio_threshold(&self) -> bool {
@@ -113,8 +116,11 @@ fn radio_unique_coverage() {
             ]
         }
 
-        fn location_trust_scores(&self) -> Vec<MaxOneMultplier> {
-            vec![dec!(1)]
+        fn location_trust_scores(&self) -> Vec<LocationTrust> {
+            vec![LocationTrust {
+                distance_to_asserted: Meters::new(1),
+                trust_score: dec!(1.0),
+            }]
         }
 
         fn verified_radio_threshold(&self) -> bool {
