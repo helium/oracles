@@ -1,9 +1,10 @@
 use std::{collections::HashMap, num::NonZeroU32};
 
 use coverage_point_calculator::{
-    calculate_coverage_points, make_rewardable_radio, make_rewardable_radios, Assignment,
-    Assignments, CoverageMap, CoveredHex, MaxOneMultplier, Radio, RadioType, Rank, SignalLevel,
-    Speedtest,
+    calculate_coverage_points, make_rewardable_radio, make_rewardable_radios,
+    speedtest::{BytesPs, Millis, Speedtest},
+    Assignment, Assignments, CoverageMap, CoveredHex, MaxOneMultplier, Radio, RadioType, Rank,
+    SignalLevel,
 };
 use rust_decimal_macros::dec;
 
@@ -17,8 +18,19 @@ fn base_radio_coverage_points() {
             self.0
         }
 
-        fn speedtest(&self) -> Speedtest {
-            Speedtest::Good
+        fn speedtests(&self) -> Vec<Speedtest> {
+            vec![
+                Speedtest {
+                    upload_speed: BytesPs::mbps(15),
+                    download_speed: BytesPs::mbps(150),
+                    latency: Millis::new(15),
+                },
+                Speedtest {
+                    upload_speed: BytesPs::mbps(15),
+                    download_speed: BytesPs::mbps(150),
+                    latency: Millis::new(15),
+                },
+            ]
         }
 
         fn location_trust_scores(&self) -> Vec<MaxOneMultplier> {
@@ -86,8 +98,19 @@ fn radio_unique_coverage() {
             self.0
         }
 
-        fn speedtest(&self) -> Speedtest {
-            Speedtest::Good
+        fn speedtests(&self) -> Vec<Speedtest> {
+            vec![
+                Speedtest {
+                    upload_speed: BytesPs::mbps(15),
+                    download_speed: BytesPs::mbps(150),
+                    latency: Millis::new(15),
+                },
+                Speedtest {
+                    upload_speed: BytesPs::mbps(15),
+                    download_speed: BytesPs::mbps(150),
+                    latency: Millis::new(15),
+                },
+            ]
         }
 
         fn location_trust_scores(&self) -> Vec<MaxOneMultplier> {

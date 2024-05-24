@@ -37,6 +37,18 @@
 /// [mobile-poc-blog]:
 ///     https://docs.helium.com/mobile/proof-of-coverage
 ///
+/// To Integrate in Docs:
+///
+/// Some verbiage about ranks.
+/// https://github.com/helium/HIP/blob/main/0105-modification-of-mobile-subdao-hex-limits.md
+///
+/// Has something to say about 30meters from asserted location wrt poc rewards for boosted hexes.
+/// https://github.com/helium/HIP/blob/8b1e814afa61a714b5ba63d3265e5897ab4c5116/0107-preventing-gaming-within-the-mobile-network.md
+/// ! I cannot find a reason why the max distance to asserted changed from 30m to 50m.
+///
+pub mod speedtest;
+
+use crate::speedtest::{Speedtest, SpeedtestTier};
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
@@ -47,8 +59,8 @@ type Points = Decimal;
 
 pub trait Radio {
     fn radio_type(&self) -> RadioType;
-    fn speedtest(&self) -> Speedtest;
-    fn location_trust_scores(&self) -> Vec<MaxOneMultplier>;
+    fn speedtests(&self) -> Vec<Speedtest>;
+    fn location_trust_scores(&self) -> Vec<LocationTrust>;
     fn verified_radio_threshold(&self) -> bool;
 }
 
@@ -77,7 +89,7 @@ pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
 
     let base_points = hex_points.sum::<Decimal>();
     let location_score = radio.location_trust_multiplier();
-    let speedtest = radio.speedtest.multiplier();
+    let speedtest = radio.speedtest_multiplier();
 
     let coverage_points = base_points * location_score * speedtest;
     let coverage_points = coverage_points.round_dp_with_strategy(2, RoundingStrategy::ToZero);
@@ -103,11 +115,26 @@ pub fn make_rewardable_radio(
 ) -> RewardableRadio {
     RewardableRadio {
         radio_type: radio.radio_type(),
-        speedtest: radio.speedtest(),
+        speedtests: radio.speedtests(),
         location_trust_scores: radio.location_trust_scores(),
         verified_radio_threshold: radio.verified_radio_threshold(),
         hexes: coverage_map.hexes(radio),
     }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct Meters(u32);
+
+impl Meters {
+    fn new(meters: u32) -> Self {
+        Self(meters)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocationTrust {
+    distance_to_asserted: Meters,
+    trust_score: Decimal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -218,27 +245,6 @@ impl Assignments {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Speedtest {
-    Good,
-    Acceptable,
-    Degraded,
-    Poor,
-    Fail,
-}
-
-impl Speedtest {
-    fn multiplier(&self) -> MaxOneMultplier {
-        match self {
-            Speedtest::Good => dec!(1.00),
-            Speedtest::Acceptable => dec!(0.75),
-            Speedtest::Degraded => dec!(0.50),
-            Speedtest::Poor => dec!(0.25),
-            Speedtest::Fail => dec!(0),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct CoveragePoints {
     pub coverage_points: Decimal,
@@ -248,8 +254,8 @@ pub struct CoveragePoints {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RewardableRadio {
     pub radio_type: RadioType,
-    pub speedtest: Speedtest,
-    pub location_trust_scores: Vec<MaxOneMultplier>,
+    pub speedtests: Vec<Speedtest>,
+    pub location_trust_scores: Vec<LocationTrust>,
     pub verified_radio_threshold: bool,
     pub hexes: Vec<CoveredHex>,
 }
@@ -264,8 +270,36 @@ pub struct CoveredHex {
 
 impl RewardableRadio {
     fn location_trust_multiplier(&self) -> Decimal {
+        const RESTRICTIVE_MAX_DISTANCE: Meters = Meters(50);
+
+        // CBRS radios are always trusted because they have internal GPS
+        match self.radio_type {
+            RadioType::IndoorCbrs => return dec!(1),
+            RadioType::OutdoorCbrs => return dec!(1),
+            _ => {}
+        }
+
+        let trust_score_sum: Decimal = if self.any_hexes_boosted() {
+            // Cap multipliers to 0.25x when a radio covers _any_ boosted hex
+            // and it's distance to asserted is above the threshold.
+            self.location_trust_scores
+                .iter()
+                .map(|l| {
+                    if l.distance_to_asserted > RESTRICTIVE_MAX_DISTANCE {
+                        dec!(0.25).min(l.trust_score)
+                    } else {
+                        l.trust_score
+                    }
+                })
+                .sum()
+        } else {
+            self.location_trust_scores
+                .iter()
+                .map(|l| l.trust_score)
+                .sum()
+        };
+
         let trust_score_count = Decimal::from(self.location_trust_scores.len());
-        let trust_score_sum = self.location_trust_scores.iter().sum::<Decimal>();
         trust_score_sum / trust_score_count
     }
 
@@ -277,10 +311,27 @@ impl RewardableRadio {
         };
         Decimal::from(maybe_boost)
     }
+
+    fn speedtest_multiplier(&self) -> MaxOneMultplier {
+        const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
+
+        if self.speedtests.len() < MIN_REQUIRED_SPEEDTEST_SAMPLES {
+            return SpeedtestTier::Fail.multiplier();
+        }
+
+        let speedtest_avg = Speedtest::avg(&self.speedtests);
+        speedtest_avg.multiplier()
+    }
+
+    fn any_hexes_boosted(&self) -> bool {
+        self.hexes.iter().any(|hex| hex.boosted.is_some())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+
+    use crate::speedtest::{BytesPs, Millis};
 
     use super::*;
     use rust_decimal_macros::dec;
@@ -295,11 +346,35 @@ mod tests {
         }
     }
 
+    impl Speedtest {
+        fn best() -> Vec<Self> {
+            vec![
+                Self {
+                    upload_speed: BytesPs::mbps(15),
+                    download_speed: BytesPs::mbps(150),
+                    latency: Millis::new(15),
+                },
+                Self {
+                    upload_speed: BytesPs::mbps(15),
+                    download_speed: BytesPs::mbps(150),
+                    latency: Millis::new(15),
+                },
+            ]
+        }
+        fn download(download: BytesPs) -> Self {
+            Self {
+                upload_speed: BytesPs::mbps(15),
+                download_speed: download,
+                latency: Millis::new(15),
+            }
+        }
+    }
+
     #[test]
     fn speedtest() {
         let mut indoor_cbrs = RewardableRadio {
             radio_type: RadioType::IndoorCbrs,
-            speedtest: Speedtest::Good,
+            speedtests: Speedtest::best(),
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![CoveredHex {
@@ -309,30 +384,43 @@ mod tests {
                 boosted: None,
             }],
         };
+
         assert_eq!(
             dec!(100),
             calculate_coverage_points(indoor_cbrs.clone()).coverage_points
         );
 
-        indoor_cbrs.speedtest = Speedtest::Acceptable;
+        indoor_cbrs.speedtests = vec![
+            Speedtest::download(BytesPs::mbps(88)),
+            Speedtest::download(BytesPs::mbps(88)),
+        ];
         assert_eq!(
             dec!(75),
             calculate_coverage_points(indoor_cbrs.clone()).coverage_points
         );
 
-        indoor_cbrs.speedtest = Speedtest::Degraded;
+        indoor_cbrs.speedtests = vec![
+            Speedtest::download(BytesPs::mbps(62)),
+            Speedtest::download(BytesPs::mbps(62)),
+        ];
         assert_eq!(
             dec!(50),
             calculate_coverage_points(indoor_cbrs.clone()).coverage_points
         );
 
-        indoor_cbrs.speedtest = Speedtest::Poor;
+        indoor_cbrs.speedtests = vec![
+            Speedtest::download(BytesPs::mbps(42)),
+            Speedtest::download(BytesPs::mbps(42)),
+        ];
         assert_eq!(
             dec!(25),
             calculate_coverage_points(indoor_cbrs.clone()).coverage_points
         );
 
-        indoor_cbrs.speedtest = Speedtest::Fail;
+        indoor_cbrs.speedtests = vec![
+            Speedtest::download(BytesPs::mbps(25)),
+            Speedtest::download(BytesPs::mbps(25)),
+        ];
         assert_eq!(
             dec!(0),
             calculate_coverage_points(indoor_cbrs).coverage_points
@@ -361,7 +449,7 @@ mod tests {
         use Assignment::*;
         let indoor_cbrs = RewardableRadio {
             radio_type: RadioType::IndoorCbrs,
-            speedtest: Speedtest::Good,
+            speedtests: Speedtest::best(),
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -412,7 +500,7 @@ mod tests {
     fn outdoor_radios_consider_top_3_ranked_hexes() {
         let outdoor_wifi = RewardableRadio {
             radio_type: RadioType::OutdoorWifi,
-            speedtest: Speedtest::Good,
+            speedtests: Speedtest::best(),
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -457,7 +545,7 @@ mod tests {
     fn indoor_radios_only_consider_first_ranked_hexes() {
         let indoor_wifi = RewardableRadio {
             radio_type: RadioType::IndoorWifi,
-            speedtest: Speedtest::Good,
+            speedtests: Speedtest::best(),
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -493,7 +581,7 @@ mod tests {
         // Location scores are averaged together
         let indoor_wifi = RewardableRadio {
             radio_type: RadioType::IndoorWifi,
-            speedtest: Speedtest::Good,
+            speedtests: Speedtest::best(),
             location_trust_scores: vec![
                 MaxOneMultplier::from_f32_retain(0.1).unwrap(),
                 MaxOneMultplier::from_f32_retain(0.2).unwrap(),
@@ -520,7 +608,7 @@ mod tests {
     fn boosted_hex() {
         let mut indoor_wifi = RewardableRadio {
             radio_type: RadioType::IndoorWifi,
-            speedtest: Speedtest::Good,
+            speedtests: Speedtest::best(),
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -557,7 +645,7 @@ mod tests {
     fn base_radio_coverage_points() {
         let outdoor_cbrs = RewardableRadio {
             radio_type: RadioType::OutdoorCbrs,
-            speedtest: Speedtest::Good,
+            speedtests: Speedtest::best(),
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -590,7 +678,7 @@ mod tests {
 
         let indoor_cbrs = RewardableRadio {
             radio_type: RadioType::IndoorCbrs,
-            speedtest: Speedtest::Good,
+            speedtests: Speedtest::best(),
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -611,7 +699,7 @@ mod tests {
 
         let outdoor_wifi = RewardableRadio {
             radio_type: RadioType::OutdoorWifi,
-            speedtest: Speedtest::Good,
+            speedtests: Speedtest::best(),
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
@@ -644,7 +732,7 @@ mod tests {
 
         let indoor_wifi = RewardableRadio {
             radio_type: RadioType::IndoorWifi,
-            speedtest: Speedtest::Good,
+            speedtests: Speedtest::best(),
             location_trust_scores: vec![MaxOneMultplier::from_f32_retain(1.0).unwrap()],
             verified_radio_threshold: true,
             hexes: vec![
