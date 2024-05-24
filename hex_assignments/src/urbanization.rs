@@ -9,16 +9,9 @@ pub struct Urbanization {
 }
 
 impl Urbanization {
-    pub fn new() -> Self {
+    pub fn new(urbanized: Option<DiskTreeMap>) -> Self {
         Self {
-            urbanized: None,
-            timestamp: None,
-        }
-    }
-
-    pub fn new_mock(urbanized: DiskTreeMap) -> Self {
-        Self {
-            urbanized: Some(urbanized),
+            urbanized,
             timestamp: None,
         }
     }
@@ -26,7 +19,7 @@ impl Urbanization {
 
 impl Default for Urbanization {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 

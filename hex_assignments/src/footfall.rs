@@ -9,16 +9,9 @@ pub struct Footfall {
 }
 
 impl Footfall {
-    pub fn new() -> Self {
+    pub fn new(footfall: Option<DiskTreeMap>) -> Self {
         Self {
-            footfall: None,
-            timestamp: None,
-        }
-    }
-
-    pub fn new_mock(footfall: DiskTreeMap) -> Self {
-        Self {
-            footfall: Some(footfall),
+            footfall,
             timestamp: None,
         }
     }
@@ -26,7 +19,7 @@ impl Footfall {
 
 impl Default for Footfall {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 

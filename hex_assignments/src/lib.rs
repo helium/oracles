@@ -214,9 +214,9 @@ mod tests {
         footfall.to_disktree(Cursor::new(&mut footfall_buff), |w, v| w.write_all(&[*v]))?;
         landtype.to_disktree(Cursor::new(&mut landtype_buf), |w, v| w.write_all(&[*v]))?;
 
-        let footfall = Footfall::new_mock(DiskTreeMap::with_buf(footfall_buff)?);
-        let landtype = Landtype::new_mock(DiskTreeMap::with_buf(landtype_buf)?);
-        let urbanization = Urbanization::new_mock(DiskTreeMap::with_buf(urbanized_buf)?);
+        let footfall = Footfall::new(Some(DiskTreeMap::with_buf(footfall_buff)?));
+        let landtype = Landtype::new(Some(DiskTreeMap::with_buf(landtype_buf)?));
+        let urbanization = Urbanization::new(Some(DiskTreeMap::with_buf(urbanized_buf)?));
 
         // Let the testing commence
         let data = HexBoostData::builder()

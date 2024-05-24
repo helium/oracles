@@ -262,9 +262,9 @@ impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization> {
             .create()
             .await?;
 
-        let urbanization = Urbanization::new();
-        let footfall = Footfall::new();
-        let landtype = Landtype::new();
+        let urbanization = Urbanization::new(None);
+        let footfall = Footfall::new(None);
+        let landtype = Landtype::new(None);
         let hex_boost_data = HexBoostData::builder()
             .footfall(footfall)
             .landtype(landtype)

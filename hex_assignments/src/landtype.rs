@@ -9,16 +9,9 @@ pub struct Landtype {
 }
 
 impl Landtype {
-    pub fn new() -> Self {
+    pub fn new(landtype: Option<DiskTreeMap>) -> Self {
         Self {
-            landtype: None,
-            timestamp: None,
-        }
-    }
-
-    pub fn new_mock(landtype: DiskTreeMap) -> Self {
-        Self {
-            landtype: Some(landtype),
+            landtype,
             timestamp: None,
         }
     }
@@ -26,7 +19,7 @@ impl Landtype {
 
 impl Default for Landtype {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
