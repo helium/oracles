@@ -1,8 +1,9 @@
 use std::{collections::HashMap, num::NonZeroU32};
 
 use coverage_point_calculator::{
-    calculate, calculate_single, Assignment, Assignments, CoverageMap, CoveredHex, MaxOneMultplier,
-    Radio, RadioType, Rank, SignalLevel, Speedtest,
+    calculate_coverage_points, make_rewardable_radio, make_rewardable_radios, Assignment,
+    Assignments, CoverageMap, CoveredHex, MaxOneMultplier, Radio, RadioType, Rank, SignalLevel,
+    Speedtest,
 };
 use rust_decimal_macros::dec;
 
@@ -50,10 +51,10 @@ fn base_radio_coverage_points() {
         RadioType::OutdoorWifi,
         RadioType::OutdoorCbrs,
     ] {
-        let radio = calculate_single(&TestRadio(radio_type), &TestCoverageMap);
+        let radio = make_rewardable_radio(&TestRadio(radio_type), &TestCoverageMap);
         println!(
             "{radio_type:?} \t--> {}",
-            radio.to_coverage_points().coverage_points
+            calculate_coverage_points(radio).coverage_points
         );
     }
 
@@ -63,8 +64,8 @@ fn base_radio_coverage_points() {
         TestRadio(RadioType::OutdoorWifi),
         TestRadio(RadioType::OutdoorCbrs),
     ];
-    let output = calculate(&radios, &TestCoverageMap)
-        .map(|r| (r.radio_type, r.to_coverage_points().coverage_points))
+    let output = make_rewardable_radios(&radios, &TestCoverageMap)
+        .map(|r| (r.radio_type, calculate_coverage_points(r).coverage_points))
         .collect::<Vec<_>>();
     println!("{output:#?}");
 }
@@ -132,8 +133,8 @@ fn radio_unique_coverage() {
         }
     }
 
-    let coverage_points = calculate(&radios, &coverage_map)
-        .map(|r| (r.radio_type, r.to_coverage_points().coverage_points))
+    let coverage_points = make_rewardable_radios(&radios, &coverage_map)
+        .map(|r| (r.radio_type, calculate_coverage_points(r).coverage_points))
         .collect::<Vec<_>>();
     println!("{coverage_points:#?}")
 }
