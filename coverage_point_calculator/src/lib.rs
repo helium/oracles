@@ -86,7 +86,7 @@ pub enum RadioType {
 }
 
 impl RadioType {
-    fn estimated_coverage_points(&self, signal_level: &SignalLevel) -> Points {
+    fn base_coverage_points(&self, signal_level: &SignalLevel) -> Points {
         match self {
             RadioType::IndoorWifi => match signal_level {
                 SignalLevel::High => dec!(400),
@@ -241,13 +241,12 @@ impl RewardableRadio {
             .iter()
             .filter(|hex| hex.rank.get() <= max_rank)
             .map(|hex| {
-                let estimated_coverage_points =
-                    radio_type.estimated_coverage_points(&hex.signal_level);
+                let base_coverage_points = radio_type.base_coverage_points(&hex.signal_level);
                 let assignments_multiplier = hex.assignments.multiplier();
                 let rank_multiplier = rank_multipliers[hex.rank.get() - 1];
                 let hex_boost_multiplier = self.hex_boosting_multiplier(hex);
 
-                estimated_coverage_points
+                base_coverage_points
                     * assignments_multiplier
                     * rank_multiplier
                     * hex_boost_multiplier
