@@ -113,15 +113,13 @@ impl RadioType {
         }
     }
 
-    fn rank_multiplier(&self, hex: &CoveredHex) -> Option<MaxOneMultplier> {
-        let multipliers = match self {
+    fn rank_multipliers(&self) -> Vec<Decimal> {
+        match self {
             RadioType::IndoorWifi => vec![dec!(1)],
             RadioType::IndoorCbrs => vec![dec!(1)],
             RadioType::OutdoorWifi => vec![dec!(1), dec!(0.5), dec!(0.25)],
             RadioType::OutdoorCbrs => vec![dec!(1), dec!(0.5), dec!(0.25)],
-        };
-
-        multipliers.get(hex.rank.get() - 1).cloned()
+        }
     }
 }
 
@@ -235,23 +233,25 @@ impl RewardableRadio {
     pub fn to_coverage_points(self) -> CoveragePoints {
         let radio_type = &self.radio_type;
 
-        let hex_points = self.hexes.iter().filter_map(|hex| {
-            let Some(rank_multiplier) = radio_type.rank_multiplier(hex) else {
-                // Rank falls outside what is allowed, skip as early as possible
-                return None;
-            };
+        let rank_multipliers = radio_type.rank_multipliers();
+        let max_rank = rank_multipliers.len();
 
-            let estimated_coverage_points = radio_type.estimated_coverage_points(&hex.signal_level);
-            let assignments_multiplier = hex.assignments.multiplier();
-            let hex_boost_multiplier = self.hex_boosting_multiplier(hex);
+        let hex_points = self
+            .hexes
+            .iter()
+            .filter(|hex| hex.rank.get() <= max_rank)
+            .map(|hex| {
+                let estimated_coverage_points =
+                    radio_type.estimated_coverage_points(&hex.signal_level);
+                let assignments_multiplier = hex.assignments.multiplier();
+                let rank_multiplier = rank_multipliers[hex.rank.get() - 1];
+                let hex_boost_multiplier = self.hex_boosting_multiplier(hex);
 
-            Some(
                 estimated_coverage_points
                     * assignments_multiplier
                     * rank_multiplier
-                    * hex_boost_multiplier,
-            )
-        });
+                    * hex_boost_multiplier
+            });
 
         let base_points = hex_points.sum::<Decimal>();
         let location_score = self.location_trust_multiplier();
