@@ -3,11 +3,14 @@ cache = "/opt/mobile-verifier/data"
 rewards = "24 hours"
 reward_offset_minutes = "30 minutes"
 modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC"
+data_sets_directory = "/opt/mobile-verifier/data_sets_directory"
 usa_and_mexico_geofence_regions = "/opt/mobile-verifier/usa_and_mexico_geofence_regions"
 usa_geofence_regions = "/opt/mobile-verifier/usa_geofence_regions"
-urbanization_data_set = "/opt/mobile-verifier/urbanization_data_set"
-footfall_data_set = "/opt/mobile-verifier/footfall_data_set"
-landtype_data_set = "/opt/mobile-verifier/landtype_data_set"
+
+[data_sets]
+bucket = "mobile-verifier-data-sets"
+region = "us-east-1"
+endpoint = "http://localstack:4566"
 
 [database]
 url = "postgres://postgres:postgres@postgres:5432/mobile_verifier"
