@@ -1,4 +1,3 @@
-#![allow(unused)]
 ///
 /// Many changes to the rewards algorithm are contained in and across many HIPs.
 /// The blog post [MOBILE Proof of Coverage][mobile-poc-blog] contains a more
@@ -38,7 +37,6 @@
 /// [mobile-poc-blog]:
 ///     https://docs.helium.com/mobile/proof-of-coverage
 ///
-use hextree::Cell;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
