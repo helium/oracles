@@ -1,0 +1,18 @@
+[package]
+name = "hex-assignments"
+version = "0.1.0"
+description = "Hex Assignments"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+hextree = { workspace = true }
+sqlx = {version = "*", features = ["runtime-tokio-rustls"]}
+rust_decimal = { workspace = true}
+rust_decimal_macros = { workspace = true}
+helium-proto = {workspace = true}
+async-trait = { workspace = true }
+chrono = { workspace = true }
+derive_builder = { workspace = true }

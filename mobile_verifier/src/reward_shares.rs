@@ -696,8 +696,9 @@ pub fn get_scheduled_tokens_for_oracles(duration: Duration) -> Decimal {
 #[cfg(test)]
 mod test {
     use super::*;
+    use hex_assignments::assignment::HexAssignments;
+
     use crate::{
-        boosting_oracles::assignment::HexAssignments,
         cell_type::CellType,
         coverage::{CoveredHexStream, HexCoverage, Seniority},
         data_session::{self, HotspotDataSession, HotspotReward},

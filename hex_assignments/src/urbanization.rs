@@ -1,13 +1,11 @@
-use std::path::Path;
-
 use chrono::{DateTime, Utc};
 use hextree::disktree::DiskTreeMap;
 
-use super::{Assignment, DataSet, DataSetType, HexAssignment};
+use super::{Assignment, HexAssignment};
 
 pub struct Urbanization {
-    urbanized: Option<DiskTreeMap>,
-    timestamp: Option<DateTime<Utc>>,
+    pub urbanized: Option<DiskTreeMap>,
+    pub timestamp: Option<DateTime<Utc>>,
 }
 
 impl Urbanization {
@@ -29,25 +27,6 @@ impl Urbanization {
 impl Default for Urbanization {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[async_trait::async_trait]
-impl DataSet for Urbanization {
-    const TYPE: DataSetType = DataSetType::Urbanization;
-
-    fn timestamp(&self) -> Option<DateTime<Utc>> {
-        self.timestamp
-    }
-
-    fn update(&mut self, path: &Path, time_to_use: DateTime<Utc>) -> anyhow::Result<()> {
-        self.urbanized = Some(DiskTreeMap::open(path)?);
-        self.timestamp = Some(time_to_use);
-        Ok(())
-    }
-
-    fn is_ready(&self) -> bool {
-        self.urbanized.is_some()
     }
 }
 

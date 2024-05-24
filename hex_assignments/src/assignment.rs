@@ -150,7 +150,6 @@ impl HexAssignmentsBuilder {
     }
 }
 
-#[cfg(test)]
 impl HexAssignments {
     pub fn test_best() -> Self {
         Self {

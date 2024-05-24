@@ -1,5 +1,4 @@
 use crate::{
-    boosting_oracles::assignment::HexAssignments,
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized, Settings,
 };
@@ -23,6 +22,7 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
+use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
 use mobile_config::{
     boosted_hex_info::{BoostedHex, BoostedHexes},
