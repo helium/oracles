@@ -123,6 +123,8 @@ services:
     volumes:
       - ./verifier/settings.toml:/opt/mobile-verifier/etc/settings.toml
       - ./verifier/keypair.bin:/opt/mobile-verifier/etc/keypair.bin
+      - ./verifier/usa_and_mexico_geofence_regions:/opt/mobile-verifier/usa_and_mexico_geofence_regions
+      - ./verifier/usa_geofence_regions:/opt/mobile-verifier/usa_geofence_regions
 
 volumes:
   postgres-data:

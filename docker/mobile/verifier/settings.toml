@@ -7,20 +7,9 @@ data_sets_directory = "/opt/mobile-verifier/data_sets_directory"
 usa_and_mexico_geofence_regions = "/opt/mobile-verifier/usa_and_mexico_geofence_regions"
 usa_geofence_regions = "/opt/mobile-verifier/usa_geofence_regions"
 
-[data_sets]
-bucket = "mobile-verifier-data-sets"
-region = "us-east-1"
-endpoint = "http://localstack:4566"
-
 [database]
 url = "postgres://postgres:postgres@postgres:5432/mobile_verifier"
 max_connections = 10
-
-[config_client]
-url = "http://config:9081/"
-signing_keypair = "/opt/mobile-verifier/etc/keypair.bin"
-config_pubkey = "14FGkBKPAdBuCtKGFkSnUmvoUBkJGjKVLrPrNLXKN3NgMiLTtwm"
-# ./target/release/mobile-config-cli env info --keypair=docker/mobile/verifier/keypair.bin
 
 [ingest]
 bucket = "mobile-ingest"
@@ -32,6 +21,19 @@ bucket = "mobile-packet-verifier"
 region = "us-east-1"
 endpoint = "http://localstack:4566"
 
+[output]
+bucket = "mobile-verifier"
+region = "us-east-1"
+endpoint = "http://localstack:4566"
+
+[data_sets]
+bucket = "mobile-verifier-data-sets"
+region = "us-east-1"
+endpoint = "http://localstack:4566"
+
+[metrics]
+endpoint = "0.0.0.0:19000"
+
 [price_tracker]
 price_duration_minutes = 10
 
@@ -40,10 +42,8 @@ bucket = "mobile-price"
 region = "us-east-1"
 endpoint = "http://localstack:4566"
 
-[output]
-bucket = "mobile-verifier"
-region = "us-east-1"
-endpoint = "http://localstack:4566"
-
-[metrics]
-endpoint = "0.0.0.0:19000"
+[config_client]
+url = "http://config:9081/"
+signing_keypair = "/opt/mobile-verifier/etc/keypair.bin"
+config_pubkey = "14FGkBKPAdBuCtKGFkSnUmvoUBkJGjKVLrPrNLXKN3NgMiLTtwm"
+# ./target/release/mobile-config-cli env info --keypair=docker/mobile/verifier/keypair.bin
