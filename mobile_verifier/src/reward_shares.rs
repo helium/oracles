@@ -696,7 +696,7 @@ pub fn get_scheduled_tokens_for_oracles(duration: Duration) -> Decimal {
 #[cfg(test)]
 mod test {
     use super::*;
-    use hex_assignments::assignment::HexAssignments;
+    use hex_assignments::{assignment::HexAssignments, Assignment};
 
     use crate::{
         cell_type::CellType,
@@ -718,6 +718,14 @@ mod test {
     use prost::Message;
     use std::collections::HashMap;
     use uuid::Uuid;
+
+    fn hex_assignments_mock() -> HexAssignments {
+        HexAssignments {
+            footfall: Assignment::A,
+            urbanized: Assignment::A,
+            landtype: Assignment::A,
+        }
+    }
 
     #[test]
     fn ensure_correct_conversion_of_bytes_to_bones() {
@@ -1007,7 +1015,7 @@ mod test {
             signal_power: 0,
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
-            assignments: HexAssignments::test_best(),
+            assignments: hex_assignments_mock(),
         }]
     }
 
@@ -1890,7 +1898,7 @@ mod test {
                             coverage_points: CoverageRewardPoints {
                                 boost_multiplier: NonZeroU32::new(1).unwrap(),
                                 coverage_points: dec!(10.0),
-                                hex_assignments: HexAssignments::test_best(),
+                                hex_assignments: hex_assignments_mock(),
                                 rank: None,
                             },
                             boosted_hex: BoostedHex {
