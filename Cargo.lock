@@ -3496,6 +3496,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex-assignments"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "derive_builder",
+ "helium-proto",
+ "hextree",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "sqlx",
+]
+
+[[package]]
 name = "hex-literal"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4712,6 +4727,7 @@ dependencies = [
  "h3o",
  "helium-crypto",
  "helium-proto",
+ "hex-assignments",
  "hextree",
  "http-serde",
  "humantime",

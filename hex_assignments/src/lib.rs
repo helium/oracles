@@ -24,6 +24,10 @@ impl HexAssignment for Assignment {
     }
 }
 
+pub trait HexBoostDataAssignments: Send + Sync + 'static {
+    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments>;
+}
+
 #[derive(derive_builder::Builder)]
 #[builder(pattern = "owned")]
 pub struct HexBoostData<Foot, Land, Urban> {
@@ -37,13 +41,13 @@ impl<F, L, U> HexBoostData<F, L, U> {
     }
 }
 
-impl<Foot, Land, Urban> HexBoostData<Foot, Land, Urban>
+impl<Foot, Land, Urban> HexBoostDataAssignments for HexBoostData<Foot, Land, Urban>
 where
     Foot: HexAssignment,
     Land: HexAssignment,
     Urban: HexAssignment,
 {
-    pub fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
+    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
         HexAssignments::builder(cell)
             .footfall(&self.footfall)
             .landtype(&self.landtype)
