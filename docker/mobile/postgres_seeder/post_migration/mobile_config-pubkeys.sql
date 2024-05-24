@@ -10,7 +10,6 @@ VALUES
     ) ON CONFLICT (pubkey, key_role) DO
 UPDATE
 SET
-    created_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP;
 
 INSERT INTO
@@ -25,7 +24,6 @@ VALUES
     ) ON CONFLICT (pubkey, key_role) DO
 UPDATE
 SET
-    created_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP;
 
 INSERT INTO
@@ -40,5 +38,4 @@ VALUES
     ) ON CONFLICT (pubkey, key_role) DO
 UPDATE
 SET
-    created_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP;
