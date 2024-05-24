@@ -5,8 +5,8 @@ pub mod urbanization;
 
 use std::collections::HashMap;
 
-use assignment::HexAssignments;
 pub use assignment::Assignment;
+use assignment::HexAssignments;
 
 pub trait HexAssignment: Send + Sync + 'static {
     fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
@@ -268,4 +268,3 @@ mod tests {
         Ok(())
     }
 }
-
