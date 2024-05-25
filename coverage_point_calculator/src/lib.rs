@@ -4,9 +4,7 @@
 /// thorough explanation of many of them. It is not exhaustive, but a great
 /// place to start.
 ///
-/// The coverage_points calculation in [`LocalRadio.coverage_points()`] are
-/// comprised the following fields.
-///
+/// ## Fields:
 /// - estimated_coverage_points
 ///   - [HIP-74][modeled-coverage]
 ///   - reduced cbrs radio coverage points [HIP-113][cbrs-experimental]
@@ -15,27 +13,25 @@
 /// - rank
 ///   - [HIP-105][hex-limits]
 /// - hex_boost_multiplier  
-///   - [HIP-84][provider-boosting]
+///   - must meet minimum subscriber thresholds [HIP-84][provider-boosting]
+///   - Wifi Location trust score >0.75 for boosted hex eligibility [HIP-93][wifi-aps]
 /// - location_trust_score_multiplier
 ///   - [HIP-98][qos-score]
+///   - increase Boosted hex restriction, 30m -> 50m [HIP-93][boosted-hex-restriction]
 /// - speedtest_multiplier
 ///   - [HIP-74][modeled-coverage]
 ///   - added "Good" speedtest tier [HIP-98][qos-score]
 ///
-/// [modeled-coverage]:
-///     https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
-/// [cbrs-experimental]:
-///     https://github.com/helium/HIP/blob/main/0113-reward-cbrs-as-experimental.md
-/// [oracle-boosting]:
-///     https://github.com/helium/HIP/blob/main/0103-oracle-hex-boosting.md
-/// [hex-limits]:
-///     https://github.com/helium/HIP/blob/main/0105-modification-of-mobile-subdao-hex-limits.md
-/// [provider-boosting]:
-///     https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md#mechanics-and-price-of-boosting-hexes
-/// [qos-score]:
-///     https://github.com/helium/HIP/blob/main/0098-mobile-subdao-quality-of-service-requirements.md
-/// [mobile-poc-blog]:
-///     https://docs.helium.com/mobile/proof-of-coverage
+/// ## References:
+/// [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
+/// [cbrs-experimental]:       https://github.com/helium/HIP/blob/main/0113-reward-cbrs-as-experimental.md
+/// [oracle-boosting]:         https://github.com/helium/HIP/blob/main/0103-oracle-hex-boosting.md
+/// [hex-limits]:              https://github.com/helium/HIP/blob/main/0105-modification-of-mobile-subdao-hex-limits.md
+/// [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
+/// [qos-score]:               https://github.com/helium/HIP/blob/main/0098-mobile-subdao-quality-of-service-requirements.md
+/// [wifi-aps]:                https://github.com/helium/HIP/blob/main/0093-addition-of-wifi-aps-to-mobile-subdao.md
+/// [mobile-poc-blog]:         https://docs.helium.com/mobile/proof-of-coverage
+/// [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
 ///
 /// To Integrate in Docs:
 ///
@@ -46,20 +42,15 @@
 /// for boosted hexes.
 /// https://github.com/helium/HIP/blob/8b1e814afa61a714b5ba63d3265e5897ab4c5116/0107-preventing-gaming-within-the-mobile-network.md
 ///
-/// From  Madninja:
-/// A res 12 hex is 307m^2 which makes for a width of about 17m.
-/// Since both the asserted location and the skyhook location are snapped to the
-/// center of the res 12 hex they are in some distances are up over 30m (17 * 2
-/// > 30) away from where the hotspots actually are. In addition skyhook drift
-/// can cause this to drift around a bit (we've seen 10-15m). To take both
-/// snapping and some skyhook slop into account the distance between asserted
-/// and inferred locations was increase from 30 to 50m
-///
-pub mod speedtest;
-
-use crate::speedtest::{Speedtest, SpeedtestTier};
+use crate::{
+    location::{LocationTrust, LocationTrustScores},
+    speedtest::{Speedtest, SpeedtestTier},
+};
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
+
+pub mod location;
+pub mod speedtest;
 
 pub type Rank = std::num::NonZeroUsize;
 type Multiplier = std::num::NonZeroU32;
@@ -129,66 +120,6 @@ pub fn make_rewardable_radio(
         location_trust_scores: LocationTrustScores::new(radio.location_trust_scores()),
         verified_radio_threshold: radio.verified_radio_threshold(),
         covered_hexes: CoveredHexes::new(coverage_map.hexes(radio)),
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct Meters(u32);
-
-impl Meters {
-    pub fn new(meters: u32) -> Self {
-        Self(meters)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LocationTrust {
-    pub distance_to_asserted: Meters,
-    pub trust_score: Decimal,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LocationTrustScores {
-    boosted_multiplier: Decimal,
-    unboosted_multiplier: Decimal,
-    trust_scores: Vec<LocationTrust>,
-}
-
-impl LocationTrustScores {
-    fn new(trust_scores: Vec<LocationTrust>) -> Self {
-        let boosted_multiplier = Self::boosted_multiplier(&trust_scores);
-        let unboosted_multiplier = Self::unboosted_multiplier(&trust_scores);
-        Self {
-            boosted_multiplier,
-            unboosted_multiplier,
-            trust_scores,
-        }
-    }
-
-    fn boosted_multiplier(trust_scores: &[LocationTrust]) -> Decimal {
-        const RESTRICTIVE_MAX_DISTANCE: Meters = Meters(50);
-        // Cap multipliers to 0.25x when a radio covers _any_ boosted hex
-        // and it's distance to asserted is above the threshold.
-        let count = Decimal::from(trust_scores.len());
-        let scores: Decimal = trust_scores
-            .iter()
-            .map(|l| {
-                if l.distance_to_asserted > RESTRICTIVE_MAX_DISTANCE {
-                    dec!(0.25).min(l.trust_score)
-                } else {
-                    l.trust_score
-                }
-            })
-            .sum();
-
-        scores / count
-    }
-
-    fn unboosted_multiplier(trust_scores: &[LocationTrust]) -> Decimal {
-        let count = Decimal::from(trust_scores.len());
-        let scores: Decimal = trust_scores.iter().map(|l| l.trust_score).sum();
-
-        scores / count
     }
 }
 
@@ -401,7 +332,10 @@ impl RewardableRadio {
 #[cfg(test)]
 mod tests {
 
-    use crate::speedtest::{BytesPs, Millis};
+    use crate::{
+        location::Meters,
+        speedtest::{BytesPs, Millis},
+    };
 
     use super::*;
     use rust_decimal_macros::dec;

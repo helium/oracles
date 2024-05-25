@@ -1,10 +1,11 @@
 use std::{collections::HashMap, num::NonZeroU32};
 
 use coverage_point_calculator::{
-    calculate_coverage_points, make_rewardable_radio, make_rewardable_radios,
+    calculate_coverage_points,
+    location::{LocationTrust, Meters},
+    make_rewardable_radio, make_rewardable_radios,
     speedtest::{BytesPs, Millis, Speedtest},
-    Assignment, Assignments, CoverageMap, CoveredHex, LocationTrust, Meters, Radio, RadioType,
-    Rank, SignalLevel,
+    Assignment, Assignments, CoverageMap, CoveredHex, Radio, RadioType, Rank, SignalLevel,
 };
 use rust_decimal_macros::dec;
 
