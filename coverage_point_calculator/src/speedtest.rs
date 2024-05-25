@@ -15,7 +15,7 @@ impl BytesPs {
         Self(megabytes_per_second * 12500)
     }
 
-    fn to_mbps(&self) -> u64 {
+    fn as_mbps(&self) -> u64 {
         self.0 / 12500
     }
 }
@@ -97,7 +97,7 @@ impl SpeedtestTier {
     // I find this confusing
 
     fn from_download(bytes: &BytesPs) -> Self {
-        match bytes.to_mbps() {
+        match bytes.as_mbps() {
             100.. => Self::Good,
             75.. => Self::Acceptable,
             50.. => Self::Degraded,
@@ -107,7 +107,7 @@ impl SpeedtestTier {
     }
 
     fn from_upload(bytes: &BytesPs) -> Self {
-        match bytes.to_mbps() {
+        match bytes.as_mbps() {
             10.. => Self::Good,
             8.. => Self::Acceptable,
             5.. => Self::Degraded,
