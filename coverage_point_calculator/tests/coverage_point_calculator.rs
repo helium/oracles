@@ -6,6 +6,7 @@ use coverage_point_calculator::{
     make_rewardable_radio, make_rewardable_radios,
     speedtest::{BytesPs, Millis, Speedtest},
     Assignment, Assignments, CoverageMap, CoveredHex, Radio, RadioType, Rank, SignalLevel,
+    SubscriberThreshold,
 };
 use rust_decimal_macros::dec;
 
@@ -41,8 +42,8 @@ fn base_radio_coverage_points() {
             }]
         }
 
-        fn verified_radio_threshold(&self) -> bool {
-            true
+        fn verified_radio_threshold(&self) -> SubscriberThreshold {
+            SubscriberThreshold::Verified
         }
     }
 
@@ -124,8 +125,8 @@ fn radio_unique_coverage() {
             }]
         }
 
-        fn verified_radio_threshold(&self) -> bool {
-            true
+        fn verified_radio_threshold(&self) -> SubscriberThreshold {
+            SubscriberThreshold::Verified
         }
     }
 

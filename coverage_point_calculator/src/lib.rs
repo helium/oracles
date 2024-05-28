@@ -62,7 +62,7 @@ pub trait Radio {
     fn radio_type(&self) -> RadioType;
     fn speedtests(&self) -> Vec<Speedtest>;
     fn location_trust_scores(&self) -> Vec<LocationTrust>;
-    fn verified_radio_threshold(&self) -> bool;
+    fn verified_radio_threshold(&self) -> SubscriberThreshold;
 }
 
 pub trait CoverageMap {
@@ -239,11 +239,17 @@ pub struct CoveragePoints {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum SubscriberThreshold {
+    Verified,
+    UnVerified,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct RewardableRadio {
     pub radio_type: RadioType,
     pub speedtests: Vec<Speedtest>,
     pub location_trust_scores: LocationTrustScores,
-    pub verified_radio_threshold: bool,
+    pub verified_radio_threshold: SubscriberThreshold,
     pub covered_hexes: CoveredHexes,
 }
 
@@ -292,7 +298,7 @@ impl RewardableRadio {
             return dec!(1);
         }
         // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
-        if !self.verified_radio_threshold {
+        if !self.subscriber_threshold_met() {
             return dec!(1);
         }
 
@@ -328,6 +334,10 @@ impl RewardableRadio {
             RadioType::IndoorCbrs | RadioType::OutdoorCbrs
         )
     }
+
+    fn subscriber_threshold_met(&self) -> bool {
+        matches!(self.verified_radio_threshold, SubscriberThreshold::Verified)
+    }
 }
 
 #[cfg(test)]
@@ -349,7 +359,7 @@ mod tests {
             radio_type: RadioType::IndoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: trusted_location,
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
@@ -377,7 +387,7 @@ mod tests {
             radio_type: RadioType::IndoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: trusted_location,
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
@@ -403,7 +413,7 @@ mod tests {
             radio_type: RadioType::IndoorCbrs,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
@@ -478,7 +488,7 @@ mod tests {
             radio_type: RadioType::IndoorCbrs,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 // yellow - POI ≥ 1 Urbanized
                 local_hex(A, A, A), // 100
@@ -529,7 +539,7 @@ mod tests {
             radio_type: RadioType::OutdoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
@@ -574,7 +584,7 @@ mod tests {
             radio_type: RadioType::IndoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
@@ -615,7 +625,7 @@ mod tests {
                 dec!(0.3),
                 dec!(0.4),
             ]),
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
@@ -637,7 +647,7 @@ mod tests {
             radio_type: RadioType::IndoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
@@ -661,7 +671,7 @@ mod tests {
         );
 
         // When the radio is not verified for boosted rewards, the boost has no effect.
-        indoor_wifi.verified_radio_threshold = false;
+        indoor_wifi.verified_radio_threshold = SubscriberThreshold::UnVerified;
         assert_eq!(
             dec!(500),
             calculate_coverage_points(indoor_wifi).coverage_points
@@ -674,7 +684,7 @@ mod tests {
             radio_type: RadioType::OutdoorCbrs,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
@@ -707,7 +717,7 @@ mod tests {
             radio_type: RadioType::IndoorCbrs,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
@@ -728,7 +738,7 @@ mod tests {
             radio_type: RadioType::OutdoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
@@ -761,7 +771,7 @@ mod tests {
             radio_type: RadioType::IndoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: true,
+            verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     rank: Rank::new(1).unwrap(),
