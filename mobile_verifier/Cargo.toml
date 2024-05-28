@@ -57,7 +57,7 @@ derive_builder = { workspace = true }
 regex = "1"
 humantime-serde = { workspace = true }
 custom-tracing = { path = "../custom_tracing" }
-hex-assignments = {path = "../hex_assignments"}
+hex-assignments = { path = "../hex_assignments" }
 
 [dev-dependencies]
 backon = "0"
