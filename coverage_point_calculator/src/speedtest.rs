@@ -86,16 +86,6 @@ impl SpeedtestTier {
         }
     }
 
-    // FIXME: The modeled coverage blog post declares all comparisons as non-inclusive.
-    // And in the blog post, the UI shows what appear to be inclusive ranges.
-    //
-    // Speed Test Tier
-    // Acceptable	100+ Download, AND 10+ Upload, AND <50 Latency
-    // In the UI
-    // Acceptable: 0-50ms
-    //
-    // I find this confusing
-
     fn from_download(bytes: &BytesPs) -> Self {
         match bytes.as_mbps() {
             100.. => Self::Good,
@@ -117,12 +107,11 @@ impl SpeedtestTier {
     }
 
     fn from_latency(Millis(millis): &Millis) -> Self {
-        // FIXME: comparison in mobile-verifier is non-inclusive
         match millis {
-            ..=50 => Self::Good,
-            ..=60 => Self::Acceptable,
-            ..=75 => Self::Degraded,
-            ..=100 => Self::Poor,
+            ..=49 => Self::Good,
+            ..=59 => Self::Acceptable,
+            ..=74 => Self::Degraded,
+            ..=99 => Self::Poor,
             _ => Self::Fail,
         }
     }
@@ -150,10 +139,10 @@ mod tests {
         assert_eq!(Fail, SpeedtestTier::from_upload(&BytesPs::mbps(1)));
 
         // latency
-        assert_eq!(Good, SpeedtestTier::from_latency(&Millis::new(50)));
-        assert_eq!(Acceptable, SpeedtestTier::from_latency(&Millis::new(60)));
-        assert_eq!(Degraded, SpeedtestTier::from_latency(&Millis::new(75)));
-        assert_eq!(Poor, SpeedtestTier::from_latency(&Millis::new(100)));
+        assert_eq!(Good, SpeedtestTier::from_latency(&Millis::new(49)));
+        assert_eq!(Acceptable, SpeedtestTier::from_latency(&Millis::new(59)));
+        assert_eq!(Degraded, SpeedtestTier::from_latency(&Millis::new(74)));
+        assert_eq!(Poor, SpeedtestTier::from_latency(&Millis::new(99)));
         assert_eq!(Fail, SpeedtestTier::from_latency(&Millis::new(101)));
     }
 }
