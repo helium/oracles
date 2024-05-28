@@ -285,9 +285,9 @@ impl RewardableRadio {
         }
 
         if self.any_hexes_boosted() {
-            self.location_trust_scores.boosted_multiplier
+            self.location_trust_scores.any_hex_boosted_multiplier
         } else {
-            self.location_trust_scores.unboosted_multiplier
+            self.location_trust_scores.no_boosted_hex_multiplier
         }
     }
 

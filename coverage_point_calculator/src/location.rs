@@ -12,8 +12,8 @@ impl Meters {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocationTrustScores {
-    pub boosted_multiplier: Decimal,
-    pub unboosted_multiplier: Decimal,
+    pub any_hex_boosted_multiplier: Decimal,
+    pub no_boosted_hex_multiplier: Decimal,
     trust_scores: Vec<LocationTrust>,
 }
 
@@ -28,8 +28,8 @@ impl LocationTrustScores {
         let boosted_multiplier = boosted_multiplier(&trust_scores);
         let unboosted_multiplier = unboosted_multiplier(&trust_scores);
         Self {
-            boosted_multiplier,
-            unboosted_multiplier,
+            any_hex_boosted_multiplier: boosted_multiplier,
+            no_boosted_hex_multiplier: unboosted_multiplier,
             trust_scores,
         }
     }
