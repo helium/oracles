@@ -21,6 +21,7 @@
 /// - speedtest_multiplier
 ///   - [HIP-74][modeled-coverage]
 ///   - added "Good" speedtest tier [HIP-98][qos-score]
+///     - latency is explicitly under limit in HIP https://github.com/helium/oracles/pull/737
 ///
 /// ## References:
 /// [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
@@ -339,6 +340,62 @@ mod tests {
 
     use super::*;
     use rust_decimal_macros::dec;
+
+    #[test]
+    fn hip_84_radio_meets_minimum_subscriber_threshold_for_boosted_hexes() {
+        let trusted_location = LocationTrustScores::with_trust_scores(&[dec!(1), dec!(1)]);
+        let untrusted_location = LocationTrustScores::with_trust_scores(&[dec!(0.1), dec!(0.2)]);
+        let mut wifi = RewardableRadio {
+            radio_type: RadioType::IndoorWifi,
+            speedtests: Speedtest::maximum(),
+            location_trust_scores: trusted_location,
+            verified_radio_threshold: true,
+            covered_hexes: CoveredHexes::new(vec![CoveredHex {
+                rank: Rank::new(1).unwrap(),
+                signal_level: SignalLevel::High,
+                assignments: Assignments::maximum(),
+                boosted: Multiplier::new(5),
+            }]),
+        };
+
+        let base_points = RadioType::IndoorWifi.base_coverage_points(&SignalLevel::High);
+        // Boosted Hex get's radio over the base_points
+        assert!(wifi.location_trust_multiplier() > dec!(0.75));
+        assert!(calculate_coverage_points(wifi.clone()).coverage_points > base_points);
+
+        // degraded location score get's radio under base_points
+        wifi.location_trust_scores = untrusted_location;
+        assert!(wifi.location_trust_multiplier() < dec!(0.75));
+        assert!(calculate_coverage_points(wifi).coverage_points < base_points);
+    }
+
+    #[test]
+    fn hip_93_wifi_with_low_location_score_receives_no_boosted_hexes() {
+        let trusted_location = LocationTrustScores::with_trust_scores(&[dec!(1), dec!(1)]);
+        let untrusted_location = LocationTrustScores::with_trust_scores(&[dec!(0.1), dec!(0.2)]);
+        let mut wifi = RewardableRadio {
+            radio_type: RadioType::IndoorWifi,
+            speedtests: Speedtest::maximum(),
+            location_trust_scores: trusted_location,
+            verified_radio_threshold: true,
+            covered_hexes: CoveredHexes::new(vec![CoveredHex {
+                rank: Rank::new(1).unwrap(),
+                signal_level: SignalLevel::High,
+                assignments: Assignments::maximum(),
+                boosted: Multiplier::new(5),
+            }]),
+        };
+
+        let base_points = RadioType::IndoorWifi.base_coverage_points(&SignalLevel::High);
+        // Boosted Hex get's radio over the base_points
+        assert!(wifi.location_trust_multiplier() > dec!(0.75));
+        assert!(calculate_coverage_points(wifi.clone()).coverage_points > base_points);
+
+        // degraded location score get's radio under base_points
+        wifi.location_trust_scores = untrusted_location;
+        assert!(wifi.location_trust_multiplier() < dec!(0.75));
+        assert!(calculate_coverage_points(wifi).coverage_points < base_points);
+    }
 
     #[test]
     fn speedtest() {
