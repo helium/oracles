@@ -6,6 +6,9 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
-[dev-dependencies]
+[dependencies]
 anyhow = { workspace = true }
 tokio = { workspace = true }
+clap = { workspace = true }
+hextree = { workspace = true }
+flate2 = "1"
