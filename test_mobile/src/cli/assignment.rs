@@ -1,12 +1,11 @@
 use std::{
-    fs::{self, File},
-    io,
+    io::Cursor,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Result;
-use flate2::{write::GzEncoder, Compression};
 use hextree::{Cell, HexTreeMap};
+use tokio::{fs::File, io::AsyncWriteExt};
 
 /// Generate footfall, landtype and urbanization
 #[derive(Debug, clap::Args)]
@@ -100,33 +99,29 @@ impl Cmd {
         urbanized.insert(outer_11_cell, 0);
         urbanized.insert(outer_12_cell, 0);
 
-        hex_tree_map_to_file(urbanized, "urbanized")?;
-        hex_tree_map_to_file(footfall, "footfall")?;
-        hex_tree_map_to_file(landtype, "landtype")?;
+        hex_tree_map_to_file(urbanized, "urbanized").await?;
+        hex_tree_map_to_file(footfall, "footfall").await?;
+        hex_tree_map_to_file(landtype, "landtype").await?;
 
         Ok(())
     }
 }
 
-fn hex_tree_map_to_file(map: HexTreeMap<u8>, name: &str) -> Result<()> {
+async fn hex_tree_map_to_file(map: HexTreeMap<u8>, name: &str) -> anyhow::Result<()> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
 
-    let file_name = format!("{name}.{now}");
-    let data_file = File::create(file_name.clone())?;
+    let file_name = format!("{name}.{now}.gz");
+    let disktree_file = File::create(file_name.clone()).await?;
 
-    map.to_disktree(data_file, |w, v| w.write_all(&[*v]))?;
+    let mut data = vec![];
+    map.to_disktree(Cursor::new(&mut data), |w, v| w.write_all(&[*v]))?;
 
-    let mut input = io::BufReader::new(File::open(file_name.clone())?);
-    let output = File::create(format!("{}.gz", file_name.clone()))?;
-
-    let mut encoder = GzEncoder::new(output, Compression::default());
-    io::copy(&mut input, &mut encoder)?;
-    encoder.finish()?;
-
-    fs::remove_file(file_name.clone())?;
+    let mut writer = async_compression::tokio::write::GzipEncoder::new(disktree_file);
+    writer.write_all(&data).await?;
+    writer.shutdown().await?;
 
     Ok(())
 }

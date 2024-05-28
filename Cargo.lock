@@ -7852,6 +7852,7 @@ name = "test-mobile"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-compression",
  "clap 4.4.8",
  "flate2",
  "hextree",

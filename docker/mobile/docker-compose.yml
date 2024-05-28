@@ -120,11 +120,13 @@ services:
       - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
       - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
+      - RUST_BACKTRACE=1
     volumes:
       - ./verifier/settings.toml:/opt/mobile-verifier/etc/settings.toml
       - ./verifier/keypair.bin:/opt/mobile-verifier/etc/keypair.bin
-      - ./verifier/usa_and_mexico_geofence_regions:/opt/mobile-verifier/usa_and_mexico_geofence_regions
-      - ./verifier/usa_geofence_regions:/opt/mobile-verifier/usa_geofence_regions
+      - ./verifier/usa_and_mexico_geofence_regions/mexico.txt:/opt/mobile-verifier/usa_and_mexico_geofence_regions/mexico.txt
+      - ./verifier/usa_and_mexico_geofence_regions/us-territories.txt:/opt/mobile-verifier/usa_and_mexico_geofence_regions/us-territories.txt
+      - ./verifier/usa_geofence_regions/us-territories.txt:/opt/mobile-verifier/usa_geofence_regions/us-territories.txt
 
 volumes:
   postgres-data:
