@@ -11,5 +11,6 @@ anyhow = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "fs"] }
 clap = { workspace = true }
 hextree = { workspace = true }
-flate2 = "1"
+helium-proto = { workspace = true }
+file-store = { path = "../file_store" }
 async-compression = { version = "0", features = ["tokio", "gzip"] }

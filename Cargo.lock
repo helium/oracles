@@ -7854,7 +7854,8 @@ dependencies = [
  "anyhow",
  "async-compression",
  "clap 4.4.8",
- "flate2",
+ "file-store",
+ "helium-proto",
  "hextree",
  "tokio",
 ]

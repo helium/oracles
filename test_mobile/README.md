@@ -2,9 +2,11 @@
 
 # Setup
 
-## 1. Generate Mobile Verifier data
+## 1. Generate data
 
-`../target/release/test-mobile assignment` and move files [^files] to `docker/mobile/localstack/data/mobile-verifier-data-sets`
+`test-mobile assignment` and move generated files [^files] to `docker/mobile/localstack/data/mobile-verifier-data-sets/`
+
+`test-mobile price` and move generated file to `docker/mobile/localstack/data/mobile-price/`
 
 ## 2. Build Docker images
 
