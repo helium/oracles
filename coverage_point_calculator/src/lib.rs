@@ -54,19 +54,20 @@ pub mod location;
 pub mod speedtest;
 
 pub type Rank = std::num::NonZeroUsize;
-type Multiplier = std::num::NonZeroU32;
+pub type Multiplier = std::num::NonZeroU32;
 pub type MaxOneMultplier = Decimal;
 type Points = Decimal;
 
-pub trait Radio {
+pub trait Radio<Key> {
+    fn key(&self) -> Key;
     fn radio_type(&self) -> RadioType;
     fn speedtests(&self) -> Vec<Speedtest>;
     fn location_trust_scores(&self) -> Vec<LocationTrust>;
     fn verified_radio_threshold(&self) -> SubscriberThreshold;
 }
 
-pub trait CoverageMap {
-    fn hexes(&self, radio: &impl Radio) -> Vec<CoveredHex>;
+pub trait CoverageMap<Key> {
+    fn hexes(&self, radio: &impl Radio<Key>) -> Vec<CoveredHex>;
 }
 
 pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
@@ -102,18 +103,18 @@ pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
     }
 }
 
-pub fn make_rewardable_radios<'a>(
-    radios: &'a [impl Radio],
-    coverage_map: &'a impl CoverageMap,
+pub fn make_rewardable_radios<'a, K>(
+    radios: &'a [impl Radio<K>],
+    coverage_map: &'a impl CoverageMap<K>,
 ) -> impl Iterator<Item = RewardableRadio> + 'a {
     radios
         .iter()
         .map(|radio| make_rewardable_radio(radio, coverage_map))
 }
 
-pub fn make_rewardable_radio(
-    radio: &impl Radio,
-    coverage_map: &impl CoverageMap,
+pub fn make_rewardable_radio<K>(
+    radio: &impl Radio<K>,
+    coverage_map: &impl CoverageMap<K>,
 ) -> RewardableRadio {
     RewardableRadio {
         radio_type: radio.radio_type(),
