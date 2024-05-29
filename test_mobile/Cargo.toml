@@ -8,9 +8,15 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-tokio = { workspace = true, features = ["io-util", "fs"] }
-clap = { workspace = true }
-hextree = { workspace = true }
-helium-proto = { workspace = true }
-file-store = { path = "../file_store" }
 async-compression = { version = "0", features = ["tokio", "gzip"] }
+clap = { workspace = true }
+file-store = { path = "../file_store" }
+helium-proto = { workspace = true }
+hextree = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "fs"] }
+
+[dev-dependencies]
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+custom-tracing = { path = "../custom_tracing" }
+tonic = { workspace = true }

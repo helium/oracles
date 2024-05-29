@@ -7854,10 +7854,14 @@ dependencies = [
  "anyhow",
  "async-compression",
  "clap 4.4.8",
+ "custom-tracing",
  "file-store",
  "helium-proto",
  "hextree",
  "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
