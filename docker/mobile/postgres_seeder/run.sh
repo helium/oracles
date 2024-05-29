@@ -1,5 +1,26 @@
 #!/bin/bash
 
+# Description:
+#   This Bash script performs database migrations and seeding for multiple PostgreSQL databases.
+#
+# Script Overview:
+#   - Runs migrations for the 'mobile_config' database using sqlx migrate.
+#   - Runs migrations for the 'mobile_packet_verifier' database using sqlx migrate.
+#   - Runs migrations for the 'mobile_verifier' database using sqlx migrate.
+#   - Runs migrations for the 'mobile_index' database using sqlx migrate.
+#   - Executes SQL scripts for additional post-migration tasks in each database.
+#       1. Define the path to SQL script files located in the /postgres_seeder/post_migration/ directory.
+#       2. Iterate through each SQL script file found in the specified directory.
+#       3. Extract the database name from the file path using delimiters and manipulation.
+#       4. Output a message indicating the script being executed and the corresponding database.
+#       5. Use psql to connect to the PostgreSQL database and execute the SQL script.
+#
+# Key Points:
+#   - Database Migration: The script uses sqlx migrate to apply database migrations from specified sources.
+#   - Database Seeding: It executes SQL scripts located in /postgres_seeder/post_migration/ directory for additional setup tasks.
+#   - Environment Variables: Requires environment variables POSTGRES_USER, POSTGRES_PASSWORD, and POSTGRES_HOST to connect to PostgreSQL databases.
+#   - Script Output: Displays status messages and execution results for each migration and seeding step.
+
 echo "#############################################"
 echo "Running mobile-config migrations"
 sqlx migrate run --database-url postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:5432/mobile_config --source /mobile_config/migrations
