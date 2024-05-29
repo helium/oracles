@@ -1,5 +1,5 @@
 [package]
-name = "coverage_point_calculator"
+name = "coverage-point-calculator"
 version = "0.1.0"
 description = "Calculate Coverage Points for hotspots in the Mobile Network"
 authors.workspace = true
