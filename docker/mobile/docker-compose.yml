@@ -59,6 +59,7 @@ services:
       - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
       - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
+      - RUST_BACKTRACE=1
     ports:
       - 9080:9080
     volumes:
@@ -76,6 +77,7 @@ services:
     stop_grace_period: 1s
     environment:
       - PACKAGE=mobile-config
+      - RUST_BACKTRACE=1
     ports:
       - 9081:9081
     volumes:
@@ -99,6 +101,7 @@ services:
       - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
       - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
+      - RUST_BACKTRACE=1
     volumes:
       - ./packet_verifier/settings.toml:/opt/mobile-packet-verifier/etc/settings.toml
       - ./packet_verifier/keypair.bin:/opt/mobile-packet-verifier/etc/keypair.bin
@@ -127,6 +130,27 @@ services:
       - ./verifier/usa_and_mexico_geofence_regions/mexico.txt:/opt/mobile-verifier/usa_and_mexico_geofence_regions/mexico.txt
       - ./verifier/usa_and_mexico_geofence_regions/us-territories.txt:/opt/mobile-verifier/usa_and_mexico_geofence_regions/us-territories.txt
       - ./verifier/usa_geofence_regions/us-territories.txt:/opt/mobile-verifier/usa_geofence_regions/us-territories.txt
+
+  reward_index:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/Dockerfile
+      args:
+        - PACKAGE=reward-index
+    depends_on:
+        localstack:
+          condition: service_healthy
+        config:
+          condition: service_started
+    stop_grace_period: 1s
+    environment:
+      - PACKAGE=reward-index
+      - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
+      - RUST_BACKTRACE=1
+    volumes:
+      - ./reward_index/settings.toml:/opt/reward-index/etc/settings.toml
 
 volumes:
   postgres-data:

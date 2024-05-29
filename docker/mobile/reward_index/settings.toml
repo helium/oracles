@@ -1,0 +1,17 @@
+modelog = "reward_index=debug,file_store=info,custom_tracing=info"
+interval = "10 minutes"
+mode = "mobile"
+
+unallocated_reward_entity_key = "131kC5gTPFfTyzziHbh2PWz2VSdF4gDvhoC5vqCz25N7LFtDocF"
+
+[database]
+url = "postgres://postgres:postgres@postgres:5432/mobile_index"
+max_connections = 10
+
+[verifier]
+bucket = "mobile-verifier"
+region = "us-east-1"
+endpoint = "http://localstack:4566"
+
+[metrics]
+endpoint = "0.0.0.0:19000"
