@@ -268,10 +268,18 @@ impl CoveredHexes {
             hexes: covered_hexes,
         }
     }
+
+    pub fn boosted_hexes(&self) -> impl Iterator<Item = CoveredHex> {
+        self.hexes
+            .clone()
+            .into_iter()
+            .filter(|hex| hex.boosted.is_some())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoveredHex {
+    pub cell: hextree::Cell,
     pub rank: Rank,
     pub signal_level: SignalLevel,
     pub assignments: Assignments,
@@ -352,6 +360,10 @@ mod tests {
     use super::*;
     use rust_decimal_macros::dec;
 
+    fn hex_location() -> hextree::Cell {
+        hextree::Cell::from_raw(0x8c2681a3064edff).unwrap()
+    }
+
     #[test]
     fn hip_84_radio_meets_minimum_subscriber_threshold_for_boosted_hexes() {
         let trusted_location = LocationTrustScores::with_trust_scores(&[dec!(1), dec!(1)]);
@@ -362,6 +374,7 @@ mod tests {
             location_trust_scores: trusted_location,
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
+                cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
                 assignments: Assignments::maximum(),
@@ -390,6 +403,7 @@ mod tests {
             location_trust_scores: trusted_location,
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
+                cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
                 assignments: Assignments::maximum(),
@@ -416,6 +430,7 @@ mod tests {
             location_trust_scores: LocationTrustScores::maximum(),
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
+                cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
                 assignments: Assignments::maximum(),
@@ -473,6 +488,7 @@ mod tests {
             urbanized: Assignment,
         ) -> CoveredHex {
             CoveredHex {
+                cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
                 assignments: Assignments {
@@ -543,24 +559,28 @@ mod tests {
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(2).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(3).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(42).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
@@ -588,18 +608,21 @@ mod tests {
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(2).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(42).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
@@ -628,6 +651,7 @@ mod tests {
             ]),
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
+                cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
                 assignments: Assignments::maximum(),
@@ -651,12 +675,14 @@ mod tests {
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
                     assignments: Assignments::maximum(),
@@ -688,24 +714,28 @@ mod tests {
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Medium,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::None,
                     assignments: Assignments::maximum(),
@@ -721,12 +751,14 @@ mod tests {
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
                     assignments: Assignments::maximum(),
@@ -742,24 +774,28 @@ mod tests {
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Medium,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::None,
                     assignments: Assignments::maximum(),
@@ -775,12 +811,14 @@ mod tests {
             verified_radio_threshold: SubscriberThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
                     assignments: Assignments::maximum(),
                     boosted: None,
                 },
                 CoveredHex {
+                    cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
                     assignments: Assignments::maximum(),
