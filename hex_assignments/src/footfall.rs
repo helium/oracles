@@ -1,26 +1,17 @@
-use std::path::Path;
-
 use chrono::{DateTime, Utc};
 use hextree::disktree::DiskTreeMap;
 
-use super::{Assignment, DataSet, DataSetType, HexAssignment};
+use super::{Assignment, HexAssignment};
 
 pub struct Footfall {
-    footfall: Option<DiskTreeMap>,
-    timestamp: Option<DateTime<Utc>>,
+    pub footfall: Option<DiskTreeMap>,
+    pub timestamp: Option<DateTime<Utc>>,
 }
 
 impl Footfall {
-    pub fn new() -> Self {
+    pub fn new(footfall: Option<DiskTreeMap>) -> Self {
         Self {
-            footfall: None,
-            timestamp: None,
-        }
-    }
-
-    pub fn new_mock(footfall: DiskTreeMap) -> Self {
-        Self {
-            footfall: Some(footfall),
+            footfall,
             timestamp: None,
         }
     }
@@ -28,26 +19,7 @@ impl Footfall {
 
 impl Default for Footfall {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait::async_trait]
-impl DataSet for Footfall {
-    const TYPE: DataSetType = DataSetType::Footfall;
-
-    fn timestamp(&self) -> Option<DateTime<Utc>> {
-        self.timestamp
-    }
-
-    fn update(&mut self, path: &Path, time_to_use: DateTime<Utc>) -> anyhow::Result<()> {
-        self.footfall = Some(DiskTreeMap::open(path)?);
-        self.timestamp = Some(time_to_use);
-        Ok(())
-    }
-
-    fn is_ready(&self) -> bool {
-        self.footfall.is_some()
+        Self::new(None)
     }
 }
 

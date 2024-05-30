@@ -11,9 +11,10 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, OracleBoostingHexAssignment, SignalLevel,
 };
+use hex_assignments::{Assignment, HexBoostData};
 use mobile_config::boosted_hex_info::BoostedHexes;
+
 use mobile_verifier::{
-    boosting_oracles::{Assignment, HexBoostData},
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
     heartbeats::{Heartbeat, HeartbeatReward, LocationCache, SeniorityUpdate, ValidatedHeartbeat},
@@ -140,7 +141,7 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     let hexes = {
         // NOTE(mj): Cell is mutated in constructor to keep elements aligned for readability
         let mut cell = CellIndex::try_from(0x8c2681a3064d9ff)?;
-        use Assignment::*;
+        use hex_assignments::Assignment::*;
         vec![
             // yellow - POI ≥ 1 Urbanized
             new_hex_assingment(&mut cell, A, A, A, 1000),
@@ -260,7 +261,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     let hexes = {
         // NOTE(mj): Cell is mutated in constructor to keep elements aligned for readability
         let mut cell = CellIndex::try_from(0x8c2681a3064d9ff)?;
-        use Assignment::*;
+        use hex_assignments::Assignment::*;
         vec![
             // yellow - POI ≥ 1 Urbanized
             TestHex::new(&mut cell, A, A, A, 400),

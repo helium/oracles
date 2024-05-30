@@ -23,6 +23,7 @@ members = [
   "reward_scheduler",
   "solana",
   "task_manager",
+  "hex_assignments"
 ]
 resolver = "2"
 

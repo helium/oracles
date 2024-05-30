@@ -14,6 +14,7 @@ use file_store::{
 };
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile as proto;
+use hextree::disktree::DiskTreeMap;
 use lazy_static::lazy_static;
 use regex::Regex;
 use rust_decimal::prelude::ToPrimitive;
@@ -23,13 +24,13 @@ use task_manager::{ManagedTask, TaskManager};
 use tokio::{fs::File, io::AsyncWriteExt, time::Instant};
 
 use crate::{
-    boosting_oracles::assignment::HexAssignments,
     coverage::{NewCoverageObjectNotification, SignalLevel},
     Settings,
 };
 
-use super::{
-    footfall::Footfall, landtype::Landtype, urbanization::Urbanization, HexAssignment, HexBoostData,
+use hex_assignments::{
+    assignment::HexAssignments, footfall::Footfall, landtype::Landtype, urbanization::Urbanization,
+    HexAssignment, HexBoostData,
 };
 
 #[async_trait::async_trait]
@@ -104,6 +105,72 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
 
         Ok(Some(latest_unprocessed_data_set))
     }
+}
+
+#[async_trait::async_trait]
+impl DataSet for Footfall {
+    const TYPE: DataSetType = DataSetType::Footfall;
+
+    fn timestamp(&self) -> Option<DateTime<Utc>> {
+        self.timestamp
+    }
+
+    fn update(&mut self, path: &Path, time_to_use: DateTime<Utc>) -> anyhow::Result<()> {
+        self.footfall = Some(DiskTreeMap::open(path)?);
+        self.timestamp = Some(time_to_use);
+        Ok(())
+    }
+
+    fn is_ready(&self) -> bool {
+        self.footfall.is_some()
+    }
+}
+
+#[async_trait::async_trait]
+impl DataSet for Landtype {
+    const TYPE: DataSetType = DataSetType::Landtype;
+
+    fn timestamp(&self) -> Option<DateTime<Utc>> {
+        self.timestamp
+    }
+
+    fn update(&mut self, path: &Path, time_to_use: DateTime<Utc>) -> anyhow::Result<()> {
+        self.landtype = Some(DiskTreeMap::open(path)?);
+        self.timestamp = Some(time_to_use);
+        Ok(())
+    }
+
+    fn is_ready(&self) -> bool {
+        self.landtype.is_some()
+    }
+}
+
+#[async_trait::async_trait]
+impl DataSet for Urbanization {
+    const TYPE: DataSetType = DataSetType::Urbanization;
+
+    fn timestamp(&self) -> Option<DateTime<Utc>> {
+        self.timestamp
+    }
+
+    fn update(&mut self, path: &Path, time_to_use: DateTime<Utc>) -> anyhow::Result<()> {
+        self.urbanized = Some(DiskTreeMap::open(path)?);
+        self.timestamp = Some(time_to_use);
+        Ok(())
+    }
+
+    fn is_ready(&self) -> bool {
+        self.urbanized.is_some()
+    }
+}
+
+pub fn is_hex_boost_data_ready<A, B, C>(h: &HexBoostData<A, B, C>) -> bool
+where
+    A: DataSet,
+    B: DataSet,
+    C: DataSet,
+{
+    h.urbanization.is_ready() && h.footfall.is_ready() && h.landtype.is_ready()
 }
 
 pub struct DataSetDownloaderDaemon<A, B, C> {
@@ -195,9 +262,9 @@ impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization> {
             .create()
             .await?;
 
-        let urbanization = Urbanization::new();
-        let footfall = Footfall::new();
-        let landtype = Landtype::new();
+        let urbanization = Urbanization::new(None);
+        let footfall = Footfall::new(None);
+        let landtype = Landtype::new(None);
         let hex_boost_data = HexBoostData::builder()
             .footfall(footfall)
             .landtype(landtype)
@@ -268,7 +335,7 @@ where
         // hex assignments:
         let new_data_set =
             new_urbanized.is_some() || new_footfall.is_some() || new_landtype.is_some();
-        if self.data_sets.is_ready() && new_data_set {
+        if is_hex_boost_data_ready(&self.data_sets) && new_data_set {
             tracing::info!("Processing new data sets");
             set_all_oracle_boosting_assignments(
                 &self.pool,
@@ -326,7 +393,7 @@ where
 
         // Attempt to fill in any unassigned hexes. This is for the edge case in
         // which we shutdown before a coverage object updates.
-        if self.data_sets.is_ready() {
+        if is_hex_boost_data_ready(&self.data_sets) {
             set_unassigned_oracle_boosting_assignments(
                 &self.pool,
                 &self.data_sets,
@@ -342,7 +409,7 @@ where
                 _ = self.new_coverage_object_notification.await_new_coverage_object() => {
                     // If we see a new coverage object, we want to assign only those hexes
                     // that don't have an assignment
-                    if self.data_sets.is_ready() {
+                    if is_hex_boost_data_ready(&self.data_sets) {
                         set_unassigned_oracle_boosting_assignments(
                             &self.pool,
                             &self.data_sets,

@@ -12,13 +12,13 @@ use helium_proto::{
     },
     Message,
 };
+use hex_assignments::{Assignment, HexAssignment, HexBoostData};
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
-use mobile_verifier::boosting_oracles::{
-    AssignedCoverageObjects, Assignment, HexAssignment, HexBoostData,
-};
+
+use mobile_verifier::boosting_oracles::AssignedCoverageObjects;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;

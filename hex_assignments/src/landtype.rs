@@ -1,26 +1,17 @@
-use std::path::Path;
-
 use chrono::{DateTime, Utc};
 use hextree::disktree::DiskTreeMap;
 
-use super::{Assignment, DataSet, DataSetType, HexAssignment};
+use super::{Assignment, HexAssignment};
 
 pub struct Landtype {
-    landtype: Option<DiskTreeMap>,
-    timestamp: Option<DateTime<Utc>>,
+    pub landtype: Option<DiskTreeMap>,
+    pub timestamp: Option<DateTime<Utc>>,
 }
 
 impl Landtype {
-    pub fn new() -> Self {
+    pub fn new(landtype: Option<DiskTreeMap>) -> Self {
         Self {
-            landtype: None,
-            timestamp: None,
-        }
-    }
-
-    pub fn new_mock(landtype: DiskTreeMap) -> Self {
-        Self {
-            landtype: Some(landtype),
+            landtype,
             timestamp: None,
         }
     }
@@ -28,26 +19,7 @@ impl Landtype {
 
 impl Default for Landtype {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait::async_trait]
-impl DataSet for Landtype {
-    const TYPE: DataSetType = DataSetType::Landtype;
-
-    fn timestamp(&self) -> Option<DateTime<Utc>> {
-        self.timestamp
-    }
-
-    fn update(&mut self, path: &Path, time_to_use: DateTime<Utc>) -> anyhow::Result<()> {
-        self.landtype = Some(DiskTreeMap::open(path)?);
-        self.timestamp = Some(time_to_use);
-        Ok(())
-    }
-
-    fn is_ready(&self) -> bool {
-        self.landtype.is_some()
+        Self::new(None)
     }
 }
 
