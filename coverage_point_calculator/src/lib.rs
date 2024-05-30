@@ -71,26 +71,7 @@ pub trait CoverageMap<Key> {
 }
 
 pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
-    let radio_type = &radio.radio_type;
-
-    let rank_multipliers = radio_type.rank_multipliers();
-    let max_rank = rank_multipliers.len();
-
-    let hex_points = radio
-        .covered_hexes
-        .hexes
-        .iter()
-        .filter(|hex| hex.rank.get() <= max_rank)
-        .map(|hex| {
-            let base_coverage_points = radio_type.base_coverage_points(&hex.signal_level);
-            let assignments_multiplier = hex.assignments.multiplier();
-            let rank_multiplier = rank_multipliers[hex.rank.get() - 1];
-            let hex_boost_multiplier = radio.hex_boosting_multiplier(hex);
-
-            base_coverage_points * assignments_multiplier * rank_multiplier * hex_boost_multiplier
-        });
-
-    let base_points = hex_points.sum::<Decimal>();
+    let base_points = radio.hex_coverage_points();
     let location_score = radio.location_trust_multiplier();
     let speedtest = radio.speedtest_multiplier();
 
@@ -239,6 +220,27 @@ pub struct CoveragePoints {
     pub radio: RewardableRadio,
 }
 
+impl CoveragePoints {
+    // FIXME: Find a better way to communicate why values are sometimes multiplied by 1k
+    // Used to put into the proto, hence * dec!(1000)
+    pub fn reward_share_location_trust_multiplier(&self) -> u32 {
+        use rust_decimal::prelude::ToPrimitive;
+        let multiplier = self.radio.location_trust_multiplier() * dec!(1000);
+        multiplier.to_u32().unwrap_or_default()
+    }
+
+    // Used to put into the proto, hence * dec!(1000)
+    pub fn reward_share_speedtest_multiplier(&self) -> u32 {
+        use rust_decimal::prelude::ToPrimitive;
+        let multiplier = self.radio.speedtest_multiplier() * dec!(1000);
+        multiplier.to_u32().unwrap_or_default()
+    }
+
+    pub fn speedtest_multiplier(&self) -> Decimal {
+        self.radio.speedtest_multiplier()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SubscriberThreshold {
     Verified,
@@ -252,6 +254,31 @@ pub struct RewardableRadio {
     pub location_trust_scores: LocationTrustScores,
     pub verified_radio_threshold: SubscriberThreshold,
     pub covered_hexes: CoveredHexes,
+}
+
+impl RewardableRadio {
+    // These points need to be reported in the proto pre-(location, speedtest) multipliers
+    pub fn hex_coverage_points(&self) -> Decimal {
+        let rank_multipliers = self.radio_type.rank_multipliers();
+        let max_rank = rank_multipliers.len();
+
+        self.covered_hexes
+            .hexes
+            .iter()
+            .filter(|hex| hex.rank.get() <= max_rank)
+            .map(|hex| {
+                let base_coverage_points = self.radio_type.base_coverage_points(&hex.signal_level);
+                let assignments_multiplier = hex.assignments.multiplier();
+                let rank_multiplier = rank_multipliers[hex.rank.get() - 1];
+                let hex_boost_multiplier = self.hex_boosting_multiplier(hex);
+
+                base_coverage_points
+                    * assignments_multiplier
+                    * rank_multiplier
+                    * hex_boost_multiplier
+            })
+            .sum()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
