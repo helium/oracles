@@ -21,4 +21,4 @@
 
 [^files]: Maps of hexes used 
 
-![Hexes](docs/hexes.png "Hexes")
+![Hexes](docs/hexes.jpg "Hexes")
