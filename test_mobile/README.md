@@ -20,5 +20,4 @@
 **NOTE:** The test will `docker compose up` on start and `docker compose stop` at the end, it is up to **you** to `docker compose down` if you want to clean up.
 
 [^files]: Maps of hexes used 
-
 ![Hexes](docs/hexes.jpg "Hexes")
