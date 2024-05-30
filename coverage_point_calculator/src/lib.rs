@@ -279,6 +279,19 @@ impl RewardableRadio {
             })
             .sum()
     }
+
+    pub fn boosted_hexes(&self) -> impl Iterator<Item = CoveredHex> {
+        let verified = self.verified_radio_threshold == SubscriberThreshold::Verified;
+        let trust_score_past_limit = self.location_trust_multiplier() > dec!(0.75);
+
+        self.covered_hexes
+            .hexes
+            .clone()
+            .into_iter()
+            .filter(move |_| verified)
+            .filter(move |_| trust_score_past_limit)
+            .filter(|hex| hex.boosted.is_some_and(|boost| boost.get() > 1))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -294,13 +307,6 @@ impl CoveredHexes {
             any_boosted,
             hexes: covered_hexes,
         }
-    }
-
-    pub fn boosted_hexes(&self) -> impl Iterator<Item = CoveredHex> {
-        self.hexes
-            .clone()
-            .into_iter()
-            .filter(|hex| hex.boosted.is_some())
     }
 }
 
