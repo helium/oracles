@@ -55,7 +55,6 @@ services:
           condition: service_healthy
     stop_grace_period: 1s
     environment:
-      - PACKAGE=ingest
       - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
       - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
@@ -76,7 +75,6 @@ services:
           condition: service_completed_successfully
     stop_grace_period: 1s
     environment:
-      - PACKAGE=mobile-config
       - RUST_BACKTRACE=1
     ports:
       - 9081:9081
@@ -97,7 +95,6 @@ services:
           condition: service_started
     stop_grace_period: 1s
     environment:
-      - PACKAGE=mobile-packet-verifier
       - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
       - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
@@ -119,7 +116,6 @@ services:
           condition: service_started
     stop_grace_period: 1s
     environment:
-      - PACKAGE=mobile-verifier
       - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
       - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
@@ -144,7 +140,6 @@ services:
           condition: service_started
     stop_grace_period: 1s
     environment:
-      - PACKAGE=reward-index
       - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
       - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN

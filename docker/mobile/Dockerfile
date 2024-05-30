@@ -45,14 +45,15 @@ RUN cargo build --release
 # Package Runners
 FROM debian:bookworm-slim
 
-ARG PACKAGE
-
 RUN apt-get update && apt-get install -y \
     libssl-dev \
     ca-certificates
 
+ARG PACKAGE
+
 # $PACKAGE via build args
 COPY --from=builder ./target/release/$PACKAGE /opt/$PACKAGE/bin/$PACKAGE
 
-# $PACKAGE via environment
+ENV PACKAGE=${PACKAGE}
+
 CMD /opt/$PACKAGE/bin/$PACKAGE -c /opt/$PACKAGE/etc/settings.toml server
