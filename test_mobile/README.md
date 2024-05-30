@@ -1,23 +1,24 @@
 # Mobile Stack Testing
 
-# Setup
+## Setup
 
-## 1. Generate data
+### 1. Generate data
 
-**NOTE:** Data is auto generated if you do no wish to change it skip these steps. The commands are here to show how the data is generated.
+**NOTE:** Data is auto-generated. If you do not wish to change it, skip these steps. The commands are here to show how the data is generated.
 
-- `test-mobile assignment` and move generated files [^files] to `docker/mobile/localstack/data/mobile-verifier-data-sets/`
-- `test-mobile price` and move generated file to `docker/mobile/localstack/data/mobile-price/`
+- Run `test-mobile assignment` and move the generated files[^files] to `docker/mobile/localstack/data/mobile-verifier-data-sets/`
+- Run `test-mobile price` and move the generated file to `docker/mobile/localstack/data/mobile-price/`
 
-## 2. Build Docker images
+### 2. Build Docker images
 
-- `cd docker && docker compose build`
+- Navigate to the `docker` directory: `cd docker`
+- Build the Docker images: `docker compose build`
 
-## 3. Run test
+### 3. Run tests
 
-- `cargo test --package test-mobile --test integration_test -- --nocapture`
+- Run the integration tests: `cargo test --package test-mobile --test integration_test -- --nocapture`
 
-**NOTE:** The test will `docker compose up` on start and `docker compose stop` at the end, it is up to **you** to `docker compose down` if you want to clean up.
+**NOTE:** The test will `docker compose up` on start and `docker compose stop` at the end. It is up to **you** to `docker compose down` if you want to clean up.
 
 [^files]: Maps of hexes used 
 ![Hexes](docs/hexes.jpg "Hexes")
