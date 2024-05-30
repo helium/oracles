@@ -26,8 +26,7 @@ awslocal s3 mb s3://mobile-verifier-data-sets
 dirs=/tmp/data/*
 for dir in $dirs; do
     echo "Looking @ $dir"
-    readarray -d '/' -t array <<<"$dir"
-    bucket=$(echo "${array[-1]}" | tr -d '\n')
+    bucket=$(basename "$dir")
 
     for file in "$dir"/*; do
         if [[ -f "$file" ]]; then
