@@ -38,6 +38,9 @@ impl CoverageMapBuilder {
     /// A submap only contains the hexes that exist in the provided `coverage_objs` arguments. This
     /// allows for one to determine the potential ranking of new coverage objects without having
     /// to clone the entire CoverageMapBuilder.
+    // TODO(map): Should this return a `CoverageMap` instead? I don't really see the purpose of
+    // having this return a `CoverageMapBuilder` since it will probably always be converted instantly
+    // to a `CoverageMap`.
     pub fn submap(&self, coverage_objs: Vec<CoverageObject>) -> Self {
         // A different way to implement this function would be to insert all of the coverage_objs into
         // the submap, and then reconstruct the coverage objs from only the relevant hexes and then
@@ -75,6 +78,7 @@ impl CoverageMapBuilder {
     }
 
     /// Constructs a [CoverageMap] from the current `CoverageMapBuilder`
+    // TODO(map): Should this take &self and clone the data?
     pub fn build(self, boosted_hexes: &BoostedHexes, epoch_start: DateTime<Utc>) -> CoverageMap {
         let mut hotspots = HashMap::<_, Vec<RankedCoverage>>::new();
         for (radio, coverage) in
