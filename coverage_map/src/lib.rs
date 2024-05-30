@@ -137,6 +137,7 @@ pub struct UnrankedCoverage {
 
 /// Ranked hex coverage given as output from the [CoverageMap]
 pub struct RankedCoverage {
+    // TODO(map): Does this need to indicate whether the coverage is indoor or outdoor?
     pub hex: Cell,
     pub rank: Rank,
     pub cbsd_id: Option<String>,
@@ -146,22 +147,12 @@ pub struct RankedCoverage {
 }
 
 /// Rank of the hex coverage.
+// TODO(map): Should this be split into Indoor and OutdoorRank?
 pub enum Rank {
     First,
     Second,
     Third,
 }
-
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
-pub enum SignalLevel {
-    None,
-    Low,
-    Medium,
-    High,
-}
-
-pub const MAX_INDOOR_RADIOS_PER_RES12_HEX: usize = 1;
-pub const MAX_OUTDOOR_RADIOS_PER_RES12_HEX: usize = 3;
 
 impl Rank {
     pub(crate) fn from_outdoor_index(idx: usize) -> Option<Self> {
@@ -177,3 +168,14 @@ impl Rank {
         (idx == 0).then_some(Self::First)
     }
 }
+
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
+pub enum SignalLevel {
+    None,
+    Low,
+    Medium,
+    High,
+}
+
+pub const MAX_INDOOR_RADIOS_PER_RES12_HEX: usize = 1;
+pub const MAX_OUTDOOR_RADIOS_PER_RES12_HEX: usize = 3;
