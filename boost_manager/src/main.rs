@@ -105,7 +105,7 @@ impl Server {
             file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_boosted_hex_update"),
         )
-        .roll_time(Duration::from_secs(50 * 60))
+        .roll_time(Duration::from_secs(5 * 60))
         .create()
         .await?;
 
