@@ -12,7 +12,6 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 #[sqlx::test]
-#[ignore]
 async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
     let coverage_object = Uuid::new_v4();
     let heartbeat = ValidatedHeartbeat {
@@ -50,7 +49,6 @@ async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-#[ignore]
 async fn test_save_cbrs_heartbeat(pool: PgPool) -> anyhow::Result<()> {
     let coverage_object = Uuid::new_v4();
     let heartbeat = ValidatedHeartbeat {
@@ -88,7 +86,6 @@ async fn test_save_cbrs_heartbeat(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-#[ignore]
 async fn only_fetch_latest_hotspot(pool: PgPool) -> anyhow::Result<()> {
     let cbsd_id = "P27-SCE4255W120200039521XGB0103".to_string();
     let coverage_object = Uuid::new_v4();
@@ -156,7 +153,6 @@ VALUES
 }
 
 #[sqlx::test]
-#[ignore]
 async fn ensure_hotspot_does_not_affect_count(pool: PgPool) -> anyhow::Result<()> {
     let cbsd_id = "P27-SCE4255W120200039521XGB0103".to_string();
     let coverage_object = Uuid::new_v4();
@@ -212,7 +208,6 @@ VALUES
 }
 
 #[sqlx::test]
-#[ignore]
 async fn ensure_minimum_count(pool: PgPool) -> anyhow::Result<()> {
     let cbsd_id = "P27-SCE4255W120200039521XGB0103".to_string();
     let coverage_object = Uuid::new_v4();
@@ -253,7 +248,6 @@ VALUES
 }
 
 #[sqlx::test]
-#[ignore]
 async fn ensure_wifi_hotspots_are_rewarded(pool: PgPool) -> anyhow::Result<()> {
     let early_coverage_object = Uuid::new_v4();
     let latest_coverage_object = Uuid::new_v4();
@@ -305,7 +299,6 @@ VALUES
 }
 
 #[sqlx::test]
-#[ignore]
 async fn ensure_wifi_hotspots_use_average_location_trust_score(pool: PgPool) -> anyhow::Result<()> {
     let early_coverage_object = Uuid::new_v4();
     let latest_coverage_object = Uuid::new_v4();
