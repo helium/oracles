@@ -63,7 +63,7 @@ pub trait Radio<Key> {
     fn radio_type(&self) -> RadioType;
     fn speedtests(&self) -> Vec<Speedtest>;
     fn location_trust_scores(&self) -> Vec<LocationTrust>;
-    fn verified_radio_threshold(&self) -> SubscriberThreshold;
+    fn verified_radio_threshold(&self) -> RadioThreshold;
 }
 
 pub trait CoverageMap<Key> {
@@ -101,7 +101,7 @@ pub fn make_rewardable_radio<K>(
         radio_type: radio.radio_type(),
         speedtests: radio.speedtests(),
         location_trust_scores: LocationTrustScores::new(radio.location_trust_scores()),
-        verified_radio_threshold: radio.verified_radio_threshold(),
+        radio_threshold: radio.verified_radio_threshold(),
         covered_hexes: CoveredHexes::new(coverage_map.hexes(&radio.key())),
     }
 }
@@ -242,7 +242,7 @@ impl CoveragePoints {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SubscriberThreshold {
+pub enum RadioThreshold {
     Verified,
     UnVerified,
 }
@@ -252,7 +252,7 @@ pub struct RewardableRadio {
     pub radio_type: RadioType,
     pub speedtests: Vec<Speedtest>,
     pub location_trust_scores: LocationTrustScores,
-    pub verified_radio_threshold: SubscriberThreshold,
+    pub radio_threshold: RadioThreshold,
     pub covered_hexes: CoveredHexes,
 }
 
@@ -261,14 +261,14 @@ impl RewardableRadio {
         radio_type: RadioType,
         speedtests: Vec<Speedtest>,
         location_trust_scores: Vec<LocationTrust>,
-        verified_radio_threshold: SubscriberThreshold,
+        verified_radio_threshold: RadioThreshold,
         covered_hexes: Vec<CoveredHex>,
     ) -> Self {
         Self {
             radio_type,
             speedtests,
             location_trust_scores: LocationTrustScores::new(location_trust_scores),
-            verified_radio_threshold,
+            radio_threshold: verified_radio_threshold,
             covered_hexes: CoveredHexes::new(covered_hexes),
         }
     }
@@ -356,7 +356,7 @@ impl RewardableRadio {
             return dec!(1);
         }
         // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
-        if !self.subscriber_threshold_met() {
+        if !self.radio_threshold_met() {
             return dec!(1);
         }
 
@@ -393,8 +393,8 @@ impl RewardableRadio {
         )
     }
 
-    fn subscriber_threshold_met(&self) -> bool {
-        matches!(self.verified_radio_threshold, SubscriberThreshold::Verified)
+    fn radio_threshold_met(&self) -> bool {
+        matches!(self.radio_threshold, RadioThreshold::Verified)
     }
 }
 
@@ -421,7 +421,7 @@ mod tests {
             radio_type: RadioType::IndoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: trusted_location,
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
                 cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
@@ -450,7 +450,7 @@ mod tests {
             radio_type: RadioType::IndoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: trusted_location,
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
                 cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
@@ -477,7 +477,7 @@ mod tests {
             radio_type: RadioType::IndoorCbrs,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
                 cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
@@ -554,7 +554,7 @@ mod tests {
             radio_type: RadioType::IndoorCbrs,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 // yellow - POI ≥ 1 Urbanized
                 local_hex(A, A, A), // 100
@@ -605,7 +605,7 @@ mod tests {
             radio_type: RadioType::OutdoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     cell: hex_location(),
@@ -654,7 +654,7 @@ mod tests {
             radio_type: RadioType::IndoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     cell: hex_location(),
@@ -698,7 +698,7 @@ mod tests {
                 dec!(0.3),
                 dec!(0.4),
             ]),
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![CoveredHex {
                 cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
@@ -721,7 +721,7 @@ mod tests {
             radio_type: RadioType::IndoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     cell: hex_location(),
@@ -747,7 +747,7 @@ mod tests {
         );
 
         // When the radio is not verified for boosted rewards, the boost has no effect.
-        indoor_wifi.verified_radio_threshold = SubscriberThreshold::UnVerified;
+        indoor_wifi.radio_threshold = RadioThreshold::UnVerified;
         assert_eq!(
             dec!(500),
             calculate_coverage_points(indoor_wifi).coverage_points
@@ -760,7 +760,7 @@ mod tests {
             radio_type: RadioType::OutdoorCbrs,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     cell: hex_location(),
@@ -797,7 +797,7 @@ mod tests {
             radio_type: RadioType::IndoorCbrs,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     cell: hex_location(),
@@ -820,7 +820,7 @@ mod tests {
             radio_type: RadioType::OutdoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     cell: hex_location(),
@@ -857,7 +857,7 @@ mod tests {
             radio_type: RadioType::IndoorWifi,
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
-            verified_radio_threshold: SubscriberThreshold::Verified,
+            radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
                 CoveredHex {
                     cell: hex_location(),
