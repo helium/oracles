@@ -2131,7 +2131,6 @@ dependencies = [
  "helium-proto",
  "hex-assignments",
  "hextree",
- "mobile-config",
  "uuid",
 ]
 
@@ -4616,6 +4615,7 @@ dependencies = [
  "chrono",
  "clap 4.4.8",
  "config",
+ "coverage_map",
  "custom-tracing",
  "db-store",
  "file-store",

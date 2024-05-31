@@ -4,7 +4,6 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
-use mobile_config::boosted_hex_info::BoostedHexes;
 
 mod indoor;
 mod outdoor;
@@ -78,7 +77,7 @@ impl CoverageMapBuilder {
     }
 
     /// Constructs a [CoverageMap] from the current `CoverageMapBuilder`
-    pub fn build(self, boosted_hexes: &BoostedHexes, epoch_start: DateTime<Utc>) -> CoverageMap {
+    pub fn build(self, boosted_hexes: &impl BoostedHexMap, epoch_start: DateTime<Utc>) -> CoverageMap {
         let mut wifi_hotspots = HashMap::<_, Vec<RankedCoverage>>::new();
         let mut cbrs_radios = HashMap::<_, Vec<RankedCoverage>>::new();
         for coverage in into_indoor_coverage_map(self.indoor_cbrs, boosted_hexes, epoch_start)
@@ -183,4 +182,18 @@ pub enum SignalLevel {
     Low,
     Medium,
     High,
+}
+
+pub trait BoostedHexMap {
+    fn get_current_multiplier(&self, cell: Cell, ts: DateTime<Utc>) -> Option<NonZeroU32>;
+}
+
+#[cfg(test)]
+pub(crate) struct NoBoostedHexes;
+
+#[cfg(test)]
+impl BoostedHexMap for NoBoostedHexes {
+    fn get_current_multiplier(&self, _cell: Cell, _ts: DateTime<Utc>) -> Option<NonZeroU32> {
+        None
+    }
 }

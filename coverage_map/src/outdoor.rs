@@ -7,9 +7,8 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
-use mobile_config::boosted_hex_info::BoostedHexes;
 
-use crate::{CoverageObject, RankedCoverage, SignalLevel, UnrankedCoverage};
+use crate::{BoostedHexMap, CoverageObject, RankedCoverage, SignalLevel, UnrankedCoverage};
 
 /// Data structure for storing outdoor radios ranked by their coverage level
 pub type OutdoorCellTree = HashMap<Cell, BinaryHeap<OutdoorCoverageLevel>>;
@@ -97,7 +96,7 @@ pub fn clone_outdoor_coverage_into_submap(
 
 pub fn into_outdoor_coverage_map(
     outdoor: OutdoorCellTree,
-    boosted_hexes: &BoostedHexes,
+    boosted_hexes: &impl BoostedHexMap,
     epoch_start: DateTime<Utc>,
 ) -> impl Iterator<Item = RankedCoverage> + '_ {
     outdoor.into_iter().flat_map(move |(hex, radios)| {
@@ -142,7 +141,7 @@ mod test {
             insert_outdoor_coverage_object(&mut outdoor_coverage, cov_obj);
         }
         let ranked: HashMap<_, _> =
-            into_outdoor_coverage_map(outdoor_coverage, &BoostedHexes::default(), Utc::now())
+            into_outdoor_coverage_map(outdoor_coverage, &NoBoostedHexes, Utc::now())
                 .map(|x| (x.cbsd_id.clone().unwrap(), x))
                 .collect();
         assert_eq!(ranked.get("5").unwrap().rank, 1);

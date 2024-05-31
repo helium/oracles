@@ -1,5 +1,5 @@
 [package]
-name = "coverage_map"
+name = "coverage-map"
 version = "0.1.0"
 authors.workspace = true
 license.workspace = true
@@ -14,5 +14,4 @@ helium-crypto = { workspace = true }
 helium-proto = { workspace = true }
 hex-assignments = { path = "../hex_assignments" }
 hextree = { workspace = true }
-mobile-config = { path = "../mobile_config" }
 uuid = { workspace = true }

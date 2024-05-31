@@ -7,9 +7,8 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
-use mobile_config::boosted_hex_info::BoostedHexes;
 
-use crate::{CoverageObject, RankedCoverage, SignalLevel, UnrankedCoverage};
+use crate::{BoostedHexMap, CoverageObject, RankedCoverage, SignalLevel, UnrankedCoverage};
 
 pub type IndoorCellTree = HashMap<Cell, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>;
 
@@ -89,7 +88,7 @@ pub fn clone_indoor_coverage_into_submap(
 
 pub fn into_indoor_coverage_map(
     indoor: IndoorCellTree,
-    boosted_hexes: &BoostedHexes,
+    boosted_hexes: &impl BoostedHexMap,
     epoch_start: DateTime<Utc>,
 ) -> impl Iterator<Item = RankedCoverage> + '_ {
     indoor
@@ -138,7 +137,7 @@ mod test {
             insert_indoor_coverage_object(&mut indoor_coverage, cov_obj);
         }
         let ranked: HashMap<_, _> =
-            into_indoor_coverage_map(indoor_coverage, &BoostedHexes::default(), Utc::now())
+            into_indoor_coverage_map(indoor_coverage, &NoBoostedHexes, Utc::now())
                 .map(|x| (x.cbsd_id.clone().unwrap(), x))
                 .collect();
         assert_eq!(ranked.get("3").unwrap().rank, 1);
@@ -180,7 +179,7 @@ mod test {
             insert_indoor_coverage_object(&mut indoor_coverage, cov_obj);
         }
         let ranked: HashMap<_, _> =
-            into_indoor_coverage_map(indoor_coverage, &BoostedHexes::default(), Utc::now())
+            into_indoor_coverage_map(indoor_coverage, &NoBoostedHexes, Utc::now())
                 .map(|x| (x.cbsd_id.clone().unwrap(), x))
                 .collect();
         assert_eq!(ranked.get("1").unwrap().rank, 9);
