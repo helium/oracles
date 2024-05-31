@@ -2122,7 +2122,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "coverage_map"
+name = "coverage-map"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -4615,7 +4615,7 @@ dependencies = [
  "chrono",
  "clap 4.4.8",
  "config",
- "coverage_map",
+ "coverage-map",
  "custom-tracing",
  "db-store",
  "file-store",

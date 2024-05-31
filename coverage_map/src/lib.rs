@@ -77,7 +77,11 @@ impl CoverageMapBuilder {
     }
 
     /// Constructs a [CoverageMap] from the current `CoverageMapBuilder`
-    pub fn build(self, boosted_hexes: &impl BoostedHexMap, epoch_start: DateTime<Utc>) -> CoverageMap {
+    pub fn build(
+        self,
+        boosted_hexes: &impl BoostedHexMap,
+        epoch_start: DateTime<Utc>,
+    ) -> CoverageMap {
         let mut wifi_hotspots = HashMap::<_, Vec<RankedCoverage>>::new();
         let mut cbrs_radios = HashMap::<_, Vec<RankedCoverage>>::new();
         for coverage in into_indoor_coverage_map(self.indoor_cbrs, boosted_hexes, epoch_start)
