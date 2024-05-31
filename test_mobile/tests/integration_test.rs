@@ -21,8 +21,10 @@ async fn main() -> Result<()> {
         Err(e) => panic!("docker::up failed: {:?}", e),
     }
 
-    let hotspot1 = Hotspot::new().await;
-    hotspot1.submit_speedtest().await?;
+    let mut hotspot1 = Hotspot::new().await;
+
+    hotspot1.submit_speedtest(1001, 1001, 25).await?;
+    hotspot1.submit_speedtest(1002, 1002, 25).await?;
 
     let _ = tokio::time::sleep(Duration::from_secs(10)).await;
 

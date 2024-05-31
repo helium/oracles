@@ -13,6 +13,7 @@ use tonic::{metadata::MetadataValue, transport::Channel};
 pub struct Hotspot {
     client: PocMobileClient<Channel>,
     keypair: Keypair,
+    serial: String,
 }
 
 impl Hotspot {
@@ -30,17 +31,26 @@ impl Hotspot {
 
         tracing::info!("hotspot {b58} connected to ingester");
 
-        Self { client, keypair }
+        Self {
+            client,
+            keypair,
+            serial: b58,
+        }
     }
 
-    pub async fn submit_speedtest(mut self) -> Result<()> {
+    pub async fn submit_speedtest(
+        &mut self,
+        upload_speed: u64,
+        download_speed: u64,
+        latency: u32,
+    ) -> Result<()> {
         let mut speedtest_req = SpeedtestReqV1 {
             pub_key: self.keypair.public_key().into(),
-            serial: "hotspot1-serial".to_string(),
+            serial: self.serial.clone(),
             timestamp: now() as u64,
-            upload_speed: 100,
-            download_speed: 100,
-            latency: 25,
+            upload_speed,
+            download_speed,
+            latency,
             signature: vec![],
         };
 
@@ -56,9 +66,9 @@ impl Hotspot {
             .metadata_mut()
             .insert("authorization", metadata_value);
 
-        let _r = self.client.submit_speedtest(request).await?;
+        let res = self.client.submit_speedtest(request).await?;
 
-        tracing::debug!("submitted speedtest {:?}", speedtest_req);
+        tracing::debug!("submitted speedtest {:?}, {:?}", speedtest_req, res);
 
         Ok(())
     }
