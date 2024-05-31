@@ -199,7 +199,7 @@ impl SpeedtestTier {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SpeedtestAverages {
     pub averages: HashMap<PublicKeyBinary, SpeedtestAverage>,
 }

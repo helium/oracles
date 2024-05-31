@@ -358,7 +358,7 @@ impl CoverageObject {
     }
 }
 
-#[derive(Clone, FromRow)]
+#[derive(Debug, Clone, FromRow)]
 pub struct HexCoverage {
     pub uuid: Uuid,
     #[sqlx(try_from = "i64")]
