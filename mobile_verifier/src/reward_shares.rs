@@ -568,16 +568,13 @@ impl CoveragePoints2 {
         return NonZeroUsize::MAX;
     }
 
-    fn radio_threshold_verified(
-        &self,
-        key: &RadioId,
-    ) -> coverage_point_calculator::SubscriberThreshold {
+    fn radio_threshold_verified(&self, key: &RadioId) -> coverage_point_calculator::RadioThreshold {
         match self
             .verified_radio_thresholds
             .is_verified(key.0.clone(), key.1.clone())
         {
-            true => coverage_point_calculator::SubscriberThreshold::Verified,
-            false => coverage_point_calculator::SubscriberThreshold::UnVerified,
+            true => coverage_point_calculator::RadioThreshold::Verified,
+            false => coverage_point_calculator::RadioThreshold::UnVerified,
         }
     }
 
