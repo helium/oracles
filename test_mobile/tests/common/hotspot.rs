@@ -1,7 +1,9 @@
 use anyhow::Result;
 use backon::{ExponentialBuilder, Retryable};
 use helium_crypto::{KeyTag, Keypair, Sign};
-use helium_proto::services::poc_mobile::{Client as PocMobileClient, SpeedtestReqV1};
+use helium_proto::services::poc_mobile::{
+    Client as PocMobileClient, CoverageObjectReqV1, SpeedtestReqV1,
+};
 use prost::Message;
 use rand::rngs::OsRng;
 use std::{
@@ -9,6 +11,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tonic::{metadata::MetadataValue, transport::Channel, Request};
+use uuid::Uuid;
 
 pub struct Hotspot {
     client: PocMobileClient<Channel>,
@@ -66,6 +69,32 @@ impl Hotspot {
 
         let res = self.client.submit_speedtest(request).await?;
         tracing::debug!("submitted speedtest {:?}", res);
+
+        Ok(())
+    }
+
+    pub async fn submit_coverage_object(&mut self) -> Result<()> {
+        let mut coverage_object_req = CoverageObjectReqV1 {
+            pub_key: self.keypair.public_key().into(),
+            uuid: Uuid::new_v4().as_bytes().to_vec(),
+            coverage_claim_time: now() as u64,
+            coverage: vec![],
+            indoor: false,
+            trust_score: 1,
+            signature: vec![],
+            key_type: None,
+        };
+
+        coverage_object_req.signature = self
+            .keypair
+            .sign(&coverage_object_req.encode_to_vec())
+            .expect("sign");
+
+        let request = self.set_metadata(coverage_object_req.clone());
+        tracing::debug!("submitting coverage_object {:?}", coverage_object_req);
+
+        let res = self.client.submit_coverage_object(request).await?;
+        tracing::debug!("submitted coverage_object {:?}", res);
 
         Ok(())
     }

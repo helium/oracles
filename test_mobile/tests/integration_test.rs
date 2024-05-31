@@ -26,6 +26,8 @@ async fn main() -> Result<()> {
     hotspot1.submit_speedtest(1001, 1001, 25).await?;
     hotspot1.submit_speedtest(1002, 1002, 25).await?;
 
+    hotspot1.submit_coverage_object().await?;
+
     let _ = tokio::time::sleep(Duration::from_secs(10)).await;
 
     Ok(())
