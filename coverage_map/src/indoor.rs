@@ -120,3 +120,128 @@ pub fn into_indoor_coverage_map(
         })
         .flatten()
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::*;
+    use chrono::NaiveDate;
+    use hex_assignments::Assignment;
+    use hextree::Cell;
+
+    #[test]
+    fn ensure_max_signal_level_selected() {
+        let mut indoor_coverage = IndoorCellTree::default();
+        for cov_obj in vec![
+            indoor_cbrs_coverage("1", SignalLevel::None),
+            indoor_cbrs_coverage("2", SignalLevel::Low),
+            indoor_cbrs_coverage("3", SignalLevel::High),
+            indoor_cbrs_coverage("4", SignalLevel::Low),
+            indoor_cbrs_coverage("5", SignalLevel::None),
+        ]
+        .into_iter()
+        {
+            insert_indoor_coverage_object(&mut indoor_coverage, cov_obj);
+        }
+        let ranked: HashMap<_, _> =
+            into_indoor_coverage_map(indoor_coverage, &BoostedHexes::default(), Utc::now())
+                .map(|x| (x.cbsd_id.clone().unwrap(), x))
+                .collect();
+        assert_eq!(ranked.get("3").unwrap().rank, Rank::First);
+        assert!(ranked.get("1").is_none());
+        assert!(ranked.get("2").is_none());
+        assert!(ranked.get("4").is_none());
+        assert!(ranked.get("5").is_none());
+    }
+
+    #[test]
+    fn ensure_oldest_radio_selected() {
+        let mut indoor_coverage = IndoorCellTree::default();
+        for cov_obj in vec![
+            indoor_cbrs_coverage_with_date("1", SignalLevel::High, date(1980, 1, 1)),
+            indoor_cbrs_coverage_with_date("2", SignalLevel::High, date(1970, 1, 5)),
+            indoor_cbrs_coverage_with_date("3", SignalLevel::High, date(1990, 2, 2)),
+            indoor_cbrs_coverage_with_date("4", SignalLevel::High, date(1970, 1, 4)),
+            indoor_cbrs_coverage_with_date("5", SignalLevel::High, date(1975, 3, 3)),
+            indoor_cbrs_coverage_with_date("6", SignalLevel::High, date(1970, 1, 3)),
+            indoor_cbrs_coverage_with_date("7", SignalLevel::High, date(1974, 2, 2)),
+            indoor_cbrs_coverage_with_date("8", SignalLevel::High, date(1970, 1, 2)),
+            indoor_cbrs_coverage_with_date("9", SignalLevel::High, date(1976, 5, 2)),
+            indoor_cbrs_coverage_with_date("10", SignalLevel::High, date(1970, 1, 1)),
+        ]
+        .into_iter()
+        {
+            insert_indoor_coverage_object(&mut indoor_coverage, cov_obj);
+        }
+        let ranked: HashMap<_, _> =
+            into_indoor_coverage_map(indoor_coverage, &BoostedHexes::default(), Utc::now())
+                .map(|x| (x.cbsd_id.clone().unwrap(), x))
+                .collect();
+        assert_eq!(ranked.get("10").unwrap().rank, Rank::First);
+        assert!(ranked.get("1").is_none());
+        assert!(ranked.get("2").is_none());
+        assert!(ranked.get("3").is_none());
+        assert!(ranked.get("4").is_none());
+        assert!(ranked.get("5").is_none());
+        assert!(ranked.get("6").is_none());
+        assert!(ranked.get("7").is_none());
+        assert!(ranked.get("8").is_none());
+        assert!(ranked.get("9").is_none());
+    }
+
+    fn hex_assignments_mock() -> HexAssignments {
+        HexAssignments {
+            footfall: Assignment::A,
+            urbanized: Assignment::A,
+            landtype: Assignment::A,
+        }
+    }
+
+    fn date(year: i32, month: u32, day: u32) -> DateTime<Utc> {
+        NaiveDate::from_ymd_opt(year, month, day)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+    }
+
+    fn indoor_cbrs_coverage(cbsd_id: &str, signal_level: SignalLevel) -> CoverageObject {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        CoverageObject {
+            indoor: true,
+            hotspot_key: owner,
+            seniority_timestamp: Utc::now(),
+            cbsd_id: Some(cbsd_id.to_string()),
+            coverage: vec![UnrankedCoverage {
+                location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
+                signal_power: 0,
+                signal_level,
+                assignments: hex_assignments_mock(),
+            }],
+        }
+    }
+
+    fn indoor_cbrs_coverage_with_date(
+        cbsd_id: &str,
+        signal_level: SignalLevel,
+        seniority_timestamp: DateTime<Utc>,
+    ) -> CoverageObject {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        CoverageObject {
+            indoor: true,
+            hotspot_key: owner,
+            seniority_timestamp,
+            cbsd_id: Some(cbsd_id.to_string()),
+            coverage: vec![UnrankedCoverage {
+                location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
+                signal_power: 0,
+                signal_level,
+                assignments: hex_assignments_mock(),
+            }],
+        }
+    }
+}
