@@ -695,9 +695,14 @@ pub fn coverage_point_to_mobile_reward_share(
     seniority_timestamp: DateTime<Utc>,
     coverage_object_uuid: Uuid,
 ) -> proto::MobileRewardShare {
+    let radio_verified = coverage_points.radio.radio_threshold_met();
+    let eligible_for_boosted = coverage_points.radio.eligible_for_boosted_hexes();
     let boosted_hexes = coverage_points
         .radio
-        .boosted_hexes()
+        .iter_covered_hexes()
+        .filter(move |_| radio_verified)
+        .filter(move |_| eligible_for_boosted)
+        .filter(|covered_hex| covered_hex.is_boosted())
         .map(|covered_hex| proto::BoostedHex {
             location: covered_hex.cell.into_raw(),
             multiplier: covered_hex.boosted.unwrap().into(),
