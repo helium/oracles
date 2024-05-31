@@ -67,7 +67,7 @@ pub trait Radio<Key> {
 }
 
 pub trait CoverageMap<Key> {
-    fn hexes(&self, radio: &impl Radio<Key>) -> Vec<CoveredHex>;
+    fn hexes(&self, radio: &Key) -> Vec<CoveredHex>;
 }
 
 pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
@@ -102,7 +102,7 @@ pub fn make_rewardable_radio<K>(
         speedtests: radio.speedtests(),
         location_trust_scores: LocationTrustScores::new(radio.location_trust_scores()),
         verified_radio_threshold: radio.verified_radio_threshold(),
-        covered_hexes: CoveredHexes::new(coverage_map.hexes(radio)),
+        covered_hexes: CoveredHexes::new(coverage_map.hexes(&radio.key())),
     }
 }
 
@@ -257,6 +257,22 @@ pub struct RewardableRadio {
 }
 
 impl RewardableRadio {
+    pub fn new(
+        radio_type: RadioType,
+        speedtests: Vec<Speedtest>,
+        location_trust_scores: Vec<LocationTrust>,
+        verified_radio_threshold: SubscriberThreshold,
+        covered_hexes: Vec<CoveredHex>,
+    ) -> Self {
+        Self {
+            radio_type,
+            speedtests,
+            location_trust_scores: LocationTrustScores::new(location_trust_scores),
+            verified_radio_threshold,
+            covered_hexes: CoveredHexes::new(covered_hexes),
+        }
+    }
+
     // These points need to be reported in the proto pre-(location, speedtest) multipliers
     pub fn hex_coverage_points(&self) -> Decimal {
         let rank_multipliers = self.radio_type.rank_multipliers();

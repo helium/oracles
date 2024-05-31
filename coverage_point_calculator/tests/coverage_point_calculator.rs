@@ -52,7 +52,7 @@ fn base_radio_coverage_points() {
     }
 
     impl CoverageMap<()> for TestCoverageMap {
-        fn hexes(&self, _radio: &impl Radio<()>) -> Vec<CoveredHex> {
+        fn hexes(&self, _radio: &()) -> Vec<CoveredHex> {
             vec![CoveredHex {
                 cell: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
                 rank: Rank::new(1).unwrap(),
@@ -103,9 +103,9 @@ fn radio_unique_coverage() {
         TestRadio(RadioType::OutdoorCbrs),
     ];
 
-    impl Radio<()> for TestRadio {
-        fn key(&self) -> () {
-            ()
+    impl Radio<RadioType> for TestRadio {
+        fn key(&self) -> RadioType {
+            self.0
         }
 
         fn radio_type(&self) -> RadioType {
@@ -162,9 +162,9 @@ fn radio_unique_coverage() {
     struct TestCoverageMap<'a>(HashMap<&'a str, Vec<CoveredHex>>);
     let coverage_map = TestCoverageMap(map);
 
-    impl CoverageMap<()> for TestCoverageMap<'_> {
-        fn hexes(&self, radio: &impl Radio<()>) -> Vec<CoveredHex> {
-            let key = match radio.radio_type() {
+    impl CoverageMap<RadioType> for TestCoverageMap<'_> {
+        fn hexes(&self, key: &RadioType) -> Vec<CoveredHex> {
+            let key = match key {
                 RadioType::IndoorWifi => "indoor_wifi",
                 RadioType::OutdoorWifi => "outdoor_wifi",
                 RadioType::IndoorCbrs => "indoor_cbrs",
