@@ -3,6 +3,7 @@ cache = "/opt/mobile-verifier/data"
 rewards = "24 hours"
 reward_offset_minutes = "30 minutes"
 modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC"
+# This needs to be created
 data_sets_directory = "/opt/mobile-verifier/data_sets_directory"
 usa_and_mexico_geofence_regions = "/opt/mobile-verifier/usa_and_mexico_geofence_regions"
 usa_geofence_regions = "/opt/mobile-verifier/usa_geofence_regions"
@@ -35,7 +36,7 @@ endpoint = "http://localstack:4566"
 endpoint = "0.0.0.0:19000"
 
 [price_tracker]
-price_duration_minutes = 10
+price_duration_minutes = 999999999
 
 [price_tracker.file_store]
 bucket = "mobile-price"

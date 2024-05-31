@@ -54,11 +54,7 @@ services:
         localstack:
           condition: service_healthy
     stop_grace_period: 1s
-    environment:
-      - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
-      - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
-      - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
-      - RUST_BACKTRACE=1
+    env_file: .env-mobile
     ports:
       - 9080:9080
     volumes:
@@ -94,11 +90,7 @@ services:
         config:
           condition: service_started
     stop_grace_period: 1s
-    environment:
-      - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
-      - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
-      - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
-      - RUST_BACKTRACE=1
+    env_file: .env-mobile
     volumes:
       - ./packet_verifier/settings.toml:/opt/mobile-packet-verifier/etc/settings.toml
       - ./packet_verifier/keypair.bin:/opt/mobile-packet-verifier/etc/keypair.bin
@@ -115,11 +107,7 @@ services:
         config:
           condition: service_started
     stop_grace_period: 1s
-    environment:
-      - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
-      - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
-      - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
-      - RUST_BACKTRACE=1
+    env_file: .env-mobile
     volumes:
       - ./verifier/settings.toml:/opt/mobile-verifier/etc/settings.toml
       - ./verifier/keypair.bin:/opt/mobile-verifier/etc/keypair.bin
@@ -139,11 +127,7 @@ services:
         config:
           condition: service_started
     stop_grace_period: 1s
-    environment:
-      - AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
-      - AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
-      - AWS_SESSION_TOKEN=AWS_SESSION_TOKEN
-      - RUST_BACKTRACE=1
+    env_file: .env-mobile
     volumes:
       - ./reward_index/settings.toml:/opt/reward-index/etc/settings.toml
 
