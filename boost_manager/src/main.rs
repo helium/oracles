@@ -3,7 +3,6 @@ use boost_manager::{
     activator::Activator, purger::Purger, settings::Settings, telemetry, updater::Updater,
     watcher::Watcher,
 };
-use chrono::Duration;
 use clap::Parser;
 use file_store::{
     file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
@@ -11,7 +10,10 @@ use file_store::{
 };
 use mobile_config::client::hex_boosting_client::HexBoostingClient;
 use solana::start_boost::SolanaRpc;
-use std::path::{self, PathBuf};
+use std::{
+    path::{self, PathBuf},
+    time::Duration,
+};
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Parser)]
@@ -103,7 +105,7 @@ impl Server {
             file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_boosted_hex_update"),
         )
-        .roll_time(Duration::minutes(5))
+        .roll_time(Duration::from_secs(50 * 60))
         .create()
         .await?;
 

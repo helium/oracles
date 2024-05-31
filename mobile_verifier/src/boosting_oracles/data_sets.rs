@@ -258,7 +258,7 @@ impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization> {
                 concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
             )
             .auto_commit(true)
-            .roll_time(chrono::Duration::minutes(15))
+            .roll_time(Duration::from_secs(15 * 60))
             .create()
             .await?;
 

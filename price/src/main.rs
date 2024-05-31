@@ -1,13 +1,15 @@
 use anyhow::Result;
-use chrono::Duration;
 use clap::Parser;
 use file_store::{file_sink, file_upload, FileType};
 use helium_proto::BlockchainTokenTypeV1;
 use price::{cli::check, PriceGenerator, Settings};
-use std::path::{self, PathBuf};
+use std::{
+    path::{self, PathBuf},
+    time::Duration,
+};
 use task_manager::TaskManager;
 
-const PRICE_SINK_ROLL_MINS: i64 = 3;
+const PRICE_SINK_ROLL_SECS: u64 = 3 * 60;
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -86,7 +88,7 @@ impl Server {
             file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
         )
-        .roll_time(Duration::minutes(PRICE_SINK_ROLL_MINS))
+        .roll_time(Duration::from_secs(PRICE_SINK_ROLL_SECS))
         .create()
         .await?;
 

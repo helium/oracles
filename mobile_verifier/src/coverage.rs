@@ -2,7 +2,7 @@ use crate::{
     heartbeats::{HbType, KeyType, OwnedKeyType},
     IsAuthorized, Settings,
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use file_store::{
     coverage::{self, CoverageObjectIngestReport},
     file_info_poller::{FileInfoStream, LookbackBehavior},
@@ -38,7 +38,7 @@ use std::{
     num::NonZeroU32,
     pin::pin,
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -89,7 +89,7 @@ impl CoverageDaemon {
             concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
         )
         .auto_commit(false)
-        .roll_time(Duration::minutes(15))
+        .roll_time(Duration::from_secs(15 * 60))
         .create()
         .await?;
 

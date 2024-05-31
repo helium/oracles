@@ -1,9 +1,10 @@
 use crate::{file_upload::FileUpload, Error, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use futures::{future::LocalBoxFuture, SinkExt, TryFutureExt};
 use metrics::Label;
+use std::time::Duration;
 use std::{
     io, mem,
     path::{Path, PathBuf},
@@ -20,12 +21,12 @@ use tokio::{
 };
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
-pub const DEFAULT_SINK_ROLL_MINS: i64 = 3;
+pub const DEFAULT_SINK_ROLL_SECS: u64 = 3 * 60;
 
 #[cfg(not(test))]
-pub const SINK_CHECK_MILLIS: i64 = 60_000;
+pub const SINK_CHECK_MILLIS: u64 = 60_000;
 #[cfg(test)]
-pub const SINK_CHECK_MILLIS: i64 = 50;
+pub const SINK_CHECK_MILLIS: u64 = 50;
 
 pub const MAX_FRAME_LENGTH: usize = 15_000_000;
 
@@ -80,7 +81,7 @@ impl FileSinkBuilder {
             target_path: target_path.to_path_buf(),
             tmp_path: target_path.join("tmp"),
             max_size: 50_000_000,
-            roll_time: Duration::minutes(DEFAULT_SINK_ROLL_MINS),
+            roll_time: Duration::from_secs(DEFAULT_SINK_ROLL_SECS),
             file_upload,
             auto_commit: true,
             metric,
@@ -340,11 +341,7 @@ impl FileSink {
             self.target_path.display()
         );
 
-        let mut rollover_timer = time::interval(
-            Duration::milliseconds(SINK_CHECK_MILLIS)
-                .to_std()
-                .expect("valid sink roll time"),
-        );
+        let mut rollover_timer = time::interval(Duration::from_millis(SINK_CHECK_MILLIS));
         rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Burst);
 
         loop {
@@ -548,7 +545,7 @@ mod tests {
             file_upload,
             "fake_metric",
         )
-        .roll_time(chrono::Duration::milliseconds(100))
+        .roll_time(Duration::from_millis(100))
         .create()
         .await
         .expect("failed to create file sink");
@@ -596,7 +593,7 @@ mod tests {
             file_upload,
             "fake_metric",
         )
-        .roll_time(chrono::Duration::milliseconds(100))
+        .roll_time(Duration::from_millis(100))
         .auto_commit(false)
         .create()
         .await

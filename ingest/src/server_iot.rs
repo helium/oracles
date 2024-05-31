@@ -1,6 +1,6 @@
 use crate::Settings;
 use anyhow::{Error, Result};
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use file_store::{
     file_sink::{self, FileSinkClient},
     file_upload,
@@ -19,7 +19,7 @@ use helium_proto::services::poc_lora::{
     LoraStreamSessionInitV1, LoraStreamSessionOfferV1, LoraWitnessIngestReportV1,
     LoraWitnessReportReqV1, LoraWitnessReportRespV1,
 };
-use std::{convert::TryFrom, net::SocketAddr, path::Path};
+use std::{convert::TryFrom, net::SocketAddr, path::Path, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{sync::mpsc::Sender, time::Instant};
 use tokio_stream::wrappers::ReceiverStream;
@@ -369,7 +369,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         file_upload.clone(),
         concat!(env!("CARGO_PKG_NAME"), "_beacon_report"),
     )
-    .roll_time(Duration::minutes(5))
+    .roll_time(Duration::from_secs(5 * 60))
     .create()
     .await?;
 
@@ -380,7 +380,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         file_upload.clone(),
         concat!(env!("CARGO_PKG_NAME"), "_witness_report"),
     )
-    .roll_time(Duration::minutes(5))
+    .roll_time(Duration::from_secs(5 * 60))
     .create()
     .await?;
 

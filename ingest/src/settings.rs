@@ -33,11 +33,18 @@ pub struct Settings {
     /// Settings for exposed public API
     /// Target bucket for uploads
     pub output: file_store::Settings,
+    /// Timeout of session key session in seconds
+    #[serde(with = "humantime_serde", default = "default_roll_time")]
+    pub roll_time: Duration,
     /// API token required as part of a Bearer authentication GRPC request
     /// header. Used only by the mobile mode currently
     pub token: Option<String>,
     /// Target output bucket details Metrics settings
     pub metrics: poc_metrics::Settings,
+}
+
+fn default_roll_time() -> Duration {
+    humantime::parse_duration("15 minutes").unwrap()
 }
 
 fn default_session_key_timeout() -> Duration {

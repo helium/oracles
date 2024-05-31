@@ -1,6 +1,5 @@
 use crate::entropy_loader::EntropyLoader;
 use anyhow::Result;
-use chrono::Duration as ChronoDuration;
 use clap::Parser;
 use file_store::{
     entropy_report::EntropyReport, file_info_poller::LookbackBehavior, file_sink, file_source,
@@ -13,7 +12,7 @@ use iot_verifier::{
     tx_scaler::Server as DensityScaler, witness_updater::WitnessUpdater, Settings,
 };
 use price::PriceTracker;
-use std::path;
+use std::{path, time::Duration};
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Parser)]
@@ -175,7 +174,7 @@ impl Server {
                 file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_non_rewardable_packet"),
             )
-            .roll_time(ChronoDuration::minutes(5))
+            .roll_time(Duration::from_secs(5 * 60))
             .create()
             .await?;
 
@@ -248,7 +247,7 @@ impl Server {
                 file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon_report"),
             )
-            .roll_time(ChronoDuration::minutes(5))
+            .roll_time(Duration::from_secs(5 * 60))
             .create()
             .await?;
 
@@ -259,7 +258,7 @@ impl Server {
                 file_upload.clone(),
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
             )
-            .roll_time(ChronoDuration::minutes(5))
+            .roll_time(Duration::from_secs(5 * 60))
             .create()
             .await?;
 
@@ -269,7 +268,7 @@ impl Server {
             file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_valid_poc"),
         )
-        .roll_time(ChronoDuration::minutes(2))
+        .roll_time(Duration::from_secs(2 * 60))
         .create()
         .await?;
 
