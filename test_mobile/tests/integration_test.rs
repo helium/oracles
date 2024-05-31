@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
         Err(e) => panic!("docker::up failed: {:?}", e),
     }
 
-    let mut hotspot1 = Hotspot::new().await;
+    let mut hotspot1 = Hotspot::new("api-token".to_string()).await;
 
     hotspot1.submit_speedtest(1001, 1001, 25).await?;
     hotspot1.submit_speedtest(1002, 1002, 25).await?;

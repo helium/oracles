@@ -8,16 +8,17 @@ use std::{
     str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tonic::{metadata::MetadataValue, transport::Channel};
+use tonic::{metadata::MetadataValue, transport::Channel, Request};
 
 pub struct Hotspot {
     client: PocMobileClient<Channel>,
+    api_token: String,
     keypair: Keypair,
     serial: String,
 }
 
 impl Hotspot {
-    pub async fn new() -> Self {
+    pub async fn new(api_token: String) -> Self {
         let endpoint = "http://127.0.0.1:9080";
 
         let client = (|| PocMobileClient::connect(endpoint))
@@ -33,6 +34,7 @@ impl Hotspot {
 
         Self {
             client,
+            api_token: format!("Bearer {api_token}"),
             keypair,
             serial: b58,
         }
@@ -59,18 +61,25 @@ impl Hotspot {
             .sign(&speedtest_req.encode_to_vec())
             .expect("sign");
 
-        let mut request = tonic::Request::new(speedtest_req.clone());
+        let request = self.set_metadata(speedtest_req.clone());
+        tracing::debug!("submitting speedtest {:?}", speedtest_req);
 
-        let metadata_value = MetadataValue::from_str("Bearer api-token").unwrap();
+        let res = self.client.submit_speedtest(request).await?;
+        tracing::debug!("submitted speedtest {:?}", res);
+
+        Ok(())
+    }
+
+    pub fn set_metadata<T>(&self, inner: T) -> Request<T> {
+        let mut request = tonic::Request::new(inner);
+        let api_token = self.api_token.clone();
+        let metadata_value = MetadataValue::from_str(api_token.as_str()).unwrap();
+
         request
             .metadata_mut()
             .insert("authorization", metadata_value);
 
-        let res = self.client.submit_speedtest(request).await?;
-
-        tracing::debug!("submitted speedtest {:?}, {:?}", speedtest_req, res);
-
-        Ok(())
+        request
     }
 }
 
