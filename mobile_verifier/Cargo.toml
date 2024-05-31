@@ -58,6 +58,7 @@ regex = "1"
 humantime-serde = { workspace = true }
 custom-tracing = { path = "../custom_tracing" }
 hex-assignments = { path = "../hex_assignments" }
+coverage-point-calculator = { path = "../coverage_point_calculator" }
 
 [dev-dependencies]
 backon = "0"
