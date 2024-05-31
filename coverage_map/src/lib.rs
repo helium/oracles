@@ -175,6 +175,7 @@ pub struct RankedCoverage {
 
 /// Rank of the hex coverage.
 // TODO(map): Should this be split into Indoor and OutdoorRank?
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Rank {
     First,
     Second,
