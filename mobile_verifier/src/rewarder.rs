@@ -411,8 +411,9 @@ async fn reward_poc(
     )
     .await?;
 
-    let unallocated_poc_amount = if let Some(mobile_reward_shares) =
-        coverage_points.into_rewards(total_poc_rewards, reward_period)
+    let unallocated_poc_amount = if let Some(mobile_reward_shares) = coverage_points
+        .into_rewards(total_poc_rewards, reward_period)
+        .await
     {
         // handle poc reward outputs
         let mut allocated_poc_rewards = 0_u64;
