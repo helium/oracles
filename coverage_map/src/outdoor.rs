@@ -108,7 +108,6 @@ pub fn into_outdoor_coverage_map(
             .map(move |(rank, cov)| RankedCoverage {
                 hex,
                 rank: rank + 1,
-                indoor: false,
                 hotspot_key: cov.hotspot_key,
                 cbsd_id: cov.cbsd_id,
                 assignments: cov.assignments,

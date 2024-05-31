@@ -169,10 +169,8 @@ pub struct UnrankedCoverage {
 /// Ranked hex coverage given as output from the [CoverageMap]
 #[derive(Clone, Debug)]
 pub struct RankedCoverage {
-    // TODO(map): Does this need to indicate whether the coverage is indoor or outdoor?
     pub hex: Cell,
     pub rank: usize,
-    pub indoor: bool,
     pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: Option<String>,
     pub assignments: HexAssignments,
@@ -182,10 +180,10 @@ pub struct RankedCoverage {
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
 pub enum SignalLevel {
-    None,
-    Low,
-    Medium,
     High,
+    Medium,
+    Low,
+    None,
 }
 
 pub trait BoostedHexMap {

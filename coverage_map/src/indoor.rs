@@ -97,7 +97,6 @@ pub fn into_indoor_coverage_map(
             let boosted = boosted_hexes.get_current_multiplier(hex, epoch_start);
             radios
                 .into_values()
-                .rev()
                 .flat_map(move |radios| radios.into_sorted_vec().into_iter())
                 .map(move |cov| (hex, boosted, cov))
         })
@@ -105,7 +104,6 @@ pub fn into_indoor_coverage_map(
         .map(move |(rank, (hex, boosted, cov))| RankedCoverage {
             hex,
             rank: rank + 1,
-            indoor: true,
             hotspot_key: cov.hotspot_key,
             cbsd_id: cov.cbsd_id,
             assignments: cov.assignments,
