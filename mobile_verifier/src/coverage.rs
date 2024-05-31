@@ -373,11 +373,11 @@ pub struct HexCoverage {
     pub assignments: HexAssignments,
 }
 
-#[derive(Eq, Debug)]
-struct IndoorCoverageLevel {
+#[derive(Eq, Debug, Clone)]
+pub struct IndoorCoverageLevel {
     radio_key: OwnedKeyType,
     seniority_timestamp: DateTime<Utc>,
-    hotspot: PublicKeyBinary,
+    pub hotspot: PublicKeyBinary,
     signal_level: SignalLevel,
     hex_assignments: HexAssignments,
 }
@@ -412,11 +412,11 @@ impl IndoorCoverageLevel {
     }
 }
 
-#[derive(Eq, Debug)]
-struct OutdoorCoverageLevel {
+#[derive(Eq, Debug, Clone)]
+pub struct OutdoorCoverageLevel {
     radio_key: OwnedKeyType,
     seniority_timestamp: DateTime<Utc>,
-    hotspot: PublicKeyBinary,
+    pub hotspot: PublicKeyBinary,
     signal_power: i32,
     signal_level: SignalLevel,
     hex_assignments: HexAssignments,
@@ -627,10 +627,10 @@ type OutdoorCellTree = HashMap<Cell, BinaryHeap<OutdoorCoverageLevel>>;
 
 #[derive(Default, Debug)]
 pub struct CoveredHexes {
-    indoor_cbrs: IndoorCellTree,
-    indoor_wifi: IndoorCellTree,
-    outdoor_cbrs: OutdoorCellTree,
-    outdoor_wifi: OutdoorCellTree,
+    pub indoor_cbrs: IndoorCellTree,
+    pub indoor_wifi: IndoorCellTree,
+    pub outdoor_cbrs: OutdoorCellTree,
+    pub outdoor_wifi: OutdoorCellTree,
 }
 
 pub const MAX_INDOOR_RADIOS_PER_RES12_HEX: usize = 1;
