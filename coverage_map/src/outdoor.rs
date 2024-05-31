@@ -9,10 +9,7 @@ use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
 use mobile_config::boosted_hex_info::BoostedHexes;
 
-use crate::{
-    CoverageObject, Rank, RankedCoverage, SignalLevel, UnrankedCoverage,
-    MAX_OUTDOOR_RADIOS_PER_RES12_HEX,
-};
+use crate::{CoverageObject, RankedCoverage, SignalLevel, UnrankedCoverage};
 
 /// Data structure for storing outdoor radios ranked by their coverage level
 pub type OutdoorCellTree = HashMap<Cell, BinaryHeap<OutdoorCoverageLevel>>;
@@ -108,18 +105,16 @@ pub fn into_outdoor_coverage_map(
         radios
             .into_sorted_vec()
             .into_iter()
-            .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
             .enumerate()
-            .flat_map(move |(rank, cov)| {
-                Rank::from_outdoor_index(rank).map(move |rank| RankedCoverage {
-                    rank,
-                    hex,
-                    hotspot_key: cov.hotspot_key,
-                    cbsd_id: cov.cbsd_id,
-                    assignments: cov.assignments,
-                    boosted,
-                    signal_level: cov.signal_level,
-                })
+            .map(move |(rank, cov)| RankedCoverage {
+                hex,
+                rank: rank + 1,
+                indoor: false,
+                hotspot_key: cov.hotspot_key,
+                cbsd_id: cov.cbsd_id,
+                assignments: cov.assignments,
+                boosted,
+                signal_level: cov.signal_level,
             })
     })
 }
@@ -150,11 +145,11 @@ mod test {
             into_outdoor_coverage_map(outdoor_coverage, &BoostedHexes::default(), Utc::now())
                 .map(|x| (x.cbsd_id.clone().unwrap(), x))
                 .collect();
-        assert_eq!(ranked.get("5").unwrap().rank, Rank::First);
-        assert_eq!(ranked.get("4").unwrap().rank, Rank::Second);
-        assert_eq!(ranked.get("3").unwrap().rank, Rank::Third);
-        assert!(ranked.get("1").is_none());
-        assert!(ranked.get("2").is_none());
+        assert_eq!(ranked.get("5").unwrap().rank, 1);
+        assert_eq!(ranked.get("4").unwrap().rank, 2);
+        assert_eq!(ranked.get("3").unwrap().rank, 3);
+        assert_eq!(ranked.get("1").unwrap().rank, 5);
+        assert_eq!(ranked.get("2").unwrap().rank, 4);
     }
 
     fn hex_assignments_mock() -> HexAssignments {

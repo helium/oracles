@@ -14,7 +14,7 @@ use outdoor::*;
 
 /// Data structure for keeping track of the ranking the coverage in each hex cell for indoor
 /// and outdoor CBRS and WiFi radios.
-#[derive(Default)]
+#[derive(Clone, Default, Debug)]
 pub struct CoverageMapBuilder {
     indoor_cbrs: IndoorCellTree,
     indoor_wifi: IndoorCellTree,
@@ -78,7 +78,6 @@ impl CoverageMapBuilder {
     }
 
     /// Constructs a [CoverageMap] from the current `CoverageMapBuilder`
-    // TODO(map): Should this take &self and clone the data?
     pub fn build(self, boosted_hexes: &BoostedHexes, epoch_start: DateTime<Utc>) -> CoverageMap {
         let mut wifi_hotspots = HashMap::<_, Vec<RankedCoverage>>::new();
         let mut cbrs_radios = HashMap::<_, Vec<RankedCoverage>>::new();
@@ -119,6 +118,7 @@ impl CoverageMapBuilder {
 }
 
 /// Data structure from mapping radios to their ranked hex coverage
+#[derive(Clone, Default, Debug)]
 pub struct CoverageMap {
     wifi_hotspots: HashMap<PublicKeyBinary, Vec<RankedCoverage>>,
     cbrs_radios: HashMap<String, Vec<RankedCoverage>>,
@@ -145,6 +145,7 @@ impl CoverageMap {
 }
 
 /// Coverage data given as input to the [CoverageMapBuilder]
+#[derive(Clone, Debug)]
 pub struct CoverageObject {
     pub indoor: bool,
     pub hotspot_key: PublicKeyBinary,
@@ -154,6 +155,7 @@ pub struct CoverageObject {
 }
 
 /// Unranked hex coverage data given as input to the [CoverageMapBuilder]
+#[derive(Clone, Debug)]
 pub struct UnrankedCoverage {
     pub location: Cell,
     pub signal_power: i32,
@@ -162,39 +164,17 @@ pub struct UnrankedCoverage {
 }
 
 /// Ranked hex coverage given as output from the [CoverageMap]
+#[derive(Clone, Debug)]
 pub struct RankedCoverage {
     // TODO(map): Does this need to indicate whether the coverage is indoor or outdoor?
     pub hex: Cell,
-    pub rank: Rank,
+    pub rank: usize,
+    pub indoor: bool,
     pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: Option<String>,
     pub assignments: HexAssignments,
     pub boosted: Option<NonZeroU32>,
     pub signal_level: SignalLevel,
-}
-
-/// Rank of the hex coverage.
-// TODO(map): Should this be split into Indoor and OutdoorRank?
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Rank {
-    First,
-    Second,
-    Third,
-}
-
-impl Rank {
-    pub(crate) fn from_outdoor_index(idx: usize) -> Option<Self> {
-        match idx {
-            0 => Some(Self::First),
-            1 => Some(Self::Second),
-            2 => Some(Self::Third),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn from_indoor_index(idx: usize) -> Option<Self> {
-        (idx == 0).then_some(Self::First)
-    }
 }
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
@@ -204,6 +184,3 @@ pub enum SignalLevel {
     Medium,
     High,
 }
-
-pub const MAX_INDOOR_RADIOS_PER_RES12_HEX: usize = 1;
-pub const MAX_OUTDOOR_RADIOS_PER_RES12_HEX: usize = 3;
