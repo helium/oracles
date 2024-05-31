@@ -94,7 +94,7 @@ pub fn into_indoor_coverage_map(
     indoor: IndoorCellTree,
     boosted_hexes: &BoostedHexes,
     epoch_start: DateTime<Utc>,
-) -> impl Iterator<Item = (PublicKeyBinary, RankedCoverage)> + '_ {
+) -> impl Iterator<Item = RankedCoverage> + '_ {
     indoor
         .into_iter()
         .flat_map(move |(hex, mut radios)| {
@@ -106,17 +106,14 @@ pub fn into_indoor_coverage_map(
                     .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
                     .enumerate()
                     .flat_map(move |(rank, cov)| {
-                        Rank::from_indoor_index(rank).map(move |rank| {
-                            let key = cov.hotspot_key;
-                            let cov = RankedCoverage {
-                                hex,
-                                rank,
-                                cbsd_id: cov.cbsd_id,
-                                assignments: cov.assignments,
-                                boosted,
-                                signal_level: cov.signal_level,
-                            };
-                            (key, cov)
+                        Rank::from_indoor_index(rank).map(move |rank| RankedCoverage {
+                            hex,
+                            rank,
+                            hotspot_key: cov.hotspot_key,
+                            cbsd_id: cov.cbsd_id,
+                            assignments: cov.assignments,
+                            boosted,
+                            signal_level: cov.signal_level,
                         })
                     })
             })

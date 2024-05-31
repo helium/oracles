@@ -80,41 +80,67 @@ impl CoverageMapBuilder {
     /// Constructs a [CoverageMap] from the current `CoverageMapBuilder`
     // TODO(map): Should this take &self and clone the data?
     pub fn build(self, boosted_hexes: &BoostedHexes, epoch_start: DateTime<Utc>) -> CoverageMap {
-        let mut hotspots = HashMap::<_, Vec<RankedCoverage>>::new();
-        for (radio, coverage) in
-            into_indoor_coverage_map(self.indoor_cbrs, boosted_hexes, epoch_start)
-                .chain(into_indoor_coverage_map(
-                    self.indoor_wifi,
-                    boosted_hexes,
-                    epoch_start,
-                ))
-                .chain(into_outdoor_coverage_map(
-                    self.outdoor_cbrs,
-                    boosted_hexes,
-                    epoch_start,
-                ))
-                .chain(into_outdoor_coverage_map(
-                    self.outdoor_wifi,
-                    boosted_hexes,
-                    epoch_start,
-                ))
+        let mut wifi_hotspots = HashMap::<_, Vec<RankedCoverage>>::new();
+        let mut cbrs_radios = HashMap::<_, Vec<RankedCoverage>>::new();
+        for coverage in into_indoor_coverage_map(self.indoor_cbrs, boosted_hexes, epoch_start)
+            .chain(into_indoor_coverage_map(
+                self.indoor_wifi,
+                boosted_hexes,
+                epoch_start,
+            ))
+            .chain(into_outdoor_coverage_map(
+                self.outdoor_cbrs,
+                boosted_hexes,
+                epoch_start,
+            ))
+            .chain(into_outdoor_coverage_map(
+                self.outdoor_wifi,
+                boosted_hexes,
+                epoch_start,
+            ))
         {
-            hotspots.entry(radio).or_default().push(coverage);
+            if let Some(ref cbsd_id) = coverage.cbsd_id {
+                cbrs_radios
+                    .entry(cbsd_id.clone())
+                    .or_default()
+                    .push(coverage);
+            } else {
+                wifi_hotspots
+                    .entry(coverage.hotspot_key.clone())
+                    .or_default()
+                    .push(coverage);
+            }
         }
-        CoverageMap { hotspots }
+        CoverageMap {
+            wifi_hotspots,
+            cbrs_radios,
+        }
     }
 }
 
-/// Data structure from mapping hotspots to their ranked hex coverage
+/// Data structure from mapping radios to their ranked hex coverage
 pub struct CoverageMap {
-    hotspots: HashMap<PublicKeyBinary, Vec<RankedCoverage>>,
+    wifi_hotspots: HashMap<PublicKeyBinary, Vec<RankedCoverage>>,
+    cbrs_radios: HashMap<String, Vec<RankedCoverage>>,
 }
 
 impl CoverageMap {
-    /// Returns the hexes covered by the hotspot. The returned slice can be empty, indicating that
+    /// Returns the hexes covered by the WiFi hotspot. The returned slice can be empty, indicating that
     /// the hotspot did not meet the criteria to be ranked in any hex.
-    pub fn get_coverage(&self, hotspot: &PublicKeyBinary) -> &[RankedCoverage] {
-        self.hotspots.get(hotspot).map(Vec::as_slice).unwrap_or(&[])
+    pub fn get_wifi_coverage(&self, wifi_hotspot: &PublicKeyBinary) -> &[RankedCoverage] {
+        self.wifi_hotspots
+            .get(wifi_hotspot)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Returns the hexes covered by the CBRS radio. The returned slice can be empty, indicating that
+    /// the radio did not meet the criteria to be ranked in any hex.
+    pub fn get_cbrs_coverage(&self, cbrs_radio: &str) -> &[RankedCoverage] {
+        self.cbrs_radios
+            .get(cbrs_radio)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 }
 
@@ -140,6 +166,7 @@ pub struct RankedCoverage {
     // TODO(map): Does this need to indicate whether the coverage is indoor or outdoor?
     pub hex: Cell,
     pub rank: Rank,
+    pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: Option<String>,
     pub assignments: HexAssignments,
     pub boosted: Option<NonZeroU32>,
