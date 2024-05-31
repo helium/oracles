@@ -296,17 +296,16 @@ impl RewardableRadio {
             .sum()
     }
 
-    pub fn boosted_hexes(&self) -> impl Iterator<Item = CoveredHex> {
-        let verified = self.verified_radio_threshold == SubscriberThreshold::Verified;
-        let trust_score_past_limit = self.location_trust_multiplier() > dec!(0.75);
+    pub fn iter_covered_hexes(&self) -> impl Iterator<Item = CoveredHex> {
+        self.covered_hexes.hexes.clone().into_iter()
+    }
 
-        self.covered_hexes
-            .hexes
-            .clone()
-            .into_iter()
-            .filter(move |_| verified)
-            .filter(move |_| trust_score_past_limit)
-            .filter(|hex| hex.boosted.is_some_and(|boost| boost.get() > 1))
+    pub fn eligible_for_boosted_hexes(&self) -> bool {
+        self.location_trust_multiplier() > dec!(0.75)
+    }
+
+    pub fn radio_threshold_met(&self) -> bool {
+        matches!(self.radio_threshold, RadioThreshold::Verified)
     }
 }
 
@@ -333,6 +332,12 @@ pub struct CoveredHex {
     pub signal_level: SignalLevel,
     pub assignments: Assignments,
     pub boosted: Option<Multiplier>,
+}
+
+impl CoveredHex {
+    pub fn is_boosted(&self) -> bool {
+        self.boosted.is_some_and(|boost| boost.get() > 1)
+    }
 }
 
 impl RewardableRadio {
@@ -391,10 +396,6 @@ impl RewardableRadio {
             self.radio_type,
             RadioType::IndoorCbrs | RadioType::OutdoorCbrs
         )
-    }
-
-    fn radio_threshold_met(&self) -> bool {
-        matches!(self.radio_threshold, RadioThreshold::Verified)
     }
 }
 
