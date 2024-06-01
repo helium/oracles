@@ -166,27 +166,6 @@ pub struct CoveragePoints {
     pub radio: RewardableRadio,
 }
 
-impl CoveragePoints {
-    // FIXME: Find a better way to communicate why values are sometimes multiplied by 1k
-    // Used to put into the proto, hence * dec!(1000)
-    pub fn reward_share_location_trust_multiplier(&self) -> u32 {
-        use rust_decimal::prelude::ToPrimitive;
-        let multiplier = self.radio.location_trust_multiplier() * dec!(1000);
-        multiplier.to_u32().unwrap_or_default()
-    }
-
-    // Used to put into the proto, hence * dec!(1000)
-    pub fn reward_share_speedtest_multiplier(&self) -> u32 {
-        use rust_decimal::prelude::ToPrimitive;
-        let multiplier = self.radio.speedtest_multiplier() * dec!(1000);
-        multiplier.to_u32().unwrap_or_default()
-    }
-
-    pub fn speedtest_multiplier(&self) -> Decimal {
-        self.radio.speedtest_multiplier()
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum RadioThreshold {
     Verified,
@@ -287,7 +266,7 @@ impl CoveredHex {
 }
 
 impl RewardableRadio {
-    fn location_trust_multiplier(&self) -> Decimal {
+    pub fn location_trust_multiplier(&self) -> Decimal {
         // CBRS radios are always trusted because they have internal GPS
         if self.is_cbrs() {
             return dec!(1);
@@ -315,7 +294,7 @@ impl RewardableRadio {
         Decimal::from(boost)
     }
 
-    fn speedtest_multiplier(&self) -> MaxOneMultplier {
+    pub fn speedtest_multiplier(&self) -> MaxOneMultplier {
         const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
 
         if self.speedtests.len() < MIN_REQUIRED_SPEEDTEST_SAMPLES {
