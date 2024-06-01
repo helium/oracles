@@ -160,60 +160,6 @@ pub enum SignalLevel {
     None,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Assignments {
-    pub footfall: Assignment,
-    pub landtype: Assignment,
-    pub urbanized: Assignment,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Assignment {
-    A,
-    B,
-    C,
-}
-
-impl Assignments {
-    fn multiplier(&self) -> MaxOneMultplier {
-        let Assignments {
-            footfall,
-            urbanized,
-            landtype,
-        } = self;
-
-        use Assignment::*;
-        match (footfall, landtype, urbanized) {
-            // yellow - POI ≥ 1 Urbanized
-            (A, A, A) => dec!(1.00),
-            (A, B, A) => dec!(1.00),
-            (A, C, A) => dec!(1.00),
-            // orange - POI ≥ 1 Not Urbanized
-            (A, A, B) => dec!(1.00),
-            (A, B, B) => dec!(1.00),
-            (A, C, B) => dec!(1.00),
-            // light green - Point of Interest Urbanized
-            (B, A, A) => dec!(0.70),
-            (B, B, A) => dec!(0.70),
-            (B, C, A) => dec!(0.70),
-            // dark green - Point of Interest Not Urbanized
-            (B, A, B) => dec!(0.50),
-            (B, B, B) => dec!(0.50),
-            (B, C, B) => dec!(0.50),
-            // light blue - No POI Urbanized
-            (C, A, A) => dec!(0.40),
-            (C, B, A) => dec!(0.30),
-            (C, C, A) => dec!(0.05),
-            // dark blue - No POI Not Urbanized
-            (C, A, B) => dec!(0.20),
-            (C, B, B) => dec!(0.15),
-            (C, C, B) => dec!(0.03),
-            // gray - Outside of USA
-            (_, _, C) => dec!(0.00),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct CoveragePoints {
     pub coverage_points: Decimal,
@@ -284,7 +230,7 @@ impl RewardableRadio {
             .filter(|hex| hex.rank.get() <= max_rank)
             .map(|hex| {
                 let base_coverage_points = self.radio_type.base_coverage_points(&hex.signal_level);
-                let assignments_multiplier = hex.assignments.multiplier();
+                let assignments_multiplier = hex.assignments.boosting_multiplier();
                 let rank_multiplier = rank_multipliers[hex.rank.get() - 1];
                 let hex_boost_multiplier = self.hex_boosting_multiplier(hex);
 
@@ -330,7 +276,7 @@ pub struct CoveredHex {
     pub cell: hextree::Cell,
     pub rank: Rank,
     pub signal_level: SignalLevel,
-    pub assignments: Assignments,
+    pub assignments: HexAssignments,
     pub boosted: Option<Multiplier>,
 }
 
@@ -408,10 +354,19 @@ mod tests {
     };
 
     use super::*;
+    use hex_assignments::Assignment;
     use rust_decimal_macros::dec;
 
     fn hex_location() -> hextree::Cell {
         hextree::Cell::from_raw(0x8c2681a3064edff).unwrap()
+    }
+
+    fn assignments_maximum() -> HexAssignments {
+        HexAssignments {
+            footfall: Assignment::A,
+            landtype: Assignment::A,
+            urbanized: Assignment::A,
+        }
     }
 
     #[test]
@@ -427,7 +382,7 @@ mod tests {
                 cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
-                assignments: Assignments::maximum(),
+                assignments: assignments_maximum(),
                 boosted: Multiplier::new(5),
             }]),
         };
@@ -456,7 +411,7 @@ mod tests {
                 cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
-                assignments: Assignments::maximum(),
+                assignments: assignments_maximum(),
                 boosted: Multiplier::new(5),
             }]),
         };
@@ -483,7 +438,7 @@ mod tests {
                 cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
-                assignments: Assignments::maximum(),
+                assignments: assignments_maximum(),
                 boosted: None,
             }]),
         };
@@ -541,7 +496,7 @@ mod tests {
                 cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
-                assignments: Assignments {
+                assignments: HexAssignments {
                     footfall,
                     landtype,
                     urbanized,
@@ -612,28 +567,28 @@ mod tests {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(2).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(3).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(42).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
             ]),
@@ -661,21 +616,21 @@ mod tests {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(2).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(42).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
             ]),
@@ -704,7 +659,7 @@ mod tests {
                 cell: hex_location(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
-                assignments: Assignments::maximum(),
+                assignments: assignments_maximum(),
                 boosted: None,
             }]),
         };
@@ -728,14 +683,14 @@ mod tests {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: Multiplier::new(4),
                 },
             ]),
@@ -767,28 +722,28 @@ mod tests {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Medium,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::None,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
             ]),
@@ -804,14 +759,14 @@ mod tests {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
             ]),
@@ -827,28 +782,28 @@ mod tests {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Medium,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::None,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
             ]),
@@ -864,14 +819,14 @@ mod tests {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::High,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
                 CoveredHex {
                     cell: hex_location(),
                     rank: Rank::new(1).unwrap(),
                     signal_level: SignalLevel::Low,
-                    assignments: Assignments::maximum(),
+                    assignments: assignments_maximum(),
                     boosted: None,
                 },
             ]),
@@ -895,16 +850,6 @@ mod tests {
             dec!(500),
             calculate_coverage_points(indoor_wifi).coverage_points
         );
-    }
-
-    impl Assignments {
-        fn maximum() -> Self {
-            Self {
-                footfall: Assignment::A,
-                landtype: Assignment::A,
-                urbanized: Assignment::A,
-            }
-        }
     }
 
     impl Speedtest {

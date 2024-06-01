@@ -5,9 +5,9 @@ use coverage_point_calculator::{
     location::{LocationTrust, Meters},
     make_rewardable_radio, make_rewardable_radios,
     speedtest::{BytesPs, Millis, Speedtest},
-    Assignment, Assignments, CoverageMap, CoveredHex, Radio, RadioThreshold, RadioType, Rank,
-    SignalLevel,
+    CoverageMap, CoveredHex, Radio, RadioThreshold, RadioType, Rank, SignalLevel,
 };
+use hex_assignments::{assignment::HexAssignments, Assignment};
 use rust_decimal_macros::dec;
 
 #[test]
@@ -57,7 +57,7 @@ fn base_radio_coverage_points() {
                 cell: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
                 rank: Rank::new(1).unwrap(),
                 signal_level: SignalLevel::High,
-                assignments: Assignments {
+                assignments: HexAssignments {
                     footfall: Assignment::A,
                     landtype: Assignment::A,
                     urbanized: Assignment::A,
@@ -144,7 +144,7 @@ fn radio_unique_coverage() {
         cell: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
         rank: Rank::new(1).unwrap(),
         signal_level: SignalLevel::High,
-        assignments: Assignments {
+        assignments: HexAssignments {
             footfall: Assignment::A,
             landtype: Assignment::A,
             urbanized: Assignment::A,
