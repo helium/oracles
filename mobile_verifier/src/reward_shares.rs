@@ -693,6 +693,14 @@ pub fn coverage_point_to_mobile_reward_share(
         })
         .collect();
 
+    let location_multiplier = coverage_points.radio.location_trust_multiplier();
+    let speedtest_multiplier = coverage_points.radio.speedtest_multiplier();
+
+    let to_proto_value = |value: Decimal| (value * dec!(1000)).to_u32().unwrap_or_default();
+
+    // Does not include location and speedtest multipliers
+    let hex_coverage_points = coverage_points.radio.hex_coverage_points();
+
     proto::MobileRewardShare {
         start_period,
         end_period,
@@ -701,16 +709,11 @@ pub fn coverage_point_to_mobile_reward_share(
                 hotspot_key: hotspot_key.clone().into(),
                 cbsd_id: cbsd_id.unwrap_or_default(),
                 poc_reward,
-                coverage_points: coverage_points
-                    .radio
-                    .hex_coverage_points()
-                    .to_u64()
-                    .unwrap_or(0),
+                coverage_points: hex_coverage_points.to_u64().unwrap_or(0),
                 seniority_timestamp: seniority_timestamp.encode_timestamp(),
                 coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
-                location_trust_score_multiplier: coverage_points
-                    .reward_share_location_trust_multiplier(),
-                speedtest_multiplier: coverage_points.reward_share_speedtest_multiplier(),
+                location_trust_score_multiplier: to_proto_value(location_multiplier),
+                speedtest_multiplier: to_proto_value(speedtest_multiplier),
                 boosted_hexes,
                 ..Default::default()
             },
