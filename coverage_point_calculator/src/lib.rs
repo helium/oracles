@@ -868,7 +868,8 @@ mod tests {
             Self::new(
                 trust_scores
                     .to_owned()
-                    .into_iter()
+                    .iter()
+                    .copied()
                     .map(|trust_score| LocationTrust {
                         distance_to_asserted: Meters::new(1),
                         trust_score,

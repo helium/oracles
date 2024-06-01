@@ -16,9 +16,7 @@ fn base_radio_coverage_points() {
     struct TestCoverageMap;
 
     impl Radio<()> for TestRadio {
-        fn key(&self) -> () {
-            ()
-        }
+        fn key(&self) {}
 
         fn radio_type(&self) -> RadioType {
             self.0
