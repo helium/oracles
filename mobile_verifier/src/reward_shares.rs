@@ -661,23 +661,7 @@ impl coverage_point_calculator::CoverageMap<RadioId> for CoveragePoints2 {
                         coverage::SignalLevel::Medium => cpc::SignalLevel::Medium,
                         coverage::SignalLevel::High => cpc::SignalLevel::High,
                     },
-                    assignments: coverage_point_calculator::Assignments {
-                        footfall: match hex.assignments.footfall {
-                            hex_assignments::Assignment::A => cpc::Assignment::A,
-                            hex_assignments::Assignment::B => cpc::Assignment::B,
-                            hex_assignments::Assignment::C => cpc::Assignment::C,
-                        },
-                        landtype: match hex.assignments.landtype {
-                            hex_assignments::Assignment::A => cpc::Assignment::A,
-                            hex_assignments::Assignment::B => cpc::Assignment::B,
-                            hex_assignments::Assignment::C => cpc::Assignment::C,
-                        },
-                        urbanized: match hex.assignments.urbanized {
-                            hex_assignments::Assignment::A => cpc::Assignment::A,
-                            hex_assignments::Assignment::B => cpc::Assignment::B,
-                            hex_assignments::Assignment::C => cpc::Assignment::C,
-                        },
-                    },
+                    assignments: hex.assignments.clone(),
                     boosted: boosted_hex,
                 }
             })
