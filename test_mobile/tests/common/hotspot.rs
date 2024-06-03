@@ -2,16 +2,17 @@ use anyhow::Result;
 use backon::{ExponentialBuilder, Retryable};
 use helium_crypto::{KeyTag, Keypair, Sign};
 use helium_proto::services::poc_mobile::{
-    Client as PocMobileClient, CoverageObjectReqV1, SpeedtestReqV1,
+    Client as PocMobileClient, CoverageObjectReqV1, RadioHexSignalLevel, SpeedtestReqV1,
+    WifiHeartbeatReqV1,
 };
 use prost::Message;
 use rand::rngs::OsRng;
-use std::{
-    str::FromStr,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::str::FromStr;
+use test_mobile::cli::assignment::CENTER_CELL;
 use tonic::{metadata::MetadataValue, transport::Channel, Request};
 use uuid::Uuid;
+
+use crate::common::{hours_ago, keypair_to_bs58, now, TimestampToDateTime};
 
 pub struct Hotspot {
     client: PocMobileClient<Channel>,
@@ -49,10 +50,12 @@ impl Hotspot {
         download_speed: u64,
         latency: u32,
     ) -> Result<()> {
+        let timestamp = now();
+
         let mut speedtest_req = SpeedtestReqV1 {
             pub_key: self.keypair.public_key().into(),
             serial: self.serial.clone(),
-            timestamp: now() as u64,
+            timestamp,
             upload_speed,
             download_speed,
             latency,
@@ -65,20 +68,36 @@ impl Hotspot {
             .expect("sign");
 
         let request = self.set_metadata(speedtest_req.clone());
-        tracing::debug!("submitting speedtest {:?}", speedtest_req);
+        tracing::debug!(
+            "submitting speedtest @ {} = {:?}",
+            timestamp.to_datetime(),
+            speedtest_req
+        );
 
         let res = self.client.submit_speedtest(request).await?;
-        tracing::debug!("submitted speedtest {:?}", res);
+        tracing::debug!(
+            "submitted speedtest @ {} = {:?}",
+            timestamp.to_datetime(),
+            res
+        );
 
         Ok(())
     }
 
-    pub async fn submit_coverage_object(&mut self) -> Result<()> {
+    pub async fn submit_coverage_object(&mut self, uuid: Uuid) -> Result<()> {
+        let location = h3o::CellIndex::try_from(CENTER_CELL).unwrap();
+
+        let coverage_claim_time = now() - hours_ago(24);
+
         let mut coverage_object_req = CoverageObjectReqV1 {
             pub_key: self.keypair.public_key().into(),
-            uuid: Uuid::new_v4().as_bytes().to_vec(),
-            coverage_claim_time: now() as u64,
-            coverage: vec![],
+            uuid: uuid.as_bytes().to_vec(),
+            coverage_claim_time,
+            coverage: vec![RadioHexSignalLevel {
+                location: location.to_string(),
+                signal_level: 3,
+                signal_power: 1000,
+            }],
             indoor: false,
             trust_score: 1,
             signature: vec![],
@@ -91,10 +110,54 @@ impl Hotspot {
             .expect("sign");
 
         let request = self.set_metadata(coverage_object_req.clone());
-        tracing::debug!("submitting coverage_object {:?}", coverage_object_req);
+        tracing::debug!(
+            "submitting coverage_object @ {} = {:?}",
+            coverage_claim_time.to_datetime(),
+            coverage_object_req
+        );
 
         let res = self.client.submit_coverage_object(request).await?;
-        tracing::debug!("submitted coverage_object {:?}", res);
+        tracing::debug!(
+            "submitted coverage_object @ {} = {:?}",
+            coverage_claim_time.to_datetime(),
+            res
+        );
+
+        Ok(())
+    }
+
+    pub async fn submit_wifi_heartbeat(&mut self, when: u64, coverage_object: Uuid) -> Result<()> {
+        let timestamp = now() - when;
+
+        let mut wifi_heartbeat_req = WifiHeartbeatReqV1 {
+            pub_key: self.keypair.public_key().into(),
+            timestamp,
+            lat: 19.642310,
+            lon: -155.990626,
+            location_validation_timestamp: timestamp,
+            operation_mode: true,
+            coverage_object: coverage_object.as_bytes().to_vec(),
+            signature: vec![],
+        };
+
+        wifi_heartbeat_req.signature = self
+            .keypair
+            .sign(&wifi_heartbeat_req.encode_to_vec())
+            .expect("sign");
+
+        let request = self.set_metadata(wifi_heartbeat_req.clone());
+        tracing::debug!(
+            "submitting wifi_heartbeat @ {} = {:?}",
+            timestamp.to_datetime(),
+            wifi_heartbeat_req
+        );
+
+        let res = self.client.submit_wifi_heartbeat(request).await?;
+        tracing::debug!(
+            "submitted wifi_heartbeat @ {} = {:?}",
+            timestamp.to_datetime(),
+            res
+        );
 
         Ok(())
     }
@@ -110,15 +173,4 @@ impl Hotspot {
 
         request
     }
-}
-
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-}
-
-fn keypair_to_bs58(keypair: &Keypair) -> String {
-    bs58::encode(keypair.public_key().to_vec()).into_string()
 }

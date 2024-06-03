@@ -7,33 +7,55 @@ use anyhow::Result;
 use hextree::{Cell, HexTreeMap};
 use tokio::{fs::File, io::AsyncWriteExt};
 
+pub const CENTER_CELL: u64 = 0x8a5d107916dffff;
+
+pub const INNER_1_CELL: u64 = 0x8a5d107916c7fff;
+pub const INNER_2_CELL: u64 = 0x8a5d107916cffff;
+pub const INNER_3_CELL: u64 = 0x8a5d1079ed67fff;
+pub const INNER_4_CELL: u64 = 0x8a5d1079ed77fff;
+pub const INNER_5_CELL: u64 = 0x8a5d1079ed2ffff;
+pub const INNER_6_CELL: u64 = 0x8a5d107916d7fff;
+
+pub const OUTER_1_CELL: u64 = 0x8a5d107916e7fff;
+pub const OUTER_2_CELL: u64 = 0x8a5d107916effff;
+pub const OUTER_3_CELL: u64 = 0x8a5d1079e9b7fff;
+pub const OUTER_4_CELL: u64 = 0x8a5d1079e997fff;
+pub const OUTER_5_CELL: u64 = 0x8a5d1079ed6ffff;
+pub const OUTER_6_CELL: u64 = 0x8a5d1079ed47fff;
+pub const OUTER_7_CELL: u64 = 0x8a5d1079ed57fff;
+pub const OUTER_8_CELL: u64 = 0x8a5d1079ed0ffff;
+pub const OUTER_9_CELL: u64 = 0x8a5d1079ed07fff;
+pub const OUTER_10_CELL: u64 = 0x8a5d1079ed27fff;
+pub const OUTER_11_CELL: u64 = 0x8a5d1079168ffff;
+pub const OUTER_12_CELL: u64 = 0x8a5d107916f7fff;
+
 /// Generate footfall, landtype and urbanization
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
 
 impl Cmd {
     pub async fn run(self) -> Result<()> {
-        let center_cell = Cell::from_raw(0x8a5d107916dffff)?;
+        let center_cell = Cell::from_raw(CENTER_CELL)?;
 
-        let inner_1_cell = Cell::from_raw(0x8a5d107916c7fff)?;
-        let inner_2_cell = Cell::from_raw(0x8a5d107916cffff)?;
-        let inner_3_cell = Cell::from_raw(0x8a5d1079ed67fff)?;
-        let inner_4_cell = Cell::from_raw(0x8a5d1079ed77fff)?;
-        let inner_5_cell = Cell::from_raw(0x8a5d1079ed2ffff)?;
-        let inner_6_cell = Cell::from_raw(0x8a5d107916d7fff)?;
+        let inner_1_cell = Cell::from_raw(INNER_1_CELL)?;
+        let inner_2_cell = Cell::from_raw(INNER_2_CELL)?;
+        let inner_3_cell = Cell::from_raw(INNER_3_CELL)?;
+        let inner_4_cell = Cell::from_raw(INNER_4_CELL)?;
+        let inner_5_cell = Cell::from_raw(INNER_5_CELL)?;
+        let inner_6_cell = Cell::from_raw(INNER_6_CELL)?;
 
-        let outer_1_cell = Cell::from_raw(0x8a5d107916e7fff)?;
-        let outer_2_cell = Cell::from_raw(0x8a5d107916effff)?;
-        let outer_3_cell = Cell::from_raw(0x8a5d1079e9b7fff)?;
-        let outer_4_cell = Cell::from_raw(0x8a5d1079e997fff)?;
-        let outer_5_cell = Cell::from_raw(0x8a5d1079ed6ffff)?;
-        let outer_6_cell = Cell::from_raw(0x8a5d1079ed47fff)?;
-        let outer_7_cell = Cell::from_raw(0x8a5d1079ed57fff)?;
-        let outer_8_cell = Cell::from_raw(0x8a5d1079ed0ffff)?;
-        let outer_9_cell = Cell::from_raw(0x8a5d1079ed07fff)?;
-        let outer_10_cell = Cell::from_raw(0x8a5d1079ed27fff)?;
-        let outer_11_cell = Cell::from_raw(0x8a5d1079168ffff)?;
-        let outer_12_cell = Cell::from_raw(0x8a5d107916f7fff)?;
+        let outer_1_cell = Cell::from_raw(OUTER_1_CELL)?;
+        let outer_2_cell = Cell::from_raw(OUTER_2_CELL)?;
+        let outer_3_cell = Cell::from_raw(OUTER_3_CELL)?;
+        let outer_4_cell = Cell::from_raw(OUTER_4_CELL)?;
+        let outer_5_cell = Cell::from_raw(OUTER_5_CELL)?;
+        let outer_6_cell = Cell::from_raw(OUTER_6_CELL)?;
+        let outer_7_cell = Cell::from_raw(OUTER_7_CELL)?;
+        let outer_8_cell = Cell::from_raw(OUTER_8_CELL)?;
+        let outer_9_cell = Cell::from_raw(OUTER_9_CELL)?;
+        let outer_10_cell = Cell::from_raw(OUTER_10_CELL)?;
+        let outer_11_cell = Cell::from_raw(OUTER_11_CELL)?;
+        let outer_12_cell = Cell::from_raw(OUTER_12_CELL)?;
 
         // Footfall Data
         // POI         - footfalls > 1 for a POI across hexes

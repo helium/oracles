@@ -11,6 +11,7 @@ anyhow = { workspace = true }
 async-compression = { version = "0", features = ["tokio", "gzip"] }
 clap = { workspace = true }
 file-store = { path = "../file_store" }
+h3o = { workspace = true, features = ["geo"] }
 helium-proto = { workspace = true }
 hextree = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "fs"] }
@@ -19,6 +20,7 @@ tokio = { workspace = true, features = ["io-util", "fs"] }
 backon = "0"
 bs58 = { workspace = true }
 custom-tracing = { path = "../custom_tracing" }
+chrono = { workspace = true }
 helium-crypto = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }

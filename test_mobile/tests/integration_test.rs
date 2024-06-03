@@ -1,6 +1,7 @@
 use anyhow::Result;
-use common::{docker::Docker, hotspot::Hotspot};
+use common::{docker::Docker, hotspot::Hotspot, hours_ago};
 use std::time::Duration;
+use uuid::Uuid;
 
 mod common;
 
@@ -24,11 +25,16 @@ async fn main() -> Result<()> {
     }
 
     let mut hotspot1 = Hotspot::new("api-token".to_string()).await;
+    let co_uuid = Uuid::new_v4();
+
+    hotspot1.submit_coverage_object(co_uuid).await?;
 
     hotspot1.submit_speedtest(1001, 1001, 25).await?;
     hotspot1.submit_speedtest(1002, 1002, 25).await?;
 
-    hotspot1.submit_coverage_object().await?;
+    hotspot1
+        .submit_wifi_heartbeat(hours_ago(12), co_uuid)
+        .await?;
 
     let _ = tokio::time::sleep(Duration::from_secs(10)).await;
 
