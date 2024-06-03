@@ -41,3 +41,6 @@ humantime-serde = { workspace = true }
 
 [dev-dependencies]
 backon = "0"
+
+[features]
+time = []

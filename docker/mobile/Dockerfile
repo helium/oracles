@@ -40,7 +40,7 @@ RUN sed -i \
     Cargo.toml
 
 # Build releases
-RUN cargo build --release
+RUN cargo build --features ingest/time --release
 
 # Package Runners
 FROM debian:bookworm-slim

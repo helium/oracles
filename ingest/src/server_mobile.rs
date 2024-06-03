@@ -107,8 +107,8 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<SpeedtestReqV1>,
     ) -> GrpcResult<SpeedtestRespV1> {
-        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+        let timestamp = maybe_honor_timestamp(event.timestamp);
 
         custom_tracing::record_b58("pub_key", &event.pub_key);
 
@@ -131,8 +131,8 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
-        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+        let timestamp = maybe_honor_timestamp(event.timestamp);
 
         custom_tracing::record_b58("pub_key", &event.pub_key);
 
@@ -155,8 +155,8 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<WifiHeartbeatReqV1>,
     ) -> GrpcResult<WifiHeartbeatRespV1> {
-        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+        let timestamp = maybe_honor_timestamp(event.timestamp);
 
         custom_tracing::record_b58("pub_key", &event.pub_key);
 
@@ -179,8 +179,8 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<DataTransferSessionReqV1>,
     ) -> GrpcResult<DataTransferSessionRespV1> {
-        let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+        let timestamp = maybe_honor_timestamp(Utc::now().timestamp_millis() as u64);
 
         custom_tracing::record_b58("pub_key", &event.pub_key);
 
@@ -204,8 +204,8 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<SubscriberLocationReqV1>,
     ) -> GrpcResult<SubscriberLocationRespV1> {
-        let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+        let timestamp = maybe_honor_timestamp(event.timestamp);
         let subscriber_id = event.subscriber_id.clone();
         let timestamp_millis = event.timestamp;
 
@@ -243,8 +243,8 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<RadioThresholdReportReqV1>,
     ) -> GrpcResult<RadioThresholdReportRespV1> {
-        let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+        let timestamp = maybe_honor_timestamp(Utc::now().timestamp_millis() as u64);
         let hotspot_pubkey = event.hotspot_pubkey.clone();
         let cbsd_id = event.cbsd_id.clone();
         let threshold_timestamp = event.threshold_timestamp;
@@ -279,8 +279,8 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<InvalidatedRadioThresholdReportReqV1>,
     ) -> GrpcResult<InvalidatedRadioThresholdReportRespV1> {
-        let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+        let timestamp = maybe_honor_timestamp(event.timestamp);
         let hotspot_pubkey = event.hotspot_pubkey.clone();
         let cbsd_id = event.cbsd_id.clone();
         let invalidated_timestamp = event.timestamp;
@@ -318,8 +318,8 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<CoverageObjectReqV1>,
     ) -> GrpcResult<CoverageObjectRespV1> {
-        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+        let timestamp = maybe_honor_timestamp(Utc::now().timestamp_millis() as u64);
 
         custom_tracing::record_b58("pub_key", &event.pub_key);
 
@@ -481,4 +481,30 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .build()
         .start()
         .await
+}
+
+/// Returns a timestamp based on certain conditions.
+///
+/// If the `time` feature is enabled and the `HONOR_TIMESTAMP` environment variable is set,
+/// the function will use the value of `HONOR_TIMESTAMP`. If `HONOR_TIMESTAMP` is "0",
+/// it returns the input `timestamp`. Otherwise, it attempts to parse and return the value of `HONOR_TIMESTAMP`.
+/// If parsing fails, it returns the input `timestamp`.
+///
+/// If the `time` feature is not enabled or `HONOR_TIMESTAMP` is not set,
+/// it returns the current time in milliseconds since the Unix epoch.
+///
+fn maybe_honor_timestamp(timestamp: u64) -> u64 {
+    if cfg!(feature = "time") && std::env::var("HONOR_TIMESTAMP").is_ok() {
+        let str = std::env::var("HONOR_TIMESTAMP").unwrap();
+        tracing::debug!("using HONOR_TIMESTAMP={}", str);
+        match str.as_str() {
+            "0" => timestamp,
+            timestamp_str => match timestamp_str.parse::<u64>() {
+                Ok(t) => t,
+                Err(_e) => timestamp,
+            },
+        }
+    } else {
+        Utc::now().timestamp_millis() as u64
+    }
 }

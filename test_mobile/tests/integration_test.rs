@@ -12,13 +12,15 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let docker = Docker::new();
+    if std::env::var("DOCKER").is_ok() {
+        let docker = Docker::new();
 
-    match docker.up() {
-        Ok(_) => {
-            tracing::info!("docker compose started")
+        match docker.up() {
+            Ok(_) => {
+                tracing::info!("docker compose started")
+            }
+            Err(e) => panic!("docker::up failed: {:?}", e),
         }
-        Err(e) => panic!("docker::up failed: {:?}", e),
     }
 
     let mut hotspot1 = Hotspot::new("api-token".to_string()).await;
