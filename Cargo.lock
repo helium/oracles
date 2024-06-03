@@ -2134,6 +2134,7 @@ dependencies = [
 name = "coverage-point-calculator"
 version = "0.1.0"
 dependencies = [
+ "coverage-map",
  "hex-assignments",
  "hextree",
  "rust_decimal",
