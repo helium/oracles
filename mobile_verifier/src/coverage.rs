@@ -65,6 +65,17 @@ impl From<SignalLevelProto> for SignalLevel {
     }
 }
 
+impl From<SignalLevel> for coverage_map::SignalLevel {
+    fn from(value: SignalLevel) -> Self {
+        match value {
+            SignalLevel::None => coverage_map::SignalLevel::None,
+            SignalLevel::Low => coverage_map::SignalLevel::Low,
+            SignalLevel::Medium => coverage_map::SignalLevel::Medium,
+            SignalLevel::High => coverage_map::SignalLevel::High,
+        }
+    }
+}
+
 pub struct CoverageDaemon {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,

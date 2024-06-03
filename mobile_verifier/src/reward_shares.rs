@@ -641,9 +641,6 @@ impl CoveragePoints2 {
 
 impl coverage_point_calculator::CoverageMap<RadioId> for CoveragePoints2 {
     fn hexes(&self, radio_id: &RadioId) -> Vec<coverage_point_calculator::CoveredHex> {
-        use crate::coverage;
-        use coverage_point_calculator as cpc;
-
         self.coverage_map
             .get(radio_id)
             .expect("coverage map")
@@ -655,12 +652,7 @@ impl coverage_point_calculator::CoverageMap<RadioId> for CoveragePoints2 {
                 coverage_point_calculator::CoveredHex {
                     cell: hex.hex,
                     rank: self.radio_rank(&radio_id, &hex),
-                    signal_level: match hex.signal_level {
-                        coverage::SignalLevel::None => cpc::SignalLevel::None,
-                        coverage::SignalLevel::Low => cpc::SignalLevel::Low,
-                        coverage::SignalLevel::Medium => cpc::SignalLevel::Medium,
-                        coverage::SignalLevel::High => cpc::SignalLevel::High,
-                    },
+                    signal_level: hex.signal_level.into(),
                     assignments: hex.assignments.clone(),
                     boosted: boosted_hex,
                 }

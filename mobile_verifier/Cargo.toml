@@ -59,6 +59,7 @@ humantime-serde = { workspace = true }
 custom-tracing = { path = "../custom_tracing" }
 hex-assignments = { path = "../hex_assignments" }
 coverage-point-calculator = { path = "../coverage_point_calculator" }
+coverage-map = { path = "../coverage_map" }
 
 [dev-dependencies]
 backon = "0"
