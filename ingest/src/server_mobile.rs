@@ -496,7 +496,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 fn maybe_honor_timestamp(timestamp: u64) -> u64 {
     if cfg!(feature = "time") && std::env::var("HONOR_TIMESTAMP").is_ok() {
         let str = std::env::var("HONOR_TIMESTAMP").unwrap();
-        tracing::debug!("using HONOR_TIMESTAMP={}", str);
+        tracing::debug!("using HONOR_TIMESTAMP={str} and timestamp={timestamp}");
         match str.as_str() {
             "0" => timestamp,
             timestamp_str => match timestamp_str.parse::<u64>() {

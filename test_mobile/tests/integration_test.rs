@@ -1,6 +1,5 @@
 use anyhow::Result;
 use common::{docker::Docker, hotspot::Hotspot, hours_ago};
-use std::time::Duration;
 use uuid::Uuid;
 
 mod common;
@@ -32,11 +31,11 @@ async fn main() -> Result<()> {
     hotspot1.submit_speedtest(1001, 1001, 25).await?;
     hotspot1.submit_speedtest(1002, 1002, 25).await?;
 
-    hotspot1
-        .submit_wifi_heartbeat(hours_ago(12), co_uuid)
-        .await?;
-
-    let _ = tokio::time::sleep(Duration::from_secs(10)).await;
+    for x in (1..=12).rev() {
+        hotspot1
+            .submit_wifi_heartbeat(hours_ago(x), co_uuid)
+            .await?;
+    }
 
     Ok(())
 }
