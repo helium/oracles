@@ -52,6 +52,7 @@ use crate::{
     location::{LocationTrust, LocationTrustScores},
     speedtest::{Speedtest, SpeedtestTier},
 };
+use coverage_map::SignalLevel;
 use hex_assignments::assignment::HexAssignments;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
@@ -156,14 +157,6 @@ impl RadioType {
             RadioType::OutdoorCbrs => vec![dec!(1), dec!(0.5), dec!(0.25)],
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SignalLevel {
-    High,
-    Medium,
-    Low,
-    None,
 }
 
 #[derive(Debug)]
