@@ -1,7 +1,7 @@
-log = "mobile-verifier=debug,file_store=info,custom_tracing=info"
+log = "mobile_verifier=debug,file_store=info,custom_tracing=info"
 cache = "/opt/mobile-verifier/data"
 rewards = "24 hours"
-reward_offset_minutes = "30 minutes"
+reward_period_offset = "30 seconds"
 modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC"
 # This needs to be created
 data_sets_directory = "/opt/mobile-verifier/data_sets_directory"

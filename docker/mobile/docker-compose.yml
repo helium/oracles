@@ -114,6 +114,7 @@ services:
       - ./verifier/usa_and_mexico_geofence_regions/mexico.txt:/opt/mobile-verifier/usa_and_mexico_geofence_regions/mexico.txt
       - ./verifier/usa_and_mexico_geofence_regions/us-territories.txt:/opt/mobile-verifier/usa_and_mexico_geofence_regions/us-territories.txt
       - ./verifier/usa_geofence_regions/us-territories.txt:/opt/mobile-verifier/usa_geofence_regions/us-territories.txt
+      - ./verifier/data_sets_directory:/opt/mobile-verifier/data_sets_directory
 
   reward_index:
     build:
