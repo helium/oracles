@@ -5,19 +5,24 @@
 /// place to start.
 ///
 /// ## Fields:
-/// - estimated_coverage_points
+/// - modeled_coverage_points
 ///   - [HIP-74][modeled-coverage]
 ///   - reduced cbrs radio coverage points [HIP-113][cbrs-experimental]
+///
 /// - assignment_multiplier
 ///   - [HIP-103][oracle-boosting]
+///
 /// - rank
 ///   - [HIP-105][hex-limits]
+///
 /// - hex_boost_multiplier  
 ///   - must meet minimum subscriber thresholds [HIP-84][provider-boosting]
 ///   - Wifi Location trust score >0.75 for boosted hex eligibility [HIP-93][wifi-aps]
+///
 /// - location_trust_score_multiplier
 ///   - [HIP-98][qos-score]
 ///   - increase Boosted hex restriction, 30m -> 50m [HIP-93][boosted-hex-restriction]
+///
 /// - speedtest_multiplier
 ///   - [HIP-74][modeled-coverage]
 ///   - added "Good" speedtest tier [HIP-98][qos-score]
@@ -47,6 +52,7 @@ use crate::{
     location::{LocationTrust, LocationTrustScores},
     speedtest::{Speedtest, SpeedtestTier},
 };
+use hex_assignments::assignment::HexAssignments;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
