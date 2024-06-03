@@ -223,6 +223,7 @@ pub fn new_coverage_object_notification_channel(
     )
 }
 
+#[derive(Clone)]
 pub struct CoverageObject {
     pub coverage_object: file_store::coverage::CoverageObject,
     pub validity: CoverageObjectValidity,
@@ -298,7 +299,7 @@ impl CoverageObject {
         Ok(())
     }
 
-    pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
+    pub async fn save(&self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         let insertion_time = Utc::now();
         let key = self.key();
         let hb_type = key.hb_type();
