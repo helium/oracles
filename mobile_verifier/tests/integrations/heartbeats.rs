@@ -461,7 +461,7 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
     let lat_lng: LatLng = cell.into();
 
     let epoch_start: DateTime<Utc> = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
-    let epoch_end: DateTime<Utc> = "2023-08-25 00:00:00.000000000 UTC".parse().unwrap();
+    let epoch_end: DateTime<Utc> = Utc::now() + Duration::days(1);
 
     let first_heartbeat = Heartbeat {
         hb_type: HbType::Wifi,
@@ -472,7 +472,7 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
         lon: lat_lng.lng(),
         coverage_object: Some(coverage_obj),
         location_validation_timestamp: Some(Utc::now()),
-        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+        timestamp: Utc::now(),
     };
 
     let first_heartbeat = ValidatedHeartbeat::validate(
@@ -500,7 +500,7 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
         lon: 0.0,
         coverage_object: Some(coverage_obj),
         location_validation_timestamp: None,
-        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+        timestamp: Utc::now(),
     };
 
     let second_heartbeat = ValidatedHeartbeat::validate(
@@ -537,7 +537,7 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
         lon: 0.0,
         coverage_object: Some(coverage_obj),
         location_validation_timestamp: None,
-        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+        timestamp: Utc::now(),
     };
 
     let third_heartbeat = ValidatedHeartbeat::validate(
@@ -566,7 +566,7 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
         lon: -104.697568066261,
         coverage_object: Some(coverage_obj_2),
         location_validation_timestamp: Some(Utc::now()),
-        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+        timestamp: Utc::now(),
     };
 
     let hotspot_2_hb_1 = ValidatedHeartbeat::validate(
@@ -613,7 +613,7 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
         lon: 0.0,
         coverage_object: Some(coverage_obj),
         location_validation_timestamp: None,
-        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+        timestamp: Utc::now(),
     };
 
     let fourth_heartbeat = ValidatedHeartbeat::validate(
@@ -651,7 +651,7 @@ async fn use_previous_location_if_timestamp_is_none(pool: PgPool) -> anyhow::Res
         location_validation_timestamp: Some(
             Utc::now() - (Duration::hours(12) + Duration::seconds(1)),
         ),
-        timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+        timestamp: Utc::now() - (Duration::hours(12) + Duration::seconds(1)),
     };
 
     let fifth_heartbeat = ValidatedHeartbeat::validate(

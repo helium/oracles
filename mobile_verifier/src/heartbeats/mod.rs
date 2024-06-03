@@ -544,6 +544,7 @@ impl ValidatedHeartbeat {
                                 &heartbeat.hotspot_key,
                                 LastLocation::new(
                                     location_validation_timestamp,
+                                    heartbeat.timestamp,
                                     heartbeat.lat,
                                     heartbeat.lon,
                                 ),

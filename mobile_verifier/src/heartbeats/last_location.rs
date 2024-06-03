@@ -8,14 +8,21 @@ use sqlx::PgPool;
 #[derive(sqlx::FromRow, Copy, Clone)]
 pub struct LastLocation {
     pub location_validation_timestamp: DateTime<Utc>,
+    pub latest_timestamp: DateTime<Utc>,
     pub lat: f64,
     pub lon: f64,
 }
 
 impl LastLocation {
-    pub fn new(location_validation_timestamp: DateTime<Utc>, lat: f64, lon: f64) -> Self {
+    pub fn new(
+        location_validation_timestamp: DateTime<Utc>,
+        latest_timestamp: DateTime<Utc>,
+        lat: f64,
+        lon: f64,
+    ) -> Self {
         Self {
             location_validation_timestamp,
+            latest_timestamp,
             lat,
             lon,
         }
@@ -23,8 +30,7 @@ impl LastLocation {
 
     /// Calculates the duration from now in which last_valid_timestamp is 12 hours old
     pub fn duration_to_expiration(&self) -> Duration {
-        ((self.location_validation_timestamp + Duration::hours(12)) - Utc::now())
-            .max(Duration::zero())
+        ((self.latest_timestamp + Duration::hours(12)) - Utc::now()).max(Duration::zero())
     }
 }
 
@@ -56,12 +62,12 @@ impl LocationCache {
     ) -> anyhow::Result<Option<LastLocation>> {
         let last_location: Option<LastLocation> = sqlx::query_as(
             r#"
-            SELECT location_validation_timestamp, lat, lon
+            SELECT location_validation_timestamp, latest_timestamp, lat, lon
             FROM wifi_heartbeats
             WHERE location_validation_timestamp IS NOT NULL
-                AND location_validation_timestamp >= $1
+                AND latest_timestamp >= $1
                 AND hotspot_key = $2
-            ORDER BY location_validation_timestamp DESC
+            ORDER BY latest_timestamp DESC
             LIMIT 1
             "#,
         )
