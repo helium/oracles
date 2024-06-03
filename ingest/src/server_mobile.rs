@@ -1,6 +1,6 @@
 use crate::Settings;
 use anyhow::{bail, Error, Result};
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use file_store::{
     file_sink::{self, FileSinkClient},
     file_upload,
@@ -26,8 +26,6 @@ use tonic::{
     metadata::{Ascii, MetadataValue},
     transport, Request, Response, Status,
 };
-
-const INGEST_WAIT_DURATION_MINUTES: i64 = 15;
 
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 pub type VerifyResult<T> = std::result::Result<T, Status>;
@@ -354,7 +352,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         file_upload.clone(),
         concat!(env!("CARGO_PKG_NAME"), "_heartbeat_report"),
     )
-    .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+    .roll_time(settings.roll_time)
     .create()
     .await?;
 
@@ -365,7 +363,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_wifi_heartbeat_report"),
         )
-        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .roll_time(settings.roll_time)
         .create()
         .await?;
 
@@ -376,7 +374,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         file_upload.clone(),
         concat!(env!("CARGO_PKG_NAME"), "_speedtest_report"),
     )
-    .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+    .roll_time(settings.roll_time)
     .create()
     .await?;
 
@@ -390,7 +388,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
                 "_mobile_data_transfer_session_report"
             ),
         )
-        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .roll_time(settings.roll_time)
         .create()
         .await?;
 
@@ -401,7 +399,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_subscriber_location_report"),
         )
-        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .roll_time(settings.roll_time)
         .create()
         .await?;
 
@@ -412,7 +410,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_radio_threshold_ingest_report"),
         )
-        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .roll_time(settings.roll_time)
         .create()
         .await?;
 
@@ -426,7 +424,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
                 "_invalidated_radio_threshold_ingest_report"
             ),
         )
-        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .roll_time(settings.roll_time)
         .create()
         .await?;
 
@@ -437,7 +435,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_coverage_object_report"),
         )
-        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .roll_time(settings.roll_time)
         .create()
         .await?;
 

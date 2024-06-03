@@ -2,7 +2,7 @@ use crate::{
     speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE},
     Settings,
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::{self, FileSinkClient},
@@ -22,7 +22,10 @@ use helium_proto::services::poc_mobile::{
 };
 use mobile_config::client::gateway_client::GatewayInfoResolver;
 use sqlx::{postgres::PgRow, FromRow, Pool, Postgres, Row, Transaction};
-use std::{collections::HashMap, time::Instant};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
@@ -77,7 +80,7 @@ where
             concat!(env!("CARGO_PKG_NAME"), "_verified_speedtest"),
         )
         .auto_commit(false)
-        .roll_time(Duration::minutes(15))
+        .roll_time(Duration::from_secs(15 * 60))
         .create()
         .await?;
 
@@ -263,7 +266,7 @@ pub async fn get_latest_speedtests_for_pubkey(
         "#,
     )
     .bind(pubkey)
-    .bind(timestamp - Duration::hours(SPEEDTEST_LAPSE))
+    .bind(timestamp - chrono::Duration::hours(SPEEDTEST_LAPSE))
     .bind(timestamp)
     .bind(SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
     .fetch_all(exec)
@@ -277,7 +280,7 @@ pub async fn aggregate_epoch_speedtests<'a>(
 ) -> Result<EpochSpeedTests, sqlx::Error> {
     let mut speedtests = EpochSpeedTests::new();
     // use latest speedtest which are no older than N hours, defined by SPEEDTEST_LAPSE
-    let start = epoch_end - Duration::hours(SPEEDTEST_LAPSE);
+    let start = epoch_end - chrono::Duration::hours(SPEEDTEST_LAPSE);
     // pull the last N most recent speedtests from prior to the epoch end for each pubkey
     let mut rows = sqlx::query_as::<_, Speedtest>(
         "select * from (
@@ -304,7 +307,7 @@ pub async fn clear_speedtests(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     epoch_end: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    let oldest_ts = *epoch_end - Duration::hours(SPEEDTEST_LAPSE);
+    let oldest_ts = *epoch_end - chrono::Duration::hours(SPEEDTEST_LAPSE);
     sqlx::query("DELETE FROM speedtests WHERE timestamp < $1")
         .bind(oldest_ts)
         .execute(&mut *tx)

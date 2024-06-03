@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::{
     boosting_oracles::DataSetDownloaderDaemon,
     coverage::{new_coverage_object_notification_channel, CoverageDaemon},
@@ -11,7 +13,6 @@ use crate::{
     telemetry, Settings,
 };
 use anyhow::Result;
-use chrono::Duration;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
@@ -52,7 +53,7 @@ impl Cmd {
             concat!(env!("CARGO_PKG_NAME"), "_heartbeat"),
         )
         .auto_commit(false)
-        .roll_time(Duration::minutes(15))
+        .roll_time(Duration::from_secs(15 * 60))
         .create()
         .await?;
 
@@ -64,7 +65,7 @@ impl Cmd {
             concat!(env!("CARGO_PKG_NAME"), "_seniority_update"),
         )
         .auto_commit(false)
-        .roll_time(Duration::minutes(15))
+        .roll_time(Duration::from_secs(15 * 60))
         .create()
         .await?;
 
@@ -75,7 +76,7 @@ impl Cmd {
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
         )
         .auto_commit(false)
-        .roll_time(Duration::minutes(15))
+        .roll_time(Duration::from_secs(15 * 60))
         .create()
         .await?;
 

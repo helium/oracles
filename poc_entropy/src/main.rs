@@ -1,13 +1,12 @@
 use anyhow::{Error, Result};
-use chrono::Duration;
 use clap::Parser;
 use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
 use poc_entropy::{entropy_generator::EntropyGenerator, server::ApiServer, Settings};
-use std::{net::SocketAddr, path};
+use std::{net::SocketAddr, path, time::Duration};
 use tokio::{self, signal};
 
-const ENTROPY_SINK_ROLL_MINS: i64 = 2;
+const ENTROPY_SINK_ROLL_SECS: u64 = 2 * 60;
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -77,7 +76,7 @@ impl Server {
             file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
         )
-        .roll_time(Duration::minutes(ENTROPY_SINK_ROLL_MINS))
+        .roll_time(Duration::from_secs(ENTROPY_SINK_ROLL_SECS))
         .create()
         .await?;
 
