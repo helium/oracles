@@ -8,7 +8,9 @@ use mobile_verifier::{
     cell_type::CellType,
     coverage::{CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::{HbType, Heartbeat, HeartbeatReward, LocationCache, ValidatedHeartbeat},
+    heartbeats::{
+        last_location::LocationCache, HbType, Heartbeat, HeartbeatReward, ValidatedHeartbeat,
+    },
     GatewayResolution, GatewayResolver,
 };
 use rust_decimal::Decimal;
