@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
 COPY custom_tracing    custom_tracing/
 COPY db_store          db_store/
 COPY file_store        file_store/
+COPY hex_assignments   hex_assignments/
 COPY metrics           metrics/
 COPY price             price/
 COPY reward_scheduler  reward_scheduler/

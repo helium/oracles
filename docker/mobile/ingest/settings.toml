@@ -5,6 +5,7 @@ cache = "/opt/ingest/data"
 network = "mainnet"
 session_key_timeout = "30 minutes"
 token = "api-token"
+roll_time = "30 seconds"
 
 [output]
 bucket = "mobile-ingest"
