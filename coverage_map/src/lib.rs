@@ -199,3 +199,222 @@ impl BoostedHexMap for NoBoostedHexes {
         None
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use hex_assignments::Assignment;
+
+    #[test]
+    fn test_indoor_cbrs_submap() {
+        let mut coverage_map_builder = CoverageMapBuilder::default();
+        coverage_map_builder.insert_coverage_object(indoor_cbrs_coverage(
+            "1",
+            0x8a1fb46622dffff,
+            SignalLevel::High,
+        ));
+        coverage_map_builder.insert_coverage_object(indoor_cbrs_coverage(
+            "2",
+            0x8c2681a3064d9ff,
+            SignalLevel::Low,
+        ));
+        let submap_builder = coverage_map_builder.submap(vec![indoor_cbrs_coverage(
+            "3",
+            0x8c2681a3064d9ff,
+            SignalLevel::High,
+        )]);
+        let submap = submap_builder.build(&NoBoostedHexes, Utc::now());
+        let cov_1 = submap.get_cbrs_coverage("1");
+        assert_eq!(cov_1.len(), 0);
+        let cov_2 = submap.get_cbrs_coverage("2");
+        assert_eq!(cov_2.len(), 1);
+        assert_eq!(cov_2[0].rank, 2);
+        let cov_3 = submap.get_cbrs_coverage("3");
+        assert_eq!(cov_3.len(), 1);
+        assert_eq!(cov_3[0].rank, 1);
+    }
+
+    #[test]
+    fn test_indoor_wifi_submap() {
+        let mut coverage_map_builder = CoverageMapBuilder::default();
+        coverage_map_builder.insert_coverage_object(indoor_wifi_coverage(
+            "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9",
+            0x8a1fb46622dffff,
+            SignalLevel::High,
+        ));
+        coverage_map_builder.insert_coverage_object(indoor_wifi_coverage(
+            "11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR",
+            0x8c2681a3064d9ff,
+            SignalLevel::Low,
+        ));
+        let submap_builder = coverage_map_builder.submap(vec![indoor_wifi_coverage(
+            "11ibmJmQXTL6qMh4cq9pJ7tUtrpafWaVjjT6qhY7CNvjyvY9g1",
+            0x8c2681a3064d9ff,
+            SignalLevel::High,
+        )]);
+        let submap = submap_builder.build(&NoBoostedHexes, Utc::now());
+        let cov_1 = submap.get_wifi_coverage(
+            &"11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(cov_1.len(), 0);
+        let cov_2 = submap.get_wifi_coverage(
+            &"11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(cov_2.len(), 1);
+        assert_eq!(cov_2[0].rank, 2);
+        let cov_3 = submap.get_wifi_coverage(
+            &"11ibmJmQXTL6qMh4cq9pJ7tUtrpafWaVjjT6qhY7CNvjyvY9g1"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(cov_3.len(), 1);
+        assert_eq!(cov_3[0].rank, 1);
+    }
+
+    #[test]
+    fn test_outdoor_cbrs_submap() {
+        let mut coverage_map_builder = CoverageMapBuilder::default();
+        coverage_map_builder.insert_coverage_object(outdoor_cbrs_coverage(
+            "1",
+            0x8a1fb46622dffff,
+            3,
+        ));
+        coverage_map_builder.insert_coverage_object(outdoor_cbrs_coverage(
+            "2",
+            0x8c2681a3064d9ff,
+            1,
+        ));
+        let submap_builder =
+            coverage_map_builder.submap(vec![outdoor_cbrs_coverage("3", 0x8c2681a3064d9ff, 2)]);
+        let submap = submap_builder.build(&NoBoostedHexes, Utc::now());
+        let cov_1 = submap.get_cbrs_coverage("1");
+        assert_eq!(cov_1.len(), 0);
+        let cov_2 = submap.get_cbrs_coverage("2");
+        assert_eq!(cov_2.len(), 1);
+        assert_eq!(cov_2[0].rank, 2);
+        let cov_3 = submap.get_cbrs_coverage("3");
+        assert_eq!(cov_3.len(), 1);
+        assert_eq!(cov_3[0].rank, 1);
+    }
+
+    #[test]
+    fn test_outdoor_wifi_submap() {
+        let mut coverage_map_builder = CoverageMapBuilder::default();
+        coverage_map_builder.insert_coverage_object(outdoor_wifi_coverage(
+            "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9",
+            0x8a1fb46622dffff,
+            3,
+        ));
+        coverage_map_builder.insert_coverage_object(outdoor_wifi_coverage(
+            "11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR",
+            0x8c2681a3064d9ff,
+            1,
+        ));
+        let submap_builder = coverage_map_builder.submap(vec![outdoor_wifi_coverage(
+            "11ibmJmQXTL6qMh4cq9pJ7tUtrpafWaVjjT6qhY7CNvjyvY9g1",
+            0x8c2681a3064d9ff,
+            2,
+        )]);
+        let submap = submap_builder.build(&NoBoostedHexes, Utc::now());
+        let cov_1 = submap.get_wifi_coverage(
+            &"11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(cov_1.len(), 0);
+        let cov_2 = submap.get_wifi_coverage(
+            &"11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(cov_2.len(), 1);
+        assert_eq!(cov_2[0].rank, 2);
+        let cov_3 = submap.get_wifi_coverage(
+            &"11ibmJmQXTL6qMh4cq9pJ7tUtrpafWaVjjT6qhY7CNvjyvY9g1"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(cov_3.len(), 1);
+        assert_eq!(cov_3[0].rank, 1);
+    }
+
+    fn hex_assignments_mock() -> HexAssignments {
+        HexAssignments {
+            footfall: Assignment::A,
+            urbanized: Assignment::A,
+            landtype: Assignment::A,
+        }
+    }
+
+    fn indoor_cbrs_coverage(cbsd_id: &str, hex: u64, signal_level: SignalLevel) -> CoverageObject {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        CoverageObject {
+            indoor: true,
+            hotspot_key: owner,
+            seniority_timestamp: Utc::now(),
+            cbsd_id: Some(cbsd_id.to_string()),
+            coverage: vec![UnrankedCoverage {
+                location: Cell::from_raw(hex).expect("valid h3 cell"),
+                signal_power: 0,
+                signal_level,
+                assignments: hex_assignments_mock(),
+            }],
+        }
+    }
+
+    fn indoor_wifi_coverage(owner: &str, hex: u64, signal_level: SignalLevel) -> CoverageObject {
+        let owner: PublicKeyBinary = owner.parse().expect("failed owner parse");
+        CoverageObject {
+            indoor: true,
+            hotspot_key: owner,
+            seniority_timestamp: Utc::now(),
+            cbsd_id: None,
+            coverage: vec![UnrankedCoverage {
+                location: Cell::from_raw(hex).expect("valid h3 cell"),
+                signal_power: 0,
+                signal_level,
+                assignments: hex_assignments_mock(),
+            }],
+        }
+    }
+
+    fn outdoor_cbrs_coverage(cbsd_id: &str, hex: u64, signal_power: i32) -> CoverageObject {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        CoverageObject {
+            indoor: false,
+            hotspot_key: owner,
+            seniority_timestamp: Utc::now(),
+            cbsd_id: Some(cbsd_id.to_string()),
+            coverage: vec![UnrankedCoverage {
+                location: Cell::from_raw(hex).expect("valid h3 cell"),
+                signal_power,
+                signal_level: SignalLevel::None,
+                assignments: hex_assignments_mock(),
+            }],
+        }
+    }
+
+    fn outdoor_wifi_coverage(owner: &str, hex: u64, signal_power: i32) -> CoverageObject {
+        let owner: PublicKeyBinary = owner.parse().expect("failed owner parse");
+        CoverageObject {
+            indoor: false,
+            hotspot_key: owner,
+            seniority_timestamp: Utc::now(),
+            cbsd_id: None,
+            coverage: vec![UnrankedCoverage {
+                location: Cell::from_raw(hex).expect("valid h3 cell"),
+                signal_power,
+                signal_level: SignalLevel::None,
+                assignments: hex_assignments_mock(),
+            }],
+        }
+    }
+}
