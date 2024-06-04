@@ -5,7 +5,7 @@ use coverage_point_calculator::{
     calculate_coverage_points,
     location::{LocationTrust, Meters},
     speedtest::{BytesPs, Millis, Speedtest},
-    CoverageMapExt, CoveredHex, RadioThreshold, RadioType, Rank, RewardableRadio,
+    CoveredHex, RadioThreshold, RadioType, Rank, RewardableRadio,
 };
 use hex_assignments::{assignment::HexAssignments, Assignment};
 use rust_decimal_macros::dec;
@@ -29,23 +29,17 @@ fn base_radio_coverage_points() {
         trust_score: dec!(1.0),
     }];
 
-    struct TestCoverageMap;
-
-    impl CoverageMapExt<()> for TestCoverageMap {
-        fn hexes(&self, _radio: &()) -> Vec<CoveredHex> {
-            vec![CoveredHex {
-                cell: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
-                rank: Rank::new(1).unwrap(),
-                signal_level: SignalLevel::High,
-                assignments: HexAssignments {
-                    footfall: Assignment::A,
-                    landtype: Assignment::A,
-                    urbanized: Assignment::A,
-                },
-                boosted: NonZeroU32::new(0),
-            }]
-        }
-    }
+    let hexes = vec![CoveredHex {
+        cell: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
+        rank: Rank::new(1).unwrap(),
+        signal_level: SignalLevel::High,
+        assignments: HexAssignments {
+            footfall: Assignment::A,
+            landtype: Assignment::A,
+            urbanized: Assignment::A,
+        },
+        boosted: NonZeroU32::new(0),
+    }];
 
     let mut radios = vec![];
     for radio_type in [
@@ -59,7 +53,7 @@ fn base_radio_coverage_points() {
             speedtests.clone(),
             location_trust_scores.clone(),
             RadioThreshold::Verified,
-            TestCoverageMap.hexes(&()),
+            hexes.clone(),
         );
         radios.push(radio.clone());
         println!(
@@ -97,19 +91,14 @@ fn radio_unique_coverage() {
     map.insert("outdoor_wifi", hex.clone().take(25).collect());
     map.insert("outdoor_cbrs", hex.clone().take(100).collect());
 
-    struct TestCoverageMap<'a>(HashMap<&'a str, Vec<CoveredHex>>);
-    let coverage_map = TestCoverageMap(map);
-
-    impl CoverageMapExt<RadioType> for TestCoverageMap<'_> {
-        fn hexes(&self, key: &RadioType) -> Vec<CoveredHex> {
-            let key = match key {
-                RadioType::IndoorWifi => "indoor_wifi",
-                RadioType::OutdoorWifi => "outdoor_wifi",
-                RadioType::IndoorCbrs => "indoor_cbrs",
-                RadioType::OutdoorCbrs => "outdoor_cbrs",
-            };
-            self.0.get(key).unwrap().clone()
-        }
+    fn hexes(coverage_map: &HashMap<&str, Vec<CoveredHex>>, key: &RadioType) -> Vec<CoveredHex> {
+        let key = match key {
+            RadioType::IndoorWifi => "indoor_wifi",
+            RadioType::OutdoorWifi => "outdoor_wifi",
+            RadioType::IndoorCbrs => "indoor_cbrs",
+            RadioType::OutdoorCbrs => "outdoor_cbrs",
+        };
+        coverage_map.get(key).unwrap().clone()
     }
 
     let default_speedtests = vec![
@@ -141,7 +130,7 @@ fn radio_unique_coverage() {
             default_speedtests.clone(),
             default_location_trust_scores.clone(),
             RadioThreshold::Verified,
-            coverage_map.hexes(&radio_type),
+            hexes(&map, &radio_type),
         ));
     }
 

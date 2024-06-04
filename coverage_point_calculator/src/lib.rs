@@ -65,11 +65,6 @@ pub type Multiplier = std::num::NonZeroU32;
 pub type MaxOneMultplier = Decimal;
 type Points = Decimal;
 
-// TODO: Going the way of D.O.D.O - Neil Stephenson
-pub trait CoverageMapExt<Key> {
-    fn hexes(&self, radio: &Key, radio_type: &RadioType) -> Vec<CoveredHex>;
-}
-
 pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
     let base_points = radio.hex_coverage_points();
     let location_score = radio.location_trust_multiplier();
