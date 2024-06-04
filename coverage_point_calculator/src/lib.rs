@@ -60,13 +60,28 @@ pub mod location;
 pub mod speedtest;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
+
+#[derive(Debug, Clone)]
+pub struct RewardableRadio {
+    pub radio_type: RadioType,
+    pub speedtests: Vec<Speedtest>,
+    pub location_trust_scores: LocationTrustScores,
+    pub radio_threshold: RadioThreshold,
+    pub covered_hexes: CoveredHexes,
+}
+
+#[derive(Debug)]
+pub struct CoveragePoints {
+    pub coverage_points: Decimal,
+    pub radio: RewardableRadio,
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("signal level {0:?} not allowed for {1:?}")]
     InvalidSignalLevel(SignalLevel, RadioType),
 }
 
-pub type Multiplier = std::num::NonZeroU32;
 pub type MaxOneMultplier = Decimal;
 
 pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
@@ -81,74 +96,6 @@ pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
         coverage_points,
         radio,
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum RadioType {
-    IndoorWifi,
-    OutdoorWifi,
-    IndoorCbrs,
-    OutdoorCbrs,
-}
-
-impl RadioType {
-    fn base_coverage_points(&self, signal_level: &SignalLevel) -> Result<Decimal> {
-        let mult = match self {
-            RadioType::IndoorWifi => match signal_level {
-                SignalLevel::High => dec!(400),
-                SignalLevel::Low => dec!(100),
-                other => return Err(Error::InvalidSignalLevel(*other, *self)),
-            },
-            RadioType::OutdoorWifi => match signal_level {
-                SignalLevel::High => dec!(16),
-                SignalLevel::Medium => dec!(8),
-                SignalLevel::Low => dec!(4),
-                SignalLevel::None => dec!(0),
-            },
-            RadioType::IndoorCbrs => match signal_level {
-                SignalLevel::High => dec!(100),
-                SignalLevel::Low => dec!(25),
-                other => return Err(Error::InvalidSignalLevel(*other, *self)),
-            },
-            RadioType::OutdoorCbrs => match signal_level {
-                SignalLevel::High => dec!(4),
-                SignalLevel::Medium => dec!(2),
-                SignalLevel::Low => dec!(1),
-                SignalLevel::None => dec!(0),
-            },
-        };
-        Ok(mult)
-    }
-
-    fn rank_multipliers(&self) -> Vec<Decimal> {
-        match self {
-            RadioType::IndoorWifi => vec![dec!(1)],
-            RadioType::IndoorCbrs => vec![dec!(1)],
-            RadioType::OutdoorWifi => vec![dec!(1), dec!(0.5), dec!(0.25)],
-            RadioType::OutdoorCbrs => vec![dec!(1), dec!(0.5), dec!(0.25)],
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct CoveragePoints {
-    pub coverage_points: Decimal,
-    pub radio: RewardableRadio,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum RadioThreshold {
-    Verified,
-    UnVerified,
-}
-
-#[derive(Debug, Clone)]
-pub struct RewardableRadio {
-    pub radio_type: RadioType,
-    pub speedtests: Vec<Speedtest>,
-    pub location_trust_scores: LocationTrustScores,
-    pub radio_threshold: RadioThreshold,
-    pub covered_hexes: CoveredHexes,
 }
 
 impl RewardableRadio {
@@ -207,31 +154,7 @@ impl RewardableRadio {
     pub fn radio_threshold_met(&self) -> bool {
         matches!(self.radio_threshold, RadioThreshold::Verified)
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct CoveredHexes {
-    any_boosted: bool,
-    hexes: Vec<RankedCoverage>,
-}
-
-impl CoveredHexes {
-    fn new(radio_type: &RadioType, covered_hexes: Vec<RankedCoverage>) -> Result<Self> {
-        let any_boosted = covered_hexes.iter().any(|hex| hex.boosted.is_some());
-        // verify all hexes can obtain a base coverage point
-        covered_hexes
-            .iter()
-            .map(|hex| radio_type.base_coverage_points(&hex.signal_level))
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(Self {
-            any_boosted,
-            hexes: covered_hexes,
-        })
-    }
-}
-
-impl RewardableRadio {
     pub fn location_trust_multiplier(&self) -> Decimal {
         // CBRS radios are always trusted because they have internal GPS
         if self.is_cbrs() {
@@ -290,10 +213,85 @@ impl RewardableRadio {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum RadioThreshold {
+    Verified,
+    UnVerified,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RadioType {
+    IndoorWifi,
+    OutdoorWifi,
+    IndoorCbrs,
+    OutdoorCbrs,
+}
+
+impl RadioType {
+    fn base_coverage_points(&self, signal_level: &SignalLevel) -> Result<Decimal> {
+        let mult = match self {
+            RadioType::IndoorWifi => match signal_level {
+                SignalLevel::High => dec!(400),
+                SignalLevel::Low => dec!(100),
+                other => return Err(Error::InvalidSignalLevel(*other, *self)),
+            },
+            RadioType::OutdoorWifi => match signal_level {
+                SignalLevel::High => dec!(16),
+                SignalLevel::Medium => dec!(8),
+                SignalLevel::Low => dec!(4),
+                SignalLevel::None => dec!(0),
+            },
+            RadioType::IndoorCbrs => match signal_level {
+                SignalLevel::High => dec!(100),
+                SignalLevel::Low => dec!(25),
+                other => return Err(Error::InvalidSignalLevel(*other, *self)),
+            },
+            RadioType::OutdoorCbrs => match signal_level {
+                SignalLevel::High => dec!(4),
+                SignalLevel::Medium => dec!(2),
+                SignalLevel::Low => dec!(1),
+                SignalLevel::None => dec!(0),
+            },
+        };
+        Ok(mult)
+    }
+
+    fn rank_multipliers(&self) -> Vec<Decimal> {
+        match self {
+            RadioType::IndoorWifi => vec![dec!(1)],
+            RadioType::IndoorCbrs => vec![dec!(1)],
+            RadioType::OutdoorWifi => vec![dec!(1), dec!(0.5), dec!(0.25)],
+            RadioType::OutdoorCbrs => vec![dec!(1), dec!(0.5), dec!(0.25)],
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CoveredHexes {
+    any_boosted: bool,
+    hexes: Vec<RankedCoverage>,
+}
+
+impl CoveredHexes {
+    fn new(radio_type: &RadioType, covered_hexes: Vec<RankedCoverage>) -> Result<Self> {
+        let any_boosted = covered_hexes.iter().any(|hex| hex.boosted.is_some());
+        // verify all hexes can obtain a base coverage point
+        covered_hexes
+            .iter()
+            .map(|hex| radio_type.base_coverage_points(&hex.signal_level))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(Self {
+            any_boosted,
+            hexes: covered_hexes,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
-    use std::str::FromStr;
+    use std::{num::NonZeroU32, str::FromStr};
 
     use crate::{
         location::Meters,
@@ -334,7 +332,7 @@ mod tests {
                     rank: 1,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
-                    boosted: Multiplier::new(5),
+                    boosted: NonZeroU32::new(5),
                 }],
             )
             .unwrap(),
@@ -371,7 +369,7 @@ mod tests {
                     rank: 1,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
-                    boosted: Multiplier::new(5),
+                    boosted: NonZeroU32::new(5),
                 }],
             )
             .unwrap(),
@@ -700,7 +698,7 @@ mod tests {
                         rank: 1,
                         signal_level: SignalLevel::Low,
                         assignments: assignments_maximum(),
-                        boosted: Multiplier::new(4),
+                        boosted: NonZeroU32::new(4),
                     },
                 ],
             )
