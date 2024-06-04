@@ -12,4 +12,4 @@ flamegraph.*
 !/minio/bucket-policy.json
 *.bak
 
-docker/mobile/verifier/data_sets_directory/
+docker/mobile/verifier/data_sets_directory/*
