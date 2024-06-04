@@ -7,7 +7,7 @@ use crate::{
     subscriber_location::SubscriberValidatedLocations,
 };
 use chrono::{DateTime, Duration, Utc};
-use coverage_point_calculator::{location, CoverageMapExt, RewardableRadio};
+use coverage_point_calculator::{location, RewardableRadio};
 use file_store::traits::TimestampEncode;
 use futures::{stream, Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -469,6 +469,50 @@ impl InnerCoverageMap {
         }
         return NonZeroUsize::MAX;
     }
+
+    fn old_hexes(
+        &self,
+        radio_id: &RadioId,
+        radio_type: &coverage_point_calculator::RadioType,
+    ) -> Vec<coverage_point_calculator::CoveredHex> {
+        self.coverage_hash_map
+            .get(radio_id)
+            .expect("coverage map")
+            .into_iter()
+            .map(|hex| {
+                let boosted_hex = self
+                    .boosted_hexes
+                    .get_current_multiplier(hex.hex, self.reward_period.start);
+
+                coverage_point_calculator::CoveredHex {
+                    cell: hex.hex,
+                    rank: self.radio_rank(radio_id, radio_type, hex),
+                    signal_level: hex.signal_level.into(),
+                    assignments: hex.assignments.clone(),
+                    boosted: boosted_hex,
+                }
+            })
+            .collect()
+    }
+
+    // fn new_hexes(&self, radio_id: &RadioId) -> Vec<coverage_point_calculator::CoveredHex> {
+    //     let (pubkey, cbsd_id) = radio_id;
+    //     let ranked_coverage = match cbsd_id {
+    //         Some(cbsd_id) => self.coverage_map.get_cbrs_coverage(cbsd_id),
+    //         None => self.coverage_map.get_wifi_coverage(pubkey),
+    //     };
+    //     ranked_coverage
+    //         .to_vec()
+    //         .into_iter()
+    //         .map(|ranked| coverage_point_calculator::CoveredHex {
+    //             cell: ranked.hex,
+    //             rank: NonZeroUsize::new(ranked.rank).expect("ranked coverage rank >1"),
+    //             signal_level: ranked.signal_level,
+    //             assignments: ranked.assignments,
+    //             boosted: ranked.boosted,
+    //         })
+    //         .collect()
+    // }
 }
 
 #[derive(Debug)]
@@ -674,7 +718,7 @@ impl CoveragePoints2 {
             .expect("trust scores")
             .clone();
         let verified = self.radio_threshold_verified(&radio_id);
-        let hexes = self.coverage_map.hexes(&radio_id, &radio_type);
+        let hexes = self.coverage_map.old_hexes(&radio_id, &radio_type);
 
         let radio = RewardableRadio::new(radio_type, speedtests, trust_scores, verified, hexes);
         let coverage_points = coverage_point_calculator::calculate_coverage_points(radio);
@@ -698,52 +742,6 @@ fn make_heartbeat_trust_scores(heartbeat: &HeartbeatReward) -> Vec<location::Loc
             trust_score,
         })
         .collect()
-}
-
-impl coverage_point_calculator::CoverageMapExt<RadioId> for InnerCoverageMap {
-    fn hexes(
-        &self,
-        radio_id: &RadioId,
-        radio_type: &coverage_point_calculator::RadioType,
-    ) -> Vec<coverage_point_calculator::CoveredHex> {
-        self.coverage_hash_map
-            .get(radio_id)
-            .expect("coverage map")
-            .into_iter()
-            .map(|hex| {
-                let boosted_hex = self
-                    .boosted_hexes
-                    .get_current_multiplier(hex.hex, self.reward_period.start);
-
-                coverage_point_calculator::CoveredHex {
-                    cell: hex.hex,
-                    rank: self.radio_rank(radio_id, radio_type, hex),
-                    signal_level: hex.signal_level.into(),
-                    assignments: hex.assignments.clone(),
-                    boosted: boosted_hex,
-                }
-            })
-            .collect()
-    }
-
-    // fn hexes_matty(&self, radio_id: &RadioId) -> Vec<coverage_point_calculator::CoveredHex> {
-    //     let (pubkey, cbsd_id) = radio_id;
-    //     let ranked_coverage = match cbsd_id {
-    //         Some(cbsd_id) => self.coverage_map.get_cbrs_coverage(cbsd_id),
-    //         None => self.coverage_map.get_wifi_coverage(pubkey),
-    //     };
-    //     ranked_coverage
-    //         .to_vec()
-    //         .into_iter()
-    //         .map(|ranked| coverage_point_calculator::CoveredHex {
-    //             cell: ranked.hex,
-    //             rank: NonZeroUsize::new(ranked.rank).expect("ranked coverage rank >1"),
-    //             signal_level: ranked.signal_level,
-    //             assignments: ranked.assignments,
-    //             boosted: ranked.boosted,
-    //         })
-    //         .collect()
-    // }
 }
 
 pub fn coverage_point_to_mobile_reward_share(
