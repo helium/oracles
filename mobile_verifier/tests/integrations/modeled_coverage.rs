@@ -18,7 +18,8 @@ use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     geofence::GeofenceValidator,
     heartbeats::{
-        Heartbeat, HeartbeatReward, KeyType, LocationCache, SeniorityUpdate, ValidatedHeartbeat,
+        last_location::LocationCache, Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate,
+        ValidatedHeartbeat,
     },
     radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoveragePoints,
