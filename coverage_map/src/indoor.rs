@@ -91,25 +91,22 @@ pub fn into_indoor_coverage_map(
     boosted_hexes: &impl BoostedHexMap,
     epoch_start: DateTime<Utc>,
 ) -> impl Iterator<Item = RankedCoverage> + '_ {
-    indoor
-        .into_iter()
-        .flat_map(move |(hex, radios)| {
-            let boosted = boosted_hexes.get_current_multiplier(hex, epoch_start);
-            radios
-                .into_values()
-                .flat_map(move |radios| radios.into_sorted_vec().into_iter())
-                .map(move |cov| (hex, boosted, cov))
-        })
-        .enumerate()
-        .map(move |(rank, (hex, boosted, cov))| RankedCoverage {
-            hex,
-            rank: rank + 1,
-            hotspot_key: cov.hotspot_key,
-            cbsd_id: cov.cbsd_id,
-            assignments: cov.assignments,
-            boosted,
-            signal_level: cov.signal_level,
-        })
+    indoor.into_iter().flat_map(move |(hex, radios)| {
+        let boosted = boosted_hexes.get_current_multiplier(hex, epoch_start);
+        radios
+            .into_values()
+            .flat_map(move |radios| radios.into_sorted_vec().into_iter())
+            .enumerate()
+            .map(move |(rank, cov)| RankedCoverage {
+                hex,
+                rank: rank + 1,
+                hotspot_key: cov.hotspot_key,
+                cbsd_id: cov.cbsd_id,
+                assignments: cov.assignments,
+                boosted,
+                signal_level: cov.signal_level,
+            })
+    })
 }
 
 #[cfg(test)]
@@ -208,6 +205,34 @@ mod test {
             .and_utc()
     }
 
+    #[test]
+    fn single_radio() {
+        let mut indoor_coverage = IndoorCellTree::default();
+
+        insert_indoor_coverage_object(
+            &mut indoor_coverage,
+            indoor_cbrs_coverage_with_loc(
+                "1",
+                Cell::from_raw(0x8c2681a3064d9ff).unwrap(),
+                date(2022, 2, 2),
+            ),
+        );
+        insert_indoor_coverage_object(
+            &mut indoor_coverage,
+            indoor_cbrs_coverage_with_loc(
+                "1",
+                Cell::from_raw(0x8c2681a3064dbff).unwrap(),
+                date(2022, 2, 2),
+            ),
+        );
+
+        let coverage = into_indoor_coverage_map(indoor_coverage, &NoBoostedHexes, Utc::now())
+            .collect::<Vec<_>>();
+        // Both coverages should be ranked 1
+        assert_eq!(coverage[0].rank, 1);
+        assert_eq!(coverage[1].rank, 1);
+    }
+
     fn indoor_cbrs_coverage(cbsd_id: &str, signal_level: SignalLevel) -> CoverageObject {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -243,6 +268,28 @@ mod test {
                 location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                 signal_power: 0,
                 signal_level,
+                assignments: hex_assignments_mock(),
+            }],
+        }
+    }
+
+    fn indoor_cbrs_coverage_with_loc(
+        cbsd_id: &str,
+        location: Cell,
+        seniority_timestamp: DateTime<Utc>,
+    ) -> CoverageObject {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        CoverageObject {
+            indoor: true,
+            hotspot_key: owner,
+            seniority_timestamp,
+            cbsd_id: Some(cbsd_id.to_string()),
+            coverage: vec![UnrankedCoverage {
+                location,
+                signal_power: 0,
+                signal_level: SignalLevel::High,
                 assignments: hex_assignments_mock(),
             }],
         }
