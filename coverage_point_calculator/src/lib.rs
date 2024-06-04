@@ -59,9 +59,15 @@ use rust_decimal_macros::dec;
 pub mod location;
 pub mod speedtest;
 
+pub type Result<T = ()> = std::result::Result<T, Error>;
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("signal level {0:?} not allowed for {1:?}")]
+    InvalidSignalLevel(SignalLevel, RadioType),
+}
+
 pub type Multiplier = std::num::NonZeroU32;
 pub type MaxOneMultplier = Decimal;
-type Points = Decimal;
 
 pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
     let base_points = radio.hex_coverage_points();
@@ -86,12 +92,12 @@ pub enum RadioType {
 }
 
 impl RadioType {
-    fn base_coverage_points(&self, signal_level: &SignalLevel) -> Points {
-        match self {
+    fn base_coverage_points(&self, signal_level: &SignalLevel) -> Result<Decimal> {
+        let mult = match self {
             RadioType::IndoorWifi => match signal_level {
                 SignalLevel::High => dec!(400),
                 SignalLevel::Low => dec!(100),
-                other => panic!("indoor wifi radios cannot have {other:?} signal levels"),
+                other => return Err(Error::InvalidSignalLevel(*other, *self)),
             },
             RadioType::OutdoorWifi => match signal_level {
                 SignalLevel::High => dec!(16),
@@ -102,7 +108,7 @@ impl RadioType {
             RadioType::IndoorCbrs => match signal_level {
                 SignalLevel::High => dec!(100),
                 SignalLevel::Low => dec!(25),
-                other => panic!("indoor cbrs radios cannot have {other:?} signal levels"),
+                other => return Err(Error::InvalidSignalLevel(*other, *self)),
             },
             RadioType::OutdoorCbrs => match signal_level {
                 SignalLevel::High => dec!(4),
@@ -110,7 +116,8 @@ impl RadioType {
                 SignalLevel::Low => dec!(1),
                 SignalLevel::None => dec!(0),
             },
-        }
+        };
+        Ok(mult)
     }
 
     fn rank_multipliers(&self) -> Vec<Decimal> {
@@ -151,14 +158,14 @@ impl RewardableRadio {
         location_trust_scores: Vec<LocationTrust>,
         verified_radio_threshold: RadioThreshold,
         covered_hexes: Vec<RankedCoverage>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        Ok(Self {
             radio_type,
             speedtests,
             location_trust_scores: LocationTrustScores::new(location_trust_scores),
             radio_threshold: verified_radio_threshold,
-            covered_hexes: CoveredHexes::new(covered_hexes),
-        }
+            covered_hexes: CoveredHexes::new(&radio_type, covered_hexes)?,
+        })
     }
 
     // These points need to be reported in the proto pre-(location, speedtest) multipliers
@@ -171,15 +178,20 @@ impl RewardableRadio {
             .iter()
             .filter(|hex| hex.rank <= max_rank)
             .map(|hex| {
-                let base_coverage_points = self.radio_type.base_coverage_points(&hex.signal_level);
+                let base_coverage_points = self
+                    .radio_type
+                    .base_coverage_points(&hex.signal_level)
+                    .expect("base coverage points");
                 let assignments_multiplier = hex.assignments.boosting_multiplier();
                 let rank_multiplier = rank_multipliers[hex.rank - 1];
                 let hex_boost_multiplier = self.hex_boosting_multiplier(hex);
 
-                base_coverage_points
+                let total = base_coverage_points
                     * assignments_multiplier
                     * rank_multiplier
-                    * hex_boost_multiplier
+                    * hex_boost_multiplier;
+
+                total
             })
             .sum()
     }
@@ -204,12 +216,18 @@ pub struct CoveredHexes {
 }
 
 impl CoveredHexes {
-    fn new(covered_hexes: Vec<RankedCoverage>) -> Self {
+    fn new(radio_type: &RadioType, covered_hexes: Vec<RankedCoverage>) -> Result<Self> {
         let any_boosted = covered_hexes.iter().any(|hex| hex.boosted.is_some());
-        Self {
+        // verify all hexes can obtain a base coverage point
+        covered_hexes
+            .iter()
+            .map(|hex| radio_type.base_coverage_points(&hex.signal_level))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(Self {
             any_boosted,
             hexes: covered_hexes,
-        }
+        })
     }
 }
 
@@ -307,18 +325,24 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: trusted_location,
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![RankedCoverage {
-                cbsd_id: None,
-                hotspot_key: pubkey(),
-                hex: hex_location(),
-                rank: 1,
-                signal_level: SignalLevel::High,
-                assignments: assignments_maximum(),
-                boosted: Multiplier::new(5),
-            }]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::IndoorWifi,
+                vec![RankedCoverage {
+                    cbsd_id: None,
+                    hotspot_key: pubkey(),
+                    hex: hex_location(),
+                    rank: 1,
+                    signal_level: SignalLevel::High,
+                    assignments: assignments_maximum(),
+                    boosted: Multiplier::new(5),
+                }],
+            )
+            .unwrap(),
         };
 
-        let base_points = RadioType::IndoorWifi.base_coverage_points(&SignalLevel::High);
+        let base_points = RadioType::IndoorWifi
+            .base_coverage_points(&SignalLevel::High)
+            .unwrap();
         // Boosted Hex get's radio over the base_points
         assert!(wifi.location_trust_multiplier() > dec!(0.75));
         assert!(calculate_coverage_points(wifi.clone()).coverage_points > base_points);
@@ -338,18 +362,24 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: trusted_location,
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![RankedCoverage {
-                hotspot_key: pubkey(),
-                cbsd_id: None,
-                hex: hex_location(),
-                rank: 1,
-                signal_level: SignalLevel::High,
-                assignments: assignments_maximum(),
-                boosted: Multiplier::new(5),
-            }]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::IndoorWifi,
+                vec![RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
+                    signal_level: SignalLevel::High,
+                    assignments: assignments_maximum(),
+                    boosted: Multiplier::new(5),
+                }],
+            )
+            .unwrap(),
         };
 
-        let base_points = RadioType::IndoorWifi.base_coverage_points(&SignalLevel::High);
+        let base_points = RadioType::IndoorWifi
+            .base_coverage_points(&SignalLevel::High)
+            .unwrap();
         // Boosted Hex get's radio over the base_points
         assert!(wifi.location_trust_multiplier() > dec!(0.75));
         assert!(calculate_coverage_points(wifi.clone()).coverage_points > base_points);
@@ -367,15 +397,19 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![RankedCoverage {
-                hotspot_key: pubkey(),
-                cbsd_id: Some("serial".to_string()),
-                hex: hex_location(),
-                rank: 1,
-                signal_level: SignalLevel::High,
-                assignments: assignments_maximum(),
-                boosted: None,
-            }]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::IndoorCbrs,
+                vec![RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: Some("serial".to_string()),
+                    hex: hex_location(),
+                    rank: 1,
+                    signal_level: SignalLevel::High,
+                    assignments: assignments_maximum(),
+                    boosted: None,
+                }],
+            )
+            .unwrap(),
         };
 
         assert_eq!(
@@ -448,42 +482,46 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![
-                // yellow - POI ≥ 1 Urbanized
-                local_hex(A, A, A), // 100
-                local_hex(A, B, A), // 100
-                local_hex(A, C, A), // 100
-                // orange - POI ≥ 1 Not Urbanized
-                local_hex(A, A, B), // 100
-                local_hex(A, B, B), // 100
-                local_hex(A, C, B), // 100
-                // light green - Point of Interest Urbanized
-                local_hex(B, A, A), // 70
-                local_hex(B, B, A), // 70
-                local_hex(B, C, A), // 70
-                // dark green - Point of Interest Not Urbanized
-                local_hex(B, A, B), // 50
-                local_hex(B, B, B), // 50
-                local_hex(B, C, B), // 50
-                // light blue - No POI Urbanized
-                local_hex(C, A, A), // 40
-                local_hex(C, B, A), // 30
-                local_hex(C, C, A), // 5
-                // dark blue - No POI Not Urbanized
-                local_hex(C, A, B), // 20
-                local_hex(C, B, B), // 15
-                local_hex(C, C, B), // 3
-                // gray - Outside of USA
-                local_hex(A, A, C), // 0
-                local_hex(A, B, C), // 0
-                local_hex(A, C, C), // 0
-                local_hex(B, A, C), // 0
-                local_hex(B, B, C), // 0
-                local_hex(B, C, C), // 0
-                local_hex(C, A, C), // 0
-                local_hex(C, B, C), // 0
-                local_hex(C, C, C), // 0
-            ]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::IndoorCbrs,
+                vec![
+                    // yellow - POI ≥ 1 Urbanized
+                    local_hex(A, A, A), // 100
+                    local_hex(A, B, A), // 100
+                    local_hex(A, C, A), // 100
+                    // orange - POI ≥ 1 Not Urbanized
+                    local_hex(A, A, B), // 100
+                    local_hex(A, B, B), // 100
+                    local_hex(A, C, B), // 100
+                    // light green - Point of Interest Urbanized
+                    local_hex(B, A, A), // 70
+                    local_hex(B, B, A), // 70
+                    local_hex(B, C, A), // 70
+                    // dark green - Point of Interest Not Urbanized
+                    local_hex(B, A, B), // 50
+                    local_hex(B, B, B), // 50
+                    local_hex(B, C, B), // 50
+                    // light blue - No POI Urbanized
+                    local_hex(C, A, A), // 40
+                    local_hex(C, B, A), // 30
+                    local_hex(C, C, A), // 5
+                    // dark blue - No POI Not Urbanized
+                    local_hex(C, A, B), // 20
+                    local_hex(C, B, B), // 15
+                    local_hex(C, C, B), // 3
+                    // gray - Outside of USA
+                    local_hex(A, A, C), // 0
+                    local_hex(A, B, C), // 0
+                    local_hex(A, C, C), // 0
+                    local_hex(B, A, C), // 0
+                    local_hex(B, B, C), // 0
+                    local_hex(B, C, C), // 0
+                    local_hex(C, A, C), // 0
+                    local_hex(C, B, C), // 0
+                    local_hex(C, C, C), // 0
+                ],
+            )
+            .unwrap(),
         };
 
         assert_eq!(
@@ -499,44 +537,48 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 2,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 3,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 42,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-            ]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::OutdoorWifi,
+                vec![
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 2,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 3,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 42,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                ],
+            )
+            .unwrap(),
         };
 
         // rank 1  :: 1.00 * 16 == 16
@@ -556,35 +598,39 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 2,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 42,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-            ]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::IndoorWifi,
+                vec![
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 2,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 42,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                ],
+            )
+            .unwrap(),
         };
 
         assert_eq!(
@@ -606,15 +652,19 @@ mod tests {
                 dec!(0.4),
             ]),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![RankedCoverage {
-                hotspot_key: pubkey(),
-                cbsd_id: None,
-                hex: hex_location(),
-                rank: 1,
-                signal_level: SignalLevel::High,
-                assignments: assignments_maximum(),
-                boosted: None,
-            }]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::IndoorWifi,
+                vec![RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
+                    signal_level: SignalLevel::High,
+                    assignments: assignments_maximum(),
+                    boosted: None,
+                }],
+            )
+            .unwrap(),
         };
 
         // Location trust scores is 1/4
@@ -631,26 +681,30 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::Low,
-                    assignments: assignments_maximum(),
-                    boosted: Multiplier::new(4),
-                },
-            ]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::IndoorWifi,
+                vec![
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::Low,
+                        assignments: assignments_maximum(),
+                        boosted: Multiplier::new(4),
+                    },
+                ],
+            )
+            .unwrap(),
         };
         // The hex with a low signal_level is boosted to the same level as a
         // signal_level of High.
@@ -674,44 +728,48 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: Some("serial".to_string()),
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: Some("serial".to_string()),
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::Medium,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: Some("serial".to_string()),
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::Low,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: Some("serial".to_string()),
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::None,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-            ]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::OutdoorCbrs,
+                vec![
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: Some("serial".to_string()),
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: Some("serial".to_string()),
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::Medium,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: Some("serial".to_string()),
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::Low,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: Some("serial".to_string()),
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::None,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                ],
+            )
+            .unwrap(),
         };
 
         let indoor_cbrs = RewardableRadio {
@@ -719,26 +777,30 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: Some("serial".to_string()),
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: Some("serial".to_string()),
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::Low,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-            ]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::IndoorCbrs,
+                vec![
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: Some("serial".to_string()),
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: Some("serial".to_string()),
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::Low,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                ],
+            )
+            .unwrap(),
         };
 
         let outdoor_wifi = RewardableRadio {
@@ -746,44 +808,48 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::Medium,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::Low,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::None,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-            ]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::OutdoorWifi,
+                vec![
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::Medium,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::Low,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::None,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                ],
+            )
+            .unwrap(),
         };
 
         let indoor_wifi = RewardableRadio {
@@ -791,26 +857,30 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::Low,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-            ]),
+            covered_hexes: CoveredHexes::new(
+                &RadioType::IndoorWifi,
+                vec![
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::High,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                    RankedCoverage {
+                        hotspot_key: pubkey(),
+                        cbsd_id: None,
+                        hex: hex_location(),
+                        rank: 1,
+                        signal_level: SignalLevel::Low,
+                        assignments: assignments_maximum(),
+                        boosted: None,
+                    },
+                ],
+            )
+            .unwrap(),
         };
 
         // When each radio contains a hex of every applicable signal_level, and

@@ -61,7 +61,8 @@ fn base_radio_coverage_points() {
             location_trust_scores.clone(),
             RadioThreshold::Verified,
             hexes.clone(),
-        );
+        )
+        .unwrap();
         radios.push(radio.clone());
         println!(
             "{radio_type:?} \t--> {}",
@@ -142,22 +143,21 @@ fn radio_unique_coverage() {
         RadioType::OutdoorWifi,
         RadioType::OutdoorCbrs,
     ] {
-        radios.push(RewardableRadio::new(
-            radio_type,
-            default_speedtests.clone(),
-            default_location_trust_scores.clone(),
-            RadioThreshold::Verified,
-            hexes(&map, &radio_type),
-        ));
+        radios.push(
+            RewardableRadio::new(
+                radio_type,
+                default_speedtests.clone(),
+                default_location_trust_scores.clone(),
+                RadioThreshold::Verified,
+                hexes(&map, &radio_type),
+            )
+            .unwrap(),
+        );
     }
 
     let coverage_points = radios
         .into_iter()
         .map(|r| (r.radio_type, calculate_coverage_points(r).coverage_points))
         .collect::<Vec<_>>();
-
-    // let coverage_points = make_rewardable_radios(&radios, &coverage_map)
-    //     .map(|r| (r.radio_type, calculate_coverage_points(r).coverage_points))
-    //     .collect::<Vec<_>>();
     println!("{coverage_points:#?}")
 }

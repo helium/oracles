@@ -2140,6 +2140,7 @@ dependencies = [
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
+ "thiserror",
 ]
 
 [[package]]
