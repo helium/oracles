@@ -2135,6 +2135,7 @@ name = "coverage-point-calculator"
 version = "0.1.0"
 dependencies = [
  "coverage-map",
+ "helium-crypto",
  "hex-assignments",
  "hextree",
  "rust_decimal",

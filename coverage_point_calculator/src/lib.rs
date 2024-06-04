@@ -52,15 +52,13 @@ use crate::{
     location::{LocationTrust, LocationTrustScores},
     speedtest::{Speedtest, SpeedtestTier},
 };
-use coverage_map::SignalLevel;
-use hex_assignments::assignment::HexAssignments;
+use coverage_map::{RankedCoverage, SignalLevel};
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
 pub mod location;
 pub mod speedtest;
 
-pub type Rank = std::num::NonZeroUsize;
 pub type Multiplier = std::num::NonZeroU32;
 pub type MaxOneMultplier = Decimal;
 type Points = Decimal;
@@ -137,7 +135,7 @@ pub enum RadioThreshold {
     UnVerified,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct RewardableRadio {
     pub radio_type: RadioType,
     pub speedtests: Vec<Speedtest>,
@@ -152,7 +150,7 @@ impl RewardableRadio {
         speedtests: Vec<Speedtest>,
         location_trust_scores: Vec<LocationTrust>,
         verified_radio_threshold: RadioThreshold,
-        covered_hexes: Vec<CoveredHex>,
+        covered_hexes: Vec<RankedCoverage>,
     ) -> Self {
         Self {
             radio_type,
@@ -171,11 +169,11 @@ impl RewardableRadio {
         self.covered_hexes
             .hexes
             .iter()
-            .filter(|hex| hex.rank.get() <= max_rank)
+            .filter(|hex| hex.rank <= max_rank)
             .map(|hex| {
                 let base_coverage_points = self.radio_type.base_coverage_points(&hex.signal_level);
                 let assignments_multiplier = hex.assignments.boosting_multiplier();
-                let rank_multiplier = rank_multipliers[hex.rank.get() - 1];
+                let rank_multiplier = rank_multipliers[hex.rank - 1];
                 let hex_boost_multiplier = self.hex_boosting_multiplier(hex);
 
                 base_coverage_points
@@ -186,7 +184,7 @@ impl RewardableRadio {
             .sum()
     }
 
-    pub fn iter_covered_hexes(&self) -> impl Iterator<Item = CoveredHex> {
+    pub fn iter_covered_hexes(&self) -> impl Iterator<Item = RankedCoverage> {
         self.covered_hexes.hexes.clone().into_iter()
     }
 
@@ -199,34 +197,19 @@ impl RewardableRadio {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct CoveredHexes {
     any_boosted: bool,
-    hexes: Vec<CoveredHex>,
+    hexes: Vec<RankedCoverage>,
 }
 
 impl CoveredHexes {
-    fn new(covered_hexes: Vec<CoveredHex>) -> Self {
+    fn new(covered_hexes: Vec<RankedCoverage>) -> Self {
         let any_boosted = covered_hexes.iter().any(|hex| hex.boosted.is_some());
         Self {
             any_boosted,
             hexes: covered_hexes,
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CoveredHex {
-    pub cell: hextree::Cell,
-    pub rank: Rank,
-    pub signal_level: SignalLevel,
-    pub assignments: HexAssignments,
-    pub boosted: Option<Multiplier>,
-}
-
-impl CoveredHex {
-    pub fn is_boosted(&self) -> bool {
-        self.boosted.is_some_and(|boost| boost.get() > 1)
     }
 }
 
@@ -244,7 +227,7 @@ impl RewardableRadio {
         }
     }
 
-    fn hex_boosting_multiplier(&self, hex: &CoveredHex) -> MaxOneMultplier {
+    fn hex_boosting_multiplier(&self, hex: &RankedCoverage) -> MaxOneMultplier {
         // need to consider requirements from hip93 & hip84 before applying any boost
         // hip93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
         if self.is_wifi() && self.location_trust_multiplier() < dec!(0.75) {
@@ -292,13 +275,15 @@ impl RewardableRadio {
 #[cfg(test)]
 mod tests {
 
+    use std::str::FromStr;
+
     use crate::{
         location::Meters,
         speedtest::{BytesPs, Millis},
     };
 
     use super::*;
-    use hex_assignments::Assignment;
+    use hex_assignments::{assignment::HexAssignments, Assignment};
     use rust_decimal_macros::dec;
 
     fn hex_location() -> hextree::Cell {
@@ -322,9 +307,11 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: trusted_location,
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![CoveredHex {
-                cell: hex_location(),
-                rank: Rank::new(1).unwrap(),
+            covered_hexes: CoveredHexes::new(vec![RankedCoverage {
+                cbsd_id: None,
+                hotspot_key: pubkey(),
+                hex: hex_location(),
+                rank: 1,
                 signal_level: SignalLevel::High,
                 assignments: assignments_maximum(),
                 boosted: Multiplier::new(5),
@@ -351,9 +338,11 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: trusted_location,
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![CoveredHex {
-                cell: hex_location(),
-                rank: Rank::new(1).unwrap(),
+            covered_hexes: CoveredHexes::new(vec![RankedCoverage {
+                hotspot_key: pubkey(),
+                cbsd_id: None,
+                hex: hex_location(),
+                rank: 1,
                 signal_level: SignalLevel::High,
                 assignments: assignments_maximum(),
                 boosted: Multiplier::new(5),
@@ -378,9 +367,11 @@ mod tests {
             speedtests: Speedtest::maximum(),
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![CoveredHex {
-                cell: hex_location(),
-                rank: Rank::new(1).unwrap(),
+            covered_hexes: CoveredHexes::new(vec![RankedCoverage {
+                hotspot_key: pubkey(),
+                cbsd_id: Some("serial".to_string()),
+                hex: hex_location(),
+                rank: 1,
                 signal_level: SignalLevel::High,
                 assignments: assignments_maximum(),
                 boosted: None,
@@ -435,10 +426,12 @@ mod tests {
             footfall: Assignment,
             landtype: Assignment,
             urbanized: Assignment,
-        ) -> CoveredHex {
-            CoveredHex {
-                cell: hex_location(),
-                rank: Rank::new(1).unwrap(),
+        ) -> RankedCoverage {
+            RankedCoverage {
+                hotspot_key: pubkey(),
+                cbsd_id: Some("serial".to_string()),
+                hex: hex_location(),
+                rank: 1,
                 signal_level: SignalLevel::High,
                 assignments: HexAssignments {
                     footfall,
@@ -507,30 +500,38 @@ mod tests {
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(2).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 2,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(3).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 3,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(42).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 42,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
@@ -556,23 +557,29 @@ mod tests {
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(2).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 2,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(42).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 42,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
@@ -599,9 +606,11 @@ mod tests {
                 dec!(0.4),
             ]),
             radio_threshold: RadioThreshold::Verified,
-            covered_hexes: CoveredHexes::new(vec![CoveredHex {
-                cell: hex_location(),
-                rank: Rank::new(1).unwrap(),
+            covered_hexes: CoveredHexes::new(vec![RankedCoverage {
+                hotspot_key: pubkey(),
+                cbsd_id: None,
+                hex: hex_location(),
+                rank: 1,
                 signal_level: SignalLevel::High,
                 assignments: assignments_maximum(),
                 boosted: None,
@@ -623,16 +632,20 @@ mod tests {
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::Low,
                     assignments: assignments_maximum(),
                     boosted: Multiplier::new(4),
@@ -662,30 +675,38 @@ mod tests {
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: Some("serial".to_string()),
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: Some("serial".to_string()),
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::Medium,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: Some("serial".to_string()),
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::Low,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: Some("serial".to_string()),
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::None,
                     assignments: assignments_maximum(),
                     boosted: None,
@@ -699,16 +720,20 @@ mod tests {
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: Some("serial".to_string()),
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: Some("serial".to_string()),
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::Low,
                     assignments: assignments_maximum(),
                     boosted: None,
@@ -722,30 +747,38 @@ mod tests {
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::Medium,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::Low,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::None,
                     assignments: assignments_maximum(),
                     boosted: None,
@@ -759,16 +792,20 @@ mod tests {
             location_trust_scores: LocationTrustScores::maximum(),
             radio_threshold: RadioThreshold::Verified,
             covered_hexes: CoveredHexes::new(vec![
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
                 },
-                CoveredHex {
-                    cell: hex_location(),
-                    rank: Rank::new(1).unwrap(),
+                RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
                     signal_level: SignalLevel::Low,
                     assignments: assignments_maximum(),
                     boosted: None,
@@ -842,5 +879,12 @@ mod tests {
                     .collect(),
             )
         }
+    }
+
+    fn pubkey() -> helium_crypto::PublicKeyBinary {
+        helium_crypto::PublicKeyBinary::from_str(
+            "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6",
+        )
+        .expect("failed owner parse")
     }
 }
