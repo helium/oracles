@@ -65,16 +65,9 @@ pub type Multiplier = std::num::NonZeroU32;
 pub type MaxOneMultplier = Decimal;
 type Points = Decimal;
 
-pub trait Radio<Key> {
-    fn key(&self) -> Key;
-    fn radio_type(&self) -> RadioType;
-    fn speedtests(&self) -> Vec<Speedtest>;
-    fn location_trust_scores(&self) -> Vec<LocationTrust>;
-    fn verified_radio_threshold(&self) -> RadioThreshold;
-}
-
-pub trait CoverageMap<Key> {
-    fn hexes(&self, radio: &Key) -> Vec<CoveredHex>;
+// TODO: Going the way of D.O.D.O - Neil Stephenson
+pub trait CoverageMapExt<Key> {
+    fn hexes(&self, radio: &Key, radio_type: &RadioType) -> Vec<CoveredHex>;
 }
 
 pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
@@ -88,28 +81,6 @@ pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
     CoveragePoints {
         coverage_points,
         radio,
-    }
-}
-
-pub fn make_rewardable_radios<'a, K>(
-    radios: &'a [impl Radio<K>],
-    coverage_map: &'a impl CoverageMap<K>,
-) -> impl Iterator<Item = RewardableRadio> + 'a {
-    radios
-        .iter()
-        .map(|radio| make_rewardable_radio(radio, coverage_map))
-}
-
-pub fn make_rewardable_radio<K>(
-    radio: &impl Radio<K>,
-    coverage_map: &impl CoverageMap<K>,
-) -> RewardableRadio {
-    RewardableRadio {
-        radio_type: radio.radio_type(),
-        speedtests: radio.speedtests(),
-        location_trust_scores: LocationTrustScores::new(radio.location_trust_scores()),
-        radio_threshold: radio.verified_radio_threshold(),
-        covered_hexes: CoveredHexes::new(coverage_map.hexes(&radio.key())),
     }
 }
 

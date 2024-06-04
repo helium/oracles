@@ -4,53 +4,34 @@ use coverage_map::SignalLevel;
 use coverage_point_calculator::{
     calculate_coverage_points,
     location::{LocationTrust, Meters},
-    make_rewardable_radio, make_rewardable_radios,
     speedtest::{BytesPs, Millis, Speedtest},
-    CoverageMap, CoveredHex, Radio, RadioThreshold, RadioType, Rank,
+    CoverageMapExt, CoveredHex, RadioThreshold, RadioType, Rank, RewardableRadio,
 };
 use hex_assignments::{assignment::HexAssignments, Assignment};
 use rust_decimal_macros::dec;
 
 #[test]
 fn base_radio_coverage_points() {
-    struct TestRadio(RadioType);
+    let speedtests = vec![
+        Speedtest {
+            upload_speed: BytesPs::mbps(15),
+            download_speed: BytesPs::mbps(150),
+            latency: Millis::new(15),
+        },
+        Speedtest {
+            upload_speed: BytesPs::mbps(15),
+            download_speed: BytesPs::mbps(150),
+            latency: Millis::new(15),
+        },
+    ];
+    let location_trust_scores = vec![LocationTrust {
+        distance_to_asserted: Meters::new(1),
+        trust_score: dec!(1.0),
+    }];
+
     struct TestCoverageMap;
 
-    impl Radio<()> for TestRadio {
-        fn key(&self) {}
-
-        fn radio_type(&self) -> RadioType {
-            self.0
-        }
-
-        fn speedtests(&self) -> Vec<Speedtest> {
-            vec![
-                Speedtest {
-                    upload_speed: BytesPs::mbps(15),
-                    download_speed: BytesPs::mbps(150),
-                    latency: Millis::new(15),
-                },
-                Speedtest {
-                    upload_speed: BytesPs::mbps(15),
-                    download_speed: BytesPs::mbps(150),
-                    latency: Millis::new(15),
-                },
-            ]
-        }
-
-        fn location_trust_scores(&self) -> Vec<LocationTrust> {
-            vec![LocationTrust {
-                distance_to_asserted: Meters::new(1),
-                trust_score: dec!(1.0),
-            }]
-        }
-
-        fn verified_radio_threshold(&self) -> RadioThreshold {
-            RadioThreshold::Verified
-        }
-    }
-
-    impl CoverageMap<()> for TestCoverageMap {
+    impl CoverageMapExt<()> for TestCoverageMap {
         fn hexes(&self, _radio: &()) -> Vec<CoveredHex> {
             vec![CoveredHex {
                 cell: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
@@ -66,26 +47,29 @@ fn base_radio_coverage_points() {
         }
     }
 
+    let mut radios = vec![];
     for radio_type in [
         RadioType::IndoorWifi,
         RadioType::IndoorCbrs,
         RadioType::OutdoorWifi,
         RadioType::OutdoorCbrs,
     ] {
-        let radio = make_rewardable_radio(&TestRadio(radio_type), &TestCoverageMap);
+        let radio = RewardableRadio::new(
+            radio_type,
+            speedtests.clone(),
+            location_trust_scores.clone(),
+            RadioThreshold::Verified,
+            TestCoverageMap.hexes(&()),
+        );
+        radios.push(radio.clone());
         println!(
             "{radio_type:?} \t--> {}",
             calculate_coverage_points(radio).coverage_points
         );
     }
 
-    let radios = vec![
-        TestRadio(RadioType::IndoorWifi),
-        TestRadio(RadioType::IndoorCbrs),
-        TestRadio(RadioType::OutdoorWifi),
-        TestRadio(RadioType::OutdoorCbrs),
-    ];
-    let output = make_rewardable_radios(&radios, &TestCoverageMap)
+    let output = radios
+        .into_iter()
         .map(|r| (r.radio_type, calculate_coverage_points(r).coverage_points))
         .collect::<Vec<_>>();
     println!("{output:#?}");
@@ -93,51 +77,6 @@ fn base_radio_coverage_points() {
 
 #[test]
 fn radio_unique_coverage() {
-    struct TestRadio(RadioType);
-
-    let radios = vec![
-        TestRadio(RadioType::IndoorWifi),
-        TestRadio(RadioType::IndoorCbrs),
-        TestRadio(RadioType::OutdoorWifi),
-        TestRadio(RadioType::OutdoorCbrs),
-    ];
-
-    impl Radio<RadioType> for TestRadio {
-        fn key(&self) -> RadioType {
-            self.0
-        }
-
-        fn radio_type(&self) -> RadioType {
-            self.0
-        }
-
-        fn speedtests(&self) -> Vec<Speedtest> {
-            vec![
-                Speedtest {
-                    upload_speed: BytesPs::mbps(15),
-                    download_speed: BytesPs::mbps(150),
-                    latency: Millis::new(15),
-                },
-                Speedtest {
-                    upload_speed: BytesPs::mbps(15),
-                    download_speed: BytesPs::mbps(150),
-                    latency: Millis::new(15),
-                },
-            ]
-        }
-
-        fn location_trust_scores(&self) -> Vec<LocationTrust> {
-            vec![LocationTrust {
-                distance_to_asserted: Meters::new(1),
-                trust_score: dec!(1.0),
-            }]
-        }
-
-        fn verified_radio_threshold(&self) -> RadioThreshold {
-            RadioThreshold::Verified
-        }
-    }
-
     // all radios will receive 400 coverage points
     let base_hex = CoveredHex {
         cell: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
@@ -161,7 +100,7 @@ fn radio_unique_coverage() {
     struct TestCoverageMap<'a>(HashMap<&'a str, Vec<CoveredHex>>);
     let coverage_map = TestCoverageMap(map);
 
-    impl CoverageMap<RadioType> for TestCoverageMap<'_> {
+    impl CoverageMapExt<RadioType> for TestCoverageMap<'_> {
         fn hexes(&self, key: &RadioType) -> Vec<CoveredHex> {
             let key = match key {
                 RadioType::IndoorWifi => "indoor_wifi",
@@ -173,8 +112,46 @@ fn radio_unique_coverage() {
         }
     }
 
-    let coverage_points = make_rewardable_radios(&radios, &coverage_map)
+    let default_speedtests = vec![
+        Speedtest {
+            upload_speed: BytesPs::mbps(15),
+            download_speed: BytesPs::mbps(150),
+            latency: Millis::new(15),
+        },
+        Speedtest {
+            upload_speed: BytesPs::mbps(15),
+            download_speed: BytesPs::mbps(150),
+            latency: Millis::new(15),
+        },
+    ];
+    let default_location_trust_scores = vec![LocationTrust {
+        distance_to_asserted: Meters::new(1),
+        trust_score: dec!(1.0),
+    }];
+
+    let mut radios = vec![];
+    for radio_type in [
+        RadioType::IndoorWifi,
+        RadioType::IndoorCbrs,
+        RadioType::OutdoorWifi,
+        RadioType::OutdoorCbrs,
+    ] {
+        radios.push(RewardableRadio::new(
+            radio_type,
+            default_speedtests.clone(),
+            default_location_trust_scores.clone(),
+            RadioThreshold::Verified,
+            coverage_map.hexes(&radio_type),
+        ));
+    }
+
+    let coverage_points = radios
+        .into_iter()
         .map(|r| (r.radio_type, calculate_coverage_points(r).coverage_points))
         .collect::<Vec<_>>();
+
+    // let coverage_points = make_rewardable_radios(&radios, &coverage_map)
+    //     .map(|r| (r.radio_type, calculate_coverage_points(r).coverage_points))
+    //     .collect::<Vec<_>>();
     println!("{coverage_points:#?}")
 }
