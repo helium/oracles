@@ -24,6 +24,9 @@ chrono = { workspace = true }
 helium-crypto = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

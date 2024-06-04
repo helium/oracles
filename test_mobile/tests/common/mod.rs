@@ -1,7 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
-use helium_crypto::Keypair;
 
 pub mod docker;
 pub mod hotspot;
@@ -24,10 +23,6 @@ pub fn now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64
-}
-
-pub fn keypair_to_bs58(keypair: &Keypair) -> String {
-    bs58::encode(keypair.public_key().to_vec()).into_string()
 }
 
 pub fn hours_ago(hours: i64) -> u64 {

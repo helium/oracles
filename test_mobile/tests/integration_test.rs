@@ -1,5 +1,6 @@
 use anyhow::Result;
 use common::{docker::Docker, hotspot::Hotspot, hours_ago};
+use test_mobile::cli::assignment::CENTER_CELL;
 use uuid::Uuid;
 
 mod common;
@@ -23,7 +24,9 @@ async fn main() -> Result<()> {
         }
     }
 
-    let mut hotspot1 = Hotspot::new("api-token".to_string()).await;
+    let api_token = "api-token".to_string();
+
+    let mut hotspot1 = Hotspot::new(api_token, CENTER_CELL).await?;
     let co_uuid = Uuid::new_v4();
 
     hotspot1.submit_coverage_object(co_uuid).await?;

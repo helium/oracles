@@ -45,7 +45,7 @@ impl Docker {
 impl Drop for Docker {
     fn drop(&mut self) {
         // This code runs when the scope exits, including if the test fails.
-        tracing::info!("Test finished. Performing cleanup.");
+        tracing::debug!("Docker dropped");
         match self.stop() {
             Ok(_) => tracing::info!("docker stack stopped"),
             Err(e) => tracing::error!("docker compose stopped failed: {:?}", e),
