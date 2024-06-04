@@ -722,7 +722,7 @@ impl CoveragePoints2 {
         let verified = self.radio_threshold_verified(&radio_id);
         let hexes = self.coverage_map.old_hexes(&radio_id, &radio_type);
 
-        let radio = RewardableRadio::new(radio_type, speedtests, trust_scores, verified, hexes);
+        let radio = RewardableRadio::new(radio_type, speedtests, trust_scores, verified, hexes)?;
         let coverage_points = coverage_point_calculator::calculate_coverage_points(radio);
 
         Ok(coverage_points)
@@ -849,11 +849,14 @@ impl CoveragePoints {
 
         let mut processed_radios = vec![];
         for id in radio_ids {
-            let points = self
-                .coverage_points
-                .coverage_points(&id)
-                .await
-                .expect("coverage points");
+            let points_res = self.coverage_points.coverage_points(&id).await;
+            let points = match points_res {
+                Ok(points) => points,
+                Err(err) => {
+                    tracing::error!(pubkey = id.0.to_string(), ?err, "could not reward radio");
+                    continue;
+                }
+            };
 
             let seniority = self
                 .coverage_points
