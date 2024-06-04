@@ -474,7 +474,7 @@ impl InnerCoverageMap {
         &self,
         radio_id: &RadioId,
         radio_type: &coverage_point_calculator::RadioType,
-    ) -> Vec<coverage_point_calculator::CoveredHex> {
+    ) -> Vec<coverage_map::RankedCoverage> {
         self.coverage_hash_map
             .get(radio_id)
             .expect("coverage map")
@@ -484,9 +484,11 @@ impl InnerCoverageMap {
                     .boosted_hexes
                     .get_current_multiplier(hex.hex, self.reward_period.start);
 
-                coverage_point_calculator::CoveredHex {
-                    cell: hex.hex,
-                    rank: self.radio_rank(radio_id, radio_type, hex),
+                coverage_map::RankedCoverage {
+                    hotspot_key: radio_id.0.clone(),
+                    cbsd_id: radio_id.1.clone(),
+                    hex: hex.hex,
+                    rank: self.radio_rank(radio_id, radio_type, hex).get(),
                     signal_level: hex.signal_level.into(),
                     assignments: hex.assignments.clone(),
                     boosted: boosted_hex,
@@ -761,9 +763,9 @@ pub fn coverage_point_to_mobile_reward_share(
         .iter_covered_hexes()
         .filter(move |_| radio_verified)
         .filter(move |_| eligible_for_boosted)
-        .filter(|covered_hex| covered_hex.is_boosted())
+        .filter(|covered_hex| covered_hex.boosted.is_some())
         .map(|covered_hex| proto::BoostedHex {
-            location: covered_hex.cell.into_raw(),
+            location: covered_hex.hex.into_raw(),
             multiplier: covered_hex.boosted.unwrap().into(),
         })
         .collect();
