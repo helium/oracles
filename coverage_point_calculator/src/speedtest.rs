@@ -5,7 +5,7 @@ use rust_decimal_macros::dec;
 use crate::MaxOneMultplier;
 
 const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
-const MAX_REQUIRED_SPEEDTEST_SAMPLES: usize = 6;
+const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
 pub struct BytesPs(u64);
@@ -41,8 +41,14 @@ pub struct Speedtests {
 
 impl Speedtests {
     pub fn new(speedtests: Vec<Speedtest>) -> Self {
+        // sort Newest to Oldest
         let mut sorted_speedtests = speedtests;
-        sorted_speedtests.sort_by_key(|test| test.timestamp);
+        sorted_speedtests.sort_by_key(|test| std::cmp::Reverse(test.timestamp));
+
+        let sorted_speedtests: Vec<_> = sorted_speedtests
+            .into_iter()
+            .take(MAX_ALLOWED_SPEEDTEST_SAMPLES)
+            .collect();
 
         let multiplier = if sorted_speedtests.len() < MIN_REQUIRED_SPEEDTEST_SAMPLES {
             SpeedtestTier::Fail.multiplier()
@@ -52,10 +58,7 @@ impl Speedtests {
 
         Self {
             multiplier,
-            speedtests: sorted_speedtests
-                .into_iter()
-                .take(MAX_REQUIRED_SPEEDTEST_SAMPLES)
-                .collect(),
+            speedtests: sorted_speedtests,
         }
     }
 
@@ -181,5 +184,55 @@ mod tests {
         assert_eq!(Degraded, SpeedtestTier::from_latency(&Millis::new(74)));
         assert_eq!(Poor, SpeedtestTier::from_latency(&Millis::new(99)));
         assert_eq!(Fail, SpeedtestTier::from_latency(&Millis::new(101)));
+    }
+
+    #[test]
+    fn restrict_to_maximum_speedtests_allowed() {
+        let base = Speedtest {
+            upload_speed: BytesPs::mbps(15),
+            download_speed: BytesPs::mbps(150),
+            latency: Millis::new(15),
+            timestamp: Utc::now(),
+        };
+        let speedtests = std::iter::repeat(base).take(10).collect();
+        let speedtests = Speedtests::new(speedtests);
+
+        assert_eq!(MAX_ALLOWED_SPEEDTEST_SAMPLES, speedtests.speedtests.len());
+    }
+
+    #[test]
+    fn speedtests_ordered_newest_to_oldest() {
+        let make_speedtest = |timestamp: DateTime<Utc>, latency: Millis| Speedtest {
+            upload_speed: BytesPs::mbps(15),
+            download_speed: BytesPs::mbps(150),
+            latency,
+            timestamp,
+        };
+
+        let speedtests = Speedtests::new(vec![
+            make_speedtest(date(2024, 4, 6), Millis::new(15)),
+            make_speedtest(date(2024, 4, 5), Millis::new(15)),
+            make_speedtest(date(2024, 4, 4), Millis::new(15)),
+            make_speedtest(date(2024, 4, 3), Millis::new(15)),
+            make_speedtest(date(2024, 4, 2), Millis::new(15)),
+            make_speedtest(date(2024, 4, 1), Millis::new(15)),
+            //
+            make_speedtest(date(2022, 4, 6), Millis::new(999)),
+            make_speedtest(date(2022, 4, 5), Millis::new(999)),
+            make_speedtest(date(2022, 4, 4), Millis::new(999)),
+            make_speedtest(date(2022, 4, 3), Millis::new(999)),
+            make_speedtest(date(2022, 4, 2), Millis::new(999)),
+            make_speedtest(date(2022, 4, 1), Millis::new(999)),
+        ]);
+        println!("{speedtests:?}");
+        assert_eq!(dec!(1), speedtests.multiplier);
+    }
+
+    fn date(year: i32, month: u32, day: u32) -> DateTime<Utc> {
+        chrono::NaiveDate::from_ymd_opt(year, month, day)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
     }
 }
