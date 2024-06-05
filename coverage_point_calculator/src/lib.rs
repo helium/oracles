@@ -70,7 +70,7 @@ pub mod speedtest;
 pub type Result<T = ()> = std::result::Result<T, Error>;
 pub type MaxOneMultplier = Decimal;
 
-/// Input Radio to calculation
+/// Necessary checks for calculating coverage points is done during [RewardableRadio::new].
 #[derive(Debug, Clone)]
 pub struct RewardableRadio {
     radio_type: RadioType,
@@ -81,6 +81,19 @@ pub struct RewardableRadio {
     boosted_hex_eligibility: BoostedHexStatus,
 }
 
+/// Output of calculating coverage points for a [RewardableRadio].
+///
+/// The only data included was used for calculating coverage points.
+///
+/// - If more than the allowed speedtests were provided, only the speedtests
+///   considered are included here.
+///
+/// - When a radio covers boosted hexes, [location_trust_scores] will contain a
+///   trust score _after_ the boosted hex restriction has been applied.
+///
+/// - When a radio is not eligible for boosted hex rewards, [covered_hexes] will
+///   have no boosted_multiplier values.
+///
 #[derive(Debug)]
 pub struct CoveragePoints {
     /// Value used when calculating poc_reward
