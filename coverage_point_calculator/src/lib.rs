@@ -107,7 +107,7 @@ pub enum Error {
 }
 
 pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
-    let hex_coverage_points = radio.covered_hexes.accumulate_calculated_coverage_points();
+    let hex_coverage_points = radio.covered_hexes.calculated_coverage_points();
     let location_trust_multiplier = radio.location_trust_scores.multiplier;
     let speedtest_multiplier = radio.speedtests.multiplier;
 

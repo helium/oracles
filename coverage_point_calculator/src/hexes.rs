@@ -81,7 +81,7 @@ impl CoveredHexes {
         })
     }
 
-    pub fn accumulate_calculated_coverage_points(&self) -> Decimal {
+    pub fn calculated_coverage_points(&self) -> Decimal {
         self.hexes
             .iter()
             .map(|hex| hex.calculated_coverage_points)
