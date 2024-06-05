@@ -209,22 +209,30 @@ mod tests {
             timestamp,
         };
 
+        // Intersperse new and old speedtests.
+        // new speedtests have 1.0 multipliers
+        // old speedtests have 0.0 multipliers
         let speedtests = Speedtests::new(vec![
             make_speedtest(date(2024, 4, 6), Millis::new(15)),
-            make_speedtest(date(2024, 4, 5), Millis::new(15)),
-            make_speedtest(date(2024, 4, 4), Millis::new(15)),
-            make_speedtest(date(2024, 4, 3), Millis::new(15)),
-            make_speedtest(date(2024, 4, 2), Millis::new(15)),
-            make_speedtest(date(2024, 4, 1), Millis::new(15)),
-            //
             make_speedtest(date(2022, 4, 6), Millis::new(999)),
+            // --
+            make_speedtest(date(2024, 4, 5), Millis::new(15)),
             make_speedtest(date(2022, 4, 5), Millis::new(999)),
+            // --
+            make_speedtest(date(2024, 4, 4), Millis::new(15)),
             make_speedtest(date(2022, 4, 4), Millis::new(999)),
+            // --
             make_speedtest(date(2022, 4, 3), Millis::new(999)),
+            make_speedtest(date(2024, 4, 3), Millis::new(15)),
+            // --
+            make_speedtest(date(2024, 4, 2), Millis::new(15)),
             make_speedtest(date(2022, 4, 2), Millis::new(999)),
+            // --
+            make_speedtest(date(2024, 4, 1), Millis::new(15)),
             make_speedtest(date(2022, 4, 1), Millis::new(999)),
         ]);
-        println!("{speedtests:?}");
+
+        // Old speedtests should be unused
         assert_eq!(dec!(1), speedtests.multiplier);
     }
 
