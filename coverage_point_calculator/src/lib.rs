@@ -67,11 +67,11 @@ pub type MaxOneMultplier = Decimal;
 /// Input Radio to calculation
 #[derive(Debug, Clone)]
 pub struct RewardableRadio {
-    pub radio_type: RadioType,
-    pub speedtests: Speedtests,
-    pub location_trust_scores: LocationTrustScores,
-    pub radio_threshold: RadioThreshold,
-    pub covered_hexes: CoveredHexes,
+    radio_type: RadioType,
+    speedtests: Speedtests,
+    location_trust_scores: LocationTrustScores,
+    radio_threshold: RadioThreshold,
+    covered_hexes: CoveredHexes,
 }
 
 #[derive(Debug)]
@@ -175,6 +175,10 @@ impl RewardableRadio {
                 covered_hexes,
             )?,
         })
+    }
+
+    pub fn radio_type(&self) -> RadioType {
+        self.radio_type
     }
 
     // These points need to be reported in the proto pre-(location, speedtest) multipliers

@@ -77,7 +77,7 @@ fn base_radio_coverage_points() {
         .into_iter()
         .map(|r| {
             (
-                r.radio_type,
+                r.radio_type(),
                 calculate_coverage_points(r).total_coverage_points,
             )
         })
@@ -169,7 +169,7 @@ fn radio_unique_coverage() {
         .into_iter()
         .map(|r| {
             (
-                r.radio_type,
+                r.radio_type(),
                 calculate_coverage_points(r).total_coverage_points,
             )
         })
