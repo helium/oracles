@@ -78,7 +78,7 @@ pub struct RewardableRadio {
     location_trust_scores: LocationTrustScores,
     radio_threshold: RadioThreshold,
     covered_hexes: CoveredHexes,
-    eligible_for_boosted_hexes: bool,
+    boosted_hex_eligibility: BoostedHexStatus,
 }
 
 #[derive(Debug)]
@@ -86,7 +86,6 @@ pub struct CoveragePoints {
     /// Value used when calculating poc_reward
     pub total_coverage_points: Decimal,
     /// Coverage Points collected from each Covered Hex
-    /// vvv turn into function call
     pub hex_coverage_points: Decimal,
     /// Location Trust Multiplier, maximum of 1
     pub location_trust_multiplier: Decimal,
@@ -98,7 +97,7 @@ pub struct CoveragePoints {
     pub speedtests: Vec<Speedtest>,
     pub location_trust_scores: Vec<LocationTrust>,
     pub covered_hexes: Vec<CoveredHex>,
-    pub eligible_for_boosted_hexes: bool,
+    pub boosted_hex_eligibility: BoostedHexStatus,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -126,13 +125,13 @@ pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
         speedtests: radio.speedtests.speedtests,
         location_trust_scores: radio.location_trust_scores.trust_scores,
         covered_hexes: radio.covered_hexes.hexes,
-        eligible_for_boosted_hexes: radio.eligible_for_boosted_hexes,
+        boosted_hex_eligibility: radio.boosted_hex_eligibility,
     }
 }
 
 impl CoveragePoints {
     pub fn iter_boosted_hexes(&self) -> impl Iterator<Item = CoveredHex> {
-        let eligible = self.eligible_for_boosted_hexes;
+        let eligible = self.boosted_hex_eligibility.is_eligible();
 
         self.covered_hexes
             .clone()
@@ -161,13 +160,13 @@ impl RewardableRadio {
             LocationTrustScores::new(&radio_type, location_trust_scores)
         };
 
-        let eligible_for_boosted_hexes = eligible_for_boosted_hexes(
+        let boosted_hex_status = BoostedHexStatus::new(
             &radio_type,
             location_trust_scores.multiplier,
             &radio_threshold,
         );
 
-        let covered_hexes = if eligible_for_boosted_hexes {
+        let covered_hexes = if boosted_hex_status.is_eligible() {
             CoveredHexes::new(&radio_type, covered_hexes)?
         } else {
             CoveredHexes::new_without_boosts(&radio_type, covered_hexes)?
@@ -179,7 +178,7 @@ impl RewardableRadio {
             location_trust_scores,
             radio_threshold,
             covered_hexes,
-            eligible_for_boosted_hexes,
+            boosted_hex_eligibility: boosted_hex_status,
         })
     }
 
@@ -188,22 +187,35 @@ impl RewardableRadio {
     }
 }
 
-fn eligible_for_boosted_hexes(
-    radio_type: &RadioType,
-    location_trust_score: Decimal,
-    radio_threshold: &RadioThreshold,
-) -> bool {
-    // hip93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
-    if radio_type.is_wifi() && location_trust_score < dec!(0.75) {
-        return false;
+#[derive(Debug, Clone)]
+pub enum BoostedHexStatus {
+    Eligible,
+    WifiLocationScoreBelowThreshold(Decimal),
+    RadioThresholdNotMet,
+}
+
+impl BoostedHexStatus {
+    fn new(
+        radio_type: &RadioType,
+        location_trust_score: Decimal,
+        radio_threshold: &RadioThreshold,
+    ) -> Self {
+        // hip93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
+        if radio_type.is_wifi() && location_trust_score < dec!(0.75) {
+            return Self::WifiLocationScoreBelowThreshold(location_trust_score);
+        }
+
+        // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
+        if !radio_threshold.threshold_met() {
+            return Self::RadioThresholdNotMet;
+        }
+
+        Self::Eligible
     }
 
-    // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
-    if !radio_threshold.threshold_met() {
-        return false;
+    fn is_eligible(&self) -> bool {
+        matches!(self, Self::Eligible)
     }
-
-    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
