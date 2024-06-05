@@ -129,18 +129,6 @@ pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
     }
 }
 
-impl CoveragePoints {
-    pub fn iter_boosted_hexes(&self) -> impl Iterator<Item = CoveredHex> {
-        let eligible = self.boosted_hex_eligibility.is_eligible();
-
-        self.covered_hexes
-            .clone()
-            .into_iter()
-            .filter(move |_| eligible)
-            .filter(|hex| hex.boosted_multiplier.is_some())
-    }
-}
-
 impl RewardableRadio {
     pub fn new(
         radio_type: RadioType,
@@ -184,6 +172,18 @@ impl RewardableRadio {
 
     pub fn radio_type(&self) -> RadioType {
         self.radio_type
+    }
+}
+
+impl CoveragePoints {
+    pub fn iter_boosted_hexes(&self) -> impl Iterator<Item = CoveredHex> {
+        let eligible = self.boosted_hex_eligibility.is_eligible();
+
+        self.covered_hexes
+            .clone()
+            .into_iter()
+            .filter(move |_| eligible)
+            .filter(|hex| hex.boosted_multiplier.is_some())
     }
 }
 
