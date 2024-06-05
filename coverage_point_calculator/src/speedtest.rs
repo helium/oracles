@@ -2,8 +2,6 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::MaxOneMultplier;
-
 const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
 const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
 
@@ -116,7 +114,7 @@ pub enum SpeedtestTier {
 }
 
 impl SpeedtestTier {
-    pub fn multiplier(&self) -> MaxOneMultplier {
+    pub fn multiplier(&self) -> Decimal {
         match self {
             SpeedtestTier::Good => dec!(1.00),
             SpeedtestTier::Acceptable => dec!(0.75),

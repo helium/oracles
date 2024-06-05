@@ -68,7 +68,6 @@ pub mod location;
 pub mod speedtest;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
-pub type MaxOneMultplier = Decimal;
 
 /// Necessary checks for calculating coverage points is done during [RewardableRadio::new].
 #[derive(Debug, Clone)]
