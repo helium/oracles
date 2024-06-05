@@ -29,6 +29,18 @@
 ///   - added "Good" speedtest tier [HIP-98][qos-score]
 ///     - latency is explicitly under limit in HIP https://github.com/helium/oracles/pull/737
 ///
+/// ## Notable Conditions:
+/// - Location
+///   - If a Radio covers any boosted hexes, [LocationTrust] scores must meet distance requirements, or be degraded.
+///   - CBRS Radio's location is always trusted because of GPS.
+///
+/// - Speedtests
+///   - The latest 6 speedtests will be used.
+///   - There must be more than 2 speedtests.
+///
+/// - Covered Hexes
+///   - If a Radio is not [eligible_for_boosted_hexes], boost values are removed before calculations. [CoveredHexes::new_without_boosts]
+///
 /// ## References:
 /// [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
 /// [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
@@ -40,13 +52,6 @@
 /// [cbrs-experimental]:       https://github.com/helium/HIP/blob/main/0113-reward-cbrs-as-experimental.md
 /// [mobile-poc-blog]:         https://docs.helium.com/mobile/proof-of-coverage
 /// [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
-///
-/// To Integrate in Docs:
-///
-///
-/// Has something to say about 30meters from asserted location wrt poc rewards
-/// for boosted hexes.
-/// https://github.com/helium/HIP/blob/8b1e814afa61a714b5ba63d3265e5897ab4c5116/0107-preventing-gaming-within-the-mobile-network.md
 ///
 use crate::{
     hexes::{CoveredHex, CoveredHexes},
