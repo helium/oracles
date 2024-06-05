@@ -182,10 +182,6 @@ impl RewardableRadio {
             boosted_hex_eligibility: boosted_hex_status,
         })
     }
-
-    pub fn radio_type(&self) -> RadioType {
-        self.radio_type
-    }
 }
 
 impl CoveragePoints {

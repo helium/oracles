@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
+use std::{num::NonZeroU32, str::FromStr};
 
 use chrono::Utc;
 use coverage_map::{RankedCoverage, SignalLevel};
@@ -51,12 +51,11 @@ fn base_radio_coverage_points() {
         boosted: NonZeroU32::new(0),
     }];
 
-    let mut radios = vec![];
-    for radio_type in [
-        RadioType::IndoorWifi,
-        RadioType::IndoorCbrs,
-        RadioType::OutdoorWifi,
-        RadioType::OutdoorCbrs,
+    for (radio_type, expcted_base_coverage_point) in [
+        (RadioType::IndoorWifi, dec!(400)),
+        (RadioType::IndoorCbrs, dec!(100)),
+        (RadioType::OutdoorWifi, dec!(16)),
+        (RadioType::OutdoorCbrs, dec!(4)),
     ] {
         let radio = RewardableRadio::new(
             radio_type,
@@ -66,33 +65,25 @@ fn base_radio_coverage_points() {
             hexes.clone(),
         )
         .unwrap();
-        radios.push(radio.clone());
-        println!(
-            "{radio_type:?} \t--> {}",
-            calculate_coverage_points(radio).total_coverage_points
+
+        let coverage_points = calculate_coverage_points(radio);
+        assert_eq!(
+            expcted_base_coverage_point,
+            coverage_points.total_coverage_points
         );
     }
-
-    let output = radios
-        .into_iter()
-        .map(|r| {
-            (
-                r.radio_type(),
-                calculate_coverage_points(r).total_coverage_points,
-            )
-        })
-        .collect::<Vec<_>>();
-    println!("{output:#?}");
 }
 
 #[test]
-fn radio_unique_coverage() {
+fn radios_with_coverage() {
+    // Enough hexes will be provided to each type of radio, that they are
+    // awarded 400 coverage points.
+
     let pubkey = helium_crypto::PublicKeyBinary::from_str(
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6",
     )
     .unwrap();
 
-    // all radios will receive 400 coverage points
     let base_hex = RankedCoverage {
         hotspot_key: pubkey,
         cbsd_id: None,
@@ -106,26 +97,7 @@ fn radio_unique_coverage() {
         },
         boosted: NonZeroU32::new(0),
     };
-    let hex = std::iter::repeat(base_hex);
-
-    let mut map = HashMap::new();
-    map.insert("indoor_wifi", hex.clone().take(1).collect());
-    map.insert("indoor_cbrs", hex.clone().take(4).collect());
-    map.insert("outdoor_wifi", hex.clone().take(25).collect());
-    map.insert("outdoor_cbrs", hex.clone().take(100).collect());
-
-    fn hexes(
-        coverage_map: &HashMap<&str, Vec<RankedCoverage>>,
-        key: &RadioType,
-    ) -> Vec<RankedCoverage> {
-        let key = match key {
-            RadioType::IndoorWifi => "indoor_wifi",
-            RadioType::OutdoorWifi => "outdoor_wifi",
-            RadioType::IndoorCbrs => "indoor_cbrs",
-            RadioType::OutdoorCbrs => "outdoor_cbrs",
-        };
-        coverage_map.get(key).unwrap().clone()
-    }
+    let base_hex_iter = std::iter::repeat(base_hex);
 
     let default_speedtests = vec![
         Speedtest {
@@ -146,33 +118,22 @@ fn radio_unique_coverage() {
         trust_score: dec!(1.0),
     }];
 
-    let mut radios = vec![];
-    for radio_type in [
-        RadioType::IndoorWifi,
-        RadioType::IndoorCbrs,
-        RadioType::OutdoorWifi,
-        RadioType::OutdoorCbrs,
+    for (radio_type, num_hexes) in [
+        (RadioType::IndoorWifi, 1),
+        (RadioType::IndoorCbrs, 4),
+        (RadioType::OutdoorWifi, 25),
+        (RadioType::OutdoorCbrs, 100),
     ] {
-        radios.push(
-            RewardableRadio::new(
-                radio_type,
-                default_speedtests.clone(),
-                default_location_trust_scores.clone(),
-                RadioThreshold::Verified,
-                hexes(&map, &radio_type),
-            )
-            .unwrap(),
-        );
-    }
+        let radio = RewardableRadio::new(
+            radio_type,
+            default_speedtests.clone(),
+            default_location_trust_scores.clone(),
+            RadioThreshold::Verified,
+            base_hex_iter.clone().take(num_hexes).collect(),
+        )
+        .unwrap();
 
-    let coverage_points = radios
-        .into_iter()
-        .map(|r| {
-            (
-                r.radio_type(),
-                calculate_coverage_points(r).total_coverage_points,
-            )
-        })
-        .collect::<Vec<_>>();
-    println!("{coverage_points:#?}")
+        let coverage_points = calculate_coverage_points(radio);
+        assert_eq!(dec!(400), coverage_points.total_coverage_points);
+    }
 }
