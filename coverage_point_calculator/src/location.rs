@@ -1,6 +1,8 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+use crate::RadioType;
+
 const RESTRICTIVE_MAX_DISTANCE: Meters = Meters(50);
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -25,14 +27,24 @@ pub struct LocationTrust {
 }
 
 impl LocationTrustScores {
-    pub fn new(trust_scores: Vec<LocationTrust>) -> Self {
+    pub fn new(radio_type: &RadioType, trust_scores: Vec<LocationTrust>) -> Self {
+        // CBRS radios are always trusted because they have internal GPS
+        let multiplier = if radio_type.is_cbrs() {
+            dec!(1)
+        } else {
+            multiplier(&trust_scores)
+        };
+
         Self {
-            multiplier: multiplier(&trust_scores),
+            multiplier,
             trust_scores,
         }
     }
 
-    pub fn new_with_boosted_hexes(trust_scores: Vec<LocationTrust>) -> Self {
+    pub fn new_with_boosted_hexes(
+        radio_type: &RadioType,
+        trust_scores: Vec<LocationTrust>,
+    ) -> Self {
         let trust_scores: Vec<_> = trust_scores
             .into_iter()
             .map(|l| LocationTrust {
@@ -41,10 +53,7 @@ impl LocationTrustScores {
             })
             .collect();
 
-        Self {
-            multiplier: multiplier(&trust_scores),
-            trust_scores,
-        }
+        Self::new(radio_type, trust_scores)
     }
 }
 impl LocationTrust {
@@ -72,10 +81,13 @@ mod tests {
 
     #[test]
     fn boosted_hexes_within_distance_retain_trust_score() {
-        let lts = LocationTrustScores::new_with_boosted_hexes(vec![LocationTrust {
-            distance_to_asserted: Meters(49),
-            trust_score: dec!(1),
-        }]);
+        let lts = LocationTrustScores::new_with_boosted_hexes(
+            &RadioType::IndoorWifi,
+            vec![LocationTrust {
+                distance_to_asserted: Meters(49),
+                trust_score: dec!(1),
+            }],
+        );
 
         assert_eq!(
             LocationTrustScores {
@@ -91,10 +103,13 @@ mod tests {
 
     #[test]
     fn boosted_hexes_past_distance_reduce_trust_score() {
-        let lts = LocationTrustScores::new_with_boosted_hexes(vec![LocationTrust {
-            distance_to_asserted: Meters(51),
-            trust_score: dec!(1),
-        }]);
+        let lts = LocationTrustScores::new_with_boosted_hexes(
+            &RadioType::IndoorWifi,
+            vec![LocationTrust {
+                distance_to_asserted: Meters(51),
+                trust_score: dec!(1),
+            }],
+        );
 
         assert_eq!(
             LocationTrustScores {
@@ -111,43 +126,52 @@ mod tests {
     #[test]
     fn multiplier_is_average_of_scores() {
         // All locations within max distance
-        let boosted_trust_scores = LocationTrustScores::new_with_boosted_hexes(vec![
-            LocationTrust {
-                distance_to_asserted: Meters(49),
-                trust_score: dec!(0.5),
-            },
-            LocationTrust {
-                distance_to_asserted: Meters(49),
-                trust_score: dec!(0.5),
-            },
-        ]);
+        let boosted_trust_scores = LocationTrustScores::new_with_boosted_hexes(
+            &RadioType::IndoorWifi,
+            vec![
+                LocationTrust {
+                    distance_to_asserted: Meters(49),
+                    trust_score: dec!(0.5),
+                },
+                LocationTrust {
+                    distance_to_asserted: Meters(49),
+                    trust_score: dec!(0.5),
+                },
+            ],
+        );
         assert_eq!(dec!(0.5), boosted_trust_scores.multiplier);
 
         // 1 location within max distance, 1 location outside
-        let boosted_over_limit_trust_scores = LocationTrustScores::new_with_boosted_hexes(vec![
-            LocationTrust {
-                distance_to_asserted: Meters(49),
-                trust_score: dec!(0.5),
-            },
-            LocationTrust {
-                distance_to_asserted: Meters(51),
-                trust_score: dec!(0.5),
-            },
-        ]);
+        let boosted_over_limit_trust_scores = LocationTrustScores::new_with_boosted_hexes(
+            &RadioType::IndoorWifi,
+            vec![
+                LocationTrust {
+                    distance_to_asserted: Meters(49),
+                    trust_score: dec!(0.5),
+                },
+                LocationTrust {
+                    distance_to_asserted: Meters(51),
+                    trust_score: dec!(0.5),
+                },
+            ],
+        );
         let mult = (dec!(0.5) + dec!(0.25)) / dec!(2);
         assert_eq!(mult, boosted_over_limit_trust_scores.multiplier);
 
         // All locations outside boosted distance restriction, but no boosted hexes
-        let unboosted_trust_scores = LocationTrustScores::new(vec![
-            LocationTrust {
-                distance_to_asserted: Meters(100),
-                trust_score: dec!(0.5),
-            },
-            LocationTrust {
-                distance_to_asserted: Meters(100),
-                trust_score: dec!(0.5),
-            },
-        ]);
+        let unboosted_trust_scores = LocationTrustScores::new(
+            &RadioType::IndoorWifi,
+            vec![
+                LocationTrust {
+                    distance_to_asserted: Meters(100),
+                    trust_score: dec!(0.5),
+                },
+                LocationTrust {
+                    distance_to_asserted: Meters(100),
+                    trust_score: dec!(0.5),
+                },
+            ],
+        );
         assert_eq!(dec!(0.5), unboosted_trust_scores.multiplier);
     }
 }
