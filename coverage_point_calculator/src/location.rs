@@ -47,23 +47,25 @@ impl LocationTrustScores {
     ) -> Self {
         let trust_scores: Vec<_> = trust_scores
             .into_iter()
-            .map(|l| LocationTrust {
-                trust_score: l.boosted_trust_score(),
-                distance_to_asserted: l.distance_to_asserted,
-            })
+            .map(LocationTrust::into_boosted)
             .collect();
 
         Self::new(radio_type, trust_scores)
     }
 }
 impl LocationTrust {
-    fn boosted_trust_score(&self) -> Decimal {
+    fn into_boosted(self) -> Self {
         // Cap multipliers to 0.25x when a radio covers _any_ boosted hex
         // and it's distance to asserted is above the threshold.
-        if self.distance_to_asserted > RESTRICTIVE_MAX_DISTANCE {
+        let trust_score = if self.distance_to_asserted > RESTRICTIVE_MAX_DISTANCE {
             dec!(0.25).min(self.trust_score)
         } else {
             self.trust_score
+        };
+
+        LocationTrust {
+            trust_score,
+            distance_to_asserted: self.distance_to_asserted,
         }
     }
 }
