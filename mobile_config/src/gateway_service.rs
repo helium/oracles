@@ -81,7 +81,10 @@ impl mobile_config::Gateway for GatewayService {
 
         gateway_info::db::get_info(&self.metadata_pool, &pubkey)
             .await
-            .map_err(|_| Status::internal("error fetching gateway info"))?
+            .map_err(|err| {
+                tracing::error!("error fetching gateway info {:?}", err);
+                Status::internal("error fetching gateway info")
+            })?
             .map_or_else(
                 || {
                     telemetry::count_gateway_chain_lookup("not-found");

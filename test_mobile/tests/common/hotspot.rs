@@ -2,48 +2,32 @@ use anyhow::Result;
 use backon::{ExponentialBuilder, Retryable};
 use chrono::Utc;
 use h3o::CellIndex;
-use helium_crypto::{KeyTag, Keypair, PublicKey, PublicKeyBinary, Sign};
-use helium_proto::services::{
-    mobile_config::DeviceType,
-    poc_mobile::{
-        Client as PocMobileClient, CoverageObjectReqV1, RadioHexSignalLevel, SpeedtestReqV1,
-        WifiHeartbeatReqV1,
-    },
+use helium_crypto::{KeyTag, Keypair, PublicKeyBinary, Sign};
+use helium_proto::services::poc_mobile::{
+    coverage_object_req_v1::KeyType, Client as PocMobileClient, CoverageObjectReqV1,
+    RadioHexSignalLevel, SpeedtestReqV1, WifiHeartbeatReqV1,
 };
 use prost::Message;
 use rand::rngs::OsRng;
 use sqlx::postgres::PgPoolOptions;
 use std::str::FromStr;
 use tonic::{metadata::MetadataValue, transport::Channel, Request};
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::common::{hours_ago, now, TimestampToDateTime};
 
+#[derive(Debug)]
 pub struct Hotspot {
     mobile_client: PocMobileClient<Channel>,
     api_token: String,
     keypair: Keypair,
-    wallet: Keypair,
-    serial: String,
+    b58: String,
     location: CellIndex,
 }
 
-#[test]
-fn it_works() {
-    let keypair = Keypair::generate(KeyTag::default(), &mut OsRng);
-    let x: Vec<u8> = keypair.public_key().into();
-    println!("{:?}", keypair);
-    println!("{:?}", x);
-    println!("{:?}", keypair.public_key().to_vec());
-    println!("{:?}", bs58::encode(x.clone()).into_string());
-    println!(
-        "{:?}",
-        PublicKey::from_bytes(x.clone()).unwrap().to_string()
-    );
-    println!("{:?}", PublicKeyBinary::from(x).to_string());
-}
-
 impl Hotspot {
+    #[instrument]
     pub async fn new(api_token: String, index: u64) -> Result<Self> {
         let endpoint = "http://127.0.0.1:9080";
 
@@ -54,27 +38,25 @@ impl Hotspot {
 
         let keypair = Keypair::generate(KeyTag::default(), &mut OsRng);
         let wallet = Keypair::generate(KeyTag::default(), &mut OsRng);
-
         let b58 = keypair.public_key().to_string();
 
-        tracing::info!("hotspot {b58} connected to ingester");
+        tracing::info!(hotspot = b58, "hotspot connected to ingester");
 
         let location = h3o::CellIndex::try_from(index).unwrap();
+        populate_mobile_metadata(&keypair, &wallet, location).await?;
 
-        let result = populate_mobile_metadata(&keypair, &wallet, location).await?;
-
-        tracing::info!("{:?}", result);
+        tracing::info!("metadata pupulated");
 
         Ok(Self {
             mobile_client: client,
             api_token: format!("Bearer {api_token}"),
             keypair,
-            wallet,
-            serial: b58,
+            b58,
             location,
         })
     }
 
+    #[instrument(skip(self), fields(hotspot = %self.b58))]
     pub async fn submit_speedtest(
         &mut self,
         upload_speed: u64,
@@ -85,7 +67,7 @@ impl Hotspot {
 
         let mut speedtest_req = SpeedtestReqV1 {
             pub_key: self.keypair.public_key().to_vec(),
-            serial: self.serial.clone(),
+            serial: self.b58.clone(),
             timestamp,
             upload_speed,
             download_speed,
@@ -115,11 +97,13 @@ impl Hotspot {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(hotspot = %self.b58))]
     pub async fn submit_coverage_object(&mut self, uuid: Uuid) -> Result<()> {
         let coverage_claim_time = now() - hours_ago(24);
+        let pub_key = self.keypair.public_key().to_vec();
 
         let mut coverage_object_req = CoverageObjectReqV1 {
-            pub_key: self.keypair.public_key().to_vec(),
+            pub_key: pub_key.clone(),
             uuid: uuid.as_bytes().to_vec(),
             coverage_claim_time,
             coverage: vec![RadioHexSignalLevel {
@@ -130,7 +114,7 @@ impl Hotspot {
             indoor: false,
             trust_score: 1,
             signature: vec![],
-            key_type: None,
+            key_type: Some(KeyType::HotspotKey(pub_key)),
         };
 
         coverage_object_req.signature = self
@@ -155,6 +139,7 @@ impl Hotspot {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(hotspot = %self.b58))]
     pub async fn submit_wifi_heartbeat(&mut self, when: u64, coverage_object: Uuid) -> Result<()> {
         let timestamp = now() - when;
 
@@ -219,6 +204,7 @@ impl Drop for Hotspot {
     }
 }
 
+#[instrument(skip_all)]
 async fn populate_mobile_metadata(
     keypair: &Keypair,
     wallet: &Keypair,
@@ -233,8 +219,7 @@ async fn populate_mobile_metadata(
 
     let uuid = Uuid::new_v4();
     let h3_index: u64 = location.into();
-    let device_type = DeviceType::WifiIndoor;
-    let device_type_json = serde_json::to_value(&device_type)?;
+    let device_type = serde_json::to_value("wifiIndoor")?;
 
     let wallet_b58 = wallet.public_key().to_string();
 
@@ -259,7 +244,7 @@ async fn populate_mobile_metadata(
     .bind(Utc::now()) // created_at
     .bind(true) // is_active
     .bind(400000) // dc_onboarding_fee_paid
-    .bind(device_type_json) // device_type
+    .bind(device_type) // device_type
     .execute(&pool)
     .await?;
 
@@ -282,7 +267,7 @@ async fn populate_mobile_metadata(
     .bind(254) // bump_seed
     .bind(Utc::now()) // created_at
     .bind("BQ3MCuTT5zVBhNfQ4SjMh3NPVhFy73MPV8rjfq5d1zie") // dao
-    .bind(entity_key) // entity_key
+    .bind(entity_key.clone()) // entity_key
     .bind(Utc::now()) // refreshed_at
     .execute(&pool)
     .await?;
