@@ -1,6 +1,8 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+const RESTRICTIVE_MAX_DISTANCE: Meters = Meters(50);
+
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Meters(u32);
 
@@ -12,9 +14,8 @@ impl Meters {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocationTrustScores {
-    pub any_hex_boosted_multiplier: Decimal,
-    pub no_boosted_hex_multiplier: Decimal,
-    trust_scores: Vec<LocationTrust>,
+    pub multiplier: Decimal,
+    pub trust_scores: Vec<LocationTrust>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,38 +26,128 @@ pub struct LocationTrust {
 
 impl LocationTrustScores {
     pub fn new(trust_scores: Vec<LocationTrust>) -> Self {
-        let boosted_multiplier = boosted_multiplier(&trust_scores);
-        let unboosted_multiplier = unboosted_multiplier(&trust_scores);
         Self {
-            any_hex_boosted_multiplier: boosted_multiplier,
-            no_boosted_hex_multiplier: unboosted_multiplier,
+            multiplier: multiplier(&trust_scores),
+            trust_scores,
+        }
+    }
+
+    pub fn new_with_boosted_hexes(trust_scores: Vec<LocationTrust>) -> Self {
+        let trust_scores: Vec<_> = trust_scores
+            .into_iter()
+            .map(|l| LocationTrust {
+                trust_score: l.boosted_trust_score(),
+                distance_to_asserted: l.distance_to_asserted,
+            })
+            .collect();
+
+        Self {
+            multiplier: multiplier(&trust_scores),
             trust_scores,
         }
     }
 }
-
-fn boosted_multiplier(trust_scores: &[LocationTrust]) -> Decimal {
-    const RESTRICTIVE_MAX_DISTANCE: Meters = Meters(50);
-    // Cap multipliers to 0.25x when a radio covers _any_ boosted hex
-    // and it's distance to asserted is above the threshold.
-    let count = Decimal::from(trust_scores.len());
-    let scores: Decimal = trust_scores
-        .iter()
-        .map(|l| {
-            if l.distance_to_asserted > RESTRICTIVE_MAX_DISTANCE {
-                dec!(0.25).min(l.trust_score)
-            } else {
-                l.trust_score
-            }
-        })
-        .sum();
-
-    scores / count
+impl LocationTrust {
+    fn boosted_trust_score(&self) -> Decimal {
+        // Cap multipliers to 0.25x when a radio covers _any_ boosted hex
+        // and it's distance to asserted is above the threshold.
+        if self.distance_to_asserted > RESTRICTIVE_MAX_DISTANCE {
+            dec!(0.25).min(self.trust_score)
+        } else {
+            self.trust_score
+        }
+    }
 }
 
-fn unboosted_multiplier(trust_scores: &[LocationTrust]) -> Decimal {
+fn multiplier(trust_scores: &[LocationTrust]) -> Decimal {
     let count = Decimal::from(trust_scores.len());
     let scores: Decimal = trust_scores.iter().map(|l| l.trust_score).sum();
 
     scores / count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn boosted_hexes_within_distance_retain_trust_score() {
+        let lts = LocationTrustScores::new_with_boosted_hexes(vec![LocationTrust {
+            distance_to_asserted: Meters(49),
+            trust_score: dec!(1),
+        }]);
+
+        assert_eq!(
+            LocationTrustScores {
+                multiplier: dec!(1),
+                trust_scores: vec![LocationTrust {
+                    distance_to_asserted: Meters(49),
+                    trust_score: dec!(1)
+                }]
+            },
+            lts
+        );
+    }
+
+    #[test]
+    fn boosted_hexes_past_distance_reduce_trust_score() {
+        let lts = LocationTrustScores::new_with_boosted_hexes(vec![LocationTrust {
+            distance_to_asserted: Meters(51),
+            trust_score: dec!(1),
+        }]);
+
+        assert_eq!(
+            LocationTrustScores {
+                multiplier: dec!(0.25),
+                trust_scores: vec![LocationTrust {
+                    distance_to_asserted: Meters(51),
+                    trust_score: dec!(0.25)
+                }]
+            },
+            lts
+        );
+    }
+
+    #[test]
+    fn multiplier_is_average_of_scores() {
+        // All locations within max distance
+        let boosted_trust_scores = LocationTrustScores::new_with_boosted_hexes(vec![
+            LocationTrust {
+                distance_to_asserted: Meters(49),
+                trust_score: dec!(0.5),
+            },
+            LocationTrust {
+                distance_to_asserted: Meters(49),
+                trust_score: dec!(0.5),
+            },
+        ]);
+        assert_eq!(dec!(0.5), boosted_trust_scores.multiplier);
+
+        // 1 location within max distance, 1 location outside
+        let boosted_over_limit_trust_scores = LocationTrustScores::new_with_boosted_hexes(vec![
+            LocationTrust {
+                distance_to_asserted: Meters(49),
+                trust_score: dec!(0.5),
+            },
+            LocationTrust {
+                distance_to_asserted: Meters(51),
+                trust_score: dec!(0.5),
+            },
+        ]);
+        let mult = (dec!(0.5) + dec!(0.25)) / dec!(2);
+        assert_eq!(mult, boosted_over_limit_trust_scores.multiplier);
+
+        // All locations outside boosted distance restriction, but no boosted hexes
+        let unboosted_trust_scores = LocationTrustScores::new(vec![
+            LocationTrust {
+                distance_to_asserted: Meters(100),
+                trust_score: dec!(0.5),
+            },
+            LocationTrust {
+                distance_to_asserted: Meters(100),
+                trust_score: dec!(0.5),
+            },
+        ]);
+        assert_eq!(dec!(0.5), unboosted_trust_scores.multiplier);
+    }
 }

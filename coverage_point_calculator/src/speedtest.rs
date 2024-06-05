@@ -1,7 +1,11 @@
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::MaxOneMultplier;
+
+const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
+const MAX_REQUIRED_SPEEDTEST_SAMPLES: usize = 6;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
 pub struct BytesPs(u64);
@@ -29,11 +33,43 @@ impl Millis {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Speedtests {
+    pub multiplier: Decimal,
+    pub speedtests: Vec<Speedtest>,
+}
+
+impl Speedtests {
+    pub fn new(speedtests: Vec<Speedtest>) -> Self {
+        let mut sorted_speedtests = speedtests;
+        sorted_speedtests.sort_by_key(|test| test.timestamp);
+
+        let multiplier = if sorted_speedtests.len() < MIN_REQUIRED_SPEEDTEST_SAMPLES {
+            SpeedtestTier::Fail.multiplier()
+        } else {
+            Speedtest::avg(&sorted_speedtests).multiplier()
+        };
+
+        Self {
+            multiplier,
+            speedtests: sorted_speedtests
+                .into_iter()
+                .take(MAX_REQUIRED_SPEEDTEST_SAMPLES)
+                .collect(),
+        }
+    }
+
+    pub fn avg(&self) -> Speedtest {
+        Speedtest::avg(&self.speedtests)
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Speedtest {
     pub upload_speed: BytesPs,
     pub download_speed: BytesPs,
     pub latency: Millis,
+    pub timestamp: DateTime<Utc>,
 }
 
 impl Speedtest {
@@ -62,6 +98,7 @@ impl Speedtest {
             upload_speed: BytesPs::new(upload / count as u64),
             download_speed: BytesPs::new(download / count as u64),
             latency: Millis::new(latency / count as u32),
+            timestamp: Utc::now(),
         }
     }
 }

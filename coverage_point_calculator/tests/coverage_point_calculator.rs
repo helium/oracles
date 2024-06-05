@@ -1,5 +1,6 @@
 use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 
+use chrono::Utc;
 use coverage_map::{RankedCoverage, SignalLevel};
 use coverage_point_calculator::{
     calculate_coverage_points,
@@ -17,11 +18,13 @@ fn base_radio_coverage_points() {
             upload_speed: BytesPs::mbps(15),
             download_speed: BytesPs::mbps(150),
             latency: Millis::new(15),
+            timestamp: Utc::now(),
         },
         Speedtest {
             upload_speed: BytesPs::mbps(15),
             download_speed: BytesPs::mbps(150),
             latency: Millis::new(15),
+            timestamp: Utc::now(),
         },
     ];
     let location_trust_scores = vec![LocationTrust {
@@ -66,13 +69,18 @@ fn base_radio_coverage_points() {
         radios.push(radio.clone());
         println!(
             "{radio_type:?} \t--> {}",
-            calculate_coverage_points(radio).coverage_points
+            calculate_coverage_points(radio).total_coverage_points
         );
     }
 
     let output = radios
         .into_iter()
-        .map(|r| (r.radio_type, calculate_coverage_points(r).coverage_points))
+        .map(|r| {
+            (
+                r.radio_type,
+                calculate_coverage_points(r).total_coverage_points,
+            )
+        })
         .collect::<Vec<_>>();
     println!("{output:#?}");
 }
@@ -124,11 +132,13 @@ fn radio_unique_coverage() {
             upload_speed: BytesPs::mbps(15),
             download_speed: BytesPs::mbps(150),
             latency: Millis::new(15),
+            timestamp: Utc::now(),
         },
         Speedtest {
             upload_speed: BytesPs::mbps(15),
             download_speed: BytesPs::mbps(150),
             latency: Millis::new(15),
+            timestamp: Utc::now(),
         },
     ];
     let default_location_trust_scores = vec![LocationTrust {
@@ -157,7 +167,12 @@ fn radio_unique_coverage() {
 
     let coverage_points = radios
         .into_iter()
-        .map(|r| (r.radio_type, calculate_coverage_points(r).coverage_points))
+        .map(|r| {
+            (
+                r.radio_type,
+                calculate_coverage_points(r).total_coverage_points,
+            )
+        })
         .collect::<Vec<_>>();
     println!("{coverage_points:#?}")
 }
