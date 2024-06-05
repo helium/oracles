@@ -4,6 +4,7 @@ debug = true
 [workspace]
 members = [
   "boost_manager",
+  "coverage_map",
   "custom_tracing",
   "db_store",
   "denylist",

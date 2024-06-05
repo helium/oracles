@@ -177,6 +177,12 @@ impl BoostedHexes {
     }
 }
 
+impl coverage_map::BoostedHexMap for BoostedHexes {
+    fn get_current_multiplier(&self, location: Cell, ts: DateTime<Utc>) -> Option<NonZeroU32> {
+        self.get_current_multiplier(location, ts)
+    }
+}
+
 pub(crate) mod db {
     use super::{to_end_ts, to_start_ts, BoostedHexInfo};
     use chrono::{DateTime, Duration, Utc};

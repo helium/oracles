@@ -2122,6 +2122,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "coverage-map"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "h3o",
+ "helium-crypto",
+ "helium-proto",
+ "hex-assignments",
+ "hextree",
+ "uuid",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4602,6 +4615,7 @@ dependencies = [
  "chrono",
  "clap 4.4.8",
  "config",
+ "coverage-map",
  "custom-tracing",
  "db-store",
  "file-store",
