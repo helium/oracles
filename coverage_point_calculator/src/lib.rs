@@ -308,26 +308,14 @@ mod tests {
     use hex_assignments::{assignment::HexAssignments, Assignment};
     use rust_decimal_macros::dec;
 
-    fn hex_location() -> hextree::Cell {
-        hextree::Cell::from_raw(0x8c2681a3064edff).unwrap()
-    }
-
-    fn assignments_maximum() -> HexAssignments {
-        HexAssignments {
-            footfall: Assignment::A,
-            landtype: Assignment::A,
-            urbanized: Assignment::A,
-        }
-    }
-
     #[test]
     fn hip_84_radio_meets_minimum_subscriber_threshold_for_boosted_hexes() {
-        let make_wifi = |location_trust_scores: Vec<LocationTrust>| {
+        let make_wifi = |radio_verified: RadioThreshold| {
             RewardableRadio::new(
                 RadioType::IndoorWifi,
-                Speedtest::maximum(),
-                location_trust_scores,
-                RadioThreshold::Verified,
+                speedtest_maximum(),
+                location_trust_maximum(),
+                radio_verified,
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
                     cbsd_id: None,
@@ -344,19 +332,22 @@ mod tests {
         let base_points = RadioType::IndoorWifi
             .base_coverage_points(&SignalLevel::High)
             .unwrap();
-        // Boosted Hex get's radio over the base_points
-        let trusted_location = LocationTrust::with_trust_scores(&[dec!(1), dec!(1)]);
-        let trusted_wifi = make_wifi(trusted_location);
-        assert!(trusted_wifi.location_trust_scores.multiplier > dec!(0.75));
-        assert!(
-            calculate_coverage_points(trusted_wifi.clone()).total_coverage_points > base_points
+
+        // Radio meeting the threshold is eligible for boosted hexes.
+        // Boosted hex provides radio with more than base_points.
+        let verified_wifi = make_wifi(RadioThreshold::Verified);
+        assert_eq!(
+            base_points * dec!(5),
+            calculate_coverage_points(verified_wifi.clone()).total_coverage_points
         );
 
-        // degraded location score get's radio under base_points
-        let untrusted_location = LocationTrust::with_trust_scores(&[dec!(0.1), dec!(0.2)]);
-        let untrusted_wifi = make_wifi(untrusted_location);
-        assert!(untrusted_wifi.location_trust_scores.multiplier < dec!(0.75));
-        assert!(calculate_coverage_points(untrusted_wifi).total_coverage_points < base_points);
+        // Radio not meeting the threshold is not eligible for boosted hexes.
+        // Boost from hex is not applied, radio receives base points.
+        let unverified_wifi = make_wifi(RadioThreshold::UnVerified);
+        assert_eq!(
+            base_points,
+            calculate_coverage_points(unverified_wifi).total_coverage_points
+        );
     }
 
     #[test]
@@ -364,7 +355,7 @@ mod tests {
         let make_wifi = |location_trust_scores: Vec<LocationTrust>| {
             RewardableRadio::new(
                 RadioType::IndoorWifi,
-                Speedtest::maximum(),
+                speedtest_maximum(),
                 location_trust_scores,
                 RadioThreshold::Verified,
                 vec![RankedCoverage {
@@ -383,17 +374,18 @@ mod tests {
         let base_points = RadioType::IndoorWifi
             .base_coverage_points(&SignalLevel::High)
             .unwrap();
-        // Boosted Hex get's radio over the base_points
-        let trusted_location = LocationTrust::with_trust_scores(&[dec!(1), dec!(1)]);
-        let trusted_wifi = make_wifi(trusted_location);
+
+        // Radio with good trust score is eligible for boosted hexes.
+        // Boosted hex provides radio with more than base_points.
+        let trusted_wifi = make_wifi(location_trust_with_scores(&[dec!(1), dec!(1)]));
         assert!(trusted_wifi.location_trust_scores.multiplier > dec!(0.75));
         assert!(
             calculate_coverage_points(trusted_wifi.clone()).total_coverage_points > base_points
         );
 
-        // degraded location score get's radio under base_points
-        let untrusted_location = LocationTrust::with_trust_scores(&[dec!(0.1), dec!(0.2)]);
-        let untrusted_wifi = make_wifi(untrusted_location);
+        // Radio with poor trust score is not eligible for boosted hexes.
+        // Boost from hex is not applied, and points are further lowered by poor trust score.
+        let untrusted_wifi = make_wifi(location_trust_with_scores(&[dec!(0.1), dec!(0.2)]));
         assert!(untrusted_wifi.location_trust_scores.multiplier < dec!(0.75));
         assert!(calculate_coverage_points(untrusted_wifi).total_coverage_points < base_points);
     }
@@ -404,7 +396,7 @@ mod tests {
             RewardableRadio::new(
                 RadioType::IndoorCbrs,
                 speedtests,
-                LocationTrust::maximum(),
+                location_trust_maximum(),
                 RadioThreshold::Verified,
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
@@ -419,15 +411,15 @@ mod tests {
             .expect("indoor cbrs with speedtests")
         };
 
-        let indoor_cbrs = make_indoor_cbrs(Speedtest::maximum());
+        let indoor_cbrs = make_indoor_cbrs(speedtest_maximum());
         assert_eq!(
             dec!(100),
             calculate_coverage_points(indoor_cbrs).total_coverage_points
         );
 
         let indoor_cbrs = make_indoor_cbrs(vec![
-            Speedtest::download(BytesPs::mbps(88)),
-            Speedtest::download(BytesPs::mbps(88)),
+            speedtest_with_download(BytesPs::mbps(88)),
+            speedtest_with_download(BytesPs::mbps(88)),
         ]);
         assert_eq!(
             dec!(75),
@@ -435,8 +427,8 @@ mod tests {
         );
 
         let indoor_cbrs = make_indoor_cbrs(vec![
-            Speedtest::download(BytesPs::mbps(62)),
-            Speedtest::download(BytesPs::mbps(62)),
+            speedtest_with_download(BytesPs::mbps(62)),
+            speedtest_with_download(BytesPs::mbps(62)),
         ]);
         assert_eq!(
             dec!(50),
@@ -444,8 +436,8 @@ mod tests {
         );
 
         let indoor_cbrs = make_indoor_cbrs(vec![
-            Speedtest::download(BytesPs::mbps(42)),
-            Speedtest::download(BytesPs::mbps(42)),
+            speedtest_with_download(BytesPs::mbps(42)),
+            speedtest_with_download(BytesPs::mbps(42)),
         ]);
         assert_eq!(
             dec!(25),
@@ -453,8 +445,8 @@ mod tests {
         );
 
         let indoor_cbrs = make_indoor_cbrs(vec![
-            Speedtest::download(BytesPs::mbps(25)),
-            Speedtest::download(BytesPs::mbps(25)),
+            speedtest_with_download(BytesPs::mbps(25)),
+            speedtest_with_download(BytesPs::mbps(25)),
         ]);
         assert_eq!(
             dec!(0),
@@ -464,7 +456,7 @@ mod tests {
 
     #[test]
     fn oracle_boosting_assignments_apply_per_hex() {
-        fn local_hex(
+        fn ranked_coverage(
             footfall: Assignment,
             landtype: Assignment,
             urbanized: Assignment,
@@ -487,44 +479,44 @@ mod tests {
         use Assignment::*;
         let indoor_cbrs = RewardableRadio::new(
             RadioType::IndoorCbrs,
-            Speedtest::maximum(),
-            LocationTrust::maximum(),
+            speedtest_maximum(),
+            location_trust_maximum(),
             RadioThreshold::Verified,
             vec![
                 // yellow - POI ≥ 1 Urbanized
-                local_hex(A, A, A), // 100
-                local_hex(A, B, A), // 100
-                local_hex(A, C, A), // 100
+                ranked_coverage(A, A, A), // 100
+                ranked_coverage(A, B, A), // 100
+                ranked_coverage(A, C, A), // 100
                 // orange - POI ≥ 1 Not Urbanized
-                local_hex(A, A, B), // 100
-                local_hex(A, B, B), // 100
-                local_hex(A, C, B), // 100
+                ranked_coverage(A, A, B), // 100
+                ranked_coverage(A, B, B), // 100
+                ranked_coverage(A, C, B), // 100
                 // light green - Point of Interest Urbanized
-                local_hex(B, A, A), // 70
-                local_hex(B, B, A), // 70
-                local_hex(B, C, A), // 70
+                ranked_coverage(B, A, A), // 70
+                ranked_coverage(B, B, A), // 70
+                ranked_coverage(B, C, A), // 70
                 // dark green - Point of Interest Not Urbanized
-                local_hex(B, A, B), // 50
-                local_hex(B, B, B), // 50
-                local_hex(B, C, B), // 50
+                ranked_coverage(B, A, B), // 50
+                ranked_coverage(B, B, B), // 50
+                ranked_coverage(B, C, B), // 50
                 // light blue - No POI Urbanized
-                local_hex(C, A, A), // 40
-                local_hex(C, B, A), // 30
-                local_hex(C, C, A), // 5
+                ranked_coverage(C, A, A), // 40
+                ranked_coverage(C, B, A), // 30
+                ranked_coverage(C, C, A), // 5
                 // dark blue - No POI Not Urbanized
-                local_hex(C, A, B), // 20
-                local_hex(C, B, B), // 15
-                local_hex(C, C, B), // 3
+                ranked_coverage(C, A, B), // 20
+                ranked_coverage(C, B, B), // 15
+                ranked_coverage(C, C, B), // 3
                 // gray - Outside of USA
-                local_hex(A, A, C), // 0
-                local_hex(A, B, C), // 0
-                local_hex(A, C, C), // 0
-                local_hex(B, A, C), // 0
-                local_hex(B, B, C), // 0
-                local_hex(B, C, C), // 0
-                local_hex(C, A, C), // 0
-                local_hex(C, B, C), // 0
-                local_hex(C, C, C), // 0
+                ranked_coverage(A, A, C), // 0
+                ranked_coverage(A, B, C), // 0
+                ranked_coverage(A, C, C), // 0
+                ranked_coverage(B, A, C), // 0
+                ranked_coverage(B, B, C), // 0
+                ranked_coverage(B, C, C), // 0
+                ranked_coverage(C, A, C), // 0
+                ranked_coverage(C, B, C), // 0
+                ranked_coverage(C, C, C), // 0
             ],
         )
         .expect("indoor cbrs");
@@ -539,8 +531,8 @@ mod tests {
     fn outdoor_radios_consider_top_3_ranked_hexes() {
         let outdoor_wifi = RewardableRadio::new(
             RadioType::OutdoorWifi,
-            Speedtest::maximum(),
-            LocationTrust::maximum(),
+            speedtest_maximum(),
+            location_trust_maximum(),
             RadioThreshold::Verified,
             vec![
                 RankedCoverage {
@@ -597,8 +589,8 @@ mod tests {
     fn indoor_radios_only_consider_first_ranked_hexes() {
         let indoor_wifi = RewardableRadio::new(
             RadioType::IndoorWifi,
-            Speedtest::maximum(),
-            LocationTrust::maximum(),
+            speedtest_maximum(),
+            location_trust_maximum(),
             RadioThreshold::Verified,
             vec![
                 RankedCoverage {
@@ -643,8 +635,8 @@ mod tests {
         // Location scores are averaged together
         let indoor_wifi = RewardableRadio::new(
             RadioType::IndoorWifi,
-            Speedtest::maximum(),
-            LocationTrust::with_trust_scores(&[dec!(0.1), dec!(0.2), dec!(0.3), dec!(0.4)]),
+            speedtest_maximum(),
+            location_trust_with_scores(&[dec!(0.1), dec!(0.2), dec!(0.3), dec!(0.4)]),
             RadioThreshold::Verified,
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
@@ -659,6 +651,7 @@ mod tests {
         .expect("indoor wifi");
 
         // Location trust scores is 1/4
+        // (0.1 + 0.2 + 0.3 + 0.4) / 4
         assert_eq!(
             dec!(100),
             calculate_coverage_points(indoor_wifi).total_coverage_points
@@ -689,31 +682,18 @@ mod tests {
         ];
         let indoor_wifi = RewardableRadio::new(
             RadioType::IndoorWifi,
-            Speedtest::maximum(),
-            LocationTrust::maximum(),
+            speedtest_maximum(),
+            location_trust_maximum(),
             RadioThreshold::Verified,
             covered_hexes.clone(),
         )
-        .expect("verified indoor wifi");
+        .expect("indoor wifi");
+
         // The hex with a low signal_level is boosted to the same level as a
         // signal_level of High.
         assert_eq!(
             dec!(800),
             calculate_coverage_points(indoor_wifi.clone()).total_coverage_points
-        );
-
-        // When the radio is not verified for boosted rewards, the boost has no effect.
-        let indoor_wifi = RewardableRadio::new(
-            RadioType::IndoorWifi,
-            Speedtest::maximum(),
-            LocationTrust::maximum(),
-            RadioThreshold::UnVerified,
-            covered_hexes,
-        )
-        .expect("unverified indoor wifi");
-        assert_eq!(
-            dec!(500),
-            calculate_coverage_points(indoor_wifi).total_coverage_points
         );
     }
 
@@ -721,8 +701,8 @@ mod tests {
     fn base_radio_coverage_points() {
         let outdoor_cbrs = RewardableRadio::new(
             RadioType::OutdoorCbrs,
-            Speedtest::maximum(),
-            LocationTrust::maximum(),
+            speedtest_maximum(),
+            location_trust_maximum(),
             RadioThreshold::Verified,
             vec![
                 RankedCoverage {
@@ -767,8 +747,8 @@ mod tests {
 
         let indoor_cbrs = RewardableRadio::new(
             RadioType::IndoorCbrs,
-            Speedtest::maximum(),
-            LocationTrust::maximum(),
+            speedtest_maximum(),
+            location_trust_maximum(),
             RadioThreshold::Verified,
             vec![
                 RankedCoverage {
@@ -795,8 +775,8 @@ mod tests {
 
         let outdoor_wifi = RewardableRadio::new(
             RadioType::OutdoorWifi,
-            Speedtest::maximum(),
-            LocationTrust::maximum(),
+            speedtest_maximum(),
+            location_trust_maximum(),
             RadioThreshold::Verified,
             vec![
                 RankedCoverage {
@@ -841,8 +821,8 @@ mod tests {
 
         let indoor_wifi = RewardableRadio::new(
             RadioType::IndoorWifi,
-            Speedtest::maximum(),
-            LocationTrust::maximum(),
+            speedtest_maximum(),
+            location_trust_maximum(),
             RadioThreshold::Verified,
             vec![
                 RankedCoverage {
@@ -887,53 +867,61 @@ mod tests {
         );
     }
 
-    impl Speedtest {
-        fn maximum() -> Vec<Self> {
-            vec![
-                Self {
-                    upload_speed: BytesPs::mbps(15),
-                    download_speed: BytesPs::mbps(150),
-                    latency: Millis::new(15),
-                    timestamp: Utc::now(),
-                },
-                Self {
-                    upload_speed: BytesPs::mbps(15),
-                    download_speed: BytesPs::mbps(150),
-                    latency: Millis::new(15),
-                    timestamp: Utc::now(),
-                },
-            ]
-        }
+    fn hex_location() -> hextree::Cell {
+        hextree::Cell::from_raw(0x8c2681a3064edff).unwrap()
+    }
 
-        fn download(download: BytesPs) -> Self {
-            Self {
-                upload_speed: BytesPs::mbps(15),
-                download_speed: download,
-                latency: Millis::new(15),
-                timestamp: Utc::now(),
-            }
+    fn assignments_maximum() -> HexAssignments {
+        HexAssignments {
+            footfall: Assignment::A,
+            landtype: Assignment::A,
+            urbanized: Assignment::A,
         }
     }
 
-    impl LocationTrust {
-        fn maximum() -> Vec<LocationTrust> {
-            vec![LocationTrust {
-                distance_to_asserted: Meters::new(1),
-                trust_score: dec!(1.0),
-            }]
-        }
+    fn speedtest_maximum() -> Vec<Speedtest> {
+        vec![
+            Speedtest {
+                upload_speed: BytesPs::mbps(15),
+                download_speed: BytesPs::mbps(150),
+                latency: Millis::new(15),
+                timestamp: Utc::now(),
+            },
+            Speedtest {
+                upload_speed: BytesPs::mbps(15),
+                download_speed: BytesPs::mbps(150),
+                latency: Millis::new(15),
+                timestamp: Utc::now(),
+            },
+        ]
+    }
 
-        fn with_trust_scores(trust_scores: &[Decimal]) -> Vec<LocationTrust> {
-            trust_scores
-                .to_owned()
-                .iter()
-                .copied()
-                .map(|trust_score| LocationTrust {
-                    distance_to_asserted: Meters::new(1),
-                    trust_score,
-                })
-                .collect()
+    fn speedtest_with_download(download: BytesPs) -> Speedtest {
+        Speedtest {
+            upload_speed: BytesPs::mbps(15),
+            download_speed: download,
+            latency: Millis::new(15),
+            timestamp: Utc::now(),
         }
+    }
+
+    fn location_trust_maximum() -> Vec<LocationTrust> {
+        vec![LocationTrust {
+            distance_to_asserted: Meters::new(1),
+            trust_score: dec!(1.0),
+        }]
+    }
+
+    fn location_trust_with_scores(trust_scores: &[Decimal]) -> Vec<LocationTrust> {
+        trust_scores
+            .to_owned()
+            .iter()
+            .copied()
+            .map(|trust_score| LocationTrust {
+                distance_to_asserted: Meters::new(1),
+                trust_score,
+            })
+            .collect()
     }
 
     fn pubkey() -> helium_crypto::PublicKeyBinary {
