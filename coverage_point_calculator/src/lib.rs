@@ -21,7 +21,8 @@
 ///
 /// - location_trust_score_multiplier
 ///   - [HIP-98][qos-score]
-///   - increase Boosted hex restriction, 30m -> 50m [HIP-93][boosted-hex-restriction]
+///   - states 30m requirement for boosted hexes [HIP-107][prevent-gaming]
+///   - increase Boosted hex restriction, 30m -> 50m [Pull Request][boosted-hex-restriction]
 ///
 /// - speedtest_multiplier
 ///   - [HIP-74][modeled-coverage]
@@ -30,19 +31,18 @@
 ///
 /// ## References:
 /// [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
-/// [cbrs-experimental]:       https://github.com/helium/HIP/blob/main/0113-reward-cbrs-as-experimental.md
+/// [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
+/// [wifi-aps]:                https://github.com/helium/HIP/blob/main/0093-addition-of-wifi-aps-to-mobile-subdao.md
+/// [qos-score]:               https://github.com/helium/HIP/blob/main/0098-mobile-subdao-quality-of-service-requirements.md
 /// [oracle-boosting]:         https://github.com/helium/HIP/blob/main/0103-oracle-hex-boosting.md
 /// [hex-limits]:              https://github.com/helium/HIP/blob/main/0105-modification-of-mobile-subdao-hex-limits.md
-/// [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
-/// [qos-score]:               https://github.com/helium/HIP/blob/main/0098-mobile-subdao-quality-of-service-requirements.md
-/// [wifi-aps]:                https://github.com/helium/HIP/blob/main/0093-addition-of-wifi-aps-to-mobile-subdao.md
+/// [prevent-gaming]:          https://github.com/helium/HIP/blob/main/0107-preventing-gaming-within-the-mobile-network.md
+/// [cbrs-experimental]:       https://github.com/helium/HIP/blob/main/0113-reward-cbrs-as-experimental.md
 /// [mobile-poc-blog]:         https://docs.helium.com/mobile/proof-of-coverage
 /// [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
 ///
 /// To Integrate in Docs:
 ///
-/// Some verbiage about ranks.
-/// https://github.com/helium/HIP/blob/main/0105-modification-of-mobile-subdao-hex-limits.md
 ///
 /// Has something to say about 30meters from asserted location wrt poc rewards
 /// for boosted hexes.
