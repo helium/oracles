@@ -49,15 +49,16 @@
 /// https://github.com/helium/HIP/blob/8b1e814afa61a714b5ba63d3265e5897ab4c5116/0107-preventing-gaming-within-the-mobile-network.md
 ///
 use crate::{
+    hexes::{CoveredHex, CoveredHexes},
     location::{LocationTrust, LocationTrustScores},
     speedtest::Speedtest,
 };
 use coverage_map::{RankedCoverage, SignalLevel};
-use hex_assignments::assignment::HexAssignments;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 use speedtest::Speedtests;
 
+pub mod hexes;
 pub mod location;
 pub mod speedtest;
 
@@ -102,7 +103,7 @@ pub enum Error {
 }
 
 pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
-    let hex_coverage_points = radio.covered_hexes.accumulated_calculated_coverage_points();
+    let hex_coverage_points = radio.covered_hexes.accumulate_calculated_coverage_points();
     let location_trust_multiplier = radio.location_trust_scores.multiplier;
     let speedtest_multiplier = radio.speedtests.multiplier;
 
@@ -144,7 +145,11 @@ impl RewardableRadio {
         radio_threshold: RadioThreshold,
         covered_hexes: Vec<RankedCoverage>,
     ) -> Result<Self> {
-        let any_boosted_hexes = any_boosted(&covered_hexes);
+        // QUESTION: we need to know about boosted hexes to determine location multiplier.
+        // The location multiplier is then used to determine if they are eligible for boosted hexes.
+        // In the case where they cannot use boosted hexes, should the location mulitiplier be restored?
+
+        let any_boosted_hexes = covered_hexes.iter().any(|hex| hex.boosted.is_some());
         let location_trust_scores = if any_boosted_hexes {
             LocationTrustScores::new_with_boosted_hexes(&radio_type, location_trust_scores)
         } else {
@@ -157,17 +162,15 @@ impl RewardableRadio {
             &radio_threshold,
         );
 
-        let speedtests = Speedtests::new(speedtests);
-
         let covered_hexes = if eligible_for_boosted_hexes {
             CoveredHexes::new(&radio_type, covered_hexes)?
         } else {
-            CoveredHexes::new_removing_boosts(&radio_type, covered_hexes)?
+            CoveredHexes::new_without_boosts(&radio_type, covered_hexes)?
         };
 
         Ok(Self {
             radio_type,
-            speedtests,
+            speedtests: Speedtests::new(speedtests),
             location_trust_scores,
             radio_threshold,
             covered_hexes,
@@ -196,94 +199,6 @@ fn eligible_for_boosted_hexes(
     }
 
     true
-}
-
-#[derive(Debug, Clone)]
-pub struct CoveredHexes {
-    hexes: Vec<CoveredHex>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CoveredHex {
-    pub hex: hextree::Cell,
-    // --
-    base_coverage_points: Decimal,
-    calculated_coverage_points: Decimal,
-    // oracle boosted
-    assignemnts: HexAssignments,
-    assignment_multiplier: Decimal,
-    // --
-    rank: usize,
-    rank_multiplier: Decimal,
-    // provider boosted
-    pub boosted_multiplier: Option<Decimal>,
-}
-
-fn any_boosted(ranked_coverage: &[RankedCoverage]) -> bool {
-    ranked_coverage.iter().any(|hex| hex.boosted.is_some())
-}
-
-impl CoveredHexes {
-    fn new_removing_boosts(
-        radio_type: &RadioType,
-        ranked_coverage: Vec<RankedCoverage>,
-    ) -> Result<Self> {
-        let ranked_coverage: Vec<_> = ranked_coverage
-            .into_iter()
-            .map(|ranked| RankedCoverage {
-                boosted: None,
-                ..ranked
-            })
-            .collect();
-
-        Self::new(radio_type, ranked_coverage)
-    }
-
-    fn new(radio_type: &RadioType, ranked_coverage: Vec<RankedCoverage>) -> Result<Self> {
-        let rank_multipliers = radio_type.rank_multipliers();
-
-        // verify all hexes can obtain a base coverage point
-        let covered_hexes = ranked_coverage
-            .into_iter()
-            .map(|ranked| {
-                let coverage_points = radio_type.base_coverage_points(&ranked.signal_level)?;
-                let assignment_multiplier = ranked.assignments.boosting_multiplier();
-                let rank_multiplier = rank_multipliers
-                    .get(ranked.rank - 1)
-                    .cloned()
-                    .unwrap_or(dec!(0));
-
-                let boosted_multiplier = ranked.boosted.map(|boost| boost.get()).map(Decimal::from);
-
-                let calculated_coverage_points = coverage_points
-                    * assignment_multiplier
-                    * rank_multiplier
-                    * boosted_multiplier.unwrap_or(dec!(1));
-
-                Ok(CoveredHex {
-                    hex: ranked.hex,
-                    base_coverage_points: coverage_points,
-                    calculated_coverage_points,
-                    assignemnts: ranked.assignments,
-                    assignment_multiplier,
-                    rank: ranked.rank,
-                    rank_multiplier,
-                    boosted_multiplier,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(Self {
-            hexes: covered_hexes,
-        })
-    }
-
-    fn accumulated_calculated_coverage_points(&self) -> Decimal {
-        self.hexes
-            .iter()
-            .map(|hex| hex.calculated_coverage_points)
-            .sum()
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
