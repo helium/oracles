@@ -68,8 +68,8 @@ pub struct Speedtest {
 
 impl Speedtest {
     pub fn multiplier(&self) -> Decimal {
-        let upload = SpeedtestTier::from_upload(&self.upload_speed);
-        let download = SpeedtestTier::from_download(&self.download_speed);
+        let upload = SpeedtestTier::from_upload(self.upload_speed);
+        let download = SpeedtestTier::from_download(self.download_speed);
         let latency = SpeedtestTier::from_latency(self.latency_millis);
 
         let tier = upload.min(download).min(latency);
@@ -107,7 +107,7 @@ pub enum SpeedtestTier {
 }
 
 impl SpeedtestTier {
-    pub fn multiplier(&self) -> Decimal {
+    pub fn multiplier(self) -> Decimal {
         match self {
             SpeedtestTier::Good => dec!(1.00),
             SpeedtestTier::Acceptable => dec!(0.75),
@@ -117,7 +117,7 @@ impl SpeedtestTier {
         }
     }
 
-    fn from_download(bytes: &BytesPs) -> Self {
+    fn from_download(bytes: BytesPs) -> Self {
         match bytes.as_mbps() {
             100.. => Self::Good,
             75.. => Self::Acceptable,
@@ -127,7 +127,7 @@ impl SpeedtestTier {
         }
     }
 
-    fn from_upload(bytes: &BytesPs) -> Self {
+    fn from_upload(bytes: BytesPs) -> Self {
         match bytes.as_mbps() {
             10.. => Self::Good,
             8.. => Self::Acceptable,
@@ -156,18 +156,18 @@ mod tests {
     fn speedtest_teirs() {
         use SpeedtestTier::*;
         // download
-        assert_eq!(Good, SpeedtestTier::from_download(&BytesPs::mbps(100)));
-        assert_eq!(Acceptable, SpeedtestTier::from_download(&BytesPs::mbps(80)));
-        assert_eq!(Degraded, SpeedtestTier::from_download(&BytesPs::mbps(62)));
-        assert_eq!(Poor, SpeedtestTier::from_download(&BytesPs::mbps(42)));
-        assert_eq!(Fail, SpeedtestTier::from_download(&BytesPs::mbps(20)));
+        assert_eq!(Good, SpeedtestTier::from_download(BytesPs::mbps(100)));
+        assert_eq!(Acceptable, SpeedtestTier::from_download(BytesPs::mbps(80)));
+        assert_eq!(Degraded, SpeedtestTier::from_download(BytesPs::mbps(62)));
+        assert_eq!(Poor, SpeedtestTier::from_download(BytesPs::mbps(42)));
+        assert_eq!(Fail, SpeedtestTier::from_download(BytesPs::mbps(20)));
 
         // upload
-        assert_eq!(Good, SpeedtestTier::from_upload(&BytesPs::mbps(10)));
-        assert_eq!(Acceptable, SpeedtestTier::from_upload(&BytesPs::mbps(8)));
-        assert_eq!(Degraded, SpeedtestTier::from_upload(&BytesPs::mbps(6)));
-        assert_eq!(Poor, SpeedtestTier::from_upload(&BytesPs::mbps(4)));
-        assert_eq!(Fail, SpeedtestTier::from_upload(&BytesPs::mbps(1)));
+        assert_eq!(Good, SpeedtestTier::from_upload(BytesPs::mbps(10)));
+        assert_eq!(Acceptable, SpeedtestTier::from_upload(BytesPs::mbps(8)));
+        assert_eq!(Degraded, SpeedtestTier::from_upload(BytesPs::mbps(6)));
+        assert_eq!(Poor, SpeedtestTier::from_upload(BytesPs::mbps(4)));
+        assert_eq!(Fail, SpeedtestTier::from_upload(BytesPs::mbps(1)));
 
         // latency
         assert_eq!(Good, SpeedtestTier::from_latency(49));
