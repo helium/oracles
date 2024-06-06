@@ -1,7 +1,6 @@
 use std::{collections::HashMap, num::NonZeroU32};
 
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKeyBinary;
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
 
@@ -120,14 +119,14 @@ impl CoverageMapBuilder {
 /// Data structure from mapping radios to their ranked hex coverage
 #[derive(Clone, Default, Debug)]
 pub struct CoverageMap {
-    wifi_hotspots: HashMap<PublicKeyBinary, Vec<RankedCoverage>>,
+    wifi_hotspots: HashMap<Vec<u8>, Vec<RankedCoverage>>,
     cbrs_radios: HashMap<String, Vec<RankedCoverage>>,
 }
 
 impl CoverageMap {
     /// Returns the hexes covered by the WiFi hotspot. The returned slice can be empty, indicating that
     /// the hotspot did not meet the criteria to be ranked in any hex.
-    pub fn get_wifi_coverage(&self, wifi_hotspot: &PublicKeyBinary) -> &[RankedCoverage] {
+    pub fn get_wifi_coverage(&self, wifi_hotspot: &[u8]) -> &[RankedCoverage] {
         self.wifi_hotspots
             .get(wifi_hotspot)
             .map(Vec::as_slice)
@@ -148,7 +147,7 @@ impl CoverageMap {
 #[derive(Clone, Debug)]
 pub struct CoverageObject {
     pub indoor: bool,
-    pub hotspot_key: PublicKeyBinary,
+    pub hotspot_key: Vec<u8>,
     pub cbsd_id: Option<String>,
     pub seniority_timestamp: DateTime<Utc>,
     pub coverage: Vec<UnrankedCoverage>,
@@ -168,7 +167,7 @@ pub struct UnrankedCoverage {
 pub struct RankedCoverage {
     pub hex: Cell,
     pub rank: usize,
-    pub hotspot_key: PublicKeyBinary,
+    pub hotspot_key: Vec<u8>,
     pub cbsd_id: Option<String>,
     pub assignments: HexAssignments,
     pub boosted: Option<NonZeroU32>,
@@ -233,41 +232,33 @@ mod test {
 
     #[test]
     fn test_indoor_wifi_submap() {
+        let radio1 = vec![1, 1, 1];
+        let radio2 = vec![1, 1, 2];
+        let radio3 = vec![1, 1, 3];
+
         let mut coverage_map_builder = CoverageMapBuilder::default();
         coverage_map_builder.insert_coverage_object(indoor_wifi_coverage(
-            "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9",
+            &radio1,
             0x8a1fb46622dffff,
             SignalLevel::High,
         ));
         coverage_map_builder.insert_coverage_object(indoor_wifi_coverage(
-            "11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR",
+            &radio2,
             0x8c2681a3064d9ff,
             SignalLevel::Low,
         ));
         let submap_builder = coverage_map_builder.submap(vec![indoor_wifi_coverage(
-            "11ibmJmQXTL6qMh4cq9pJ7tUtrpafWaVjjT6qhY7CNvjyvY9g1",
+            &radio3,
             0x8c2681a3064d9ff,
             SignalLevel::High,
         )]);
         let submap = submap_builder.build(&NoBoostedHexes, Utc::now());
-        let cov_1 = submap.get_wifi_coverage(
-            &"11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9"
-                .parse()
-                .unwrap(),
-        );
+        let cov_1 = submap.get_wifi_coverage(&radio1);
         assert_eq!(cov_1.len(), 0);
-        let cov_2 = submap.get_wifi_coverage(
-            &"11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR"
-                .parse()
-                .unwrap(),
-        );
+        let cov_2 = submap.get_wifi_coverage(&radio2);
         assert_eq!(cov_2.len(), 1);
         assert_eq!(cov_2[0].rank, 2);
-        let cov_3 = submap.get_wifi_coverage(
-            &"11ibmJmQXTL6qMh4cq9pJ7tUtrpafWaVjjT6qhY7CNvjyvY9g1"
-                .parse()
-                .unwrap(),
-        );
+        let cov_3 = submap.get_wifi_coverage(&radio3);
         assert_eq!(cov_3.len(), 1);
         assert_eq!(cov_3[0].rank, 1);
     }
@@ -300,41 +291,30 @@ mod test {
 
     #[test]
     fn test_outdoor_wifi_submap() {
+        let radio1 = vec![1, 1, 1];
+        let radio2 = vec![1, 1, 2];
+        let radio3 = vec![1, 1, 3];
+
         let mut coverage_map_builder = CoverageMapBuilder::default();
         coverage_map_builder.insert_coverage_object(outdoor_wifi_coverage(
-            "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9",
+            &radio1,
             0x8a1fb46622dffff,
             3,
         ));
         coverage_map_builder.insert_coverage_object(outdoor_wifi_coverage(
-            "11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR",
+            &radio2,
             0x8c2681a3064d9ff,
             1,
         ));
-        let submap_builder = coverage_map_builder.submap(vec![outdoor_wifi_coverage(
-            "11ibmJmQXTL6qMh4cq9pJ7tUtrpafWaVjjT6qhY7CNvjyvY9g1",
-            0x8c2681a3064d9ff,
-            2,
-        )]);
+        let submap_builder =
+            coverage_map_builder.submap(vec![outdoor_wifi_coverage(&radio3, 0x8c2681a3064d9ff, 2)]);
         let submap = submap_builder.build(&NoBoostedHexes, Utc::now());
-        let cov_1 = submap.get_wifi_coverage(
-            &"11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9"
-                .parse()
-                .unwrap(),
-        );
+        let cov_1 = submap.get_wifi_coverage(&radio1);
         assert_eq!(cov_1.len(), 0);
-        let cov_2 = submap.get_wifi_coverage(
-            &"11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR"
-                .parse()
-                .unwrap(),
-        );
+        let cov_2 = submap.get_wifi_coverage(&radio2);
         assert_eq!(cov_2.len(), 1);
         assert_eq!(cov_2[0].rank, 2);
-        let cov_3 = submap.get_wifi_coverage(
-            &"11ibmJmQXTL6qMh4cq9pJ7tUtrpafWaVjjT6qhY7CNvjyvY9g1"
-                .parse()
-                .unwrap(),
-        );
+        let cov_3 = submap.get_wifi_coverage(&radio3);
         assert_eq!(cov_3.len(), 1);
         assert_eq!(cov_3[0].rank, 1);
     }
@@ -348,12 +328,9 @@ mod test {
     }
 
     fn indoor_cbrs_coverage(cbsd_id: &str, hex: u64, signal_level: SignalLevel) -> CoverageObject {
-        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed owner parse");
         CoverageObject {
             indoor: true,
-            hotspot_key: owner,
+            hotspot_key: vec![1, 0],
             seniority_timestamp: Utc::now(),
             cbsd_id: Some(cbsd_id.to_string()),
             coverage: vec![UnrankedCoverage {
@@ -365,11 +342,10 @@ mod test {
         }
     }
 
-    fn indoor_wifi_coverage(owner: &str, hex: u64, signal_level: SignalLevel) -> CoverageObject {
-        let owner: PublicKeyBinary = owner.parse().expect("failed owner parse");
+    fn indoor_wifi_coverage(owner: &[u8], hex: u64, signal_level: SignalLevel) -> CoverageObject {
         CoverageObject {
             indoor: true,
-            hotspot_key: owner,
+            hotspot_key: owner.to_vec(),
             seniority_timestamp: Utc::now(),
             cbsd_id: None,
             coverage: vec![UnrankedCoverage {
@@ -382,12 +358,9 @@ mod test {
     }
 
     fn outdoor_cbrs_coverage(cbsd_id: &str, hex: u64, signal_power: i32) -> CoverageObject {
-        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed owner parse");
         CoverageObject {
             indoor: false,
-            hotspot_key: owner,
+            hotspot_key: vec![0, 0],
             seniority_timestamp: Utc::now(),
             cbsd_id: Some(cbsd_id.to_string()),
             coverage: vec![UnrankedCoverage {
@@ -399,11 +372,10 @@ mod test {
         }
     }
 
-    fn outdoor_wifi_coverage(owner: &str, hex: u64, signal_power: i32) -> CoverageObject {
-        let owner: PublicKeyBinary = owner.parse().expect("failed owner parse");
+    fn outdoor_wifi_coverage(owner: &[u8], hex: u64, signal_power: i32) -> CoverageObject {
         CoverageObject {
             indoor: false,
-            hotspot_key: owner,
+            hotspot_key: owner.to_vec(),
             seniority_timestamp: Utc::now(),
             cbsd_id: None,
             coverage: vec![UnrankedCoverage {

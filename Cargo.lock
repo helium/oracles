@@ -2127,7 +2127,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "h3o",
- "helium-crypto",
  "helium-proto",
  "hex-assignments",
  "hextree",

@@ -4,7 +4,6 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKeyBinary;
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
 
@@ -14,7 +13,7 @@ pub type IndoorCellTree = HashMap<Cell, BTreeMap<SignalLevel, BinaryHeap<IndoorC
 
 #[derive(Eq, Debug, Clone)]
 pub struct IndoorCoverageLevel {
-    hotspot_key: PublicKeyBinary,
+    hotspot_key: Vec<u8>,
     cbsd_id: Option<String>,
     seniority_timestamp: DateTime<Utc>,
     signal_level: SignalLevel,
@@ -53,7 +52,7 @@ pub fn insert_indoor_coverage_object(indoor: &mut IndoorCellTree, coverage_objec
 
 pub fn insert_indoor_coverage(
     indoor: &mut IndoorCellTree,
-    hotspot: &PublicKeyBinary,
+    hotspot: &[u8],
     cbsd_id: &Option<String>,
     seniority_timestamp: DateTime<Utc>,
     hex_coverage: UnrankedCoverage,
@@ -64,7 +63,7 @@ pub fn insert_indoor_coverage(
         .entry(hex_coverage.signal_level)
         .or_default()
         .push(IndoorCoverageLevel {
-            hotspot_key: hotspot.clone(),
+            hotspot_key: hotspot.to_vec(),
             cbsd_id: cbsd_id.clone(),
             seniority_timestamp,
             signal_level: hex_coverage.signal_level,
@@ -234,12 +233,9 @@ mod test {
     }
 
     fn indoor_cbrs_coverage(cbsd_id: &str, signal_level: SignalLevel) -> CoverageObject {
-        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed owner parse");
         CoverageObject {
             indoor: true,
-            hotspot_key: owner,
+            hotspot_key: vec![1, 0],
             seniority_timestamp: Utc::now(),
             cbsd_id: Some(cbsd_id.to_string()),
             coverage: vec![UnrankedCoverage {
@@ -256,12 +252,9 @@ mod test {
         signal_level: SignalLevel,
         seniority_timestamp: DateTime<Utc>,
     ) -> CoverageObject {
-        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed owner parse");
         CoverageObject {
             indoor: true,
-            hotspot_key: owner,
+            hotspot_key: vec![1, 0],
             seniority_timestamp,
             cbsd_id: Some(cbsd_id.to_string()),
             coverage: vec![UnrankedCoverage {
@@ -278,12 +271,9 @@ mod test {
         location: Cell,
         seniority_timestamp: DateTime<Utc>,
     ) -> CoverageObject {
-        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed owner parse");
         CoverageObject {
             indoor: true,
-            hotspot_key: owner,
+            hotspot_key: vec![1, 0],
             seniority_timestamp,
             cbsd_id: Some(cbsd_id.to_string()),
             coverage: vec![UnrankedCoverage {
