@@ -109,16 +109,9 @@ pub struct CoveragePoints {
     pub location_trust_multiplier: Decimal,
     /// Speedtest Mulitplier, maximum of 1
     pub speedtest_multiplier: Decimal,
-    // ---
-    pub radio_type: RadioType,
-    pub radio_threshold: RadioThreshold,
-    pub speedtests: Vec<Speedtest>,
-    pub location_trust_scores: Vec<LocationTrust>,
-    pub covered_hexes: Vec<CoveredHex>,
-    pub boosted_hex_eligibility: BoostedHexStatus,
 }
 
-pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
+pub fn calculate_coverage_points(radio: &RewardableRadio) -> CoveragePoints {
     let hex_coverage_points = radio.covered_hexes.calculated_coverage_points();
     let location_trust_multiplier = radio.location_trust_scores.multiplier;
     let speedtest_multiplier = radio.speedtests.multiplier;
@@ -131,13 +124,6 @@ pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
         hex_coverage_points,
         location_trust_multiplier,
         speedtest_multiplier,
-        // Radio information
-        radio_type: radio.radio_type,
-        radio_threshold: radio.radio_threshold,
-        speedtests: radio.speedtests.speedtests,
-        location_trust_scores: radio.location_trust_scores.trust_scores,
-        covered_hexes: radio.covered_hexes.hexes,
-        boosted_hex_eligibility: radio.boosted_hex_eligibility,
     }
 }
 
