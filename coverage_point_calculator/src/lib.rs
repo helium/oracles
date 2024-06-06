@@ -500,68 +500,50 @@ mod tests {
         );
     }
 
-    #[test]
-    fn outdoor_radios_consider_top_3_ranked_hexes() {
+    #[rstest]
+    #[case(RadioType::OutdoorWifi, 1, dec!(16))]
+    #[case(RadioType::OutdoorWifi, 2, dec!(8))]
+    #[case(RadioType::OutdoorWifi, 3, dec!(4))]
+    #[case(RadioType::OutdoorWifi, 42, dec!(0))]
+    fn outdoor_radios_consider_top_3_ranked_hexes(
+        #[case] radio_type: RadioType,
+        #[case] rank: usize,
+        #[case] expected_points: Decimal,
+    ) {
         let outdoor_wifi = RewardableRadio::new(
-            RadioType::OutdoorWifi,
+            radio_type,
             speedtest_maximum(),
             location_trust_maximum(),
             RadioThreshold::Verified,
-            vec![
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 1,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 2,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 3,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-                RankedCoverage {
-                    hotspot_key: pubkey(),
-                    cbsd_id: None,
-                    hex: hex_location(),
-                    rank: 42,
-                    signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
-                    boosted: None,
-                },
-            ],
+            vec![RankedCoverage {
+                hotspot_key: pubkey(),
+                cbsd_id: None,
+                hex: hex_location(),
+                rank,
+                signal_level: SignalLevel::High,
+                assignments: assignments_maximum(),
+                boosted: None,
+            }],
         )
         .expect("outdoor wifi");
 
-        // rank 1  :: 1.00 * 16 == 16
-        // rank 2  :: 0.50 * 16 == 8
-        // rank 3  :: 0.25 * 16 == 4
-        // rank 42 :: 0.00 * 16 == 0
         assert_eq!(
-            dec!(28),
+            expected_points,
             calculate_coverage_points(&outdoor_wifi).total_coverage_points
         );
     }
 
-    #[test]
-    fn indoor_radios_only_consider_first_ranked_hexes() {
+    #[rstest]
+    #[case(RadioType::IndoorWifi, 1, dec!(400))]
+    #[case(RadioType::IndoorWifi, 2, dec!(0))]
+    #[case(RadioType::IndoorWifi, 42, dec!(0))]
+    fn indoor_radios_only_consider_first_ranked_hexes(
+        #[case] radio_type: RadioType,
+        #[case] rank: usize,
+        #[case] expected_points: Decimal,
+    ) {
         let indoor_wifi = RewardableRadio::new(
-            RadioType::IndoorWifi,
+            radio_type,
             speedtest_maximum(),
             location_trust_maximum(),
             RadioThreshold::Verified,
@@ -570,7 +552,7 @@ mod tests {
                     hotspot_key: pubkey(),
                     cbsd_id: None,
                     hex: hex_location(),
-                    rank: 1,
+                    rank,
                     signal_level: SignalLevel::High,
                     assignments: assignments_maximum(),
                     boosted: None,
@@ -598,7 +580,7 @@ mod tests {
         .expect("indoor wifi");
 
         assert_eq!(
-            dec!(400),
+            expected_points,
             calculate_coverage_points(&indoor_wifi).total_coverage_points
         );
     }
