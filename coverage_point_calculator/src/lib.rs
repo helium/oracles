@@ -189,7 +189,7 @@ impl BoostedHexStatus {
         }
 
         // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
-        if !radio_threshold.threshold_met() {
+        if !radio_threshold.is_met() {
             return Self::RadioThresholdNotMet;
         }
 
@@ -272,7 +272,7 @@ pub enum RadioThreshold {
 }
 
 impl RadioThreshold {
-    fn threshold_met(&self) -> bool {
+    fn is_met(&self) -> bool {
         matches!(self, Self::Verified)
     }
 }
