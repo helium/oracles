@@ -139,10 +139,10 @@ impl SpeedtestTier {
 
     fn from_latency(millis: Millis) -> Self {
         match millis {
-            ..=49 => Self::Good,
-            ..=59 => Self::Acceptable,
-            ..=74 => Self::Degraded,
-            ..=99 => Self::Poor,
+            00..=49 => Self::Good,
+            50..=59 => Self::Acceptable,
+            60..=74 => Self::Degraded,
+            75..=99 => Self::Poor,
             _ => Self::Fail,
         }
     }
