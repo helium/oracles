@@ -309,7 +309,7 @@ mod tests {
         let verified_wifi = make_wifi(RadioThreshold::Verified);
         assert_eq!(
             base_points * dec!(5),
-            calculate_coverage_points(verified_wifi.clone()).total_coverage_points
+            calculate_coverage_points(&verified_wifi).total_coverage_points
         );
 
         // Radio not meeting the threshold is not eligible for boosted hexes.
@@ -317,7 +317,7 @@ mod tests {
         let unverified_wifi = make_wifi(RadioThreshold::Unverified);
         assert_eq!(
             base_points,
-            calculate_coverage_points(unverified_wifi).total_coverage_points
+            calculate_coverage_points(&unverified_wifi).total_coverage_points
         );
     }
 
@@ -350,15 +350,13 @@ mod tests {
         // Boosted hex provides radio with more than base_points.
         let trusted_wifi = make_wifi(location_trust_with_scores(&[dec!(1), dec!(1)]));
         assert!(trusted_wifi.location_trust_scores.multiplier > dec!(0.75));
-        assert!(
-            calculate_coverage_points(trusted_wifi.clone()).total_coverage_points > base_points
-        );
+        assert!(calculate_coverage_points(&trusted_wifi).total_coverage_points > base_points);
 
         // Radio with poor trust score is not eligible for boosted hexes.
         // Boost from hex is not applied, and points are further lowered by poor trust score.
         let untrusted_wifi = make_wifi(location_trust_with_scores(&[dec!(0.1), dec!(0.2)]));
         assert!(untrusted_wifi.location_trust_scores.multiplier < dec!(0.75));
-        assert!(calculate_coverage_points(untrusted_wifi).total_coverage_points < base_points);
+        assert!(calculate_coverage_points(&untrusted_wifi).total_coverage_points < base_points);
     }
 
     #[test]
@@ -389,7 +387,7 @@ mod tests {
         let indoor_cbrs = make_indoor_cbrs(speedtest_maximum());
         assert_eq!(
             base_coverage_points * SpeedtestTier::Good.multiplier(),
-            calculate_coverage_points(indoor_cbrs).total_coverage_points
+            calculate_coverage_points(&indoor_cbrs).total_coverage_points
         );
 
         let indoor_cbrs = make_indoor_cbrs(vec![
@@ -398,7 +396,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Acceptable.multiplier(),
-            calculate_coverage_points(indoor_cbrs.clone()).total_coverage_points
+            calculate_coverage_points(&indoor_cbrs).total_coverage_points
         );
 
         let indoor_cbrs = make_indoor_cbrs(vec![
@@ -407,7 +405,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Degraded.multiplier(),
-            calculate_coverage_points(indoor_cbrs).total_coverage_points
+            calculate_coverage_points(&indoor_cbrs).total_coverage_points
         );
 
         let indoor_cbrs = make_indoor_cbrs(vec![
@@ -416,7 +414,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Poor.multiplier(),
-            calculate_coverage_points(indoor_cbrs).total_coverage_points
+            calculate_coverage_points(&indoor_cbrs).total_coverage_points
         );
 
         let indoor_cbrs = make_indoor_cbrs(vec![
@@ -425,7 +423,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Fail.multiplier(),
-            calculate_coverage_points(indoor_cbrs).total_coverage_points
+            calculate_coverage_points(&indoor_cbrs).total_coverage_points
         );
     }
 
@@ -498,7 +496,7 @@ mod tests {
 
         assert_eq!(
             dec!(1073),
-            calculate_coverage_points(indoor_cbrs).total_coverage_points
+            calculate_coverage_points(&indoor_cbrs).total_coverage_points
         );
     }
 
@@ -556,7 +554,7 @@ mod tests {
         // rank 42 :: 0.00 * 16 == 0
         assert_eq!(
             dec!(28),
-            calculate_coverage_points(outdoor_wifi).total_coverage_points
+            calculate_coverage_points(&outdoor_wifi).total_coverage_points
         );
     }
 
@@ -601,7 +599,7 @@ mod tests {
 
         assert_eq!(
             dec!(400),
-            calculate_coverage_points(indoor_wifi).total_coverage_points
+            calculate_coverage_points(&indoor_wifi).total_coverage_points
         );
     }
 
@@ -629,7 +627,7 @@ mod tests {
         // (0.1 + 0.2 + 0.3 + 0.4) / 4
         assert_eq!(
             dec!(100),
-            calculate_coverage_points(indoor_wifi).total_coverage_points
+            calculate_coverage_points(&indoor_wifi).total_coverage_points
         );
     }
 
@@ -668,7 +666,7 @@ mod tests {
         // signal_level of High.
         assert_eq!(
             dec!(800),
-            calculate_coverage_points(indoor_wifi.clone()).total_coverage_points
+            calculate_coverage_points(&indoor_wifi).total_coverage_points
         );
     }
 
@@ -700,7 +698,7 @@ mod tests {
 
         assert_eq!(
             expected,
-            calculate_coverage_points(outdoor_cbrs).total_coverage_points
+            calculate_coverage_points(&outdoor_cbrs).total_coverage_points
         );
     }
 
@@ -730,7 +728,7 @@ mod tests {
 
         assert_eq!(
             expected,
-            calculate_coverage_points(indoor_cbrs).total_coverage_points
+            calculate_coverage_points(&indoor_cbrs).total_coverage_points
         );
     }
 
@@ -762,7 +760,7 @@ mod tests {
 
         assert_eq!(
             expected,
-            calculate_coverage_points(outdoor_wifi).total_coverage_points
+            calculate_coverage_points(&outdoor_wifi).total_coverage_points
         );
     }
 
@@ -792,7 +790,7 @@ mod tests {
 
         assert_eq!(
             expected,
-            calculate_coverage_points(indoor_wifi).total_coverage_points
+            calculate_coverage_points(&indoor_wifi).total_coverage_points
         );
     }
 

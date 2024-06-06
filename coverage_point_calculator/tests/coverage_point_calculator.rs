@@ -61,7 +61,7 @@ fn base_radio_coverage_points() {
         )
         .unwrap();
 
-        let coverage_points = calculate_coverage_points(radio);
+        let coverage_points = calculate_coverage_points(&radio);
         assert_eq!(
             expcted_base_coverage_point,
             coverage_points.total_coverage_points
@@ -123,7 +123,7 @@ fn radios_with_coverage() {
         )
         .unwrap();
 
-        let coverage_points = calculate_coverage_points(radio);
+        let coverage_points = calculate_coverage_points(&radio);
         assert_eq!(dec!(400), coverage_points.total_coverage_points);
     }
 }
