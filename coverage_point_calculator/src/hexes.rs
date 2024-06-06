@@ -50,19 +50,19 @@ impl CoveredHexes {
         let covered_hexes = ranked_coverage
             .into_iter()
             .map(|ranked| {
-                let coverage_points = radio_type.base_coverage_points(&ranked.signal_level)?;
+                let base_coverage_points = radio_type.base_coverage_points(&ranked.signal_level)?;
                 let rank_multiplier = radio_type.rank_multiplier(ranked.rank);
                 let assignment_multiplier = ranked.assignments.boosting_multiplier();
                 let boosted_multiplier = ranked.boosted.map(|boost| boost.get()).map(Decimal::from);
 
-                let calculated_coverage_points = coverage_points
+                let calculated_coverage_points = base_coverage_points
                     * assignment_multiplier
                     * rank_multiplier
                     * boosted_multiplier.unwrap_or(dec!(1));
 
                 Ok(CoveredHex {
                     hex: ranked.hex,
-                    base_coverage_points: coverage_points,
+                    base_coverage_points,
                     calculated_coverage_points,
                     assignments: ranked.assignments,
                     assignment_multiplier,
