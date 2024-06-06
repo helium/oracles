@@ -1,3 +1,4 @@
+use coverage_map::RankedCoverage;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -27,30 +28,33 @@ pub struct LocationTrust {
 }
 
 impl LocationTrustScores {
-    pub fn new(radio_type: &RadioType, trust_scores: Vec<LocationTrust>) -> Self {
+    pub fn new(
+        radio_type: RadioType,
+        trust_scores: Vec<LocationTrust>,
+        ranked_coverage: &[RankedCoverage],
+    ) -> Self {
+        let any_boosted_hexes = ranked_coverage.iter().any(|hex| hex.boosted.is_some());
+
+        let cleaned_scores = if any_boosted_hexes {
+            trust_scores
+                .into_iter()
+                .map(LocationTrust::into_boosted)
+                .collect()
+        } else {
+            trust_scores
+        };
+
         // CBRS radios are always trusted because they have internal GPS
         let multiplier = if radio_type.is_cbrs() {
             dec!(1)
         } else {
-            multiplier(&trust_scores)
+            multiplier(&cleaned_scores)
         };
 
         Self {
             multiplier,
-            trust_scores,
+            trust_scores: cleaned_scores,
         }
-    }
-
-    pub fn new_with_boosted_hexes(
-        radio_type: &RadioType,
-        trust_scores: Vec<LocationTrust>,
-    ) -> Self {
-        let trust_scores: Vec<_> = trust_scores
-            .into_iter()
-            .map(LocationTrust::into_boosted)
-            .collect();
-
-        Self::new(radio_type, trust_scores)
     }
 }
 impl LocationTrust {

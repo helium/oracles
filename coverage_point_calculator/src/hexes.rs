@@ -3,7 +3,7 @@ use hex_assignments::assignment::HexAssignments;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::{RadioType, Result};
+use crate::{BoostedHexStatus, RadioType, Result};
 
 #[derive(Debug, Clone)]
 pub struct CoveredHexes {
@@ -27,23 +27,22 @@ pub struct CoveredHex {
 }
 
 impl CoveredHexes {
-    pub fn new_without_boosts(
-        radio_type: &RadioType,
+    pub fn new(
+        radio_type: RadioType,
         ranked_coverage: Vec<RankedCoverage>,
+        boosted_hex_status: BoostedHexStatus,
     ) -> Result<Self> {
-        let ranked_coverage: Vec<_> = ranked_coverage
-            .into_iter()
-            .map(|ranked| RankedCoverage {
-                boosted: None,
-                ..ranked
-            })
-            .collect();
-
-        Self::new(radio_type, ranked_coverage)
-    }
-
-    pub fn new(radio_type: &RadioType, ranked_coverage: Vec<RankedCoverage>) -> Result<Self> {
-        let rank_multipliers = radio_type.rank_multipliers();
+        let ranked_coverage = if !boosted_hex_status.is_eligible() {
+            ranked_coverage
+                .into_iter()
+                .map(|ranked| RankedCoverage {
+                    boosted: None,
+                    ..ranked
+                })
+                .collect()
+        } else {
+            ranked_coverage
+        };
 
         // verify all hexes can obtain a base coverage point
         let covered_hexes = ranked_coverage

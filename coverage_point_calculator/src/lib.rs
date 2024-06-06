@@ -54,7 +54,7 @@
 //! [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
 //!
 use crate::{
-    hexes::{CoveredHex, CoveredHexes},
+    hexes::CoveredHexes,
     location::{LocationTrust, LocationTrustScores},
     speedtest::Speedtest,
 };
@@ -147,18 +147,14 @@ impl RewardableRadio {
         speedtests: Vec<Speedtest>,
         location_trust_scores: Vec<LocationTrust>,
         radio_threshold: RadioThreshold,
-        covered_hexes: Vec<RankedCoverage>,
+        ranked_coverage: Vec<RankedCoverage>,
     ) -> Result<Self> {
         // QUESTION: we need to know about boosted hexes to determine location multiplier.
         // The location multiplier is then used to determine if they are eligible for boosted hexes.
         // In the case where they cannot use boosted hexes, should the location mulitiplier be restored?
 
-        let any_boosted_hexes = covered_hexes.iter().any(|hex| hex.boosted.is_some());
-        let location_trust_scores = if any_boosted_hexes {
-            LocationTrustScores::new_with_boosted_hexes(&radio_type, location_trust_scores)
-        } else {
-            LocationTrustScores::new(&radio_type, location_trust_scores)
-        };
+        let location_trust_scores =
+            LocationTrustScores::new(radio_type, location_trust_scores, &ranked_coverage);
 
         let boosted_hex_status = BoostedHexStatus::new(
             &radio_type,
@@ -166,11 +162,7 @@ impl RewardableRadio {
             &radio_threshold,
         );
 
-        let covered_hexes = if boosted_hex_status.is_eligible() {
-            CoveredHexes::new(&radio_type, covered_hexes)?
-        } else {
-            CoveredHexes::new_without_boosts(&radio_type, covered_hexes)?
-        };
+        let covered_hexes = CoveredHexes::new(radio_type, ranked_coverage, boosted_hex_status)?;
 
         Ok(Self {
             radio_type,
