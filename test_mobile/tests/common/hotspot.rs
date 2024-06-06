@@ -169,16 +169,11 @@ impl Hotspot {
             .expect("sign");
 
         let request = self.set_metadata(wifi_heartbeat_req.clone());
-        tracing::debug!(
-            "submitting wifi_heartbeat @ {} = {:?}",
-            timestamp.to_datetime(),
-            wifi_heartbeat_req
-        );
-
         let res = self.mobile_client.submit_wifi_heartbeat(request).await?;
         tracing::debug!(
-            "submitted wifi_heartbeat @ {} = {:?}",
+            "submitted wifi_heartbeat @ {} = {:?} {:?}",
             timestamp.to_datetime(),
+            wifi_heartbeat_req,
             res
         );
 
@@ -219,7 +214,7 @@ async fn populate_mobile_metadata(
 
     let uuid = Uuid::new_v4();
     let h3_index: u64 = location.into();
-    let device_type = serde_json::to_value("wifiIndoor")?;
+    let device_type = serde_json::to_value("wifiOutdoor")?;
 
     let wallet_b58 = wallet.public_key().to_string();
 
@@ -248,7 +243,6 @@ async fn populate_mobile_metadata(
     .execute(&pool)
     .await?;
 
-    // let pk_binary: PublicKeyBinary = keypair.public_key().to_owned().into();
     let pk_binary = PublicKeyBinary::from_str(keypair.public_key().to_string().as_str())?;
     let entity_key = bs58::decode(pk_binary.to_string()).into_vec()?;
 

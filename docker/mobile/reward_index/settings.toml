@@ -1,5 +1,5 @@
 modelog = "reward_index=debug,file_store=info,custom_tracing=info"
-interval = "10 minutes"
+interval = "10 seconds"
 mode = "mobile"
 
 unallocated_reward_entity_key = "131kC5gTPFfTyzziHbh2PWz2VSdF4gDvhoC5vqCz25N7LFtDocF"

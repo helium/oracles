@@ -1,4 +1,4 @@
-log = "mobile_verifier=debug,file_store=info,custom_tracing=info"
+log = "price=debug,mobile_verifier=debug,file_store=info,custom_tracing=info"
 cache = "/opt/mobile-verifier/data"
 rewards = "24 hours"
 reward_period_offset = "30 seconds"
