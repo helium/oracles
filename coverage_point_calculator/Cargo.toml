@@ -17,3 +17,4 @@ coverage-map = { path = "../coverage_map" }
 
 [dev-dependencies]
 helium-crypto = { workspace = true }
+rstest = { version = "0.21.0", default-features = false }
