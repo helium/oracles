@@ -175,7 +175,7 @@ impl RewardableRadio {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum BoostedHexStatus {
     Eligible,
     WifiLocationScoreBelowThreshold(Decimal),
@@ -261,7 +261,7 @@ impl RadioType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RadioThreshold {
     Verified,
     UnVerified,
