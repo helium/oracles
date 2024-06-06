@@ -22,3 +22,5 @@
 
 [^files]: Maps of hexes used 
 ![Hexes](docs/hexes.jpg "Hexes")
+
+key pair for coverage object `13te9quF3s24VNrQmBRHnoNSwWPg48Jh2hfJdqFQoiFYiDcDAsp`

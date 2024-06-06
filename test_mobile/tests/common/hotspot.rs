@@ -2,20 +2,19 @@ use anyhow::Result;
 use backon::{ExponentialBuilder, Retryable};
 use chrono::Utc;
 use h3o::CellIndex;
-use helium_crypto::{KeyTag, Keypair, PublicKeyBinary, Sign};
+use helium_crypto::{Keypair, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
     coverage_object_req_v1::KeyType, Client as PocMobileClient, CoverageObjectReqV1,
     RadioHexSignalLevel, SpeedtestReqV1, WifiHeartbeatReqV1,
 };
 use prost::Message;
-use rand::rngs::OsRng;
 use sqlx::postgres::PgPoolOptions;
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 use tonic::{metadata::MetadataValue, transport::Channel, Request};
 use tracing::instrument;
 use uuid::Uuid;
 
-use crate::common::{hours_ago, now, TimestampToDateTime};
+use crate::common::{generate_keypair, hours_ago, now, TimestampToDateTime};
 
 #[derive(Debug)]
 pub struct Hotspot {
@@ -36,8 +35,8 @@ impl Hotspot {
             .await
             .expect("client connect");
 
-        let keypair = Keypair::generate(KeyTag::default(), &mut OsRng);
-        let wallet = Keypair::generate(KeyTag::default(), &mut OsRng);
+        let keypair = generate_keypair();
+        let wallet = generate_keypair();
         let b58 = keypair.public_key().to_string();
 
         tracing::info!(hotspot = b58, "hotspot connected to ingester");
@@ -98,12 +97,16 @@ impl Hotspot {
     }
 
     #[instrument(skip(self), fields(hotspot = %self.b58))]
-    pub async fn submit_coverage_object(&mut self, uuid: Uuid) -> Result<()> {
+    pub async fn submit_coverage_object(
+        &mut self,
+        uuid: Uuid,
+        pcs_keypair: Arc<Keypair>,
+    ) -> Result<()> {
         let coverage_claim_time = now() - hours_ago(24);
         let pub_key = self.keypair.public_key().to_vec();
 
         let mut coverage_object_req = CoverageObjectReqV1 {
-            pub_key: pub_key.clone(),
+            pub_key: pcs_keypair.public_key().to_vec(),
             uuid: uuid.as_bytes().to_vec(),
             coverage_claim_time,
             coverage: vec![RadioHexSignalLevel {
@@ -117,8 +120,7 @@ impl Hotspot {
             key_type: Some(KeyType::HotspotKey(pub_key)),
         };
 
-        coverage_object_req.signature = self
-            .keypair
+        coverage_object_req.signature = pcs_keypair
             .sign(&coverage_object_req.encode_to_vec())
             .expect("sign");
 
@@ -265,6 +267,8 @@ async fn populate_mobile_metadata(
     .bind(Utc::now()) // refreshed_at
     .execute(&pool)
     .await?;
+
+    pool.close().await;
 
     Ok(())
 }

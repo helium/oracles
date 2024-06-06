@@ -39,3 +39,17 @@ VALUES
 UPDATE
 SET
     updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO
+    registered_keys (pubkey, key_role, created_at, updated_at, name)
+VALUES
+    (
+        '13te9quF3s24VNrQmBRHnoNSwWPg48Jh2hfJdqFQoiFYiDcDAsp',
+        'pcs',
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP,
+        'Authorized Coverage Object Key'
+    ) ON CONFLICT (pubkey, key_role) DO
+UPDATE
+SET
+    updated_at = CURRENT_TIMESTAMP;
