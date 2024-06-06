@@ -13,16 +13,18 @@ pub struct CoveredHexes {
 #[derive(Debug, Clone)]
 pub struct CoveredHex {
     pub hex: hextree::Cell,
-    // --
+    /// Default points received from (RadioType, SignalLevel) pair.
     pub base_coverage_points: Decimal,
+    /// Coverage points including assignment, rank, and boosted hex multipliers.
     pub calculated_coverage_points: Decimal,
-    // oracle boosted
+    /// Oracle boosted Assignments
     pub assignments: HexAssignments,
     pub assignment_multiplier: Decimal,
-    // --
+    /// [RankedCoverage::rank] 1-based
     pub rank: usize,
     pub rank_multiplier: Decimal,
-    // provider boosted
+    /// Provider boosted multiplier. Will be None if the Radio does not qualify
+    /// for boosted rewards.
     pub boosted_multiplier: Option<Decimal>,
 }
 
