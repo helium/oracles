@@ -74,15 +74,16 @@ pub enum Error {
     #[error("signal level {0:?} not allowed for {1:?}")]
     InvalidSignalLevel(SignalLevel, RadioType),
 }
+
 /// Necessary checks for calculating coverage points is done during [RewardableRadio::new].
 #[derive(Debug, Clone)]
 pub struct RewardableRadio {
-    radio_type: RadioType,
+    pub radio_type: RadioType,
+    pub radio_threshold: RadioThreshold,
+    pub boosted_hex_eligibility: BoostedHexStatus,
     speedtests: Speedtests,
     location_trust_scores: LocationTrustScores,
-    radio_threshold: RadioThreshold,
     covered_hexes: CoveredHexes,
-    boosted_hex_eligibility: BoostedHexStatus,
 }
 
 /// Output of calculating coverage points for a [RewardableRadio].
