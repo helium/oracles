@@ -724,7 +724,7 @@ mod tests {
         #[case] expected: Decimal,
     ) {
         let outdoor_wifi = RewardableRadio::new(
-            RadioType::IndoorCbrs,
+            RadioType::OutdoorWifi,
             speedtest_maximum(),
             location_trust_maximum(),
             RadioThreshold::Verified,
