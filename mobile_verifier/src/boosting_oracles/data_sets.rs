@@ -833,30 +833,3 @@ pub struct AssignedHex {
     pub signal_power: i32,
     pub assignments: HexAssignments,
 }
-
-pub async fn set_all_oracle_boosting_assignments(
-    pool: &PgPool,
-    data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
-    file_sink: &FileSinkClient,
-) -> anyhow::Result<()> {
-    let assigned_coverage_objs =
-        AssignedCoverageObjects::assign_hex_stream(db::fetch_all_hexes(pool), data_sets).await?;
-    assigned_coverage_objs.write(file_sink).await?;
-    assigned_coverage_objs.save(pool).await?;
-    Ok(())
-}
-
-pub async fn set_unassigned_oracle_boosting_assignments(
-    pool: &PgPool,
-    data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
-    file_sink: &FileSinkClient,
-) -> anyhow::Result<()> {
-    let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
-        db::fetch_hexes_with_null_assignments(pool),
-        data_sets,
-    )
-    .await?;
-    assigned_coverage_objs.write(file_sink).await?;
-    assigned_coverage_objs.save(pool).await?;
-    Ok(())
-}
