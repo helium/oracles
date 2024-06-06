@@ -178,6 +178,26 @@ mod tests {
     }
 
     #[test]
+    fn minimum_required_speedtests_provided_for_multiplier_above_zero() {
+        let speedtest = Speedtest {
+            upload_speed: BytesPs::mbps(15),
+            download_speed: BytesPs::mbps(150),
+            latency_millis: 15,
+            timestamp: Utc::now(),
+        };
+        let speedtests = |num: usize| std::iter::repeat(speedtest).take(num).collect();
+
+        assert_eq!(
+            dec!(0),
+            Speedtests::new(speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES - 1)).multiplier
+        );
+        assert_eq!(
+            dec!(1),
+            Speedtests::new(speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES)).multiplier
+        );
+    }
+
+    #[test]
     fn restrict_to_maximum_speedtests_allowed() {
         let base = Speedtest {
             upload_speed: BytesPs::mbps(15),
