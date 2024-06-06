@@ -382,9 +382,13 @@ mod tests {
             .expect("indoor cbrs with speedtests")
         };
 
+        let base_coverage_points = RadioType::IndoorCbrs
+            .base_coverage_points(&SignalLevel::High)
+            .unwrap();
+
         let indoor_cbrs = make_indoor_cbrs(speedtest_maximum());
         assert_eq!(
-            dec!(100),
+            base_coverage_points * SpeedtestTier::Good.multiplier(),
             calculate_coverage_points(indoor_cbrs).total_coverage_points
         );
 
@@ -393,7 +397,7 @@ mod tests {
             speedtest_with_download(BytesPs::mbps(88)),
         ]);
         assert_eq!(
-            dec!(75),
+            base_coverage_points * SpeedtestTier::Acceptable.multiplier(),
             calculate_coverage_points(indoor_cbrs.clone()).total_coverage_points
         );
 
@@ -402,7 +406,7 @@ mod tests {
             speedtest_with_download(BytesPs::mbps(62)),
         ]);
         assert_eq!(
-            dec!(50),
+            base_coverage_points * SpeedtestTier::Degraded.multiplier(),
             calculate_coverage_points(indoor_cbrs).total_coverage_points
         );
 
@@ -411,7 +415,7 @@ mod tests {
             speedtest_with_download(BytesPs::mbps(42)),
         ]);
         assert_eq!(
-            dec!(25),
+            base_coverage_points * SpeedtestTier::Poor.multiplier(),
             calculate_coverage_points(indoor_cbrs).total_coverage_points
         );
 
@@ -420,7 +424,7 @@ mod tests {
             speedtest_with_download(BytesPs::mbps(25)),
         ]);
         assert_eq!(
-            dec!(0),
+            base_coverage_points * SpeedtestTier::Fail.multiplier(),
             calculate_coverage_points(indoor_cbrs).total_coverage_points
         );
     }
