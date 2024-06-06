@@ -92,10 +92,10 @@ pub struct RewardableRadio {
 /// - If more than the allowed speedtests were provided, only the speedtests
 ///   considered are included here.
 ///
-/// - When a radio covers boosted hexes, [location_trust_scores] will contain a
+/// - When a radio covers boosted hexes, [CoveragePoints::location_trust_scores] will contain a
 ///   trust score _after_ the boosted hex restriction has been applied.
 ///
-/// - When a radio is not eligible for boosted hex rewards, [covered_hexes] will
+/// - When a radio is not eligible for boosted hex rewards, [CoveragePoints::covered_hexes] will
 ///   have no boosted_multiplier values.
 ///
 #[derive(Debug)]
