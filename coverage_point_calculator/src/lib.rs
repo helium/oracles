@@ -175,18 +175,6 @@ impl RewardableRadio {
     }
 }
 
-impl CoveragePoints {
-    pub fn iter_boosted_hexes(&self) -> impl Iterator<Item = CoveredHex> {
-        let eligible = self.boosted_hex_eligibility.is_eligible();
-
-        self.covered_hexes
-            .clone()
-            .into_iter()
-            .filter(move |_| eligible)
-            .filter(|hex| hex.boosted_multiplier.is_some())
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum BoostedHexStatus {
     Eligible,
