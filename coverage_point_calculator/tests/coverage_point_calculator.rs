@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, str::FromStr};
+use std::num::NonZeroU32;
 
 use chrono::Utc;
 use coverage_map::{RankedCoverage, SignalLevel};
@@ -32,13 +32,8 @@ fn base_radio_coverage_points() {
         trust_score: dec!(1.0),
     }];
 
-    let pubkey = helium_crypto::PublicKeyBinary::from_str(
-        "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6",
-    )
-    .unwrap();
-
     let hexes = vec![RankedCoverage {
-        hotspot_key: pubkey,
+        hotspot_key: vec![1],
         cbsd_id: None,
         hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
         rank: 1,
@@ -79,13 +74,8 @@ fn radios_with_coverage() {
     // Enough hexes will be provided to each type of radio, that they are
     // awarded 400 coverage points.
 
-    let pubkey = helium_crypto::PublicKeyBinary::from_str(
-        "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6",
-    )
-    .unwrap();
-
     let base_hex = RankedCoverage {
-        hotspot_key: pubkey,
+        hotspot_key: vec![1],
         cbsd_id: None,
         hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
         rank: 1,

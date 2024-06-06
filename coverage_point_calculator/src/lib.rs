@@ -853,10 +853,7 @@ mod tests {
             .collect()
     }
 
-    fn pubkey() -> helium_crypto::PublicKeyBinary {
-        helium_crypto::PublicKeyBinary::from_str(
-            "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6",
-        )
-        .expect("failed owner parse")
+    fn pubkey() -> Vec<u8> {
+        vec![1]
     }
 }
