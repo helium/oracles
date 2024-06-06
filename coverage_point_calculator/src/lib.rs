@@ -272,7 +272,7 @@ impl RadioType {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RadioThreshold {
     Verified,
-    UnVerified,
+    Unverified,
 }
 
 impl RadioThreshold {
@@ -331,7 +331,7 @@ mod tests {
 
         // Radio not meeting the threshold is not eligible for boosted hexes.
         // Boost from hex is not applied, radio receives base points.
-        let unverified_wifi = make_wifi(RadioThreshold::UnVerified);
+        let unverified_wifi = make_wifi(RadioThreshold::Unverified);
         assert_eq!(
             base_points,
             calculate_coverage_points(unverified_wifi).total_coverage_points
