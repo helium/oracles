@@ -4,7 +4,7 @@ use chrono::Utc;
 use coverage_map::{RankedCoverage, SignalLevel};
 use coverage_point_calculator::{
     calculate_coverage_points,
-    location::{LocationTrust, Meters},
+    location::LocationTrust,
     speedtest::{BytesPs, Speedtest},
     RadioThreshold, RadioType, RewardableRadio,
 };
@@ -28,7 +28,7 @@ fn base_radio_coverage_points() {
         },
     ];
     let location_trust_scores = vec![LocationTrust {
-        distance_to_asserted: Meters::new(1),
+        meters_to_asserted: 1,
         trust_score: dec!(1.0),
     }];
 
@@ -104,7 +104,7 @@ fn radios_with_coverage() {
         },
     ];
     let default_location_trust_scores = vec![LocationTrust {
-        distance_to_asserted: Meters::new(1),
+        meters_to_asserted: 1,
         trust_score: dec!(1.0),
     }];
 

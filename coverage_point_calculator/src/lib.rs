@@ -272,7 +272,7 @@ mod tests {
 
     use std::num::NonZeroU32;
 
-    use crate::{location::Meters, speedtest::BytesPs};
+    use crate::speedtest::BytesPs;
 
     use super::*;
     use chrono::Utc;
@@ -834,7 +834,7 @@ mod tests {
 
     fn location_trust_maximum() -> Vec<LocationTrust> {
         vec![LocationTrust {
-            distance_to_asserted: Meters::new(1),
+            meters_to_asserted: 1,
             trust_score: dec!(1.0),
         }]
     }
@@ -845,7 +845,7 @@ mod tests {
             .iter()
             .copied()
             .map(|trust_score| LocationTrust {
-                distance_to_asserted: Meters::new(1),
+                meters_to_asserted: 1,
                 trust_score,
             })
             .collect()

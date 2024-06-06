@@ -4,16 +4,12 @@ use rust_decimal_macros::dec;
 
 use crate::RadioType;
 
-const RESTRICTIVE_MAX_DISTANCE: Meters = Meters(50);
+/// When a Radio is covering any boosted hexes, it's trust score location must
+/// be within this distance to it's asserted location. Otherwise the trust_score
+/// will be capped at 0.25x.
+const RESTRICTIVE_MAX_DISTANCE: Meters = 50;
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct Meters(u32);
-
-impl Meters {
-    pub fn new(meters: u32) -> Self {
-        Self(meters)
-    }
-}
+type Meters = u32;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocationTrustScores {
@@ -23,7 +19,7 @@ pub struct LocationTrustScores {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocationTrust {
-    pub distance_to_asserted: Meters,
+    pub meters_to_asserted: Meters,
     pub trust_score: Decimal,
 }
 
@@ -61,7 +57,7 @@ impl LocationTrust {
     fn into_boosted(self) -> Self {
         // Cap multipliers to 0.25x when a radio covers _any_ boosted hex
         // and it's distance to asserted is above the threshold.
-        let trust_score = if self.distance_to_asserted > RESTRICTIVE_MAX_DISTANCE {
+        let trust_score = if self.meters_to_asserted > RESTRICTIVE_MAX_DISTANCE {
             dec!(0.25).min(self.trust_score)
         } else {
             self.trust_score
@@ -69,7 +65,7 @@ impl LocationTrust {
 
         LocationTrust {
             trust_score,
-            distance_to_asserted: self.distance_to_asserted,
+            meters_to_asserted: self.meters_to_asserted,
         }
     }
 }
@@ -94,11 +90,11 @@ mod tests {
     fn all_locations_within_max_boosted_distance() {
         let trust_scores = vec![
             LocationTrust {
-                distance_to_asserted: Meters(49),
+                meters_to_asserted: 49,
                 trust_score: dec!(0.5),
             },
             LocationTrust {
-                distance_to_asserted: Meters(50),
+                meters_to_asserted: 50,
                 trust_score: dec!(0.5),
             },
         ];
@@ -117,11 +113,11 @@ mod tests {
     fn all_locations_past_max_boosted_distance() {
         let trust_scores = vec![
             LocationTrust {
-                distance_to_asserted: Meters(51),
+                meters_to_asserted: 51,
                 trust_score: dec!(0.5),
             },
             LocationTrust {
-                distance_to_asserted: Meters(100),
+                meters_to_asserted: 100,
                 trust_score: dec!(0.5),
             },
         ];
@@ -141,11 +137,11 @@ mod tests {
     fn locations_around_max_boosted_distance() {
         let trust_scores = vec![
             LocationTrust {
-                distance_to_asserted: Meters(50),
+                meters_to_asserted: 50,
                 trust_score: dec!(0.5),
             },
             LocationTrust {
-                distance_to_asserted: Meters(51),
+                meters_to_asserted: 51,
                 trust_score: dec!(0.5),
             },
         ];
@@ -170,7 +166,7 @@ mod tests {
         // regardless of their score or distance provided.
 
         let trust_scores = vec![LocationTrust {
-            distance_to_asserted: Meters(99999),
+            meters_to_asserted: 99999,
             trust_score: dec!(0),
         }];
 
