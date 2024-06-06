@@ -83,101 +83,121 @@ fn multiplier(trust_scores: &[LocationTrust]) -> Decimal {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
+    use coverage_map::SignalLevel;
+    use hex_assignments::{assignment::HexAssignments, Assignment};
+
     use super::*;
 
     #[test]
-    fn boosted_hexes_within_distance_retain_trust_score() {
-        let lts = LocationTrustScores::new_with_boosted_hexes(
-            &RadioType::IndoorWifi,
-            vec![LocationTrust {
+    fn all_locations_within_max_boosted_distance() {
+        let trust_scores = vec![
+            LocationTrust {
                 distance_to_asserted: Meters(49),
-                trust_score: dec!(1),
-            }],
-        );
-
-        assert_eq!(
-            LocationTrustScores {
-                multiplier: dec!(1),
-                trust_scores: vec![LocationTrust {
-                    distance_to_asserted: Meters(49),
-                    trust_score: dec!(1)
-                }]
+                trust_score: dec!(0.5),
             },
-            lts
+            LocationTrust {
+                distance_to_asserted: Meters(50),
+                trust_score: dec!(0.5),
+            },
+        ];
+        let boosted = LocationTrustScores::new(
+            RadioType::IndoorWifi,
+            trust_scores.clone(),
+            &boosted_ranked_coverage(),
         );
+        let unboosted = LocationTrustScores::new(RadioType::IndoorWifi, trust_scores, &[]);
+
+        assert_eq!(dec!(0.5), boosted.multiplier);
+        assert_eq!(dec!(0.5), unboosted.multiplier);
     }
 
     #[test]
-    fn boosted_hexes_past_distance_reduce_trust_score() {
-        let lts = LocationTrustScores::new_with_boosted_hexes(
-            &RadioType::IndoorWifi,
-            vec![LocationTrust {
+    fn all_locations_past_max_boosted_distance() {
+        let trust_scores = vec![
+            LocationTrust {
                 distance_to_asserted: Meters(51),
-                trust_score: dec!(1),
-            }],
-        );
-
-        assert_eq!(
-            LocationTrustScores {
-                multiplier: dec!(0.25),
-                trust_scores: vec![LocationTrust {
-                    distance_to_asserted: Meters(51),
-                    trust_score: dec!(0.25)
-                }]
+                trust_score: dec!(0.5),
             },
-            lts
+            LocationTrust {
+                distance_to_asserted: Meters(100),
+                trust_score: dec!(0.5),
+            },
+        ];
+
+        let boosted = LocationTrustScores::new(
+            RadioType::IndoorWifi,
+            trust_scores.clone(),
+            &boosted_ranked_coverage(),
         );
+        let unboosted = LocationTrustScores::new(RadioType::IndoorWifi, trust_scores, &[]);
+
+        assert_eq!(dec!(0.25), boosted.multiplier);
+        assert_eq!(dec!(0.5), unboosted.multiplier);
     }
 
     #[test]
-    fn multiplier_is_average_of_scores() {
-        // All locations within max distance
-        let boosted_trust_scores = LocationTrustScores::new_with_boosted_hexes(
-            &RadioType::IndoorWifi,
-            vec![
-                LocationTrust {
-                    distance_to_asserted: Meters(49),
-                    trust_score: dec!(0.5),
-                },
-                LocationTrust {
-                    distance_to_asserted: Meters(49),
-                    trust_score: dec!(0.5),
-                },
-            ],
-        );
-        assert_eq!(dec!(0.5), boosted_trust_scores.multiplier);
+    fn locations_around_max_boosted_distance() {
+        let trust_scores = vec![
+            LocationTrust {
+                distance_to_asserted: Meters(50),
+                trust_score: dec!(0.5),
+            },
+            LocationTrust {
+                distance_to_asserted: Meters(51),
+                trust_score: dec!(0.5),
+            },
+        ];
 
-        // 1 location within max distance, 1 location outside
-        let boosted_over_limit_trust_scores = LocationTrustScores::new_with_boosted_hexes(
-            &RadioType::IndoorWifi,
-            vec![
-                LocationTrust {
-                    distance_to_asserted: Meters(49),
-                    trust_score: dec!(0.5),
-                },
-                LocationTrust {
-                    distance_to_asserted: Meters(51),
-                    trust_score: dec!(0.5),
-                },
-            ],
+        let boosted = LocationTrustScores::new(
+            RadioType::IndoorWifi,
+            trust_scores.clone(),
+            &boosted_ranked_coverage(),
         );
-        let mult = (dec!(0.5) + dec!(0.25)) / dec!(2);
-        assert_eq!(mult, boosted_over_limit_trust_scores.multiplier);
+        let unboosted = LocationTrustScores::new(RadioType::IndoorWifi, trust_scores, &[]);
 
-        // All locations outside boosted distance restriction, but no boosted hexes
-        let unboosted_trust_scores = LocationTrustScores::new(
-            &RadioType::IndoorWifi,
-            vec![
-                LocationTrust {
-                    distance_to_asserted: Meters(100),
-                    trust_score: dec!(0.5),
-                },
-                LocationTrust {
-                    distance_to_asserted: Meters(100),
-                    trust_score: dec!(0.5),
-                },
-            ],
+        // location past distance limit trust score is degraded
+        let degraded_mult = (dec!(0.5) + dec!(0.25)) / dec!(2);
+        assert_eq!(degraded_mult, boosted.multiplier);
+        // location past distance limit trust score is untouched
+        assert_eq!(dec!(0.5), unboosted.multiplier);
+    }
+
+    #[test]
+    fn cbrs_trust_score_bypassed_for_gps_trust() {
+        // CBRS radios have GPS units in them, they are always trusted,
+        // regardless of their score or distance provided.
+
+        let trust_scores = vec![LocationTrust {
+            distance_to_asserted: Meters(99999),
+            trust_score: dec!(0),
+        }];
+
+        let boosted = LocationTrustScores::new(
+            RadioType::IndoorCbrs,
+            trust_scores.clone(),
+            &boosted_ranked_coverage(),
         );
-        assert_eq!(dec!(0.5), unboosted_trust_scores.multiplier);
+        let unboosted = LocationTrustScores::new(RadioType::IndoorCbrs, trust_scores, &[]);
+
+        assert_eq!(dec!(1), boosted.multiplier);
+        assert_eq!(dec!(1), unboosted.multiplier);
+    }
+
+    fn boosted_ranked_coverage() -> Vec<RankedCoverage> {
+        vec![RankedCoverage {
+            hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
+            rank: 1,
+            hotspot_key: vec![],
+            cbsd_id: None,
+            signal_level: SignalLevel::High,
+            assignments: HexAssignments {
+                footfall: Assignment::A,
+                landtype: Assignment::A,
+                urbanized: Assignment::A,
+            },
+            boosted: NonZeroU32::new(5),
+        }]
     }
 }
