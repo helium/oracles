@@ -813,13 +813,13 @@ mod tests {
             Speedtest {
                 upload_speed: BytesPs::mbps(15),
                 download_speed: BytesPs::mbps(150),
-                latency: Millis::new(15),
+                latency_millis: 15,
                 timestamp: Utc::now(),
             },
             Speedtest {
                 upload_speed: BytesPs::mbps(15),
                 download_speed: BytesPs::mbps(150),
-                latency: Millis::new(15),
+                latency_millis: 15,
                 timestamp: Utc::now(),
             },
         ]
@@ -829,7 +829,7 @@ mod tests {
         Speedtest {
             upload_speed: BytesPs::mbps(15),
             download_speed: download,
-            latency: Millis::new(15),
+            latency_millis: 15,
             timestamp: Utc::now(),
         }
     }

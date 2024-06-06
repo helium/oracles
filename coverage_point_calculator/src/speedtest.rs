@@ -5,6 +5,8 @@ use rust_decimal_macros::dec;
 const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
 const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
 
+type Millis = u32;
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
 pub struct BytesPs(u64);
 
@@ -19,15 +21,6 @@ impl BytesPs {
 
     fn as_mbps(&self) -> u64 {
         self.0 / 12500
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub struct Millis(u32);
-
-impl Millis {
-    pub fn new(milliseconds: u32) -> Self {
-        Self(milliseconds)
     }
 }
 
@@ -69,7 +62,7 @@ impl Speedtests {
 pub struct Speedtest {
     pub upload_speed: BytesPs,
     pub download_speed: BytesPs,
-    pub latency: Millis,
+    pub latency_millis: u32,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -77,7 +70,7 @@ impl Speedtest {
     pub fn multiplier(&self) -> Decimal {
         let upload = SpeedtestTier::from_upload(&self.upload_speed);
         let download = SpeedtestTier::from_download(&self.download_speed);
-        let latency = SpeedtestTier::from_latency(&self.latency);
+        let latency = SpeedtestTier::from_latency(self.latency_millis);
 
         let tier = upload.min(download).min(latency);
         tier.multiplier()
@@ -91,14 +84,14 @@ impl Speedtest {
         for test in speedtests {
             upload += test.upload_speed.0;
             download += test.download_speed.0;
-            latency += test.latency.0;
+            latency += test.latency_millis;
         }
 
         let count = speedtests.len();
         Self {
             upload_speed: BytesPs::new(upload / count as u64),
             download_speed: BytesPs::new(download / count as u64),
-            latency: Millis::new(latency / count as u32),
+            latency_millis: latency / count as u32,
             timestamp: Utc::now(),
         }
     }
@@ -144,7 +137,7 @@ impl SpeedtestTier {
         }
     }
 
-    fn from_latency(Millis(millis): &Millis) -> Self {
+    fn from_latency(millis: Millis) -> Self {
         match millis {
             ..=49 => Self::Good,
             ..=59 => Self::Acceptable,
@@ -177,11 +170,11 @@ mod tests {
         assert_eq!(Fail, SpeedtestTier::from_upload(&BytesPs::mbps(1)));
 
         // latency
-        assert_eq!(Good, SpeedtestTier::from_latency(&Millis::new(49)));
-        assert_eq!(Acceptable, SpeedtestTier::from_latency(&Millis::new(59)));
-        assert_eq!(Degraded, SpeedtestTier::from_latency(&Millis::new(74)));
-        assert_eq!(Poor, SpeedtestTier::from_latency(&Millis::new(99)));
-        assert_eq!(Fail, SpeedtestTier::from_latency(&Millis::new(101)));
+        assert_eq!(Good, SpeedtestTier::from_latency(49));
+        assert_eq!(Acceptable, SpeedtestTier::from_latency(59));
+        assert_eq!(Degraded, SpeedtestTier::from_latency(74));
+        assert_eq!(Poor, SpeedtestTier::from_latency(99));
+        assert_eq!(Fail, SpeedtestTier::from_latency(101));
     }
 
     #[test]
@@ -189,7 +182,7 @@ mod tests {
         let base = Speedtest {
             upload_speed: BytesPs::mbps(15),
             download_speed: BytesPs::mbps(150),
-            latency: Millis::new(15),
+            latency_millis: 15,
             timestamp: Utc::now(),
         };
         let speedtests = std::iter::repeat(base).take(10).collect();
@@ -203,7 +196,7 @@ mod tests {
         let make_speedtest = |timestamp: DateTime<Utc>, latency: Millis| Speedtest {
             upload_speed: BytesPs::mbps(15),
             download_speed: BytesPs::mbps(150),
-            latency,
+            latency_millis: latency,
             timestamp,
         };
 
@@ -211,23 +204,23 @@ mod tests {
         // new speedtests have 1.0 multipliers
         // old speedtests have 0.0 multipliers
         let speedtests = Speedtests::new(vec![
-            make_speedtest(date(2024, 4, 6), Millis::new(15)),
-            make_speedtest(date(2022, 4, 6), Millis::new(999)),
+            make_speedtest(date(2024, 4, 6), 15),
+            make_speedtest(date(2022, 4, 6), 999),
             // --
-            make_speedtest(date(2024, 4, 5), Millis::new(15)),
-            make_speedtest(date(2022, 4, 5), Millis::new(999)),
+            make_speedtest(date(2024, 4, 5), 15),
+            make_speedtest(date(2022, 4, 5), 999),
             // --
-            make_speedtest(date(2024, 4, 4), Millis::new(15)),
-            make_speedtest(date(2022, 4, 4), Millis::new(999)),
+            make_speedtest(date(2024, 4, 4), 15),
+            make_speedtest(date(2022, 4, 4), 999),
             // --
-            make_speedtest(date(2022, 4, 3), Millis::new(999)),
-            make_speedtest(date(2024, 4, 3), Millis::new(15)),
+            make_speedtest(date(2022, 4, 3), 999),
+            make_speedtest(date(2024, 4, 3), 15),
             // --
-            make_speedtest(date(2024, 4, 2), Millis::new(15)),
-            make_speedtest(date(2022, 4, 2), Millis::new(999)),
+            make_speedtest(date(2024, 4, 2), 15),
+            make_speedtest(date(2022, 4, 2), 999),
             // --
-            make_speedtest(date(2024, 4, 1), Millis::new(15)),
-            make_speedtest(date(2022, 4, 1), Millis::new(999)),
+            make_speedtest(date(2024, 4, 1), 15),
+            make_speedtest(date(2022, 4, 1), 999),
         ]);
 
         // Old speedtests should be unused

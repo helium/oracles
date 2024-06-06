@@ -5,7 +5,7 @@ use coverage_map::{RankedCoverage, SignalLevel};
 use coverage_point_calculator::{
     calculate_coverage_points,
     location::{LocationTrust, Meters},
-    speedtest::{BytesPs, Millis, Speedtest},
+    speedtest::{BytesPs, Speedtest},
     RadioThreshold, RadioType, RewardableRadio,
 };
 use hex_assignments::{assignment::HexAssignments, Assignment};
@@ -17,13 +17,13 @@ fn base_radio_coverage_points() {
         Speedtest {
             upload_speed: BytesPs::mbps(15),
             download_speed: BytesPs::mbps(150),
-            latency: Millis::new(15),
+            latency_millis: 15,
             timestamp: Utc::now(),
         },
         Speedtest {
             upload_speed: BytesPs::mbps(15),
             download_speed: BytesPs::mbps(150),
-            latency: Millis::new(15),
+            latency_millis: 15,
             timestamp: Utc::now(),
         },
     ];
@@ -93,13 +93,13 @@ fn radios_with_coverage() {
         Speedtest {
             upload_speed: BytesPs::mbps(15),
             download_speed: BytesPs::mbps(150),
-            latency: Millis::new(15),
+            latency_millis: 15,
             timestamp: Utc::now(),
         },
         Speedtest {
             upload_speed: BytesPs::mbps(15),
             download_speed: BytesPs::mbps(150),
-            latency: Millis::new(15),
+            latency_millis: 15,
             timestamp: Utc::now(),
         },
     ];
