@@ -2126,11 +2126,8 @@ name = "coverage-map"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "h3o",
- "helium-proto",
  "hex-assignments",
  "hextree",
- "uuid",
 ]
 
 [[package]]
