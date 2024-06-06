@@ -6,7 +6,6 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tracing::instrument;
 
 pub mod docker;
 pub mod hotspot;

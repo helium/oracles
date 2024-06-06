@@ -61,3 +61,6 @@ hex-assignments = { path = "../hex_assignments" }
 
 [dev-dependencies]
 backon = "0"
+
+[features]
+test = []

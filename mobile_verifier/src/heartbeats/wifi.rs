@@ -17,6 +17,7 @@ use futures::{stream::StreamExt, TryFutureExt};
 use retainer::Cache;
 use sqlx::{Pool, Postgres};
 use std::{
+    ops::Range,
     sync::Arc,
     time::{self, Instant},
 };
@@ -153,8 +154,7 @@ where
     ) -> anyhow::Result<()> {
         tracing::info!("Processing WIFI heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
-        let epoch = (file.file_info.timestamp - Duration::hours(3))
-            ..(file.file_info.timestamp + Duration::minutes(30));
+        let epoch = process_file_epoch(file.file_info.timestamp);
         let heartbeats = file
             .into_stream(&mut transaction)
             .await?
@@ -200,5 +200,24 @@ where
                 .map_err(anyhow::Error::from)
                 .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
         )
+    }
+}
+
+/// Generates a time range around a given timestamp.
+///
+/// By default, the range is from 3 hours before the given timestamp to 30 minutes after it.
+/// If the `test` feature is enabled and the `PROCESS_FILE_EPOCH_MIN` environment variable is set,
+/// the starting point of the range can be adjusted based on the value of the environment variable.
+fn process_file_epoch(timestamp: DateTime<Utc>) -> Range<DateTime<Utc>> {
+    let default = (timestamp - Duration::hours(3))..(timestamp + Duration::minutes(30));
+    if cfg!(feature = "test") && std::env::var("PROCESS_FILE_EPOCH_MIN").is_ok() {
+        let str = std::env::var("PROCESS_FILE_EPOCH_MIN").unwrap();
+        tracing::debug!("using PROCESS_FILE_EPOCH_MIN={str} and timestamp={timestamp}");
+        match str.parse::<i64>() {
+            Ok(t) => (timestamp - Duration::hours(t))..(timestamp + Duration::minutes(30)),
+            Err(_e) => default,
+        }
+    } else {
+        default
     }
 }

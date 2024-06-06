@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use common::{docker::Docker, hotspot::Hotspot, hours_ago, load_pcs_keypair};
 use test_mobile::cli::assignment::CENTER_CELL;
@@ -42,7 +44,9 @@ async fn main() -> Result<()> {
         .submit_speedtest(500_000_000, 500_000_000, 25)
         .await?;
 
-    for x in (1..=12).rev() {
+    let _ = tokio::time::sleep(Duration::from_secs(60)).await;
+
+    for x in (1..=24).rev() {
         hotspot1
             .submit_wifi_heartbeat(hours_ago(x), co_uuid)
             .await?;
