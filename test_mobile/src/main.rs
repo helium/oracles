@@ -10,6 +10,13 @@ pub struct Cli {
 
 impl Cli {
     pub async fn run(self) -> Result<()> {
+        custom_tracing::init(
+            "info".to_string(),
+            custom_tracing::Settings {
+                tracing_cfg_file: "".to_string(),
+            },
+        )
+        .await?;
         self.cmd.run().await
     }
 }

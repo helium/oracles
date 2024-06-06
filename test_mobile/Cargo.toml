@@ -10,11 +10,13 @@ license.workspace = true
 anyhow = { workspace = true }
 async-compression = { version = "0", features = ["tokio", "gzip"] }
 clap = { workspace = true }
+custom-tracing = { path = "../custom_tracing" }
 file-store = { path = "../file_store" }
 h3o = { workspace = true, features = ["geo"] }
 helium-proto = { workspace = true }
 hextree = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "fs"] }
+triggered = { workspace = true }
 
 [dev-dependencies]
 backon = "0"

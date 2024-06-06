@@ -7,7 +7,7 @@
 **NOTE:** Data is auto-generated. If you do not wish to change it, skip these steps. The commands are here to show how the data is generated.
 
 - Run `test-mobile assignment` and move the generated files[^files] to `docker/mobile/localstack/data/mobile-verifier-data-sets/`
-- Run `test-mobile price` and move the generated file to `docker/mobile/localstack/data/mobile-price/`
+- Run `AWS_ACCESS_KEY_ID=X AWS_SECRET_ACCESS_KEY=X AWS_SESSION_TOKEN=X test-mobile price` and move the generated file to `docker/mobile/localstack/data/mobile-price/`. This can also be ran when localstack is up and will uopload files. 
 
 ### 2. Build Docker images
 

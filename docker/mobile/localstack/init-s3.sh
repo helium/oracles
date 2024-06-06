@@ -6,23 +6,26 @@ awslocal s3 mb s3://mobile-packet-verifier
 awslocal s3 mb s3://mobile-price
 awslocal s3 mb s3://mobile-verifier-data-sets
 
-# Description:
-#   This Bash script uploads files from subdirectories in /tmp/data to an S3-compatible service using awslocal.
-#   It treats each subdirectory as a separate bucket and uploads files with modified timestamps in their filenames.
+# This shell script automates the process of uploading files from local directories
+# to S3 buckets using `awslocal` (typically used with LocalStack for local AWS service emulation).
 #
-# Script Overview:
-#   1. Iterate Through Directories: The script iterates over each subdirectory in /tmp/data.
-#   2. Extract Bucket Name: The script extracts the bucket name from each subdirectory's basename.
-#   3. Process Files in Each Directory: For each file in the subdirectory, the script:
-#      - Prints the original file name and the bucket name for debugging purposes.
-#      - Generates a new file name by replacing any existing 13-digit timestamp with the current timestamp in milliseconds.
-#      - Prints the new file name and the S3 path for debugging purposes.
-#      - Uploads the file to the specified S3 bucket using awslocal s3 cp.
+# 1. Define Source Directories: The script begins by setting the `dirs` variable to include
+#    all directories under `/tmp/data/`.
 #
-# Key Points:
-#   - Directories and Buckets: Each subdirectory in /tmp/data is treated as a bucket.
-#   - File Processing: Files within these directories are uploaded to their respective buckets with a new timestamp in their filenames.
-
+# 2. Directory Iteration: It loops through each directory found in `/tmp/data/*`,
+#    processing one directory at a time.
+#
+# 3. Extract Bucket Name: For each directory, the script extracts the directory name
+#    (using `basename`) and assigns it as the S3 bucket name.
+#
+# 4. File Iteration: Within each directory, the script iterates over all files,
+#    checking if each item is a file (excluding subdirectories).
+#
+# 5. Upload to S3: For each file, the script uploads it to the corresponding S3 bucket
+#    using the `awslocal s3 cp` command. The file is placed in the S3 bucket with its original filename.
+#
+# 6. Debug Output: After each upload, the script prints the executed command for verification
+#    and debugging purposes, followed by a separator line for readability.
 dirs=/tmp/data/*
 for dir in $dirs; do
     echo "Looking @ $dir"
@@ -31,25 +34,13 @@ for dir in $dirs; do
     for file in "$dir"/*; do
         if [[ -f "$file" ]]; then
             echo "Uploading $file to bucket $bucket"
-            now=$(date +%s000)
             file_name=$(basename "$file")
 
-            # Debugging output to check the file name and bucket
-            echo "Original file name: $file_name"
-            echo "Current timestamp: $now"
-
-            # Replace timestamp in file name
-            new_file=$(echo "$file_name" | sed -E 's|[0-9]{13}|'"${now}"'|g')
-
-            # Debugging output to check the new file name and bucket path
-            echo "New file name: $new_file"
-            echo "s3 path: s3://$bucket/$new_file"
-
             # Perform the upload
-            awslocal s3 cp "$file" "s3://$bucket/$new_file"
+            awslocal s3 cp "$file" "s3://$bucket/$file_name"
 
             # Debugging output to confirm upload command
-            echo "Executed: awslocal s3 cp \"$file\" \"s3://$bucket/$new_file\""
+            echo "Executed: awslocal s3 cp \"$file\" \"s3://$bucket/$file_name\""
             echo "################################################################"
         fi
     done
