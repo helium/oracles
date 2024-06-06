@@ -148,10 +148,6 @@ impl RewardableRadio {
         radio_threshold: RadioThreshold,
         ranked_coverage: Vec<RankedCoverage>,
     ) -> Result<Self> {
-        // QUESTION: we need to know about boosted hexes to determine location multiplier.
-        // The location multiplier is then used to determine if they are eligible for boosted hexes.
-        // In the case where they cannot use boosted hexes, should the location mulitiplier be restored?
-
         let location_trust_scores =
             LocationTrustScores::new(radio_type, location_trust_scores, &ranked_coverage);
 
