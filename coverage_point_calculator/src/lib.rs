@@ -69,6 +69,11 @@ pub mod speedtest;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("signal level {0:?} not allowed for {1:?}")]
+    InvalidSignalLevel(SignalLevel, RadioType),
+}
 /// Necessary checks for calculating coverage points is done during [RewardableRadio::new].
 #[derive(Debug, Clone)]
 pub struct RewardableRadio {
@@ -110,12 +115,6 @@ pub struct CoveragePoints {
     pub location_trust_scores: Vec<LocationTrust>,
     pub covered_hexes: Vec<CoveredHex>,
     pub boosted_hex_eligibility: BoostedHexStatus,
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("signal level {0:?} not allowed for {1:?}")]
-    InvalidSignalLevel(SignalLevel, RadioType),
 }
 
 pub fn calculate_coverage_points(radio: RewardableRadio) -> CoveragePoints {
