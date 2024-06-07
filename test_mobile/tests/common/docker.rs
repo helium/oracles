@@ -25,7 +25,7 @@ impl Docker {
         }
     }
 
-    fn down(&self) -> Result<String> {
+    pub fn down(&self) -> Result<String> {
         let up_output = Command::new("docker")
             .current_dir("../docker/mobile/")
             .arg("compose")
@@ -39,17 +39,6 @@ impl Docker {
         } else {
             let stderr = String::from_utf8(up_output.stderr)?;
             bail!(stderr)
-        }
-    }
-}
-
-impl Drop for Docker {
-    fn drop(&mut self) {
-        // This code runs when the scope exits, including if the test fails.
-        tracing::debug!("Docker dropped");
-        match self.down() {
-            Ok(_) => tracing::info!("docker stack down"),
-            Err(e) => tracing::error!("docker compose down failed: {:?}", e),
         }
     }
 }

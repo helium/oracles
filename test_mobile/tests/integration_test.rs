@@ -7,16 +7,43 @@ use uuid::Uuid;
 
 mod common;
 
+struct TestGuard<F: FnOnce()>(Option<F>);
+
+impl<F: FnOnce()> TestGuard<F> {
+    fn new() -> Self {
+        TestGuard(None)
+    }
+
+    fn set_cleanup(&mut self, f: F) {
+        self.0 = Some(f);
+    }
+}
+
+impl<F: FnOnce()> Drop for TestGuard<F> {
+    fn drop(&mut self) {
+        if let Some(f) = self.0.take() {
+            f();
+        }
+    }
+}
+
 #[tokio::test]
 async fn main() -> Result<()> {
+    let docker = Docker::new();
+
+    // Function to execute after the test if it's successful
+    let cleanup = || {
+        tracing::info!("Test succeeded! Running cleanup...");
+        docker.down().unwrap();
+    };
+
+    let mut guard = TestGuard::new();
+
     custom_tracing::init(
         "info,integration_test=debug".to_string(),
         custom_tracing::Settings::default(),
     )
     .await?;
-
-    // if std::env::var("DOCKER").is_ok() {
-    let docker = Docker::new();
 
     match docker.up() {
         Ok(_) => {
@@ -24,7 +51,6 @@ async fn main() -> Result<()> {
         }
         Err(e) => panic!("docker::up failed: {:?}", e),
     }
-    // }
 
     let pcs_keypair = load_pcs_keypair().await?;
 
@@ -77,6 +103,7 @@ async fn main() -> Result<()> {
                     "rewards for {} are wrong {reward} vs expected {expected}",
                     hotspot1.b58()
                 );
+                guard.set_cleanup(cleanup); // Activate the guard if the test is successful
                 return Ok(());
             }
         }
