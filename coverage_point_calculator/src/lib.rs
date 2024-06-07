@@ -53,7 +53,7 @@
 //! [mobile-poc-blog]:         https://docs.helium.com/mobile/proof-of-coverage
 //! [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
 //!
-use crate::{hexes::CoveredHexes, location::LocationTrust, speedtest::Speedtest};
+use crate::{location::LocationTrust, speedtest::Speedtest};
 use coverage_map::{RankedCoverage, SignalLevel};
 use hexes::CoveredHex;
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -123,10 +123,12 @@ pub fn calculate_coverage_points(
     let boosted_hex_status =
         BoostedHexStatus::new(&radio_type, location_trust_multiplier, &radio_threshold);
 
-    let covered_hexes = CoveredHexes::new(radio_type, ranked_coverage, boosted_hex_status)?;
+    let covered_hexes =
+        hexes::clean_covered_hexes(radio_type, ranked_coverage, boosted_hex_status)?;
+    let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
+
     let speedtests = Speedtests::new(speedtests);
 
-    let hex_coverage_points = covered_hexes.calculated_coverage_points();
     let speedtest_multiplier = speedtests.multiplier;
 
     let coverage_points = hex_coverage_points * location_trust_multiplier * speedtest_multiplier;
@@ -142,7 +144,7 @@ pub fn calculate_coverage_points(
         boosted_hex_eligibility: boosted_hex_status,
         speedtests: speedtests.speedtests.iter().map(|s| s.clone()).collect(),
         location_trust_scores,
-        covered_hexes: covered_hexes.hexes.iter().map(|h| h.clone()).collect(),
+        covered_hexes,
     })
 }
 
