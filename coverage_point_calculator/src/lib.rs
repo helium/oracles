@@ -59,6 +59,7 @@ use crate::{
     speedtest::Speedtest,
 };
 use coverage_map::{RankedCoverage, SignalLevel};
+use hexes::CoveredHex;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 use speedtest::Speedtests;
@@ -110,6 +111,18 @@ pub struct CoveragePoints {
     pub location_trust_multiplier: Decimal,
     /// Speedtest Mulitplier, maximum of 1
     pub speedtest_multiplier: Decimal,
+    /// Input Radio Type
+    pub radio_type: RadioType,
+    /// Input RadioThreshold
+    pub radio_threshold: RadioThreshold,
+    /// Derived Eligibility for Boosted Hex Rewards
+    pub boosted_hex_eligibility: BoostedHexStatus,
+    /// Speedtests used in calculcation
+    pub speedtests: Vec<Speedtest>,
+    /// Locaiton Trust Scores used in calculations
+    pub location_trust_scores: Vec<LocationTrust>,
+    /// Covered Hexes used in calculations
+    pub covered_hexes: Vec<CoveredHex>,
 }
 
 /// Entry point into the Coverage Point Calculator.
@@ -159,6 +172,27 @@ pub fn calculate_coverage_points(radio: &RewardableRadio) -> CoveragePoints {
         hex_coverage_points,
         location_trust_multiplier,
         speedtest_multiplier,
+        radio_type: radio.radio_type,
+        radio_threshold: radio.radio_threshold,
+        boosted_hex_eligibility: radio.boosted_hex_eligibility,
+        speedtests: radio
+            .speedtests
+            .speedtests
+            .iter()
+            .map(|s| s.clone())
+            .collect(),
+        location_trust_scores: radio
+            .location_trust_scores
+            .trust_scores
+            .iter()
+            .map(|s| s.clone())
+            .collect(),
+        covered_hexes: radio
+            .covered_hexes
+            .hexes
+            .iter()
+            .map(|h| h.clone())
+            .collect(),
     }
 }
 
