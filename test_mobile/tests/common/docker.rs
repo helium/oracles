@@ -25,11 +25,12 @@ impl Docker {
         }
     }
 
-    fn stop(&self) -> Result<String> {
+    fn down(&self) -> Result<String> {
         let up_output = Command::new("docker")
             .current_dir("../docker/mobile/")
             .arg("compose")
-            .arg("stop")
+            .arg("down")
+            .arg("-v")
             .output()?;
 
         if up_output.status.success() {
@@ -46,9 +47,9 @@ impl Drop for Docker {
     fn drop(&mut self) {
         // This code runs when the scope exits, including if the test fails.
         tracing::debug!("Docker dropped");
-        match self.stop() {
-            Ok(_) => tracing::info!("docker stack stopped"),
-            Err(e) => tracing::error!("docker compose stopped failed: {:?}", e),
+        match self.down() {
+            Ok(_) => tracing::info!("docker stack down"),
+            Err(e) => tracing::error!("docker compose down failed: {:?}", e),
         }
     }
 }

@@ -194,6 +194,10 @@ impl Hotspot {
 
         request
     }
+
+    pub fn b58(&self) -> &str {
+        &self.b58
+    }
 }
 
 impl Drop for Hotspot {
