@@ -7,6 +7,7 @@ modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC"
 data_sets_directory = "/opt/mobile-verifier/data_sets_directory"
 usa_and_mexico_geofence_regions = "/opt/mobile-verifier/usa_and_mexico_geofence_regions"
 usa_geofence_regions = "/opt/mobile-verifier/usa_geofence_regions"
+data_sets_poll_duration = "10 seconds"
 
 [database]
 url = "postgres://postgres:postgres@postgres:5432/mobile_verifier"
