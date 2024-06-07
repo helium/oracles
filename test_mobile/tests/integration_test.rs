@@ -7,22 +7,32 @@ use uuid::Uuid;
 
 mod common;
 
-struct TestGuard<F: FnOnce()>(Option<F>);
+// struct TestGuard<F: FnOnce()>(Option<F>);
+
+struct TestGuard<F: FnOnce()> {
+    success: bool,
+    fun: Option<F>,
+}
 
 impl<F: FnOnce()> TestGuard<F> {
-    fn new() -> Self {
-        TestGuard(None)
+    fn new(f: F) -> Self {
+        TestGuard {
+            success: false,
+            fun: Some(f),
+        }
     }
 
-    fn set_cleanup(&mut self, f: F) {
-        self.0 = Some(f);
+    fn successful(&mut self) {
+        self.success = true
     }
 }
 
 impl<F: FnOnce()> Drop for TestGuard<F> {
     fn drop(&mut self) {
-        if let Some(f) = self.0.take() {
-            f();
+        if self.success {
+            if let Some(f) = self.fun.take() {
+                f();
+            }
         }
     }
 }
@@ -32,12 +42,10 @@ async fn main() -> Result<()> {
     let docker = Docker::new();
 
     // Function to execute after the test if it's successful
-    let cleanup = || {
+    let mut guard = TestGuard::new(|| {
         tracing::info!("Test succeeded! Running cleanup...");
         docker.down().unwrap();
-    };
-
-    let mut guard = TestGuard::new();
+    });
 
     custom_tracing::init(
         "info,integration_test=debug".to_string(),
@@ -103,7 +111,7 @@ async fn main() -> Result<()> {
                     "rewards for {} are wrong {reward} vs expected {expected}",
                     hotspot1.b58()
                 );
-                guard.set_cleanup(cleanup); // Activate the guard if the test is successful
+                guard.successful();
                 return Ok(());
             }
         }
