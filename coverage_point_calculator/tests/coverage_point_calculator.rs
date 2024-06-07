@@ -55,9 +55,9 @@ fn base_radio_coverage_points() {
     ] {
         let radio = make_rewardable_radio(
             radio_type,
+            RadioThreshold::Verified,
             speedtests.clone(),
             location_trust_scores.clone(),
-            RadioThreshold::Verified,
             hexes.clone(),
         )
         .unwrap();
@@ -117,9 +117,9 @@ fn radios_with_coverage() {
     ] {
         let radio = make_rewardable_radio(
             radio_type,
+            RadioThreshold::Verified,
             default_speedtests.clone(),
             default_location_trust_scores.clone(),
-            RadioThreshold::Verified,
             base_hex_iter.clone().take(num_hexes).collect(),
         )
         .unwrap();

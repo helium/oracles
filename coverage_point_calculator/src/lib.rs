@@ -119,9 +119,9 @@ pub struct CoveragePoints {
 /// [calculate_coverage_points].
 pub fn make_rewardable_radio(
     radio_type: RadioType,
+    radio_threshold: RadioThreshold,
     speedtests: Vec<Speedtest>,
     location_trust_scores: Vec<LocationTrust>,
-    radio_threshold: RadioThreshold,
     ranked_coverage: Vec<RankedCoverage>,
 ) -> Result<RewardableRadio> {
     let location_trust_scores =
@@ -289,9 +289,9 @@ mod tests {
         let make_wifi = |radio_verified: RadioThreshold| {
             make_rewardable_radio(
                 RadioType::IndoorWifi,
+                radio_verified,
                 speedtest_maximum(),
                 location_trust_maximum(),
-                radio_verified,
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
                     cbsd_id: None,
@@ -331,9 +331,9 @@ mod tests {
         let make_wifi = |location_trust_scores: Vec<LocationTrust>| {
             make_rewardable_radio(
                 RadioType::IndoorWifi,
+                RadioThreshold::Verified,
                 speedtest_maximum(),
                 location_trust_scores,
-                RadioThreshold::Verified,
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
                     cbsd_id: None,
@@ -369,9 +369,9 @@ mod tests {
         let make_indoor_cbrs = |speedtests: Vec<Speedtest>| {
             make_rewardable_radio(
                 RadioType::IndoorCbrs,
+                RadioThreshold::Verified,
                 speedtests,
                 location_trust_maximum(),
-                RadioThreshold::Verified,
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
                     cbsd_id: Some("serial".to_string()),
@@ -457,9 +457,9 @@ mod tests {
         use Assignment::*;
         let indoor_cbrs = make_rewardable_radio(
             RadioType::IndoorCbrs,
+            RadioThreshold::Verified,
             speedtest_maximum(),
             location_trust_maximum(),
-            RadioThreshold::Verified,
             vec![
                 // yellow - POI ≥ 1 Urbanized
                 ranked_coverage(A, A, A), // 100
@@ -517,9 +517,9 @@ mod tests {
     ) {
         let outdoor_wifi = make_rewardable_radio(
             radio_type,
+            RadioThreshold::Verified,
             speedtest_maximum(),
             location_trust_maximum(),
-            RadioThreshold::Verified,
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
                 cbsd_id: None,
@@ -549,9 +549,9 @@ mod tests {
     ) {
         let indoor_wifi = make_rewardable_radio(
             radio_type,
+            RadioThreshold::Verified,
             speedtest_maximum(),
             location_trust_maximum(),
-            RadioThreshold::Verified,
             vec![
                 RankedCoverage {
                     hotspot_key: pubkey(),
@@ -595,9 +595,9 @@ mod tests {
         // Location scores are averaged together
         let indoor_wifi = make_rewardable_radio(
             RadioType::IndoorWifi,
+            RadioThreshold::Verified,
             speedtest_maximum(),
             location_trust_with_scores(&[dec!(0.1), dec!(0.2), dec!(0.3), dec!(0.4)]),
-            RadioThreshold::Verified,
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
                 cbsd_id: None,
@@ -642,9 +642,9 @@ mod tests {
         ];
         let indoor_wifi = make_rewardable_radio(
             RadioType::IndoorWifi,
+            RadioThreshold::Verified,
             speedtest_maximum(),
             location_trust_maximum(),
-            RadioThreshold::Verified,
             covered_hexes.clone(),
         )
         .expect("indoor wifi");
@@ -668,9 +668,9 @@ mod tests {
     ) {
         let outdoor_cbrs = make_rewardable_radio(
             RadioType::OutdoorCbrs,
+            RadioThreshold::Verified,
             speedtest_maximum(),
             location_trust_maximum(),
-            RadioThreshold::Verified,
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
                 cbsd_id: Some("serial".to_string()),
@@ -698,9 +698,9 @@ mod tests {
     ) {
         let indoor_cbrs = make_rewardable_radio(
             RadioType::IndoorCbrs,
+            RadioThreshold::Verified,
             speedtest_maximum(),
             location_trust_maximum(),
-            RadioThreshold::Verified,
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
                 cbsd_id: Some("serial".to_string()),
@@ -730,9 +730,9 @@ mod tests {
     ) {
         let outdoor_wifi = make_rewardable_radio(
             RadioType::OutdoorWifi,
+            RadioThreshold::Verified,
             speedtest_maximum(),
             location_trust_maximum(),
-            RadioThreshold::Verified,
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
                 cbsd_id: Some("serial".to_string()),
@@ -760,9 +760,9 @@ mod tests {
     ) {
         let indoor_wifi = make_rewardable_radio(
             RadioType::IndoorWifi,
+            RadioThreshold::Verified,
             speedtest_maximum(),
             location_trust_maximum(),
-            RadioThreshold::Verified,
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
                 cbsd_id: None,
