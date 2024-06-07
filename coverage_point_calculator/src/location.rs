@@ -12,47 +12,39 @@ const RESTRICTIVE_MAX_DISTANCE: Meters = 50;
 type Meters = u32;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LocationTrustScores {
-    pub multiplier: Decimal,
-    pub trust_scores: Vec<LocationTrust>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct LocationTrust {
     pub meters_to_asserted: Meters,
     pub trust_score: Decimal,
 }
 
-impl LocationTrustScores {
-    pub fn new(
-        radio_type: RadioType,
-        trust_scores: Vec<LocationTrust>,
-        ranked_coverage: &[RankedCoverage],
-    ) -> Self {
-        let any_boosted_hexes = ranked_coverage.iter().any(|hex| hex.boosted.is_some());
+pub(crate) fn clean_trust_scores(
+    trust_scores: Vec<LocationTrust>,
+    ranked_coverage: &[RankedCoverage],
+) -> Vec<LocationTrust> {
+    let any_boosted_hexes = ranked_coverage.iter().any(|hex| hex.boosted.is_some());
 
-        let cleaned_scores = if any_boosted_hexes {
-            trust_scores
-                .into_iter()
-                .map(LocationTrust::into_boosted)
-                .collect()
-        } else {
-            trust_scores
-        };
-
-        // CBRS radios are always trusted because they have internal GPS
-        let multiplier = if radio_type.is_cbrs() {
-            dec!(1)
-        } else {
-            multiplier(&cleaned_scores)
-        };
-
-        Self {
-            multiplier,
-            trust_scores: cleaned_scores,
-        }
+    if any_boosted_hexes {
+        trust_scores
+            .into_iter()
+            .map(LocationTrust::into_boosted)
+            .collect()
+    } else {
+        trust_scores
     }
 }
+
+pub(crate) fn multiplier(radio_type: RadioType, trust_scores: &[LocationTrust]) -> Decimal {
+    // CBRS radios are always trusted because they have internal GPS
+    if radio_type.is_cbrs() {
+        return dec!(1);
+    }
+
+    let count = Decimal::from(trust_scores.len());
+    let scores: Decimal = trust_scores.iter().map(|l| l.trust_score).sum();
+
+    scores / count
+}
+
 impl LocationTrust {
     fn into_boosted(self) -> Self {
         // Cap multipliers to 0.25x when a radio covers _any_ boosted hex
@@ -68,13 +60,6 @@ impl LocationTrust {
             meters_to_asserted: self.meters_to_asserted,
         }
     }
-}
-
-fn multiplier(trust_scores: &[LocationTrust]) -> Decimal {
-    let count = Decimal::from(trust_scores.len());
-    let scores: Decimal = trust_scores.iter().map(|l| l.trust_score).sum();
-
-    scores / count
 }
 
 #[cfg(test)]
@@ -98,15 +83,11 @@ mod tests {
                 trust_score: dec!(0.5),
             },
         ];
-        let boosted = LocationTrustScores::new(
-            RadioType::IndoorWifi,
-            trust_scores.clone(),
-            &boosted_ranked_coverage(),
-        );
-        let unboosted = LocationTrustScores::new(RadioType::IndoorWifi, trust_scores, &[]);
+        let boosted = clean_trust_scores(trust_scores.clone(), &boosted_ranked_coverage());
+        let unboosted = clean_trust_scores(trust_scores, &[]);
 
-        assert_eq!(dec!(0.5), boosted.multiplier);
-        assert_eq!(dec!(0.5), unboosted.multiplier);
+        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &boosted));
+        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &unboosted));
     }
 
     #[test]
@@ -122,15 +103,11 @@ mod tests {
             },
         ];
 
-        let boosted = LocationTrustScores::new(
-            RadioType::IndoorWifi,
-            trust_scores.clone(),
-            &boosted_ranked_coverage(),
-        );
-        let unboosted = LocationTrustScores::new(RadioType::IndoorWifi, trust_scores, &[]);
+        let boosted = clean_trust_scores(trust_scores.clone(), &boosted_ranked_coverage());
+        let unboosted = clean_trust_scores(trust_scores, &[]);
 
-        assert_eq!(dec!(0.25), boosted.multiplier);
-        assert_eq!(dec!(0.5), unboosted.multiplier);
+        assert_eq!(dec!(0.25), multiplier(RadioType::IndoorWifi, &boosted));
+        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &unboosted));
     }
 
     #[test]
@@ -146,18 +123,14 @@ mod tests {
             },
         ];
 
-        let boosted = LocationTrustScores::new(
-            RadioType::IndoorWifi,
-            trust_scores.clone(),
-            &boosted_ranked_coverage(),
-        );
-        let unboosted = LocationTrustScores::new(RadioType::IndoorWifi, trust_scores, &[]);
+        let boosted = clean_trust_scores(trust_scores.clone(), &boosted_ranked_coverage());
+        let unboosted = clean_trust_scores(trust_scores, &[]);
 
         // location past distance limit trust score is degraded
         let degraded_mult = (dec!(0.5) + dec!(0.25)) / dec!(2);
-        assert_eq!(degraded_mult, boosted.multiplier);
+        assert_eq!(degraded_mult, multiplier(RadioType::IndoorWifi, &boosted));
         // location past distance limit trust score is untouched
-        assert_eq!(dec!(0.5), unboosted.multiplier);
+        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &unboosted));
     }
 
     #[test]
@@ -170,15 +143,11 @@ mod tests {
             trust_score: dec!(0),
         }];
 
-        let boosted = LocationTrustScores::new(
-            RadioType::IndoorCbrs,
-            trust_scores.clone(),
-            &boosted_ranked_coverage(),
-        );
-        let unboosted = LocationTrustScores::new(RadioType::IndoorCbrs, trust_scores, &[]);
+        let boosted = clean_trust_scores(trust_scores.clone(), &boosted_ranked_coverage());
+        let unboosted = clean_trust_scores(trust_scores, &[]);
 
-        assert_eq!(dec!(1), boosted.multiplier);
-        assert_eq!(dec!(1), unboosted.multiplier);
+        assert_eq!(dec!(1), multiplier(RadioType::IndoorCbrs, &boosted));
+        assert_eq!(dec!(1), multiplier(RadioType::IndoorCbrs, &unboosted));
     }
 
     fn boosted_ranked_coverage() -> Vec<RankedCoverage> {

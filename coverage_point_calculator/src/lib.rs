@@ -53,11 +53,7 @@
 //! [mobile-poc-blog]:         https://docs.helium.com/mobile/proof-of-coverage
 //! [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
 //!
-use crate::{
-    hexes::CoveredHexes,
-    location::{LocationTrust, LocationTrustScores},
-    speedtest::Speedtest,
-};
+use crate::{hexes::CoveredHexes, location::LocationTrust, speedtest::Speedtest};
 use coverage_map::{RankedCoverage, SignalLevel};
 use hexes::CoveredHex;
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -113,11 +109,6 @@ pub struct CoveragePoints {
     pub covered_hexes: Vec<CoveredHex>,
 }
 
-/// Entry point into the Coverage Point Calculator.
-///
-/// All of the necessary checks for rewardability are done during construction.
-/// If you can successfully construct a [RewardableRadio], it can be passed to
-/// [calculate_coverage_points].
 pub fn calculate_coverage_points(
     radio_type: RadioType,
     radio_threshold: RadioThreshold,
@@ -126,19 +117,16 @@ pub fn calculate_coverage_points(
     ranked_coverage: Vec<RankedCoverage>,
 ) -> Result<CoveragePoints> {
     let location_trust_scores =
-        LocationTrustScores::new(radio_type, location_trust_scores, &ranked_coverage);
+        location::clean_trust_scores(location_trust_scores, &ranked_coverage);
+    let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
 
-    let boosted_hex_status = BoostedHexStatus::new(
-        &radio_type,
-        location_trust_scores.multiplier,
-        &radio_threshold,
-    );
+    let boosted_hex_status =
+        BoostedHexStatus::new(&radio_type, location_trust_multiplier, &radio_threshold);
 
     let covered_hexes = CoveredHexes::new(radio_type, ranked_coverage, boosted_hex_status)?;
     let speedtests = Speedtests::new(speedtests);
 
     let hex_coverage_points = covered_hexes.calculated_coverage_points();
-    let location_trust_multiplier = location_trust_scores.multiplier;
     let speedtest_multiplier = speedtests.multiplier;
 
     let coverage_points = hex_coverage_points * location_trust_multiplier * speedtest_multiplier;
@@ -153,11 +141,7 @@ pub fn calculate_coverage_points(
         radio_threshold,
         boosted_hex_eligibility: boosted_hex_status,
         speedtests: speedtests.speedtests.iter().map(|s| s.clone()).collect(),
-        location_trust_scores: location_trust_scores
-            .trust_scores
-            .iter()
-            .map(|s| s.clone())
-            .collect(),
+        location_trust_scores,
         covered_hexes: covered_hexes.hexes.iter().map(|h| h.clone()).collect(),
     })
 }
