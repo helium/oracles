@@ -573,7 +573,7 @@ impl CoveragePoints {
         epoch: &'_ Range<DateTime<Utc>>,
         poc_rewards_per_share: Decimal,
     ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_> {
-        tracing::info!("poc_rewards_per_share {:?}", poc_rewards_per_share);
+        tracing::info!(%poc_rewards_per_share);
         let start_period = epoch.start.encode_timestamp();
         let end_period = epoch.end.encode_timestamp();
         if poc_rewards_per_share > Decimal::ZERO {
@@ -590,7 +590,7 @@ impl CoveragePoints {
                             hotspot_points.radio_points.into_iter(),
                         )
                     })
-                    .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0),
+                    .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0)
             )
         } else {
             None
