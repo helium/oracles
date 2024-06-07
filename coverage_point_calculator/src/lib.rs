@@ -110,40 +110,45 @@ pub struct CoveragePoints {
     pub covered_hexes: Vec<CoveredHex>,
 }
 
-pub fn calculate_coverage_points(
-    radio_type: RadioType,
-    radio_threshold: RadioThreshold,
-    speedtests: Vec<Speedtest>,
-    trust_scores: Vec<LocationTrust>,
-    ranked_coverage: Vec<coverage_map::RankedCoverage>,
-) -> Result<CoveragePoints> {
-    let location_trust_scores = location::clean_trust_scores(trust_scores, &ranked_coverage);
-    let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
+impl CoveragePoints {
+    pub fn new(
+        radio_type: RadioType,
+        radio_threshold: RadioThreshold,
+        speedtests: Vec<Speedtest>,
+        trust_scores: Vec<LocationTrust>,
+        ranked_coverage: Vec<coverage_map::RankedCoverage>,
+    ) -> Result<CoveragePoints> {
+        let location_trust_scores = location::clean_trust_scores(trust_scores, &ranked_coverage);
+        let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
 
-    let boost_eligibility =
-        BoostedHexStatus::new(&radio_type, location_trust_multiplier, &radio_threshold);
+        let boost_eligibility =
+            BoostedHexStatus::new(&radio_type, location_trust_multiplier, &radio_threshold);
 
-    let covered_hexes = hexes::clean_covered_hexes(radio_type, ranked_coverage, boost_eligibility)?;
-    let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
+        let covered_hexes =
+            hexes::clean_covered_hexes(radio_type, ranked_coverage, boost_eligibility)?;
+        let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
 
-    let speedtests = speedtest::clean_speedtests(speedtests);
-    let speedtest_multiplier = speedtest::multiplier(&speedtests);
+        let speedtests = speedtest::clean_speedtests(speedtests);
+        let speedtest_multiplier = speedtest::multiplier(&speedtests);
 
-    let coverage_points = hex_coverage_points * location_trust_multiplier * speedtest_multiplier;
-    let total_coverage_points = coverage_points.round_dp_with_strategy(2, RoundingStrategy::ToZero);
+        let coverage_points =
+            hex_coverage_points * location_trust_multiplier * speedtest_multiplier;
+        let total_coverage_points =
+            coverage_points.round_dp_with_strategy(2, RoundingStrategy::ToZero);
 
-    Ok(CoveragePoints {
-        total_coverage_points,
-        hex_coverage_points,
-        location_trust_multiplier,
-        speedtest_multiplier,
-        radio_type,
-        radio_threshold,
-        boosted_hex_eligibility: boost_eligibility,
-        speedtests,
-        location_trust_scores,
-        covered_hexes,
-    })
+        Ok(CoveragePoints {
+            total_coverage_points,
+            hex_coverage_points,
+            location_trust_multiplier,
+            speedtest_multiplier,
+            radio_type,
+            radio_threshold,
+            boosted_hex_eligibility: boost_eligibility,
+            speedtests,
+            location_trust_scores,
+            covered_hexes,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -270,7 +275,7 @@ mod tests {
     #[test]
     fn hip_84_radio_meets_minimum_subscriber_threshold_for_boosted_hexes() {
         let calculate_wifi = |radio_verified: RadioThreshold| {
-            calculate_coverage_points(
+            CoveragePoints::new(
                 RadioType::IndoorWifi,
                 radio_verified,
                 speedtest_maximum(),
@@ -306,7 +311,7 @@ mod tests {
     #[test]
     fn hip_93_wifi_with_low_location_score_receives_no_boosted_hexes() {
         let calculate_wifi = |location_trust_scores: Vec<LocationTrust>| {
-            calculate_coverage_points(
+            CoveragePoints::new(
                 RadioType::IndoorWifi,
                 RadioThreshold::Verified,
                 speedtest_maximum(),
@@ -344,7 +349,7 @@ mod tests {
     #[test]
     fn speedtest() {
         let calculate_indoor_cbrs = |speedtests: Vec<Speedtest>| {
-            calculate_coverage_points(
+            CoveragePoints::new(
                 RadioType::IndoorCbrs,
                 RadioThreshold::Verified,
                 speedtests,
@@ -432,7 +437,7 @@ mod tests {
         }
 
         use Assignment::*;
-        let indoor_cbrs = calculate_coverage_points(
+        let indoor_cbrs = CoveragePoints::new(
             RadioType::IndoorCbrs,
             RadioThreshold::Verified,
             speedtest_maximum(),
@@ -489,7 +494,7 @@ mod tests {
         #[case] rank: usize,
         #[case] expected_points: Decimal,
     ) {
-        let outdoor_wifi = calculate_coverage_points(
+        let outdoor_wifi = CoveragePoints::new(
             radio_type,
             RadioThreshold::Verified,
             speedtest_maximum(),
@@ -518,7 +523,7 @@ mod tests {
         #[case] rank: usize,
         #[case] expected_points: Decimal,
     ) {
-        let indoor_wifi = calculate_coverage_points(
+        let indoor_wifi = CoveragePoints::new(
             radio_type,
             RadioThreshold::Verified,
             speedtest_maximum(),
@@ -561,7 +566,7 @@ mod tests {
     #[test]
     fn location_trust_score_multiplier() {
         // Location scores are averaged together
-        let indoor_wifi = calculate_coverage_points(
+        let indoor_wifi = CoveragePoints::new(
             RadioType::IndoorWifi,
             RadioThreshold::Verified,
             speedtest_maximum(),
@@ -605,7 +610,7 @@ mod tests {
                 boosted: NonZeroU32::new(4),
             },
         ];
-        let indoor_wifi = calculate_coverage_points(
+        let indoor_wifi = CoveragePoints::new(
             RadioType::IndoorWifi,
             RadioThreshold::Verified,
             speedtest_maximum(),
@@ -628,7 +633,7 @@ mod tests {
         #[case] signal_level: SignalLevel,
         #[case] expected: Decimal,
     ) {
-        let outdoor_cbrs = calculate_coverage_points(
+        let outdoor_cbrs = CoveragePoints::new(
             RadioType::OutdoorCbrs,
             RadioThreshold::Verified,
             speedtest_maximum(),
@@ -655,7 +660,7 @@ mod tests {
         #[case] signal_level: SignalLevel,
         #[case] expected: Decimal,
     ) {
-        let indoor_cbrs = calculate_coverage_points(
+        let indoor_cbrs = CoveragePoints::new(
             RadioType::IndoorCbrs,
             RadioThreshold::Verified,
             speedtest_maximum(),
@@ -684,7 +689,7 @@ mod tests {
         #[case] signal_level: SignalLevel,
         #[case] expected: Decimal,
     ) {
-        let outdoor_wifi = calculate_coverage_points(
+        let outdoor_wifi = CoveragePoints::new(
             RadioType::OutdoorWifi,
             RadioThreshold::Verified,
             speedtest_maximum(),
@@ -711,7 +716,7 @@ mod tests {
         #[case] signal_level: SignalLevel,
         #[case] expected: Decimal,
     ) {
-        let indoor_wifi = calculate_coverage_points(
+        let indoor_wifi = CoveragePoints::new(
             RadioType::IndoorWifi,
             RadioThreshold::Verified,
             speedtest_maximum(),

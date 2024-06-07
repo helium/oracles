@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use chrono::Utc;
 use coverage_map::{RankedCoverage, SignalLevel};
 use coverage_point_calculator::{
-    calculate_coverage_points, BytesPs, LocationTrust, RadioThreshold, RadioType, Speedtest,
+    BytesPs, CoveragePoints, LocationTrust, RadioThreshold, RadioType, Speedtest,
 };
 use hex_assignments::{assignment::HexAssignments, Assignment};
 use rust_decimal_macros::dec;
@@ -49,7 +49,7 @@ fn base_radio_coverage_points() {
         (RadioType::OutdoorWifi, dec!(16)),
         (RadioType::OutdoorCbrs, dec!(4)),
     ] {
-        let coverage_points = calculate_coverage_points(
+        let coverage_points = CoveragePoints::new(
             radio_type,
             RadioThreshold::Verified,
             speedtests.clone(),
@@ -110,7 +110,7 @@ fn radios_with_coverage() {
         (RadioType::OutdoorWifi, 25),
         (RadioType::OutdoorCbrs, 100),
     ] {
-        let coverage_points = calculate_coverage_points(
+        let coverage_points = CoveragePoints::new(
             radio_type,
             RadioThreshold::Verified,
             default_speedtests.clone(),
