@@ -24,38 +24,21 @@ impl BytesPs {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Speedtests {
-    pub multiplier: Decimal,
-    pub speedtests: Vec<Speedtest>,
+pub(crate) fn clean_speedtests(speedtests: Vec<Speedtest>) -> Vec<Speedtest> {
+    let mut cleaned = speedtests;
+    // sort newest to oldest
+    cleaned.sort_by_key(|test| std::cmp::Reverse(test.timestamp));
+    cleaned.truncate(MAX_ALLOWED_SPEEDTEST_SAMPLES);
+    cleaned
 }
 
-impl Speedtests {
-    pub fn new(speedtests: Vec<Speedtest>) -> Self {
-        // sort Newest to Oldest
-        let mut sorted_speedtests = speedtests;
-        sorted_speedtests.sort_by_key(|test| std::cmp::Reverse(test.timestamp));
-
-        let sorted_speedtests: Vec<_> = sorted_speedtests
-            .into_iter()
-            .take(MAX_ALLOWED_SPEEDTEST_SAMPLES)
-            .collect();
-
-        let multiplier = if sorted_speedtests.len() < MIN_REQUIRED_SPEEDTEST_SAMPLES {
-            SpeedtestTier::Fail.multiplier()
-        } else {
-            Speedtest::avg(&sorted_speedtests).multiplier()
-        };
-
-        Self {
-            multiplier,
-            speedtests: sorted_speedtests,
-        }
+pub(crate) fn multiplier(speedtests: &[Speedtest]) -> Decimal {
+    if speedtests.len() < MIN_REQUIRED_SPEEDTEST_SAMPLES {
+        return dec!(0);
     }
 
-    pub fn avg(&self) -> Speedtest {
-        Speedtest::avg(&self.speedtests)
-    }
+    let avg = Speedtest::avg(speedtests);
+    avg.multiplier()
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -185,15 +168,15 @@ mod tests {
             latency_millis: 15,
             timestamp: Utc::now(),
         };
-        let speedtests = |num: usize| std::iter::repeat(speedtest).take(num).collect();
+        let speedtests = |num: usize| std::iter::repeat(speedtest).take(num).collect::<Vec<_>>();
 
         assert_eq!(
             dec!(0),
-            Speedtests::new(speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES - 1)).multiplier
+            multiplier(&speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES - 1))
         );
         assert_eq!(
             dec!(1),
-            Speedtests::new(speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES)).multiplier
+            multiplier(&speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES))
         );
     }
 
@@ -206,9 +189,9 @@ mod tests {
             timestamp: Utc::now(),
         };
         let speedtests = std::iter::repeat(base).take(10).collect();
-        let speedtests = Speedtests::new(speedtests);
+        let speedtests = clean_speedtests(speedtests);
 
-        assert_eq!(MAX_ALLOWED_SPEEDTEST_SAMPLES, speedtests.speedtests.len());
+        assert_eq!(MAX_ALLOWED_SPEEDTEST_SAMPLES, speedtests.len());
     }
 
     #[test]
@@ -223,7 +206,7 @@ mod tests {
         // Intersperse new and old speedtests.
         // new speedtests have 1.0 multipliers
         // old speedtests have 0.0 multipliers
-        let speedtests = Speedtests::new(vec![
+        let speedtests = clean_speedtests(vec![
             make_speedtest(date(2024, 4, 6), 15),
             make_speedtest(date(2022, 4, 6), 999),
             // --
@@ -244,7 +227,7 @@ mod tests {
         ]);
 
         // Old speedtests should be unused
-        assert_eq!(dec!(1), speedtests.multiplier);
+        assert_eq!(dec!(1), multiplier(&speedtests));
     }
 
     fn date(year: i32, month: u32, day: u32) -> DateTime<Utc> {

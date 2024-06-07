@@ -3,10 +3,7 @@ use std::num::NonZeroU32;
 use chrono::Utc;
 use coverage_map::{RankedCoverage, SignalLevel};
 use coverage_point_calculator::{
-    calculate_coverage_points,
-    location::LocationTrust,
-    speedtest::{BytesPs, Speedtest},
-    RadioThreshold, RadioType,
+    calculate_coverage_points, BytesPs, LocationTrust, RadioThreshold, RadioType, Speedtest,
 };
 use hex_assignments::{assignment::HexAssignments, Assignment};
 use rust_decimal_macros::dec;

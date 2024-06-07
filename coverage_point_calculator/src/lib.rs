@@ -53,16 +53,18 @@
 //! [mobile-poc-blog]:         https://docs.helium.com/mobile/proof-of-coverage
 //! [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
 //!
-use crate::{location::LocationTrust, speedtest::Speedtest};
-use coverage_map::{RankedCoverage, SignalLevel};
-use hexes::CoveredHex;
+pub use crate::{
+    hexes::CoveredHex,
+    location::LocationTrust,
+    speedtest::{BytesPs, Speedtest},
+};
+use coverage_map::SignalLevel;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
-use speedtest::Speedtests;
 
-pub mod hexes;
-pub mod location;
-pub mod speedtest;
+mod hexes;
+mod location;
+mod speedtest;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
@@ -113,23 +115,20 @@ pub fn calculate_coverage_points(
     radio_type: RadioType,
     radio_threshold: RadioThreshold,
     speedtests: Vec<Speedtest>,
-    location_trust_scores: Vec<LocationTrust>,
-    ranked_coverage: Vec<RankedCoverage>,
+    trust_scores: Vec<LocationTrust>,
+    ranked_coverage: Vec<coverage_map::RankedCoverage>,
 ) -> Result<CoveragePoints> {
-    let location_trust_scores =
-        location::clean_trust_scores(location_trust_scores, &ranked_coverage);
+    let location_trust_scores = location::clean_trust_scores(trust_scores, &ranked_coverage);
     let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
 
-    let boosted_hex_status =
+    let boost_eligibility =
         BoostedHexStatus::new(&radio_type, location_trust_multiplier, &radio_threshold);
 
-    let covered_hexes =
-        hexes::clean_covered_hexes(radio_type, ranked_coverage, boosted_hex_status)?;
+    let covered_hexes = hexes::clean_covered_hexes(radio_type, ranked_coverage, boost_eligibility)?;
     let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
 
-    let speedtests = Speedtests::new(speedtests);
-
-    let speedtest_multiplier = speedtests.multiplier;
+    let speedtests = speedtest::clean_speedtests(speedtests);
+    let speedtest_multiplier = speedtest::multiplier(&speedtests);
 
     let coverage_points = hex_coverage_points * location_trust_multiplier * speedtest_multiplier;
     let total_coverage_points = coverage_points.round_dp_with_strategy(2, RoundingStrategy::ToZero);
@@ -141,8 +140,8 @@ pub fn calculate_coverage_points(
         speedtest_multiplier,
         radio_type,
         radio_threshold,
-        boosted_hex_eligibility: boosted_hex_status,
-        speedtests: speedtests.speedtests.iter().map(|s| s.clone()).collect(),
+        boosted_hex_eligibility: boost_eligibility,
+        speedtests,
         location_trust_scores,
         covered_hexes,
     })
@@ -263,10 +262,9 @@ mod tests {
 
     use std::num::NonZeroU32;
 
-    use crate::speedtest::BytesPs;
-
     use super::*;
     use chrono::Utc;
+    use coverage_map::RankedCoverage;
     use hex_assignments::{assignment::HexAssignments, Assignment};
     use rust_decimal_macros::dec;
 
