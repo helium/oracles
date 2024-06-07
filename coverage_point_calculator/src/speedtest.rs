@@ -42,7 +42,7 @@ pub(crate) fn multiplier(speedtests: &[Speedtest]) -> Decimal {
     avg.multiplier()
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Speedtest {
     pub upload_speed: BytesPs,
     pub download_speed: BytesPs,
