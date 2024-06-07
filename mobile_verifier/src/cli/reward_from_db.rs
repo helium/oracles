@@ -41,7 +41,7 @@ impl Cmd {
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
 
-        let reward_shares = CoveragePoints::aggregate_points(
+        let coverage_points = CoveragePoints::aggregate_points(
             &pool,
             heartbeats,
             &speedtest_averages,
@@ -53,8 +53,8 @@ impl Cmd {
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
-        let radio_rewards = reward_shares
-            .into_rewards(Decimal::ZERO, &epoch)
+        let radio_rewards = coverage_points
+            .into_rewards(&epoch, Decimal::ZERO)
             .ok_or(anyhow::anyhow!("no rewardable events"))?;
         for (_reward_amount, reward) in radio_rewards {
             if let Some(proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {

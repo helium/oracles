@@ -570,16 +570,14 @@ impl CoveragePoints {
 
     pub fn into_rewards(
         self,
-        available_poc_rewards: Decimal,
         epoch: &'_ Range<DateTime<Utc>>,
+        poc_rewards_per_share: Decimal,
     ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_> {
-        let total_shares = self.total_shares();
-        available_poc_rewards
-            .checked_div(total_shares)
-            .map(|poc_rewards_per_share| {
-                tracing::info!(%poc_rewards_per_share);
-                let start_period = epoch.start.encode_timestamp();
-                let end_period = epoch.end.encode_timestamp();
+        tracing::info!("poc_rewards_per_share {:?}", poc_rewards_per_share);
+        let start_period = epoch.start.encode_timestamp();
+        let end_period = epoch.end.encode_timestamp();
+        if poc_rewards_per_share > Decimal::ZERO {
+            Some(
                 self.coverage_points
                     .into_iter()
                     .flat_map(move |(hotspot_key, hotspot_points)| {
@@ -592,8 +590,11 @@ impl CoveragePoints {
                             hotspot_points.radio_points.into_iter(),
                         )
                     })
-                    .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0)
-            })
+                    .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0),
+            )
+        } else {
+            None
+        }
     }
 }
 
@@ -1394,7 +1395,7 @@ mod test {
         let mut allocated_poc_rewards = 0_u64;
 
         let epoch = (now - Duration::hours(1))..now;
-        for (reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
+        let coverage_points = CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1403,9 +1404,14 @@ mod test {
             &epoch,
         )
         .await
-        .unwrap()
-        .into_rewards(total_poc_rewards, &epoch)
-        .unwrap()
+        .unwrap();
+        let total_shares = coverage_points.total_shares();
+        let poc_rewards_per_share = total_poc_rewards
+            .checked_div(total_shares)
+            .unwrap_or_default();
+        for (reward_amount, mobile_reward) in coverage_points
+            .into_rewards(&epoch, poc_rewards_per_share)
+            .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1566,7 +1572,8 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
-        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
+
+        let coverage_points = CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1575,9 +1582,15 @@ mod test {
             &epoch,
         )
         .await
-        .unwrap()
-        .into_rewards(total_poc_rewards, &epoch)
-        .unwrap()
+        .unwrap();
+        let total_shares = coverage_points.total_shares();
+        let poc_rewards_per_share = total_poc_rewards
+            .checked_div(total_shares)
+            .unwrap_or_default();
+
+        for (_reward_amount, mobile_reward) in coverage_points
+            .into_rewards(&epoch, poc_rewards_per_share)
+            .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1696,7 +1709,8 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
-        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
+
+        let coverage_points = CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1705,9 +1719,15 @@ mod test {
             &epoch,
         )
         .await
-        .unwrap()
-        .into_rewards(total_poc_rewards, &epoch)
-        .unwrap()
+        .unwrap();
+        let total_shares = coverage_points.total_shares();
+        let poc_rewards_per_share = total_poc_rewards
+            .checked_div(total_shares)
+            .unwrap_or_default();
+
+        for (_reward_amount, mobile_reward) in coverage_points
+            .into_rewards(&epoch, poc_rewards_per_share)
+            .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1826,7 +1846,8 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
-        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
+
+        let coverage_points = CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1835,9 +1856,15 @@ mod test {
             &epoch,
         )
         .await
-        .unwrap()
-        .into_rewards(total_poc_rewards, &epoch)
-        .unwrap()
+        .unwrap();
+        let total_shares = coverage_points.total_shares();
+        let poc_rewards_per_share = total_poc_rewards
+            .checked_div(total_shares)
+            .unwrap_or_default();
+
+        for (_reward_amount, mobile_reward) in coverage_points
+            .into_rewards(&epoch, poc_rewards_per_share)
+            .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1944,12 +1971,17 @@ mod test {
         let now = Utc::now();
         // We should never see any radio shares from owner2, since all of them are
         // less than or equal to zero.
-        let coverage_points = CoveragePoints { coverage_points };
         let epoch = now - Duration::hours(1)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
+        let coverage_points = CoveragePoints { coverage_points };
+        let total_shares = coverage_points.total_shares();
+        let poc_rewards_per_share = total_poc_rewards
+            .checked_div(total_shares)
+            .unwrap_or_default();
+
         let expected_hotspot = gw1;
         for (_reward_amount, mobile_reward) in coverage_points
-            .into_rewards(total_poc_rewards, &epoch)
+            .into_rewards(&epoch, poc_rewards_per_share)
             .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1970,8 +2002,14 @@ mod test {
         let now = Utc::now();
         let epoch = now - Duration::hours(1)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
+
+        let total_shares = coverage_points.total_shares();
+        let poc_rewards_per_share = total_poc_rewards
+            .checked_div(total_shares)
+            .unwrap_or_default();
+
         assert!(coverage_points
-            .into_rewards(total_poc_rewards, &epoch)
+            .into_rewards(&epoch, poc_rewards_per_share)
             .is_none());
     }
 

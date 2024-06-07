@@ -1421,7 +1421,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#fdb83a38fbe8aead4ff6cb39d1e996f0ad0646b7"
+source = "git+https://github.com/helium/proto?branch=andymck/reward-manifest-additions#b18e075199b83455e67297f2c2c6264072208a61"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3437,7 +3437,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.2.10",
+ "getrandom 0.1.16",
  "k256",
  "lazy_static",
  "multihash",
@@ -3464,7 +3464,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#fdb83a38fbe8aead4ff6cb39d1e996f0ad0646b7"
+source = "git+https://github.com/helium/proto?branch=andymck/reward-manifest-additions#b18e075199b83455e67297f2c2c6264072208a61"
 dependencies = [
  "bytes",
  "prost",
@@ -3720,7 +3720,7 @@ dependencies = [
  "httpdate",
  "itoa 1.0.9",
  "pin-project-lite",
- "socket2 0.5.5",
+ "socket2 0.4.9",
  "tokio",
  "tower-service",
  "tracing",
@@ -8304,7 +8304,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 

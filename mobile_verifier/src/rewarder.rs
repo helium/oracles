@@ -18,11 +18,15 @@ use file_store::{
     FileType,
 };
 use futures_util::TryFutureExt;
-use helium_proto::services::{
-    poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
-    poc_mobile::UnallocatedReward, poc_mobile::UnallocatedRewardType,
+
+use helium_proto::{
+    reward_manifest::RewardData::MobileRewardData,
+    services::{
+        poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
+        poc_mobile::UnallocatedReward, poc_mobile::UnallocatedRewardType,
+    },
+    MobileRewardData as ManifestMobileRewardData, RewardManifest,
 };
-use helium_proto::RewardManifest;
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{
@@ -51,6 +55,11 @@ pub struct Rewarder<A, B> {
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
     speedtest_averages: FileSinkClient,
+}
+
+pub struct RewardPocDcDataPoints {
+    poc_bones_per_coverage_point: Decimal,
+    dc_transfer_rewards_per_share: Decimal,
 }
 
 impl<A, B> Rewarder<A, B>
@@ -250,7 +259,7 @@ where
                 / dec!(1_000_000); // Per Bone
 
         // process rewards for poc and data transfer
-        reward_poc_and_dc(
+        let poc_dc_shares = reward_poc_and_dc(
             &self.pool,
             &self.hex_service_client,
             &self.mobile_rewards,
@@ -293,12 +302,17 @@ where
         transaction.commit().await?;
 
         // now that the db has been purged, safe to write out the manifest
+        let reward_data = ManifestMobileRewardData {
+            poc_bones_per_coverage_point: poc_dc_shares.poc_bones_per_coverage_point.to_string(),
+            dc_bones_per_share: poc_dc_shares.dc_transfer_rewards_per_share.to_string(),
+        };
         self.reward_manifests
             .write(
                 RewardManifest {
                     start_timestamp: reward_period.start.encode_timestamp(),
                     end_timestamp: reward_period.end.encode_timestamp(),
                     written_files,
+                    reward_data: Some(MobileRewardData(reward_data)),
                 },
                 [],
             )
@@ -336,7 +350,7 @@ pub async fn reward_poc_and_dc(
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<RewardPocDcDataPoints> {
     let transfer_rewards = TransferRewards::from_transfer_sessions(
         mobile_bone_price,
         data_session::aggregate_hotspot_data_sessions_to_dc(pool, reward_period).await?,
@@ -354,7 +368,7 @@ pub async fn reward_poc_and_dc(
     // and carry this into the poc pool
     let dc_unallocated_amount = reward_dc(mobile_rewards, reward_period, transfer_rewards).await?;
     // any poc unallocated gets attributed to the unallocated reward
-    let poc_unallocated_amount = reward_poc(
+    let (poc_unallocated_amount, poc_rewards_per_share) = reward_poc(
         pool,
         hex_service_client,
         mobile_rewards,
@@ -362,10 +376,12 @@ pub async fn reward_poc_and_dc(
         reward_period,
         transfer_rewards_sum - dc_unallocated_amount,
     )
-    .await?
-    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-    .to_u64()
-    .unwrap_or(0);
+    .await?;
+
+    let poc_unallocated_amount = poc_unallocated_amount
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
 
     write_unallocated_reward(
         mobile_rewards,
@@ -375,7 +391,10 @@ pub async fn reward_poc_and_dc(
     )
     .await?;
 
-    Ok(())
+    Ok(RewardPocDcDataPoints {
+        poc_bones_per_coverage_point: poc_rewards_per_share,
+        dc_transfer_rewards_per_share: transfer_rewards_sum,
+    })
 }
 
 async fn reward_poc(
@@ -385,7 +404,7 @@ async fn reward_poc(
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     transfer_reward_sum: Decimal,
-) -> anyhow::Result<Decimal> {
+) -> anyhow::Result<(Decimal, Decimal)> {
     let total_poc_rewards =
         reward_shares::get_scheduled_tokens_for_poc(reward_period.end - reward_period.start)
             - transfer_reward_sum;
@@ -411,8 +430,13 @@ async fn reward_poc(
     )
     .await?;
 
+    let total_shares = coverage_points.total_shares();
+    let poc_rewards_per_share = total_poc_rewards
+        .checked_div(total_shares)
+        .unwrap_or_default();
+
     let unallocated_poc_amount = if let Some(mobile_reward_shares) =
-        coverage_points.into_rewards(total_poc_rewards, reward_period)
+        coverage_points.into_rewards(reward_period, poc_rewards_per_share)
     {
         // handle poc reward outputs
         let mut allocated_poc_rewards = 0_u64;
@@ -430,7 +454,7 @@ async fn reward_poc(
         // default unallocated poc reward to the total poc reward
         total_poc_rewards
     };
-    Ok(unallocated_poc_amount)
+    Ok((unallocated_poc_amount, poc_rewards_per_share))
 }
 
 pub async fn reward_dc(
