@@ -5,7 +5,6 @@ use coverage_map::{RankedCoverage, SignalLevel};
 use coverage_point_calculator::{
     calculate_coverage_points,
     location::LocationTrust,
-    make_rewardable_radio,
     speedtest::{BytesPs, Speedtest},
     RadioThreshold, RadioType,
 };
@@ -53,7 +52,7 @@ fn base_radio_coverage_points() {
         (RadioType::OutdoorWifi, dec!(16)),
         (RadioType::OutdoorCbrs, dec!(4)),
     ] {
-        let radio = make_rewardable_radio(
+        let coverage_points = calculate_coverage_points(
             radio_type,
             RadioThreshold::Verified,
             speedtests.clone(),
@@ -62,7 +61,6 @@ fn base_radio_coverage_points() {
         )
         .unwrap();
 
-        let coverage_points = calculate_coverage_points(&radio);
         assert_eq!(
             expcted_base_coverage_point,
             coverage_points.total_coverage_points
@@ -115,7 +113,7 @@ fn radios_with_coverage() {
         (RadioType::OutdoorWifi, 25),
         (RadioType::OutdoorCbrs, 100),
     ] {
-        let radio = make_rewardable_radio(
+        let coverage_points = calculate_coverage_points(
             radio_type,
             RadioThreshold::Verified,
             default_speedtests.clone(),
@@ -124,7 +122,6 @@ fn radios_with_coverage() {
         )
         .unwrap();
 
-        let coverage_points = calculate_coverage_points(&radio);
         assert_eq!(dec!(400), coverage_points.total_coverage_points);
     }
 }
