@@ -111,6 +111,40 @@ pub struct CoveragePoints {
     pub speedtest_multiplier: Decimal,
 }
 
+/// Entry point into the Coverage Point Calculator.
+///
+/// All of the necessary checks for rewardability are done during construction.
+/// If you can successfully construct a [RewardableRadio], it can be passed to
+/// [calculate_coverage_points].
+pub fn make_rewardable_radio(
+    radio_type: RadioType,
+    speedtests: Vec<Speedtest>,
+    location_trust_scores: Vec<LocationTrust>,
+    radio_threshold: RadioThreshold,
+    ranked_coverage: Vec<RankedCoverage>,
+) -> Result<RewardableRadio> {
+    let location_trust_scores =
+        LocationTrustScores::new(radio_type, location_trust_scores, &ranked_coverage);
+
+    let boosted_hex_status = BoostedHexStatus::new(
+        &radio_type,
+        location_trust_scores.multiplier,
+        &radio_threshold,
+    );
+
+    let covered_hexes = CoveredHexes::new(radio_type, ranked_coverage, boosted_hex_status)?;
+
+    Ok(RewardableRadio {
+        radio_type,
+        speedtests: Speedtests::new(speedtests),
+        location_trust_scores,
+        radio_threshold,
+        covered_hexes,
+        boosted_hex_eligibility: boosted_hex_status,
+    })
+}
+
+/// This function contains the simplest form of the Coverage Points eqation.
 pub fn calculate_coverage_points(radio: &RewardableRadio) -> CoveragePoints {
     let hex_coverage_points = radio.covered_hexes.calculated_coverage_points();
     let location_trust_multiplier = radio.location_trust_scores.multiplier;
@@ -124,36 +158,6 @@ pub fn calculate_coverage_points(radio: &RewardableRadio) -> CoveragePoints {
         hex_coverage_points,
         location_trust_multiplier,
         speedtest_multiplier,
-    }
-}
-
-impl RewardableRadio {
-    pub fn new(
-        radio_type: RadioType,
-        speedtests: Vec<Speedtest>,
-        location_trust_scores: Vec<LocationTrust>,
-        radio_threshold: RadioThreshold,
-        ranked_coverage: Vec<RankedCoverage>,
-    ) -> Result<Self> {
-        let location_trust_scores =
-            LocationTrustScores::new(radio_type, location_trust_scores, &ranked_coverage);
-
-        let boosted_hex_status = BoostedHexStatus::new(
-            &radio_type,
-            location_trust_scores.multiplier,
-            &radio_threshold,
-        );
-
-        let covered_hexes = CoveredHexes::new(radio_type, ranked_coverage, boosted_hex_status)?;
-
-        Ok(Self {
-            radio_type,
-            speedtests: Speedtests::new(speedtests),
-            location_trust_scores,
-            radio_threshold,
-            covered_hexes,
-            boosted_hex_eligibility: boosted_hex_status,
-        })
     }
 }
 
@@ -282,7 +286,7 @@ mod tests {
     #[test]
     fn hip_84_radio_meets_minimum_subscriber_threshold_for_boosted_hexes() {
         let make_wifi = |radio_verified: RadioThreshold| {
-            RewardableRadio::new(
+            make_rewardable_radio(
                 RadioType::IndoorWifi,
                 speedtest_maximum(),
                 location_trust_maximum(),
@@ -324,7 +328,7 @@ mod tests {
     #[test]
     fn hip_93_wifi_with_low_location_score_receives_no_boosted_hexes() {
         let make_wifi = |location_trust_scores: Vec<LocationTrust>| {
-            RewardableRadio::new(
+            make_rewardable_radio(
                 RadioType::IndoorWifi,
                 speedtest_maximum(),
                 location_trust_scores,
@@ -362,7 +366,7 @@ mod tests {
     #[test]
     fn speedtest() {
         let make_indoor_cbrs = |speedtests: Vec<Speedtest>| {
-            RewardableRadio::new(
+            make_rewardable_radio(
                 RadioType::IndoorCbrs,
                 speedtests,
                 location_trust_maximum(),
@@ -450,7 +454,7 @@ mod tests {
         }
 
         use Assignment::*;
-        let indoor_cbrs = RewardableRadio::new(
+        let indoor_cbrs = make_rewardable_radio(
             RadioType::IndoorCbrs,
             speedtest_maximum(),
             location_trust_maximum(),
@@ -510,7 +514,7 @@ mod tests {
         #[case] rank: usize,
         #[case] expected_points: Decimal,
     ) {
-        let outdoor_wifi = RewardableRadio::new(
+        let outdoor_wifi = make_rewardable_radio(
             radio_type,
             speedtest_maximum(),
             location_trust_maximum(),
@@ -542,7 +546,7 @@ mod tests {
         #[case] rank: usize,
         #[case] expected_points: Decimal,
     ) {
-        let indoor_wifi = RewardableRadio::new(
+        let indoor_wifi = make_rewardable_radio(
             radio_type,
             speedtest_maximum(),
             location_trust_maximum(),
@@ -588,7 +592,7 @@ mod tests {
     #[test]
     fn location_trust_score_multiplier() {
         // Location scores are averaged together
-        let indoor_wifi = RewardableRadio::new(
+        let indoor_wifi = make_rewardable_radio(
             RadioType::IndoorWifi,
             speedtest_maximum(),
             location_trust_with_scores(&[dec!(0.1), dec!(0.2), dec!(0.3), dec!(0.4)]),
@@ -635,7 +639,7 @@ mod tests {
                 boosted: NonZeroU32::new(4),
             },
         ];
-        let indoor_wifi = RewardableRadio::new(
+        let indoor_wifi = make_rewardable_radio(
             RadioType::IndoorWifi,
             speedtest_maximum(),
             location_trust_maximum(),
@@ -661,7 +665,7 @@ mod tests {
         #[case] signal_level: SignalLevel,
         #[case] expected: Decimal,
     ) {
-        let outdoor_cbrs = RewardableRadio::new(
+        let outdoor_cbrs = make_rewardable_radio(
             RadioType::OutdoorCbrs,
             speedtest_maximum(),
             location_trust_maximum(),
@@ -691,7 +695,7 @@ mod tests {
         #[case] signal_level: SignalLevel,
         #[case] expected: Decimal,
     ) {
-        let indoor_cbrs = RewardableRadio::new(
+        let indoor_cbrs = make_rewardable_radio(
             RadioType::IndoorCbrs,
             speedtest_maximum(),
             location_trust_maximum(),
@@ -723,7 +727,7 @@ mod tests {
         #[case] signal_level: SignalLevel,
         #[case] expected: Decimal,
     ) {
-        let outdoor_wifi = RewardableRadio::new(
+        let outdoor_wifi = make_rewardable_radio(
             RadioType::OutdoorWifi,
             speedtest_maximum(),
             location_trust_maximum(),
@@ -753,7 +757,7 @@ mod tests {
         #[case] signal_level: SignalLevel,
         #[case] expected: Decimal,
     ) {
-        let indoor_wifi = RewardableRadio::new(
+        let indoor_wifi = make_rewardable_radio(
             RadioType::IndoorWifi,
             speedtest_maximum(),
             location_trust_maximum(),

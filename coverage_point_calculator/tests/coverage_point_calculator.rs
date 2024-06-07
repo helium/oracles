@@ -5,8 +5,9 @@ use coverage_map::{RankedCoverage, SignalLevel};
 use coverage_point_calculator::{
     calculate_coverage_points,
     location::LocationTrust,
+    make_rewardable_radio,
     speedtest::{BytesPs, Speedtest},
-    RadioThreshold, RadioType, RewardableRadio,
+    RadioThreshold, RadioType,
 };
 use hex_assignments::{assignment::HexAssignments, Assignment};
 use rust_decimal_macros::dec;
@@ -52,7 +53,7 @@ fn base_radio_coverage_points() {
         (RadioType::OutdoorWifi, dec!(16)),
         (RadioType::OutdoorCbrs, dec!(4)),
     ] {
-        let radio = RewardableRadio::new(
+        let radio = make_rewardable_radio(
             radio_type,
             speedtests.clone(),
             location_trust_scores.clone(),
@@ -114,7 +115,7 @@ fn radios_with_coverage() {
         (RadioType::OutdoorWifi, 25),
         (RadioType::OutdoorCbrs, 100),
     ] {
-        let radio = RewardableRadio::new(
+        let radio = make_rewardable_radio(
             radio_type,
             default_speedtests.clone(),
             default_location_trust_scores.clone(),
