@@ -590,7 +590,7 @@ impl CoveragePoints {
                             hotspot_points.radio_points.into_iter(),
                         )
                     })
-                    .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0)
+                    .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0),
             )
         } else {
             None
