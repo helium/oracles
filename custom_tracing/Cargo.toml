@@ -6,22 +6,23 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-notify = { version = "6", default-features = false }
 anyhow = "1"
+axum = { version = ">=0.7", features = ["tracing"], optional = true }
+bs58 = { workspace = true }
+helium-crypto = { workspace = true }
+helium-proto = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+notify = { version = "6", default-features = false }
+serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "signal"] }
+tower-http = { version = "0", features = ["trace"] }
+tower-layer = { version = "0" }
 tracing = "0"
 tracing-subscriber = { version = "0", default-features = true, features = [
     "env-filter",
     "registry",
     "fmt",
 ] }
-tower-http = { version = "0", features = ["trace"] }
-tower-layer = { version = "0" }
-axum = { version = "0.7", features = ["tracing"], optional = true }
-helium-proto = { workspace = true, optional = true }
-http = { workspace = true, optional = true }
-bs58 = { version = "0.4", features = ["check"] }
 
 
 [target.'cfg(target_os = "macos")'.dependencies]

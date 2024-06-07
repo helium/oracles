@@ -1,4 +1,5 @@
 use anyhow::Result;
+use helium_crypto::PublicKeyBinary;
 use notify::{event::DataChange, Config, RecommendedWatcher, RecursiveMode, Watcher};
 mod settings;
 pub use settings::Settings;
@@ -54,7 +55,7 @@ where
 }
 
 pub fn record_b58(key: &str, pub_key: &[u8]) {
-    let b58 = bs58::encode(pub_key).into_string();
+    let b58 = PublicKeyBinary::from(pub_key).to_string();
 
     record(key, b58);
 }
