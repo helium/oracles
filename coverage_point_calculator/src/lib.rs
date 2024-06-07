@@ -39,7 +39,7 @@
 //!   - There must be more than 2 speedtests.
 //!
 //! - Covered Hexes
-//!   - If a Radio is not [CoveragePoints::boosted_hex_eligibility], boost values are removed before calculations. [CoveredHexes::new_without_boosts]
+//!   - If a Radio is not [BoostedHexStatus::Eligible], boost values are removed before calculations. [CoveredHexes::new]
 //!
 //! ## References:
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
@@ -75,7 +75,20 @@ pub enum Error {
     InvalidSignalLevel(SignalLevel, RadioType),
 }
 
-/// Necessary checks for calculating coverage points is done during [RewardableRadio::new].
+/// Necessary checks for calculating coverage points is done during
+/// [RewardableRadio::new].
+///
+/// The data in this struct may be different from the input data, but
+/// it contains the values used for calculating coverage points.
+///
+/// - If more than the allowed speedtests were provided, only the speedtests
+///   considered are included here.
+///
+/// - When a radio covers boosted hexes, [CoveragePoints::location_trust_scores] will contain a
+///   trust score _after_ the boosted hex restriction has been applied.
+///
+/// - When a radio is not eligible for boosted hex rewards, [CoveragePoints::covered_hexes] will
+///   have no boosted_multiplier values.
 #[derive(Debug, Clone)]
 pub struct RewardableRadio {
     pub radio_type: RadioType,
@@ -87,18 +100,6 @@ pub struct RewardableRadio {
 }
 
 /// Output of calculating coverage points for a [RewardableRadio].
-///
-/// The only data included was used for calculating coverage points.
-///
-/// - If more than the allowed speedtests were provided, only the speedtests
-///   considered are included here.
-///
-/// - When a radio covers boosted hexes, [CoveragePoints::location_trust_scores] will contain a
-///   trust score _after_ the boosted hex restriction has been applied.
-///
-/// - When a radio is not eligible for boosted hex rewards, [CoveragePoints::covered_hexes] will
-///   have no boosted_multiplier values.
-///
 #[derive(Debug)]
 pub struct CoveragePoints {
     /// Value used when calculating poc_reward
