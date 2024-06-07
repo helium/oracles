@@ -76,8 +76,7 @@ pub enum Error {
     InvalidSignalLevel(SignalLevel, RadioType),
 }
 
-/// Necessary checks for calculating coverage points is done during
-/// [RewardableRadio::new].
+/// Output of calculating coverage points for a Radio.
 ///
 /// The data in this struct may be different from the input data, but
 /// it contains the values used for calculating coverage points.
@@ -91,17 +90,6 @@ pub enum Error {
 /// - When a radio is not eligible for boosted hex rewards, [CoveragePoints::covered_hexes] will
 ///   have no boosted_multiplier values.
 #[derive(Debug, Clone)]
-pub struct RewardableRadio {
-    pub radio_type: RadioType,
-    pub radio_threshold: RadioThreshold,
-    pub boosted_hex_eligibility: BoostedHexStatus,
-    speedtests: Speedtests,
-    location_trust_scores: LocationTrustScores,
-    covered_hexes: CoveredHexes,
-}
-
-/// Output of calculating coverage points for a [RewardableRadio].
-#[derive(Debug)]
 pub struct CoveragePoints {
     /// Value used when calculating poc_reward
     pub total_coverage_points: Decimal,
@@ -147,19 +135,11 @@ pub fn calculate_coverage_points(
     );
 
     let covered_hexes = CoveredHexes::new(radio_type, ranked_coverage, boosted_hex_status)?;
+    let speedtests = Speedtests::new(speedtests);
 
-    let radio = RewardableRadio {
-        radio_type,
-        speedtests: Speedtests::new(speedtests),
-        location_trust_scores,
-        radio_threshold,
-        covered_hexes,
-        boosted_hex_eligibility: boosted_hex_status,
-    };
-
-    let hex_coverage_points = radio.covered_hexes.calculated_coverage_points();
-    let location_trust_multiplier = radio.location_trust_scores.multiplier;
-    let speedtest_multiplier = radio.speedtests.multiplier;
+    let hex_coverage_points = covered_hexes.calculated_coverage_points();
+    let location_trust_multiplier = location_trust_scores.multiplier;
+    let speedtest_multiplier = speedtests.multiplier;
 
     let coverage_points = hex_coverage_points * location_trust_multiplier * speedtest_multiplier;
     let total_coverage_points = coverage_points.round_dp_with_strategy(2, RoundingStrategy::ToZero);
@@ -169,27 +149,16 @@ pub fn calculate_coverage_points(
         hex_coverage_points,
         location_trust_multiplier,
         speedtest_multiplier,
-        radio_type: radio.radio_type,
-        radio_threshold: radio.radio_threshold,
-        boosted_hex_eligibility: radio.boosted_hex_eligibility,
-        speedtests: radio
-            .speedtests
-            .speedtests
-            .iter()
-            .map(|s| s.clone())
-            .collect(),
-        location_trust_scores: radio
-            .location_trust_scores
+        radio_type,
+        radio_threshold,
+        boosted_hex_eligibility: boosted_hex_status,
+        speedtests: speedtests.speedtests.iter().map(|s| s.clone()).collect(),
+        location_trust_scores: location_trust_scores
             .trust_scores
             .iter()
             .map(|s| s.clone())
             .collect(),
-        covered_hexes: radio
-            .covered_hexes
-            .hexes
-            .iter()
-            .map(|h| h.clone())
-            .collect(),
+        covered_hexes: covered_hexes.hexes.iter().map(|h| h.clone()).collect(),
     })
 }
 
