@@ -7,6 +7,7 @@ const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
 
 type Millis = u32;
 
+/// Bytes per second
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
 pub struct BytesPs(u64);
 

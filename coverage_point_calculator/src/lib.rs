@@ -4,44 +4,43 @@
 //! thorough explanation of many of them. It is not exhaustive, but a great
 //! place to start.
 //!
-//! ## Fields:
-//! - modeled_coverage_points
+//! ## Important Fields
+//! - [CoveredHex::base_coverage_points]
 //!   - [HIP-74][modeled-coverage]
 //!   - reduced cbrs radio coverage points [HIP-113][cbrs-experimental]
 //!
-//! - assignment_multiplier
+//! - [CoveredHex::assignment_multiplier]
 //!   - [HIP-103][oracle-boosting]
 //!
-//! - rank
+//! - [CoveredHex::rank]
 //!   - [HIP-105][hex-limits]
 //!
-//! - hex_boost_multiplier  
+//! - [CoveredHex::boosted_multiplier]
 //!   - must meet minimum subscriber thresholds [HIP-84][provider-boosting]
 //!   - Wifi Location trust score >0.75 for boosted hex eligibility [HIP-93][wifi-aps]
 //!
-//! - location_trust_score_multiplier
+//! - [CoveragePoints::location_trust_multiplier]
 //!   - [HIP-98][qos-score]
 //!   - states 30m requirement for boosted hexes [HIP-107][prevent-gaming]
 //!   - increase Boosted hex restriction, 30m -> 50m [Pull Request][boosted-hex-restriction]
 //!
-//! - speedtest_multiplier
+//! - [CoveragePoints::speedtest_multiplier]
 //!   - [HIP-74][modeled-coverage]
 //!   - added "Good" speedtest tier [HIP-98][qos-score]
 //!     - latency is explicitly under limit in HIP <https://github.com/helium/oracles/pull/737>
 //!
 //! ## Notable Conditions:
-//! - Location
+//! - [LocationTrust]
 //!   - If a Radio covers any boosted hexes, [LocationTrust] scores must meet distance requirements, or be degraded.
 //!   - CBRS Radio's location is always trusted because of GPS.
 //!
-//! - Speedtests
+//! - [Speedtest]
 //!   - The latest 6 speedtests will be used.
 //!   - There must be more than 2 speedtests.
 //!
-//! - Covered Hexes
-//!   - If a Radio is not [BoostedHexStatus::Eligible], boost values are removed before calculations. [CoveredHexes::new]
+//! - [CoveredHex]
+//!   - If a Radio is not [BoostedHexStatus::Eligible], boost values are removed before calculations.
 //!
-//! ## References:
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
 //! [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
 //! [wifi-aps]:                https://github.com/helium/HIP/blob/main/0093-addition-of-wifi-aps-to-mobile-subdao.md
