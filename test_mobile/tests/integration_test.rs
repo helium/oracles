@@ -38,10 +38,10 @@ async fn main() -> Result<()> {
         .await?;
 
     hotspot1
-        .submit_speedtest(500_000_000, 500_000_000, 25)
+        .submit_speedtest(hours_ago(2), 500_000_000, 500_000_000, 25)
         .await?;
     hotspot1
-        .submit_speedtest(500_000_000, 500_000_000, 25)
+        .submit_speedtest(hours_ago(1), 500_000_000, 500_000_000, 25)
         .await?;
 
     let _ = tokio::time::sleep(Duration::from_secs(60)).await;

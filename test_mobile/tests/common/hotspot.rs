@@ -58,16 +58,17 @@ impl Hotspot {
     #[instrument(skip(self), fields(hotspot = %self.b58))]
     pub async fn submit_speedtest(
         &mut self,
+        when: u64,
         upload_speed: u64,
         download_speed: u64,
         latency: u32,
     ) -> Result<()> {
-        let timestamp = now();
+        let timestamp = now() - when;
 
         let mut speedtest_req = SpeedtestReqV1 {
             pub_key: self.keypair.public_key().to_vec(),
             serial: self.b58.clone(),
-            timestamp,
+            timestamp: millis_to_seconds(timestamp),
             upload_speed,
             download_speed,
             latency,
@@ -108,7 +109,7 @@ impl Hotspot {
         let mut coverage_object_req = CoverageObjectReqV1 {
             pub_key: pcs_keypair.public_key().to_vec(),
             uuid: uuid.as_bytes().to_vec(),
-            coverage_claim_time,
+            coverage_claim_time: millis_to_seconds(coverage_claim_time),
             coverage: vec![RadioHexSignalLevel {
                 location: self.location.to_string(),
                 signal_level: 3,
@@ -159,7 +160,7 @@ impl Hotspot {
             // lon: -155.990626,
             lat: lat_lon.lat(),
             lon: lat_lon.lng(),
-            location_validation_timestamp: timestamp,
+            location_validation_timestamp: millis_to_seconds(timestamp),
             operation_mode: true,
             coverage_object: coverage_object.as_bytes().to_vec(),
             signature: vec![],
@@ -199,6 +200,10 @@ impl Drop for Hotspot {
     fn drop(&mut self) {
         tracing::debug!("Hotspot dropped")
     }
+}
+
+fn millis_to_seconds(milliseconds: u64) -> u64 {
+    milliseconds / 1000
 }
 
 #[instrument(skip_all)]
