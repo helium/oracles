@@ -502,7 +502,7 @@ impl CoveragePoints2 {
         })
     }
 
-    fn new_hexes(&self, radio_id: &RadioId) -> Vec<coverage_map::RankedCoverage> {
+    fn radio_hexes(&self, radio_id: &RadioId) -> Vec<coverage_map::RankedCoverage> {
         let (pubkey, cbsd_id) = radio_id;
         let ranked_coverage = match cbsd_id {
             Some(cbsd_id) => self.coverage_map.get_cbrs_coverage(cbsd_id),
@@ -567,8 +567,7 @@ impl CoveragePoints2 {
             .expect("trust scores")
             .clone();
         let verified = self.radio_threshold_verified(&radio_id);
-        // let hexes = self.coverage_map.old_hexes(&radio_id, &radio_type);
-        let hexes = self.new_hexes(&radio_id);
+        let hexes = self.radio_hexes(&radio_id);
 
         let coverage_points = coverage_point_calculator::CoveragePoints::new(
             radio_type,
