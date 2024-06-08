@@ -376,27 +376,10 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
 }
 
 type RadioId = (PublicKeyBinary, Option<String>);
-// type RadioId = PublicKeyBinary;
-
-#[derive(Debug)]
-struct InnerCoverageMap {
-    coverage_map: coverage_map::CoverageMap,
-}
-
-impl InnerCoverageMap {
-    fn new_hexes(&self, radio_id: &RadioId) -> Vec<coverage_map::RankedCoverage> {
-        let (pubkey, cbsd_id) = radio_id;
-        let ranked_coverage = match cbsd_id {
-            Some(cbsd_id) => self.coverage_map.get_cbrs_coverage(cbsd_id),
-            None => self.coverage_map.get_wifi_coverage(pubkey.as_ref()),
-        };
-        ranked_coverage.to_vec().into_iter().collect()
-    }
-}
 
 #[derive(Debug)]
 pub struct CoveragePoints2 {
-    coverage_map: InnerCoverageMap,
+    coverage_map: coverage_map::CoverageMap,
     //
     verified_radio_thresholds: VerifiedRadioThresholds,
     speedtest_averages: SpeedtestAverages,
@@ -469,19 +452,9 @@ impl CoveragePoints2 {
             radio_types.insert(key.clone(), radio_type);
         }
 
-        let mut covered_hexes = CoveredHexes::default();
-
         let coverage_map = {
             let mut coverage_map_builder = coverage_map::CoverageMapBuilder::default();
             for (key, coverage) in &coverage_hash_map {
-                covered_hexes
-                    .aggregate_coverage(
-                        &key.0,
-                        &boosted_hexes,
-                        stream::iter(coverage.iter().cloned().map(anyhow::Ok)),
-                    )
-                    .await?;
-
                 let seniority = {
                     let mut seniorities = seniority_timestamps
                         .get(&key)
@@ -518,13 +491,8 @@ impl CoveragePoints2 {
             coverage_map_builder.build(&boosted_hexes, reward_period.start)
         };
 
-        println!("COVERAGE MAP: ");
-        println!("{coverage_map:?}");
-        println!("");
-        println!("");
-
         Ok(Self {
-            coverage_map: InnerCoverageMap { coverage_map },
+            coverage_map,
             verified_radio_thresholds,
             speedtest_averages,
             trust_scores,
@@ -532,6 +500,15 @@ impl CoveragePoints2 {
             radio_types,
             coverage_obj_uuid,
         })
+    }
+
+    fn new_hexes(&self, radio_id: &RadioId) -> Vec<coverage_map::RankedCoverage> {
+        let (pubkey, cbsd_id) = radio_id;
+        let ranked_coverage = match cbsd_id {
+            Some(cbsd_id) => self.coverage_map.get_cbrs_coverage(cbsd_id),
+            None => self.coverage_map.get_wifi_coverage(pubkey.as_ref()),
+        };
+        ranked_coverage.to_vec().into_iter().collect()
     }
 
     pub async fn all_radio_ids(&mut self) -> anyhow::Result<Vec<RadioId>> {
@@ -591,7 +568,7 @@ impl CoveragePoints2 {
             .clone();
         let verified = self.radio_threshold_verified(&radio_id);
         // let hexes = self.coverage_map.old_hexes(&radio_id, &radio_type);
-        let hexes = self.coverage_map.new_hexes(&radio_id);
+        let hexes = self.new_hexes(&radio_id);
 
         let coverage_points = coverage_point_calculator::CoveragePoints::new(
             radio_type,
@@ -2265,7 +2242,7 @@ mod test {
 
         let coverage_points = CoveragePoints {
             coverage_points: CoveragePoints2 {
-                coverage_map: InnerCoverageMap { coverage_map },
+                coverage_map,
                 verified_radio_thresholds: VerifiedRadioThresholds::default(),
                 speedtest_averages,
                 seniority_timestamps,
@@ -2297,10 +2274,8 @@ mod test {
         let epoch = now - Duration::hours(1)..now;
         let coverage_points = CoveragePoints {
             coverage_points: CoveragePoints2 {
-                coverage_map: InnerCoverageMap {
-                    coverage_map: coverage_map::CoverageMapBuilder::default()
-                        .build(&BoostedHexes::default(), epoch.start),
-                },
+                coverage_map: coverage_map::CoverageMapBuilder::default()
+                    .build(&BoostedHexes::default(), epoch.start),
                 verified_radio_thresholds: VerifiedRadioThresholds::default(),
                 speedtest_averages: SpeedtestAverages::default(),
                 seniority_timestamps: HashMap::new(),
