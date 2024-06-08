@@ -25,7 +25,7 @@ use mobile_config::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use std::{collections::HashMap, num::NonZeroUsize, ops::Range};
+use std::{collections::HashMap, ops::Range};
 use uuid::Uuid;
 
 /// Total tokens emissions pool per 365 days or 366 days for a leap year
@@ -380,122 +380,10 @@ type RadioId = (PublicKeyBinary, Option<String>);
 
 #[derive(Debug)]
 struct InnerCoverageMap {
-    coverage_hash_map: HashMap<RadioId, Vec<HexCoverage>>,
-    covered_hexes: CoveredHexes,
-    boosted_hexes: BoostedHexes,
-    reward_period: Range<DateTime<Utc>>,
-    // in the end, we should be able to swap out the above members with the coverage_map crate.
     coverage_map: coverage_map::CoverageMap,
 }
 
 impl InnerCoverageMap {
-    fn radio_rank(
-        &self,
-        key: &RadioId,
-        radio_type: &coverage_point_calculator::RadioType,
-        hex: &HexCoverage,
-    ) -> NonZeroUsize {
-        match radio_type {
-            coverage_point_calculator::RadioType::IndoorWifi => {
-                let hex_coverage = self
-                    .covered_hexes
-                    .indoor_wifi
-                    .get(&hex.hex)
-                    .expect("any indoor wifi radios covering a cell");
-                let coverage_by_level =
-                    hex_coverage
-                        .clone()
-                        .into_iter()
-                        .flat_map(|(sig_level, coverage)| {
-                            coverage
-                                .into_sorted_vec()
-                                .into_iter()
-                                .map(move |cl| (sig_level, cl))
-                        });
-                for (index, (_sig_level, coverage)) in coverage_by_level.enumerate() {
-                    if coverage.hotspot == key.0 {
-                        return NonZeroUsize::new(index + 1).unwrap();
-                    }
-                }
-            }
-            coverage_point_calculator::RadioType::OutdoorWifi => {
-                let coverage = self
-                    .covered_hexes
-                    .outdoor_wifi
-                    .get(&hex.hex)
-                    .expect("any outdoor wifi radios covering a cell");
-
-                for (index, cl) in coverage.clone().into_sorted_vec().iter().enumerate() {
-                    if cl.hotspot == key.0 {
-                        return NonZeroUsize::new(index + 1).unwrap();
-                    }
-                }
-            }
-            coverage_point_calculator::RadioType::IndoorCbrs => {
-                let hex_coverage = self
-                    .covered_hexes
-                    .indoor_cbrs
-                    .get(&hex.hex)
-                    .expect("any indoor cbrs radios covering a cell");
-                let coverage_by_level =
-                    hex_coverage
-                        .clone()
-                        .into_iter()
-                        .flat_map(|(sig_level, coverage)| {
-                            coverage
-                                .into_sorted_vec()
-                                .into_iter()
-                                .map(move |cl| (sig_level, cl))
-                        });
-                for (index, (_signal_level, coverage)) in coverage_by_level.enumerate() {
-                    if coverage.hotspot == key.0 {
-                        return NonZeroUsize::new(index + 1).unwrap();
-                    }
-                }
-            }
-            coverage_point_calculator::RadioType::OutdoorCbrs => {
-                let coverage = self
-                    .covered_hexes
-                    .outdoor_cbrs
-                    .get(&hex.hex)
-                    .expect("any outdoor cbrs radios covering cell");
-                for (index, cl) in coverage.clone().into_sorted_vec().iter().enumerate() {
-                    if cl.hotspot == key.0 {
-                        return NonZeroUsize::new(index + 1).unwrap();
-                    }
-                }
-            }
-        }
-        return NonZeroUsize::MAX;
-    }
-
-    fn old_hexes(
-        &self,
-        radio_id: &RadioId,
-        radio_type: &coverage_point_calculator::RadioType,
-    ) -> Vec<coverage_map::RankedCoverage> {
-        self.coverage_hash_map
-            .get(radio_id)
-            .expect("coverage map")
-            .into_iter()
-            .map(|hex| {
-                let boosted_hex = self
-                    .boosted_hexes
-                    .get_current_multiplier(hex.hex, self.reward_period.start);
-
-                coverage_map::RankedCoverage {
-                    hotspot_key: radio_id.0.clone().into(),
-                    cbsd_id: radio_id.1.clone(),
-                    hex: hex.hex,
-                    rank: self.radio_rank(radio_id, radio_type, hex).get(),
-                    signal_level: hex.signal_level.into(),
-                    assignments: hex.assignments.clone(),
-                    boosted: boosted_hex,
-                }
-            })
-            .collect()
-    }
-
     fn new_hexes(&self, radio_id: &RadioId) -> Vec<coverage_map::RankedCoverage> {
         let (pubkey, cbsd_id) = radio_id;
         let ranked_coverage = match cbsd_id {
@@ -636,13 +524,7 @@ impl CoveragePoints2 {
         println!("");
 
         Ok(Self {
-            coverage_map: InnerCoverageMap {
-                coverage_hash_map,
-                covered_hexes,
-                boosted_hexes,
-                reward_period: reward_period.clone(),
-                coverage_map,
-            },
+            coverage_map: InnerCoverageMap { coverage_map },
             verified_radio_thresholds,
             speedtest_averages,
             trust_scores,
@@ -2332,48 +2214,6 @@ mod test {
             }],
         );
 
-        let mut coverage_hash_map = HashMap::new();
-        coverage_hash_map.insert(
-            (gw1.clone(), None),
-            vec![HexCoverage {
-                uuid: uuid_1,
-                hex: Cell::from_raw(0x8c2681a3064dbff).expect("valid h3 cell"),
-                indoor: true,
-                radio_key: OwnedKeyType::Wifi(gw1.clone()),
-                signal_level: crate::coverage::SignalLevel::High,
-                signal_power: 42,
-                coverage_claim_time: now.clone(),
-                inserted_at: now.clone(),
-                assignments: hex_assignments_mock(),
-            }],
-        );
-        coverage_hash_map.insert(
-            (gw2.clone(), None),
-            vec![HexCoverage {
-                uuid: uuid_2,
-                hex: Cell::from_raw(0x8c2681a3064ddff).expect("valid h3 cell"),
-                indoor: true,
-                radio_key: OwnedKeyType::Wifi(gw2.clone()),
-                signal_level: crate::coverage::SignalLevel::High,
-                signal_power: 42,
-                coverage_claim_time: now.clone(),
-                inserted_at: now.clone(),
-                assignments: hex_assignments_mock(),
-            }],
-        );
-
-        let mut covered_hexes = CoveredHexes::default();
-        for (key, coverage) in &coverage_hash_map {
-            covered_hexes
-                .aggregate_coverage(
-                    &key.0,
-                    &BoostedHexes::default(),
-                    stream::iter(coverage.iter().cloned().map(|x| anyhow::Ok(x))),
-                )
-                .await
-                .expect("aded covered hexes");
-        }
-
         let mut coverage_map = coverage_map::CoverageMapBuilder::default();
         coverage_map.insert_coverage_object(coverage_map::CoverageObject {
             indoor: true,
@@ -2425,13 +2265,7 @@ mod test {
 
         let coverage_points = CoveragePoints {
             coverage_points: CoveragePoints2 {
-                coverage_map: InnerCoverageMap {
-                    coverage_hash_map,
-                    covered_hexes,
-                    boosted_hexes: BoostedHexes::default(),
-                    reward_period: epoch.clone(),
-                    coverage_map,
-                },
+                coverage_map: InnerCoverageMap { coverage_map },
                 verified_radio_thresholds: VerifiedRadioThresholds::default(),
                 speedtest_averages,
                 seniority_timestamps,
@@ -2464,11 +2298,6 @@ mod test {
         let coverage_points = CoveragePoints {
             coverage_points: CoveragePoints2 {
                 coverage_map: InnerCoverageMap {
-                    coverage_hash_map: HashMap::new(),
-                    covered_hexes: CoveredHexes::default(),
-                    boosted_hexes: BoostedHexes::default(),
-                    reward_period: epoch.clone(),
-                    //
                     coverage_map: coverage_map::CoverageMapBuilder::default()
                         .build(&BoostedHexes::default(), epoch.start),
                 },
