@@ -1,5 +1,5 @@
 use crate::{
-    coverage::{CoveredHexStream, CoveredHexes, HexCoverage, Seniority},
+    coverage::{CoveredHexStream, HexCoverage, Seniority},
     data_session::{HotspotMap, ServiceProviderDataSession},
     heartbeats::HeartbeatReward,
     radio_threshold::VerifiedRadioThresholds,
@@ -8,7 +8,7 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
-use futures::{stream, Stream, StreamExt};
+use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::{
@@ -377,8 +377,79 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
 
 type RadioId = (PublicKeyBinary, Option<String>);
 
+fn make_heartbeat_trust_scores(
+    heartbeat: &HeartbeatReward,
+) -> Vec<coverage_point_calculator::LocationTrust> {
+    let fallback: Vec<i64> = std::iter::repeat(0)
+        .take(heartbeat.trust_score_multipliers.len())
+        .collect();
+    heartbeat
+        .distances_to_asserted
+        .as_ref()
+        .unwrap_or(&fallback)
+        .iter()
+        .zip(heartbeat.trust_score_multipliers.iter())
+        .map(
+            |(&distance, &trust_score)| coverage_point_calculator::LocationTrust {
+                meters_to_asserted: distance as u32,
+                trust_score,
+            },
+        )
+        .collect()
+}
+
+pub fn coverage_point_to_mobile_reward_share(
+    coverage_points: coverage_point_calculator::CoveragePoints,
+    start_period: u64,
+    end_period: u64,
+    hotspot_key: &PublicKeyBinary,
+    cbsd_id: Option<String>,
+    poc_reward: u64,
+    seniority_timestamp: DateTime<Utc>,
+    coverage_object_uuid: Uuid,
+) -> proto::MobileRewardShare {
+    let boosted_hexes = coverage_points
+        .covered_hexes
+        .iter()
+        .filter(|hex| hex.boosted_multiplier.is_some())
+        .map(|covered_hex| proto::BoostedHex {
+            location: covered_hex.hex.into_raw(),
+            multiplier: covered_hex.boosted_multiplier.unwrap().to_u32().unwrap(),
+        })
+        .collect();
+
+    let to_proto_value = |value: Decimal| (value * dec!(1000)).to_u32().unwrap_or_default();
+    let location_trust_score_multiplier = to_proto_value(coverage_points.location_trust_multiplier);
+    let speedtest_multiplier = to_proto_value(coverage_points.speedtest_multiplier);
+    let coverage_points = coverage_points
+        .hex_coverage_points
+        .to_u64()
+        .unwrap_or_default();
+
+    let coverage_object = Vec::from(coverage_object_uuid.into_bytes());
+
+    proto::MobileRewardShare {
+        start_period,
+        end_period,
+        reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+            proto::RadioReward {
+                hotspot_key: hotspot_key.clone().into(),
+                cbsd_id: cbsd_id.unwrap_or_default(),
+                poc_reward,
+                coverage_points,
+                seniority_timestamp: seniority_timestamp.encode_timestamp(),
+                coverage_object,
+                location_trust_score_multiplier,
+                speedtest_multiplier,
+                boosted_hexes,
+                ..Default::default()
+            },
+        )),
+    }
+}
+
 #[derive(Debug)]
-pub struct CoveragePoints2 {
+pub struct CoveragePoints {
     coverage_map: coverage_map::CoverageMap,
     //
     verified_radio_thresholds: VerifiedRadioThresholds,
@@ -389,15 +460,19 @@ pub struct CoveragePoints2 {
     coverage_obj_uuid: HashMap<RadioId, Uuid>,
 }
 
-impl CoveragePoints2 {
-    pub async fn new(
+impl CoveragePoints {
+    pub async fn aggregate_points(
         hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
-        speedtest_averages: SpeedtestAverages,
-        boosted_hexes: BoostedHexes,
-        verified_radio_thresholds: VerifiedRadioThresholds,
+        speedtests: &SpeedtestAverages,
+        boosted_hexes: &BoostedHexes,
+        verified_radio_thresholds: &VerifiedRadioThresholds,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<Self> {
+        let speedtest_averages = speedtests.clone();
+        let boosted_hexes = boosted_hexes.clone();
+        let verified_radio_thresholds = verified_radio_thresholds.clone();
+
         let mut coverage_hash_map: HashMap<RadioId, Vec<HexCoverage>> = HashMap::new();
         let mut trust_scores: HashMap<RadioId, Vec<coverage_point_calculator::LocationTrust>> =
             HashMap::new();
@@ -502,6 +577,7 @@ impl CoveragePoints2 {
         })
     }
 
+    // ===============================================================
     fn radio_hexes(&self, radio_id: &RadioId) -> Vec<coverage_map::RankedCoverage> {
         let (pubkey, cbsd_id) = radio_id;
         let ranked_coverage = match cbsd_id {
@@ -579,110 +655,11 @@ impl CoveragePoints2 {
 
         Ok(coverage_points)
     }
-}
-
-fn make_heartbeat_trust_scores(
-    heartbeat: &HeartbeatReward,
-) -> Vec<coverage_point_calculator::LocationTrust> {
-    let fallback: Vec<i64> = std::iter::repeat(0)
-        .take(heartbeat.trust_score_multipliers.len())
-        .collect();
-    heartbeat
-        .distances_to_asserted
-        .as_ref()
-        .unwrap_or(&fallback)
-        .iter()
-        .zip(heartbeat.trust_score_multipliers.iter())
-        .map(
-            |(&distance, &trust_score)| coverage_point_calculator::LocationTrust {
-                meters_to_asserted: distance as u32,
-                trust_score,
-            },
-        )
-        .collect()
-}
-
-pub fn coverage_point_to_mobile_reward_share(
-    coverage_points: coverage_point_calculator::CoveragePoints,
-    start_period: u64,
-    end_period: u64,
-    hotspot_key: &PublicKeyBinary,
-    cbsd_id: Option<String>,
-    poc_reward: u64,
-    seniority_timestamp: DateTime<Utc>,
-    coverage_object_uuid: Uuid,
-) -> proto::MobileRewardShare {
-    let boosted_hexes = coverage_points
-        .covered_hexes
-        .iter()
-        .filter(|hex| hex.boosted_multiplier.is_some())
-        .map(|covered_hex| proto::BoostedHex {
-            location: covered_hex.hex.into_raw(),
-            multiplier: covered_hex.boosted_multiplier.unwrap().to_u32().unwrap(),
-        })
-        .collect();
-
-    let to_proto_value = |value: Decimal| (value * dec!(1000)).to_u32().unwrap_or_default();
-    let location_trust_score_multiplier = to_proto_value(coverage_points.location_trust_multiplier);
-    let speedtest_multiplier = to_proto_value(coverage_points.speedtest_multiplier);
-    let coverage_points = coverage_points
-        .hex_coverage_points
-        .to_u64()
-        .unwrap_or_default();
-
-    let coverage_object = Vec::from(coverage_object_uuid.into_bytes());
-
-    proto::MobileRewardShare {
-        start_period,
-        end_period,
-        reward: Some(proto::mobile_reward_share::Reward::RadioReward(
-            proto::RadioReward {
-                hotspot_key: hotspot_key.clone().into(),
-                cbsd_id: cbsd_id.unwrap_or_default(),
-                poc_reward,
-                coverage_points,
-                seniority_timestamp: seniority_timestamp.encode_timestamp(),
-                coverage_object,
-                location_trust_score_multiplier,
-                speedtest_multiplier,
-                boosted_hexes,
-                ..Default::default()
-            },
-        )),
-    }
-}
-
-#[derive(Debug)]
-pub struct CoveragePoints {
-    // coverage_points: HashMap<PublicKeyBinary, HotspotPoints>,
-    coverage_points: CoveragePoints2,
-}
-
-impl CoveragePoints {
-    pub async fn aggregate_points(
-        hex_streams: &impl CoveredHexStream,
-        heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
-        speedtests: &SpeedtestAverages,
-        boosted_hexes: &BoostedHexes,
-        verified_radio_thresholds: &VerifiedRadioThresholds,
-        reward_period: &Range<DateTime<Utc>>,
-    ) -> anyhow::Result<Self> {
-        let coverage_points = CoveragePoints2::new(
-            hex_streams,
-            heartbeats,
-            speedtests.clone(),
-            boosted_hexes.clone(),
-            verified_radio_thresholds.clone(),
-            reward_period,
-        )
-        .await?;
-        Ok(Self { coverage_points })
-    }
+    // ===============================================================
 
     /// Only used for testing
     pub async fn hotspot_points(&mut self, hotspot: &RadioId) -> Decimal {
-        self.coverage_points
-            .coverage_points(hotspot)
+        self.coverage_points(hotspot)
             .await
             .expect("coverage points for hotspot")
             .total_coverage_points
@@ -693,17 +670,13 @@ impl CoveragePoints {
         available_poc_rewards: Decimal,
         epoch: &'_ Range<DateTime<Utc>>,
     ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_> {
-        let radio_ids = self
-            .coverage_points
-            .all_radio_ids()
-            .await
-            .expect("radio ids");
+        let radio_ids = self.all_radio_ids().await.expect("radio ids");
 
         let mut total_shares: Decimal = dec!(0);
 
         let mut processed_radios = vec![];
         for id in radio_ids {
-            let points_res = self.coverage_points.coverage_points(&id).await;
+            let points_res = self.coverage_points(&id).await;
             let points = match points_res {
                 Ok(points) => points,
                 Err(err) => {
@@ -712,12 +685,8 @@ impl CoveragePoints {
                 }
             };
 
-            let seniority = self
-                .coverage_points
-                .get_seniority(&id)
-                .expect("seniority timestamp");
+            let seniority = self.get_seniority(&id).expect("seniority timestamp");
             let coverage_object_uuid = self
-                .coverage_points
                 .get_coverage_object_uuid(&id)
                 .expect("coverage_object_uuid");
 
@@ -2240,15 +2209,13 @@ mod test {
         );
 
         let coverage_points = CoveragePoints {
-            coverage_points: CoveragePoints2 {
-                coverage_map,
-                verified_radio_thresholds: VerifiedRadioThresholds::default(),
-                speedtest_averages,
-                seniority_timestamps,
-                trust_scores,
-                radio_types,
-                coverage_obj_uuid,
-            },
+            coverage_map,
+            verified_radio_thresholds: VerifiedRadioThresholds::default(),
+            speedtest_averages,
+            seniority_timestamps,
+            trust_scores,
+            radio_types,
+            coverage_obj_uuid,
         };
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
         // gw2 does not have enough speedtests for a mulitplier
@@ -2272,16 +2239,14 @@ mod test {
         let now = Utc::now();
         let epoch = now - Duration::hours(1)..now;
         let coverage_points = CoveragePoints {
-            coverage_points: CoveragePoints2 {
-                coverage_map: coverage_map::CoverageMapBuilder::default()
-                    .build(&BoostedHexes::default(), epoch.start),
-                verified_radio_thresholds: VerifiedRadioThresholds::default(),
-                speedtest_averages: SpeedtestAverages::default(),
-                seniority_timestamps: HashMap::new(),
-                trust_scores: HashMap::new(),
-                radio_types: HashMap::new(),
-                coverage_obj_uuid: HashMap::new(),
-            },
+            coverage_map: coverage_map::CoverageMapBuilder::default()
+                .build(&BoostedHexes::default(), epoch.start),
+            verified_radio_thresholds: VerifiedRadioThresholds::default(),
+            speedtest_averages: SpeedtestAverages::default(),
+            seniority_timestamps: HashMap::new(),
+            trust_scores: HashMap::new(),
+            radio_types: HashMap::new(),
+            coverage_obj_uuid: HashMap::new(),
         };
 
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
