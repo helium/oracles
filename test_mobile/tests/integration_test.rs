@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
         .submit_speedtest(hours_ago(1), 500_000_000, 500_000_000, 25)
         .await?;
 
-    // giving time for submit_coverage_object FIXME
+    // FIXME: giving time for submit_coverage_object
     let _ = tokio::time::sleep(Duration::from_secs(60)).await;
 
     for x in (1..=24).rev() {
