@@ -421,10 +421,8 @@ pub fn coverage_point_to_mobile_reward_share(
     let to_proto_value = |value: Decimal| (value * dec!(1000)).to_u32().unwrap_or_default();
     let location_trust_score_multiplier = to_proto_value(coverage_points.location_trust_multiplier);
     let speedtest_multiplier = to_proto_value(coverage_points.speedtest_multiplier);
-    let coverage_points = coverage_points
-        .hex_coverage_points
-        .to_u64()
-        .unwrap_or_default();
+
+    let coverage_points = coverage_points.total_coverage_points;
 
     let coverage_object = Vec::from(coverage_object_uuid.into_bytes());
 
