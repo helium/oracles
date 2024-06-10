@@ -210,7 +210,7 @@ where
 /// the starting point of the range can be adjusted based on the value of the environment variable.
 fn process_file_epoch(timestamp: DateTime<Utc>) -> Range<DateTime<Utc>> {
     let default = (timestamp - Duration::hours(3))..(timestamp + Duration::minutes(30));
-    if cfg!(feature = "test") && std::env::var("PROCESS_FILE_EPOCH_MIN").is_ok() {
+    if cfg!(feature = "mobile-test") && std::env::var("PROCESS_FILE_EPOCH_MIN").is_ok() {
         let str = std::env::var("PROCESS_FILE_EPOCH_MIN").unwrap();
         tracing::debug!("using PROCESS_FILE_EPOCH_MIN={str} and timestamp={timestamp}");
         match str.parse::<i64>() {

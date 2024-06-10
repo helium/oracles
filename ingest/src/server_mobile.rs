@@ -494,7 +494,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 /// it returns the current time in milliseconds since the Unix epoch.
 ///
 fn maybe_honor_timestamp(timestamp: u64) -> u64 {
-    if cfg!(feature = "test") && std::env::var("HONOR_TIMESTAMP").is_ok() {
+    if cfg!(feature = "mobile-test") && std::env::var("HONOR_TIMESTAMP").is_ok() {
         let str = std::env::var("HONOR_TIMESTAMP").unwrap();
         tracing::debug!("using HONOR_TIMESTAMP={str} and timestamp={timestamp}");
         match str.as_str() {

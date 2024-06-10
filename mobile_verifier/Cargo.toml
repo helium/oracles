@@ -63,4 +63,4 @@ hex-assignments = { path = "../hex_assignments" }
 backon = "0"
 
 [features]
-test = []
+mobile-test = []

@@ -41,7 +41,7 @@ RUN sed -i \
     Cargo.toml
 
 # Build releases
-RUN cargo build --features "ingest/test,mobile-verifier/test" --release
+RUN cargo build --features "ingest/mobile-test,mobile-verifier/mobile-test" --release
 
 # Package Runners
 FROM debian:bookworm-slim
