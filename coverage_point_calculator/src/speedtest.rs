@@ -12,16 +12,18 @@ type Millis = u32;
 pub struct BytesPs(u64);
 
 impl BytesPs {
+    const BYTES_PER_MEGABYTE: u64 = 125_000;
+
     pub fn new(bytes_per_second: u64) -> Self {
         Self(bytes_per_second)
     }
 
     pub fn mbps(megabytes_per_second: u64) -> Self {
-        Self(megabytes_per_second * 12500)
+        Self(megabytes_per_second * Self::BYTES_PER_MEGABYTE)
     }
 
     fn as_mbps(&self) -> u64 {
-        self.0 / 12500
+        self.0 / Self::BYTES_PER_MEGABYTE
     }
 }
 
@@ -229,6 +231,17 @@ mod tests {
 
         // Old speedtests should be unused
         assert_eq!(dec!(1), multiplier(&speedtests));
+    }
+
+    #[test]
+    fn test_real_bytes_per_second() {
+        // Random sampling from database for a download speed that should be
+        // "Acceptable". Other situational tests go through the ::mbps()
+        // constructor, so will always be consistent with each other.
+        assert_eq!(
+            SpeedtestTier::Acceptable,
+            SpeedtestTier::from_download(BytesPs::new(11_702_687))
+        );
     }
 
     fn date(year: i32, month: u32, day: u32) -> DateTime<Utc> {
