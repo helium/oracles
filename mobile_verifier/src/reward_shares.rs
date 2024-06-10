@@ -449,6 +449,16 @@ pub fn coverage_point_to_mobile_reward_share(
 }
 
 #[derive(Debug)]
+struct RadioInfo {
+    radio_type: coverage_point_calculator::RadioType,
+    coverage_obj_uuid: Uuid,
+    indoor: bool,
+    trust_scores: Vec<coverage_point_calculator::LocationTrust>,
+    seniority_timestamps: Vec<Seniority>,
+    coverage: Vec<HexCoverage>,
+}
+
+#[derive(Debug)]
 pub struct CoveragePoints {
     coverage_map: coverage_map::CoverageMap,
     //
@@ -458,6 +468,8 @@ pub struct CoveragePoints {
     seniority_timestamps: HashMap<RadioId, Vec<Seniority>>,
     radio_types: HashMap<RadioId, coverage_point_calculator::RadioType>,
     coverage_obj_uuid: HashMap<RadioId, Uuid>,
+    //
+    radio_infos: HashMap<RadioId, RadioInfo>,
 }
 
 impl CoveragePoints {
@@ -473,50 +485,42 @@ impl CoveragePoints {
         let boosted_hexes = boosted_hexes.clone();
         let verified_radio_thresholds = verified_radio_thresholds.clone();
 
-        let mut coverage_hash_map: HashMap<RadioId, Vec<HexCoverage>> = HashMap::new();
-        let mut trust_scores: HashMap<RadioId, Vec<coverage_point_calculator::LocationTrust>> =
+        let trust_scores: HashMap<RadioId, Vec<coverage_point_calculator::LocationTrust>> =
             HashMap::new();
-        let mut coverage_obj_uuid: HashMap<RadioId, Uuid> = HashMap::new();
-        let mut seniority_timestamps: HashMap<RadioId, Vec<Seniority>> = HashMap::new();
-        let mut radio_types: HashMap<RadioId, coverage_point_calculator::RadioType> =
-            HashMap::new();
+        let coverage_obj_uuid: HashMap<RadioId, Uuid> = HashMap::new();
+        let seniority_timestamps: HashMap<RadioId, Vec<Seniority>> = HashMap::new();
+        let radio_types: HashMap<RadioId, coverage_point_calculator::RadioType> = HashMap::new();
+
+        let mut radio_infos: HashMap<RadioId, RadioInfo> = HashMap::new();
 
         let mut heartbeats = std::pin::pin!(heartbeats);
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             let pubkey = heartbeat.hotspot_key.clone();
-            let heartbeat_key = heartbeat.key().clone();
+            let heartbeat_key = heartbeat.key();
             let cbsd_id = heartbeat_key.to_owned().into_cbsd_id();
             let key = (pubkey.clone(), cbsd_id.clone());
 
             let seniority = hex_streams
                 .fetch_seniority(heartbeat_key, reward_period.end)
                 .await?;
-            seniority_timestamps
-                .entry(key.clone())
-                .or_default()
-                .push(seniority.clone());
 
-            trust_scores
-                .entry(key.clone())
-                .or_default()
-                .extend(make_heartbeat_trust_scores(&heartbeat));
+            let (is_indoor, covered_hexes) = {
+                let covered_hexes_stream = hex_streams
+                    .covered_hex_stream(heartbeat_key, &heartbeat.coverage_object, &seniority)
+                    .await?;
 
-            coverage_obj_uuid.insert(key.clone(), heartbeat.coverage_object);
+                let mut covered_hexes = vec![];
 
-            let covered_hexes_stream = hex_streams
-                .covered_hex_stream(heartbeat_key, &heartbeat.coverage_object, &seniority)
-                .await?;
+                // FIXME: Is there a way to make is_indoor look nicer?
+                let mut is_indoor = false;
+                let mut covered_hexes_stream = std::pin::pin!(covered_hexes_stream);
+                while let Some(hex_coverage) = covered_hexes_stream.next().await.transpose()? {
+                    is_indoor = hex_coverage.indoor;
+                    covered_hexes.push(hex_coverage);
+                }
 
-            // FIXME: Is there a way to make is_indoor look nicer?
-            let mut is_indoor = false;
-            let mut covered_hexes = std::pin::pin!(covered_hexes_stream);
-            while let Some(hex_coverage) = covered_hexes.next().await.transpose()? {
-                is_indoor = hex_coverage.indoor;
-                coverage_hash_map
-                    .entry(key.clone())
-                    .or_default()
-                    .push(hex_coverage);
-            }
+                (is_indoor, covered_hexes)
+            };
 
             let radio_type = match (is_indoor, cbsd_id.is_some()) {
                 (true, false) => coverage_point_calculator::RadioType::IndoorWifi,
@@ -524,28 +528,37 @@ impl CoveragePoints {
                 (false, false) => coverage_point_calculator::RadioType::OutdoorWifi,
                 (false, true) => coverage_point_calculator::RadioType::OutdoorCbrs,
             };
-            radio_types.insert(key.clone(), radio_type);
+
+            let radio_info = radio_infos.entry(key).or_insert_with(|| RadioInfo {
+                radio_type,
+                coverage_obj_uuid: heartbeat.coverage_object,
+                indoor: is_indoor,
+                trust_scores: vec![],
+                seniority_timestamps: vec![],
+                coverage: vec![],
+            });
+
+            radio_info
+                .trust_scores
+                .extend(make_heartbeat_trust_scores(&heartbeat));
+            radio_info.seniority_timestamps.push(seniority);
+            radio_info.coverage.extend(covered_hexes);
         }
 
         let coverage_map = {
             let mut coverage_map_builder = coverage_map::CoverageMapBuilder::default();
-            for (key, coverage) in &coverage_hash_map {
+            for (key, radio_info) in &radio_infos {
                 let seniority = {
-                    let mut seniorities = seniority_timestamps
-                        .get(&key)
-                        .expect("seniority gauranteed")
-                        .clone();
+                    let mut seniorities = radio_info.seniority_timestamps.clone();
                     seniorities.sort_by_key(|s| s.seniority_ts);
                     let first = seniorities.first().cloned();
                     first.expect("seniority gauranteed")
                 };
 
-                let is_indoor = coverage.first().unwrap().indoor;
-                let (pubkey, cbsd_id) = &key;
-
-                let coverage = coverage
+                let coverage = radio_info
+                    .coverage
+                    .clone()
                     .into_iter()
-                    .cloned()
                     .map(|hex_coverage| coverage_map::UnrankedCoverage {
                         location: hex_coverage.hex,
                         signal_power: hex_coverage.signal_power,
@@ -555,14 +568,15 @@ impl CoveragePoints {
                     .collect();
 
                 let coverage_obj = coverage_map::CoverageObject {
-                    indoor: is_indoor,
-                    hotspot_key: pubkey.clone().into(),
-                    cbsd_id: cbsd_id.clone(),
+                    indoor: radio_info.indoor,
+                    hotspot_key: key.0.clone().into(),
+                    cbsd_id: key.1.clone(),
                     seniority_timestamp: seniority.seniority_ts,
                     coverage,
                 };
                 coverage_map_builder.insert_coverage_object(coverage_obj);
             }
+
             coverage_map_builder.build(&boosted_hexes, reward_period.start)
         };
 
@@ -574,6 +588,7 @@ impl CoveragePoints {
             seniority_timestamps,
             radio_types,
             coverage_obj_uuid,
+            radio_infos,
         })
     }
 
@@ -584,7 +599,7 @@ impl CoveragePoints {
             Some(cbsd_id) => self.coverage_map.get_cbrs_coverage(cbsd_id),
             None => self.coverage_map.get_wifi_coverage(pubkey.as_ref()),
         };
-        ranked_coverage.to_vec().into_iter().collect()
+        ranked_coverage.to_vec()
     }
 
     pub async fn all_radio_ids(&mut self) -> anyhow::Result<Vec<RadioId>> {
@@ -636,14 +651,14 @@ impl CoveragePoints {
             });
         }
 
-        let radio_type = self.radio_type(&radio_id);
+        let radio_type = self.radio_type(radio_id);
         let trust_scores = self
             .trust_scores
-            .get(&radio_id)
+            .get(radio_id)
             .expect("trust scores")
             .clone();
-        let verified = self.radio_threshold_verified(&radio_id);
-        let hexes = self.radio_hexes(&radio_id);
+        let verified = self.radio_threshold_verified(radio_id);
+        let hexes = self.radio_hexes(radio_id);
 
         let coverage_points = coverage_point_calculator::CoveragePoints::new(
             radio_type,
