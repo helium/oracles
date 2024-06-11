@@ -57,7 +57,7 @@
 pub use crate::{
     hexes::CoveredHex,
     location::LocationTrust,
-    speedtest::{BytesPs, Speedtest},
+    speedtest::{BytesPs, Speedtest, SpeedtestTier},
 };
 use coverage_map::SignalLevel;
 use rust_decimal::Decimal;
