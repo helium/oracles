@@ -58,7 +58,7 @@ pub use crate::{
     speedtest::{BytesPs, Speedtest},
 };
 use coverage_map::SignalLevel;
-use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 mod hexes;
@@ -88,13 +88,27 @@ pub enum Error {
 ///   have no boosted_multiplier values.
 #[derive(Debug, Clone)]
 pub struct CoveragePoints {
-    /// Value used when calculating poc_reward
+    /// Total Rewards Shares earned by the Radio.
+    ///
+    /// Includes Coverage and Backhaul.
+    /// Hex Coverage points * location trust multiplier * speedtest trust multiplier
+    pub reward_shares: Decimal,
+    /// Total Points of Coverage for a Radio.
+    ///
+    /// Does not include Backhaul.
+    /// Hex coverage points * location trust multiplier
     pub total_coverage_points: Decimal,
     /// Coverage Points collected from each Covered Hex
+    ///
+    /// Before location trust multiplier is applied.
     pub hex_coverage_points: Decimal,
     /// Location Trust Multiplier, maximum of 1
+    ///
+    /// Coverage trust of a Radio
     pub location_trust_multiplier: Decimal,
     /// Speedtest Mulitplier, maximum of 1
+    ///
+    /// Backhaul of a Radio
     pub speedtest_multiplier: Decimal,
     /// Input Radio Type
     pub radio_type: RadioType,
@@ -104,9 +118,9 @@ pub struct CoveragePoints {
     pub boosted_hex_eligibility: BoostedHexStatus,
     /// Speedtests used in calculcation
     pub speedtests: Vec<Speedtest>,
-    /// Locaiton Trust Scores used in calculations
+    /// Location Trust Scores used in calculation
     pub location_trust_scores: Vec<LocationTrust>,
-    /// Covered Hexes used in calculations
+    /// Covered Hexes used in calculation
     pub covered_hexes: Vec<CoveredHex>,
 }
 
@@ -131,12 +145,23 @@ impl CoveragePoints {
         let speedtests = speedtest::clean_speedtests(speedtests);
         let speedtest_multiplier = speedtest::multiplier(&speedtests);
 
-        let coverage_points =
-            hex_coverage_points * location_trust_multiplier * speedtest_multiplier;
+        let reward_shares = hex_coverage_points * location_trust_multiplier * speedtest_multiplier;
+        let total_coverage_points = hex_coverage_points * location_trust_multiplier;
+
+        // Values to be used directly are truncated here.
+        // The values that make them up, go forward untruncated.
+        // let reward_shares = reward_shares.to_u64().unwrap_or_default();
+        // let total_coverage_points = total_coverage_points.to_u64().unwrap_or_default();
+
+        // TODO: poc_reward calculations are done with fractional shares,
+        // truncating shares and points here breaks calculations
+        let reward_shares =
+            reward_shares.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToZero);
         let total_coverage_points =
-            coverage_points.round_dp_with_strategy(2, RoundingStrategy::ToZero);
+            total_coverage_points.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToZero);
 
         Ok(CoveragePoints {
+            reward_shares,
             total_coverage_points,
             hex_coverage_points,
             location_trust_multiplier,
