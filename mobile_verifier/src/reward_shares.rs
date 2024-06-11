@@ -1,5 +1,5 @@
 use crate::{
-    coverage::{CoveredHexStream, HexCoverage, Seniority},
+    coverage::{CoveredHexStream, Seniority},
     data_session::{HotspotMap, ServiceProviderDataSession},
     heartbeats::HeartbeatReward,
     radio_threshold::VerifiedRadioThresholds,
@@ -400,14 +400,14 @@ fn make_heartbeat_trust_scores(
 
 pub fn coverage_point_to_mobile_reward_share(
     coverage_points: coverage_point_calculator::CoveragePoints,
-    start_period: u64,
-    end_period: u64,
-    hotspot_key: &PublicKeyBinary,
-    cbsd_id: Option<String>,
+    reward_epoch: &Range<DateTime<Utc>>,
+    radio_id: &RadioId,
     poc_reward: u64,
     seniority_timestamp: DateTime<Utc>,
     coverage_object_uuid: Uuid,
 ) -> proto::MobileRewardShare {
+    let (hotspot_key, cbsd_id) = radio_id.clone();
+
     let boosted_hexes = coverage_points
         .covered_hexes
         .iter()
@@ -422,16 +422,19 @@ pub fn coverage_point_to_mobile_reward_share(
     let location_trust_score_multiplier = to_proto_value(coverage_points.location_trust_multiplier);
     let speedtest_multiplier = to_proto_value(coverage_points.speedtest_multiplier);
 
-    let coverage_points = coverage_points.total_coverage_points;
+    let coverage_points = coverage_points
+        .total_coverage_points
+        .to_u64()
+        .unwrap_or_default();
 
     let coverage_object = Vec::from(coverage_object_uuid.into_bytes());
 
     proto::MobileRewardShare {
-        start_period,
-        end_period,
+        start_period: reward_epoch.start.encode_timestamp(),
+        end_period: reward_epoch.end.encode_timestamp(),
         reward: Some(proto::mobile_reward_share::Reward::RadioReward(
             proto::RadioReward {
-                hotspot_key: hotspot_key.clone().into(),
+                hotspot_key: hotspot_key.into(),
                 cbsd_id: cbsd_id.unwrap_or_default(),
                 poc_reward,
                 coverage_points,
@@ -446,27 +449,19 @@ pub fn coverage_point_to_mobile_reward_share(
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RadioInfo {
     radio_type: coverage_point_calculator::RadioType,
     coverage_obj_uuid: Uuid,
-    indoor: bool,
+    seniority: Seniority,
     trust_scores: Vec<coverage_point_calculator::LocationTrust>,
-    seniority_timestamps: Vec<Seniority>,
-    coverage: Vec<HexCoverage>,
+    verified_radio_threshold: coverage_point_calculator::RadioThreshold,
+    speedtests: Vec<coverage_point_calculator::Speedtest>,
 }
 
 #[derive(Debug)]
 pub struct CoveragePoints {
     coverage_map: coverage_map::CoverageMap,
-    //
-    verified_radio_thresholds: VerifiedRadioThresholds,
-    speedtest_averages: SpeedtestAverages,
-    trust_scores: HashMap<RadioId, Vec<coverage_point_calculator::LocationTrust>>,
-    seniority_timestamps: HashMap<RadioId, Vec<Seniority>>,
-    radio_types: HashMap<RadioId, coverage_point_calculator::RadioType>,
-    coverage_obj_uuid: HashMap<RadioId, Uuid>,
-    //
     radio_infos: HashMap<RadioId, RadioInfo>,
 }
 
@@ -479,18 +474,10 @@ impl CoveragePoints {
         verified_radio_thresholds: &VerifiedRadioThresholds,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<Self> {
-        let speedtest_averages = speedtests.clone();
-        let boosted_hexes = boosted_hexes.clone();
-        let verified_radio_thresholds = verified_radio_thresholds.clone();
-
-        let trust_scores: HashMap<RadioId, Vec<coverage_point_calculator::LocationTrust>> =
-            HashMap::new();
-        let coverage_obj_uuid: HashMap<RadioId, Uuid> = HashMap::new();
-        let seniority_timestamps: HashMap<RadioId, Vec<Seniority>> = HashMap::new();
-        let radio_types: HashMap<RadioId, coverage_point_calculator::RadioType> = HashMap::new();
-
         let mut radio_infos: HashMap<RadioId, RadioInfo> = HashMap::new();
+        let mut coverage_map_builder = coverage_map::CoverageMapBuilder::default();
 
+        // The heartbearts query is written in a way that each rardio is iterated a single time.
         let mut heartbeats = std::pin::pin!(heartbeats);
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             let pubkey = heartbeat.hotspot_key.clone();
@@ -514,7 +501,12 @@ impl CoveragePoints {
                 let mut covered_hexes_stream = std::pin::pin!(covered_hexes_stream);
                 while let Some(hex_coverage) = covered_hexes_stream.next().await.transpose()? {
                     is_indoor = hex_coverage.indoor;
-                    covered_hexes.push(hex_coverage);
+                    covered_hexes.push(coverage_map::UnrankedCoverage {
+                        location: hex_coverage.hex,
+                        signal_power: hex_coverage.signal_power,
+                        signal_level: hex_coverage.signal_level.into(),
+                        assignments: hex_coverage.assignments,
+                    });
                 }
 
                 (is_indoor, covered_hexes)
@@ -527,136 +519,73 @@ impl CoveragePoints {
                 (false, true) => coverage_point_calculator::RadioType::OutdoorCbrs,
             };
 
-            let radio_info = radio_infos.entry(key).or_insert_with(|| RadioInfo {
-                radio_type,
-                coverage_obj_uuid: heartbeat.coverage_object,
+            coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
                 indoor: is_indoor,
-                trust_scores: vec![],
-                seniority_timestamps: vec![],
-                coverage: vec![],
+                hotspot_key: pubkey.clone().into(),
+                cbsd_id: cbsd_id.clone(),
+                seniority_timestamp: seniority.seniority_ts,
+                coverage: covered_hexes,
             });
 
-            radio_info
-                .trust_scores
-                .extend(make_heartbeat_trust_scores(&heartbeat));
-            radio_info.seniority_timestamps.push(seniority);
-            radio_info.coverage.extend(covered_hexes);
+            use coverage_point_calculator::{BytesPs, Speedtest};
+            let speedtests = speedtests
+                .get_average(&pubkey)
+                .unwrap()
+                .speedtests
+                .iter()
+                .map(|test| Speedtest {
+                    upload_speed: BytesPs::new(test.report.upload_speed),
+                    download_speed: BytesPs::new(test.report.download_speed),
+                    latency_millis: test.report.latency,
+                    timestamp: test.report.timestamp,
+                })
+                .collect();
+
+            let verified_radio_threshold =
+                match verified_radio_thresholds.is_verified(pubkey, cbsd_id) {
+                    true => coverage_point_calculator::RadioThreshold::Verified,
+                    false => coverage_point_calculator::RadioThreshold::Unverified,
+                };
+            radio_infos.insert(
+                key,
+                RadioInfo {
+                    radio_type,
+                    coverage_obj_uuid: heartbeat.coverage_object,
+                    seniority,
+                    trust_scores: make_heartbeat_trust_scores(&heartbeat),
+                    verified_radio_threshold,
+                    speedtests,
+                },
+            );
         }
 
-        let coverage_map = {
-            let mut coverage_map_builder = coverage_map::CoverageMapBuilder::default();
-            for (key, radio_info) in &radio_infos {
-                let seniority = {
-                    let mut seniorities = radio_info.seniority_timestamps.clone();
-                    seniorities.sort_by_key(|s| s.seniority_ts);
-                    let first = seniorities.first().cloned();
-                    first.expect("seniority gauranteed")
-                };
-
-                let coverage = radio_info
-                    .coverage
-                    .clone()
-                    .into_iter()
-                    .map(|hex_coverage| coverage_map::UnrankedCoverage {
-                        location: hex_coverage.hex,
-                        signal_power: hex_coverage.signal_power,
-                        signal_level: hex_coverage.signal_level.into(),
-                        assignments: hex_coverage.assignments,
-                    })
-                    .collect();
-
-                let coverage_obj = coverage_map::CoverageObject {
-                    indoor: radio_info.indoor,
-                    hotspot_key: key.0.clone().into(),
-                    cbsd_id: key.1.clone(),
-                    seniority_timestamp: seniority.seniority_ts,
-                    coverage,
-                };
-                coverage_map_builder.insert_coverage_object(coverage_obj);
-            }
-
-            coverage_map_builder.build(&boosted_hexes, reward_period.start)
-        };
+        let coverage_map = coverage_map_builder.build(boosted_hexes, reward_period.start);
 
         Ok(Self {
             coverage_map,
-            verified_radio_thresholds,
-            speedtest_averages,
-            trust_scores,
-            seniority_timestamps,
-            radio_types,
-            coverage_obj_uuid,
             radio_infos,
         })
     }
 
-    // ===============================================================
-    fn radio_hexes(&self, radio_id: &RadioId) -> Vec<coverage_map::RankedCoverage> {
-        let (pubkey, cbsd_id) = radio_id;
-        let ranked_coverage = match cbsd_id {
-            Some(cbsd_id) => self.coverage_map.get_cbrs_coverage(cbsd_id),
-            None => self.coverage_map.get_wifi_coverage(pubkey.as_ref()),
-        };
-        ranked_coverage.to_vec()
-    }
-
-    pub async fn all_radio_ids(&mut self) -> anyhow::Result<Vec<RadioId>> {
-        Ok(self.radio_types.keys().cloned().collect())
-    }
-
-    pub fn get_seniority(&self, key: &RadioId) -> Option<Seniority> {
-        let mut s = self
-            .seniority_timestamps
-            .get(key)
-            .expect("seniority timestamps")
-            .clone();
-        s.sort_by_key(|f| f.seniority_ts);
-        s.first().cloned()
-    }
-
-    fn radio_type(&self, key: &RadioId) -> coverage_point_calculator::RadioType {
-        self.radio_types.get(key).cloned().expect("radio type")
-    }
-
-    fn radio_threshold_verified(&self, key: &RadioId) -> coverage_point_calculator::RadioThreshold {
-        match self
-            .verified_radio_thresholds
-            .is_verified(key.0.clone(), key.1.clone())
-        {
-            true => coverage_point_calculator::RadioThreshold::Verified,
-            false => coverage_point_calculator::RadioThreshold::Unverified,
-        }
-    }
-
-    fn get_coverage_object_uuid(&self, key: &RadioId) -> Option<Uuid> {
-        self.coverage_obj_uuid.get(key).cloned()
-    }
-
-    pub async fn coverage_points(
-        &mut self,
+    async fn coverage_points(
+        &self,
         radio_id: &RadioId,
+        radio_info: RadioInfo,
     ) -> anyhow::Result<coverage_point_calculator::CoveragePoints> {
-        let mut speedtests = vec![];
-        let pubkey = &radio_id.0;
-        let average = self.speedtest_averages.get_average(pubkey).unwrap();
-        for test in average.speedtests {
-            use coverage_point_calculator::{BytesPs, Speedtest};
-            speedtests.push(Speedtest {
-                upload_speed: BytesPs::new(test.report.upload_speed),
-                download_speed: BytesPs::new(test.report.download_speed),
-                latency_millis: test.report.latency,
-                timestamp: test.report.timestamp,
-            });
-        }
+        let radio_type = radio_info.radio_type;
+        let trust_scores = radio_info.trust_scores;
+        let verified = radio_info.verified_radio_threshold;
+        let speedtests = radio_info.speedtests;
 
-        let radio_type = self.radio_type(radio_id);
-        let trust_scores = self
-            .trust_scores
-            .get(radio_id)
-            .expect("trust scores")
-            .clone();
-        let verified = self.radio_threshold_verified(radio_id);
-        let hexes = self.radio_hexes(radio_id);
+        let hexes = {
+            let this = &self;
+            let (pubkey, cbsd_id) = radio_id;
+            let ranked_coverage = match cbsd_id {
+                Some(cbsd_id) => this.coverage_map.get_cbrs_coverage(cbsd_id),
+                None => this.coverage_map.get_wifi_coverage(pubkey.as_ref()),
+            };
+            ranked_coverage.to_vec()
+        };
 
         let coverage_points = coverage_point_calculator::CoveragePoints::new(
             radio_type,
@@ -672,24 +601,24 @@ impl CoveragePoints {
 
     /// Only used for testing
     pub async fn hotspot_points(&mut self, hotspot: &RadioId) -> Decimal {
-        self.coverage_points(hotspot)
+        let radio = self.radio_infos.get(hotspot).unwrap();
+
+        self.coverage_points(hotspot, radio.clone())
             .await
             .expect("coverage points for hotspot")
             .total_coverage_points
     }
 
     pub async fn into_rewards(
-        mut self,
+        self,
         available_poc_rewards: Decimal,
         epoch: &'_ Range<DateTime<Utc>>,
     ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_> {
-        let radio_ids = self.all_radio_ids().await.expect("radio ids");
-
         let mut total_shares: Decimal = dec!(0);
 
         let mut processed_radios = vec![];
-        for id in radio_ids {
-            let points_res = self.coverage_points(&id).await;
+        for (id, radio_info) in self.radio_infos.iter() {
+            let points_res = self.coverage_points(id, radio_info.clone()).await;
             let points = match points_res {
                 Ok(points) => points,
                 Err(err) => {
@@ -698,13 +627,11 @@ impl CoveragePoints {
                 }
             };
 
-            let seniority = self.get_seniority(&id).expect("seniority timestamp");
-            let coverage_object_uuid = self
-                .get_coverage_object_uuid(&id)
-                .expect("coverage_object_uuid");
+            let seniority = radio_info.seniority.clone();
+            let coverage_object_uuid = radio_info.coverage_obj_uuid;
 
-            total_shares += points.total_coverage_points;
-            processed_radios.push((id, points, seniority, coverage_object_uuid));
+            total_shares += points.reward_shares;
+            processed_radios.push((id.clone(), points, seniority, coverage_object_uuid));
         }
 
         let Some(rewards_per_share) = available_poc_rewards.checked_div(total_shares) else {
@@ -716,18 +643,13 @@ impl CoveragePoints {
             processed_radios
                 .into_iter()
                 .map(move |(id, points, seniority, coverage_object_uuid)| {
-                    let poc_reward = rewards_per_share * points.total_coverage_points;
-                    let poc_reward = poc_reward
-                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                        .to_u64()
-                        .unwrap_or_default();
+                    let poc_reward = rewards_per_share * points.reward_shares;
+                    let poc_reward = poc_reward.to_u64().unwrap_or_default();
 
                     let mobile_reward_share = coverage_point_to_mobile_reward_share(
                         points,
-                        epoch.start.encode_timestamp(),
-                        epoch.end.encode_timestamp(),
-                        &id.0,
-                        id.1,
+                        epoch,
+                        &id,
                         poc_reward,
                         seniority.seniority_ts,
                         coverage_object_uuid,
@@ -2115,63 +2037,6 @@ mod test {
         let uuid_1 = Uuid::new_v4();
         let uuid_2 = Uuid::new_v4();
 
-        let mut radio_types: HashMap<
-            (PublicKeyBinary, Option<String>),
-            coverage_point_calculator::RadioType,
-        > = HashMap::new();
-        radio_types.insert(
-            (gw1.clone(), None),
-            coverage_point_calculator::RadioType::IndoorWifi,
-        );
-        radio_types.insert(
-            (gw2.clone(), None),
-            coverage_point_calculator::RadioType::IndoorWifi,
-        );
-
-        let mut radio_heartbeats = HashMap::<RadioId, Vec<HeartbeatReward>>::new();
-        radio_heartbeats.insert(
-            (gw1.clone(), None),
-            vec![HeartbeatReward {
-                hotspot_key: gw1.clone(),
-                cbsd_id: None,
-                cell_type: CellType::NovaGenericWifiIndoor,
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1)],
-                coverage_object: uuid_1,
-            }],
-        );
-        radio_heartbeats.insert(
-            (gw2.clone(), None),
-            vec![HeartbeatReward {
-                hotspot_key: gw2.clone(),
-                cbsd_id: None,
-                cell_type: CellType::NovaGenericWifiIndoor,
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1)],
-                coverage_object: uuid_2,
-            }],
-        );
-
-        let mut coverage_obj_uuid = HashMap::new();
-        coverage_obj_uuid.insert((gw1.clone(), None), uuid_1);
-        coverage_obj_uuid.insert((gw2.clone(), None), uuid_2);
-
-        let mut trust_scores = HashMap::new();
-        trust_scores.insert(
-            (gw1.clone(), None),
-            vec![coverage_point_calculator::LocationTrust {
-                meters_to_asserted: 0,
-                trust_score: dec!(1),
-            }],
-        );
-        trust_scores.insert(
-            (gw2.clone(), None),
-            vec![coverage_point_calculator::LocationTrust {
-                meters_to_asserted: 0,
-                trust_score: dec!(1),
-            }],
-        );
-
         let mut coverage_map = coverage_map::CoverageMapBuilder::default();
         coverage_map.insert_coverage_object(coverage_map::CoverageObject {
             indoor: true,
@@ -2199,36 +2064,64 @@ mod test {
         });
         let coverage_map = coverage_map.build(&BoostedHexes::default(), epoch.start);
 
-        let mut seniority_timestamps = HashMap::new();
-        seniority_timestamps.insert(
+        let mut radio_infos = HashMap::new();
+        radio_infos.insert(
             (gw1.clone(), None),
-            vec![Seniority {
-                uuid: Uuid::new_v4(),
-                seniority_ts: now.clone(),
-                last_heartbeat: now.clone(),
-                inserted_at: now.clone(),
-                update_reason: 0,
-            }],
+            RadioInfo {
+                radio_type: coverage_point_calculator::RadioType::IndoorWifi,
+                coverage_obj_uuid: uuid_1,
+                trust_scores: vec![coverage_point_calculator::LocationTrust {
+                    meters_to_asserted: 0,
+                    trust_score: dec!(1),
+                }],
+                seniority: Seniority {
+                    uuid: Uuid::new_v4(),
+                    seniority_ts: now.clone(),
+                    last_heartbeat: now.clone(),
+                    inserted_at: now.clone(),
+                    update_reason: 0,
+                },
+                verified_radio_threshold: coverage_point_calculator::RadioThreshold::Verified,
+                speedtests: vec![
+                    coverage_point_calculator::Speedtest {
+                        upload_speed: coverage_point_calculator::BytesPs::new(100_000_000),
+                        download_speed: coverage_point_calculator::BytesPs::new(100_000_000),
+                        latency_millis: 10,
+                        timestamp: now.clone(),
+                    },
+                    coverage_point_calculator::Speedtest {
+                        upload_speed: coverage_point_calculator::BytesPs::new(100_000_000),
+                        download_speed: coverage_point_calculator::BytesPs::new(100_000_000),
+                        latency_millis: 10,
+                        timestamp: now.clone(),
+                    },
+                ],
+            },
         );
-        seniority_timestamps.insert(
+        radio_infos.insert(
             (gw2.clone(), None),
-            vec![Seniority {
-                uuid: Uuid::new_v4(),
-                seniority_ts: now.clone(),
-                last_heartbeat: now.clone(),
-                inserted_at: now.clone(),
-                update_reason: 0,
-            }],
+            RadioInfo {
+                radio_type: coverage_point_calculator::RadioType::IndoorWifi,
+                coverage_obj_uuid: uuid_2,
+                trust_scores: vec![coverage_point_calculator::LocationTrust {
+                    meters_to_asserted: 0,
+                    trust_score: dec!(1),
+                }],
+                seniority: Seniority {
+                    uuid: Uuid::new_v4(),
+                    seniority_ts: now.clone(),
+                    last_heartbeat: now.clone(),
+                    inserted_at: now.clone(),
+                    update_reason: 0,
+                },
+                verified_radio_threshold: coverage_point_calculator::RadioThreshold::Verified,
+                speedtests: vec![],
+            },
         );
 
         let coverage_points = CoveragePoints {
             coverage_map,
-            verified_radio_thresholds: VerifiedRadioThresholds::default(),
-            speedtest_averages,
-            seniority_timestamps,
-            trust_scores,
-            radio_types,
-            coverage_obj_uuid,
+            radio_infos,
         };
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
         // gw2 does not have enough speedtests for a mulitplier
@@ -2254,12 +2147,7 @@ mod test {
         let coverage_points = CoveragePoints {
             coverage_map: coverage_map::CoverageMapBuilder::default()
                 .build(&BoostedHexes::default(), epoch.start),
-            verified_radio_thresholds: VerifiedRadioThresholds::default(),
-            speedtest_averages: SpeedtestAverages::default(),
-            seniority_timestamps: HashMap::new(),
-            trust_scores: HashMap::new(),
-            radio_types: HashMap::new(),
-            coverage_obj_uuid: HashMap::new(),
+            radio_infos: HashMap::new(),
         };
 
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
