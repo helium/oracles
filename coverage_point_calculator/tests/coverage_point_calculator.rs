@@ -404,6 +404,8 @@ impl BoostedHexMap for NoBoostedHexes {
 }
 
 fn speedtests(tier: SpeedtestTier) -> Vec<Speedtest> {
+    // SpeedtestTier is determined solely by upload_speed.
+    // Other values are far surpassing ::Good.
     let upload_speed = BytesPs::mbps(match tier {
         SpeedtestTier::Good => 10,
         SpeedtestTier::Acceptable => 8,
@@ -414,13 +416,13 @@ fn speedtests(tier: SpeedtestTier) -> Vec<Speedtest> {
 
     vec![
         Speedtest {
-            upload_speed: upload_speed.clone(),
+            upload_speed,
             download_speed: BytesPs::mbps(150),
             latency_millis: 0,
             timestamp: Utc::now(),
         },
         Speedtest {
-            upload_speed: upload_speed.clone(),
+            upload_speed,
             download_speed: BytesPs::mbps(150),
             latency_millis: 0,
             timestamp: Utc::now(),
