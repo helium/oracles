@@ -11,6 +11,7 @@
 //!
 //! - [CoveredHex::assignment_multiplier]
 //!   - [HIP-103][oracle-boosting]
+//!     - provider boosted hexes increase oracle boosting to 1x
 //!
 //! - [CoveredHex::rank]
 //!   - [HIP-105][hex-limits]
@@ -40,6 +41,7 @@
 //!
 //! - [CoveredHex]
 //!   - If a Radio is not [BoostedHexStatus::Eligible], boost values are removed before calculations.
+//!   - If a Hex is boosted by a Provider, the Oracle Assignment multiplier is automatically 1x.
 //!
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
 //! [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
@@ -177,12 +179,12 @@ impl BoostedHexStatus {
         location_trust_score: Decimal,
         radio_threshold: &RadioThreshold,
     ) -> Self {
-        // hip93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
+        // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
         if radio_type.is_wifi() && location_trust_score < dec!(0.75) {
             return Self::WifiLocationScoreBelowThreshold(location_trust_score);
         }
 
-        // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
+        // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
         if !radio_threshold.is_met() {
             return Self::RadioThresholdNotMet;
         }
@@ -285,6 +287,36 @@ mod tests {
     use hex_assignments::{assignment::HexAssignments, Assignment};
     use rust_decimal_macros::dec;
 
+    #[rstest]
+    #[case::unboosted(0, dec!(0))]
+    #[case::minimum_boosted(1, dec!(400))]
+    #[case::boosted(5, dec!(2000))]
+    fn hip_103_provider_boost_can_raise_oracle_boost(
+        #[case] boost_multiplier: u32,
+        #[case] expected_points: Decimal,
+    ) {
+        let wifi = CoveragePoints::new(
+            RadioType::IndoorWifi,
+            RadioThreshold::Verified,
+            speedtest_maximum(),
+            location_trust_maximum(),
+            vec![RankedCoverage {
+                hotspot_key: pubkey(),
+                cbsd_id: None,
+                hex: hex_location(),
+                rank: 1,
+                signal_level: SignalLevel::High,
+                assignments: assignments_from(Assignment::C),
+                boosted: NonZeroU32::new(boost_multiplier),
+            }],
+        )
+        .unwrap();
+
+        // A Hex with the worst possible oracle boosting assignment.
+        // The boosting assignment multiplier will be 1x when the hex is provider boosted.
+        assert_eq!(expected_points, wifi.total_coverage_points);
+    }
+
     #[test]
     fn hip_84_radio_meets_minimum_subscriber_threshold_for_boosted_hexes() {
         let calculate_wifi = |radio_verified: RadioThreshold| {
@@ -360,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn speedtest() {
+    fn speedtests_effect_coverage_points() {
         let calculate_indoor_cbrs = |speedtests: Vec<Speedtest>| {
             CoveragePoints::new(
                 RadioType::IndoorCbrs,
@@ -758,6 +790,14 @@ mod tests {
             footfall: Assignment::A,
             landtype: Assignment::A,
             urbanized: Assignment::A,
+        }
+    }
+
+    fn assignments_from(assignment: Assignment) -> HexAssignments {
+        HexAssignments {
+            footfall: assignment,
+            landtype: assignment,
+            urbanized: assignment,
         }
     }
 
