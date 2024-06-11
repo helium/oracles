@@ -148,18 +148,6 @@ impl CoveragePoints {
         let reward_shares = hex_coverage_points * location_trust_multiplier * speedtest_multiplier;
         let total_coverage_points = hex_coverage_points * location_trust_multiplier;
 
-        // Values to be used directly are truncated here.
-        // The values that make them up, go forward untruncated.
-        // let reward_shares = reward_shares.to_u64().unwrap_or_default();
-        // let total_coverage_points = total_coverage_points.to_u64().unwrap_or_default();
-
-        // TODO: poc_reward calculations are done with fractional shares,
-        // truncating shares and points here breaks calculations
-        let reward_shares =
-            reward_shares.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToZero);
-        let total_coverage_points =
-            total_coverage_points.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToZero);
-
         Ok(CoveragePoints {
             reward_shares,
             total_coverage_points,
