@@ -141,7 +141,7 @@ impl CoveragePoints {
             BoostedHexStatus::new(&radio_type, location_trust_multiplier, &radio_threshold);
 
         let covered_hexes =
-            hexes::clean_covered_hexes(radio_type, ranked_coverage, boost_eligibility)?;
+            hexes::clean_covered_hexes(radio_type, boost_eligibility, ranked_coverage)?;
         let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
 
         let speedtests = speedtest::clean_speedtests(speedtests);

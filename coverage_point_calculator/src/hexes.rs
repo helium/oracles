@@ -25,8 +25,8 @@ pub struct CoveredHex {
 
 pub(crate) fn clean_covered_hexes(
     radio_type: RadioType,
-    ranked_coverage: Vec<RankedCoverage>,
     boosted_hex_status: BoostedHexStatus,
+    ranked_coverage: Vec<RankedCoverage>,
 ) -> Result<Vec<CoveredHex>> {
     // verify all hexes can obtain a base coverage point
     let covered_hexes = ranked_coverage
@@ -116,8 +116,8 @@ mod tests {
 
         let covered_hexes = clean_covered_hexes(
             RadioType::IndoorWifi,
-            vec![unboosted_coverage, boosted_coverage],
             boost_status,
+            vec![unboosted_coverage, boosted_coverage],
         )
         .unwrap();
 
