@@ -5,6 +5,7 @@ debug = true
 members = [
   "boost_manager",
   "coverage_map",
+  "coverage_point_calculator",
   "custom_tracing",
   "db_store",
   "denylist",
