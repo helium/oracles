@@ -600,7 +600,7 @@ impl CoveragePoints {
     // ===============================================================
 
     /// Only used for testing
-    pub async fn hotspot_points(&mut self, hotspot: &RadioId) -> Decimal {
+    pub async fn hotspot_points(&self, hotspot: &RadioId) -> Decimal {
         let radio = self.radio_infos.get(hotspot).unwrap();
 
         self.coverage_points(hotspot, radio.clone())
