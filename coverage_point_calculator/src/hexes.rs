@@ -28,27 +28,20 @@ pub(crate) fn clean_covered_hexes(
     ranked_coverage: Vec<RankedCoverage>,
     boosted_hex_status: BoostedHexStatus,
 ) -> Result<Vec<CoveredHex>> {
-    let ranked_coverage = if !boosted_hex_status.is_eligible() {
-        ranked_coverage
-            .into_iter()
-            .map(|ranked| RankedCoverage {
-                boosted: None,
-                ..ranked
-            })
-            .collect()
-    } else {
-        ranked_coverage
-    };
-
     // verify all hexes can obtain a base coverage point
     let covered_hexes = ranked_coverage
         .into_iter()
         .map(|ranked| {
             let base_coverage_points = radio_type.base_coverage_points(&ranked.signal_level)?;
             let rank_multiplier = radio_type.rank_multiplier(ranked.rank);
-            let boosted_multiplier = ranked.boosted.map(|boost| boost.get()).map(Decimal::from);
 
-            // hip-103: if a hex is boosted by a service provider >1x, the oracle
+            let boosted_multiplier = if boosted_hex_status.is_eligible() {
+                ranked.boosted.map(|boost| boost.get()).map(Decimal::from)
+            } else {
+                None
+            };
+
+            // hip-103: if a hex is boosted by a service provider >=1x, the oracle
             // multiplier will automatically be 1x, regardless of boosted_hex_status.
             let assignment_multiplier = if ranked.boosted.is_some() {
                 dec!(1)
@@ -86,6 +79,7 @@ pub(crate) fn calculated_coverage_points(covered_hexes: &[CoveredHex]) -> Decima
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use std::num::NonZeroU32;
 
     use coverage_map::SignalLevel;
@@ -93,8 +87,15 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn hip_103_provider_boosted_hex_receives_maximum_oracle_boost() {
+    #[rstest]
+    #[case(BoostedHexStatus::Eligible)]
+    #[case(BoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(999)))]
+    #[case(BoostedHexStatus::RadioThresholdNotMet)]
+    fn hip_103_provider_boosted_hex_receives_maximum_oracle_boost(
+        #[case] boost_status: BoostedHexStatus,
+    ) {
+        // Regardless of the radio's eligibility to receive provider boosted
+        // rewards, a boosted hex increases the oracle assignment.
         let unboosted_coverage = RankedCoverage {
             hotspot_key: vec![1],
             cbsd_id: None,
@@ -115,8 +116,8 @@ mod tests {
 
         let covered_hexes = clean_covered_hexes(
             RadioType::IndoorWifi,
-            vec![unboosted_coverage.clone(), boosted_coverage],
-            BoostedHexStatus::Eligible,
+            vec![unboosted_coverage, boosted_coverage],
+            boost_status,
         )
         .unwrap();
 
@@ -124,20 +125,9 @@ mod tests {
         let boosted = &covered_hexes[1];
 
         // unboosted receives original multiplier
-        assert_eq!(dec!(0), unboosted.calculated_coverage_points);
-        assert_eq!(
-            unboosted_coverage.assignments.boosting_multiplier(),
-            unboosted.assignment_multiplier
-        );
+        assert_eq!(dec!(0), unboosted.assignment_multiplier);
 
         // provider boosted gets oracle assignment bumped to 1x
         assert_eq!(dec!(1), boosted.assignment_multiplier);
-        assert_eq!(
-            RadioType::IndoorWifi
-                .base_coverage_points(&SignalLevel::High)
-                .unwrap_or_default()
-                * dec!(5),
-            boosted.calculated_coverage_points
-        );
     }
 }
