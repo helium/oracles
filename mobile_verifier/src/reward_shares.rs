@@ -671,15 +671,13 @@ pub fn get_scheduled_tokens_for_oracles(duration: Duration) -> Decimal {
 
 #[cfg(test)]
 mod test {
-    #![allow(unused)]
 
     use super::*;
     use hex_assignments::{assignment::HexAssignments, Assignment};
-    use mobile_config::boosted_hex_info::BoostedHex;
 
     use crate::{
         cell_type::CellType,
-        coverage::{CoverageRewardPoints, CoveredHexStream, HexCoverage, Seniority},
+        coverage::{CoveredHexStream, HexCoverage, Seniority},
         data_session::{self, HotspotDataSession, HotspotReward},
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
         reward_shares,
@@ -695,117 +693,8 @@ mod test {
     };
     use hextree::Cell;
     use prost::Message;
-    use std::{collections::HashMap, num::NonZeroU32};
+    use std::collections::HashMap;
     use uuid::Uuid;
-
-    #[derive(Debug)]
-    struct CoverageRewardPointsWithMultiplier {
-        coverage_points: CoverageRewardPoints,
-        boosted_hex: BoostedHex,
-    }
-
-    #[derive(Debug)]
-    struct RadioPoints {
-        location_trust_score_multiplier: Decimal,
-        coverage_object: Uuid,
-        seniority: DateTime<Utc>,
-        // Boosted hexes are included in CoverageRewardPointsWithMultiplier,
-        // this gets included in the radio reward share proto
-        reward_points: Vec<CoverageRewardPointsWithMultiplier>,
-    }
-
-    impl RadioPoints {
-        fn new(
-            location_trust_score_multiplier: Decimal,
-            coverage_object: Uuid,
-            seniority: DateTime<Utc>,
-        ) -> Self {
-            Self {
-                location_trust_score_multiplier,
-                seniority,
-                coverage_object,
-                reward_points: vec![],
-            }
-        }
-
-        fn hex_points(&self) -> Decimal {
-            self.reward_points
-                .iter()
-                .map(|c| c.coverage_points.points() * Decimal::from(c.boosted_hex.multiplier.get()))
-                .sum::<Decimal>()
-        }
-
-        fn coverage_points(&self) -> Decimal {
-            let coverage_points = self.hex_points();
-            (self.location_trust_score_multiplier * coverage_points).max(Decimal::ZERO)
-        }
-
-        fn poc_reward(&self, reward_per_share: Decimal, speedtest_multiplier: Decimal) -> Decimal {
-            reward_per_share * speedtest_multiplier * self.coverage_points()
-        }
-    }
-
-    // pub type HotspotBoostedHexes = HashMap<u64, u32>;
-
-    #[derive(Debug, Default)]
-    struct HotspotPoints {
-        /// Points are multiplied by the multiplier to get shares.
-        /// Multiplier should never be zero.
-        speedtest_multiplier: Decimal,
-        radio_points: HashMap<Option<String>, RadioPoints>,
-    }
-
-    impl HotspotPoints {
-        pub fn add_coverage_entry(
-            &mut self,
-            radio_key: OwnedKeyType,
-            hotspot: PublicKeyBinary,
-            points: CoverageRewardPoints,
-            boosted_hex_info: BoostedHex,
-            verified_radio_thresholds: &VerifiedRadioThresholds,
-        ) {
-            let cbsd_id = radio_key.clone().into_cbsd_id();
-            let rp = self.radio_points.get_mut(&cbsd_id).unwrap();
-            // need to consider requirements from hip93 & hip84 before applying any boost
-            // hip93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
-            // hip84: if radio has not met minimum data and subscriber thresholds, no boosting
-            let final_boost_info = if radio_key.is_wifi()
-                && rp.location_trust_score_multiplier < dec!(0.75)
-                || !verified_radio_thresholds.is_verified(hotspot, cbsd_id)
-            {
-                BoostedHex {
-                    location: boosted_hex_info.location,
-                    multiplier: NonZeroU32::new(1).unwrap(),
-                }
-            } else {
-                boosted_hex_info
-            };
-
-            rp.reward_points.push(CoverageRewardPointsWithMultiplier {
-                coverage_points: points,
-                boosted_hex: final_boost_info,
-            });
-        }
-    }
-
-    impl HotspotPoints {
-        pub fn new(speedtest_multiplier: Decimal) -> Self {
-            Self {
-                speedtest_multiplier,
-                radio_points: HashMap::new(),
-            }
-        }
-    }
-
-    impl HotspotPoints {
-        pub fn total_points(&self) -> Decimal {
-            self.speedtest_multiplier
-                * self
-                    .radio_points
-                    .values()
-                    .fold(Decimal::ZERO, |sum, radio| sum + radio.coverage_points())
-        }
-    }
 
     fn hex_assignments_mock() -> HexAssignments {
         HexAssignments {
@@ -1970,56 +1859,8 @@ mod test {
             .parse()
             .expect("failed gw2 parse");
 
-        let c1 = "P27-SCE4255W2107CW5000014".to_string();
-        let c2 = "P27-SCE4255W2107CW5000015".to_string();
-        let c3 = "2AG32PBS3101S1202000464223GY0153".to_string();
-
         let now = Utc::now();
         let epoch = now - Duration::hours(1)..now;
-        // We should never see any radio shares from owner2, since all of them are
-        // less than or equal to zero.
-        let speedtest_averages = SpeedtestAverages {
-            averages: HashMap::from_iter([
-                (
-                    gw1.clone(),
-                    SpeedtestAverage::from(vec![
-                        Speedtest {
-                            report: CellSpeedtest {
-                                pubkey: gw1.clone(),
-                                serial: "serial-1".to_string(),
-                                timestamp: now,
-                                upload_speed: 100_000_000,
-                                download_speed: 100_000_000,
-                                latency: 10,
-                            },
-                        },
-                        Speedtest {
-                            report: CellSpeedtest {
-                                pubkey: gw1.clone(),
-                                serial: "serial-1".to_string(),
-                                timestamp: now,
-                                upload_speed: 100_000_000,
-                                download_speed: 100_000_000,
-                                latency: 10,
-                            },
-                        },
-                    ]),
-                ),
-                (
-                    gw2.clone(),
-                    SpeedtestAverage::from(vec![Speedtest {
-                        report: CellSpeedtest {
-                            pubkey: gw2.clone(),
-                            serial: "serial-2".to_string(),
-                            timestamp: now,
-                            upload_speed: 100_000_000,
-                            download_speed: 100_000_000,
-                            latency: 10,
-                        },
-                    }]),
-                ),
-            ]),
-        };
 
         let uuid_1 = Uuid::new_v4();
         let uuid_2 = Uuid::new_v4();
