@@ -439,12 +439,12 @@ struct RadioInfo {
 }
 
 #[derive(Debug)]
-pub struct CoveragePoints {
+pub struct CoverageShares {
     coverage_map: coverage_map::CoverageMap,
     radio_infos: HashMap<RadioId, RadioInfo>,
 }
 
-impl CoveragePoints {
+impl CoverageShares {
     pub async fn new(
         hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
@@ -1369,7 +1369,7 @@ mod test {
         let mut allocated_poc_rewards = 0_u64;
 
         let epoch = (now - Duration::hours(1))..now;
-        for (reward_amount, mobile_reward) in CoveragePoints::new(
+        for (reward_amount, mobile_reward) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1541,7 +1541,7 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
-        for (_reward_amount, mobile_reward) in CoveragePoints::new(
+        for (_reward_amount, mobile_reward) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1671,7 +1671,7 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
-        for (_reward_amount, mobile_reward) in CoveragePoints::new(
+        for (_reward_amount, mobile_reward) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1801,7 +1801,7 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
-        for (_reward_amount, mobile_reward) in CoveragePoints::new(
+        for (_reward_amount, mobile_reward) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1941,7 +1941,7 @@ mod test {
             },
         );
 
-        let coverage_points = CoveragePoints {
+        let coverage_points = CoverageShares {
             coverage_map,
             radio_infos,
         };
@@ -1965,7 +1965,7 @@ mod test {
     async fn skip_empty_radio_rewards() {
         let now = Utc::now();
         let epoch = now - Duration::hours(1)..now;
-        let coverage_points = CoveragePoints {
+        let coverage_points = CoverageShares {
             coverage_map: coverage_map::CoverageMapBuilder::default()
                 .build(&BoostedHexes::default(), epoch.start),
             radio_infos: HashMap::new(),

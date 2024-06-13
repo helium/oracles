@@ -3,7 +3,7 @@ use crate::{
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
     radio_threshold,
-    reward_shares::{self, CoveragePoints, MapperShares, ServiceProviderShares, TransferRewards},
+    reward_shares::{self, CoverageShares, MapperShares, ServiceProviderShares, TransferRewards},
     speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, telemetry, Settings,
@@ -401,7 +401,7 @@ async fn reward_poc(
     let verified_radio_thresholds =
         radio_threshold::verified_radio_thresholds(pool, reward_period).await?;
 
-    let coverage_points = CoveragePoints::new(
+    let coverage_points = CoverageShares::new(
         pool,
         heartbeats,
         &speedtest_averages,

@@ -22,7 +22,7 @@ use mobile_verifier::{
         ValidatedHeartbeat,
     },
     radio_threshold::VerifiedRadioThresholds,
-    reward_shares::CoveragePoints,
+    reward_shares::CoverageShares,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     GatewayResolution, GatewayResolver,
@@ -400,7 +400,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let heartbeats = HeartbeatReward::validated(&pool, &epoch);
-    let coverage_points = CoveragePoints::new(
+    let coverage_points = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
