@@ -564,11 +564,10 @@ impl CoveragePoints {
         let radio_info = self.radio_infos.get(radio_id).unwrap();
 
         let hexes = {
-            let this = &self;
             let (pubkey, cbsd_id) = radio_id;
             let ranked_coverage = match cbsd_id {
-                Some(cbsd_id) => this.coverage_map.get_cbrs_coverage(cbsd_id),
-                None => this.coverage_map.get_wifi_coverage(pubkey.as_ref()),
+                Some(cbsd_id) => self.coverage_map.get_cbrs_coverage(cbsd_id),
+                None => self.coverage_map.get_wifi_coverage(pubkey.as_ref()),
             };
             ranked_coverage.to_vec()
         };
