@@ -448,7 +448,7 @@ impl CoverageShares {
     pub async fn new(
         hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
-        speedtests: &SpeedtestAverages,
+        speedtest_averages: &SpeedtestAverages,
         boosted_hexes: &BoostedHexes,
         verified_radio_thresholds: &VerifiedRadioThresholds,
         reward_period: &Range<DateTime<Utc>>,
@@ -507,7 +507,7 @@ impl CoverageShares {
             });
 
             use coverage_point_calculator::{BytesPs, Speedtest};
-            let speedtests = speedtests
+            let speedtests = speedtest_averages
                 .get_average(&pubkey)
                 .unwrap()
                 .speedtests
