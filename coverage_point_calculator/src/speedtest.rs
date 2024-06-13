@@ -2,8 +2,8 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-pub const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
-pub const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
+const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
+const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
 
 type Millis = u32;
 
@@ -53,14 +53,32 @@ pub struct Speedtest {
 }
 
 impl Speedtest {
-    /// Construct a maximally acceptable speedtest for mocking
-    pub fn mock() -> Self {
-        Self {
-            upload_speed: BytesPs::mbps(MIN_GOOD_UPLOAD_SPEED_MBPS),
-            download_speed: BytesPs::mbps(MIN_GOOD_DOWNLOAD_SPEED_MBPS),
-            latency_millis: BEST_LATENCY,
-            timestamp: Utc::now(),
-        }
+    /// Construct the minimum required speedtests for a given tier
+    pub fn mock(tier: SpeedtestTier) -> Vec<Speedtest> {
+        // SpeedtestTier is determined solely by upload_speed.
+        // Other values are far surpassing ::Good.
+        let upload_speed = BytesPs::mbps(match tier {
+            SpeedtestTier::Good => 10,
+            SpeedtestTier::Acceptable => 8,
+            SpeedtestTier::Degraded => 5,
+            SpeedtestTier::Poor => 2,
+            SpeedtestTier::Fail => 0,
+        });
+
+        vec![
+            Speedtest {
+                upload_speed,
+                download_speed: BytesPs::mbps(150),
+                latency_millis: 0,
+                timestamp: Utc::now(),
+            },
+            Speedtest {
+                upload_speed,
+                download_speed: BytesPs::mbps(150),
+                latency_millis: 0,
+                timestamp: Utc::now(),
+            },
+        ]
     }
 
     pub fn multiplier(&self) -> Decimal {
@@ -102,10 +120,6 @@ pub enum SpeedtestTier {
     Fail = 0,
 }
 
-const MIN_GOOD_DOWNLOAD_SPEED_MBPS: u64 = 100;
-const MIN_GOOD_UPLOAD_SPEED_MBPS: u64 = 10;
-const BEST_LATENCY: Millis = 0;
-
 impl SpeedtestTier {
     pub fn multiplier(self) -> Decimal {
         match self {
@@ -119,7 +133,7 @@ impl SpeedtestTier {
 
     fn from_download(bytes: BytesPs) -> Self {
         match bytes.as_mbps() {
-            MIN_GOOD_DOWNLOAD_SPEED_MBPS.. => Self::Good,
+            100.. => Self::Good,
             75.. => Self::Acceptable,
             50.. => Self::Degraded,
             30.. => Self::Poor,
@@ -129,7 +143,7 @@ impl SpeedtestTier {
 
     fn from_upload(bytes: BytesPs) -> Self {
         match bytes.as_mbps() {
-            MIN_GOOD_UPLOAD_SPEED_MBPS.. => Self::Good,
+            10.. => Self::Good,
             8.. => Self::Acceptable,
             5.. => Self::Degraded,
             2.. => Self::Poor,
@@ -139,7 +153,7 @@ impl SpeedtestTier {
 
     fn from_latency(millis: Millis) -> Self {
         match millis {
-            BEST_LATENCY..=49 => Self::Good,
+            0..=49 => Self::Good,
             50..=59 => Self::Acceptable,
             60..=74 => Self::Degraded,
             75..=99 => Self::Poor,

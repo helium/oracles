@@ -241,7 +241,7 @@ fn cbrs_outdoor_with_mixed_signal_level_coverage() -> Result {
     let radio = CoveragePoints::new(
         RadioType::OutdoorCbrs,
         RadioThreshold::Verified,
-        speedtests(SpeedtestTier::Good),
+        Speedtest::mock(SpeedtestTier::Good),
         vec![], // Location Trust is ignored for Cbrs
         vec![
             top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High),
@@ -373,7 +373,7 @@ fn indoor_cbrs_radio(
     CoveragePoints::new(
         RadioType::IndoorCbrs,
         RadioThreshold::Verified,
-        speedtests(speedtest_tier),
+        Speedtest::mock(speedtest_tier),
         vec![],
         coverage.to_owned(),
     )
@@ -386,7 +386,7 @@ fn outdoor_cbrs_radio(
     CoveragePoints::new(
         RadioType::OutdoorCbrs,
         RadioThreshold::Verified,
-        speedtests(speedtest_tier),
+        Speedtest::mock(speedtest_tier),
         vec![],
         coverage.to_owned(),
     )
@@ -401,33 +401,6 @@ impl BoostedHexMap for NoBoostedHexes {
     ) -> Option<NonZeroU32> {
         None
     }
-}
-
-fn speedtests(tier: SpeedtestTier) -> Vec<Speedtest> {
-    // SpeedtestTier is determined solely by upload_speed.
-    // Other values are far surpassing ::Good.
-    let upload_speed = BytesPs::mbps(match tier {
-        SpeedtestTier::Good => 10,
-        SpeedtestTier::Acceptable => 8,
-        SpeedtestTier::Degraded => 5,
-        SpeedtestTier::Poor => 2,
-        SpeedtestTier::Fail => 0,
-    });
-
-    vec![
-        Speedtest {
-            upload_speed,
-            download_speed: BytesPs::mbps(150),
-            latency_millis: 0,
-            timestamp: Utc::now(),
-        },
-        Speedtest {
-            upload_speed,
-            download_speed: BytesPs::mbps(150),
-            latency_millis: 0,
-            timestamp: Utc::now(),
-        },
-    ]
 }
 
 fn top_ranked_coverage(hex: u64, signal_level: SignalLevel) -> RankedCoverage {
