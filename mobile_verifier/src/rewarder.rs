@@ -401,7 +401,7 @@ async fn reward_poc(
     let verified_radio_thresholds =
         radio_threshold::verified_radio_thresholds(pool, reward_period).await?;
 
-    let coverage_points = CoveragePoints::aggregate_points(
+    let coverage_points = CoveragePoints::new(
         pool,
         heartbeats,
         &speedtest_averages,

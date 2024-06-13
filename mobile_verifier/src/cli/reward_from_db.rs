@@ -41,7 +41,7 @@ impl Cmd {
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
 
-        let reward_shares = CoveragePoints::aggregate_points(
+        let reward_shares = CoveragePoints::new(
             &pool,
             heartbeats,
             &speedtest_averages,

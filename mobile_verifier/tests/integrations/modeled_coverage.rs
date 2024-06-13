@@ -492,7 +492,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoveragePoints::aggregate_points(
+    let coverage_points = CoveragePoints::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -596,7 +596,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoveragePoints::aggregate_points(
+    let coverage_points = CoveragePoints::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -888,7 +888,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoveragePoints::aggregate_points(
+    let coverage_points = CoveragePoints::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -989,7 +989,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoveragePoints::aggregate_points(
+    let coverage_points = CoveragePoints::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -1092,7 +1092,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoveragePoints::aggregate_points(
+    let coverage_points = CoveragePoints::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -1345,7 +1345,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoveragePoints::aggregate_points(
+    let coverage_points = CoveragePoints::new(
         &pool,
         heartbeats,
         &speedtest_avgs,

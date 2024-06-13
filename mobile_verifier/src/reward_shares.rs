@@ -445,7 +445,7 @@ pub struct CoveragePoints {
 }
 
 impl CoveragePoints {
-    pub async fn aggregate_points(
+    pub async fn new(
         hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtests: &SpeedtestAverages,
@@ -1371,7 +1371,7 @@ mod test {
         let mut allocated_poc_rewards = 0_u64;
 
         let epoch = (now - Duration::hours(1))..now;
-        for (reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
+        for (reward_amount, mobile_reward) in CoveragePoints::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1544,7 +1544,7 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
-        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
+        for (_reward_amount, mobile_reward) in CoveragePoints::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1675,7 +1675,7 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
-        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
+        for (_reward_amount, mobile_reward) in CoveragePoints::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1806,7 +1806,7 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
-        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
+        for (_reward_amount, mobile_reward) in CoveragePoints::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,

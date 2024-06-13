@@ -400,7 +400,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let heartbeats = HeartbeatReward::validated(&pool, &epoch);
-    let coverage_points = CoveragePoints::aggregate_points(
+    let coverage_points = CoveragePoints::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
