@@ -592,8 +592,7 @@ impl CoverageShares {
 
         let mut processed_radios = vec![];
         for (radio_id, radio_info) in self.radio_infos.iter() {
-            let points_res = self.coverage_points(radio_id);
-            let points = match points_res {
+            let points = match self.coverage_points(radio_id) {
                 Ok(points) => points,
                 Err(err) => {
                     tracing::error!(
