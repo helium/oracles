@@ -453,7 +453,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
 
     assert_eq!(
         coverage_points
-            .hotspot_points(&(owner, Some(cbsd_id.clone())))
+            .test_hotspot_reward_shares(&(owner, Some(cbsd_id.clone())))
             .await,
         dec!(1073.0)
     );
