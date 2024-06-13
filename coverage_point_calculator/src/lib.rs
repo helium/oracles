@@ -392,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn speedtests_effect_coverage_points() {
+    fn speedtests_effect_reward_shares() {
         let calculate_indoor_cbrs = |speedtests: Vec<Speedtest>| {
             CoveragePoints::new(
                 RadioType::IndoorCbrs,
@@ -419,7 +419,7 @@ mod tests {
         let indoor_cbrs = calculate_indoor_cbrs(speedtest_maximum());
         assert_eq!(
             base_coverage_points * SpeedtestTier::Good.multiplier(),
-            indoor_cbrs.total_coverage_points
+            indoor_cbrs.reward_shares
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -428,7 +428,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Acceptable.multiplier(),
-            indoor_cbrs.total_coverage_points
+            indoor_cbrs.reward_shares
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -437,7 +437,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Degraded.multiplier(),
-            indoor_cbrs.total_coverage_points
+            indoor_cbrs.reward_shares
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -446,7 +446,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Poor.multiplier(),
-            indoor_cbrs.total_coverage_points
+            indoor_cbrs.reward_shares
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -455,7 +455,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Fail.multiplier(),
-            indoor_cbrs.total_coverage_points
+            indoor_cbrs.reward_shares
         );
     }
 
