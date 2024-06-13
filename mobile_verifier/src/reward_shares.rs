@@ -560,12 +560,8 @@ impl CoveragePoints {
     async fn coverage_points(
         &self,
         radio_id: &RadioId,
-        radio_info: RadioInfo,
     ) -> anyhow::Result<coverage_point_calculator::CoveragePoints> {
-        let radio_type = radio_info.radio_type;
-        let trust_scores = radio_info.trust_scores;
-        let verified = radio_info.verified_radio_threshold;
-        let speedtests = radio_info.speedtests;
+        let radio_info = self.radio_infos.get(radio_id).unwrap();
 
         let hexes = {
             let this = &self;
@@ -578,25 +574,14 @@ impl CoveragePoints {
         };
 
         let coverage_points = coverage_point_calculator::CoveragePoints::new(
-            radio_type,
-            verified,
-            speedtests,
-            trust_scores,
+            radio_info.radio_type,
+            radio_info.verified_radio_threshold,
+            radio_info.speedtests.clone(),
+            radio_info.trust_scores.clone(),
             hexes,
         )?;
 
         Ok(coverage_points)
-    }
-    // ===============================================================
-
-    /// Only used for testing
-    pub async fn test_hotspot_reward_shares(&self, hotspot: &RadioId) -> Decimal {
-        let radio = self.radio_infos.get(hotspot).unwrap();
-
-        self.coverage_points(hotspot, radio.clone())
-            .await
-            .expect("coverage points for hotspot")
-            .reward_shares
     }
 
     pub async fn into_rewards(
@@ -607,12 +592,16 @@ impl CoveragePoints {
         let mut total_shares: Decimal = dec!(0);
 
         let mut processed_radios = vec![];
-        for (id, radio_info) in self.radio_infos.iter() {
-            let points_res = self.coverage_points(id, radio_info.clone()).await;
+        for (radio_id, radio_info) in self.radio_infos.iter() {
+            let points_res = self.coverage_points(radio_id).await;
             let points = match points_res {
                 Ok(points) => points,
                 Err(err) => {
-                    tracing::error!(pubkey = id.0.to_string(), ?err, "could not reward radio");
+                    tracing::error!(
+                        pubkey = radio_id.0.to_string(),
+                        ?err,
+                        "could not reward radio"
+                    );
                     continue;
                 }
             };
@@ -621,7 +610,7 @@ impl CoveragePoints {
             let coverage_object_uuid = radio_info.coverage_obj_uuid;
 
             total_shares += points.reward_shares;
-            processed_radios.push((id.clone(), points, seniority, coverage_object_uuid));
+            processed_radios.push((radio_id.clone(), points, seniority, coverage_object_uuid));
         }
 
         let Some(rewards_per_share) = available_poc_rewards.checked_div(total_shares) else {
@@ -648,6 +637,14 @@ impl CoveragePoints {
                 })
                 .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0),
         )
+    }
+
+    /// Only used for testing
+    pub async fn test_hotspot_reward_shares(&self, hotspot: &RadioId) -> Decimal {
+        self.coverage_points(hotspot)
+            .await
+            .expect("coverage points for hotspot")
+            .reward_shares
     }
 }
 
