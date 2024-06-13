@@ -557,7 +557,7 @@ impl CoveragePoints {
         })
     }
 
-    async fn coverage_points(
+    fn coverage_points(
         &self,
         radio_id: &RadioId,
     ) -> anyhow::Result<coverage_point_calculator::CoveragePoints> {
@@ -584,7 +584,7 @@ impl CoveragePoints {
         Ok(coverage_points)
     }
 
-    pub async fn into_rewards(
+    pub fn into_rewards(
         self,
         available_poc_rewards: Decimal,
         epoch: &'_ Range<DateTime<Utc>>,
@@ -593,7 +593,7 @@ impl CoveragePoints {
 
         let mut processed_radios = vec![];
         for (radio_id, radio_info) in self.radio_infos.iter() {
-            let points_res = self.coverage_points(radio_id).await;
+            let points_res = self.coverage_points(radio_id);
             let points = match points_res {
                 Ok(points) => points,
                 Err(err) => {
@@ -640,10 +640,9 @@ impl CoveragePoints {
     }
 
     /// Only used for testing
-    pub async fn test_hotspot_reward_shares(&self, hotspot: &RadioId) -> Decimal {
+    pub fn test_hotspot_reward_shares(&self, hotspot: &RadioId) -> Decimal {
         self.coverage_points(hotspot)
-            .await
-            .expect("coverage points for hotspot")
+            .expect("reward shares for hotspot")
             .reward_shares
     }
 }
@@ -1382,7 +1381,6 @@ mod test {
         .await
         .unwrap()
         .into_rewards(total_poc_rewards, &epoch)
-        .await
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1555,7 +1553,6 @@ mod test {
         .await
         .unwrap()
         .into_rewards(total_poc_rewards, &epoch)
-        .await
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1686,7 +1683,6 @@ mod test {
         .await
         .unwrap()
         .into_rewards(total_poc_rewards, &epoch)
-        .await
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1817,7 +1813,6 @@ mod test {
         .await
         .unwrap()
         .into_rewards(total_poc_rewards, &epoch)
-        .await
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1956,7 +1951,6 @@ mod test {
         let expected_hotspot = gw1;
         for (_reward_amount, mobile_reward) in coverage_points
             .into_rewards(total_poc_rewards, &epoch)
-            .await
             .expect("rewards output")
         {
             let radio_reward = match mobile_reward.reward {
@@ -1981,7 +1975,6 @@ mod test {
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
         assert!(coverage_points
             .into_rewards(total_poc_rewards, &epoch)
-            .await
             .is_none());
     }
 
