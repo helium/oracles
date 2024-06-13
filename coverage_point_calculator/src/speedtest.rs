@@ -2,8 +2,8 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
-const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
+pub const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
+pub const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
 
 type Millis = u32;
 
@@ -53,6 +53,16 @@ pub struct Speedtest {
 }
 
 impl Speedtest {
+    /// Construct a maximally acceptable speedtest for mocking
+    pub fn mock() -> Self {
+        Self {
+            upload_speed: BytesPs::mbps(MIN_GOOD_UPLOAD_SPEED_MBPS),
+            download_speed: BytesPs::mbps(MIN_GOOD_DOWNLOAD_SPEED_MBPS),
+            latency_millis: BEST_LATENCY,
+            timestamp: Utc::now(),
+        }
+    }
+
     pub fn multiplier(&self) -> Decimal {
         let upload = SpeedtestTier::from_upload(self.upload_speed);
         let download = SpeedtestTier::from_download(self.download_speed);
@@ -92,6 +102,10 @@ pub enum SpeedtestTier {
     Fail = 0,
 }
 
+const MIN_GOOD_DOWNLOAD_SPEED_MBPS: u64 = 100;
+const MIN_GOOD_UPLOAD_SPEED_MBPS: u64 = 10;
+const BEST_LATENCY: Millis = 0;
+
 impl SpeedtestTier {
     pub fn multiplier(self) -> Decimal {
         match self {
@@ -105,7 +119,7 @@ impl SpeedtestTier {
 
     fn from_download(bytes: BytesPs) -> Self {
         match bytes.as_mbps() {
-            100.. => Self::Good,
+            MIN_GOOD_DOWNLOAD_SPEED_MBPS.. => Self::Good,
             75.. => Self::Acceptable,
             50.. => Self::Degraded,
             30.. => Self::Poor,
@@ -115,7 +129,7 @@ impl SpeedtestTier {
 
     fn from_upload(bytes: BytesPs) -> Self {
         match bytes.as_mbps() {
-            10.. => Self::Good,
+            MIN_GOOD_UPLOAD_SPEED_MBPS.. => Self::Good,
             8.. => Self::Acceptable,
             5.. => Self::Degraded,
             2.. => Self::Poor,
@@ -125,7 +139,7 @@ impl SpeedtestTier {
 
     fn from_latency(millis: Millis) -> Self {
         match millis {
-            00..=49 => Self::Good,
+            BEST_LATENCY..=49 => Self::Good,
             50..=59 => Self::Acceptable,
             60..=74 => Self::Degraded,
             75..=99 => Self::Poor,
