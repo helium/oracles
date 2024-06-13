@@ -468,14 +468,14 @@ impl CoverageShares {
                 .fetch_seniority(heartbeat_key, reward_period.end)
                 .await?;
 
-            let (is_indoor, covered_hexes) = {
+            let is_indoor = {
+                let mut is_indoor = false;
+
                 let covered_hexes_stream = hex_streams
                     .covered_hex_stream(heartbeat_key, &heartbeat.coverage_object, &seniority)
                     .await?;
 
                 let mut covered_hexes = vec![];
-
-                let mut is_indoor = false;
                 let mut covered_hexes_stream = std::pin::pin!(covered_hexes_stream);
                 while let Some(hex_coverage) = covered_hexes_stream.next().await.transpose()? {
                     is_indoor = hex_coverage.indoor;
@@ -487,7 +487,15 @@ impl CoverageShares {
                     });
                 }
 
-                (is_indoor, covered_hexes)
+                coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
+                    indoor: is_indoor,
+                    hotspot_key: pubkey.clone().into(),
+                    cbsd_id: cbsd_id.clone(),
+                    seniority_timestamp: seniority.seniority_ts,
+                    coverage: covered_hexes,
+                });
+
+                is_indoor
             };
 
             use coverage_point_calculator::RadioType;
@@ -497,14 +505,6 @@ impl CoverageShares {
                 (false, None) => RadioType::OutdoorWifi,
                 (false, Some(_)) => RadioType::OutdoorCbrs,
             };
-
-            coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
-                indoor: is_indoor,
-                hotspot_key: pubkey.clone().into(),
-                cbsd_id: cbsd_id.clone(),
-                seniority_timestamp: seniority.seniority_ts,
-                coverage: covered_hexes,
-            });
 
             use coverage_point_calculator::{BytesPs, Speedtest};
             let speedtests = speedtest_averages
