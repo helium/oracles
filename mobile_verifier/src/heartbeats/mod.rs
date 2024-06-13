@@ -342,6 +342,18 @@ impl HeartbeatReward {
             .bind(MINIMUM_HEARTBEAT_COUNT)
             .fetch(exec)
     }
+
+    pub fn iter_distances_and_scores(&self) -> impl Iterator<Item = (i64, Decimal)> {
+        let fallback: Vec<i64> = std::iter::repeat(0)
+            .take(self.trust_score_multipliers.len())
+            .collect();
+
+        self.distances_to_asserted
+            .clone()
+            .unwrap_or(fallback)
+            .into_iter()
+            .zip(self.trust_score_multipliers.clone())
+    }
 }
 
 #[derive(Clone)]

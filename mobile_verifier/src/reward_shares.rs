@@ -375,29 +375,6 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
         .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
 }
 
-type RadioId = (PublicKeyBinary, Option<String>);
-
-fn make_heartbeat_trust_scores(
-    heartbeat: &HeartbeatReward,
-) -> Vec<coverage_point_calculator::LocationTrust> {
-    let fallback: Vec<i64> = std::iter::repeat(0)
-        .take(heartbeat.trust_score_multipliers.len())
-        .collect();
-    heartbeat
-        .distances_to_asserted
-        .as_ref()
-        .unwrap_or(&fallback)
-        .iter()
-        .zip(heartbeat.trust_score_multipliers.iter())
-        .map(
-            |(&distance, &trust_score)| coverage_point_calculator::LocationTrust {
-                meters_to_asserted: distance as u32,
-                trust_score,
-            },
-        )
-        .collect()
-}
-
 pub fn coverage_point_to_mobile_reward_share(
     coverage_points: coverage_point_calculator::CoveragePoints,
     reward_epoch: &Range<DateTime<Utc>>,
@@ -411,7 +388,7 @@ pub fn coverage_point_to_mobile_reward_share(
     let boosted_hexes = coverage_points
         .covered_hexes
         .iter()
-        .filter(|hex| hex.boosted_multiplier.is_some())
+        .filter(|hex| hex.boosted_multiplier.is_some_and(|boost| boost > dec!(1)))
         .map(|covered_hex| proto::BoostedHex {
             location: covered_hex.hex.into_raw(),
             multiplier: covered_hex.boosted_multiplier.unwrap().to_u32().unwrap(),
@@ -449,6 +426,8 @@ pub fn coverage_point_to_mobile_reward_share(
     }
 }
 
+type RadioId = (PublicKeyBinary, Option<String>);
+
 #[derive(Debug, Clone)]
 struct RadioInfo {
     radio_type: coverage_point_calculator::RadioType,
@@ -477,7 +456,7 @@ impl CoveragePoints {
         let mut radio_infos: HashMap<RadioId, RadioInfo> = HashMap::new();
         let mut coverage_map_builder = coverage_map::CoverageMapBuilder::default();
 
-        // The heartbearts query is written in a way that each rardio is iterated a single time.
+        // The heartbearts query is written in a way that each radio is iterated a single time.
         let mut heartbeats = std::pin::pin!(heartbeats);
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             let pubkey = heartbeat.hotspot_key.clone();
@@ -496,7 +475,6 @@ impl CoveragePoints {
 
                 let mut covered_hexes = vec![];
 
-                // FIXME: Is there a way to make is_indoor look nicer?
                 let mut is_indoor = false;
                 let mut covered_hexes_stream = std::pin::pin!(covered_hexes_stream);
                 while let Some(hex_coverage) = covered_hexes_stream.next().await.transpose()? {
@@ -512,11 +490,12 @@ impl CoveragePoints {
                 (is_indoor, covered_hexes)
             };
 
-            let radio_type = match (is_indoor, cbsd_id.is_some()) {
-                (true, false) => coverage_point_calculator::RadioType::IndoorWifi,
-                (true, true) => coverage_point_calculator::RadioType::IndoorCbrs,
-                (false, false) => coverage_point_calculator::RadioType::OutdoorWifi,
-                (false, true) => coverage_point_calculator::RadioType::OutdoorCbrs,
+            use coverage_point_calculator::RadioType;
+            let radio_type = match (is_indoor, cbsd_id.as_ref()) {
+                (true, None) => RadioType::IndoorWifi,
+                (true, Some(_)) => RadioType::IndoorCbrs,
+                (false, None) => RadioType::OutdoorWifi,
+                (false, Some(_)) => RadioType::OutdoorCbrs,
             };
 
             coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
@@ -541,18 +520,29 @@ impl CoveragePoints {
                 })
                 .collect();
 
+            use coverage_point_calculator::RadioThreshold;
             let verified_radio_threshold =
                 match verified_radio_thresholds.is_verified(pubkey, cbsd_id) {
-                    true => coverage_point_calculator::RadioThreshold::Verified,
-                    false => coverage_point_calculator::RadioThreshold::Unverified,
+                    true => RadioThreshold::Verified,
+                    false => RadioThreshold::Unverified,
                 };
+
+            use coverage_point_calculator::LocationTrust;
+            let trust_scores = heartbeat
+                .iter_distances_and_scores()
+                .map(|(distance, trust_score)| LocationTrust {
+                    meters_to_asserted: distance as u32,
+                    trust_score,
+                })
+                .collect();
+
             radio_infos.insert(
                 key,
                 RadioInfo {
                     radio_type,
                     coverage_obj_uuid: heartbeat.coverage_object,
                     seniority,
-                    trust_scores: make_heartbeat_trust_scores(&heartbeat),
+                    trust_scores,
                     verified_radio_threshold,
                     speedtests,
                 },
@@ -606,7 +596,7 @@ impl CoveragePoints {
         self.coverage_points(hotspot, radio.clone())
             .await
             .expect("coverage points for hotspot")
-            .total_coverage_points
+            .reward_shares
     }
 
     pub async fn into_rewards(
