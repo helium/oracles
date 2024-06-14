@@ -53,6 +53,34 @@ pub struct Speedtest {
 }
 
 impl Speedtest {
+    /// Construct the minimum required speedtests for a given tier
+    pub fn mock(tier: SpeedtestTier) -> Vec<Speedtest> {
+        // SpeedtestTier is determined solely by upload_speed.
+        // Other values are far surpassing ::Good.
+        let upload_speed = BytesPs::mbps(match tier {
+            SpeedtestTier::Good => 10,
+            SpeedtestTier::Acceptable => 8,
+            SpeedtestTier::Degraded => 5,
+            SpeedtestTier::Poor => 2,
+            SpeedtestTier::Fail => 0,
+        });
+
+        vec![
+            Speedtest {
+                upload_speed,
+                download_speed: BytesPs::mbps(150),
+                latency_millis: 0,
+                timestamp: Utc::now(),
+            },
+            Speedtest {
+                upload_speed,
+                download_speed: BytesPs::mbps(150),
+                latency_millis: 0,
+                timestamp: Utc::now(),
+            },
+        ]
+    }
+
     pub fn multiplier(&self) -> Decimal {
         let upload = SpeedtestTier::from_upload(self.upload_speed);
         let download = SpeedtestTier::from_download(self.download_speed);
@@ -125,7 +153,7 @@ impl SpeedtestTier {
 
     fn from_latency(millis: Millis) -> Self {
         match millis {
-            00..=49 => Self::Good,
+            0..=49 => Self::Good,
             50..=59 => Self::Acceptable,
             60..=74 => Self::Degraded,
             75..=99 => Self::Poor,
