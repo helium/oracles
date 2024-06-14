@@ -492,7 +492,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoverageShares::new(
+    let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -503,7 +503,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner, Some(cbsd_id))),
+        coverage_shares.test_hotspot_reward_shares(&(owner, Some(cbsd_id))),
         dec!(250)
     );
 
@@ -594,7 +594,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoverageShares::new(
+    let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -605,11 +605,11 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_1, Some(cbsd_id_1))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_1, Some(cbsd_id_1))),
         dec!(112.5)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_2, Some(cbsd_id_2))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_2, Some(cbsd_id_2))),
         dec!(250)
     );
 
@@ -882,7 +882,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoverageShares::new(
+    let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -893,27 +893,27 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_1, Some(cbsd_id_1))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_1, Some(cbsd_id_1))),
         dec!(0)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_2, Some(cbsd_id_2))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_2, Some(cbsd_id_2))),
         dec!(0)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_3, Some(cbsd_id_3))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_3, Some(cbsd_id_3))),
         dec!(0)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_4, Some(cbsd_id_4))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_4, Some(cbsd_id_4))),
         dec!(250)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_5, Some(cbsd_id_5))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_5, Some(cbsd_id_5))),
         dec!(0)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_6, Some(cbsd_id_6))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_6, Some(cbsd_id_6))),
         dec!(0)
     );
 
@@ -971,7 +971,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoverageShares::new(
+    let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -982,7 +982,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner, Some(cbsd_id))),
+        coverage_shares.test_hotspot_reward_shares(&(owner, Some(cbsd_id))),
         dec!(19)
     );
 
@@ -1072,7 +1072,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoverageShares::new(
+    let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -1083,11 +1083,11 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_1, Some(cbsd_id_1))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_1, Some(cbsd_id_1))),
         dec!(19) * dec!(0.5)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_2, Some(cbsd_id_2))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_2, Some(cbsd_id_2))),
         dec!(8)
     );
 
@@ -1321,7 +1321,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
-    let coverage_points = CoverageShares::new(
+    let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -1332,27 +1332,27 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_1, Some(cbsd_id_1))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_1, Some(cbsd_id_1))),
         dec!(0)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_2, Some(cbsd_id_2))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_2, Some(cbsd_id_2))),
         dec!(62.5)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_3, Some(cbsd_id_3))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_3, Some(cbsd_id_3))),
         dec!(0)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_4, Some(cbsd_id_4))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_4, Some(cbsd_id_4))),
         dec!(0)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_5, Some(cbsd_id_5))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_5, Some(cbsd_id_5))),
         dec!(0)
     );
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner_6, Some(cbsd_id_6))),
+        coverage_shares.test_hotspot_reward_shares(&(owner_6, Some(cbsd_id_6))),
         dec!(0)
     );
 

@@ -400,7 +400,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let heartbeats = HeartbeatReward::validated(&pool, &epoch);
-    let coverage_points = CoverageShares::new(
+    let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -452,7 +452,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     //                                     = 1,073
 
     assert_eq!(
-        coverage_points.test_hotspot_reward_shares(&(owner, Some(cbsd_id.clone()))),
+        coverage_shares.test_hotspot_reward_shares(&(owner, Some(cbsd_id.clone()))),
         dec!(1073.0)
     );
 

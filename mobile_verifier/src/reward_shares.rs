@@ -1940,14 +1940,14 @@ mod test {
             },
         );
 
-        let coverage_points = CoverageShares {
+        let coverage_shares = CoverageShares {
             coverage_map,
             radio_infos,
         };
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
         // gw2 does not have enough speedtests for a mulitplier
         let expected_hotspot = gw1;
-        for (_reward_amount, mobile_reward) in coverage_points
+        for (_reward_amount, mobile_reward) in coverage_shares
             .into_rewards(total_poc_rewards, &epoch)
             .expect("rewards output")
         {
@@ -1964,14 +1964,14 @@ mod test {
     async fn skip_empty_radio_rewards() {
         let now = Utc::now();
         let epoch = now - Duration::hours(1)..now;
-        let coverage_points = CoverageShares {
+        let coverage_shares = CoverageShares {
             coverage_map: coverage_map::CoverageMapBuilder::default()
                 .build(&BoostedHexes::default(), epoch.start),
             radio_infos: HashMap::new(),
         };
 
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
-        assert!(coverage_points
+        assert!(coverage_shares
             .into_rewards(total_poc_rewards, &epoch)
             .is_none());
     }
