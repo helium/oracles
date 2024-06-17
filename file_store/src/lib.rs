@@ -19,6 +19,7 @@ pub mod mobile_radio_invalidated_threshold;
 pub mod mobile_radio_threshold;
 pub mod mobile_session;
 pub mod mobile_subscriber;
+pub mod mobile_subscriber_mapping;
 pub mod mobile_transfer;
 pub mod reward_manifest;
 mod settings;
