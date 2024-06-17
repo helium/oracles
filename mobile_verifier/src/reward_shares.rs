@@ -507,10 +507,11 @@ impl CoverageShares {
             };
 
             use coverage_point_calculator::{BytesPs, Speedtest};
-            let speedtests = speedtest_averages
-                .get_average(&pubkey)
-                .unwrap()
-                .speedtests
+            let speedtests = match speedtest_averages.get_average(&pubkey) {
+                Some(avg) => avg.speedtests,
+                None => vec![],
+            };
+            let speedtests = speedtests
                 .iter()
                 .map(|test| Speedtest {
                     upload_speed: BytesPs::new(test.report.upload_speed),
