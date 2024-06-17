@@ -106,6 +106,10 @@ impl FileInfo {
     }
 }
 
+pub const VERIFIED_SUBSCRIBER_MAPPING_EVENT_REQ: &str = "verified_subscriber_mapping_event_req";
+pub const VERIFIED_SUBSCRIBER_MAPPING_EVENT_INGEST_REPORT: &str =
+    "verified_subscriber_mapping_event_report";
+
 pub const INVALIDATED_RADIO_THRESHOLD_REQ: &str = "invalidated_radio_threshold_req";
 pub const INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT: &str =
     "invalidated_radio_threshold_ingest_report";
@@ -214,11 +218,17 @@ pub enum FileType {
     VerifiedInvalidatedRadioThresholdIngestReport,
     SPBoostedRewardsBannedRadioIngestReport,
     VerifiedSPBoostedRewardsBannedRadioIngestReport,
+    VerifiedSubscriberMappingEventReq,
+    VerifiedSubscriberMappingEventIngestReport,
 }
 
 impl fmt::Display for FileType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
+            Self::VerifiedSubscriberMappingEventReq => VERIFIED_SUBSCRIBER_MAPPING_EVENT_REQ,
+            Self::VerifiedSubscriberMappingEventIngestReport => {
+                VERIFIED_SUBSCRIBER_MAPPING_EVENT_INGEST_REPORT
+            }
             Self::InvalidatedRadioThresholdReq => INVALIDATED_RADIO_THRESHOLD_REQ,
             Self::InvalidatedRadioThresholdIngestReport => {
                 INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT
@@ -287,6 +297,10 @@ impl fmt::Display for FileType {
 impl FileType {
     pub fn to_str(&self) -> &'static str {
         match self {
+            Self::VerifiedSubscriberMappingEventReq => VERIFIED_SUBSCRIBER_MAPPING_EVENT_REQ,
+            Self::VerifiedSubscriberMappingEventIngestReport => {
+                VERIFIED_SUBSCRIBER_MAPPING_EVENT_INGEST_REPORT
+            }
             Self::InvalidatedRadioThresholdReq => INVALIDATED_RADIO_THRESHOLD_REQ,
             Self::InvalidatedRadioThresholdIngestReport => {
                 INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT
@@ -355,6 +369,10 @@ impl FromStr for FileType {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         let result = match s {
+            VERIFIED_SUBSCRIBER_MAPPING_EVENT_REQ => Self::VerifiedSubscriberMappingEventReq,
+            VERIFIED_SUBSCRIBER_MAPPING_EVENT_INGEST_REPORT => {
+                Self::VerifiedSubscriberMappingEventIngestReport
+            }
             INVALIDATED_RADIO_THRESHOLD_REQ => Self::InvalidatedRadioThresholdReq,
             INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT => {
                 Self::InvalidatedRadioThresholdIngestReport
