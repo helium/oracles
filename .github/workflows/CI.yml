@@ -136,7 +136,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [file-store,ingest,mobile-packet-verifier,reward-scheduler,task-manager]
+        package: [coverage-map,coverage-point-calculator,file-store,ingest,mobile-packet-verifier,reward-scheduler,task-manager]
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-tests-${{ matrix.package }}
       cancel-in-progress: true
