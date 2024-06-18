@@ -3,6 +3,7 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     VerifiedSubscriberMappingEventIngestReportV1, VerifiedSubscriberMappingEventReqV1,
 };
@@ -13,6 +14,7 @@ pub struct VerifiedSubscriberMappingEvent {
     pub subscriber_id: String,
     pub total_reward_points: u64,
     pub timestamp: DateTime<Utc>,
+    pub carrier_pub_key: PublicKeyBinary,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct VerifiedSubscriberMappingEventIngestReport {
@@ -35,6 +37,7 @@ impl TryFrom<VerifiedSubscriberMappingEventReqV1> for VerifiedSubscriberMappingE
             subscriber_id: v.subscriber_id,
             total_reward_points: v.total_reward_points,
             timestamp: v.timestamp.to_timestamp()?,
+            carrier_pub_key: v.carrier_pub_key.into(),
         })
     }
 }
@@ -46,6 +49,8 @@ impl From<VerifiedSubscriberMappingEvent> for VerifiedSubscriberMappingEventReqV
             subscriber_id: v.subscriber_id,
             total_reward_points: v.total_reward_points,
             timestamp,
+            carrier_pub_key: v.carrier_pub_key.into(),
+            signature: vec![],
         }
     }
 }
@@ -105,17 +110,23 @@ impl From<VerifiedSubscriberMappingEventIngestReport>
 #[cfg(test)]
 mod tests {
     use chrono::NaiveDateTime;
+    use std::str::FromStr;
 
     use super::*;
 
     #[test]
     fn from_proto() -> anyhow::Result<()> {
+        let carrier_pubkey =
+            PublicKeyBinary::from_str("14ihsKqVhXqfzET1dkLZGNQWrB9ZeGnqJtdMGajFjPmwKsKEEAC")?;
+
         let proto = VerifiedSubscriberMappingEventIngestReportV1 {
             received_timestamp: 1712624400000,
             report: Some(VerifiedSubscriberMappingEventReqV1 {
                 subscriber_id: "sub1".to_string(),
                 total_reward_points: 1000,
                 timestamp: 1712624400,
+                carrier_pub_key: carrier_pubkey.as_ref().into(),
+                signature: vec![],
             }),
         };
 
@@ -124,6 +135,7 @@ mod tests {
         assert_eq!("sub1", report.report.subscriber_id);
         assert_eq!(1000, report.report.total_reward_points);
         assert_eq!(parse_dt("2024-04-09 01:00:00"), report.report.timestamp);
+        assert_eq!(carrier_pubkey, report.report.carrier_pub_key);
 
         Ok(())
     }
