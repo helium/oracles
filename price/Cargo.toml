@@ -27,7 +27,7 @@ helium-anchor-gen = { workspace = true }
 helium-proto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
-pyth-sdk-solana = { workspace = true }
+pyth-solana-receiver-sdk = { workspace = true }
 triggered = { workspace = true }
 solana-client = { workspace = true }
 solana-sdk = { workspace = true }

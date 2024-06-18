@@ -3,7 +3,9 @@ use anyhow::{anyhow, bail, Error, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::file_sink;
 use futures::{future::LocalBoxFuture, TryFutureExt};
+use helium_anchor_gen::anchor_lang::AccountDeserialize;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
+use pyth_solana_receiver_sdk::price_update::{PriceFeedMessage, PriceUpdateV2};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey as SolPubkey;
@@ -233,23 +235,36 @@ impl PriceGenerator {
     }
 
     async fn get_pyth_price(&self, price_key: &SolPubkey) -> Result<Price> {
-        let mut account = self.client.get_account(price_key).await?;
-        let price_oracle = pyth_sdk_solana::load_price_feed_from_account(price_key, &mut account)?;
-        let curr_price = price_oracle
-            .get_ema_price_no_older_than(Utc::now().timestamp(), self.pyth_price_interval.as_secs())
-            .ok_or_else(|| anyhow!("No new price in the given interval"))?;
+        let account = self.client.get_account(price_key).await?;
+        let PriceUpdateV2 {
+            price_message:
+                PriceFeedMessage {
+                    ema_price: price,
+                    ema_conf: confidence,
+                    exponent,
+                    publish_time,
+                    ..
+                },
+            ..
+        } = PriceUpdateV2::try_deserialize(&mut account.data.as_slice())?;
 
-        if curr_price.price < 0 {
+        if publish_time.saturating_add(self.pyth_price_interval.as_secs() as i64)
+            < Utc::now().timestamp()
+        {
+            bail!("Price is too old");
+        }
+
+        if price < 0 {
             bail!("Price is less than zero");
         }
 
         // Remove the confidence interval from the price to get the most optimistic price:
-        let optimistic_price = curr_price.price as u64 + curr_price.conf * 2;
+        let optimistic_price = price as u64 + confidence * 2;
 
         // We want the price to have a resulting exponent of 10^-6
         // I don't think it's possible for pyth to give us anything other than -8, but we make
         // this robust just in case:
-        let exp = curr_price.expo + 6;
+        let exp = exponent + 6;
         let adjusted_optimistic_price = match exp.cmp(&0) {
             Ordering::Less => optimistic_price / 10_u64.pow(exp.unsigned_abs()),
             Ordering::Greater => optimistic_price * 10_u64.pow(exp as u32),
@@ -257,12 +272,8 @@ impl PriceGenerator {
         };
 
         Ok(Price::new(
-            DateTime::from_timestamp(curr_price.publish_time, 0).ok_or_else(|| {
-                anyhow!(
-                    "Invalid publish time for price: {}",
-                    curr_price.publish_time
-                )
-            })?,
+            DateTime::from_timestamp(publish_time, 0)
+                .ok_or_else(|| anyhow!("Invalid publish time for price: {}", publish_time))?,
             adjusted_optimistic_price,
             self.token_type,
         ))
