@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use config::{Config, Environment, File};
 use helium_proto::BlockchainTokenTypeV1;
 use humantime_serde::re::humantime;
+use pyth_solana_receiver_sdk::price_update::{get_feed_id_from_hex, FeedId};
 use serde::Deserialize;
 use solana_sdk::pubkey::Pubkey as SolPubkey;
 use std::{path::Path, str::FromStr, time::Duration};
@@ -10,10 +11,13 @@ use std::{path::Path, str::FromStr, time::Duration};
 pub struct ClusterConfig {
     pub name: String,
     pub hnt_price_key: Option<String>,
+    pub hnt_price_feed_id: Option<String>,
     pub hnt_price: Option<u64>,
     pub mobile_price_key: Option<String>,
+    pub mobile_price_feed_id: Option<String>,
     pub mobile_price: Option<u64>,
     pub iot_price_key: Option<String>,
+    pub iot_price_feed_id: Option<String>,
     pub iot_price: Option<u64>,
 }
 
@@ -21,11 +25,14 @@ impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
             name: "devnet".to_string(),
-            hnt_price_key: Some("6Eg8YdfFJQF2HHonzPUBSCCmyUEhrStg9VBLK957sBe6".to_string()),
+            hnt_price_key: None,
+            hnt_price_feed_id: None,
             hnt_price: None,
             mobile_price_key: None,
+            mobile_price_feed_id: None,
             mobile_price: None,
             iot_price_key: None,
+            iot_price_feed_id: None,
             iot_price: None,
         }
     }
@@ -114,6 +121,19 @@ impl Settings {
         self.key(token_type)?
             .as_ref()
             .map(|key| SolPubkey::from_str(key).map_err(|_| anyhow!("unable to parse {}", key)))
+            .transpose()
+    }
+
+    pub fn price_feed_id(&self, token_type: BlockchainTokenTypeV1) -> Result<Option<FeedId>> {
+        let feed_id = match token_type {
+            BlockchainTokenTypeV1::Hnt => Ok(self.cluster.hnt_price_feed_id.as_deref()),
+            BlockchainTokenTypeV1::Mobile => Ok(self.cluster.mobile_price_feed_id.as_deref()),
+            BlockchainTokenTypeV1::Iot => Ok(self.cluster.iot_price_feed_id.as_deref()),
+            _ => Err(anyhow::anyhow!("token type not supported")),
+        }?;
+
+        feed_id
+            .map(|f| get_feed_id_from_hex(f).map_err(|_| anyhow::anyhow!("invalid feed id")))
             .transpose()
     }
 
