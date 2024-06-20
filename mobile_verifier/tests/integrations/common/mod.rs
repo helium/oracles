@@ -103,7 +103,7 @@ impl MockFileSinkReceiver {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected radio reward");
-                println!("mobile_reward: {:?}", mobile_reward);
+
                 match mobile_reward.reward {
                     Some(MobileReward::RadioReward(r)) => r,
                     _ => panic!("failed to get radio reward"),
@@ -118,7 +118,7 @@ impl MockFileSinkReceiver {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected gateway reward");
-                println!("mobile_reward: {:?}", mobile_reward);
+
                 match mobile_reward.reward {
                     Some(MobileReward::GatewayReward(r)) => r,
                     _ => panic!("failed to get gateway reward"),
@@ -133,7 +133,7 @@ impl MockFileSinkReceiver {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected service provider reward");
-                println!("mobile_reward: {:?}", mobile_reward);
+
                 match mobile_reward.reward {
                     Some(MobileReward::ServiceProviderReward(r)) => r,
                     _ => panic!("failed to get service provider reward"),
@@ -148,7 +148,7 @@ impl MockFileSinkReceiver {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected subscriber reward");
-                println!("mobile_reward: {:?}", mobile_reward);
+
                 match mobile_reward.reward {
                     Some(MobileReward::SubscriberReward(r)) => r,
                     _ => panic!("failed to get subscriber reward"),
@@ -163,7 +163,7 @@ impl MockFileSinkReceiver {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected unallocated reward");
-                println!("mobile_reward: {:?}", mobile_reward);
+
                 match mobile_reward.reward {
                     Some(MobileReward::UnallocatedReward(r)) => r,
                     _ => panic!("failed to get unallocated reward"),

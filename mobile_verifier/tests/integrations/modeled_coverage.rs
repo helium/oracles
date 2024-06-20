@@ -12,7 +12,7 @@ use helium_proto::services::{
     poc_mobile::{CoverageObjectValidity, SignalLevel},
 };
 use hextree::Cell;
-use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
+use mobile_config::boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
@@ -835,9 +835,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     averages.insert(owner_6.clone(), SpeedtestAverage::from(speedtests_6));
     let speedtest_avgs = SpeedtestAverages { averages };
 
-    let mut boosted_hexes = BoostedHexes::default();
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8a1fb466d2dffff)?,
+    let boosted_hexes = BoostedHexes::test_new_active(vec![
         BoostedHexInfo {
             location: Cell::from_raw(0x8a1fb466d2dffff)?,
             start_ts: None,
@@ -847,10 +845,8 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
-    );
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8a1fb49642dffff)?,
         BoostedHexInfo {
             location: Cell::from_raw(0x8a1fb49642dffff)?,
             start_ts: None,
@@ -860,10 +856,8 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
-    );
-    boosted_hexes.hexes.insert(
-        Cell::from_raw(0x8c2681a306607ff)?,
         BoostedHexInfo {
             // hotspot 1's location
             location: Cell::from_raw(0x8c2681a306607ff)?,
@@ -874,8 +868,9 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
-    );
+    ])?;
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);

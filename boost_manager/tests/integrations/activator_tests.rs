@@ -1,9 +1,11 @@
 use boost_manager::{activator, db, OnChainStatus};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Timelike, Utc};
-use mobile_config::boosted_hex_info::{BoostedHex, BoostedHexInfo, BoostedHexes};
+use mobile_config::boosted_hex_info::{
+    BoostedHex, BoostedHexDeviceType, BoostedHexInfo, BoostedHexes,
+};
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
-use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
+use std::{num::NonZeroU32, str::FromStr};
 
 const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
 const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
@@ -50,6 +52,7 @@ impl TestContext {
                 boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
                 boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
                 version: 0,
+                device_type: BoostedHexDeviceType::All,
             },
             BoostedHexInfo {
                 location: 0x8a1fb49642dffff_u64.try_into().expect("valid h3 cell"),
@@ -60,6 +63,7 @@ impl TestContext {
                 boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
                 boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
                 version: 0,
+                device_type: BoostedHexDeviceType::All,
             },
             BoostedHexInfo {
                 // hotspot 3's location
@@ -71,6 +75,7 @@ impl TestContext {
                 boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
                 boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
                 version: 0,
+                device_type: BoostedHexDeviceType::All,
             },
         ];
         Ok(Self {
@@ -82,14 +87,7 @@ impl TestContext {
 async fn test_activated_hex_insert(pool: PgPool) -> anyhow::Result<()> {
     let now = Utc::now();
     let ctx = TestContext::setup(now)?;
-    let boosted_hexes_map = ctx
-        .boosted_hexes
-        .iter()
-        .map(|info| (info.location, info.clone()))
-        .collect::<HashMap<_, _>>();
-    let boosted_hexes = BoostedHexes {
-        hexes: boosted_hexes_map,
-    };
+    let boosted_hexes = BoostedHexes::test_new_active(ctx.boosted_hexes)?;
 
     // test a boosted hex derived from radio rewards
     // with a non set start date, will result in a row being
@@ -119,14 +117,7 @@ async fn test_activated_hex_insert(pool: PgPool) -> anyhow::Result<()> {
 async fn test_activated_hex_no_insert(pool: PgPool) -> anyhow::Result<()> {
     let now = Utc::now();
     let ctx = TestContext::setup(now)?;
-    let boosted_hexes_map = ctx
-        .boosted_hexes
-        .iter()
-        .map(|info| (info.location, info.clone()))
-        .collect::<HashMap<_, _>>();
-    let boosted_hexes = BoostedHexes {
-        hexes: boosted_hexes_map,
-    };
+    let boosted_hexes = BoostedHexes::test_new_active(ctx.boosted_hexes)?;
 
     // test a boosted hex derived from radio rewards
     // with an active start date, will result in no row being
@@ -152,14 +143,7 @@ async fn test_activated_hex_no_insert(pool: PgPool) -> anyhow::Result<()> {
 async fn test_activated_dup_hex_insert(pool: PgPool) -> anyhow::Result<()> {
     let now = Utc::now().with_second(0).unwrap();
     let ctx = TestContext::setup(now)?;
-    let boosted_hexes_map = ctx
-        .boosted_hexes
-        .iter()
-        .map(|info| (info.location, info.clone()))
-        .collect::<HashMap<_, _>>();
-    let boosted_hexes = BoostedHexes {
-        hexes: boosted_hexes_map,
-    };
+    let boosted_hexes = BoostedHexes::test_new_active(ctx.boosted_hexes)?;
 
     // test with DUPLICATE boosted hexes derived from radio rewards
     // with a non set start date, will result in a single row being
