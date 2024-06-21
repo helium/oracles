@@ -1,7 +1,7 @@
 use crate::{
     heartbeats::HeartbeatReward,
     radio_threshold::VerifiedRadioThresholds,
-    reward_shares::{get_scheduled_tokens_for_poc, CoveragePoints},
+    reward_shares::{get_scheduled_tokens_for_poc, CoverageShares},
     speedtests_average::SpeedtestAverages,
     Settings,
 };
@@ -41,7 +41,7 @@ impl Cmd {
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
 
-        let reward_shares = CoveragePoints::aggregate_points(
+        let reward_shares = CoverageShares::new(
             &pool,
             heartbeats,
             &speedtest_averages,

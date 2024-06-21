@@ -4758,6 +4758,8 @@ dependencies = [
  "chrono",
  "clap 4.4.8",
  "config",
+ "coverage-map",
+ "coverage-point-calculator",
  "custom-tracing",
  "db-store",
  "derive_builder",

@@ -10,7 +10,6 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 #[sqlx::test]
-#[ignore]
 async fn test_seniority_updates(pool: PgPool) -> anyhow::Result<()> {
     let coverage_object = Uuid::new_v4();
     let mut heartbeat = ValidatedHeartbeat {
