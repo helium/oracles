@@ -34,6 +34,13 @@ pub struct Settings {
     /// any disabled orgs.
     #[serde(default = "default_monitor_funds_period")]
     pub monitor_funds_period: Duration,
+    // default delay between retry attempts at submitting solana txns
+    #[serde(default = "default_txn_retry_delay")]
+    pub txn_retry_delay: Duration,
+}
+
+pub fn default_txn_retry_delay() -> Duration {
+    humantime::parse_duration("1 seconds").unwrap()
 }
 
 fn default_start_after() -> DateTime<Utc> {

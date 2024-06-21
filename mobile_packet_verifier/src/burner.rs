@@ -2,9 +2,9 @@ use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::burn::SolanaNetwork;
+use solana::{burn::SolanaNetwork, IsErrorBlockhashNotFound};
 use sqlx::{FromRow, Pool, Postgres};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 #[derive(FromRow)]
 pub struct DataTransferSession {
@@ -33,13 +33,15 @@ impl PayerTotals {
 pub struct Burner<S> {
     valid_sessions: FileSinkClient,
     solana: S,
+    retry_delay: Duration,
 }
 
 impl<S> Burner<S> {
-    pub fn new(valid_sessions: FileSinkClient, solana: S) -> Self {
+    pub fn new(valid_sessions: FileSinkClient, solana: S, retry_delay: Duration) -> Self {
         Self {
             valid_sessions,
             solana,
+            retry_delay,
         }
     }
 }
@@ -132,7 +134,6 @@ where
                     .await?;
             }
         }
-
         Ok(())
     }
 
@@ -140,9 +141,48 @@ where
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<(), S::Error> {
-        let txn = self.solana.make_burn_transaction(payer, amount).await?;
-        self.solana.submit_transaction(&txn).await?;
+    ) -> Result<(), BurnError<S::Error>> {
+        let txn = self
+            .solana
+            .make_burn_transaction(payer, amount)
+            .await
+            .map_err(BurnError::SolanaError)?;
+        let mut signed_txn = self
+            .solana
+            .sign_transaction(&txn)
+            .await
+            .map_err(BurnError::SolanaError)?;
+        // handle retries, if we encounter a blockhash not found error
+        // resign the txn with the latest blockhash before next retry attempt
+        let mut attempt = 1;
+        const MAX_ATTEMPTS: u32 = 10;
+        loop {
+            match self.solana.submit_transaction(&signed_txn).await {
+                Ok(_) => {
+                    tracing::info!(%payer, %amount, "Burned DC");
+                    break;
+                }
+                Err(err) if err.is_error_blockhash_not_found() && attempt < MAX_ATTEMPTS => {
+                    tracing::error!(%payer, %amount, "block hash not found..possibly stale block hash, resigning txn and retrying");
+                    signed_txn = self
+                        .solana
+                        .sign_transaction(&txn)
+                        .await
+                        .map_err(BurnError::SolanaError)?;
+
+                    attempt += 1;
+                    continue;
+                }
+                Err(_) if attempt < MAX_ATTEMPTS => {
+                    attempt += 1;
+                    tokio::time::sleep(self.retry_delay * attempt).await;
+                    continue;
+                }
+                Err(err) => {
+                    Err(BurnError::SolanaError(err))?;
+                }
+            }
+        }
         Ok(())
     }
 }

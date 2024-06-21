@@ -424,6 +424,13 @@ mod test {
         async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
             Ok(self.0.contains(txn))
         }
+
+        async fn sign_transaction(
+            &self,
+            _transaction: &Self::Transaction,
+        ) -> Result<Self::Transaction, Self::Error> {
+            unreachable!()
+        }
     }
 
     #[tokio::test]
