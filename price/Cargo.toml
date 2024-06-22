@@ -28,7 +28,6 @@ helium-lib = { workspace = true }
 helium-proto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
-pyth-solana-receiver-sdk = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 triggered = { workspace = true }

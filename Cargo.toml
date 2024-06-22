@@ -103,7 +103,6 @@ triggered = "0"
 futures = "*"
 futures-util = "*"
 prost = "*"
-pyth-solana-receiver-sdk = "0"
 once_cell = "1"
 lazy_static = "1"
 config = { version = "0", default-features = false, features = ["toml"] }

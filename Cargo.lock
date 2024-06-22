@@ -5900,7 +5900,6 @@ dependencies = [
  "metrics-exporter-prometheus",
  "poc-metrics",
  "prost",
- "pyth-solana-receiver-sdk",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
