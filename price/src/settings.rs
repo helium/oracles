@@ -83,42 +83,4 @@ impl Settings {
             .build()
             .and_then(|config| config.try_deserialize())
     }
-
-    // pub fn price_key(&self, token_type: BlockchainTokenTypeV1) -> Result<Option<SolPubkey>> {
-    //     self.key(token_type)?
-    //         .as_ref()
-    //         .map(|key| SolPubkey::from_str(key).map_err(|_| anyhow!("unable to parse {}", key)))
-    //         .transpose()
-    // }
-
-    // pub fn price_feed_id(&self, token_type: BlockchainTokenTypeV1) -> Result<Option<FeedId>> {
-    //     let feed_id = match token_type {
-    //         BlockchainTokenTypeV1::Hnt => Ok(self.cluster.hnt_price_feed_id.as_deref()),
-    //         BlockchainTokenTypeV1::Mobile => Ok(self.cluster.mobile_price_feed_id.as_deref()),
-    //         BlockchainTokenTypeV1::Iot => Ok(self.cluster.iot_price_feed_id.as_deref()),
-    //         _ => Err(anyhow::anyhow!("token type not supported")),
-    //     }?;
-
-    //     feed_id
-    //         .map(|f| get_feed_id_from_hex(f).map_err(|_| anyhow::anyhow!("invalid feed id")))
-    //         .transpose()
-    // }
-
-    // pub fn default_price(&self, token_type: BlockchainTokenTypeV1) -> Result<Option<u64>> {
-    //     match token_type {
-    //         BlockchainTokenTypeV1::Hnt => Ok(self.cluster.hnt_price),
-    //         BlockchainTokenTypeV1::Iot => Ok(self.cluster.iot_price),
-    //         BlockchainTokenTypeV1::Mobile => Ok(self.cluster.mobile_price),
-    //         _ => Err(anyhow::anyhow!("token type not supported")),
-    //     }
-    // }
-
-    // fn key(&self, token_type: BlockchainTokenTypeV1) -> Result<&Option<String>> {
-    //     match token_type {
-    //         BlockchainTokenTypeV1::Hnt => Ok(&self.cluster.hnt_price_key),
-    //         BlockchainTokenTypeV1::Mobile => Ok(&self.cluster.mobile_price_key),
-    //         BlockchainTokenTypeV1::Iot => Ok(&self.cluster.iot_price_key),
-    //         _ => Err(anyhow::anyhow!("token type not supported")),
-    //     }
-    // }
 }
