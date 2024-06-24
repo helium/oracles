@@ -4,7 +4,7 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::coverage::RadioHexSignalLevel;
 use h3o::LatLng;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile as proto;
+use helium_proto::services::poc_mobile::{self as proto, LocationSource};
 use mobile_verifier::{
     coverage::{CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
@@ -291,6 +291,7 @@ impl HeartbeatBuilder {
             coverage_object: Some(self.coverage_object.coverage_object.uuid),
             location_validation_timestamp: self.location_validation_timestamp,
             timestamp: self.timestamp.unwrap_or(Utc::now()),
+            location_source: LocationSource::Skyhook,
         }
     }
 }
