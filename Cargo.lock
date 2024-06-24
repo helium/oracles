@@ -7260,7 +7260,6 @@ dependencies = [
  "spl-token 3.5.0",
  "thiserror",
  "tokio",
- "tokio-util",
  "tracing",
 ]
 
