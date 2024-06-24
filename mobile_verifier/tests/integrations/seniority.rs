@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
-use helium_proto::services::poc_mobile::{HeartbeatValidity, SeniorityUpdateReason};
+use helium_proto::services::poc_mobile::{
+    HeartbeatValidity, LocationSource, SeniorityUpdateReason,
+};
 use mobile_verifier::cell_type::CellType;
 use mobile_verifier::coverage::Seniority;
 use mobile_verifier::heartbeats::{
@@ -25,6 +27,7 @@ async fn test_seniority_updates(pool: PgPool) -> anyhow::Result<()> {
             coverage_object: Some(coverage_object),
             location_validation_timestamp: None,
             timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+            location_source: LocationSource::Skyhook,
         },
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: None,
