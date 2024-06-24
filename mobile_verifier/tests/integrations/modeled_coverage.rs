@@ -9,7 +9,7 @@ use futures::stream::{self, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
-    poc_mobile::{CoverageObjectValidity, SignalLevel},
+    poc_mobile::{CoverageObjectValidity, LocationSource, SignalLevel},
 };
 use hextree::Cell;
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
@@ -1392,6 +1392,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
             location_validation_timestamp: Some(DateTime::<Utc>::MIN_UTC),
             operation_mode: true,
             coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
+            location_source: LocationSource::Skyhook,
         },
         received_timestamp: Utc::now(),
     };
@@ -1407,6 +1408,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
             location_validation_timestamp: Some(DateTime::<Utc>::MIN_UTC),
             operation_mode: true,
             coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
+            location_source: LocationSource::Skyhook,
         },
         received_timestamp: Utc::now(),
     };
