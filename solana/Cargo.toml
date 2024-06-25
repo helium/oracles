@@ -9,13 +9,13 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = {workspace = true}
-anchor-client = {workspace = true}
+anchor-client = { workspace = true }
 clap = {workspace = true}
 chrono = {workspace = true}
 file-store = {path = "../file_store"}
 futures = {workspace = true}
 helium-anchor-gen = {workspace = true}
-helium-crypto = {workspace = true, features = ["solana"]}
+helium-crypto = {workspace = true}
 itertools = {workspace = true}
 metrics = {workspace = true}
 serde = {workspace = true}
@@ -26,5 +26,4 @@ solana-sdk = {workspace = true}
 spl-token = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
-tokio-util = { workspace = true }
 tracing = {workspace = true}

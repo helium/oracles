@@ -1,7 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
 use file_store::{file_sink, file_upload, FileType};
-use helium_proto::BlockchainTokenTypeV1;
 use price::{cli::check, PriceGenerator, Settings};
 use std::{
     path::{self, PathBuf},
@@ -92,24 +91,23 @@ impl Server {
         .create()
         .await?;
 
-        // price generators
-        let hnt_price_generator =
-            PriceGenerator::new(settings, BlockchainTokenTypeV1::Hnt, price_sink.clone()).await?;
-        let mobile_price_generator =
-            PriceGenerator::new(settings, BlockchainTokenTypeV1::Mobile, price_sink.clone())
-                .await?;
-        let iot_price_generator =
-            PriceGenerator::new(settings, BlockchainTokenTypeV1::Iot, price_sink.clone()).await?;
+        let mut task_manager = TaskManager::new();
+        task_manager.add(file_upload_server);
+        task_manager.add(price_sink_server);
 
-        TaskManager::builder()
-            .add_task(file_upload_server)
-            .add_task(price_sink_server)
-            .add_task(hnt_price_generator)
-            .add_task(mobile_price_generator)
-            .add_task(iot_price_generator)
-            .build()
-            .start()
-            .await
+        for token_setting in settings.tokens.iter() {
+            task_manager.add(
+                PriceGenerator::new(
+                    settings,
+                    token_setting.token,
+                    token_setting.default_price,
+                    price_sink.clone(),
+                )
+                .await?,
+            );
+        }
+
+        task_manager.start().await
     }
 }
 
