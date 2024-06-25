@@ -33,9 +33,6 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_interval")]
     pub interval: Duration,
     pub tokens: Vec<TokenSetting>,
-    // /// Cluster Configuration
-    // #[serde(default)]
-    // pub cluster: ClusterConfig,
     /// How long to use a stale price in minutes
     #[serde(with = "humantime_serde", default = "default_stale_price_duration")]
     pub stale_price_duration: Duration,
