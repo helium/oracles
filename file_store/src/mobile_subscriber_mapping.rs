@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct VerifiedSubscriberMappingEvent {
-    pub subscriber_id: String,
+    pub subscriber_id: Vec<u8>,
     pub total_reward_points: u64,
     pub timestamp: DateTime<Utc>,
     pub carrier_pub_key: PublicKeyBinary,
@@ -116,13 +116,14 @@ mod tests {
 
     #[test]
     fn from_proto() -> anyhow::Result<()> {
+        let subscriber_id = "sub1".to_string().as_bytes().to_vec();
         let carrier_pubkey =
             PublicKeyBinary::from_str("14ihsKqVhXqfzET1dkLZGNQWrB9ZeGnqJtdMGajFjPmwKsKEEAC")?;
 
         let proto = VerifiedSubscriberMappingEventIngestReportV1 {
             received_timestamp: 1712624400000,
             report: Some(VerifiedSubscriberMappingEventReqV1 {
-                subscriber_id: "sub1".to_string(),
+                subscriber_id: subscriber_id.clone(),
                 total_reward_points: 1000,
                 timestamp: 1712624400,
                 carrier_pub_key: carrier_pubkey.as_ref().into(),
@@ -132,7 +133,7 @@ mod tests {
 
         let report = VerifiedSubscriberMappingEventIngestReport::try_from(proto)?;
         assert_eq!(parse_dt("2024-04-09 01:00:00"), report.received_timestamp);
-        assert_eq!("sub1", report.report.subscriber_id);
+        assert_eq!(subscriber_id, report.report.subscriber_id);
         assert_eq!(1000, report.report.total_reward_points);
         assert_eq!(parse_dt("2024-04-09 01:00:00"), report.report.timestamp);
         assert_eq!(carrier_pubkey, report.report.carrier_pub_key);
