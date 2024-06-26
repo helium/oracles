@@ -40,6 +40,12 @@ pub struct PriceGenerator {
     file_sink: file_sink::FileSinkClient,
 }
 
+impl AsRef<RpcClient> for PriceGenerator {
+    fn as_ref(&self) -> &RpcClient {
+        &self.client
+    }
+}
+
 impl ManagedTask for PriceGenerator {
     fn start_task(
         self: Box<Self>,
@@ -190,7 +196,7 @@ impl PriceGenerator {
     }
 
     async fn get_pyth_price(&self) -> Result<Price> {
-        helium_lib::token::price::get(&self.client, self.token)
+        helium_lib::token::price::get(self, self.token)
             .await
             .map_err(anyhow::Error::from)
             .and_then(|p| {
