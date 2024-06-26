@@ -400,7 +400,7 @@ pub fn coverage_point_to_mobile_reward_share(
     let speedtest_multiplier = to_proto_value(coverage_points.speedtest_multiplier);
 
     let coverage_points = coverage_points
-        .total_coverage_points
+        .coverage_points()
         .to_u64()
         .unwrap_or_default();
 
@@ -608,7 +608,7 @@ impl CoverageShares {
             let seniority = radio_info.seniority.clone();
             let coverage_object_uuid = radio_info.coverage_obj_uuid;
 
-            total_shares += points.reward_shares;
+            total_shares += points.total_points();
             processed_radios.push((radio_id.clone(), points, seniority, coverage_object_uuid));
         }
 
@@ -621,7 +621,7 @@ impl CoverageShares {
             processed_radios
                 .into_iter()
                 .map(move |(id, points, seniority, coverage_object_uuid)| {
-                    let poc_reward = rewards_per_share * points.reward_shares;
+                    let poc_reward = rewards_per_share * points.total_points();
                     let poc_reward = poc_reward.to_u64().unwrap_or_default();
 
                     let mobile_reward_share = coverage_point_to_mobile_reward_share(
@@ -642,7 +642,7 @@ impl CoverageShares {
     pub fn test_hotspot_reward_shares(&self, hotspot: &RadioId) -> Decimal {
         self.coverage_points(hotspot)
             .expect("reward shares for hotspot")
-            .reward_shares
+            .total_points()
     }
 }
 

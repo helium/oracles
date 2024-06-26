@@ -5,13 +5,46 @@ use rust_decimal_macros::dec;
 
 use crate::{BoostedHexStatus, RadioType, Result};
 
+/// Breakdown of points for a hex.
+///
+/// Example:
+///   Outdoor Wifi with 1-hex boosted 5x,
+///   Rank 2, Assignment AAA:
+///     SplitPoints {
+///       modeled: 16,
+///       base: 8,
+///       boosted: 32
+///     }
+///
+///   Rank 2 splits modeled points in half.
+///   Boost at 5x adds 32 points ( (8 * 5) - 8 )
+#[derive(Debug, Default, Clone)]
+pub struct HexPoints {
+    /// Default points received for hex
+    ///
+    /// (RadioType, SignalLevel) points
+    modeled: Decimal,
+    /// Points including Coverage affected multipliers
+    ///
+    /// modeled + (Rank * Assignment)
+    base: Decimal,
+    /// Points _over_ normal received from hex boosting.
+    ///
+    /// (base * Boost multiplier) - base
+    boosted: Decimal,
+}
+
+impl HexPoints {
+    pub(crate) fn total_coverage_points(&self) -> Decimal {
+        self.base + self.boosted
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CoveredHex {
     pub hex: hextree::Cell,
-    /// Default points received from (RadioType, SignalLevel) pair.
-    pub base_coverage_points: Decimal,
-    /// Coverage points including assignment, rank, and boosted hex multipliers.
-    pub calculated_coverage_points: Decimal,
+    /// Breakdown of points for a hex
+    pub points: HexPoints,
     /// Oracle boosted Assignments
     pub assignments: HexAssignments,
     pub assignment_multiplier: Decimal,
@@ -32,7 +65,7 @@ pub(crate) fn clean_covered_hexes(
     let covered_hexes = ranked_coverage
         .into_iter()
         .map(|ranked| {
-            let base_coverage_points = radio_type.base_coverage_points(&ranked.signal_level)?;
+            let modeled_coverage_points = radio_type.base_coverage_points(&ranked.signal_level)?;
             let rank_multiplier = radio_type.rank_multiplier(ranked.rank);
 
             let boosted_multiplier = if boosted_hex_status.is_eligible() {
@@ -49,15 +82,23 @@ pub(crate) fn clean_covered_hexes(
                 ranked.assignments.boosting_multiplier()
             };
 
-            let calculated_coverage_points = base_coverage_points
+            let base_coverage_points =
+                modeled_coverage_points * assignment_multiplier * rank_multiplier;
+
+            let calculated_coverage_points = modeled_coverage_points
                 * assignment_multiplier
                 * rank_multiplier
                 * boosted_multiplier.unwrap_or(dec!(1));
 
+            let boosted_coverage_points = calculated_coverage_points - base_coverage_points;
+
             Ok(CoveredHex {
                 hex: ranked.hex,
-                base_coverage_points,
-                calculated_coverage_points,
+                points: HexPoints {
+                    modeled: modeled_coverage_points,
+                    base: base_coverage_points,
+                    boosted: boosted_coverage_points,
+                },
                 assignments: ranked.assignments,
                 assignment_multiplier,
                 rank: ranked.rank,
@@ -70,11 +111,14 @@ pub(crate) fn clean_covered_hexes(
     Ok(covered_hexes)
 }
 
-pub(crate) fn calculated_coverage_points(covered_hexes: &[CoveredHex]) -> Decimal {
+pub(crate) fn calculated_coverage_points(covered_hexes: &[CoveredHex]) -> HexPoints {
     covered_hexes
         .iter()
-        .map(|hex| hex.calculated_coverage_points)
-        .sum()
+        .fold(HexPoints::default(), |acc, hex| HexPoints {
+            modeled: acc.modeled + hex.points.modeled,
+            base: acc.base + hex.points.base,
+            boosted: acc.boosted + hex.points.boosted,
+        })
 }
 
 #[cfg(test)]

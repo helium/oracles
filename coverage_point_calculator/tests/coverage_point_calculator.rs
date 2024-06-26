@@ -61,7 +61,7 @@ fn base_radio_coverage_points() {
 
         assert_eq!(
             expcted_base_coverage_point,
-            coverage_points.total_coverage_points
+            coverage_points.coverage_points()
         );
     }
 }
@@ -120,7 +120,7 @@ fn radios_with_coverage() {
         )
         .unwrap();
 
-        assert_eq!(dec!(400), coverage_points.total_coverage_points);
+        assert_eq!(dec!(400), coverage_points.coverage_points());
     }
 }
 
@@ -140,7 +140,7 @@ fn cbrs_with_mixed_signal_level_coverage() -> Result {
         ],
     )?;
 
-    assert_eq!(dec!(250), coverage_points.reward_shares);
+    assert_eq!(dec!(250), coverage_points.total_points());
 
     Ok(())
 }
@@ -175,8 +175,8 @@ fn cbrs_with_partially_overlapping_coverage_and_differing_speedtests() -> Result
         ],
     )?;
 
-    assert_eq!(dec!(112.5), radio_1.reward_shares);
-    assert_eq!(dec!(250), radio_2.reward_shares);
+    assert_eq!(dec!(112.5), radio_1.total_points());
+    assert_eq!(dec!(250), radio_2.total_points());
 
     Ok(())
 }
@@ -223,12 +223,12 @@ fn cbrs_with_wholly_overlapping_coverage_and_differing_speedtests() -> Result {
     let radio_5 = indoor_cbrs_radio(SpeedtestTier::Fail, map.get_cbrs_coverage("serial-5"))?;
     let radio_6 = indoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-6"))?;
 
-    assert_eq!(dec!(0), radio_1.reward_shares);
-    assert_eq!(dec!(0), radio_2.reward_shares);
-    assert_eq!(dec!(0), radio_3.reward_shares);
-    assert_eq!(dec!(250), radio_4.reward_shares);
-    assert_eq!(dec!(0), radio_5.reward_shares);
-    assert_eq!(dec!(0), radio_6.reward_shares);
+    assert_eq!(dec!(0), radio_1.total_points());
+    assert_eq!(dec!(0), radio_2.total_points());
+    assert_eq!(dec!(0), radio_3.total_points());
+    assert_eq!(dec!(250), radio_4.total_points());
+    assert_eq!(dec!(0), radio_5.total_points());
+    assert_eq!(dec!(0), radio_6.total_points());
 
     Ok(())
 }
@@ -258,7 +258,7 @@ fn cbrs_outdoor_with_mixed_signal_level_coverage() -> Result {
     )
     .unwrap();
 
-    assert_eq!(dec!(19), radio.reward_shares);
+    assert_eq!(dec!(19), radio.total_points());
 
     Ok(())
 }
@@ -310,8 +310,8 @@ fn cbrs_outdoor_with_single_overlapping_coverage() -> Result {
     let radio_1 = outdoor_cbrs_radio(SpeedtestTier::Degraded, map.get_cbrs_coverage("serial-1"))?;
     let radio_2 = outdoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-2"))?;
 
-    assert_eq!(dec!(19) * dec!(0.5), radio_1.reward_shares);
-    assert_eq!(dec!(8), radio_2.reward_shares);
+    assert_eq!(dec!(19) * dec!(0.5), radio_1.total_points());
+    assert_eq!(dec!(8), radio_2.total_points());
 
     Ok(())
 }
@@ -356,12 +356,12 @@ fn cbrs_indoor_with_wholly_overlapping_coverage_and_no_failing_speedtests() -> R
     let radio_5 = indoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-5"))?;
     let radio_6 = indoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-6"))?;
 
-    assert_eq!(dec!(0), radio_1.reward_shares);
-    assert_eq!(dec!(62.5), radio_2.reward_shares);
-    assert_eq!(dec!(0), radio_3.reward_shares);
-    assert_eq!(dec!(0), radio_4.reward_shares);
-    assert_eq!(dec!(0), radio_5.reward_shares);
-    assert_eq!(dec!(0), radio_6.reward_shares);
+    assert_eq!(dec!(0), radio_1.total_points());
+    assert_eq!(dec!(62.5), radio_2.total_points());
+    assert_eq!(dec!(0), radio_3.total_points());
+    assert_eq!(dec!(0), radio_4.total_points());
+    assert_eq!(dec!(0), radio_5.total_points());
+    assert_eq!(dec!(0), radio_6.total_points());
 
     Ok(())
 }
