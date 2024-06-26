@@ -1617,7 +1617,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/subscriber-mapping-support#16a54eb243663d1cd6bf7c5fff6f7c8ee1e0eda4"
+source = "git+https://github.com/helium/proto?branch=andymck/subscriber-mapping-support#03342d4857065bf9d028c4e06b495d0c142c19d4"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3801,7 +3801,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/subscriber-mapping-support#16a54eb243663d1cd6bf7c5fff6f7c8ee1e0eda4"
+source = "git+https://github.com/helium/proto?branch=andymck/subscriber-mapping-support#03342d4857065bf9d028c4e06b495d0c142c19d4"
 dependencies = [
  "bytes",
  "prost",
