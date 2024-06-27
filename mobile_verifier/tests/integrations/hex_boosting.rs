@@ -403,6 +403,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
 
     let now = Utc::now();
     let epoch = (now - ChronoDuration::hours(24))..now;
+    let epoch_duration = epoch.end - epoch.start;
     let boost_period_length = Duration::days(30);
 
     // seed all the things
@@ -425,7 +426,6 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where reward start time is in the third & last period length
-
     let multipliers2 = vec![
         NonZeroU32::new(3).unwrap(),
         NonZeroU32::new(10).unwrap(),
@@ -493,8 +493,11 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         },
     ];
 
-    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+    let total_poc_emissions = reward_shares::get_scheduled_tokens_for_poc(epoch_duration)
+        .to_u64()
+        .unwrap();
 
+    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -505,79 +508,114 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             &epoch,
             dec!(0.0001)
         ),
-        receive_expected_rewards(&mut mobile_rewards)
+        receive_expected_rewards_maybe_unallocated(
+            &mut mobile_rewards,
+            ExpectUnallocated::NoWhenValue(total_poc_emissions)
+        )
     );
-    if let Ok((poc_rewards, unallocated_reward)) = rewards {
-        // assert poc reward outputs
-        let exp_reward_1 = 23_990_403_838_464;
-        let exp_reward_2 = 23_990_403_838_464;
-        let exp_reward_3 = 1_199_520_191_923;
 
-        assert_eq!(exp_reward_1, poc_rewards[0].poc_reward);
-        assert_eq!(
-            HOTSPOT_2.to_string(),
-            PublicKeyBinary::from(poc_rewards[0].hotspot_key.clone()).to_string()
-        );
-        assert_eq!(exp_reward_2, poc_rewards[1].poc_reward);
-        assert_eq!(
-            HOTSPOT_1.to_string(),
-            PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
-        );
-        assert_eq!(exp_reward_3, poc_rewards[2].poc_reward);
-        assert_eq!(
-            HOTSPOT_3.to_string(),
-            PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
-        );
-
-        // assert the number of boosted hexes for each radio
-        assert_eq!(1, poc_rewards[0].boosted_hexes.len());
-        assert_eq!(2, poc_rewards[1].boosted_hexes.len());
-        // hotspot 3 has no boosted hexes as all its hex boosts are 1x multiplier
-        // and those get filtered out as they dont affect points
-        assert_eq!(0, poc_rewards[2].boosted_hexes.len());
-
-        // assert the hex boost multiplier values
-        // as hotspot 3 has 2 covered hexes, it should have 2 boosted hexes
-        // sort order in the vec for these is not guaranteed, so sort them
-        let mut hotspot_1_boosted_hexes = poc_rewards[1].boosted_hexes.clone();
-        hotspot_1_boosted_hexes.sort_by(|a, b| b.location.cmp(&a.location));
-
-        assert_eq!(20, poc_rewards[0].boosted_hexes[0].multiplier);
-        assert_eq!(10, hotspot_1_boosted_hexes[1].multiplier);
-        assert_eq!(10, hotspot_1_boosted_hexes[1].multiplier);
-
-        // assert the hex boost location values
-        assert_eq!(0x8a1fb46622dffff_u64, hotspot_1_boosted_hexes[0].location);
-        assert_eq!(0x8a1fb46622d7fff_u64, hotspot_1_boosted_hexes[1].location);
-        assert_eq!(
-            0x8a1fb49642dffff_u64,
-            poc_rewards[0].boosted_hexes[0].location
-        );
-
-        // hotspot1 should have 20x the reward of hotspot 3
-        assert_eq!(poc_rewards[0].poc_reward / poc_rewards[2].poc_reward, 20);
-        // hotspot1 should have 20x the reward of hotspot 3
-        // due to the 2 boosted hexes each with a 10x multiplier
-        assert_eq!(poc_rewards[1].poc_reward / poc_rewards[2].poc_reward, 20);
-
-        // confirm the total rewards allocated matches expectations
-        let poc_sum: u64 = poc_rewards.iter().map(|r| r.poc_reward).sum();
-        let unallocated_sum: u64 = unallocated_reward.amount;
-        let total = poc_sum + unallocated_sum;
-
-        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
-            .to_u64()
-            .unwrap();
-        assert_eq!(expected_sum, total);
-
-        // confirm the rewarded percentage amount matches expectations
-        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-        let percent = (Decimal::from(total) / daily_total)
-            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-        assert_eq!(percent, dec!(0.6));
-    } else {
+    let Ok((poc_rewards, unallocated_reward)) = rewards else {
         panic!("no rewards received");
     };
+
+    let mut poc_rewards = poc_rewards.iter();
+    let hotspot_2 = poc_rewards.next().unwrap(); // 1 boost at 20x
+    let hotspot_1 = poc_rewards.next().unwrap(); // 2 boost at 10x
+    let hotspot_3 = poc_rewards.next().unwrap(); // no boost
+    assert_eq!(
+        None,
+        poc_rewards.next(),
+        "Received more hotspots than expected in rewards"
+    );
+
+    assert_eq!(
+        HOTSPOT_2.to_string(),
+        PublicKeyBinary::from(hotspot_2.hotspot_key.clone()).to_string()
+    );
+    assert_eq!(
+        HOTSPOT_1.to_string(),
+        PublicKeyBinary::from(hotspot_1.hotspot_key.clone()).to_string()
+    );
+    assert_eq!(
+        HOTSPOT_3.to_string(),
+        PublicKeyBinary::from(hotspot_3.hotspot_key.clone()).to_string()
+    );
+
+    // Let's figure out how to calculate rewards for 3 IndoorWifi radios where:
+    // - 2 covered hexes boosted at 10x
+    // - 1 covered hex boosted at 20x
+    // - 1 covered hex no boost
+    {
+        // To not deal with percentages of percentages, let's start with the
+        // total emissions and work from there.
+        let total_emissions = reward_shares::get_total_scheduled_tokens(epoch_duration);
+        let data_transfer = total_emissions * dec!(0.4);
+        let regular_poc = total_emissions * dec!(0.1);
+        let boosted_poc = total_emissions * dec!(0.1);
+
+        // There is no data transfer in this test to be rewarded, so we know the
+        // entirety of the unallocated amount will be put in the poc pool.
+        let regular_poc = regular_poc + data_transfer;
+
+        // With regular poc now 50% of total emissions, that will be split
+        // between the 3 radios equally.
+        // 1200 comes from IndoorWifi 400 * 0.75 speedtest multiplier * 4 hexes
+        let regular_per_share = regular_poc / dec!(1200);
+
+        // Boosted hexes are 2 at 10x and 1 at 20x.
+        // (300 * (9 * 2)) + (300 * 19) = 11,100;
+        // To get points _only_ from boosting.
+        let boosted_per_share = boosted_poc / dec!(11_100);
+
+        let hex_coverage = |hexes: u8| regular_per_share * dec!(300) * Decimal::from(hexes);
+        let boost_coverage = |mult: u8| boosted_per_share * dec!(300) * Decimal::from(mult);
+
+        let exp_reward_1 = (hex_coverage(2) + boost_coverage(18)).to_u64().unwrap();
+        let exp_reward_2 = (hex_coverage(1) + boost_coverage(19)).to_u64().unwrap();
+        let exp_reward_3 = (hex_coverage(1) + boost_coverage(0)).to_u64().unwrap();
+
+        assert_eq!(exp_reward_1, hotspot_1.poc_reward); // 2 at 10x boost
+        assert_eq!(exp_reward_2, hotspot_2.poc_reward); // 1 at 20x boost
+        assert_eq!(exp_reward_3, hotspot_3.poc_reward); // 1 at no boost
+
+        // hotspot 1 and 2 should have the same coverage points, but different poc rewards.
+        assert_eq!(hotspot_1.coverage_points, hotspot_2.coverage_points);
+        assert_ne!(hotspot_1.poc_reward, hotspot_2.poc_reward);
+    }
+
+    // assert the number of boosted hexes for each radio
+    assert_eq!(1, hotspot_2.boosted_hexes.len());
+    assert_eq!(2, hotspot_1.boosted_hexes.len());
+    // hotspot 3 has no boosted hexes as all its hex boosts are 1x multiplier
+    // and those get filtered out as they dont affect points
+    assert_eq!(0, hotspot_3.boosted_hexes.len());
+
+    // assert the hex boost multiplier values
+    // as hotspot 3 has 2 covered hexes, it should have 2 boosted hexes
+    // sort order in the vec for these is not guaranteed, so sort them
+    let mut hotspot_1_boosted_hexes = hotspot_1.boosted_hexes.clone();
+    hotspot_1_boosted_hexes.sort_by(|a, b| b.location.cmp(&a.location));
+
+    assert_eq!(20, hotspot_2.boosted_hexes[0].multiplier);
+    assert_eq!(10, hotspot_1_boosted_hexes[1].multiplier);
+    assert_eq!(10, hotspot_1_boosted_hexes[1].multiplier);
+
+    // assert the hex boost location values
+    assert_eq!(0x8a1fb46622dffff_u64, hotspot_1_boosted_hexes[0].location);
+    assert_eq!(0x8a1fb46622d7fff_u64, hotspot_1_boosted_hexes[1].location);
+    assert_eq!(0x8a1fb49642dffff_u64, hotspot_2.boosted_hexes[0].location);
+
+    // confirm the total rewards allocated matches expectations
+    let poc_sum = hotspot_1.poc_reward + hotspot_2.poc_reward + hotspot_3.poc_reward;
+    let total = poc_sum + unallocated_reward.amount;
+    assert_eq!(total_poc_emissions, total);
+
+    // confirm the rewarded percentage amount matches expectations
+    let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
+    let percent = (Decimal::from(total) / daily_total)
+        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+    assert_eq!(percent, dec!(0.6));
+
     Ok(())
 }
 
@@ -1187,7 +1225,7 @@ async fn seed_heartbeats_v2(
 ) -> anyhow::Result<()> {
     for n in 0..24 {
         let hotspot_key1: PublicKeyBinary = HOTSPOT_1.to_string().parse().unwrap();
-        println!("0x8a1fb466d2dffff_u64 as u64: {}", 0x8a1fb466d2dffff_u64);
+
         let cov_obj_1 = create_multi_coverage_object(
             ts + ChronoDuration::hours(n),
             None,
@@ -1393,7 +1431,7 @@ async fn seed_heartbeats_v4(
 ) -> anyhow::Result<()> {
     for n in 0..24 {
         let hotspot_key1: PublicKeyBinary = HOTSPOT_1.to_string().parse().unwrap();
-        println!("0x8a1fb466d2dffff_u64 as u64: {}", 0x8a1fb466d2dffff_u64);
+
         let cov_obj_1 = create_multi_coverage_object(
             ts + ChronoDuration::hours(n),
             None,
