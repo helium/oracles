@@ -645,7 +645,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     let start_ts_1 =
         epoch.start - (boost_period_length * multipliers1.len() as i32 + ChronoDuration::days(1));
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
-    dbg!(epoch.start, start_ts_1, end_ts_1);
+
     // setup boosted hex where reward start time is same as the boost period ends
     let multipliers2 = vec![
         NonZeroU32::new(4).unwrap(),
@@ -654,7 +654,6 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     ];
     let start_ts_2 = epoch.start - (boost_period_length * multipliers2.len() as i32);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
-    dbg!(epoch.start, start_ts_2, end_ts_2);
 
     let boosted_hexes = vec![
         BoostedHexInfo {
@@ -748,6 +747,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
     let now = Utc::now();
     let epoch = (now - ChronoDuration::hours(24))..now;
+    let epoch_duration = epoch.end - epoch.start;
     let boost_period_length = Duration::days(30);
 
     // seed all the things
@@ -792,6 +792,9 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+    let total_poc_emissions = reward_shares::get_scheduled_tokens_for_poc(epoch_duration)
+        .to_u64()
+        .unwrap();
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -803,82 +806,106 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             &epoch,
             dec!(0.0001)
         ),
-        receive_expected_rewards(&mut mobile_rewards)
+        receive_expected_rewards_maybe_unallocated(
+            &mut mobile_rewards,
+            ExpectUnallocated::NoWhenValue(total_poc_emissions)
+        )
     );
-    if let Ok((poc_rewards, unallocated_reward)) = rewards {
-        // HOTSPOT 1 has full location trust score and a boosted location
-        // HOTSPOT 2 has full location trust score and NO boosted location
-        // HOTSPOT 3 has reduced location trust score and a boosted location
 
-        // assert poc reward outputs
-        let hotspot_1_reward = 30_264_817_150_063;
-        let hotspot_2_reward = 15_132_408_575_031;
-        let hotspot_3_reward = 3_783_102_143_757;
-
-        assert_eq!(hotspot_1_reward, poc_rewards[1].poc_reward);
-        assert_eq!(
-            HOTSPOT_1.to_string(),
-            PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
-        );
-        assert_eq!(hotspot_2_reward, poc_rewards[0].poc_reward);
-        assert_eq!(
-            HOTSPOT_2.to_string(),
-            PublicKeyBinary::from(poc_rewards[0].hotspot_key.clone()).to_string()
-        );
-        assert_eq!(hotspot_3_reward, poc_rewards[2].poc_reward);
-        assert_eq!(
-            HOTSPOT_3.to_string(),
-            PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
-        );
-
-        // assert the boosted hexes in the radio rewards
-        // assert the number of boosted hexes for each radio
-
-        //hotspot 1 has one boosted hex
-        assert_eq!(1, poc_rewards[1].boosted_hexes.len());
-        //hotspot 2 has no boosted hexes
-        assert_eq!(0, poc_rewards[0].boosted_hexes.len());
-        // hotspot 3 has a boosted location but as its location trust score
-        // is reduced the boost does not get applied
-        assert_eq!(0, poc_rewards[2].boosted_hexes.len());
-
-        // assert the hex boost multiplier values
-        // assert_eq!(2, poc_rewards[0].boosted_hexes[0].multiplier);
-        assert_eq!(2, poc_rewards[1].boosted_hexes[0].multiplier);
-
-        assert_eq!(
-            0x8a1fb466d2dffff_u64,
-            poc_rewards[1].boosted_hexes[0].location
-        );
-
-        // hotspot1 should have 2x the reward of hotspot 2
-        // hotspot 2 has a full location trust score but no boosted hex
-        assert_eq!(poc_rewards[1].poc_reward / poc_rewards[0].poc_reward, 2);
-        // hotspot1 should have 8x the reward of hotspot 3
-        // hotspot 2 has a reduced location trust score and thus gets no boost
-        // even tho its location is boosted
-        // this results in a 4x reduction in reward compared to hotspot 1's base reward
-        // then when you apply hotspots 2x boost you get an 8x difference
-        assert_eq!(poc_rewards[1].poc_reward / poc_rewards[2].poc_reward, 8);
-
-        // confirm the total rewards allocated matches expectations
-        let poc_sum: u64 = poc_rewards.iter().map(|r| r.poc_reward).sum();
-        let unallocated_sum: u64 = unallocated_reward.amount;
-        let total = poc_sum + unallocated_sum;
-
-        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
-            .to_u64()
-            .unwrap();
-        assert_eq!(expected_sum, total);
-
-        // confirm the rewarded percentage amount matches expectations
-        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-        let percent = (Decimal::from(total) / daily_total)
-            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-        assert_eq!(percent, dec!(0.6));
-    } else {
+    let Ok((poc_rewards, unallocated_reward)) = rewards else {
         panic!("no rewards received");
     };
+
+    let mut poc_rewards = poc_rewards.iter();
+    let hotspot_2 = poc_rewards.next().unwrap(); // full location trust NO boosts
+    let hotspot_1 = poc_rewards.next().unwrap(); // full location trust 1 boost
+    let hotspot_3 = poc_rewards.next().unwrap(); // reduced location trust 1 boost
+    assert_eq!(
+        None,
+        poc_rewards.next(),
+        "Received more hotspots than expected in rewards"
+    );
+    assert_eq!(
+        HOTSPOT_1.to_string(),
+        PublicKeyBinary::from(hotspot_1.hotspot_key.clone()).to_string()
+    );
+    assert_eq!(
+        HOTSPOT_2.to_string(),
+        PublicKeyBinary::from(hotspot_2.hotspot_key.clone()).to_string()
+    );
+    assert_eq!(
+        HOTSPOT_3.to_string(),
+        PublicKeyBinary::from(hotspot_3.hotspot_key.clone()).to_string()
+    );
+
+    // Let's figure out how to calculate rewards for 3 similar radios with
+    // different location trust and boosting.
+    {
+        // To not deal with percentages of percentages, let's start with the
+        // total emissions and work from there.
+        let total_emissions = reward_shares::get_total_scheduled_tokens(epoch_duration);
+        let data_transfer = total_emissions * dec!(0.4);
+        let regular_poc = total_emissions * dec!(0.1);
+        let boosted_poc = total_emissions * dec!(0.1);
+
+        // There is no data transfer in this test to be rewarded, so we know
+        // the entirety of the unallocated amount will be put in the poc
+        // pool.
+        let regular_poc = regular_poc + data_transfer;
+
+        // Here's how we get the regular shares per coverage points
+        // | base coverage point | speedtest | location | total |
+        // |---------------------|-----------|----------|-------|
+        // | 400                 | 0.75      | 1.00     | 300   |
+        // | 400                 | 0.75      | 1.00     | 300   |
+        // | 400                 | 0.75      | 0.25     | 75    |
+        // |---------------------|-----------|----------|-------|
+        //                                              | 675   |
+        let regular_share = regular_poc / dec!(675);
+
+        // Boosted hexes are 2x, only one radio qualifies based on the location trust
+        // 300 * 1 == 600
+        // To get points _only_ from boosting.
+        let boosted_share = boosted_poc / dec!(300);
+
+        let exp_reward_1 = (regular_share * dec!(300)) + (boosted_share * dec!(300) * dec!(1));
+        let exp_reward_2 = (regular_share * dec!(300)) + (boosted_share * dec!(300) * dec!(0));
+        let exp_reward_3 = (regular_share * dec!(75)) + (boosted_share * dec!(75) * dec!(0));
+
+        assert_eq!(exp_reward_1.to_u64().unwrap(), hotspot_1.poc_reward);
+        assert_eq!(exp_reward_2.to_u64().unwrap(), hotspot_2.poc_reward);
+        assert_eq!(exp_reward_3.to_u64().unwrap(), hotspot_3.poc_reward);
+    }
+
+    // assert the number of boosted hexes for each radio
+    //hotspot 1 has one boosted hex
+    assert_eq!(1, hotspot_1.boosted_hexes.len());
+    //hotspot 2 has no boosted hexes
+    assert_eq!(0, hotspot_2.boosted_hexes.len());
+    // hotspot 3 has a boosted location but as its location trust score
+    // is reduced the boost does not get applied
+    assert_eq!(0, hotspot_3.boosted_hexes.len());
+
+    // assert the hex boost multiplier values
+    // assert_eq!(2, hotspot_1.boosted_hexes[0].multiplier);
+    assert_eq!(2, hotspot_1.boosted_hexes[0].multiplier);
+    assert_eq!(0x8a1fb466d2dffff_u64, hotspot_1.boosted_hexes[0].location);
+
+    // confirm the total rewards allocated matches expectations
+    let poc_sum = hotspot_1.poc_reward + hotspot_2.poc_reward + hotspot_3.poc_reward;
+    let total = poc_sum + unallocated_reward.amount;
+
+    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+        .to_u64()
+        .unwrap();
+    assert_eq!(expected_sum, total);
+
+    // confirm the rewarded percentage amount matches expectations
+    let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
+    let percent = (Decimal::from(total) / daily_total)
+        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+    assert_eq!(percent, dec!(0.6));
+
     Ok(())
 }
 
