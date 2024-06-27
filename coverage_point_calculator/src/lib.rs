@@ -106,8 +106,8 @@ pub fn calculate_reward_shares<'a>(
         |(total, boosted, poc), radio| {
             (
                 total + radio.total_points(),
-                boosted + radio.boosted_points(),
-                poc + radio.coverage_points(),
+                boosted + radio.total_boosted_points(),
+                poc + radio.total_base_points(),
             )
         },
     );
@@ -117,9 +117,9 @@ pub fn calculate_reward_shares<'a>(
     }
 
     let shares_per_point = allocated_rewards.total() / total_points;
+    let boost_within_limit = allocated_rewards.boost_rewards >= shares_per_point * boost_points;
 
-    if allocated_rewards.boost_rewards >= shares_per_point * boost_points {
-        // Within boosted reward limit, use the already calculated shares ratio
+    if boost_within_limit {
         Ok(CalculatedRewardShares {
             normal: shares_per_point,
             boost: shares_per_point,
@@ -217,7 +217,7 @@ impl CoveragePoints {
     /// Accumulated points related to entire radio.
     /// coverage points * speedtest
     pub fn total_points(&self) -> Decimal {
-        self.coverage_points() * self.speedtest_multiplier
+        self.total_base_points() + self.total_boosted_points()
     }
 
     pub fn total_base_points(&self) -> Decimal {
