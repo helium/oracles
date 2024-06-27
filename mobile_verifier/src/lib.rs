@@ -9,6 +9,7 @@ pub mod radio_threshold;
 pub mod reward_shares;
 pub mod rewarder;
 mod settings;
+pub mod sp_boosted_rewards_bans;
 pub mod speedtests;
 pub mod speedtests_average;
 pub mod subscriber_location;

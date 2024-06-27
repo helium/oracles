@@ -8,7 +8,7 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("encode error")]
     Encode(#[from] EncodeError),
-    #[error("dencode error")]
+    #[error("decode error")]
     Decode(#[from] DecodeError),
     #[error("not found")]
     NotFound(String),

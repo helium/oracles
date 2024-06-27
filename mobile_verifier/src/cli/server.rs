@@ -8,6 +8,7 @@ use crate::{
     heartbeats::{cbrs::CbrsHeartbeatDaemon, wifi::WifiHeartbeatDaemon},
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
+    sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
     speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor,
     telemetry, Settings,
@@ -176,12 +177,21 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     file_upload.clone(),
-                    report_ingest,
-                    auth_client,
+                    report_ingest.clone(),
+                    auth_client.clone(),
                 )
                 .await?,
             )
             .add_task(DataSessionIngestor::create_managed_task(pool.clone(), settings).await?)
+            .add_task(
+                ServiceProviderBoostedRewardsBanIngestor::create_managed_task(
+                    pool.clone(),
+                    report_ingest,
+                    auth_client,
+                    settings.start_after,
+                )
+                .await?,
+            )
             .add_task(
                 Rewarder::create_managed_task(
                     pool,
