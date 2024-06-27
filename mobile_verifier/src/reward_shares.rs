@@ -620,6 +620,13 @@ impl CoverageShares {
     ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + 'b> {
         let mut total_shares: Decimal = dec!(0);
 
+        struct ProcessedRadio {
+            radio_id: RadioId,
+            points: coverage_point_calculator::CoveragePoints,
+            seniority: Seniority,
+            coverage_obj_uuid: Uuid,
+        }
+
         let mut processed_radios = vec![];
         for (radio_id, radio_info) in self.radio_infos.iter() {
             let points = match self.coverage_points(radio_id) {
@@ -634,34 +641,57 @@ impl CoverageShares {
                 }
             };
 
-            let seniority = radio_info.seniority.clone();
-            let coverage_object_uuid = radio_info.coverage_obj_uuid;
-
             total_shares += points.total_points();
-            processed_radios.push((radio_id.clone(), points, seniority, coverage_object_uuid));
+
+            processed_radios.push(ProcessedRadio {
+                radio_id: radio_id.clone(),
+                points,
+                seniority: radio_info.seniority.clone(),
+                coverage_obj_uuid: radio_info.coverage_obj_uuid,
+            });
         }
 
-        let available_poc_rewards = reward_shares.total_poc();
-        let Some(rewards_per_share) = available_poc_rewards.checked_div(total_shares) else {
-            // there are no shares, the rest are unallocated, return early
-            return None;
+        let allocated_rewards = coverage_point_calculator::AllocatedRewardShares {
+            poc_rewards: reward_shares.poc,
+            boost_rewards: reward_shares.boosted_poc,
+            extra_rewards: reward_shares.unallocated,
+        };
+
+        let coverage_points_iter = processed_radios.iter().map(|radio| &radio.points);
+        let calculate_reward_shares = coverage_point_calculator::calculate_reward_shares(
+            allocated_rewards,
+            coverage_points_iter,
+        );
+        let rewards_per_share = match calculate_reward_shares {
+            Ok(rewards_per_share) => rewards_per_share,
+            Err(err) => {
+                tracing::info!(?epoch, ?err, "could not calculate reward shares");
+                return None;
+            }
         };
 
         Some(
             processed_radios
                 .into_iter()
-                .map(move |(id, points, seniority, coverage_object_uuid)| {
-                    let base_reward = rewards_per_share * points.total_base_points();
-                    let boosted_reward = rewards_per_share * points.total_boosted_points();
+                .map(move |radio| {
+                    let ProcessedRadio {
+                        radio_id,
+                        points,
+                        seniority,
+                        coverage_obj_uuid,
+                    } = radio;
+
+                    let base_reward = rewards_per_share.normal * points.total_base_points();
+                    let boosted_reward = rewards_per_share.boost * points.total_boosted_points();
                     let poc_reward = (base_reward + boosted_reward).to_u64().unwrap_or_default();
 
                     let mobile_reward_share = coverage_point_to_mobile_reward_share(
                         points,
                         epoch,
-                        &id,
+                        &radio_id,
                         poc_reward,
                         seniority.seniority_ts,
-                        coverage_object_uuid,
+                        coverage_obj_uuid,
                     );
                     (poc_reward, mobile_reward_share)
                 })
