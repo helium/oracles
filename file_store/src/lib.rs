@@ -22,7 +22,6 @@ pub mod mobile_subscriber;
 pub mod mobile_transfer;
 pub mod reward_manifest;
 mod settings;
-pub mod sp_boosted_rewards_bans;
 pub mod speedtest;
 pub mod traits;
 pub mod wifi_heartbeat;

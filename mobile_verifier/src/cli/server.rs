@@ -186,9 +186,10 @@ impl Cmd {
             .add_task(
                 ServiceProviderBoostedRewardsBanIngestor::create_managed_task(
                     pool.clone(),
+                    file_upload.clone(),
                     report_ingest,
                     auth_client,
-                    settings.start_after,
+                    settings,
                 )
                 .await?,
             )

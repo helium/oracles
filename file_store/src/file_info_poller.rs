@@ -277,10 +277,10 @@ where
     }
 }
 
-pub struct ProtoFileInfoPollerParser;
+pub struct MsgDecodeFileInfoPollerParser;
 
 #[async_trait::async_trait]
-impl<T> FileInfoPollerParser<T> for ProtoFileInfoPollerParser
+impl<T> FileInfoPollerParser<T> for MsgDecodeFileInfoPollerParser
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
@@ -298,6 +298,41 @@ where
             })
             .filter_map(|msg| async {
                 <T as MsgDecode>::decode(msg)
+                    .map_err(|err| {
+                        tracing::error!(
+                            "Error in decoding message of type {}: {err:?}",
+                            std::any::type_name::<T>()
+                        );
+                        err
+                    })
+                    .ok()
+            })
+            .collect()
+            .await)
+    }
+}
+
+pub struct ProstFileInfoPollerParser;
+
+#[async_trait::async_trait]
+impl<T> FileInfoPollerParser<T> for ProstFileInfoPollerParser
+where
+    T: helium_proto::Message + Default,
+{
+    async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
+        Ok(file_store::stream_source(byte_stream)
+            .filter_map(|msg| async {
+                msg.map_err(|err| {
+                    tracing::error!(
+                        "Error streaming entry in file of type {}: {err:?}",
+                        std::any::type_name::<T>()
+                    );
+                    err
+                })
+                .ok()
+            })
+            .filter_map(|msg| async {
+                <T as helium_proto::Message>::decode(msg)
                     .map_err(|err| {
                         tracing::error!(
                             "Error in decoding message of type {}: {err:?}",
