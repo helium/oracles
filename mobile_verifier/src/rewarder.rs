@@ -358,7 +358,13 @@ pub async fn reward_poc_and_dc(
 
     // reward dc before poc so that we can calculate the unallocated dc reward
     // and carry this into the poc pool
-    let dc_unallocated_amount = reward_dc(mobile_rewards, reward_period, transfer_rewards).await?;
+    let dc_unallocated_amount = reward_dc(
+        mobile_rewards,
+        reward_period,
+        transfer_rewards,
+        &reward_shares,
+    )
+    .await?;
 
     // any poc unallocated gets attributed to the unallocated reward
     reward_shares.unallocated = dc_unallocated_amount;
@@ -444,10 +450,10 @@ pub async fn reward_dc(
     mobile_rewards: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     transfer_rewards: TransferRewards,
+    reward_shares: &DataTransferAndPocAllocatedRewardShares,
 ) -> anyhow::Result<Decimal> {
     // handle dc reward outputs
     let mut allocated_dc_rewards = 0_u64;
-    let total_dc_rewards = transfer_rewards.total();
     for (dc_reward_amount, mobile_reward_share) in transfer_rewards.into_rewards(reward_period) {
         allocated_dc_rewards += dc_reward_amount;
         mobile_rewards
@@ -459,7 +465,8 @@ pub async fn reward_dc(
     // for Dc we return the unallocated amount rather than writing it out to as an unallocated reward
     // it then gets added to the poc pool
     // we return the full decimal value just to ensure we allocate all to poc
-    let unallocated_dc_reward_amount = total_dc_rewards - Decimal::from(allocated_dc_rewards);
+    let unallocated_dc_reward_amount =
+        reward_shares.data_transfer - Decimal::from(allocated_dc_rewards);
     Ok(unallocated_dc_reward_amount)
 }
 

@@ -662,6 +662,7 @@ impl CoverageShares {
             allocated_rewards,
             coverage_points_iter,
         );
+
         let rewards_per_share = match calculate_reward_shares {
             Ok(rewards_per_share) => rewards_per_share,
             Err(err) => {
