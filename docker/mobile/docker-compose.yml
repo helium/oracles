@@ -1,0 +1,137 @@
+name: mobile
+services:
+
+  postgres:
+    image: postgres:14-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres:/docker-entrypoint-initdb.d
+
+  postgres_seeder:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/postgres_seeder/Dockerfile
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST=postgres
+    depends_on:
+        postgres:
+          condition: service_healthy
+    volumes:
+      - ./postgres_seeder/post_migration:/postgres_seeder/post_migration
+
+  localstack:
+    image: localstack/localstack:stable
+    environment:
+      - AWS_DEFAULT_REGION=us-east-1
+      - SERVICES=s3
+    ports:
+      - 4566:4566
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - ./localstack/init-s3.sh:/etc/localstack/init/ready.d/init-s3.sh
+      - ./localstack/data:/tmp/data
+  
+  ingest:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/Dockerfile
+      args:
+        - PACKAGE=ingest
+    depends_on:
+        localstack:
+          condition: service_healthy
+    stop_grace_period: 1s
+    env_file: .env-mobile
+    ports:
+      - 9080:9080
+    volumes:
+      - ./ingest/settings.toml:/opt/ingest/etc/settings.toml
+  
+  config:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/Dockerfile
+      args:
+        - PACKAGE=mobile-config
+    depends_on:
+        postgres_seeder:
+          condition: service_completed_successfully
+    stop_grace_period: 1s
+    environment:
+      - RUST_BACKTRACE=1
+    ports:
+      - 9081:9081
+    volumes:
+      - ./config/settings.toml:/opt/mobile-config/etc/settings.toml
+      - ./config/keypair.bin:/opt/mobile-config/etc/keypair.bin
+
+  packet_verifier:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/Dockerfile
+      args:
+        - PACKAGE=mobile-packet-verifier
+    depends_on:
+        localstack:
+          condition: service_healthy
+        config:
+          condition: service_started
+    stop_grace_period: 1s
+    env_file: .env-mobile
+    volumes:
+      - ./packet_verifier/settings.toml:/opt/mobile-packet-verifier/etc/settings.toml
+      - ./packet_verifier/keypair.bin:/opt/mobile-packet-verifier/etc/keypair.bin
+  
+  verifier:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/Dockerfile
+      args:
+        - PACKAGE=mobile-verifier
+    depends_on:
+        localstack:
+          condition: service_healthy
+        config:
+          condition: service_started
+    stop_grace_period: 1s
+    env_file: .env-mobile
+    volumes:
+      - ./verifier/settings.toml:/opt/mobile-verifier/etc/settings.toml
+      - ./verifier/keypair.bin:/opt/mobile-verifier/etc/keypair.bin
+      - ./verifier/usa_and_mexico_geofence_regions/mexico.txt:/opt/mobile-verifier/usa_and_mexico_geofence_regions/mexico.txt
+      - ./verifier/usa_and_mexico_geofence_regions/us-territories.txt:/opt/mobile-verifier/usa_and_mexico_geofence_regions/us-territories.txt
+      - ./verifier/usa_geofence_regions/us-territories.txt:/opt/mobile-verifier/usa_geofence_regions/us-territories.txt
+      - ./verifier/data_sets_directory:/opt/mobile-verifier/data_sets_directory
+
+  reward_index:
+    build:
+      context: ../..
+      dockerfile: ./docker/mobile/Dockerfile
+      args:
+        - PACKAGE=reward-index
+    depends_on:
+        localstack:
+          condition: service_healthy
+        config:
+          condition: service_started
+    stop_grace_period: 1s
+    env_file: .env-mobile
+    volumes:
+      - ./reward_index/settings.toml:/opt/reward-index/etc/settings.toml
+
+volumes:
+  postgres-data:
+  localstack-data:

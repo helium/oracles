@@ -8782,6 +8782,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-mobile"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-compression",
+ "backon",
+ "bs58 0.4.0",
+ "chrono",
+ "clap 4.4.8",
+ "custom-tracing",
+ "file-store",
+ "h3o",
+ "helium-crypto",
+ "helium-proto",
+ "hextree",
+ "prost",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+ "uuid",
+]
+
+[[package]]
 name = "textwrap"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

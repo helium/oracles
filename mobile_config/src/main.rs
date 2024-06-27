@@ -102,6 +102,8 @@ impl Daemon {
             hex_boosting_svc,
         };
 
+        tracing::info!("grpc listening on {listen_addr}");
+
         TaskManager::builder()
             .add_task(grpc_server)
             .build()

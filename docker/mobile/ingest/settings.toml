@@ -1,0 +1,16 @@
+log = "ingest=debug,file_store=info,custom_tracing=info"
+mode = "mobile"
+listen_addr = "0.0.0.0:9080"
+cache = "/opt/ingest/data"
+network = "mainnet"
+session_key_timeout = "30 minutes"
+token = "api-token"
+roll_time = "30 seconds"
+
+[output]
+bucket = "mobile-ingest"
+region = "us-east-1"
+endpoint = "http://localstack:4566"
+
+[metrics]
+endpoint = "0.0.0.0:19000"
