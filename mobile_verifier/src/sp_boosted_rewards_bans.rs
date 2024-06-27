@@ -1,22 +1,77 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_source,
-    sp_boosted_rewards_bans::{KeyType, ServiceProviderBoostedRewardBannedRadioIngest},
+    file_info_poller::{
+        FileInfoPollerConfigBuilder, FileInfoStream, LookbackBehavior, ProstFileInfoPollerParser,
+    },
+    file_sink::{self, FileSinkClient},
+    file_upload::FileUpload,
     FileStore, FileType,
 };
 use futures::{prelude::future::LocalBoxFuture, StreamExt, TryFutureExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::mobile_config::NetworkKeyRole;
+use helium_proto::services::{
+    mobile_config::NetworkKeyRole,
+    poc_mobile::{
+        service_provider_boosted_rewards_banned_radio_req_v1::KeyType,
+        ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+        ServiceProviderBoostedRewardsBannedRadioVerificationStatus,
+        VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    },
+};
 use mobile_config::client::authorization_client::AuthorizationVerifier;
 use sqlx::{PgPool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
+use crate::Settings;
+
+struct BannedRadioReport {
+    received_timestamp: DateTime<Utc>,
+    pubkey: PublicKeyBinary,
+    radio_type: String,
+    radio_key: String,
+    until: DateTime<Utc>,
+}
+
+impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedRadioReport {
+    type Error = anyhow::Error;
+
+    fn try_from(
+        value: ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    ) -> Result<Self, Self::Error> {
+        let report = value
+            .report
+            .ok_or_else(|| anyhow::anyhow!("invalid ingest report"))?;
+
+        let (radio_type, radio_key) = match report.key_type {
+            Some(KeyType::CbsdId(cbsd_id)) => ("cbrs", cbsd_id),
+            Some(KeyType::HotspotKey(bytes)) => ("wifi", PublicKeyBinary::from(bytes).to_string()),
+            None => anyhow::bail!("Invalid keytype"),
+        };
+
+        Ok(Self {
+            received_timestamp: Utc
+                .timestamp_millis_opt(value.received_timestamp as i64)
+                .single()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("invalid received timestamp, {}", value.received_timestamp)
+                })?,
+            pubkey: report.pub_key.into(),
+            radio_type: radio_type.to_string(),
+            radio_key,
+            until: Utc
+                .timestamp_opt(report.until as i64, 0)
+                .single()
+                .ok_or_else(|| anyhow::anyhow!("invalid until: {}", report.until))?,
+        })
+    }
+}
+
 pub struct ServiceProviderBoostedRewardsBanIngestor<AV> {
     pool: PgPool,
     authorization_verifier: AV,
-    receiver: Receiver<FileInfoStream<ServiceProviderBoostedRewardBannedRadioIngest>>,
+    receiver: Receiver<FileInfoStream<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>>,
+    verified_sink: FileSinkClient,
 }
 
 impl<AV> ManagedTask for ServiceProviderBoostedRewardsBanIngestor<AV>
@@ -44,26 +99,43 @@ where
 {
     pub async fn create_managed_task(
         pool: PgPool,
+        file_upload: FileUpload,
         file_store: FileStore,
         authorization_verifier: AV,
-        start_after: DateTime<Utc>,
+        settings: &Settings,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (receiver, ingest_server) =
-            file_source::continuous_source::<ServiceProviderBoostedRewardBannedRadioIngest, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(start_after))
-                .prefix(FileType::ServiceProviderBoostedRewardsBannedRadioIngestReport.to_string())
-                .create()
-                .await?;
+        let (verified_sink, verified_sink_server) = file_sink::FileSinkBuilder::new(
+            FileType::VerifiedServiceProviderBoostedRewardsBannedRadioIngestReport,
+            settings.store_base_path(),
+            file_upload,
+            concat!(env!("CARGO_PKG_NAME"), "_verified_sp_boosted_rewards_ban"),
+        )
+        .auto_commit(false)
+        .create()
+        .await?;
+
+        let (receiver, ingest_server) = FileInfoPollerConfigBuilder::<
+            ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+            _,
+            _,
+        >::default()
+        .parser(ProstFileInfoPollerParser)
+        .state(pool.clone())
+        .store(file_store)
+        .lookback(LookbackBehavior::StartAfter(settings.start_after))
+        .prefix(FileType::ServiceProviderBoostedRewardsBannedRadioIngestReport.to_string())
+        .create()
+        .await?;
 
         let ingestor = Self {
             pool,
             authorization_verifier,
             receiver,
+            verified_sink,
         };
 
         Ok(TaskManager::builder()
+            .add_task(verified_sink_server)
             .add_task(ingest_server)
             .add_task(ingestor)
             .build())
@@ -87,7 +159,7 @@ where
 
     async fn process_file(
         &self,
-        file_info_stream: FileInfoStream<ServiceProviderBoostedRewardBannedRadioIngest>,
+        file_info_stream: FileInfoStream<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
     ) -> anyhow::Result<()> {
         tracing::info!(file = %file_info_stream.file_info.key, "processing sp boosted rewards ban file");
         let mut transaction = self.pool.begin().await?;
@@ -96,15 +168,34 @@ where
             .await?
             .map(anyhow::Ok)
             .try_fold(transaction, |mut tx, ingest| async move {
-                if self.is_authorized(&ingest.report.pubkey).await? {
-                    save(&mut tx, ingest).await?;
+                let report = BannedRadioReport::try_from(ingest.clone())?;
+                let is_authorized = self.is_authorized(&report.pubkey).await?;
+
+                if is_authorized {
+                    save(&mut tx, report).await?;
                 }
+
+                let status = match is_authorized {
+                    true => ServiceProviderBoostedRewardsBannedRadioVerificationStatus::SpBoostedRewardsBanValid,
+                    false => ServiceProviderBoostedRewardsBannedRadioVerificationStatus::SpBoostedRewardsBanInvalidCarrierKey,
+                };
+
+                let verified_report =
+                    VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
+                        report: Some(ingest),
+                        status: status.into(),
+                        timestamp: Utc::now().timestamp_millis() as u64,
+                    };
+
+                self.verified_sink.write(verified_report, &[("status", status.as_str_name())]).await?;
 
                 Ok(tx)
             })
             .await?
             .commit()
             .await?;
+
+        self.verified_sink.commit().await?;
 
         Ok(())
     }
@@ -119,23 +210,18 @@ where
 
 async fn save(
     transaction: &mut Transaction<'_, Postgres>,
-    ingest: ServiceProviderBoostedRewardBannedRadioIngest,
+    report: BannedRadioReport,
 ) -> anyhow::Result<()> {
-    let (radio_type, radio_key) = match ingest.report.key_type {
-        KeyType::CbsdId(cbsd_id) => ("cbrs", cbsd_id),
-        KeyType::HotspotKey(pubkey) => ("wifi", pubkey.to_string()),
-    };
-
     sqlx::query(
         r#"
         INSERT INTO sp_boosted_rewards_bans(radio_type, radio_key, received_timestamp, until)
         VALUES($1,$2,$3,$4)
     "#,
     )
-    .bind(radio_type)
-    .bind(radio_key)
-    .bind(ingest.received_timestamp)
-    .bind(ingest.report.until)
+    .bind(report.radio_type)
+    .bind(report.radio_key)
+    .bind(report.received_timestamp)
+    .bind(report.until)
     .execute(transaction)
     .await
     .map(|_| ())
