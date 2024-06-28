@@ -182,42 +182,25 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     // Let's figure out how to calculate rewards for 3 similar radios whose
     // only difference is boosting.
     {
-        // To not deal with percentages of percentages, let's start with the
-        // total emissions and work from there.
-        let total_emissions = reward_shares::get_total_scheduled_tokens(epoch_duration);
-        let data_transfer = total_emissions * dec!(0.4);
-        let regular_poc = total_emissions * dec!(0.1);
-        let boosted_poc = total_emissions * dec!(0.1);
-
-        // There is no data transfer in this test to be rewarded, so we know
-        // the entirety of the unallocated amount will be put in the poc
-        // pool.
-        let regular_poc = regular_poc + data_transfer;
+        let (regular_poc, boosted_poc) = get_poc_allocation_buckets(epoch_duration);
 
         // With regular poc now 50% of total emissions, that will be split
         // between the 3 radios equally. 900 comes from IndoorWifi 400 *
         // 0.75 speedtest multiplier * 3 radios
-        let regular_per_share = regular_poc / dec!(900);
+        let regular_share = regular_poc / dec!(900);
 
         // Boosted hexes are 10x and 20x.
-        // (300 * 9) + (300 * 19) = 8400;
+        // (300 * 19) + (300 * 9) = 8400;
         // To get points _only_ from boosting.
-        let boosted_per_share = boosted_poc / dec!(8400);
+        let boosted_share = boosted_poc / dec!(8400);
 
-        let base_reward = regular_per_share * dec!(300);
-        let expected_reward_1 = base_reward + (boosted_per_share * dec!(300) * dec!(19));
-        let expected_reward_2 = base_reward + (boosted_per_share * dec!(300) * dec!(9));
-        let expected_reward_3 = base_reward + (boosted_per_share * dec!(300) * dec!(0));
+        let exp_reward_1 = (regular_share * dec!(300)) + (boosted_share * dec!(300) * dec!(19));
+        let exp_reward_2 = (regular_share * dec!(300)) + (boosted_share * dec!(300) * dec!(9));
+        let exp_reward_3 = (regular_share * dec!(300)) + (boosted_share * dec!(300) * dec!(0));
 
-        let (exp_reward_1, exp_reward_2, exp_reward_3) = (
-            expected_reward_1.to_u64().unwrap(),
-            expected_reward_2.to_u64().unwrap(),
-            expected_reward_3.to_u64().unwrap(),
-        );
-
-        assert_eq!(exp_reward_1, hotspot_2.poc_reward); // 20x boost
-        assert_eq!(exp_reward_2, hotspot_1.poc_reward); // 10x boost
-        assert_eq!(exp_reward_3, hotspot_3.poc_reward); // no boost
+        assert_eq!(exp_reward_1.to_u64().unwrap(), hotspot_2.poc_reward); // 20x boost
+        assert_eq!(exp_reward_2.to_u64().unwrap(), hotspot_1.poc_reward); // 10x boost
+        assert_eq!(exp_reward_3.to_u64().unwrap(), hotspot_3.poc_reward); // no boost
     }
 
     // assert the boosted hexes in the radio rewards
@@ -546,37 +529,28 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     // - 1 covered hex boosted at 20x
     // - 1 covered hex no boost
     {
-        // To not deal with percentages of percentages, let's start with the
-        // total emissions and work from there.
-        let total_emissions = reward_shares::get_total_scheduled_tokens(epoch_duration);
-        let data_transfer = total_emissions * dec!(0.4);
-        let regular_poc = total_emissions * dec!(0.1);
-        let boosted_poc = total_emissions * dec!(0.1);
-
-        // There is no data transfer in this test to be rewarded, so we know the
-        // entirety of the unallocated amount will be put in the poc pool.
-        let regular_poc = regular_poc + data_transfer;
+        let (regular_poc, boosted_poc) = get_poc_allocation_buckets(epoch_duration);
 
         // With regular poc now 50% of total emissions, that will be split
         // between the 3 radios equally.
         // 1200 comes from IndoorWifi 400 * 0.75 speedtest multiplier * 4 hexes
-        let regular_per_share = regular_poc / dec!(1200);
+        let regular_share = regular_poc / dec!(1200);
 
         // Boosted hexes are 2 at 10x and 1 at 20x.
         // (300 * (9 * 2)) + (300 * 19) = 11,100;
         // To get points _only_ from boosting.
-        let boosted_per_share = boosted_poc / dec!(11_100);
+        let boosted_share = boosted_poc / dec!(11_100);
 
-        let hex_coverage = |hexes: u8| regular_per_share * dec!(300) * Decimal::from(hexes);
-        let boost_coverage = |mult: u8| boosted_per_share * dec!(300) * Decimal::from(mult);
+        let hex_coverage = |hexes: u8| regular_share * dec!(300) * Decimal::from(hexes);
+        let boost_coverage = |mult: u8| boosted_share * dec!(300) * Decimal::from(mult);
 
-        let exp_reward_1 = (hex_coverage(2) + boost_coverage(18)).to_u64().unwrap();
-        let exp_reward_2 = (hex_coverage(1) + boost_coverage(19)).to_u64().unwrap();
-        let exp_reward_3 = (hex_coverage(1) + boost_coverage(0)).to_u64().unwrap();
+        let exp_reward_1 = hex_coverage(2) + boost_coverage(18);
+        let exp_reward_2 = hex_coverage(1) + boost_coverage(19);
+        let exp_reward_3 = hex_coverage(1) + boost_coverage(0);
 
-        assert_eq!(exp_reward_1, hotspot_1.poc_reward); // 2 at 10x boost
-        assert_eq!(exp_reward_2, hotspot_2.poc_reward); // 1 at 20x boost
-        assert_eq!(exp_reward_3, hotspot_3.poc_reward); // 1 at no boost
+        assert_eq!(exp_reward_1.to_u64().unwrap(), hotspot_1.poc_reward); // 2 at 10x boost
+        assert_eq!(exp_reward_2.to_u64().unwrap(), hotspot_2.poc_reward); // 1 at 20x boost
+        assert_eq!(exp_reward_3.to_u64().unwrap(), hotspot_3.poc_reward); // 1 at no boost
 
         // hotspot 1 and 2 should have the same coverage points, but different poc rewards.
         assert_eq!(hotspot_1.coverage_points, hotspot_2.coverage_points);
@@ -841,17 +815,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     // Let's figure out how to calculate rewards for 3 similar radios with
     // different location trust and boosting.
     {
-        // To not deal with percentages of percentages, let's start with the
-        // total emissions and work from there.
-        let total_emissions = reward_shares::get_total_scheduled_tokens(epoch_duration);
-        let data_transfer = total_emissions * dec!(0.4);
-        let regular_poc = total_emissions * dec!(0.1);
-        let boosted_poc = total_emissions * dec!(0.1);
-
-        // There is no data transfer in this test to be rewarded, so we know
-        // the entirety of the unallocated amount will be put in the poc
-        // pool.
-        let regular_poc = regular_poc + data_transfer;
+        let (regular_poc, boosted_poc) = get_poc_allocation_buckets(epoch_duration);
 
         // Here's how we get the regular shares per coverage points
         // | base coverage point | speedtest | location | total |
@@ -864,7 +828,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         let regular_share = regular_poc / dec!(675);
 
         // Boosted hexes are 2x, only one radio qualifies based on the location trust
-        // 300 * 1 == 600
+        // 300 * 1 == 300
         // To get points _only_ from boosting.
         let boosted_share = boosted_poc / dec!(300);
 
@@ -1051,20 +1015,10 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         PublicKeyBinary::from(hotspot_3.hotspot_key.clone()).to_string()
     );
 
-    // Let's figure out how to calculate rewards for 3 similar radios with
+    // Let's figure out how to calculate rewards for 2 Wifi and 1 Cbrs radios with
     // different location trust and boosting.
     {
-        // To not deal with percentages of percentages, let's start with the
-        // total emissions and work from there.
-        let total_emissions = reward_shares::get_total_scheduled_tokens(epoch_duration);
-        let data_transfer = total_emissions * dec!(0.4);
-        let regular_poc = total_emissions * dec!(0.1);
-        let boosted_poc = total_emissions * dec!(0.1);
-
-        // There is no data transfer in this test to be rewarded, so we know
-        // the entirety of the unallocated amount will be put in the poc
-        // pool.
-        let regular_poc = regular_poc + data_transfer;
+        let (regular_poc, boosted_poc) = get_poc_allocation_buckets(epoch_duration);
 
         // Here's how we get the regular shares per coverage points
         // | base coverage point | speedtest | location | total |
@@ -1150,13 +1104,12 @@ async fn receive_expected_rewards_maybe_unallocated(
     expect_unallocated: ExpectUnallocated,
 ) -> anyhow::Result<(Vec<RadioReward>, UnallocatedReward)> {
     // get the filestore outputs from rewards run
-    // we will have 3 radio rewards, 1 wifi radio and 2 cbrs radios
     let radio_reward1 = mobile_rewards.receive_radio_reward().await;
     let radio_reward2 = mobile_rewards.receive_radio_reward().await;
     let radio_reward3 = mobile_rewards.receive_radio_reward().await;
+
     // ordering is not guaranteed, so stick the rewards into a vec and sort
     let mut poc_rewards = vec![radio_reward1, radio_reward2, radio_reward3];
-    // after sorting reward 1 = cbrs radio1, 2 = cbrs radio2, 3 = wifi radio
     poc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
 
     let unallocated_poc_reward = match expect_unallocated {
@@ -1792,4 +1745,20 @@ async fn save_seniority_object(
     .execute(&mut *exec)
     .await?;
     Ok(())
+}
+
+fn get_poc_allocation_buckets(epoch_duration: Duration) -> (Decimal, Decimal) {
+    // To not deal with percentages of percentages, let's start with the
+    // total emissions and work from there.
+    let total_emissions = reward_shares::get_total_scheduled_tokens(epoch_duration);
+    let data_transfer = total_emissions * dec!(0.4);
+    let regular_poc = total_emissions * dec!(0.1);
+    let boosted_poc = total_emissions * dec!(0.1);
+
+    // There is no data transfer in this test to be rewarded, so we know
+    // the entirety of the unallocated amount will be put in the poc
+    // pool.
+    let regular_poc = regular_poc + data_transfer;
+
+    (regular_poc, boosted_poc)
 }
