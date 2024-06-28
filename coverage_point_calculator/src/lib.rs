@@ -74,63 +74,6 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("signal level {0:?} not allowed for {1:?}")]
     InvalidSignalLevel(SignalLevel, RadioType),
-    #[error("No points to calculate reward shares")]
-    NoPoints,
-}
-
-#[derive(Debug)]
-pub struct AllocatedRewardShares {
-    pub poc_rewards: Decimal,
-    pub boost_rewards: Decimal,
-    pub extra_rewards: Decimal,
-}
-
-impl AllocatedRewardShares {
-    fn total(&self) -> Decimal {
-        self.poc_rewards + self.boost_rewards + self.extra_rewards
-    }
-}
-
-#[derive(Debug)]
-pub struct CalculatedRewardShares {
-    pub normal: Decimal,
-    pub boost: Decimal,
-}
-
-pub fn calculate_reward_shares<'a>(
-    allocated_rewards: AllocatedRewardShares,
-    radios: impl Iterator<Item = &'a CoveragePoints>,
-) -> Result<CalculatedRewardShares> {
-    let (total_points, boost_points, poc_points) = radios.fold(
-        (dec!(0), dec!(0), dec!(0)),
-        |(total, boosted, poc), radio| {
-            (
-                total + radio.total_points(),
-                boosted + radio.total_boosted_points(),
-                poc + radio.total_base_points(),
-            )
-        },
-    );
-
-    if total_points.is_zero() {
-        return Err(Error::NoPoints);
-    }
-
-    let shares_per_point = allocated_rewards.total() / total_points;
-    let boost_within_limit = allocated_rewards.boost_rewards >= shares_per_point * boost_points;
-
-    if boost_within_limit {
-        Ok(CalculatedRewardShares {
-            normal: shares_per_point,
-            boost: shares_per_point,
-        })
-    } else {
-        // Over boosted reward limit, need to calculate 2 share ratios
-        let normal = (allocated_rewards.poc_rewards + allocated_rewards.extra_rewards) / poc_points;
-        let boost = allocated_rewards.boost_rewards / boost_points;
-
-        Ok(CalculatedRewardShares { normal, boost })
-    }
 }
 
 /// Output of calculating coverage points for a Radio.
@@ -209,32 +152,30 @@ impl CoveragePoints {
 
     /// Accumulated points related only to coverage.
     /// (Hex * Rank * Assignment) * Location Trust
+    /// Used for reporting.
     pub fn coverage_points(&self) -> Decimal {
-        let total_coverage_points = self.base_points() + self.boosted_points();
+        let total_coverage_points = self.coverage_points.base + self.boosted_points();
         total_coverage_points * self.location_trust_multiplier
     }
 
     /// Accumulated points related to entire radio.
     /// coverage points * speedtest
+    /// Used in calculating rewards
     pub fn total_points(&self) -> Decimal {
         self.total_base_points() + self.total_boosted_points()
     }
 
+    /// Useful for grabbing only base points when calculating reward shares
     pub fn total_base_points(&self) -> Decimal {
-        self.base_points() * self.speedtest_multiplier * self.location_trust_multiplier
+        self.coverage_points.base * self.speedtest_multiplier * self.location_trust_multiplier
     }
 
+    /// Useful for grabbing only boost points when calculating reward shares
     pub fn total_boosted_points(&self) -> Decimal {
         self.boosted_points() * self.speedtest_multiplier * self.location_trust_multiplier
     }
 
-    /// Accumulated points without boosting
-    pub fn base_points(&self) -> Decimal {
-        self.coverage_points.base
-    }
-
-    /// Accumulated applicable boost points
-    pub fn boosted_points(&self) -> Decimal {
+    fn boosted_points(&self) -> Decimal {
         match self.boosted_hex_eligibility {
             BoostedHexStatus::Eligible => self.coverage_points.boosted,
             BoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),

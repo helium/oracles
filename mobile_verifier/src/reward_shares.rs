@@ -59,44 +59,6 @@ const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.1);
 // Percent of total emissions allocated for oracles
 const ORACLES_PERCENT: Decimal = dec!(0.04);
 
-#[derive(Debug, Default)]
-pub struct DataTransferAndPocAllocatedRewardShares {
-    pub data_transfer: Decimal,
-    pub poc: Decimal,
-    pub boosted_poc: Decimal,
-    pub unallocated: Decimal,
-}
-
-impl DataTransferAndPocAllocatedRewardShares {
-    pub fn new(epoch: &Range<DateTime<Utc>>) -> Self {
-        let duration = epoch.end - epoch.start;
-        let total_emission_pool = get_total_scheduled_tokens(duration);
-
-        Self {
-            data_transfer: total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT,
-            poc: total_emission_pool * POC_REWARDS_PERCENT,
-            boosted_poc: total_emission_pool * BOOSTED_POC_REWARDS_PERCENT,
-            unallocated: dec!(0),
-        }
-    }
-
-    pub fn new_poc_only(epoch: &Range<DateTime<Utc>>) -> Self {
-        let duration = epoch.end - epoch.start;
-        let total_emission_pool = get_total_scheduled_tokens(duration);
-
-        Self {
-            data_transfer: dec!(0),
-            poc: total_emission_pool * POC_REWARDS_PERCENT,
-            boosted_poc: total_emission_pool * BOOSTED_POC_REWARDS_PERCENT,
-            unallocated: total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT,
-        }
-    }
-
-    pub fn total_poc(&self) -> Decimal {
-        self.poc + self.boosted_poc + self.unallocated
-    }
-}
-
 #[derive(Debug)]
 pub struct TransferRewards {
     reward_scale: Decimal,
@@ -140,7 +102,7 @@ impl TransferRewards {
     pub async fn from_transfer_sessions(
         mobile_bone_price: Decimal,
         transfer_sessions: HotspotMap,
-        reward_shares: &DataTransferAndPocAllocatedRewardShares,
+        reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
     ) -> Self {
         let mut reward_sum = Decimal::ZERO;
         let rewards = transfer_sessions
@@ -613,13 +575,11 @@ impl CoverageShares {
         Ok(coverage_points)
     }
 
-    pub fn into_rewards<'a, 'b>(
+    pub fn into_rewards(
         self,
-        reward_shares: &'a DataTransferAndPocAllocatedRewardShares,
-        epoch: &'b Range<DateTime<Utc>>,
-    ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + 'b> {
-        let mut total_shares: Decimal = dec!(0);
-
+        reward_shares: DataTransferAndPocAllocatedRewardBuckets,
+        epoch: &'_ Range<DateTime<Utc>>,
+    ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_> {
         struct ProcessedRadio {
             radio_id: RadioId,
             points: coverage_point_calculator::CoveragePoints,
@@ -641,8 +601,6 @@ impl CoverageShares {
                 }
             };
 
-            total_shares += points.total_points();
-
             processed_radios.push(ProcessedRadio {
                 radio_id: radio_id.clone(),
                 points,
@@ -651,24 +609,12 @@ impl CoverageShares {
             });
         }
 
-        let allocated_rewards = coverage_point_calculator::AllocatedRewardShares {
-            poc_rewards: reward_shares.poc,
-            boost_rewards: reward_shares.boosted_poc,
-            extra_rewards: reward_shares.unallocated,
-        };
-
-        let coverage_points_iter = processed_radios.iter().map(|radio| &radio.points);
-        let calculate_reward_shares = coverage_point_calculator::calculate_reward_shares(
-            allocated_rewards,
-            coverage_points_iter,
-        );
-
-        let rewards_per_share = match calculate_reward_shares {
-            Ok(rewards_per_share) => rewards_per_share,
-            Err(err) => {
-                tracing::info!(?epoch, ?err, "could not calculate reward shares");
-                return None;
-            }
+        let Some(rewards_per_share) = CalculatedPocRewardShares::new(
+            reward_shares,
+            processed_radios.iter().map(|radio| &radio.points),
+        ) else {
+            tracing::info!(?epoch, "could not calculate reward shares");
+            return None;
         };
 
         Some(
@@ -682,10 +628,7 @@ impl CoverageShares {
                         coverage_obj_uuid,
                     } = radio;
 
-                    let base_reward = rewards_per_share.normal * points.total_base_points();
-                    let boosted_reward = rewards_per_share.boost * points.total_boosted_points();
-                    let poc_reward = (base_reward + boosted_reward).to_u64().unwrap_or_default();
-
+                    let poc_reward = rewards_per_share.poc_reward(&points);
                     let mobile_reward_share = coverage_point_to_mobile_reward_share(
                         points,
                         epoch,
@@ -708,13 +651,118 @@ impl CoverageShares {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct DataTransferAndPocAllocatedRewardBuckets {
+    pub data_transfer: Decimal,
+    pub poc: Decimal,
+    pub boosted_poc: Decimal,
+}
+
+impl DataTransferAndPocAllocatedRewardBuckets {
+    pub fn new(epoch: &Range<DateTime<Utc>>) -> Self {
+        let duration = epoch.end - epoch.start;
+        let total_emission_pool = get_total_scheduled_tokens(duration);
+
+        Self {
+            data_transfer: total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT,
+            poc: total_emission_pool * POC_REWARDS_PERCENT,
+            boosted_poc: total_emission_pool * BOOSTED_POC_REWARDS_PERCENT,
+        }
+    }
+
+    pub fn new_poc_only(epoch: &Range<DateTime<Utc>>) -> Self {
+        let duration = epoch.end - epoch.start;
+        let total_emission_pool = get_total_scheduled_tokens(duration);
+
+        let poc = total_emission_pool * POC_REWARDS_PERCENT;
+        let data_transfer = total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT;
+
+        Self {
+            data_transfer: dec!(0),
+            poc: poc + data_transfer,
+            boosted_poc: total_emission_pool * BOOSTED_POC_REWARDS_PERCENT,
+        }
+    }
+
+    pub fn total_poc(&self) -> Decimal {
+        self.poc + self.boosted_poc
+    }
+
+    /// Rewards left over from Data Transfer rewards go into the POC pool. They
+    /// do not get considered for boosted POC rewards if the boost shares
+    /// surpasses the 10% allocation.
+    pub fn handle_unallocated_data_transfer(&mut self, unallocated_data_transfer: Decimal) {
+        self.poc += unallocated_data_transfer;
+    }
+}
+
+/// Given the rewards allocated for Proof of Coverage and all the radios
+/// participating in an epoch, we can calculate the rewards per share for a
+/// radio.
+///
+/// Reference:
+/// HIP 122: Amend Service Provider Hex Boosting
+/// https://github.com/helium/HIP/blob/main/0122-amend-service-provider-hex-boosting.md
+#[derive(Debug)]
+struct CalculatedPocRewardShares {
+    normal: Decimal,
+    boost: Decimal,
+}
+
+impl CalculatedPocRewardShares {
+    fn new<'a>(
+        allocated_rewards: DataTransferAndPocAllocatedRewardBuckets,
+        radios: impl Iterator<Item = &'a coverage_point_calculator::CoveragePoints>,
+    ) -> Option<Self> {
+        let (total_points, boost_points, poc_points) = radios.fold(
+            (dec!(0), dec!(0), dec!(0)),
+            |(total, boosted, poc), radio| {
+                (
+                    total + radio.total_points(),
+                    boosted + radio.total_boosted_points(),
+                    poc + radio.total_base_points(),
+                )
+            },
+        );
+
+        if total_points.is_zero() {
+            return None;
+        }
+
+        let shares_per_point = allocated_rewards.total_poc() / total_points;
+        let boost_within_limit = allocated_rewards.boosted_poc >= shares_per_point * boost_points;
+
+        if boost_within_limit {
+            Some(CalculatedPocRewardShares {
+                normal: shares_per_point,
+                boost: shares_per_point,
+            })
+        } else {
+            // Over boosted reward limit, need to calculate 2 share ratios
+            let normal = allocated_rewards.poc / poc_points;
+            let boost = allocated_rewards.boosted_poc / boost_points;
+
+            Some(CalculatedPocRewardShares { normal, boost })
+        }
+    }
+
+    fn poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
+        let base_reward = self.normal * points.total_base_points();
+        let boosted_reward = self.boost * points.total_boosted_points();
+
+        (base_reward + boosted_reward).to_u64().unwrap_or_default()
+    }
+}
+
 pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
     (TOTAL_EMISSIONS_POOL / dec!(366) / Decimal::from(Duration::hours(24).num_seconds()))
         * Decimal::from(duration.num_seconds())
 }
 
 pub fn get_scheduled_tokens_for_poc(duration: Duration) -> Decimal {
-    get_total_scheduled_tokens(duration) * dec!(0.6)
+    let poc_percent =
+        MAX_DATA_TRANSFER_REWARDS_PERCENT + POC_REWARDS_PERCENT + BOOSTED_POC_REWARDS_PERCENT;
+    get_total_scheduled_tokens(duration) * poc_percent
 }
 
 pub fn get_scheduled_tokens_for_mappers(duration: Duration) -> Decimal {
@@ -886,7 +934,7 @@ mod test {
             dec!(49_180_327)
         );
 
-        let reward_shares = DataTransferAndPocAllocatedRewardShares::new(&epoch);
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(&epoch);
 
         let data_transfer_rewards =
             TransferRewards::from_transfer_sessions(dec!(1.0), data_transfer_map, &reward_shares)
@@ -934,7 +982,7 @@ mod test {
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
 
-        let reward_shares = DataTransferAndPocAllocatedRewardShares::new(&epoch);
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(&epoch);
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
             dec!(1.0),
@@ -1432,7 +1480,7 @@ mod test {
 
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        let reward_shares = DataTransferAndPocAllocatedRewardShares::new_poc_only(&epoch);
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
 
         let mut allocated_poc_rewards = 0_u64;
 
@@ -1447,7 +1495,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(&reward_shares, &epoch)
+        .into_rewards(reward_shares, &epoch)
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1609,7 +1657,7 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
 
-        let reward_shares = DataTransferAndPocAllocatedRewardShares::new_poc_only(&epoch);
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
 
         for (_reward_amount, mobile_reward) in CoverageShares::new(
             &hex_coverage,
@@ -1621,7 +1669,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(&reward_shares, &epoch)
+        .into_rewards(reward_shares, &epoch)
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1741,7 +1789,7 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
 
-        let reward_shares = DataTransferAndPocAllocatedRewardShares::new_poc_only(&epoch);
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
         for (_reward_amount, mobile_reward) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
@@ -1752,7 +1800,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(&reward_shares, &epoch)
+        .into_rewards(reward_shares, &epoch)
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1872,7 +1920,7 @@ mod test {
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
 
-        let reward_shares = DataTransferAndPocAllocatedRewardShares::new_poc_only(&epoch);
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
         for (_reward_amount, mobile_reward) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
@@ -1883,7 +1931,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(&reward_shares, &epoch)
+        .into_rewards(reward_shares, &epoch)
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -2018,11 +2066,11 @@ mod test {
             radio_infos,
         };
 
-        let reward_shares = DataTransferAndPocAllocatedRewardShares::new_poc_only(&epoch);
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
         // gw2 does not have enough speedtests for a mulitplier
         let expected_hotspot = gw1;
         for (_reward_amount, mobile_reward) in coverage_shares
-            .into_rewards(&reward_shares, &epoch)
+            .into_rewards(reward_shares, &epoch)
             .expect("rewards output")
         {
             let radio_reward = match mobile_reward.reward {
@@ -2044,9 +2092,9 @@ mod test {
             radio_infos: HashMap::new(),
         };
 
-        let reward_shares = DataTransferAndPocAllocatedRewardShares::new_poc_only(&epoch);
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
         assert!(coverage_shares
-            .into_rewards(&reward_shares, &epoch)
+            .into_rewards(reward_shares, &epoch)
             .is_none());
     }
 

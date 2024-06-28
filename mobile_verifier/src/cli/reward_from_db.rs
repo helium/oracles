@@ -2,7 +2,7 @@ use crate::{
     heartbeats::HeartbeatReward,
     radio_threshold::VerifiedRadioThresholds,
     reward_shares::{
-        get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardShares,
+        get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
     },
     speedtests_average::SpeedtestAverages,
     Settings,
@@ -55,7 +55,10 @@ impl Cmd {
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
         let radio_rewards = reward_shares
-            .into_rewards(&DataTransferAndPocAllocatedRewardShares::default(), &epoch)
+            .into_rewards(
+                DataTransferAndPocAllocatedRewardBuckets::new(&epoch),
+                &epoch,
+            )
             .ok_or(anyhow::anyhow!("no rewardable events"))?;
         for (_reward_amount, reward) in radio_rewards {
             if let Some(proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {

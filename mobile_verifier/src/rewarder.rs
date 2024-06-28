@@ -4,7 +4,7 @@ use crate::{
     heartbeats::{self, HeartbeatReward},
     radio_threshold,
     reward_shares::{
-        self, CoverageShares, DataTransferAndPocAllocatedRewardShares, MapperShares,
+        self, CoverageShares, DataTransferAndPocAllocatedRewardBuckets, MapperShares,
         ServiceProviderShares, TransferRewards,
     },
     speedtests,
@@ -340,7 +340,7 @@ pub async fn reward_poc_and_dc(
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
 ) -> anyhow::Result<()> {
-    let mut reward_shares = DataTransferAndPocAllocatedRewardShares::new(reward_period);
+    let mut reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(reward_period);
 
     let transfer_rewards = TransferRewards::from_transfer_sessions(
         mobile_bone_price,
@@ -366,15 +366,14 @@ pub async fn reward_poc_and_dc(
     )
     .await?;
 
-    // any poc unallocated gets attributed to the unallocated reward
-    reward_shares.unallocated = dc_unallocated_amount;
+    reward_shares.handle_unallocated_data_transfer(dc_unallocated_amount);
     let poc_unallocated_amount = reward_poc(
         pool,
         hex_service_client,
         mobile_rewards,
         speedtest_avg_sink,
         reward_period,
-        &reward_shares,
+        reward_shares,
     )
     .await?
     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
@@ -398,7 +397,7 @@ async fn reward_poc(
     mobile_rewards: &FileSinkClient,
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
-    reward_shares: &DataTransferAndPocAllocatedRewardShares,
+    reward_shares: DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<Decimal> {
     let heartbeats = HeartbeatReward::validated(pool, reward_period);
     let speedtest_averages =
@@ -421,8 +420,7 @@ async fn reward_poc(
     )
     .await?;
 
-    let total_poc_rewards =
-        reward_shares.poc + reward_shares.boosted_poc + reward_shares.unallocated;
+    let total_poc_rewards = reward_shares.total_poc();
 
     let unallocated_poc_amount = if let Some(mobile_reward_shares) =
         coverage_shares.into_rewards(reward_shares, reward_period)
@@ -450,7 +448,7 @@ pub async fn reward_dc(
     mobile_rewards: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     transfer_rewards: TransferRewards,
-    reward_shares: &DataTransferAndPocAllocatedRewardShares,
+    reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<Decimal> {
     // handle dc reward outputs
     let mut allocated_dc_rewards = 0_u64;
