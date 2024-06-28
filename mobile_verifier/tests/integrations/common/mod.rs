@@ -58,16 +58,16 @@ pub struct MockFileSinkReceiver {
 }
 
 impl MockFileSinkReceiver {
-    pub async fn receive(&mut self) -> Option<Vec<u8>> {
+    pub async fn receive(&mut self, caller: &str) -> Option<Vec<u8>> {
         match timeout(seconds(2), self.receiver.recv()).await {
             Ok(Some(SinkMessage::Data(on_write_tx, msg))) => {
                 let _ = on_write_tx.send(Ok(()));
                 Some(msg)
             }
             Ok(None) => None,
-            Err(e) => panic!("timeout while waiting for message1 {:?}", e),
+            Err(e) => panic!("{caller}: timeout while waiting for message1 {:?}", e),
             Ok(Some(unexpected_msg)) => {
-                println!("ignoring unexpected msg {:?}", unexpected_msg);
+                println!("{caller}: ignoring unexpected msg {:?}", unexpected_msg);
                 None
             }
         }
@@ -99,7 +99,7 @@ impl MockFileSinkReceiver {
     }
 
     pub async fn receive_radio_reward(&mut self) -> RadioReward {
-        match self.receive().await {
+        match self.receive("receive_radio_reward").await {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected radio reward");
@@ -114,7 +114,7 @@ impl MockFileSinkReceiver {
     }
 
     pub async fn receive_gateway_reward(&mut self) -> GatewayReward {
-        match self.receive().await {
+        match self.receive("receive_gateway_reward").await {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected gateway reward");
@@ -129,7 +129,7 @@ impl MockFileSinkReceiver {
     }
 
     pub async fn receive_service_provider_reward(&mut self) -> ServiceProviderReward {
-        match self.receive().await {
+        match self.receive("receive_service_provider_reward").await {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected service provider reward");
@@ -144,7 +144,7 @@ impl MockFileSinkReceiver {
     }
 
     pub async fn receive_subscriber_reward(&mut self) -> SubscriberReward {
-        match self.receive().await {
+        match self.receive("receive_subscriber_reward").await {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected subscriber reward");
@@ -159,7 +159,7 @@ impl MockFileSinkReceiver {
     }
 
     pub async fn receive_unallocated_reward(&mut self) -> UnallocatedReward {
-        match self.receive().await {
+        match self.receive("receive_unallocated_reward").await {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected unallocated reward");

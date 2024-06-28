@@ -3,7 +3,10 @@ use crate::{
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
     radio_threshold,
-    reward_shares::{self, CoverageShares, MapperShares, ServiceProviderShares, TransferRewards},
+    reward_shares::{
+        self, CoverageShares, DataTransferAndPocAllocatedRewardBuckets, MapperShares,
+        ServiceProviderShares, TransferRewards,
+    },
     speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, telemetry, Settings,
@@ -337,30 +340,40 @@ pub async fn reward_poc_and_dc(
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
 ) -> anyhow::Result<()> {
+    let mut reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(reward_period);
+
     let transfer_rewards = TransferRewards::from_transfer_sessions(
         mobile_bone_price,
         data_session::aggregate_hotspot_data_sessions_to_dc(pool, reward_period).await?,
-        reward_period,
+        &reward_shares,
     )
     .await;
-    let transfer_rewards_sum = transfer_rewards.reward_sum();
+
     // It's important to gauge the scale metric. If this value is < 1.0, we are in
     // big trouble.
     let Some(scale) = transfer_rewards.reward_scale().to_f64() else {
         bail!("The data transfer rewards scale cannot be converted to a float");
     };
     telemetry::data_transfer_rewards_scale(scale);
+
     // reward dc before poc so that we can calculate the unallocated dc reward
     // and carry this into the poc pool
-    let dc_unallocated_amount = reward_dc(mobile_rewards, reward_period, transfer_rewards).await?;
-    // any poc unallocated gets attributed to the unallocated reward
+    let dc_unallocated_amount = reward_dc(
+        mobile_rewards,
+        reward_period,
+        transfer_rewards,
+        &reward_shares,
+    )
+    .await?;
+
+    reward_shares.handle_unallocated_data_transfer(dc_unallocated_amount);
     let poc_unallocated_amount = reward_poc(
         pool,
         hex_service_client,
         mobile_rewards,
         speedtest_avg_sink,
         reward_period,
-        transfer_rewards_sum - dc_unallocated_amount,
+        reward_shares,
     )
     .await?
     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
@@ -384,12 +397,8 @@ async fn reward_poc(
     mobile_rewards: &FileSinkClient,
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
-    transfer_reward_sum: Decimal,
+    reward_shares: DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<Decimal> {
-    let total_poc_rewards =
-        reward_shares::get_scheduled_tokens_for_poc(reward_period.end - reward_period.start)
-            - transfer_reward_sum;
-
     let heartbeats = HeartbeatReward::validated(pool, reward_period);
     let speedtest_averages =
         SpeedtestAverages::aggregate_epoch_averages(reward_period.end, pool).await?;
@@ -411,8 +420,10 @@ async fn reward_poc(
     )
     .await?;
 
+    let total_poc_rewards = reward_shares.total_poc();
+
     let unallocated_poc_amount = if let Some(mobile_reward_shares) =
-        coverage_shares.into_rewards(total_poc_rewards, reward_period)
+        coverage_shares.into_rewards(reward_shares, reward_period)
     {
         // handle poc reward outputs
         let mut allocated_poc_rewards = 0_u64;
@@ -437,10 +448,10 @@ pub async fn reward_dc(
     mobile_rewards: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     transfer_rewards: TransferRewards,
+    reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<Decimal> {
     // handle dc reward outputs
     let mut allocated_dc_rewards = 0_u64;
-    let total_dc_rewards = transfer_rewards.total();
     for (dc_reward_amount, mobile_reward_share) in transfer_rewards.into_rewards(reward_period) {
         allocated_dc_rewards += dc_reward_amount;
         mobile_rewards
@@ -452,7 +463,8 @@ pub async fn reward_dc(
     // for Dc we return the unallocated amount rather than writing it out to as an unallocated reward
     // it then gets added to the poc pool
     // we return the full decimal value just to ensure we allocate all to poc
-    let unallocated_dc_reward_amount = total_dc_rewards - Decimal::from(allocated_dc_rewards);
+    let unallocated_dc_reward_amount =
+        reward_shares.data_transfer - Decimal::from(allocated_dc_rewards);
     Ok(unallocated_dc_reward_amount)
 }
 
