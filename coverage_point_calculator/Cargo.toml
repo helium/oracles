@@ -1,0 +1,20 @@
+[package]
+name = "coverage-point-calculator"
+version = "0.1.0"
+description = "Calculate Coverage Points for hotspots in the Mobile Network"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+hextree = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+thiserror = { workspace = true }
+hex-assignments = { path = "../hex_assignments" }
+coverage-map = { path = "../coverage_map" }
+
+[dev-dependencies]
+helium-crypto = { workspace = true }
+rstest = { version = "0.21.0", default-features = false }

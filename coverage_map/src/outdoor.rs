@@ -4,7 +4,6 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKeyBinary;
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
 
@@ -15,7 +14,7 @@ pub type OutdoorCellTree = HashMap<Cell, BinaryHeap<OutdoorCoverageLevel>>;
 
 #[derive(Eq, Debug, Clone)]
 pub struct OutdoorCoverageLevel {
-    hotspot_key: PublicKeyBinary,
+    hotspot_key: Vec<u8>,
     cbsd_id: Option<String>,
     seniority_timestamp: DateTime<Utc>,
     signal_power: i32,
@@ -62,7 +61,7 @@ pub fn insert_outdoor_coverage_object(
 
 pub fn insert_outdoor_coverage(
     outdoor: &mut OutdoorCellTree,
-    hotspot: &PublicKeyBinary,
+    hotspot: &[u8],
     cbsd_id: &Option<String>,
     seniority_timestamp: DateTime<Utc>,
     hex_coverage: UnrankedCoverage,
@@ -71,7 +70,7 @@ pub fn insert_outdoor_coverage(
         .entry(hex_coverage.location)
         .or_default()
         .push(OutdoorCoverageLevel {
-            hotspot_key: hotspot.clone(),
+            hotspot_key: hotspot.to_vec(),
             cbsd_id: cbsd_id.clone(),
             seniority_timestamp,
             signal_level: hex_coverage.signal_level,
@@ -171,12 +170,9 @@ mod test {
         signal_power: i32,
         seniority_timestamp: DateTime<Utc>,
     ) -> CoverageObject {
-        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed owner parse");
         CoverageObject {
             indoor: false,
-            hotspot_key: owner,
+            hotspot_key: vec![0, 0],
             seniority_timestamp,
             cbsd_id: Some(cbsd_id.to_string()),
             coverage: vec![UnrankedCoverage {

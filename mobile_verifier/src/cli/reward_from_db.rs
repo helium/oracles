@@ -1,7 +1,7 @@
 use crate::{
     heartbeats::HeartbeatReward,
     radio_threshold::VerifiedRadioThresholds,
-    reward_shares::{get_scheduled_tokens_for_poc, CoveragePoints},
+    reward_shares::{get_scheduled_tokens_for_poc, CoverageShares},
     speedtests_average::SpeedtestAverages,
     Settings,
 };
@@ -41,7 +41,7 @@ impl Cmd {
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
 
-        let coverage_points = CoveragePoints::aggregate_points(
+        let reward_shares = CoverageShares::new(
             &pool,
             heartbeats,
             &speedtest_averages,
@@ -53,9 +53,10 @@ impl Cmd {
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
-        let radio_rewards = coverage_points
+        let radio_rewards = reward_shares
             .into_rewards(&epoch, Decimal::ZERO)
-            .ok_or(anyhow::anyhow!("no rewardable events"))?;
+            .ok_or(anyhow::anyhow!("no rewardable events"))?
+            .1;
         for (_reward_amount, reward) in radio_rewards {
             if let Some(proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
                 hotspot_key,

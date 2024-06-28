@@ -1,34 +1,14 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use config::{Config, Environment, File};
-use helium_proto::BlockchainTokenTypeV1;
+use helium_lib::token::Token;
 use humantime_serde::re::humantime;
 use serde::Deserialize;
-use solana_sdk::pubkey::Pubkey as SolPubkey;
-use std::{path::Path, str::FromStr, time::Duration};
+use std::{path::Path, time::Duration};
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct ClusterConfig {
-    pub name: String,
-    pub hnt_price_key: Option<String>,
-    pub hnt_price: Option<u64>,
-    pub mobile_price_key: Option<String>,
-    pub mobile_price: Option<u64>,
-    pub iot_price_key: Option<String>,
-    pub iot_price: Option<u64>,
-}
-
-impl Default for ClusterConfig {
-    fn default() -> Self {
-        Self {
-            name: "devnet".to_string(),
-            hnt_price_key: Some("6Eg8YdfFJQF2HHonzPUBSCCmyUEhrStg9VBLK957sBe6".to_string()),
-            hnt_price: None,
-            mobile_price_key: None,
-            mobile_price: None,
-            iot_price_key: None,
-            iot_price: None,
-        }
-    }
+pub struct TokenSetting {
+    pub token: Token,
+    pub default_price: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -52,19 +32,10 @@ pub struct Settings {
     /// Tick interval (secs). Default = 60s.
     #[serde(with = "humantime_serde", default = "default_interval")]
     pub interval: Duration,
-    /// Cluster Configuration
-    #[serde(default)]
-    pub cluster: ClusterConfig,
+    pub tokens: Vec<TokenSetting>,
     /// How long to use a stale price in minutes
     #[serde(with = "humantime_serde", default = "default_stale_price_duration")]
     pub stale_price_duration: Duration,
-    /// Interval when retrieving a pyth price from on chain
-    #[serde(with = "humantime_serde", default = "default_pyth_price_interval")]
-    pub pyth_price_interval: Duration,
-}
-
-fn default_pyth_price_interval() -> Duration {
-    humantime::parse_duration("2 hours").unwrap()
 }
 
 fn default_source() -> String {
@@ -108,30 +79,5 @@ impl Settings {
             .add_source(Environment::with_prefix("price").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn price_key(&self, token_type: BlockchainTokenTypeV1) -> Result<Option<SolPubkey>> {
-        self.key(token_type)?
-            .as_ref()
-            .map(|key| SolPubkey::from_str(key).map_err(|_| anyhow!("unable to parse {}", key)))
-            .transpose()
-    }
-
-    pub fn default_price(&self, token_type: BlockchainTokenTypeV1) -> Result<Option<u64>> {
-        match token_type {
-            BlockchainTokenTypeV1::Hnt => Ok(self.cluster.hnt_price),
-            BlockchainTokenTypeV1::Iot => Ok(self.cluster.iot_price),
-            BlockchainTokenTypeV1::Mobile => Ok(self.cluster.mobile_price),
-            _ => Err(anyhow::anyhow!("token type not supported")),
-        }
-    }
-
-    fn key(&self, token_type: BlockchainTokenTypeV1) -> Result<&Option<String>> {
-        match token_type {
-            BlockchainTokenTypeV1::Hnt => Ok(&self.cluster.hnt_price_key),
-            BlockchainTokenTypeV1::Mobile => Ok(&self.cluster.mobile_price_key),
-            BlockchainTokenTypeV1::Iot => Ok(&self.cluster.iot_price_key),
-            _ => Err(anyhow::anyhow!("token type not supported")),
-        }
     }
 }

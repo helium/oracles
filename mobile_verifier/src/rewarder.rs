@@ -3,7 +3,7 @@ use crate::{
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
     radio_threshold,
-    reward_shares::{self, CoveragePoints, MapperShares, ServiceProviderShares, TransferRewards},
+    reward_shares::{self, CoverageShares, MapperShares, ServiceProviderShares, TransferRewards},
     speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, telemetry, Settings,
@@ -424,7 +424,7 @@ async fn reward_poc(
     let verified_radio_thresholds =
         radio_threshold::verified_radio_thresholds(pool, reward_period).await?;
 
-    let coverage_points = CoveragePoints::aggregate_points(
+    let coverage_shares = CoverageShares::new(
         pool,
         heartbeats,
         &speedtest_averages,
@@ -434,30 +434,29 @@ async fn reward_poc(
     )
     .await?;
 
-    let total_shares = coverage_points.total_shares();
-    let poc_rewards_per_share = total_poc_rewards
-        .checked_div(total_shares)
-        .unwrap_or_default();
-
-    let unallocated_poc_amount = if let Some(mobile_reward_shares) =
-        coverage_points.into_rewards(reward_period, poc_rewards_per_share)
-    {
-        // handle poc reward outputs
-        let mut allocated_poc_rewards = 0_u64;
-        for (poc_reward_amount, mobile_reward_share) in mobile_reward_shares {
-            allocated_poc_rewards += poc_reward_amount;
-            mobile_rewards
-                .write(mobile_reward_share, [])
-                .await?
-                // Await the returned one shot to ensure that we wrote the file
-                .await??;
-        }
-        // calculate any unallocated poc reward
-        total_poc_rewards - Decimal::from(allocated_poc_rewards)
-    } else {
-        // default unallocated poc reward to the total poc reward
-        total_poc_rewards
-    };
+    let (unallocated_poc_amount, poc_rewards_per_share) =
+        if let Some((poc_rewards_per_share, mobile_reward_shares)) =
+            coverage_shares.into_rewards(reward_period, total_poc_rewards)
+        {
+            // handle poc reward outputs
+            let mut allocated_poc_rewards = 0_u64;
+            for (poc_reward_amount, mobile_reward_share) in mobile_reward_shares {
+                allocated_poc_rewards += poc_reward_amount;
+                mobile_rewards
+                    .write(mobile_reward_share, [])
+                    .await?
+                    // Await the returned one shot to ensure that we wrote the file
+                    .await??;
+            }
+            // calculate any unallocated poc reward
+            (
+                total_poc_rewards - Decimal::from(allocated_poc_rewards),
+                poc_rewards_per_share,
+            )
+        } else {
+            // default unallocated poc reward to the total poc reward
+            (total_poc_rewards, Decimal::ZERO)
+        };
     Ok((unallocated_poc_amount, poc_rewards_per_share))
 }
 

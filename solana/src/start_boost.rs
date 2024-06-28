@@ -74,13 +74,11 @@ impl SolanaNetwork for SolanaRpc {
         batch: &[BoostedHexActivation],
     ) -> Result<Self::Transaction, Self::Error> {
         let instructions = {
-            let rt_handle = tokio::runtime::Handle::current();
             let mut request = RequestBuilder::from(
                 hexboosting::id(),
                 &self.cluster,
                 std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
                 Some(CommitmentConfig::confirmed()),
-                &rt_handle,
             );
             for update in batch {
                 let account = accounts::StartBoostV0 {

@@ -1,13 +1,14 @@
 use crate::{metrics::Metrics, Settings};
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::file_sink;
 use futures::{future::LocalBoxFuture, TryFutureExt};
+use helium_lib::token::Token;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::pubkey::Pubkey as SolPubkey;
-use std::{cmp::Ordering, path::PathBuf, str::FromStr, time::Duration};
+use std::{path::PathBuf, str::FromStr, time::Duration};
 use task_manager::ManagedTask;
 use tokio::{fs, time};
 
@@ -15,30 +16,28 @@ use tokio::{fs, time};
 pub struct Price {
     timestamp: DateTime<Utc>,
     price: u64,
-    token_type: BlockchainTokenTypeV1,
+    token: Token,
 }
 
 impl Price {
-    fn new(timestamp: DateTime<Utc>, price: u64, token_type: BlockchainTokenTypeV1) -> Self {
+    fn new(timestamp: DateTime<Utc>, price: u64, token: Token) -> Self {
         Self {
             timestamp,
             price,
-            token_type,
+            token,
         }
     }
 }
 
 pub struct PriceGenerator {
-    token_type: BlockchainTokenTypeV1,
+    token: Token,
     client: RpcClient,
     interval_duration: std::time::Duration,
     last_price_opt: Option<Price>,
-    key: Option<SolPubkey>,
     default_price: Option<u64>,
     stale_price_duration: Duration,
     latest_price_file: PathBuf,
-    file_sink: Option<file_sink::FileSinkClient>,
-    pyth_price_interval: std::time::Duration,
+    file_sink: file_sink::FileSinkClient,
 }
 
 impl ManagedTask for PriceGenerator {
@@ -50,13 +49,20 @@ impl ManagedTask for PriceGenerator {
     }
 }
 
-impl From<Price> for PriceReportV1 {
-    fn from(value: Price) -> Self {
-        Self {
+impl TryFrom<&Price> for PriceReportV1 {
+    type Error = Error;
+
+    fn try_from(value: &Price) -> anyhow::Result<Self> {
+        Ok(Self {
             timestamp: value.timestamp.timestamp() as u64,
             price: value.price,
-            token_type: value.token_type.into(),
-        }
+            token_type: match value.token {
+                Token::Hnt => BlockchainTokenTypeV1::Hnt.into(),
+                Token::Mobile => BlockchainTokenTypeV1::Mobile.into(),
+                Token::Iot => BlockchainTokenTypeV1::Iot.into(),
+                _ => anyhow::bail!("Invalid token type"),
+            },
+        })
     }
 }
 
@@ -72,7 +78,12 @@ impl TryFrom<PriceReportV1> for Price {
                 .single()
                 .ok_or_else(|| anyhow!("invalid timestamp"))?,
             price: value.price,
-            token_type: tt,
+            token: match tt {
+                BlockchainTokenTypeV1::Hnt => Token::Hnt,
+                BlockchainTokenTypeV1::Mobile => Token::Mobile,
+                BlockchainTokenTypeV1::Iot => Token::Iot,
+                _ => anyhow::bail!("Invalid token type"),
+            },
         })
     }
 }
@@ -80,141 +91,89 @@ impl TryFrom<PriceReportV1> for Price {
 impl PriceGenerator {
     pub async fn new(
         settings: &Settings,
-        token_type: BlockchainTokenTypeV1,
+        token: Token,
+        default_price: Option<u64>,
         file_sink: file_sink::FileSinkClient,
     ) -> Result<Self> {
         let client = RpcClient::new(settings.source.clone());
         Ok(Self {
             last_price_opt: None,
-            token_type,
+            token,
             client,
-            key: settings.price_key(token_type)?,
-            default_price: settings.default_price(token_type)?,
+            default_price,
             interval_duration: settings.interval,
             stale_price_duration: settings.stale_price_duration,
             latest_price_file: PathBuf::from_str(&settings.cache)?
-                .join(format!("{token_type:?}.latest")),
-            file_sink: Some(file_sink),
-            pyth_price_interval: settings.pyth_price_interval,
+                .join(format!("{:?}.latest", token)),
+            file_sink,
         })
     }
 
-    pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
-        match (self.key, self.default_price, self.file_sink.clone()) {
-            (Some(key), _, Some(file_sink)) => self.run_with_key(key, file_sink, &shutdown).await,
-            (None, Some(defaut_price), Some(file_sink)) => {
-                self.run_with_default(defaut_price, file_sink, &shutdown)
-                    .await
-            }
-            _ => {
-                tracing::warn!(
-                    "stopping price generator for {:?}, not configured",
-                    self.token_type
-                );
-                Ok(())
-            }
-        }
-    }
+    pub async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
+        tracing::info!(token = %self.token, "starting price generator");
 
-    async fn run_with_default(
-        &mut self,
-        default_price: u64,
-        file_sink: file_sink::FileSinkClient,
-        shutdown: &triggered::Listener,
-    ) -> Result<()> {
-        tracing::info!(
-            "starting default price generator for {:?}, using price {default_price}",
-            self.token_type
-        );
-        let mut trigger = time::interval(self.interval_duration);
-
-        loop {
-            tokio::select! {
-                biased;
-                _ = shutdown.clone() => break,
-                _ = trigger.tick() => {
-                    let price = Price::new(Utc::now(), default_price, self.token_type);
-                    let price_report = PriceReportV1::from(price);
-                    tracing::info!("updating {:?} with default price: {}", self.token_type, default_price);
-                    file_sink.write(price_report, []).await?;
-                }
-            }
-        }
-
-        tracing::info!("stopping default price generator for {:?}", self.token_type);
-        Ok(())
-    }
-
-    async fn run_with_key(
-        &mut self,
-        key: SolPubkey,
-        file_sink: file_sink::FileSinkClient,
-        shutdown: &triggered::Listener,
-    ) -> Result<()> {
-        tracing::info!("starting price generator for {:?}", self.token_type);
         let mut trigger = time::interval(self.interval_duration);
         self.last_price_opt = self.read_price_file().await;
 
         loop {
             tokio::select! {
                 biased;
-                _ = shutdown.clone() => break,
-                _ = trigger.tick() => self.handle(&key, &file_sink).await?,
+                _ = &mut shutdown => break,
+                _ = trigger.tick() => {
+                    match self.default_price {
+                        Some(price) => {
+                            let price = Price::new(Utc::now(), price, self.token);
+                            self.write_price_to_sink(&price).await?;
+                        }
+                        None => {
+                            self.retrieve_and_update_price().await?;
+                        }
+                    }
+                }
             }
         }
 
-        tracing::info!("stopping price generator for {:?}", self.token_type);
+        tracing::info!(token = %self.token, "stopping price generator");
         Ok(())
     }
 
-    async fn handle(
-        &mut self,
-        key: &SolPubkey,
-        file_sink: &file_sink::FileSinkClient,
-    ) -> Result<()> {
-        let price_opt = match self.get_pyth_price(key).await {
+    async fn write_price_to_sink(&self, price: &Price) -> Result<()> {
+        let price_report = PriceReportV1::try_from(price)?;
+        tracing::info!(token = %self.token, %price.price, "updating price");
+        self.file_sink.write(price_report, []).await?;
+
+        Ok(())
+    }
+
+    async fn retrieve_and_update_price(&mut self) -> Result<()> {
+        let price_opt = match self.get_pyth_price().await {
             Ok(new_price) => {
-                tracing::info!(
-                    "updating price for {:?} to {}",
-                    self.token_type,
-                    new_price.price
-                );
                 self.last_price_opt = Some(new_price.clone());
                 self.write_price_file(&new_price).await;
 
                 Metrics::update(
                     "price_update_counter".to_string(),
-                    self.token_type,
+                    self.token,
                     new_price.price as f64,
                 );
 
                 Some(new_price)
             }
             Err(err) => {
-                tracing::error!(
-                    "error in retrieving new price for {:?}: {err:?}",
-                    self.token_type
-                );
+                tracing::error!(token = %self.token,?err,"error in retrieving new price");
 
                 match &self.last_price_opt {
                     Some(old_price) if self.is_valid(old_price) => {
                         Metrics::update(
                             "price_stale_counter".to_string(),
-                            self.token_type,
+                            self.token,
                             old_price.price as f64,
                         );
 
-                        Some(Price::new(
-                            Utc::now(),
-                            old_price.price,
-                            old_price.token_type,
-                        ))
+                        Some(Price::new(Utc::now(), old_price.price, old_price.token))
                     }
                     Some(_old_price) => {
-                        tracing::warn!(
-                            "stale price for {:?} is too old, discarding",
-                            self.token_type
-                        );
+                        tracing::warn!(token = %self.token, "stale price is too old, discarding");
                         self.last_price_opt = None;
                         None
                     }
@@ -224,48 +183,23 @@ impl PriceGenerator {
         };
 
         if let Some(price) = price_opt {
-            let price_report = PriceReportV1::from(price);
-            tracing::debug!("price_report: {:?}", price_report);
-            file_sink.write(price_report, []).await?;
+            self.write_price_to_sink(&price).await?;
         }
 
         Ok(())
     }
 
-    async fn get_pyth_price(&self, price_key: &SolPubkey) -> Result<Price> {
-        let mut account = self.client.get_account(price_key).await?;
-        let price_oracle = pyth_sdk_solana::load_price_feed_from_account(price_key, &mut account)?;
-        let curr_price = price_oracle
-            .get_ema_price_no_older_than(Utc::now().timestamp(), self.pyth_price_interval.as_secs())
-            .ok_or_else(|| anyhow!("No new price in the given interval"))?;
-
-        if curr_price.price < 0 {
-            bail!("Price is less than zero");
-        }
-
-        // Remove the confidence interval from the price to get the most optimistic price:
-        let optimistic_price = curr_price.price as u64 + curr_price.conf * 2;
-
-        // We want the price to have a resulting exponent of 10^-6
-        // I don't think it's possible for pyth to give us anything other than -8, but we make
-        // this robust just in case:
-        let exp = curr_price.expo + 6;
-        let adjusted_optimistic_price = match exp.cmp(&0) {
-            Ordering::Less => optimistic_price / 10_u64.pow(exp.unsigned_abs()),
-            Ordering::Greater => optimistic_price * 10_u64.pow(exp as u32),
-            _ => optimistic_price,
-        };
-
-        Ok(Price::new(
-            DateTime::from_timestamp(curr_price.publish_time, 0).ok_or_else(|| {
-                anyhow!(
-                    "Invalid publish time for price: {}",
-                    curr_price.publish_time
-                )
-            })?,
-            adjusted_optimistic_price,
-            self.token_type,
-        ))
+    async fn get_pyth_price(&self) -> Result<Price> {
+        helium_lib::token::price::get(&self.client, self.token)
+            .await
+            .map_err(anyhow::Error::from)
+            .and_then(|p| {
+                tracing::debug!(token = %self.token, %p.price, "retrieved price from chain");
+                (p.price * Decimal::from(10_u64.pow(self.token.decimals() as u32)))
+                    .try_into()
+                    .map(|price| Price::new(p.timestamp, price, self.token))
+                    .map_err(anyhow::Error::from)
+            })
     }
 
     fn is_valid(&self, price: &Price) -> bool {
@@ -280,7 +214,7 @@ impl PriceGenerator {
             })
             .await
             .map_err(|err| {
-                tracing::warn!(token = ?self.token_type, "unable to read latest price file due to {err}");
+                tracing::warn!(token = %self.token, ?err, "unable to read latest price file");
                 err
             })
             .ok()
@@ -297,7 +231,7 @@ impl PriceGenerator {
         match result {
             Ok(_) => (),
             Err(err) => {
-                tracing::warn!(token = ?self.token_type, "unable to save latest price file due to {err}");
+                tracing::warn!(token = %self.token, ?err, "unable to save latest price file");
             }
         }
     }

@@ -22,7 +22,7 @@ use mobile_verifier::{
         ValidatedHeartbeat,
     },
     radio_threshold::VerifiedRadioThresholds,
-    reward_shares::CoveragePoints,
+    reward_shares::CoverageShares,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     GatewayResolution, GatewayResolver,
@@ -350,7 +350,8 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         .build()?;
     let _ = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
-    let heartbeats = heartbeats(12, start, &owner, &cbsd_id, 0.0, 0.0, uuid);
+    let heartbeat_owner = owner.clone();
+    let heartbeats = heartbeats(12, start, &heartbeat_owner, &cbsd_id, 0.0, 0.0, uuid);
 
     let coverage_objects = CoverageObjectCache::new(&pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
@@ -399,7 +400,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let heartbeats = HeartbeatReward::validated(&pool, &epoch);
-    let coverage_points = CoveragePoints::aggregate_points(
+    let coverage_shares = CoverageShares::new(
         &pool,
         heartbeats,
         &speedtest_avgs,
@@ -450,7 +451,10 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     // -----------------------------------------------
     //                                     = 1,073
 
-    assert_eq!(coverage_points.hotspot_points(&owner), dec!(1073.0));
+    assert_eq!(
+        coverage_shares.test_hotspot_reward_shares(&(owner, Some(cbsd_id.clone()))),
+        dec!(1073.0)
+    );
 
     Ok(())
 }
