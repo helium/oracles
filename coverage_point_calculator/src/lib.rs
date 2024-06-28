@@ -91,7 +91,7 @@ pub enum Error {
 ///   have no boosted_multiplier values.
 #[derive(Debug, Clone)]
 pub struct CoveragePoints {
-    ///
+    /// Breakdown of coverage points by source
     pub coverage_points: HexPoints,
     /// Location Trust Multiplier, maximum of 1
     ///
