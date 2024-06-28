@@ -303,8 +303,12 @@ where
 
         // now that the db has been purged, safe to write out the manifest
         let reward_data = ManifestMobileRewardData {
-            poc_bones_per_coverage_point: poc_dc_shares.poc_bones_per_coverage_point.to_string(),
-            dc_bones_per_share: poc_dc_shares.dc_transfer_rewards_per_share.to_string(),
+            poc_bones_per_coverage_point: Some(helium_proto::Decimal {
+                value: poc_dc_shares.poc_bones_per_coverage_point.to_string(),
+            }),
+            dc_bones_per_share: Some(helium_proto::Decimal {
+                value: poc_dc_shares.dc_transfer_rewards_per_share.to_string(),
+            }),
         };
         self.reward_manifests
             .write(

@@ -1421,7 +1421,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/reward-manifest-additions#b18e075199b83455e67297f2c2c6264072208a61"
+source = "git+https://github.com/helium/proto?branch=map/decimalize#1bfa3d95d204d92420dca46ef6d05196e2da08f0"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -1431,7 +1431,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -3464,7 +3464,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/reward-manifest-additions#b18e075199b83455e67297f2c2c6264072208a61"
+source = "git+https://github.com/helium/proto?branch=map/decimalize#1bfa3d95d204d92420dca46ef6d05196e2da08f0"
 dependencies = [
  "bytes",
  "prost",
