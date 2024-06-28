@@ -138,7 +138,6 @@ impl CoveragePoints {
 
         Ok(CoveragePoints {
             coverage_points: hex_coverage_points,
-
             location_trust_multiplier,
             speedtest_multiplier,
             radio_type,
