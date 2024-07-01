@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::{
     file_info_poller::{
@@ -72,6 +74,29 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
                 .ok_or_else(|| anyhow::anyhow!("invalid until: {}", report.until))?,
             reason,
         })
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct BannedRadios {
+    wifi: HashSet<PublicKeyBinary>,
+    cbrs: HashSet<String>,
+}
+
+impl BannedRadios {
+    pub fn insert_wifi(&mut self, pubkey: PublicKeyBinary) {
+        self.wifi.insert(pubkey);
+    }
+
+    pub fn insert_cbrs(&mut self, cbsd_id: String) {
+        self.cbrs.insert(cbsd_id);
+    }
+
+    pub fn contains(&self, pubkey: &PublicKeyBinary, cbsd_id_opt: Option<&str>) -> bool {
+        match cbsd_id_opt {
+            Some(cbsd_id) => self.cbrs.contains(cbsd_id),
+            None => self.wifi.contains(pubkey),
+        }
     }
 }
 
@@ -235,7 +260,7 @@ pub async fn clear_bans(
 }
 
 pub mod db {
-    use std::{collections::HashSet, str::FromStr};
+    use std::str::FromStr;
 
     use chrono::Duration;
     use sqlx::Row;
@@ -245,7 +270,7 @@ pub mod db {
     pub async fn get_banned_radios(
         pool: &PgPool,
         date_time: DateTime<Utc>,
-    ) -> anyhow::Result<HashSet<(Option<PublicKeyBinary>, Option<String>)>> {
+    ) -> anyhow::Result<BannedRadios> {
         sqlx::query(
             r#"
                 SELECT radio_type, radio_key
@@ -256,12 +281,12 @@ pub mod db {
         .bind(date_time)
         .fetch(pool)
         .map_err(anyhow::Error::from)
-        .try_fold(HashSet::new(), |mut set, row| async move {
+        .try_fold(BannedRadios::default(), |mut set, row| async move {
             let radio_type = row.get::<&str, &str>("radio_type");
             let radio_key = row.get::<String, &str>("radio_key");
             match radio_type {
-                "wifi" => set.insert((Some(PublicKeyBinary::from_str(&radio_key)?), None)),
-                "cbrs" => set.insert((None, Some(radio_key))),
+                "wifi" => set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?),
+                "cbrs" => set.insert_cbrs(radio_key),
                 _ => anyhow::bail!("Inavlid radio type: {}", radio_type),
             };
 
