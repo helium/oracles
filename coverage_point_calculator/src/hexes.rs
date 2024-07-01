@@ -8,16 +8,19 @@ use crate::{BoostedHexStatus, RadioType, Result};
 /// Breakdown of points for a hex.
 ///
 /// Example:
-///   Outdoor Wifi with 1-hex boosted 5x,
-///   Rank 2, Assignment AAA:
-///     SplitPoints {
-///       modeled: 16,
-///       base: 8,
-///       boosted: 32
-///     }
-///
-///   Rank 2 splits modeled points in half.
-///   Boost at 5x adds 32 points ( (8 * 5) - 8 )
+/// - Outdoor Wifi
+/// - 1 hex boosted at `5x`
+/// - Rank 2
+/// - Assignment: `AAA`
+/// <pre>
+/// SplitPoints {
+///   modeled: 16,
+///   base: 8,
+///   boosted: 32
+/// }
+/// </pre>
+/// Rank 2 splits modeled points in half.
+/// Boost at `5x` adds 32 points `( (8 * 5) - 8 )`
 #[derive(Debug, Default, Clone)]
 pub struct HexPoints {
     /// Default points received for hex
