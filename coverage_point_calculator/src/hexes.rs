@@ -26,15 +26,15 @@ pub struct HexPoints {
     /// Default points received for hex
     ///
     /// (RadioType, SignalLevel) points
-    pub(crate) modeled: Decimal,
+    pub modeled: Decimal,
     /// Points including Coverage affected multipliers
     ///
     /// modeled + (Rank * Assignment)
-    pub(crate) base: Decimal,
+    pub base: Decimal,
     /// Points _over_ normal received from hex boosting.
     ///
     /// (base * Boost multiplier) - base
-    pub(crate) boosted: Decimal,
+    pub boosted: Decimal,
 }
 
 #[derive(Debug, Clone)]
