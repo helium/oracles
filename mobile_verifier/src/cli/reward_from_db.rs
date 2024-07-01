@@ -54,8 +54,9 @@ impl Cmd {
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
         let radio_rewards = reward_shares
-            .into_rewards(Decimal::ZERO, &epoch)
-            .ok_or(anyhow::anyhow!("no rewardable events"))?;
+            .into_rewards(&epoch, Decimal::ZERO)
+            .ok_or(anyhow::anyhow!("no rewardable events"))?
+            .1;
         for (_reward_amount, reward) in radio_rewards {
             if let Some(proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
                 hotspot_key,

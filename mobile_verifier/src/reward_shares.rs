@@ -586,9 +586,12 @@ impl CoverageShares {
 
     pub fn into_rewards(
         self,
-        available_poc_rewards: Decimal,
         epoch: &'_ Range<DateTime<Utc>>,
-    ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_> {
+        available_poc_rewards: Decimal,
+    ) -> Option<(
+        Decimal,
+        impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_,
+    )> {
         let mut total_shares: Decimal = dec!(0);
 
         let mut processed_radios = vec![];
@@ -617,7 +620,8 @@ impl CoverageShares {
             return None;
         };
 
-        Some(
+        Some((
+            rewards_per_share,
             processed_radios
                 .into_iter()
                 .map(move |(id, points, seniority, coverage_object_uuid)| {
@@ -635,7 +639,7 @@ impl CoverageShares {
                     (poc_reward, mobile_reward_share)
                 })
                 .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0),
-        )
+        ))
     }
 
     /// Only used for testing
@@ -1379,8 +1383,9 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(total_poc_rewards, &epoch)
+        .into_rewards(&epoch, total_poc_rewards)
         .unwrap()
+        .1
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1551,8 +1556,9 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(total_poc_rewards, &epoch)
+        .into_rewards(&epoch, total_poc_rewards)
         .unwrap()
+        .1
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1681,8 +1687,9 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(total_poc_rewards, &epoch)
+        .into_rewards(&epoch, total_poc_rewards)
         .unwrap()
+        .1
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1811,8 +1818,9 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(total_poc_rewards, &epoch)
+        .into_rewards(&epoch, total_poc_rewards)
         .unwrap()
+        .1
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1854,6 +1862,8 @@ mod test {
             .expect("failed gw2 parse");
 
         let now = Utc::now();
+        // We should never see any radio shares from owner2, since all of them are
+        // less than or equal to zero.
         let epoch = now - Duration::hours(1)..now;
 
         let uuid_1 = Uuid::new_v4();
@@ -1949,8 +1959,9 @@ mod test {
         // gw2 does not have enough speedtests for a mulitplier
         let expected_hotspot = gw1;
         for (_reward_amount, mobile_reward) in coverage_shares
-            .into_rewards(total_poc_rewards, &epoch)
+            .into_rewards(&epoch, total_poc_rewards)
             .expect("rewards output")
+            .1
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1973,7 +1984,7 @@ mod test {
 
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
         assert!(coverage_shares
-            .into_rewards(total_poc_rewards, &epoch)
+            .into_rewards(&epoch, total_poc_rewards)
             .is_none());
     }
 
