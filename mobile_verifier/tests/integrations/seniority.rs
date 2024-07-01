@@ -1,10 +1,8 @@
 use chrono::{DateTime, Utc};
 use helium_proto::services::poc_mobile::{HeartbeatValidity, SeniorityUpdateReason};
 use mobile_verifier::cell_type::CellType;
-use mobile_verifier::coverage::Seniority;
-use mobile_verifier::heartbeats::{
-    HbType, Heartbeat, SeniorityUpdate, SeniorityUpdateAction, ValidatedHeartbeat,
-};
+use mobile_verifier::heartbeats::{HbType, Heartbeat, ValidatedHeartbeat};
+use mobile_verifier::seniority::{Seniority, SeniorityUpdate, SeniorityUpdateAction};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use uuid::Uuid;

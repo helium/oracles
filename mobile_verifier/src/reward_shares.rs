@@ -1,8 +1,9 @@
 use crate::{
-    coverage::{CoveredHexStream, Seniority},
+    coverage::CoveredHexStream,
     data_session::{HotspotMap, ServiceProviderDataSession},
     heartbeats::HeartbeatReward,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
+    seniority::Seniority,
     speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
 };
@@ -786,7 +787,7 @@ mod test {
 
     use crate::{
         cell_type::CellType,
-        coverage::{CoveredHexStream, HexCoverage, Seniority},
+        coverage::{CoveredHexStream, HexCoverage},
         data_session::{self, HotspotDataSession, HotspotReward},
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
         reward_shares,

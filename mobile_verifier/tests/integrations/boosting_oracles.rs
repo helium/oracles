@@ -15,14 +15,12 @@ use hex_assignments::{Assignment, HexBoostData};
 use mobile_config::boosted_hex_info::BoostedHexes;
 
 use mobile_verifier::{
-    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
+    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::{
-        last_location::LocationCache, Heartbeat, HeartbeatReward, SeniorityUpdate,
-        ValidatedHeartbeat,
-    },
+    heartbeats::{last_location::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
+    seniority::{Seniority, SeniorityUpdate},
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     GatewayResolution, GatewayResolver,
