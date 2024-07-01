@@ -435,7 +435,7 @@ async fn process_input(
             coverage_claim_time.unwrap(),
             epoch.start,
             latest_seniority,
-        );
+        )?;
         seniority_update.execute(&mut transaction).await?;
         heartbeat.save(&mut transaction).await?;
     }

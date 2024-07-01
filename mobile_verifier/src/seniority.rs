@@ -31,7 +31,9 @@ impl Seniority {
 }
 
 pub struct SeniorityUpdate<'a> {
-    heartbeat: &'a ValidatedHeartbeat,
+    key: KeyType<'a>,
+    heartbeat_ts: DateTime<Utc>,
+    uuid: Uuid,
     pub action: SeniorityUpdateAction,
 }
 
@@ -48,8 +50,19 @@ pub enum SeniorityUpdateAction {
 }
 
 impl<'a> SeniorityUpdate<'a> {
-    pub fn new(heartbeat: &'a ValidatedHeartbeat, action: SeniorityUpdateAction) -> Self {
-        Self { heartbeat, action }
+    pub fn from(
+        heartbeat: &'a ValidatedHeartbeat,
+        action: SeniorityUpdateAction,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            key: heartbeat.heartbeat.key(),
+            heartbeat_ts: heartbeat.heartbeat.timestamp,
+            uuid: heartbeat
+                .heartbeat
+                .coverage_object
+                .ok_or_else(|| anyhow::anyhow!("invalid heartbeat, no coverage object found"))?,
+            action,
+        })
     }
 
     pub fn determine_update_action(
@@ -57,17 +70,18 @@ impl<'a> SeniorityUpdate<'a> {
         coverage_claim_time: DateTime<Utc>,
         modeled_coverage_start: DateTime<Utc>,
         latest_seniority: Option<Seniority>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         use proto::SeniorityUpdateReason::*;
 
         if let Some(prev_seniority) = latest_seniority {
             if heartbeat.heartbeat.coverage_object != Some(prev_seniority.uuid) {
+                // TODO need to think about this
                 if prev_seniority.update_reason == HeartbeatNotSeen as i32
                     && coverage_claim_time < prev_seniority.seniority_ts
                 {
-                    Self::new(heartbeat, SeniorityUpdateAction::NoAction)
+                    Self::from(heartbeat, SeniorityUpdateAction::NoAction)
                 } else {
-                    Self::new(
+                    Self::from(
                         heartbeat,
                         SeniorityUpdateAction::Insert {
                             new_seniority: coverage_claim_time,
@@ -79,7 +93,7 @@ impl<'a> SeniorityUpdate<'a> {
                 > Duration::days(3)
                 && coverage_claim_time < heartbeat.heartbeat.timestamp
             {
-                Self::new(
+                Self::from(
                     heartbeat,
                     SeniorityUpdateAction::Insert {
                         new_seniority: heartbeat.heartbeat.timestamp,
@@ -87,7 +101,7 @@ impl<'a> SeniorityUpdate<'a> {
                     },
                 )
             } else {
-                Self::new(
+                Self::from(
                     heartbeat,
                     SeniorityUpdateAction::Update {
                         curr_seniority: prev_seniority.seniority_ts,
@@ -96,7 +110,7 @@ impl<'a> SeniorityUpdate<'a> {
             }
         } else if heartbeat.heartbeat.timestamp - modeled_coverage_start > Duration::days(3) {
             // This will become the default case 72 hours after we launch modeled coverage
-            Self::new(
+            Self::from(
                 heartbeat,
                 SeniorityUpdateAction::Insert {
                     new_seniority: heartbeat.heartbeat.timestamp,
@@ -104,7 +118,7 @@ impl<'a> SeniorityUpdate<'a> {
                 },
             )
         } else {
-            Self::new(
+            Self::from(
                 heartbeat,
                 SeniorityUpdateAction::Insert {
                     new_seniority: coverage_claim_time,
@@ -126,7 +140,7 @@ impl SeniorityUpdate<'_> {
             seniorities
                 .write(
                     proto::SeniorityUpdate {
-                        key_type: Some(self.heartbeat.heartbeat.key().into()),
+                        key_type: Some(self.key.into()),
                         new_seniority_timestamp: new_seniority.timestamp() as u64,
                         reason: update_reason as i32,
                         new_seniority_timestamp_ms: new_seniority.timestamp_millis() as u64,
@@ -157,13 +171,13 @@ impl SeniorityUpdate<'_> {
                       update_reason = EXCLUDED.update_reason
                     "#,
                 )
-                .bind(self.heartbeat.heartbeat.key())
-                .bind(self.heartbeat.heartbeat.timestamp)
-                .bind(self.heartbeat.heartbeat.coverage_object)
+                .bind(self.key)
+                .bind(self.heartbeat_ts)
+                .bind(self.uuid)
                 .bind(new_seniority)
-                .bind(self.heartbeat.heartbeat.timestamp)
+                .bind(self.heartbeat_ts)
                 .bind(update_reason as i32)
-                .bind(self.heartbeat.heartbeat.hb_type)
+                .bind(self.key.hb_type())
                 .execute(&mut *exec)
                 .await?;
             }
@@ -177,8 +191,8 @@ impl SeniorityUpdate<'_> {
                       seniority_ts = $3
                     "#,
                 )
-                .bind(self.heartbeat.heartbeat.timestamp)
-                .bind(self.heartbeat.heartbeat.key())
+                .bind(self.heartbeat_ts)
+                .bind(self.key)
                 .bind(curr_seniority)
                 .execute(&mut *exec)
                 .await?;
