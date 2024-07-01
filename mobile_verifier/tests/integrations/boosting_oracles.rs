@@ -21,8 +21,8 @@ use mobile_verifier::{
         last_location::LocationCache, Heartbeat, HeartbeatReward, SeniorityUpdate,
         ValidatedHeartbeat,
     },
-    radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoverageShares,
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     GatewayResolution, GatewayResolver,
@@ -405,7 +405,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &epoch,
     )
     .await

@@ -21,8 +21,8 @@ use mobile_verifier::{
         last_location::LocationCache, Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate,
         ValidatedHeartbeat,
     },
-    radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoverageShares,
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     GatewayResolution, GatewayResolver, IsAuthorized,
@@ -497,7 +497,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
@@ -599,7 +599,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
@@ -887,7 +887,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &boosted_hexes,
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
@@ -976,7 +976,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
@@ -1077,7 +1077,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
@@ -1326,7 +1326,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
