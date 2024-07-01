@@ -728,7 +728,7 @@ pub(crate) async fn process_validated_heartbeats(
                 coverage_claim_time,
                 modeled_coverage_start,
                 latest_seniority,
-            );
+            )?;
             seniority_update.write(seniority_sink).await?;
             seniority_update.execute(&mut *transaction).await?;
         }
@@ -791,7 +791,7 @@ mod test {
     }
 
     #[test]
-    fn ensure_first_seniority_causes_update() {
+    fn ensure_first_seniority_causes_update() -> anyhow::Result<()> {
         let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
@@ -805,7 +805,7 @@ mod test {
             coverage_claim_time,
             modeled_coverage_start,
             None,
-        );
+        )?;
 
         assert_eq!(
             seniority_action.action,
@@ -814,10 +814,12 @@ mod test {
                 update_reason: NewCoverageClaimTime,
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn ensure_first_seniority_72_hours_after_start_resets_coverage_claim_time() {
+    fn ensure_first_seniority_72_hours_after_start_resets_coverage_claim_time() -> anyhow::Result<()>
+    {
         let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
@@ -831,7 +833,7 @@ mod test {
             coverage_claim_time,
             modeled_coverage_start,
             None,
-        );
+        )?;
 
         assert_eq!(
             seniority_action.action,
@@ -840,10 +842,11 @@ mod test {
                 update_reason: HeartbeatNotSeen,
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn ensure_seniority_updates_on_new_coverage_object() {
+    fn ensure_seniority_updates_on_new_coverage_object() -> anyhow::Result<()> {
         let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
@@ -866,7 +869,7 @@ mod test {
             new_coverage_claim_time,
             modeled_coverage_start,
             Some(latest_seniority.clone()),
-        );
+        )?;
 
         assert_eq!(
             seniority_action.action,
@@ -875,10 +878,11 @@ mod test {
                 update_reason: NewCoverageClaimTime,
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn ensure_last_heartbeat_updates_on_same_coverage_object() {
+    fn ensure_last_heartbeat_updates_on_same_coverage_object() -> anyhow::Result<()> {
         let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
@@ -899,7 +903,7 @@ mod test {
             coverage_claim_time,
             modeled_coverage_start,
             Some(latest_seniority.clone()),
-        );
+        )?;
 
         assert_eq!(
             seniority_action.action,
@@ -907,10 +911,11 @@ mod test {
                 curr_seniority: coverage_claim_time,
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn ensure_seniority_updates_after_72_hours() {
+    fn ensure_seniority_updates_after_72_hours() -> anyhow::Result<()> {
         let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
@@ -930,7 +935,7 @@ mod test {
             coverage_claim_time,
             modeled_coverage_start,
             Some(latest_seniority),
-        );
+        )?;
         assert_eq!(
             seniority_action.action,
             SeniorityUpdateAction::Insert {
@@ -938,10 +943,11 @@ mod test {
                 update_reason: HeartbeatNotSeen,
             }
         );
+        Ok(())
     }
 
     #[test]
-    fn ensure_seniority_updates_after_not_seen_if_in_future() {
+    fn ensure_seniority_updates_after_not_seen_if_in_future() -> anyhow::Result<()> {
         let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
@@ -964,7 +970,7 @@ mod test {
             new_coverage_claim_time,
             modeled_coverage_start,
             Some(latest_seniority.clone()),
-        );
+        )?;
         assert_eq!(
             seniority_action.action,
             SeniorityUpdateAction::Insert {
@@ -983,7 +989,8 @@ mod test {
             new_coverage_claim_time,
             modeled_coverage_start,
             Some(latest_seniority),
-        );
+        )?;
         assert_eq!(seniority_action.action, SeniorityUpdateAction::NoAction);
+        Ok(())
     }
 }

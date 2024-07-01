@@ -382,7 +382,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
             coverage_claim_time.unwrap(),
             epoch.start,
             latest_seniority,
-        );
+        )?;
         seniority_update.execute(&mut transaction).await?;
         heartbeat.save(&mut transaction).await?;
     }
