@@ -5,7 +5,7 @@
 //! place to start.
 //!
 //! ## Important Fields
-//! - [CoveredHex::base_coverage_points]
+//! - [CoveredHex::points]
 //!   - [HIP-74][modeled-coverage]
 //!   - reduced cbrs radio coverage points [HIP-113][cbrs-experimental]
 //!
@@ -55,12 +55,11 @@
 //! [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
 //!
 pub use crate::{
-    hexes::CoveredHex,
+    hexes::{CoveredHex, HexPoints},
     location::LocationTrust,
     speedtest::{BytesPs, Speedtest, SpeedtestTier},
 };
 use coverage_map::SignalLevel;
-use hexes::HexPoints;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
