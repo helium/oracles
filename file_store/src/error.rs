@@ -53,6 +53,10 @@ pub enum DecodeError {
     Uri(#[from] http::uri::InvalidUri),
     #[error("integer conversion error")]
     FromInt(#[from] std::num::TryFromIntError),
+    #[error("error parsing decimal")]
+    IntoDecimal(#[from] rust_decimal::Error),
+    #[error("empty field: {0}")]
+    EmptyField(&'static str),
     #[error("unsupported region, type: {0}, value: {1}")]
     UnsupportedRegion(String, i32),
     #[error("unsupported datarate, type: {0}, value: {1}")]
@@ -165,6 +169,10 @@ impl DecodeError {
 
     pub fn unsupported_invalidated_reason<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedInvalidReason(msg1.to_string(), msg2))
+    }
+
+    pub const fn empty_field(field: &'static str) -> Error {
+        Error::Decode(Self::EmptyField(field))
     }
 }
 
