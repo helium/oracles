@@ -28,7 +28,6 @@ use tokio::sync::mpsc::Receiver;
 use crate::Settings;
 
 const CLEANUP_DAYS: i64 = 7;
-const CLEANUP_INTERVAL_SECS: u64 = 12 * 60 * 60;
 
 struct BannedRadioReport {
     received_timestamp: DateTime<Utc>,
@@ -153,16 +152,10 @@ where
     async fn run(mut self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("service provider boosted rewards ban ingestor starting");
 
-        let mut cleanup_interval =
-            tokio::time::interval(std::time::Duration::from_secs(CLEANUP_INTERVAL_SECS));
-
         loop {
             tokio::select! {
                 biased;
                 _ = &mut shutdown => break,
-                _ = cleanup_interval.tick() => {
-                    db::cleanup(&self.pool).await?;
-                }
                 Some(file) = self.receiver.recv() => {
                     self.process_file(file).await?;
                 }
@@ -234,20 +227,61 @@ where
     }
 }
 
-mod db {
+pub async fn clear_bans(
+    transaction: &mut Transaction<'_, Postgres>,
+    before: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    db::cleanup(transaction, before).await
+}
+
+pub mod db {
+    use std::{collections::HashSet, str::FromStr};
+
     use chrono::Duration;
+    use sqlx::Row;
 
     use super::*;
 
-    pub(super) async fn cleanup(pool: &PgPool) -> anyhow::Result<()> {
+    pub async fn get_banned_radios(
+        pool: &PgPool,
+        date_time: DateTime<Utc>,
+    ) -> anyhow::Result<HashSet<(Option<PublicKeyBinary>, Option<String>)>> {
         sqlx::query(
             r#"
-            DELETE FROM sp_boosted_rewards_bans
-            WHERE until < $1 or invalidated_at < $1
-        "#,
+                SELECT radio_type, radio_key
+                FROM sp_boosted_rewards_bans
+                WHERE until < $1 or invalidated_at < $1
+            "#,
         )
-        .bind(Utc::now() - Duration::days(CLEANUP_DAYS))
-        .execute(pool)
+        .bind(date_time)
+        .fetch(pool)
+        .map_err(anyhow::Error::from)
+        .try_fold(HashSet::new(), |mut set, row| async move {
+            let radio_type = row.get::<&str, &str>("radio_type");
+            let radio_key = row.get::<String, &str>("radio_key");
+            match radio_type {
+                "wifi" => set.insert((Some(PublicKeyBinary::from_str(&radio_key)?), None)),
+                "cbrs" => set.insert((None, Some(radio_key))),
+                _ => anyhow::bail!("Inavlid radio type: {}", radio_type),
+            };
+
+            Ok(set)
+        })
+        .await
+    }
+
+    pub(super) async fn cleanup(
+        transaction: &mut Transaction<'_, Postgres>,
+        before: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+                DELETE FROM sp_boosted_rewards_bans
+                WHERE until < $1 or invalidated_at < $1
+            "#,
+        )
+        .bind(before - Duration::days(CLEANUP_DAYS))
+        .execute(transaction)
         .await
         .map(|_| ())
         .map_err(anyhow::Error::from)
@@ -271,9 +305,9 @@ mod db {
     ) -> anyhow::Result<()> {
         sqlx::query(
             r#"
-        INSERT INTO sp_boosted_rewards_bans(radio_type, radio_key, received_timestamp, until)
-        VALUES($1,$2,$3,$4)
-    "#,
+                INSERT INTO sp_boosted_rewards_bans(radio_type, radio_key, received_timestamp, until)
+                VALUES($1,$2,$3,$4)
+            "#,
         )
         .bind(report.radio_type)
         .bind(report.radio_key)
@@ -295,7 +329,7 @@ mod db {
             SET invalidated_at = now()
             WHERE radio_type = $1
                 AND radio_key = $2
-                AND received_timestamp <= $3
+               AND received_timestamp <= $3
         "#,
         )
         .bind(report.radio_type)
