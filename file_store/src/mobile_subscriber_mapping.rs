@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct VerifiedSubscriberMappingEvent {
+    // The id of the verified subscriber mapper
+    // expressed as a vec of the UUID bytes
     pub subscriber_id: Vec<u8>,
     pub total_reward_points: u64,
     pub timestamp: DateTime<Utc>,
@@ -111,12 +113,15 @@ impl From<VerifiedSubscriberMappingEventIngestReport>
 mod tests {
     use chrono::NaiveDateTime;
     use std::str::FromStr;
+    use uuid::Uuid;
 
     use super::*;
 
     #[test]
-    fn from_proto() -> anyhow::Result<()> {
-        let subscriber_id = "sub1".to_string().as_bytes().to_vec();
+    fn verified_subscriber_mapper_from_proto() -> anyhow::Result<()> {
+        let subscriber_id = Uuid::parse_str("f47ac10b-58cc-4372-a567-0e02b2c3d479")?
+            .as_bytes()
+            .to_vec();
         let carrier_pubkey =
             PublicKeyBinary::from_str("14ihsKqVhXqfzET1dkLZGNQWrB9ZeGnqJtdMGajFjPmwKsKEEAC")?;
 
