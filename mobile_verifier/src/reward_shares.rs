@@ -1,12 +1,14 @@
 use crate::{
-    coverage::{CoveredHexStream, Seniority},
+    coverage::CoveredHexStream,
     data_session::{HotspotMap, ServiceProviderDataSession},
     heartbeats::HeartbeatReward,
-    radio_threshold::VerifiedRadioThresholds,
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
+    seniority::Seniority,
     speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
 };
 use chrono::{DateTime, Duration, Utc};
+use coverage_point_calculator::ServiceProviderBoostedRewardEligibility;
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -434,7 +436,7 @@ struct RadioInfo {
     coverage_obj_uuid: Uuid,
     seniority: Seniority,
     trust_scores: Vec<coverage_point_calculator::LocationTrust>,
-    verified_radio_threshold: coverage_point_calculator::RadioThreshold,
+    sp_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility,
     speedtests: Vec<coverage_point_calculator::Speedtest>,
 }
 
@@ -450,7 +452,7 @@ impl CoverageShares {
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtest_averages: &SpeedtestAverages,
         boosted_hexes: &BoostedHexes,
-        verified_radio_thresholds: &VerifiedRadioThresholds,
+        boosted_hex_eligibility: &BoostedHexEligibility,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<Self> {
         let mut radio_infos: HashMap<RadioId, RadioInfo> = HashMap::new();
@@ -521,12 +523,8 @@ impl CoverageShares {
                 })
                 .collect();
 
-            use coverage_point_calculator::RadioThreshold;
-            let verified_radio_threshold =
-                match verified_radio_thresholds.is_verified(pubkey, cbsd_id) {
-                    true => RadioThreshold::Verified,
-                    false => RadioThreshold::Unverified,
-                };
+            let sp_boosted_reward_eligibility =
+                boosted_hex_eligibility.eligibility(pubkey, cbsd_id);
 
             use coverage_point_calculator::LocationTrust;
             let trust_scores = heartbeat
@@ -544,7 +542,7 @@ impl CoverageShares {
                     coverage_obj_uuid: heartbeat.coverage_object,
                     seniority,
                     trust_scores,
-                    verified_radio_threshold,
+                    sp_boosted_reward_eligibility,
                     speedtests,
                 },
             );
@@ -575,7 +573,7 @@ impl CoverageShares {
 
         let coverage_points = coverage_point_calculator::CoveragePoints::new(
             radio_info.radio_type,
-            radio_info.verified_radio_threshold,
+            radio_info.sp_boosted_reward_eligibility,
             radio_info.speedtests.clone(),
             radio_info.trust_scores.clone(),
             hexes,
@@ -675,7 +673,7 @@ mod test {
 
     use crate::{
         cell_type::CellType,
-        coverage::{CoveredHexStream, HexCoverage, Seniority},
+        coverage::{CoveredHexStream, HexCoverage},
         data_session::{self, HotspotDataSession, HotspotReward},
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
         reward_shares,
@@ -1374,7 +1372,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
-            &VerifiedRadioThresholds::default(),
+            &BoostedHexEligibility::default(),
             &epoch,
         )
         .await
@@ -1546,7 +1544,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
-            &VerifiedRadioThresholds::default(),
+            &BoostedHexEligibility::default(),
             &epoch,
         )
         .await
@@ -1676,7 +1674,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
-            &VerifiedRadioThresholds::default(),
+            &BoostedHexEligibility::default(),
             &epoch,
         )
         .await
@@ -1806,7 +1804,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
-            &VerifiedRadioThresholds::default(),
+            &BoostedHexEligibility::default(),
             &epoch,
         )
         .await
@@ -1903,7 +1901,7 @@ mod test {
                     inserted_at: now,
                     update_reason: 0,
                 },
-                verified_radio_threshold: coverage_point_calculator::RadioThreshold::Verified,
+                sp_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility::Eligible,
                 speedtests: vec![
                     coverage_point_calculator::Speedtest {
                         upload_speed: coverage_point_calculator::BytesPs::new(100_000_000),
@@ -1936,7 +1934,7 @@ mod test {
                     inserted_at: now,
                     update_reason: 0,
                 },
-                verified_radio_threshold: coverage_point_calculator::RadioThreshold::Verified,
+                sp_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility::Eligible,
                 speedtests: vec![],
             },
         );

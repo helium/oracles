@@ -34,7 +34,6 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: DateTime<Utc>,
-    pub modeled_coverage_start: DateTime<Utc>,
     /// Max distance in meters between the heartbeat and all of the hexes in
     /// its respective coverage object
     #[serde(default = "default_max_distance_from_coverage")]

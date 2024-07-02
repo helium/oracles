@@ -6,6 +6,7 @@ use tower_http::{
 };
 use tracing::{Level, Span};
 
+#[allow(clippy::type_complexity)]
 pub fn new_with_span(
     make_span: fn(&Request<Body>) -> Span,
 ) -> TraceLayer<

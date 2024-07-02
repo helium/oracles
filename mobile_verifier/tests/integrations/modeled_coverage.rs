@@ -15,14 +15,14 @@ use hextree::Cell;
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
-    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
+    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
     heartbeats::{
-        last_location::LocationCache, Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate,
-        ValidatedHeartbeat,
+        last_location::LocationCache, Heartbeat, HeartbeatReward, KeyType, ValidatedHeartbeat,
     },
-    radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoverageShares,
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
+    seniority::{Seniority, SeniorityUpdate},
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     GatewayResolution, GatewayResolver, IsAuthorized,
@@ -433,9 +433,8 @@ async fn process_input(
         let seniority_update = SeniorityUpdate::determine_update_action(
             &heartbeat,
             coverage_claim_time.unwrap(),
-            epoch.start,
             latest_seniority,
-        );
+        )?;
         seniority_update.execute(&mut transaction).await?;
         heartbeat.save(&mut transaction).await?;
     }
@@ -497,7 +496,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
@@ -599,7 +598,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
@@ -887,7 +886,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &boosted_hexes,
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
@@ -976,7 +975,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
@@ -1077,7 +1076,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;
@@ -1326,7 +1325,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &reward_period,
     )
     .await?;

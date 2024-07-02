@@ -3,6 +3,7 @@ use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::{
     iot_config, mobile_config,
     poc_lora::{LoraBeaconReportReqV1, LoraStreamSessionInitV1, LoraWitnessReportReqV1},
+    poc_mobile::ServiceProviderBoostedRewardsBannedRadioReqV1,
 };
 use helium_proto::{
     services::poc_mobile::{
@@ -41,6 +42,7 @@ impl_msg_verify!(LoraWitnessReportReqV1, signature);
 impl_msg_verify!(LoraStreamSessionInitV1, signature);
 impl_msg_verify!(DataTransferSessionReqV1, signature);
 impl_msg_verify!(CoverageObjectReqV1, signature);
+impl_msg_verify!(ServiceProviderBoostedRewardsBannedRadioReqV1, signature);
 impl_msg_verify!(iot_config::OrgCreateHeliumReqV1, signature);
 impl_msg_verify!(iot_config::OrgCreateRoamerReqV1, signature);
 impl_msg_verify!(iot_config::OrgUpdateReqV1, signature);
