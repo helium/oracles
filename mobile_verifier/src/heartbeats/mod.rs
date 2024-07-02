@@ -128,6 +128,13 @@ impl OwnedKeyType {
         }
     }
 
+    pub fn to_ref(&self) -> KeyType {
+        match self {
+            OwnedKeyType::Cbrs(cbsd_id) => KeyType::Cbrs(cbsd_id),
+            OwnedKeyType::Wifi(pubkey) => KeyType::Wifi(pubkey),
+        }
+    }
+
     pub fn is_cbrs(&self) -> bool {
         matches!(self, Self::Cbrs(_))
     }

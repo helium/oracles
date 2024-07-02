@@ -15,9 +15,9 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{
         service_provider_boosted_rewards_banned_radio_req_v1::{
-            KeyType, SpBoostedRewardsBannedRadioReason,
+            KeyType as ProtoKeyType, SpBoostedRewardsBannedRadioReason,
         },
-        ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+        SeniorityUpdateReason, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
         ServiceProviderBoostedRewardsBannedRadioVerificationStatus,
         VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     },
@@ -27,17 +27,29 @@ use sqlx::{PgPool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::Settings;
+use crate::{
+    heartbeats::OwnedKeyType,
+    seniority::{Seniority, SeniorityUpdate, SeniorityUpdateAction},
+    Settings,
+};
 
 const CLEANUP_DAYS: i64 = 7;
 
 struct BannedRadioReport {
     received_timestamp: DateTime<Utc>,
     pubkey: PublicKeyBinary,
-    radio_type: String,
-    radio_key: String,
+    key: OwnedKeyType,
     until: DateTime<Utc>,
     reason: SpBoostedRewardsBannedRadioReason,
+}
+
+impl BannedRadioReport {
+    fn radio_type(&self) -> &'static str {
+        match self.key {
+            OwnedKeyType::Cbrs(_) => "cbrs",
+            OwnedKeyType::Wifi(_) => "wifi",
+        }
+    }
 }
 
 impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedRadioReport {
@@ -52,9 +64,11 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
 
         let reason = report.reason();
 
-        let (radio_type, radio_key) = match report.key_type {
-            Some(KeyType::CbsdId(cbsd_id)) => ("cbrs", cbsd_id),
-            Some(KeyType::HotspotKey(bytes)) => ("wifi", PublicKeyBinary::from(bytes).to_string()),
+        let key = match report.key_type {
+            Some(ProtoKeyType::CbsdId(cbsd_id)) => OwnedKeyType::Cbrs(cbsd_id),
+            Some(ProtoKeyType::HotspotKey(bytes)) => {
+                OwnedKeyType::Wifi(PublicKeyBinary::from(bytes))
+            }
             None => anyhow::bail!("Invalid keytype"),
         };
 
@@ -66,8 +80,7 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
                     anyhow::anyhow!("invalid received timestamp, {}", value.received_timestamp)
                 })?,
             pubkey: report.pub_key.into(),
-            radio_type: radio_type.to_string(),
-            radio_key,
+            key,
             until: Utc
                 .timestamp_opt(report.until as i64, 0)
                 .single()
@@ -105,6 +118,7 @@ pub struct ServiceProviderBoostedRewardsBanIngestor<AV> {
     authorization_verifier: AV,
     receiver: Receiver<FileInfoStream<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>>,
     verified_sink: FileSinkClient,
+    seniority_update_sink: FileSinkClient,
 }
 
 impl<AV> ManagedTask for ServiceProviderBoostedRewardsBanIngestor<AV>
@@ -136,6 +150,7 @@ where
         file_store: FileStore,
         authorization_verifier: AV,
         settings: &Settings,
+        seniority_update_sink: FileSinkClient,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_sink, verified_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::VerifiedServiceProviderBoostedRewardsBannedRadioIngestReport,
@@ -165,6 +180,7 @@ where
             authorization_verifier,
             receiver,
             verified_sink,
+            seniority_update_sink,
         };
 
         Ok(TaskManager::builder()
@@ -210,6 +226,7 @@ where
             .await?;
 
         self.verified_sink.commit().await?;
+        self.seniority_update_sink.commit().await?;
 
         Ok(())
     }
@@ -223,13 +240,14 @@ where
         let is_authorized = self.is_authorized(&report.pubkey).await?;
 
         if is_authorized {
-            db::update_report(transaction, report).await?;
+            db::update_report(transaction, &report).await?;
+            self.update_seniority(transaction, &report).await?;
         }
 
         let status = match is_authorized {
-                    true => ServiceProviderBoostedRewardsBannedRadioVerificationStatus::SpBoostedRewardsBanValid,
-                    false => ServiceProviderBoostedRewardsBannedRadioVerificationStatus::SpBoostedRewardsBanInvalidCarrierKey,
-                };
+            true => ServiceProviderBoostedRewardsBannedRadioVerificationStatus::SpBoostedRewardsBanValid,
+            false => ServiceProviderBoostedRewardsBannedRadioVerificationStatus::SpBoostedRewardsBanInvalidCarrierKey,
+        };
 
         let verified_report = VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
             report: Some(ingest),
@@ -249,6 +267,31 @@ where
             .verify_authorized_key(pubkey, NetworkKeyRole::MobileCarrier)
             .await
             .map_err(anyhow::Error::from)
+    }
+
+    async fn update_seniority(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        report: &BannedRadioReport,
+    ) -> anyhow::Result<()> {
+        if let Some(current_seniority) =
+            Seniority::fetch_latest(report.key.to_ref(), transaction).await?
+        {
+            let seniority_update = SeniorityUpdate::new(
+                report.key.to_ref(),
+                current_seniority.last_heartbeat,
+                current_seniority.uuid,
+                SeniorityUpdateAction::Insert {
+                    new_seniority: Utc::now(),
+                    update_reason: SeniorityUpdateReason::ServiceProviderBan,
+                },
+            );
+
+            seniority_update.write(&self.seniority_update_sink).await?;
+            seniority_update.execute(transaction).await?;
+        }
+
+        Ok(())
     }
 }
 
@@ -314,7 +357,7 @@ pub mod db {
 
     pub(super) async fn update_report(
         transaction: &mut Transaction<'_, Postgres>,
-        report: BannedRadioReport,
+        report: &BannedRadioReport,
     ) -> anyhow::Result<()> {
         match report.reason {
             SpBoostedRewardsBannedRadioReason::Unbanned => {
@@ -326,7 +369,7 @@ pub mod db {
 
     async fn save(
         transaction: &mut Transaction<'_, Postgres>,
-        report: BannedRadioReport,
+        report: &BannedRadioReport,
     ) -> anyhow::Result<()> {
         sqlx::query(
             r#"
@@ -334,8 +377,8 @@ pub mod db {
                 VALUES($1,$2,$3,$4)
             "#,
         )
-        .bind(report.radio_type)
-        .bind(report.radio_key)
+        .bind(report.radio_type())
+        .bind(&report.key)
         .bind(report.received_timestamp)
         .bind(report.until)
         .execute(transaction)
@@ -346,7 +389,7 @@ pub mod db {
 
     async fn invalidate_all_before(
         transaction: &mut Transaction<'_, Postgres>,
-        report: BannedRadioReport,
+        report: &BannedRadioReport,
     ) -> anyhow::Result<()> {
         sqlx::query(
             r#"
@@ -357,8 +400,8 @@ pub mod db {
                AND received_timestamp <= $3
         "#,
         )
-        .bind(report.radio_type)
-        .bind(report.radio_key)
+        .bind(report.radio_type())
+        .bind(&report.key)
         .bind(report.received_timestamp)
         .execute(transaction)
         .await
