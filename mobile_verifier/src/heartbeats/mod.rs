@@ -707,7 +707,6 @@ pub(crate) async fn process_validated_heartbeats(
     validated_heartbeats: impl Stream<Item = anyhow::Result<ValidatedHeartbeat>>,
     heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
     coverage_claim_time_cache: &CoverageClaimTimeCache,
-    modeled_coverage_start: DateTime<Utc>,
     heartbeat_sink: &FileSinkClient,
     seniority_sink: &FileSinkClient,
     transaction: &mut Transaction<'_, Postgres>,
@@ -733,7 +732,6 @@ pub(crate) async fn process_validated_heartbeats(
             let seniority_update = SeniorityUpdate::determine_update_action(
                 &validated_heartbeat,
                 coverage_claim_time,
-                modeled_coverage_start,
                 latest_seniority,
             )?;
             seniority_update.write(seniority_sink).await?;
@@ -799,7 +797,6 @@ mod test {
 
     #[test]
     fn ensure_first_seniority_causes_update() -> anyhow::Result<()> {
-        let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_object = Uuid::new_v4();
@@ -807,12 +804,8 @@ mod test {
         let received_timestamp: DateTime<Utc> =
             "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
         let new_heartbeat = heartbeat(received_timestamp, coverage_object);
-        let seniority_action = SeniorityUpdate::determine_update_action(
-            &new_heartbeat,
-            coverage_claim_time,
-            modeled_coverage_start,
-            None,
-        )?;
+        let seniority_action =
+            SeniorityUpdate::determine_update_action(&new_heartbeat, coverage_claim_time, None)?;
 
         assert_eq!(
             seniority_action.action,
@@ -825,36 +818,7 @@ mod test {
     }
 
     #[test]
-    fn ensure_first_seniority_72_hours_after_start_resets_coverage_claim_time() -> anyhow::Result<()>
-    {
-        let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
-        let coverage_claim_time: DateTime<Utc> =
-            "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
-        let coverage_object = Uuid::new_v4();
-
-        let received_timestamp: DateTime<Utc> =
-            "2023-08-23 00:00:01.000000000 UTC".parse().unwrap();
-        let new_heartbeat = heartbeat(received_timestamp, coverage_object);
-        let seniority_action = SeniorityUpdate::determine_update_action(
-            &new_heartbeat,
-            coverage_claim_time,
-            modeled_coverage_start,
-            None,
-        )?;
-
-        assert_eq!(
-            seniority_action.action,
-            SeniorityUpdateAction::Insert {
-                new_seniority: received_timestamp,
-                update_reason: HeartbeatNotSeen,
-            }
-        );
-        Ok(())
-    }
-
-    #[test]
     fn ensure_seniority_updates_on_new_coverage_object() -> anyhow::Result<()> {
-        let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_object = Uuid::new_v4();
@@ -874,7 +838,6 @@ mod test {
         let seniority_action = SeniorityUpdate::determine_update_action(
             &new_heartbeat,
             new_coverage_claim_time,
-            modeled_coverage_start,
             Some(latest_seniority.clone()),
         )?;
 
@@ -890,7 +853,6 @@ mod test {
 
     #[test]
     fn ensure_last_heartbeat_updates_on_same_coverage_object() -> anyhow::Result<()> {
-        let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_object = Uuid::new_v4();
@@ -908,7 +870,6 @@ mod test {
         let seniority_action = SeniorityUpdate::determine_update_action(
             &new_heartbeat,
             coverage_claim_time,
-            modeled_coverage_start,
             Some(latest_seniority.clone()),
         )?;
 
@@ -923,7 +884,6 @@ mod test {
 
     #[test]
     fn ensure_seniority_updates_after_72_hours() -> anyhow::Result<()> {
-        let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
         let last_heartbeat: DateTime<Utc> = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
@@ -940,7 +900,6 @@ mod test {
         let seniority_action = SeniorityUpdate::determine_update_action(
             &new_heartbeat,
             coverage_claim_time,
-            modeled_coverage_start,
             Some(latest_seniority),
         )?;
         assert_eq!(
@@ -955,7 +914,6 @@ mod test {
 
     #[test]
     fn ensure_seniority_updates_after_not_seen_if_in_future() -> anyhow::Result<()> {
-        let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
             "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_object = Uuid::new_v4();
@@ -975,7 +933,6 @@ mod test {
         let seniority_action = SeniorityUpdate::determine_update_action(
             &new_heartbeat,
             new_coverage_claim_time,
-            modeled_coverage_start,
             Some(latest_seniority.clone()),
         )?;
         assert_eq!(
@@ -994,7 +951,6 @@ mod test {
         let seniority_action = SeniorityUpdate::determine_update_action(
             &new_heartbeat,
             new_coverage_claim_time,
-            modeled_coverage_start,
             Some(latest_seniority),
         )?;
         assert_eq!(seniority_action.action, SeniorityUpdateAction::NoAction);
