@@ -125,7 +125,7 @@ impl Cmd {
                     report_ingest.clone(),
                     gateway_client.clone(),
                     valid_heartbeats,
-                    seniority_updates,
+                    seniority_updates.clone(),
                     usa_and_mexico_geofence,
                 )
                 .await?,
@@ -190,6 +190,7 @@ impl Cmd {
                     report_ingest,
                     auth_client,
                     settings,
+                    seniority_updates,
                 )
                 .await?,
             )

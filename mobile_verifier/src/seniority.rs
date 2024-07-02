@@ -50,6 +50,20 @@ pub enum SeniorityUpdateAction {
 }
 
 impl<'a> SeniorityUpdate<'a> {
+    pub fn new(
+        key: KeyType<'a>,
+        heartbeat_ts: DateTime<Utc>,
+        uuid: Uuid,
+        action: SeniorityUpdateAction,
+    ) -> Self {
+        Self {
+            key,
+            heartbeat_ts,
+            uuid,
+            action,
+        }
+    }
+
     pub fn from(
         heartbeat: &'a ValidatedHeartbeat,
         action: SeniorityUpdateAction,
