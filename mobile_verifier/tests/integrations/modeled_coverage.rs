@@ -433,7 +433,6 @@ async fn process_input(
         let seniority_update = SeniorityUpdate::determine_update_action(
             &heartbeat,
             coverage_claim_time.unwrap(),
-            epoch.start,
             latest_seniority,
         )?;
         seniority_update.execute(&mut transaction).await?;

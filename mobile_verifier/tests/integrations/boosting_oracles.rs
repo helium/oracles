@@ -380,7 +380,6 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         let seniority_update = SeniorityUpdate::determine_update_action(
             &heartbeat,
             coverage_claim_time.unwrap(),
-            epoch.start,
             latest_seniority,
         )?;
         seniority_update.execute(&mut transaction).await?;

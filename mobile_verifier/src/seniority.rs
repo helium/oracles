@@ -82,14 +82,12 @@ impl<'a> SeniorityUpdate<'a> {
     pub fn determine_update_action(
         heartbeat: &'a ValidatedHeartbeat,
         coverage_claim_time: DateTime<Utc>,
-        modeled_coverage_start: DateTime<Utc>,
         latest_seniority: Option<Seniority>,
     ) -> anyhow::Result<Self> {
         use proto::SeniorityUpdateReason::*;
 
         if let Some(prev_seniority) = latest_seniority {
             if heartbeat.heartbeat.coverage_object != Some(prev_seniority.uuid) {
-                // TODO need to think about this
                 if prev_seniority.update_reason == HeartbeatNotSeen as i32
                     && coverage_claim_time < prev_seniority.seniority_ts
                 {
@@ -122,15 +120,6 @@ impl<'a> SeniorityUpdate<'a> {
                     },
                 )
             }
-        } else if heartbeat.heartbeat.timestamp - modeled_coverage_start > Duration::days(3) {
-            // This will become the default case 72 hours after we launch modeled coverage
-            Self::from(
-                heartbeat,
-                SeniorityUpdateAction::Insert {
-                    new_seniority: heartbeat.heartbeat.timestamp,
-                    update_reason: HeartbeatNotSeen,
-                },
-            )
         } else {
             Self::from(
                 heartbeat,
