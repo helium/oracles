@@ -322,18 +322,6 @@ pub enum ServiceProviderBoostedRewardEligibility {
     RadioThresholdNotMet,
 }
 
-// #[derive(Debug, Clone, Copy, PartialEq)]
-// pub enum RadioThreshold {
-//     Verified,
-//     Unverified,
-// }
-
-// impl RadioThreshold {
-//     fn is_met(&self) -> bool {
-//         matches!(self, Self::Verified)
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
 
