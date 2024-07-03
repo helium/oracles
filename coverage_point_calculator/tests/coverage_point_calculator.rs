@@ -61,7 +61,7 @@ fn base_radio_coverage_points() {
 
         assert_eq!(
             expcted_base_coverage_point,
-            coverage_points.coverage_points()
+            coverage_points.coverage_points_v1()
         );
     }
 }
@@ -120,7 +120,7 @@ fn radios_with_coverage() {
         )
         .unwrap();
 
-        assert_eq!(dec!(400), coverage_points.coverage_points());
+        assert_eq!(dec!(400), coverage_points.coverage_points_v1());
     }
 }
 

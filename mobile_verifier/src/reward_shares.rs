@@ -391,7 +391,7 @@ pub fn coverage_point_to_mobile_reward_share(
     let speedtest_multiplier = to_proto_value(coverage_points.speedtest_multiplier);
 
     let coverage_points = coverage_points
-        .coverage_points()
+        .coverage_points_v1()
         .to_u64()
         .unwrap_or_default();
 
