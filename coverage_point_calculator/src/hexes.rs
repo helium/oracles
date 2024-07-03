@@ -26,7 +26,10 @@ pub struct HexPoints {
     /// Default points received for hex
     ///
     /// (RadioType, SignalLevel) points
-    pub modeled: Decimal,
+    ///
+    /// This is a convenience field for debugging, hexes can reach similar
+    /// values through different means, it helps to know the starting value.
+    modeled: Decimal,
     /// Points including Coverage affected multipliers
     ///
     /// modeled + (Rank * Assignment)
