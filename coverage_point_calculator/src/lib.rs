@@ -88,6 +88,25 @@ pub enum Error {
 ///
 /// - When a radio is not eligible for boosted hex rewards, [CoveragePoints::covered_hexes] will
 ///   have no boosted_multiplier values.
+///
+/// #### Terminology
+///
+/// *Points*
+///
+/// The value provided from covering hexes. These include hex related modifiers.
+/// - Rank
+/// - Oracle boosting.
+///
+/// *Multipliers*
+///
+/// Values relating to a radio that modify it's points.
+/// - Location Trust
+/// - Speedtest
+///
+/// *Shares*
+///
+/// The result of multiplying Points and Multipliers together.
+///
 #[derive(Debug, Clone)]
 pub struct CoveragePoints {
     /// Breakdown of coverage points by source
@@ -159,17 +178,17 @@ impl CoveragePoints {
     /// Accumulated points related to entire radio.
     /// coverage points * speedtest
     /// Used in calculating rewards
-    pub fn total_points(&self) -> Decimal {
-        self.total_base_points() + self.total_boosted_points()
+    pub fn total_shares(&self) -> Decimal {
+        self.total_base_shares() + self.total_boosted_shares()
     }
 
     /// Useful for grabbing only base points when calculating reward shares
-    pub fn total_base_points(&self) -> Decimal {
+    pub fn total_base_shares(&self) -> Decimal {
         self.coverage_points.base * self.speedtest_multiplier * self.location_trust_multiplier
     }
 
     /// Useful for grabbing only boost points when calculating reward shares
-    pub fn total_boosted_points(&self) -> Decimal {
+    pub fn total_boosted_shares(&self) -> Decimal {
         self.boosted_points() * self.speedtest_multiplier * self.location_trust_multiplier
     }
 
@@ -435,7 +454,7 @@ mod tests {
         let indoor_cbrs = calculate_indoor_cbrs(speedtest_maximum());
         assert_eq!(
             base_coverage_points * SpeedtestTier::Good.multiplier(),
-            indoor_cbrs.total_points()
+            indoor_cbrs.total_shares()
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -444,7 +463,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Acceptable.multiplier(),
-            indoor_cbrs.total_points()
+            indoor_cbrs.total_shares()
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -453,7 +472,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Degraded.multiplier(),
-            indoor_cbrs.total_points()
+            indoor_cbrs.total_shares()
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -462,7 +481,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Poor.multiplier(),
-            indoor_cbrs.total_points()
+            indoor_cbrs.total_shares()
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -471,7 +490,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Fail.multiplier(),
-            indoor_cbrs.total_points()
+            indoor_cbrs.total_shares()
         );
     }
 

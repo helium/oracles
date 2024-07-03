@@ -647,7 +647,7 @@ impl CoverageShares {
     pub fn test_hotspot_reward_shares(&self, hotspot: &RadioId) -> Decimal {
         self.coverage_points(hotspot)
             .expect("reward shares for hotspot")
-            .total_points()
+            .total_shares()
     }
 }
 
@@ -718,9 +718,9 @@ impl CalculatedPocRewardShares {
             (dec!(0), dec!(0), dec!(0)),
             |(total, boosted, poc), radio| {
                 (
-                    total + radio.total_points(),
-                    boosted + radio.total_boosted_points(),
-                    poc + radio.total_base_points(),
+                    total + radio.total_shares(),
+                    boosted + radio.total_boosted_shares(),
+                    poc + radio.total_base_shares(),
                 )
             },
         );
@@ -747,8 +747,8 @@ impl CalculatedPocRewardShares {
     }
 
     fn poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
-        let base_reward = self.normal * points.total_base_points();
-        let boosted_reward = self.boost * points.total_boosted_points();
+        let base_reward = self.normal * points.total_base_shares();
+        let boosted_reward = self.boost * points.total_boosted_shares();
 
         (base_reward + boosted_reward).to_u64().unwrap_or_default()
     }
