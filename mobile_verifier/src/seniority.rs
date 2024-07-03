@@ -22,7 +22,7 @@ impl Seniority {
         exec: &mut Transaction<'_, Postgres>,
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as(
-            "SELECT uuid, seniority_ts, last_heartbeat, inserted_at, update_reason FROM seniority WHERE radio_key = $1 ORDER BY last_heartbeat DESC LIMIT 1",
+            "SELECT uuid, seniority_ts, last_heartbeat, inserted_at, update_reason FROM seniority WHERE radio_key = $1 ORDER BY last_heartbeat DESC, seniority_ts DESC LIMIT 1",
         )
         .bind(key)
         .fetch_optional(&mut *exec)

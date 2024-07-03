@@ -419,6 +419,8 @@ mod tests {
     use rand::rngs::OsRng;
     use tokio::sync::mpsc;
 
+    use crate::heartbeats::KeyType;
+
     use super::*;
 
     #[derive(thiserror::Error, Debug)]
@@ -594,6 +596,54 @@ mod tests {
         let result = banned_radios.contains(&keypair.public_key().to_owned().into(), None);
 
         assert!(!result);
+
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn getting_banned_reset_seniority(pool: PgPool) -> anyhow::Result<()> {
+        let setup = TestSetup::create(pool.clone(), AllVerified);
+        let keypair = generate_keypair();
+        let pubkey = PublicKeyBinary::from(keypair.public_key().to_owned());
+
+        let last_heartbeat_ts = Utc::now() - Duration::hours(5);
+        let uuid = uuid::Uuid::new_v4();
+        let key_type = KeyType::Wifi(&pubkey);
+
+        let seniority_update = SeniorityUpdate::new(
+            key_type,
+            last_heartbeat_ts,
+            uuid,
+            SeniorityUpdateAction::Insert {
+                new_seniority: last_heartbeat_ts,
+                update_reason: SeniorityUpdateReason::NewCoverageClaimTime,
+            },
+        );
+
+        let report = wifi_ban_report(
+            keypair.public_key(),
+            Utc::now() + Duration::days(7),
+            SpBoostedRewardsBannedRadioReason::NoNetworkCorrelation,
+        );
+
+        let mut transaction = pool.begin().await?;
+        seniority_update.execute(&mut transaction).await?;
+
+        setup
+            .ingestor
+            .process_ingest_report(&mut transaction, report)
+            .await?;
+
+        let seniority = Seniority::fetch_latest(key_type, &mut transaction)
+            .await?
+            .unwrap();
+        transaction.commit().await?;
+
+        assert!(seniority.seniority_ts > last_heartbeat_ts);
+        assert_eq!(
+            seniority.update_reason,
+            SeniorityUpdateReason::ServiceProviderBan as i32
+        );
 
         Ok(())
     }
