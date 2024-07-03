@@ -64,7 +64,7 @@ impl<'a> SeniorityUpdate<'a> {
         }
     }
 
-    pub fn from(
+    pub fn from_heartbeat(
         heartbeat: &'a ValidatedHeartbeat,
         action: SeniorityUpdateAction,
     ) -> anyhow::Result<Self> {
@@ -91,9 +91,9 @@ impl<'a> SeniorityUpdate<'a> {
                 if prev_seniority.update_reason == HeartbeatNotSeen as i32
                     && coverage_claim_time < prev_seniority.seniority_ts
                 {
-                    Self::from(heartbeat, SeniorityUpdateAction::NoAction)
+                    Self::from_heartbeat(heartbeat, SeniorityUpdateAction::NoAction)
                 } else {
-                    Self::from(
+                    Self::from_heartbeat(
                         heartbeat,
                         SeniorityUpdateAction::Insert {
                             new_seniority: coverage_claim_time,
@@ -105,7 +105,7 @@ impl<'a> SeniorityUpdate<'a> {
                 > Duration::days(3)
                 && coverage_claim_time < heartbeat.heartbeat.timestamp
             {
-                Self::from(
+                Self::from_heartbeat(
                     heartbeat,
                     SeniorityUpdateAction::Insert {
                         new_seniority: heartbeat.heartbeat.timestamp,
@@ -113,7 +113,7 @@ impl<'a> SeniorityUpdate<'a> {
                     },
                 )
             } else {
-                Self::from(
+                Self::from_heartbeat(
                     heartbeat,
                     SeniorityUpdateAction::Update {
                         curr_seniority: prev_seniority.seniority_ts,
@@ -121,7 +121,7 @@ impl<'a> SeniorityUpdate<'a> {
                 )
             }
         } else {
-            Self::from(
+            Self::from_heartbeat(
                 heartbeat,
                 SeniorityUpdateAction::Insert {
                     new_seniority: coverage_claim_time,

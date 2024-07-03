@@ -36,7 +36,7 @@ async fn test_seniority_updates(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(latest_seniority, None);
 
-    let action1 = SeniorityUpdate::from(
+    let action1 = SeniorityUpdate::from_heartbeat(
         &heartbeat,
         SeniorityUpdateAction::Insert {
             new_seniority: "2023-08-25 00:00:00.000000000 UTC".parse().unwrap(),
@@ -60,7 +60,7 @@ async fn test_seniority_updates(pool: PgPool) -> anyhow::Result<()> {
 
     heartbeat.heartbeat.timestamp = "2023-08-24 00:00:00.000000000 UTC".parse().unwrap();
 
-    let action2 = SeniorityUpdate::from(
+    let action2 = SeniorityUpdate::from_heartbeat(
         &heartbeat,
         SeniorityUpdateAction::Update {
             curr_seniority: "2023-08-25 00:00:00.000000000 UTC".parse().unwrap(),

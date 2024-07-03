@@ -244,9 +244,10 @@ where
             self.update_seniority(transaction, &report).await?;
         }
 
-        let status = match is_authorized {
-            true => ServiceProviderBoostedRewardsBannedRadioVerificationStatus::SpBoostedRewardsBanValid,
-            false => ServiceProviderBoostedRewardsBannedRadioVerificationStatus::SpBoostedRewardsBanInvalidCarrierKey,
+        let status = if is_authorized {
+            ServiceProviderBoostedRewardsBannedRadioVerificationStatus::SpBoostedRewardsBanValid
+        } else {
+            ServiceProviderBoostedRewardsBannedRadioVerificationStatus::SpBoostedRewardsBanInvalidCarrierKey
         };
 
         let verified_report = VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
@@ -318,8 +319,9 @@ pub mod db {
             r#"
                 SELECT radio_type, radio_key
                 FROM sp_boosted_rewards_bans
-                WHERE until > $1 
-                    AND (invalidated_at > $1 OR invalidated_at IS NULL)
+                WHERE received_timestamp <= $1
+                    AND until > $1 
+                    AND COALESCE(invalidated_at > $1, TRUE)
             "#,
         )
         .bind(date_time)
