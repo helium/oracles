@@ -295,7 +295,6 @@ async fn assert_route_received(
     expected_id: &str,
 ) {
     let msg = receive(stream.next()).await;
-    dbg!(&msg);
     let Ok(proto::RouteStreamResV1 {
         action,
         data: Some(proto::route_stream_res_v1::Data::Route(streamed_route)),
@@ -425,10 +424,7 @@ where
     T: std::fmt::Debug,
 {
     match tokio::time::timeout(std::time::Duration::from_secs(5), future).await {
-        Ok(Some(t)) => {
-            dbg!(&t);
-            t
-        }
+        Ok(Some(t)) => t,
         _other => panic!("message was not received within 5 seconds"),
     }
 }
