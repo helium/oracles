@@ -304,7 +304,9 @@ where
             poc_bones_per_coverage_point: Some(helium_proto::Decimal {
                 value: poc_dc_shares.normal.to_string(),
             }),
-            dc_bones_per_share: None,
+            boosted_poc_bones_per_coverage_point: Some(helium_proto::Decimal {
+                value: poc_dc_shares.boost.to_string(),
+            }),
         };
         self.reward_manifests
             .write(
