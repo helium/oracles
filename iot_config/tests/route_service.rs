@@ -8,7 +8,8 @@ use chrono::Utc;
 use futures::{Future, StreamExt, TryFutureExt};
 use helium_crypto::{KeyTag, Keypair, PublicKey, Sign};
 use helium_proto::services::iot_config::{
-    self as proto, config_org_client::OrgClient, config_route_client::RouteClient, RouteStreamReqV1,
+    self as proto, config_org_client::OrgClient, config_route_client::RouteClient, RouteGetReqV1,
+    RouteListReqV1, RouteStreamReqV1,
 };
 use iot_config::{
     admin::{AuthCache, KeyType},
@@ -23,6 +24,48 @@ use tonic::{
     transport::{self, Channel},
     Streaming,
 };
+
+#[sqlx::test]
+async fn packet_router_can_access_route_list(pool: Pool<Postgres>) {
+    let signing_keypair = Arc::new(generate_keypair());
+    let admin_keypair = generate_keypair();
+    let client_keypair = generate_keypair();
+
+    let socket_addr = get_socket_addr().expect("socket addr");
+
+    let auth_cache = create_auth_cache(
+        admin_keypair.public_key().clone(),
+        client_keypair.public_key().clone(),
+        &pool,
+    )
+    .await;
+
+    let _handle = start_server(socket_addr, signing_keypair, auth_cache, pool.clone()).await;
+    let mut client = connect_client(socket_addr).await;
+
+    let org = create_org(socket_addr, &admin_keypair).await;
+    let route = create_route(&mut client, &org.org.unwrap(), &admin_keypair).await;
+
+    // List Routes for OUI
+    let mut list_request = RouteListReqV1 {
+        oui: 1,
+        timestamp: Utc::now().timestamp() as u64,
+        signer: client_keypair.public_key().to_vec(),
+        signature: vec![],
+    };
+    list_request.signature = client_keypair.sign(&list_request.encode_to_vec()).unwrap();
+    assert!(client.list(list_request).await.is_ok());
+
+    // Get Route
+    let mut get_request = RouteGetReqV1 {
+        id: route.id.clone(),
+        timestamp: Utc::now().timestamp() as u64,
+        signer: client_keypair.public_key().to_vec(),
+        signature: vec![],
+    };
+    get_request.signature = client_keypair.sign(&get_request.encode_to_vec()).unwrap();
+    assert!(client.get(get_request).await.is_ok());
+}
 
 #[sqlx::test]
 async fn stream_sends_all_data_when_since_is_0(pool: Pool<Postgres>) {
@@ -295,7 +338,6 @@ async fn assert_route_received(
     expected_id: &str,
 ) {
     let msg = receive(stream.next()).await;
-    dbg!(&msg);
     let Ok(proto::RouteStreamResV1 {
         action,
         data: Some(proto::route_stream_res_v1::Data::Route(streamed_route)),
@@ -425,10 +467,7 @@ where
     T: std::fmt::Debug,
 {
     match tokio::time::timeout(std::time::Duration::from_secs(5), future).await {
-        Ok(Some(t)) => {
-            dbg!(&t);
-            t
-        }
+        Ok(Some(t)) => t,
         _other => panic!("message was not received within 5 seconds"),
     }
 }
