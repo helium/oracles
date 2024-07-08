@@ -192,13 +192,16 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     // To get points _only_ from boosting.
     let boosted_share = boosted_poc / dec!(8400);
 
-    let exp_reward_1 = (regular_share * dec!(300)) + (boosted_share * dec!(300) * dec!(19));
-    let exp_reward_2 = (regular_share * dec!(300)) + (boosted_share * dec!(300) * dec!(9));
-    let exp_reward_3 = (regular_share * dec!(300)) + (boosted_share * dec!(300) * dec!(0));
+    let exp_reward_1 =
+        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(19));
+    let exp_reward_2 =
+        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(9));
+    let exp_reward_3 =
+        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(0));
 
-    assert_eq!(exp_reward_1.to_u64().unwrap(), hotspot_2.poc_reward); // 20x boost
-    assert_eq!(exp_reward_2.to_u64().unwrap(), hotspot_1.poc_reward); // 10x boost
-    assert_eq!(exp_reward_3.to_u64().unwrap(), hotspot_3.poc_reward); // no boost
+    assert_eq!(exp_reward_1, hotspot_2.poc_reward); // 20x boost
+    assert_eq!(exp_reward_2, hotspot_1.poc_reward); // 10x boost
+    assert_eq!(exp_reward_3, hotspot_3.poc_reward); // no boost
 
     // assert the boosted hexes in the radio rewards
     // assert the number of boosted hexes for each radio
@@ -540,13 +543,13 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     let hex_coverage = |hexes: u8| regular_share * dec!(300) * Decimal::from(hexes);
     let boost_coverage = |mult: u8| boosted_share * dec!(300) * Decimal::from(mult);
 
-    let exp_reward_1 = hex_coverage(2) + boost_coverage(18);
-    let exp_reward_2 = hex_coverage(1) + boost_coverage(19);
-    let exp_reward_3 = hex_coverage(1) + boost_coverage(0);
+    let exp_reward_1 = rounded(hex_coverage(2)) + rounded(boost_coverage(18));
+    let exp_reward_2 = rounded(hex_coverage(1)) + rounded(boost_coverage(19));
+    let exp_reward_3 = rounded(hex_coverage(1)) + rounded(boost_coverage(0));
 
-    assert_eq!(exp_reward_1.to_u64().unwrap(), hotspot_1.poc_reward); // 2 at 10x boost
-    assert_eq!(exp_reward_2.to_u64().unwrap(), hotspot_2.poc_reward); // 1 at 20x boost
-    assert_eq!(exp_reward_3.to_u64().unwrap(), hotspot_3.poc_reward); // 1 at no boost
+    assert_eq!(exp_reward_1, hotspot_1.poc_reward); // 2 at 10x boost
+    assert_eq!(exp_reward_2, hotspot_2.poc_reward); // 1 at 20x boost
+    assert_eq!(exp_reward_3, hotspot_3.poc_reward); // 1 at no boost
 
     // hotspot 1 and 2 should have the same coverage points, but different poc rewards.
     assert_eq!(hotspot_1.coverage_points, hotspot_2.coverage_points);
@@ -825,13 +828,16 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     // To get points _only_ from boosting.
     let boosted_share = boosted_poc / dec!(300);
 
-    let exp_reward_1 = (regular_share * dec!(300)) + (boosted_share * dec!(300) * dec!(1));
-    let exp_reward_2 = (regular_share * dec!(300)) + (boosted_share * dec!(300) * dec!(0));
-    let exp_reward_3 = (regular_share * dec!(75)) + (boosted_share * dec!(75) * dec!(0));
+    let exp_reward_1 =
+        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(1));
+    let exp_reward_2 =
+        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(0));
+    let exp_reward_3 =
+        rounded(regular_share * dec!(75)) + rounded(boosted_share * dec!(75) * dec!(0));
 
-    assert_eq!(exp_reward_1.to_u64().unwrap(), hotspot_1.poc_reward);
-    assert_eq!(exp_reward_2.to_u64().unwrap(), hotspot_2.poc_reward);
-    assert_eq!(exp_reward_3.to_u64().unwrap(), hotspot_3.poc_reward);
+    assert_eq!(exp_reward_1, hotspot_1.poc_reward);
+    assert_eq!(exp_reward_2, hotspot_2.poc_reward);
+    assert_eq!(exp_reward_3, hotspot_3.poc_reward);
 
     // assert the number of boosted hexes for each radio
     //hotspot 1 has one boosted hex
@@ -1026,15 +1032,16 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     // To get points _only_ from boosting.
     let boosted_share = boosted_poc / dec!(11_100);
 
-    let exp_reward_1 =
-        (regular_share * dec!(300) * dec!(2)) + (boosted_share * dec!(300) * dec!(18));
-    let exp_reward_2 =
-        (regular_share * dec!(300) * dec!(1)) + (boosted_share * dec!(300) * dec!(19));
-    let exp_reward_3 = (regular_share * dec!(75) * dec!(1)) + (boosted_share * dec!(75) * dec!(0));
+    let exp_reward_1 = rounded(regular_share * dec!(300) * dec!(2))
+        + rounded(boosted_share * dec!(300) * dec!(18));
+    let exp_reward_2 = rounded(regular_share * dec!(300) * dec!(1))
+        + rounded(boosted_share * dec!(300) * dec!(19));
+    let exp_reward_3 =
+        rounded(regular_share * dec!(75) * dec!(1)) + rounded(boosted_share * dec!(75) * dec!(0));
 
-    assert_eq!(exp_reward_1.to_u64().unwrap(), hotspot_1.poc_reward);
-    assert_eq!(exp_reward_2.to_u64().unwrap(), hotspot_2.poc_reward);
-    assert_eq!(exp_reward_3.to_u64().unwrap(), hotspot_3.poc_reward);
+    assert_eq!(exp_reward_1, hotspot_1.poc_reward);
+    assert_eq!(exp_reward_2, hotspot_2.poc_reward);
+    assert_eq!(exp_reward_3, hotspot_3.poc_reward);
 
     // assert the number of boosted hexes for each radio
     assert_eq!(1, hotspot_2.boosted_hexes.len());
@@ -1074,6 +1081,10 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     assert_eq!(percent, dec!(0.6));
 
     Ok(())
+}
+
+fn rounded(num: Decimal) -> u64 {
+    num.to_u64().unwrap_or_default()
 }
 
 async fn receive_expected_rewards(
