@@ -17,6 +17,29 @@ pub struct LocationTrust {
     pub trust_score: Decimal,
 }
 
+/// Returns the trust multiplier for a given radio type and distance to asserted.
+///
+/// Reference:
+/// HIP-119
+/// https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md
+pub fn asserted_distance_to_trust_multiplier(
+    radio_type: RadioType,
+    meters_to_asserted: Meters,
+) -> Decimal {
+    match radio_type {
+        RadioType::IndoorWifi | RadioType::IndoorCbrs => match meters_to_asserted {
+            0..=200 => dec!(1.00),
+            201..=300 => dec!(0.25),
+            _ => dec!(0.00),
+        },
+        RadioType::OutdoorWifi | RadioType::OutdoorCbrs => match meters_to_asserted {
+            0..=75 => dec!(1.00),
+            76..=100 => dec!(0.25),
+            _ => dec!(0.00),
+        },
+    }
+}
+
 pub(crate) fn clean_trust_scores(
     trust_scores: Vec<LocationTrust>,
     ranked_coverage: &[RankedCoverage],

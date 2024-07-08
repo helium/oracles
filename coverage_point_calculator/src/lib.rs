@@ -24,6 +24,7 @@
 //!   - [HIP-98][qos-score]
 //!   - states 30m requirement for boosted hexes [HIP-107][prevent-gaming]
 //!   - increase Boosted hex restriction, 30m -> 50m [Pull Request][boosted-hex-restriction]
+//!   - Maximum Asserted Distance Difference [HIP-119][location-gaming]
 //!
 //! - [CoveragePoints::speedtest_multiplier]
 //!   - [HIP-74][modeled-coverage]
@@ -53,10 +54,11 @@
 //! [cbrs-experimental]:       https://github.com/helium/HIP/blob/main/0113-reward-cbrs-as-experimental.md
 //! [mobile-poc-blog]:         https://docs.helium.com/mobile/proof-of-coverage
 //! [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
+//! [location-gaming]:         https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
-    location::LocationTrust,
+    location::{asserted_distance_to_trust_multiplier, LocationTrust},
     speedtest::{BytesPs, Speedtest, SpeedtestTier},
 };
 use coverage_map::SignalLevel;
