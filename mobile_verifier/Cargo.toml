@@ -63,3 +63,6 @@ coverage-map = { path = "../coverage_map" }
 
 [dev-dependencies]
 backon = "0"
+
+[features]
+mobile-test = []
