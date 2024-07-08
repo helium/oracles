@@ -747,10 +747,11 @@ impl CalculatedPocRewardShares {
     }
 
     fn poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
-        let base_reward = self.normal * points.total_base_shares();
-        let boosted_reward = self.boost * points.total_boosted_shares();
+        let base_reward = self.normal * points.total_base_shares().to_u64().unwrap_or_default();
+        let boosted_reward =
+            self.boost * points.total_boosted_shares().to_u64().unwrap_or_default();
 
-        (base_reward + boosted_reward).to_u64().unwrap_or_default()
+        base_reward + boosted_reward
     }
 }
 
