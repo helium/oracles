@@ -79,7 +79,7 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
                 .ok_or_else(|| {
                     anyhow::anyhow!("invalid received timestamp, {}", value.received_timestamp)
                 })?,
-            pubkey: report.pub_key.into(),
+            pubkey: report.pubkey.into(),
             key,
             until: Utc
                 .timestamp_opt(report.until as i64, 0)
@@ -486,7 +486,7 @@ mod tests {
         ServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
             received_timestamp: Utc::now().timestamp_millis() as u64,
             report: Some(ServiceProviderBoostedRewardsBannedRadioReqV1 {
-                pub_key: signer_keypair.public_key().into(),
+                pubkey: signer_keypair.public_key().into(),
                 reason: reason as i32,
                 until: until.timestamp() as u64,
                 signature: vec![],
@@ -505,7 +505,7 @@ mod tests {
         ServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
             received_timestamp: Utc::now().timestamp_millis() as u64,
             report: Some(ServiceProviderBoostedRewardsBannedRadioReqV1 {
-                pub_key: signer_keypair.public_key().into(),
+                pubkey: signer_keypair.public_key().into(),
                 reason: reason as i32,
                 until: until.timestamp() as u64,
                 signature: vec![],

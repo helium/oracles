@@ -348,10 +348,10 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        custom_tracing::record_b58("pub_key", &event.pub_key);
+        custom_tracing::record_b58("pub_key", &event.pubkey);
 
         let report = self
-            .verify_public_key(event.pub_key.as_ref())
+            .verify_public_key(event.pubkey.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))
             .map(
