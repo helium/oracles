@@ -317,7 +317,7 @@ pub mod db {
     ) -> anyhow::Result<BannedRadios> {
         sqlx::query(
             r#"
-                SELECT radio_type, radio_key
+                SELECT distinct radio_type, radio_key
                 FROM sp_boosted_rewards_bans
                 WHERE received_timestamp <= $1
                     AND until > $1 
@@ -365,7 +365,10 @@ pub mod db {
             SpBoostedRewardsBannedRadioReason::Unbanned => {
                 invalidate_all_before(transaction, report).await
             }
-            _ => save(transaction, report).await,
+            _ => {
+                invalidate_all_before(transaction, report).await?;
+                save(transaction, report).await
+            }
         }
     }
 
