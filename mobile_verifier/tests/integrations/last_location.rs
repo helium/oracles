@@ -221,7 +221,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
 
     assert_eq!(
         validated_heartbeat_2.location_trust_score_multiplier,
-        dec!(0.25)
+        dec!(0.00)
     );
 
     Ok(())
