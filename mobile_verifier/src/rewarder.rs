@@ -3,7 +3,10 @@ use crate::{
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
     radio_threshold,
-    reward_shares::{self, CoverageShares, MapperShares, ServiceProviderShares, TransferRewards},
+    reward_shares::{
+        self, CoverageShares, DataTransferAndPocAllocatedRewardBuckets, MapperShares,
+        ServiceProviderShares, TransferRewards,
+    },
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, telemetry, Settings,
