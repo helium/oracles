@@ -33,7 +33,7 @@
 //!
 //! ## Notable Conditions:
 //! - [LocationTrust]
-//!   - If a Radio covers any boosted hexes, [LocationTrust] scores must meet distance requirements, or be degraded.
+//!   - The average distance to asserted must be <=50m to be eligible for boosted rewards.
 //!   - CBRS Radio's location is always trusted because of GPS.
 //!
 //! - [Speedtest]
@@ -140,16 +140,16 @@ impl CoveragePoints {
         radio_type: RadioType,
         service_provider_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility,
         speedtests: Vec<Speedtest>,
-        trust_scores: Vec<LocationTrust>,
+        location_trust_scores: Vec<LocationTrust>,
         ranked_coverage: Vec<coverage_map::RankedCoverage>,
     ) -> Result<CoveragePoints> {
-        let location_trust_scores = location::clean_trust_scores(trust_scores, &ranked_coverage);
         let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
 
         let boost_eligibility = BoostedHexStatus::new(
-            &radio_type,
+            radio_type,
             location_trust_multiplier,
-            &service_provider_boosted_reward_eligibility,
+            &location_trust_scores,
+            service_provider_boosted_reward_eligibility,
         );
 
         let covered_hexes =
@@ -211,6 +211,7 @@ impl CoveragePoints {
         match self.boosted_hex_eligibility {
             BoostedHexStatus::Eligible => self.coverage_points.boosted,
             BoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
+            BoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
             BoostedHexStatus::RadioThresholdNotMet => dec!(0),
             BoostedHexStatus::ServiceProviderBanned => dec!(0),
         }
@@ -221,19 +222,27 @@ impl CoveragePoints {
 pub enum BoostedHexStatus {
     Eligible,
     WifiLocationScoreBelowThreshold(Decimal),
+    AverageAssertedDistanceOverLimit(Decimal),
     RadioThresholdNotMet,
     ServiceProviderBanned,
 }
 
 impl BoostedHexStatus {
     fn new(
-        radio_type: &RadioType,
-        location_trust_score: Decimal,
-        service_provider_boosted_reward_eligibility: &ServiceProviderBoostedRewardEligibility,
+        radio_type: RadioType,
+        location_trust_multiplier: Decimal,
+        location_trust_scores: &[LocationTrust],
+        service_provider_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility,
     ) -> Self {
         // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
-        if radio_type.is_wifi() && location_trust_score < dec!(0.75) {
-            return Self::WifiLocationScoreBelowThreshold(location_trust_score);
+        if radio_type.is_wifi() && location_trust_multiplier < dec!(0.75) {
+            return Self::WifiLocationScoreBelowThreshold(location_trust_multiplier);
+        }
+
+        // hip-119: if the average distance to asserted is beyond 50m, no boosting
+        let average_distance = location::average_distance(radio_type, location_trust_scores);
+        if average_distance > dec!(50) {
+            return Self::AverageAssertedDistanceOverLimit(average_distance);
         }
 
         // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting

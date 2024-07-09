@@ -1,13 +1,7 @@
-use coverage_map::RankedCoverage;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::RadioType;
-
-/// When a Radio is covering any boosted hexes, it's trust score location must
-/// be within this distance to it's asserted location. Otherwise the trust_score
-/// will be capped at 0.25x.
-const RESTRICTIVE_MAX_DISTANCE: Meters = 50;
 
 type Meters = u32;
 
@@ -40,20 +34,19 @@ pub fn asserted_distance_to_trust_multiplier(
     }
 }
 
-pub(crate) fn clean_trust_scores(
-    trust_scores: Vec<LocationTrust>,
-    ranked_coverage: &[RankedCoverage],
-) -> Vec<LocationTrust> {
-    let any_boosted_hexes = ranked_coverage.iter().any(|hex| hex.boosted.is_some());
-
-    if any_boosted_hexes {
-        trust_scores
-            .into_iter()
-            .map(LocationTrust::into_boosted)
-            .collect()
-    } else {
-        trust_scores
+pub(crate) fn average_distance(radio_type: RadioType, trust_scores: &[LocationTrust]) -> Decimal {
+    // CBRS radios are always trusted because they have internal GPS
+    if radio_type.is_cbrs() {
+        return dec!(0);
     }
+
+    let count = Decimal::from(trust_scores.len());
+    let sum: Decimal = trust_scores
+        .iter()
+        .map(|l| Decimal::from(l.meters_to_asserted))
+        .sum();
+
+    sum / count
 }
 
 pub(crate) fn multiplier(radio_type: RadioType, trust_scores: &[LocationTrust]) -> Decimal {
@@ -68,29 +61,8 @@ pub(crate) fn multiplier(radio_type: RadioType, trust_scores: &[LocationTrust]) 
     scores / count
 }
 
-impl LocationTrust {
-    fn into_boosted(self) -> Self {
-        // Cap multipliers to 0.25x when a radio covers _any_ boosted hex
-        // and it's distance to asserted is above the threshold.
-        let trust_score = if self.meters_to_asserted > RESTRICTIVE_MAX_DISTANCE {
-            dec!(0.25).min(self.trust_score)
-        } else {
-            self.trust_score
-        };
-
-        LocationTrust {
-            trust_score,
-            meters_to_asserted: self.meters_to_asserted,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
-
-    use coverage_map::SignalLevel;
-    use hex_assignments::{assignment::HexAssignments, Assignment};
 
     use super::*;
 
@@ -106,11 +78,8 @@ mod tests {
                 trust_score: dec!(0.5),
             },
         ];
-        let boosted = clean_trust_scores(trust_scores.clone(), &boosted_ranked_coverage());
-        let unboosted = clean_trust_scores(trust_scores, &[]);
 
-        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &boosted));
-        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &unboosted));
+        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &trust_scores));
     }
 
     #[test]
@@ -126,11 +95,7 @@ mod tests {
             },
         ];
 
-        let boosted = clean_trust_scores(trust_scores.clone(), &boosted_ranked_coverage());
-        let unboosted = clean_trust_scores(trust_scores, &[]);
-
-        assert_eq!(dec!(0.25), multiplier(RadioType::IndoorWifi, &boosted));
-        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &unboosted));
+        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &trust_scores));
     }
 
     #[test]
@@ -146,14 +111,7 @@ mod tests {
             },
         ];
 
-        let boosted = clean_trust_scores(trust_scores.clone(), &boosted_ranked_coverage());
-        let unboosted = clean_trust_scores(trust_scores, &[]);
-
-        // location past distance limit trust score is degraded
-        let degraded_mult = (dec!(0.5) + dec!(0.25)) / dec!(2);
-        assert_eq!(degraded_mult, multiplier(RadioType::IndoorWifi, &boosted));
-        // location past distance limit trust score is untouched
-        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &unboosted));
+        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &trust_scores));
     }
 
     #[test]
@@ -166,26 +124,6 @@ mod tests {
             trust_score: dec!(0),
         }];
 
-        let boosted = clean_trust_scores(trust_scores.clone(), &boosted_ranked_coverage());
-        let unboosted = clean_trust_scores(trust_scores, &[]);
-
-        assert_eq!(dec!(1), multiplier(RadioType::IndoorCbrs, &boosted));
-        assert_eq!(dec!(1), multiplier(RadioType::IndoorCbrs, &unboosted));
-    }
-
-    fn boosted_ranked_coverage() -> Vec<RankedCoverage> {
-        vec![RankedCoverage {
-            hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
-            rank: 1,
-            hotspot_key: vec![],
-            cbsd_id: None,
-            signal_level: SignalLevel::High,
-            assignments: HexAssignments {
-                footfall: Assignment::A,
-                landtype: Assignment::A,
-                urbanized: Assignment::A,
-            },
-            boosted: NonZeroU32::new(5),
-        }]
+        assert_eq!(dec!(1), multiplier(RadioType::IndoorCbrs, &trust_scores));
     }
 }
