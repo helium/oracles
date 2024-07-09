@@ -212,8 +212,8 @@ pub enum FileType {
     InvalidatedRadioThresholdReq,
     InvalidatedRadioThresholdIngestReport,
     VerifiedInvalidatedRadioThresholdIngestReport,
-    ServiceProviderBoostedRewardsBannedRadioIngestReport,
-    VerifiedServiceProviderBoostedRewardsBannedRadioIngestReport,
+    SPBoostedRewardsBannedRadioIngestReport,
+    VerifiedSPBoostedRewardsBannedRadioIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -275,10 +275,8 @@ impl fmt::Display for FileType {
             Self::UrbanizationDataSet => URBANIZATION_DATA_SET,
             Self::FootfallDataSet => FOOTFALL_DATA_SET,
             Self::LandtypeDataSet => LANDTYPE_DATA_SET,
-            Self::ServiceProviderBoostedRewardsBannedRadioIngestReport => {
-                SP_BOOSTED_REWARDS_BANNED_RADIO
-            }
-            Self::VerifiedServiceProviderBoostedRewardsBannedRadioIngestReport => {
+            Self::SPBoostedRewardsBannedRadioIngestReport => SP_BOOSTED_REWARDS_BANNED_RADIO,
+            Self::VerifiedSPBoostedRewardsBannedRadioIngestReport => {
                 VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO
             }
         };
@@ -345,10 +343,8 @@ impl FileType {
             Self::UrbanizationDataSet => URBANIZATION_DATA_SET,
             Self::FootfallDataSet => FOOTFALL_DATA_SET,
             Self::LandtypeDataSet => LANDTYPE_DATA_SET,
-            Self::ServiceProviderBoostedRewardsBannedRadioIngestReport => {
-                SP_BOOSTED_REWARDS_BANNED_RADIO
-            }
-            Self::VerifiedServiceProviderBoostedRewardsBannedRadioIngestReport => {
+            Self::SPBoostedRewardsBannedRadioIngestReport => SP_BOOSTED_REWARDS_BANNED_RADIO,
+            Self::VerifiedSPBoostedRewardsBannedRadioIngestReport => {
                 VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO
             }
         }
@@ -415,11 +411,9 @@ impl FromStr for FileType {
             URBANIZATION_DATA_SET => Self::UrbanizationDataSet,
             FOOTFALL_DATA_SET => Self::FootfallDataSet,
             LANDTYPE_DATA_SET => Self::LandtypeDataSet,
-            SP_BOOSTED_REWARDS_BANNED_RADIO => {
-                Self::ServiceProviderBoostedRewardsBannedRadioIngestReport
-            }
+            SP_BOOSTED_REWARDS_BANNED_RADIO => Self::SPBoostedRewardsBannedRadioIngestReport,
             VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO => {
-                Self::VerifiedServiceProviderBoostedRewardsBannedRadioIngestReport
+                Self::VerifiedSPBoostedRewardsBannedRadioIngestReport
             }
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };

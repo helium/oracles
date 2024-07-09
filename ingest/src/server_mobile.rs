@@ -472,7 +472,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (sp_boosted_rewards_ban_sink, sp_boosted_rewards_ban_sink_server) =
         file_sink::FileSinkBuilder::new(
-            FileType::ServiceProviderBoostedRewardsBannedRadioIngestReport,
+            FileType::SPBoostedRewardsBannedRadioIngestReport,
             store_base_path,
             file_upload.clone(),
             concat!(

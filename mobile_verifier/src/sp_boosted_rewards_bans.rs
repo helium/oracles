@@ -153,7 +153,7 @@ where
         seniority_update_sink: FileSinkClient,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_sink, verified_sink_server) = file_sink::FileSinkBuilder::new(
-            FileType::VerifiedServiceProviderBoostedRewardsBannedRadioIngestReport,
+            FileType::VerifiedSPBoostedRewardsBannedRadioIngestReport,
             settings.store_base_path(),
             file_upload,
             concat!(env!("CARGO_PKG_NAME"), "_verified_sp_boosted_rewards_ban"),
@@ -171,7 +171,7 @@ where
         .state(pool.clone())
         .store(file_store)
         .lookback(LookbackBehavior::StartAfter(settings.start_after))
-        .prefix(FileType::ServiceProviderBoostedRewardsBannedRadioIngestReport.to_string())
+        .prefix(FileType::SPBoostedRewardsBannedRadioIngestReport.to_string())
         .create()
         .await?;
 
