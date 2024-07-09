@@ -121,7 +121,7 @@ pub struct CoveragePoints {
     pub speedtest_multiplier: Decimal,
     /// Input Radio Type
     pub radio_type: RadioType,
-    /// Input RadioThreshold
+    /// Input ServiceProviderBoostedRewardEligibility
     pub service_provider_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility,
     /// Derived Eligibility for Boosted Hex Rewards
     pub boosted_hex_eligibility: BoostedHexStatus,
