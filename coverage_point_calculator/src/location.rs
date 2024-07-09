@@ -67,8 +67,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_locations_within_max_boosted_distance() {
+    fn distance_does_not_effect_multiplier() {
         let trust_scores = vec![
+            LocationTrust {
+                meters_to_asserted: 0,
+                trust_score: dec!(0.5),
+            },
             LocationTrust {
                 meters_to_asserted: 49,
                 trust_score: dec!(0.5),
@@ -77,14 +81,6 @@ mod tests {
                 meters_to_asserted: 50,
                 trust_score: dec!(0.5),
             },
-        ];
-
-        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &trust_scores));
-    }
-
-    #[test]
-    fn all_locations_past_max_boosted_distance() {
-        let trust_scores = vec![
             LocationTrust {
                 meters_to_asserted: 51,
                 trust_score: dec!(0.5),
@@ -93,20 +89,8 @@ mod tests {
                 meters_to_asserted: 100,
                 trust_score: dec!(0.5),
             },
-        ];
-
-        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &trust_scores));
-    }
-
-    #[test]
-    fn locations_around_max_boosted_distance() {
-        let trust_scores = vec![
             LocationTrust {
-                meters_to_asserted: 50,
-                trust_score: dec!(0.5),
-            },
-            LocationTrust {
-                meters_to_asserted: 51,
+                meters_to_asserted: 99999,
                 trust_score: dec!(0.5),
             },
         ];
