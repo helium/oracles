@@ -1,10 +1,8 @@
 use chrono::{DateTime, Utc};
 use helium_proto::services::poc_mobile::{HeartbeatValidity, SeniorityUpdateReason};
 use mobile_verifier::cell_type::CellType;
-use mobile_verifier::coverage::Seniority;
-use mobile_verifier::heartbeats::{
-    HbType, Heartbeat, SeniorityUpdate, SeniorityUpdateAction, ValidatedHeartbeat,
-};
+use mobile_verifier::heartbeats::{HbType, Heartbeat, ValidatedHeartbeat};
+use mobile_verifier::seniority::{Seniority, SeniorityUpdate, SeniorityUpdateAction};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -38,13 +36,13 @@ async fn test_seniority_updates(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(latest_seniority, None);
 
-    let action1 = SeniorityUpdate::new(
+    let action1 = SeniorityUpdate::from_heartbeat(
         &heartbeat,
         SeniorityUpdateAction::Insert {
             new_seniority: "2023-08-25 00:00:00.000000000 UTC".parse().unwrap(),
             update_reason: SeniorityUpdateReason::HeartbeatNotSeen,
         },
-    );
+    )?;
 
     action1.execute(&mut transaction).await?;
 
@@ -62,12 +60,12 @@ async fn test_seniority_updates(pool: PgPool) -> anyhow::Result<()> {
 
     heartbeat.heartbeat.timestamp = "2023-08-24 00:00:00.000000000 UTC".parse().unwrap();
 
-    let action2 = SeniorityUpdate::new(
+    let action2 = SeniorityUpdate::from_heartbeat(
         &heartbeat,
         SeniorityUpdateAction::Update {
             curr_seniority: "2023-08-25 00:00:00.000000000 UTC".parse().unwrap(),
         },
-    );
+    )?;
 
     action2.execute(&mut transaction).await?;
 

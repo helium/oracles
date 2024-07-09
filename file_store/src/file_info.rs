@@ -157,6 +157,9 @@ pub const ORACLE_BOOSTING_REPORT: &str = "oracle_boosting_report";
 pub const URBANIZATION_DATA_SET: &str = "urbanization";
 pub const FOOTFALL_DATA_SET: &str = "footfall";
 pub const LANDTYPE_DATA_SET: &str = "landtype";
+pub const SP_BOOSTED_REWARDS_BANNED_RADIO: &str = "service_provider_boosted_rewards_banned_radio";
+pub const VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO: &str =
+    "verified_service_provider_boosted_rewards_banned_radio";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -209,6 +212,8 @@ pub enum FileType {
     InvalidatedRadioThresholdReq,
     InvalidatedRadioThresholdIngestReport,
     VerifiedInvalidatedRadioThresholdIngestReport,
+    SPBoostedRewardsBannedRadioIngestReport,
+    VerifiedSPBoostedRewardsBannedRadioIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -270,6 +275,10 @@ impl fmt::Display for FileType {
             Self::UrbanizationDataSet => URBANIZATION_DATA_SET,
             Self::FootfallDataSet => FOOTFALL_DATA_SET,
             Self::LandtypeDataSet => LANDTYPE_DATA_SET,
+            Self::SPBoostedRewardsBannedRadioIngestReport => SP_BOOSTED_REWARDS_BANNED_RADIO,
+            Self::VerifiedSPBoostedRewardsBannedRadioIngestReport => {
+                VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO
+            }
         };
         f.write_str(s)
     }
@@ -334,6 +343,10 @@ impl FileType {
             Self::UrbanizationDataSet => URBANIZATION_DATA_SET,
             Self::FootfallDataSet => FOOTFALL_DATA_SET,
             Self::LandtypeDataSet => LANDTYPE_DATA_SET,
+            Self::SPBoostedRewardsBannedRadioIngestReport => SP_BOOSTED_REWARDS_BANNED_RADIO,
+            Self::VerifiedSPBoostedRewardsBannedRadioIngestReport => {
+                VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO
+            }
         }
     }
 }
@@ -398,6 +411,10 @@ impl FromStr for FileType {
             URBANIZATION_DATA_SET => Self::UrbanizationDataSet,
             FOOTFALL_DATA_SET => Self::FootfallDataSet,
             LANDTYPE_DATA_SET => Self::LandtypeDataSet,
+            SP_BOOSTED_REWARDS_BANNED_RADIO => Self::SPBoostedRewardsBannedRadioIngestReport,
+            VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO => {
+                Self::VerifiedSPBoostedRewardsBannedRadioIngestReport
+            }
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

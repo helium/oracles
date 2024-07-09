@@ -16,9 +16,11 @@ use helium_proto::services::poc_mobile::{
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
-    RadioThresholdReportRespV1, SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1,
-    SubscriberLocationIngestReportV1, SubscriberLocationReqV1, SubscriberLocationRespV1,
-    WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1, WifiHeartbeatRespV1,
+    RadioThresholdReportRespV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
+    SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
+    SubscriberLocationReqV1, SubscriberLocationRespV1, WifiHeartbeatIngestReportV1,
+    WifiHeartbeatReqV1, WifiHeartbeatRespV1,
 };
 use std::{net::SocketAddr, path::Path};
 use task_manager::{ManagedTask, TaskManager};
@@ -39,6 +41,7 @@ pub struct GrpcServer {
     radio_threshold_report_sink: FileSinkClient,
     invalidated_radio_threshold_report_sink: FileSinkClient,
     coverage_object_report_sink: FileSinkClient,
+    sp_boosted_rewards_ban_sink: FileSinkClient,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -337,6 +340,34 @@ impl poc_mobile::PocMobile for GrpcServer {
         let id = timestamp.to_string();
         Ok(Response::new(CoverageObjectRespV1 { id }))
     }
+
+    async fn submit_sp_boosted_rewards_banned_radio(
+        &self,
+        request: Request<ServiceProviderBoostedRewardsBannedRadioReqV1>,
+    ) -> GrpcResult<ServiceProviderBoostedRewardsBannedRadioRespV1> {
+        let timestamp = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+
+        custom_tracing::record_b58("pub_key", &event.pubkey);
+
+        let report = self
+            .verify_public_key(event.pubkey.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(
+                |(_, event)| ServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
+                    received_timestamp: timestamp,
+                    report: Some(event),
+                },
+            )?;
+
+        _ = self.sp_boosted_rewards_ban_sink.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(
+            ServiceProviderBoostedRewardsBannedRadioRespV1 { id },
+        ))
+    }
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
@@ -439,6 +470,20 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .create()
         .await?;
 
+    let (sp_boosted_rewards_ban_sink, sp_boosted_rewards_ban_sink_server) =
+        file_sink::FileSinkBuilder::new(
+            FileType::SPBoostedRewardsBannedRadioIngestReport,
+            store_base_path,
+            file_upload.clone(),
+            concat!(
+                env!("CARGO_PKG_NAME"),
+                "_service_provider_boosted_rewards_banned_radio"
+            ),
+        )
+        .roll_time(settings.roll_time)
+        .create()
+        .await?;
+
     let Some(api_token) = settings
         .token
         .as_ref()
@@ -456,6 +501,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         radio_threshold_report_sink,
         invalidated_radio_threshold_report_sink,
         coverage_object_report_sink,
+        sp_boosted_rewards_ban_sink,
         required_network: settings.network,
         address: settings.listen_addr,
         api_token,
@@ -477,6 +523,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(radio_threshold_report_sink_server)
         .add_task(invalidated_radio_threshold_report_sink_server)
         .add_task(coverage_object_report_sink_server)
+        .add_task(sp_boosted_rewards_ban_sink_server)
         .add_task(grpc_server)
         .build()
         .start()
