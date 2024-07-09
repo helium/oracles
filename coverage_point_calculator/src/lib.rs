@@ -62,6 +62,7 @@ pub use crate::{
     speedtest::{BytesPs, Speedtest, SpeedtestTier},
 };
 use coverage_map::SignalLevel;
+use location::service_provider_boosting::{MAX_AVERAGE_DISTANCE, MIN_WIFI_TRUST_MULTIPLIER};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -235,13 +236,13 @@ impl BoostedHexStatus {
         service_provider_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility,
     ) -> Self {
         // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
-        if radio_type.is_wifi() && location_trust_multiplier < dec!(0.75) {
+        if radio_type.is_wifi() && location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
             return Self::WifiLocationScoreBelowThreshold(location_trust_multiplier);
         }
 
         // hip-119: if the average distance to asserted is beyond 50m, no boosting
         let average_distance = location::average_distance(radio_type, location_trust_scores);
-        if average_distance > dec!(50) {
+        if average_distance > MAX_AVERAGE_DISTANCE {
             return Self::AverageAssertedDistanceOverLimit(average_distance);
         }
 
