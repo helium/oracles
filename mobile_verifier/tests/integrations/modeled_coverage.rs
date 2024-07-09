@@ -6,6 +6,7 @@ use file_store::{
     wifi_heartbeat::{WifiHeartbeat, WifiHeartbeatIngestReport},
 };
 use futures::stream::{self, StreamExt};
+use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -415,7 +416,6 @@ async fn process_input(
         &AllOwnersValid,
         &coverage_objects,
         &location_cache,
-        2000,
         2000,
         epoch,
         &MockGeofence,
@@ -1421,7 +1421,6 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         &coverage_object_cache,
         &location_cache,
         2000,
-        2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
         &MockGeofence,
     )
@@ -1435,7 +1434,6 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         &AllOwnersValid,
         &coverage_object_cache,
         &location_cache,
-        1000000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
         &MockGeofence,
@@ -1450,7 +1448,6 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         &AllOwnersValid,
         &coverage_object_cache,
         &location_cache,
-        2000,
         1000000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
         &MockGeofence,
@@ -1465,7 +1462,6 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         &AllOwnersValid,
         &coverage_object_cache,
         &location_cache,
-        1000000,
         1000000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
         &MockGeofence,
