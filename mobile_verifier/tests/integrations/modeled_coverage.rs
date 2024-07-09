@@ -1382,94 +1382,71 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     coverage_object.save(&mut transaction).await?;
     transaction.commit().await?;
 
-    let hb_1 = WifiHeartbeatIngestReport {
-        report: WifiHeartbeat {
-            pubkey: owner_1.clone(),
-            lon: -105.2715848904,
-            lat: 40.0194278140,
-            timestamp: DateTime::<Utc>::MIN_UTC,
-            location_validation_timestamp: Some(DateTime::<Utc>::MIN_UTC),
-            operation_mode: true,
-            coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
-        },
-        received_timestamp: Utc::now(),
-    };
-
-    let hb_1: Heartbeat = hb_1.into();
-
-    let hb_2 = WifiHeartbeatIngestReport {
-        report: WifiHeartbeat {
-            pubkey: owner_1.clone(),
-            lon: -105.2344693282443,
-            lat: 40.033526907035935,
-            timestamp: DateTime::<Utc>::MIN_UTC,
-            location_validation_timestamp: Some(DateTime::<Utc>::MIN_UTC),
-            operation_mode: true,
-            coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
-        },
-        received_timestamp: Utc::now(),
-    };
-
-    let hb_2: Heartbeat = hb_2.into();
-
+    let max_covered_distance = 5_000;
     let coverage_object_cache = CoverageObjectCache::new(&pool);
     let location_cache = LocationCache::new(&pool);
 
-    let validated_hb_1 = ValidatedHeartbeat::validate(
-        hb_1,
-        &AllOwnersValid,
-        &coverage_object_cache,
-        &location_cache,
-        2000,
-        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
-        &MockGeofence,
-    )
-    .await
-    .unwrap();
+    let mk_heartbeat = |latlng: LatLng| WifiHeartbeatIngestReport {
+        report: WifiHeartbeat {
+            pubkey: owner_1.clone(),
+            lon: latlng.lng(),
+            lat: latlng.lat(),
+            timestamp: DateTime::<Utc>::MIN_UTC,
+            location_validation_timestamp: Some(DateTime::<Utc>::MIN_UTC),
+            operation_mode: true,
+            coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
+        },
+        received_timestamp: Utc::now(),
+    };
 
-    assert_eq!(validated_hb_1.location_trust_score_multiplier, dec!(1.0));
+    let validate = |latlng: LatLng| {
+        ValidatedHeartbeat::validate(
+            mk_heartbeat(latlng).into(),
+            &AllOwnersValid,
+            &coverage_object_cache,
+            &location_cache,
+            max_covered_distance,
+            &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+            &MockGeofence,
+        )
+    };
 
-    let validated_hb_2 = ValidatedHeartbeat::validate(
-        hb_2.clone(),
-        &AllOwnersValid,
-        &coverage_object_cache,
-        &location_cache,
-        2000,
-        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
-        &MockGeofence,
-    )
-    .await
-    .unwrap();
+    let covered_cell_index: CellIndex = "8c2681a3064d9ff".parse()?;
+    let covered_latlng = LatLng::from(covered_cell_index);
 
-    assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(0.25));
+    // Constrain distances by only moving vertically
+    let near_latlng = LatLng::new(40.0194278140, -105.272)?; // 35m
+    let med_latlng = LatLng::new(40.0194278140, -105.274)?; // 205m
+    let far_latlng = LatLng::new(40.0194278140, -105.3)?; // 2,419m
+    let past_latlng = LatLng::new(40.0194278140, 105.2715848904)?; // 10,591,975m
 
-    let validated_hb_2 = ValidatedHeartbeat::validate(
-        hb_2.clone(),
-        &AllOwnersValid,
-        &coverage_object_cache,
-        &location_cache,
-        1000000,
-        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
-        &MockGeofence,
-    )
-    .await
-    .unwrap();
+    // It's easy to gloss over floats, let make sure the distances are within the ranges we expect.
+    assert!((0.0..=200.0).contains(&covered_latlng.distance_m(near_latlng))); // Indoor low distance <= 200
+    assert!((200.0..=300.0).contains(&covered_latlng.distance_m(med_latlng))); // Indoor Medium distance <= 300
+    assert!(covered_latlng.distance_m(far_latlng) > 300.0); // Indoor Over Distance => 300
+    assert!(covered_latlng.distance_m(past_latlng) > max_covered_distance as f64); // Indoor past max distance => max_distance
 
-    assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(0.25));
+    let low_dist_validated = validate(near_latlng).await?;
+    let med_dist_validated = validate(med_latlng).await?;
+    let far_dist_validated = validate(far_latlng).await?;
+    let past_dist_validated = validate(past_latlng).await?;
 
-    let validated_hb_2 = ValidatedHeartbeat::validate(
-        hb_2.clone(),
-        &AllOwnersValid,
-        &coverage_object_cache,
-        &location_cache,
-        1000000,
-        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
-        &MockGeofence,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(1.0));
+    assert_eq!(
+        low_dist_validated.location_trust_score_multiplier,
+        dec!(1.0)
+    );
+    assert_eq!(
+        med_dist_validated.location_trust_score_multiplier,
+        dec!(0.25)
+    );
+    assert_eq!(
+        far_dist_validated.location_trust_score_multiplier,
+        dec!(0.00)
+    );
+    assert_eq!(
+        past_dist_validated.location_trust_score_multiplier,
+        dec!(0.00)
+    );
 
     Ok(())
 }
