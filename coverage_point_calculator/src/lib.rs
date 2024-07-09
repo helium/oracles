@@ -449,6 +449,42 @@ mod tests {
     }
 
     #[test]
+    fn hip_119_radio_with_past_50m_from_asserted_receives_no_boosted_hexes() {
+        let calculate_wifi = |location_trust_scores: Vec<LocationTrust>| {
+            CoveragePoints::new(
+                RadioType::IndoorWifi,
+                ServiceProviderBoostedRewardEligibility::Eligible,
+                speedtest_maximum(),
+                location_trust_scores,
+                vec![RankedCoverage {
+                    hotspot_key: pubkey(),
+                    cbsd_id: None,
+                    hex: hex_location(),
+                    rank: 1,
+                    signal_level: SignalLevel::High,
+                    assignments: assignments_maximum(),
+                    boosted: NonZeroU32::new(5),
+                }],
+            )
+            .expect("indoor wifi with location scores")
+        };
+
+        let base_points = RadioType::IndoorWifi
+            .base_coverage_points(&SignalLevel::High)
+            .unwrap();
+
+        // Radio with distance to asserted under the limit is eligible for boosted hexes.
+        // Boosted hex provides radio with more than base_points.
+        let trusted_wifi = calculate_wifi(location_trust_with_asserted_distance(&[0, 49]));
+        assert!(trusted_wifi.total_shares() > base_points);
+
+        // Radio with distance to asserted over the limit is not eligible for boosted hexes.
+        // Boost from hex is not applied.
+        let untrusted_wifi = calculate_wifi(location_trust_with_asserted_distance(&[50, 51]));
+        assert_eq!(untrusted_wifi.total_shares(), base_points);
+    }
+
+    #[test]
     fn speedtests_effect_reward_shares() {
         let calculate_indoor_cbrs = |speedtests: Vec<Speedtest>| {
             CoveragePoints::new(
@@ -899,6 +935,18 @@ mod tests {
             .map(|trust_score| LocationTrust {
                 meters_to_asserted: 1,
                 trust_score,
+            })
+            .collect()
+    }
+
+    fn location_trust_with_asserted_distance(distances_to_asserted: &[u32]) -> Vec<LocationTrust> {
+        distances_to_asserted
+            .to_owned()
+            .iter()
+            .copied()
+            .map(|meters_to_asserted| LocationTrust {
+                meters_to_asserted,
+                trust_score: dec!(1.0),
             })
             .collect()
     }
