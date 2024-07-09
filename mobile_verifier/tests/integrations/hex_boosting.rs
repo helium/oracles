@@ -724,7 +724,23 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    seed_heartbeats_v3(epoch.start, &mut txn).await?;
+    seed_heartbeats_with_location_trust(
+        epoch.start,
+        &mut txn,
+        HotspotLocationTrust {
+            meters: 10,
+            multiplier: dec!(1.0),
+        },
+        HotspotLocationTrust {
+            meters: 10,
+            multiplier: dec!(1.0),
+        },
+        HotspotLocationTrust {
+            meters: 300,
+            multiplier: dec!(0.25),
+        },
+    )
+    .await?;
     seed_speedtests(epoch.end, &mut txn).await?;
     seed_radio_thresholds(epoch.start, &mut txn).await?;
     txn.commit().await?;
@@ -1143,100 +1159,24 @@ async fn seed_heartbeats_v1(
     ts: DateTime<Utc>,
     txn: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<()> {
-    for n in 0..24 {
-        let hotspot_key1: PublicKeyBinary = HOTSPOT_1.to_string().parse().unwrap();
-        let cov_obj_1 = create_coverage_object(
-            ts + ChronoDuration::hours(n),
-            None,
-            hotspot_key1.clone(),
-            0x8a1fb466d2dffff_u64,
-            true,
-        );
-        let wifi_heartbeat1 = ValidatedHeartbeat {
-            heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
-                hotspot_key: hotspot_key1,
-                cbsd_id: None,
-                operation_mode: true,
-                lat: 0.0,
-                lon: 0.0,
-                coverage_object: Some(cov_obj_1.coverage_object.uuid),
-                location_validation_timestamp: Some(ts - ChronoDuration::hours(24)),
-                timestamp: ts + ChronoDuration::hours(n),
-            },
-            cell_type: CellType::NovaGenericWifiIndoor,
-            distance_to_asserted: Some(10),
-            coverage_meta: None,
-            location_trust_score_multiplier: dec!(1.0),
-            validity: HeartbeatValidity::Valid,
-        };
+    seed_heartbeats_with_location_trust(
+        ts,
+        txn,
+        HotspotLocationTrust {
+            meters: 10,
+            multiplier: dec!(1.0),
+        },
+        HotspotLocationTrust {
+            meters: 10,
+            multiplier: dec!(1.0),
+        },
+        HotspotLocationTrust {
+            meters: 10,
+            multiplier: dec!(1.0),
+        },
+    )
+    .await?;
 
-        let hotspot_key2: PublicKeyBinary = HOTSPOT_2.to_string().parse().unwrap();
-        let cov_obj_2 = create_coverage_object(
-            ts + ChronoDuration::hours(n),
-            None,
-            hotspot_key2.clone(),
-            0x8a1fb49642dffff_u64,
-            true,
-        );
-        let wifi_heartbeat2 = ValidatedHeartbeat {
-            heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
-                hotspot_key: hotspot_key2,
-                cbsd_id: None,
-                operation_mode: true,
-                lat: 0.0,
-                lon: 0.0,
-                coverage_object: Some(cov_obj_2.coverage_object.uuid),
-                location_validation_timestamp: Some(ts - ChronoDuration::hours(24)),
-                timestamp: ts + ChronoDuration::hours(n),
-            },
-            cell_type: CellType::NovaGenericWifiIndoor,
-            distance_to_asserted: Some(10),
-            coverage_meta: None,
-            location_trust_score_multiplier: dec!(1.0),
-            validity: HeartbeatValidity::Valid,
-        };
-
-        let hotspot_key3: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap();
-        let cov_obj_3 = create_coverage_object(
-            ts + ChronoDuration::hours(n),
-            None,
-            hotspot_key3.clone(),
-            0x8c2681a306607ff_u64,
-            true,
-        );
-        let wifi_heartbeat3 = ValidatedHeartbeat {
-            heartbeat: Heartbeat {
-                hb_type: HbType::Wifi,
-                hotspot_key: hotspot_key3,
-                cbsd_id: None,
-                operation_mode: true,
-                lat: 0.0,
-                lon: 0.0,
-                coverage_object: Some(cov_obj_3.coverage_object.uuid),
-                location_validation_timestamp: Some(ts - ChronoDuration::hours(24)),
-                timestamp: ts + ChronoDuration::hours(n),
-            },
-            cell_type: CellType::NovaGenericWifiIndoor,
-            distance_to_asserted: Some(10),
-            coverage_meta: None,
-            location_trust_score_multiplier: dec!(1.0),
-            validity: HeartbeatValidity::Valid,
-        };
-
-        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat1, txn).await?;
-        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat2, txn).await?;
-        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat3, txn).await?;
-
-        wifi_heartbeat1.save(txn).await?;
-        wifi_heartbeat2.save(txn).await?;
-        wifi_heartbeat3.save(txn).await?;
-
-        cov_obj_1.save(txn).await?;
-        cov_obj_2.save(txn).await?;
-        cov_obj_3.save(txn).await?;
-    }
     Ok(())
 }
 
@@ -1342,13 +1282,18 @@ async fn seed_heartbeats_v2(
     Ok(())
 }
 
-async fn seed_heartbeats_v3(
+struct HotspotLocationTrust {
+    meters: i64,
+    multiplier: Decimal,
+}
+
+async fn seed_heartbeats_with_location_trust(
     ts: DateTime<Utc>,
     txn: &mut Transaction<'_, Postgres>,
+    hs_1_location: HotspotLocationTrust,
+    hs_2_location: HotspotLocationTrust,
+    hs_3_location: HotspotLocationTrust,
 ) -> anyhow::Result<()> {
-    // HOTSPOT 1 has full location trust score
-    // HOTSPOT 2 has full location trust score
-    // HOTSPOT 3 has reduced location trust score
     for n in 0..24 {
         let hotspot_key1: PublicKeyBinary = HOTSPOT_1.to_string().parse().unwrap();
         let cov_obj_1 = create_coverage_object(
@@ -1371,9 +1316,9 @@ async fn seed_heartbeats_v3(
                 timestamp: ts + ChronoDuration::hours(n),
             },
             cell_type: CellType::NovaGenericWifiIndoor,
-            distance_to_asserted: Some(10),
+            distance_to_asserted: Some(hs_1_location.meters),
             coverage_meta: None,
-            location_trust_score_multiplier: dec!(1.0),
+            location_trust_score_multiplier: hs_1_location.multiplier,
             validity: HeartbeatValidity::Valid,
         };
 
@@ -1398,9 +1343,9 @@ async fn seed_heartbeats_v3(
                 timestamp: ts + ChronoDuration::hours(n),
             },
             cell_type: CellType::NovaGenericWifiIndoor,
-            distance_to_asserted: Some(10),
+            distance_to_asserted: Some(hs_2_location.meters),
             coverage_meta: None,
-            location_trust_score_multiplier: dec!(1.0),
+            location_trust_score_multiplier: hs_2_location.multiplier,
             validity: HeartbeatValidity::Valid,
         };
 
@@ -1425,9 +1370,9 @@ async fn seed_heartbeats_v3(
                 timestamp: ts + ChronoDuration::hours(n),
             },
             cell_type: CellType::NovaGenericWifiIndoor,
-            distance_to_asserted: Some(300),
+            distance_to_asserted: Some(hs_3_location.meters),
             coverage_meta: None,
-            location_trust_score_multiplier: dec!(0.25),
+            location_trust_score_multiplier: hs_3_location.multiplier,
             validity: HeartbeatValidity::Valid,
         };
 
