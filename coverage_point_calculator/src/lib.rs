@@ -5,7 +5,7 @@
 //! place to start.
 //!
 //! ## Important Fields
-//! - [CoveredHex::base_coverage_points]
+//! - [CoveredHex::points]
 //!   - [HIP-74][modeled-coverage]
 //!   - reduced cbrs radio coverage points [HIP-113][cbrs-experimental]
 //!
@@ -55,7 +55,7 @@
 //! [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
 //!
 pub use crate::{
-    hexes::CoveredHex,
+    hexes::{CoveredHex, HexPoints},
     location::LocationTrust,
     speedtest::{BytesPs, Speedtest, SpeedtestTier},
 };
@@ -88,22 +88,29 @@ pub enum Error {
 ///
 /// - When a radio is not eligible for boosted hex rewards, [CoveragePoints::covered_hexes] will
 ///   have no boosted_multiplier values.
+///
+/// #### Terminology
+///
+/// *Points*
+///
+/// The value provided from covering hexes. These include hex related modifiers.
+/// - Rank
+/// - Oracle boosting.
+///
+/// *Multipliers*
+///
+/// Values relating to a radio that modify it's points.
+/// - Location Trust
+/// - Speedtest
+///
+/// *Shares*
+///
+/// The result of multiplying Points and Multipliers together.
+///
 #[derive(Debug, Clone)]
 pub struct CoveragePoints {
-    /// Total Rewards Shares earned by the Radio.
-    ///
-    /// Includes Coverage and Backhaul.
-    /// Hex Coverage points * location trust multiplier * speedtest trust multiplier
-    pub reward_shares: Decimal,
-    /// Total Points of Coverage for a Radio.
-    ///
-    /// Does not include Backhaul.
-    /// Hex coverage points * location trust multiplier
-    pub total_coverage_points: Decimal,
-    /// Coverage Points collected from each Covered Hex
-    ///
-    /// Before location trust multiplier is applied.
-    pub hex_coverage_points: Decimal,
+    /// Breakdown of coverage points by source
+    pub coverage_points: HexPoints,
     /// Location Trust Multiplier, maximum of 1
     ///
     /// Coverage trust of a Radio
@@ -147,13 +154,8 @@ impl CoveragePoints {
         let speedtests = speedtest::clean_speedtests(speedtests);
         let speedtest_multiplier = speedtest::multiplier(&speedtests);
 
-        let reward_shares = hex_coverage_points * location_trust_multiplier * speedtest_multiplier;
-        let total_coverage_points = hex_coverage_points * location_trust_multiplier;
-
         Ok(CoveragePoints {
-            reward_shares,
-            total_coverage_points,
-            hex_coverage_points,
+            coverage_points: hex_coverage_points,
             location_trust_multiplier,
             speedtest_multiplier,
             radio_type,
@@ -163,6 +165,49 @@ impl CoveragePoints {
             location_trust_scores,
             covered_hexes,
         })
+    }
+
+    /// Accumulated points related only to coverage.
+    /// (Hex * Rank * Assignment) * Location Trust
+    /// Used for reporting.
+    ///
+    /// NOTE:
+    /// Coverage Points includes Location Trust multiplier. In a future version,
+    /// coverage points will refer only to points received by covering a hex,
+    /// and multipliers like location trust will be applied later to reach a
+    /// value referred to as "shares".
+    ///
+    /// Ref:
+    /// https://github.com/helium/proto/blob/master/src/service/poc_mobile.proto
+    /// `message radio_reward`
+    pub fn coverage_points_v1(&self) -> Decimal {
+        let total_coverage_points = self.coverage_points.base + self.boosted_points();
+        total_coverage_points * self.location_trust_multiplier
+    }
+
+    /// Accumulated points related to entire radio.
+    /// coverage points * speedtest
+    /// Used in calculating rewards
+    pub fn total_shares(&self) -> Decimal {
+        self.total_base_shares() + self.total_boosted_shares()
+    }
+
+    /// Useful for grabbing only base points when calculating reward shares
+    pub fn total_base_shares(&self) -> Decimal {
+        self.coverage_points.base * self.speedtest_multiplier * self.location_trust_multiplier
+    }
+
+    /// Useful for grabbing only boost points when calculating reward shares
+    pub fn total_boosted_shares(&self) -> Decimal {
+        self.boosted_points() * self.speedtest_multiplier * self.location_trust_multiplier
+    }
+
+    fn boosted_points(&self) -> Decimal {
+        match self.boosted_hex_eligibility {
+            BoostedHexStatus::Eligible => self.coverage_points.boosted,
+            BoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
+            BoostedHexStatus::RadioThresholdNotMet => dec!(0),
+        }
     }
 }
 
@@ -314,7 +359,7 @@ mod tests {
 
         // A Hex with the worst possible oracle boosting assignment.
         // The boosting assignment multiplier will be 1x when the hex is provider boosted.
-        assert_eq!(expected_points, wifi.total_coverage_points);
+        assert_eq!(expected_points, wifi.coverage_points_v1());
     }
 
     #[test]
@@ -345,12 +390,12 @@ mod tests {
         // Radio meeting the threshold is eligible for boosted hexes.
         // Boosted hex provides radio with more than base_points.
         let verified_wifi = calculate_wifi(RadioThreshold::Verified);
-        assert_eq!(base_points * dec!(5), verified_wifi.total_coverage_points);
+        assert_eq!(base_points * dec!(5), verified_wifi.coverage_points_v1());
 
         // Radio not meeting the threshold is not eligible for boosted hexes.
         // Boost from hex is not applied, radio receives base points.
         let unverified_wifi = calculate_wifi(RadioThreshold::Unverified);
-        assert_eq!(base_points, unverified_wifi.total_coverage_points);
+        assert_eq!(base_points, unverified_wifi.coverage_points_v1());
     }
 
     #[test]
@@ -382,13 +427,13 @@ mod tests {
         // Boosted hex provides radio with more than base_points.
         let trusted_wifi = calculate_wifi(location_trust_with_scores(&[dec!(1), dec!(1)]));
         assert!(trusted_wifi.location_trust_multiplier > dec!(0.75));
-        assert!(trusted_wifi.total_coverage_points > base_points);
+        assert!(trusted_wifi.coverage_points_v1() > base_points);
 
         // Radio with poor trust score is not eligible for boosted hexes.
         // Boost from hex is not applied, and points are further lowered by poor trust score.
         let untrusted_wifi = calculate_wifi(location_trust_with_scores(&[dec!(0.1), dec!(0.2)]));
         assert!(untrusted_wifi.location_trust_multiplier < dec!(0.75));
-        assert!(untrusted_wifi.total_coverage_points < base_points);
+        assert!(untrusted_wifi.coverage_points_v1() < base_points);
     }
 
     #[test]
@@ -419,7 +464,7 @@ mod tests {
         let indoor_cbrs = calculate_indoor_cbrs(speedtest_maximum());
         assert_eq!(
             base_coverage_points * SpeedtestTier::Good.multiplier(),
-            indoor_cbrs.reward_shares
+            indoor_cbrs.total_shares()
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -428,7 +473,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Acceptable.multiplier(),
-            indoor_cbrs.reward_shares
+            indoor_cbrs.total_shares()
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -437,7 +482,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Degraded.multiplier(),
-            indoor_cbrs.reward_shares
+            indoor_cbrs.total_shares()
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -446,7 +491,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Poor.multiplier(),
-            indoor_cbrs.reward_shares
+            indoor_cbrs.total_shares()
         );
 
         let indoor_cbrs = calculate_indoor_cbrs(vec![
@@ -455,7 +500,7 @@ mod tests {
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Fail.multiplier(),
-            indoor_cbrs.reward_shares
+            indoor_cbrs.total_shares()
         );
     }
 
@@ -526,7 +571,7 @@ mod tests {
         )
         .expect("indoor cbrs");
 
-        assert_eq!(dec!(1073), indoor_cbrs.total_coverage_points);
+        assert_eq!(dec!(1073), indoor_cbrs.coverage_points_v1());
     }
 
     #[rstest]
@@ -556,7 +601,7 @@ mod tests {
         )
         .expect("outdoor wifi");
 
-        assert_eq!(expected_points, outdoor_wifi.total_coverage_points);
+        assert_eq!(expected_points, outdoor_wifi.coverage_points_v1());
     }
 
     #[rstest]
@@ -605,7 +650,7 @@ mod tests {
         )
         .expect("indoor wifi");
 
-        assert_eq!(expected_points, indoor_wifi.total_coverage_points);
+        assert_eq!(expected_points, indoor_wifi.coverage_points_v1());
     }
 
     #[test]
@@ -630,7 +675,7 @@ mod tests {
 
         // Location trust scores is 1/4
         // (0.1 + 0.2 + 0.3 + 0.4) / 4
-        assert_eq!(dec!(100), indoor_wifi.total_coverage_points);
+        assert_eq!(dec!(100), indoor_wifi.coverage_points_v1());
     }
 
     #[test]
@@ -666,7 +711,7 @@ mod tests {
 
         // The hex with a low signal_level is boosted to the same level as a
         // signal_level of High.
-        assert_eq!(dec!(800), indoor_wifi.total_coverage_points);
+        assert_eq!(dec!(800), indoor_wifi.coverage_points_v1());
     }
 
     #[rstest]
@@ -695,7 +740,7 @@ mod tests {
         )
         .expect("outdoor cbrs");
 
-        assert_eq!(expected, outdoor_cbrs.total_coverage_points);
+        assert_eq!(expected, outdoor_cbrs.coverage_points_v1());
     }
 
     #[rstest]
@@ -722,7 +767,7 @@ mod tests {
         )
         .expect("indoor cbrs");
 
-        assert_eq!(expected, indoor_cbrs.total_coverage_points);
+        assert_eq!(expected, indoor_cbrs.coverage_points_v1());
     }
 
     #[rstest]
@@ -751,7 +796,7 @@ mod tests {
         )
         .expect("indoor cbrs");
 
-        assert_eq!(expected, outdoor_wifi.total_coverage_points);
+        assert_eq!(expected, outdoor_wifi.coverage_points_v1());
     }
 
     #[rstest]
@@ -778,7 +823,7 @@ mod tests {
         )
         .expect("indoor wifi");
 
-        assert_eq!(expected, indoor_wifi.total_coverage_points);
+        assert_eq!(expected, indoor_wifi.coverage_points_v1());
     }
 
     fn hex_location() -> hextree::Cell {
