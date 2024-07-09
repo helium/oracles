@@ -42,7 +42,7 @@ impl GatewayResolver for AllOwnersValid {
 }
 
 #[sqlx::test]
-async fn heatbeat_uses_last_good_location_when_invalid_location(
+async fn heartbeat_uses_last_good_location_when_invalid_location(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let hotspot = PublicKeyBinary::from_str(PUB_KEY)?;
@@ -106,7 +106,7 @@ async fn heatbeat_uses_last_good_location_when_invalid_location(
 }
 
 #[sqlx::test]
-async fn heatbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::Result<()> {
+async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::Result<()> {
     let hotspot = PublicKeyBinary::from_str(PUB_KEY)?;
     let epoch_start = Utc::now() - Duration::days(1);
     let epoch_end = epoch_start + Duration::days(2);
@@ -173,7 +173,7 @@ async fn heatbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::R
 }
 
 #[sqlx::test]
-async fn heatbeat_does_not_use_last_good_location_when_more_than_12_hours(
+async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let hotspot = PublicKeyBinary::from_str(PUB_KEY)?;
