@@ -59,15 +59,17 @@
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
     location::{asserted_distance_to_trust_multiplier, LocationTrust},
+    service_provider_boosting::ServiceProviderBoostedRewardEligibility,
     speedtest::{BytesPs, Speedtest, SpeedtestTier},
 };
 use coverage_map::SignalLevel;
-use location::service_provider_boosting::{MAX_AVERAGE_DISTANCE, MIN_WIFI_TRUST_MULTIPLIER};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use service_provider_boosting::{MAX_AVERAGE_DISTANCE, MIN_WIFI_TRUST_MULTIPLIER};
 
 mod hexes;
 mod location;
+mod service_provider_boosting;
 mod speedtest;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -325,13 +327,6 @@ impl RadioType {
     pub fn is_cbrs(&self) -> bool {
         matches!(self, Self::IndoorCbrs | Self::OutdoorCbrs)
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ServiceProviderBoostedRewardEligibility {
-    Eligible,
-    ServiceProviderBanned,
-    RadioThresholdNotMet,
 }
 
 #[cfg(test)]
