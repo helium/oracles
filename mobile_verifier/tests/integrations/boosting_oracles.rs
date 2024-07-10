@@ -15,14 +15,12 @@ use hex_assignments::{Assignment, HexBoostData};
 use mobile_config::boosted_hex_info::BoostedHexes;
 
 use mobile_verifier::{
-    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
+    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::{
-        last_location::LocationCache, Heartbeat, HeartbeatReward, SeniorityUpdate,
-        ValidatedHeartbeat,
-    },
-    radio_threshold::VerifiedRadioThresholds,
+    heartbeats::{last_location::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
     reward_shares::CoverageShares,
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
+    seniority::{Seniority, SeniorityUpdate},
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     GatewayResolution, GatewayResolver,
@@ -382,9 +380,8 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         let seniority_update = SeniorityUpdate::determine_update_action(
             &heartbeat,
             coverage_claim_time.unwrap(),
-            epoch.start,
             latest_seniority,
-        );
+        )?;
         seniority_update.execute(&mut transaction).await?;
         heartbeat.save(&mut transaction).await?;
     }
@@ -405,7 +402,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &VerifiedRadioThresholds::default(),
+        &BoostedHexEligibility::default(),
         &epoch,
     )
     .await

@@ -1,5 +1,6 @@
 use crate::{
     heartbeats::{HbType, KeyType, OwnedKeyType},
+    seniority::Seniority,
     IsAuthorized, Settings,
 };
 use chrono::{DateTime, Utc};
@@ -390,29 +391,6 @@ pub trait CoveredHexStream {
         key: KeyType<'_>,
         period_end: DateTime<Utc>,
     ) -> Result<Seniority, sqlx::Error>;
-}
-
-#[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
-pub struct Seniority {
-    pub uuid: Uuid,
-    pub seniority_ts: DateTime<Utc>,
-    pub last_heartbeat: DateTime<Utc>,
-    pub inserted_at: DateTime<Utc>,
-    pub update_reason: i32,
-}
-
-impl Seniority {
-    pub async fn fetch_latest(
-        key: KeyType<'_>,
-        exec: &mut Transaction<'_, Postgres>,
-    ) -> Result<Option<Self>, sqlx::Error> {
-        sqlx::query_as(
-            "SELECT uuid, seniority_ts, last_heartbeat, inserted_at, update_reason FROM seniority WHERE radio_key = $1 ORDER BY last_heartbeat DESC LIMIT 1",
-        )
-        .bind(key)
-        .fetch_optional(&mut *exec)
-        .await
-    }
 }
 
 #[async_trait::async_trait]

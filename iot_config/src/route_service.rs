@@ -194,7 +194,7 @@ impl iot_config::Route for RouteService {
         custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::Oui(request.oui))
+        self.verify_request_signature_or_stream(&signer, &request, OrgId::Oui(request.oui))
             .await?;
 
         tracing::debug!("list routes");
@@ -224,7 +224,7 @@ impl iot_config::Route for RouteService {
         custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
+        self.verify_request_signature_or_stream(&signer, &request, OrgId::RouteId(&request.id))
             .await?;
 
         tracing::debug!(route_id = request.id, "get route");

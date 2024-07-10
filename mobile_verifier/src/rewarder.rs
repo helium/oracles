@@ -7,7 +7,7 @@ use crate::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, ServiceProviderShares, TransferRewards,
     },
-    speedtests,
+    sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, telemetry, Settings,
 };
@@ -45,6 +45,10 @@ use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
+
+use self::boosted_hex_eligibility::BoostedHexEligibility;
+
+pub mod boosted_hex_eligibility;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
@@ -292,6 +296,7 @@ where
         speedtests::clear_speedtests(&mut transaction, &reward_period.start).await?;
         data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.start).await?;
         coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
+        sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
@@ -422,15 +427,17 @@ async fn reward_poc(
 
     let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
 
-    let verified_radio_thresholds =
-        radio_threshold::verified_radio_thresholds(pool, reward_period).await?;
+    let boosted_hex_eligibility = BoostedHexEligibility::new(
+        radio_threshold::verified_radio_thresholds(pool, reward_period).await?,
+        sp_boosted_rewards_bans::db::get_banned_radios(pool, reward_period.end).await?,
+    );
 
     let coverage_shares = CoverageShares::new(
         pool,
         heartbeats,
         &speedtest_averages,
         &boosted_hexes,
-        &verified_radio_thresholds,
+        &boosted_hex_eligibility,
         reward_period,
     )
     .await?;

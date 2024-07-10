@@ -1,9 +1,9 @@
 use crate::{
     heartbeats::HeartbeatReward,
-    radio_threshold::VerifiedRadioThresholds,
     reward_shares::{
         get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
     },
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     speedtests_average::SpeedtestAverages,
     Settings,
 };
@@ -47,7 +47,7 @@ impl Cmd {
             heartbeats,
             &speedtest_averages,
             &BoostedHexes::default(),
-            &VerifiedRadioThresholds::default(),
+            &BoostedHexEligibility::default(),
             &epoch,
         )
         .await?;
