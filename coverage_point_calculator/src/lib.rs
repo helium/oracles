@@ -45,7 +45,7 @@
 //!   - If a Hex is boosted by a Provider, the Oracle Assignment multiplier is automatically 1x.
 //!
 //! - [ServiceProviderBoostedRewardEligibility]
-//!   - TODO: Link HIP mentioning Threshold data requirement
+//!   - Radio must pass at least 1mb of data from 3 unique phones [HIP-84][provider-boosting]
 //!   - Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
@@ -191,7 +191,7 @@ impl CoveragePoints {
     /// value referred to as "shares".
     ///
     /// Ref:
-    /// https://github.com/helium/proto/blob/master/src/service/poc_mobile.proto
+    /// <https://github.com/helium/proto/blob/master/src/service/poc_mobile.proto>
     /// `message radio_reward`
     pub fn coverage_points_v1(&self) -> Decimal {
         let total_coverage_points = self.coverage_points.base + self.boosted_points();

@@ -11,11 +11,11 @@ pub struct LocationTrust {
     pub trust_score: Decimal,
 }
 
-/// Returns the trust multiplier for a given radio type and distance to asserted.
+/// Returns the trust multiplier for a given radio type and distance to it's asserted location.
 ///
-/// Reference:
-/// HIP-119
-/// https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md
+/// [HIP-119: Gaming Loopholes][gaming-loopholes]
+///
+/// [gaming-loopholes]: https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md#maximum-asserted-distance-difference
 pub fn asserted_distance_to_trust_multiplier(
     radio_type: RadioType,
     meters_to_asserted: Meters,
