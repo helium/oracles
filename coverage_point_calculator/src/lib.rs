@@ -44,6 +44,10 @@
 //!   - If a Radio is not [BoostedHexStatus::Eligible], boost values are removed before calculations.
 //!   - If a Hex is boosted by a Provider, the Oracle Assignment multiplier is automatically 1x.
 //!
+//! - [ServiceProviderBoostedRewardEligibility]
+//!   - TODO: Link HIP mentioning Threshold data requirement
+//!   - Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
+//!
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
 //! [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
 //! [wifi-aps]:                https://github.com/helium/HIP/blob/main/0093-addition-of-wifi-aps-to-mobile-subdao.md
@@ -55,6 +59,7 @@
 //! [mobile-poc-blog]:         https://docs.helium.com/mobile/proof-of-coverage
 //! [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
 //! [location-gaming]:         https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md
+//! [provider-banning]:        https://github.com/helium/HIP/blob/main/0125-temporary-anti-gaming-measures-for-boosted-hexes.md
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
@@ -248,12 +253,13 @@ impl BoostedHexStatus {
             return Self::AverageAssertedDistanceOverLimit(average_distance);
         }
 
-        // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
         match service_provider_boosted_reward_eligibility {
             ServiceProviderBoostedRewardEligibility::Eligible => Self::Eligible,
+            // hip-125: if radio has been banned by service provider, no boosting
             ServiceProviderBoostedRewardEligibility::ServiceProviderBanned => {
                 Self::ServiceProviderBanned
             }
+            // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
             ServiceProviderBoostedRewardEligibility::RadioThresholdNotMet => {
                 Self::RadioThresholdNotMet
             }
