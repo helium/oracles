@@ -50,13 +50,13 @@ impl TryFrom<proto::RewardManifest> for RewardManifest {
                 Some(proto::reward_manifest::RewardData::MobileRewardData(reward_data)) => {
                     Some(RewardData::MobileRewardData {
                         poc_bones_per_coverage_point: reward_data
-                            .poc_bones_per_coverage_point
+                            .poc_bones_per_reward_share
                             .ok_or(DecodeError::empty_field("poc_bones_per_coverage_point"))?
                             .value
                             .parse()
                             .map_err(DecodeError::from)?,
                         boosted_poc_bones_per_coverage_point: reward_data
-                            .boosted_poc_bones_per_coverage_point
+                            .boosted_poc_bones_per_reward_share
                             .ok_or(DecodeError::empty_field(
                                 "boosted_poc_bones_per_coverage_point",
                             ))?
