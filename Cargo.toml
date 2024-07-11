@@ -70,7 +70,7 @@ helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = 
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
-helium-proto = { git = "https://github.com/helium/proto", branch = "macpie/verification_mapping", features = [
+helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
   "services",
 ] }
 beacon = { git = "https://github.com/helium/proto", branch = "master" }
@@ -133,3 +133,6 @@ sqlx = { git = "https://github.com/helium/sqlx.git", rev = "92a2268f02e0cac6fccb
 # [patch.'https://github.com/helium/proto']
 # helium-proto = { path = "../proto" }
 # beacon = { path = "../proto/beacon" }
+# Temporary patch
+[patch."https://github.com/helium/proto"]
+helium-proto = { path = "../proto" }
