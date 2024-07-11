@@ -226,7 +226,7 @@ impl CoveragePoints {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoostedHexStatus {
     Eligible,
     WifiLocationScoreBelowThreshold(Decimal),
@@ -242,19 +242,7 @@ impl BoostedHexStatus {
         location_trust_scores: &[LocationTrust],
         service_provider_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility,
     ) -> Self {
-        // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
-        if radio_type.is_wifi() && location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
-            return Self::WifiLocationScoreBelowThreshold(location_trust_multiplier);
-        }
-
-        // hip-119: if the average distance to asserted is beyond 50m, no boosting
-        let average_distance = location::average_distance(radio_type, location_trust_scores);
-        if average_distance > MAX_AVERAGE_DISTANCE {
-            return Self::AverageAssertedDistanceOverLimit(average_distance);
-        }
-
         match service_provider_boosted_reward_eligibility {
-            ServiceProviderBoostedRewardEligibility::Eligible => Self::Eligible,
             // hip-125: if radio has been banned by service provider, no boosting
             ServiceProviderBoostedRewardEligibility::ServiceProviderBanned => {
                 Self::ServiceProviderBanned
@@ -262,6 +250,21 @@ impl BoostedHexStatus {
             // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
             ServiceProviderBoostedRewardEligibility::RadioThresholdNotMet => {
                 Self::RadioThresholdNotMet
+            }
+            ServiceProviderBoostedRewardEligibility::Eligible => {
+                // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
+                if radio_type.is_wifi() && location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
+                    return Self::WifiLocationScoreBelowThreshold(location_trust_multiplier);
+                }
+
+                // hip-119: if the average distance to asserted is beyond 50m, no boosting
+                let average_distance =
+                    location::average_distance(radio_type, location_trust_scores);
+                if average_distance > MAX_AVERAGE_DISTANCE {
+                    return Self::AverageAssertedDistanceOverLimit(average_distance);
+                }
+
+                Self::Eligible
             }
         }
     }
@@ -878,6 +881,36 @@ mod tests {
         .expect("indoor wifi");
 
         assert_eq!(expected, indoor_wifi.coverage_points_v1());
+    }
+
+    #[test]
+    fn wifi_with_bad_location_boosted_hex_status_prioritizes_service_provider_statuses() {
+        let bad_location = vec![LocationTrust {
+            meters_to_asserted: 100,
+            trust_score: dec!(0.0),
+        }];
+
+        let wifi_bad_trust_score = |sp_status: ServiceProviderBoostedRewardEligibility| {
+            BoostedHexStatus::new(
+                RadioType::IndoorWifi,
+                location::multiplier(RadioType::IndoorWifi, &bad_location),
+                &bad_location,
+                sp_status,
+            )
+        };
+
+        assert_eq!(
+            wifi_bad_trust_score(ServiceProviderBoostedRewardEligibility::Eligible),
+            BoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(0)),
+        );
+        assert_eq!(
+            wifi_bad_trust_score(ServiceProviderBoostedRewardEligibility::ServiceProviderBanned),
+            BoostedHexStatus::ServiceProviderBanned
+        );
+        assert_eq!(
+            wifi_bad_trust_score(ServiceProviderBoostedRewardEligibility::RadioThresholdNotMet),
+            BoostedHexStatus::RadioThresholdNotMet
+        );
     }
 
     fn hex_location() -> hextree::Cell {
