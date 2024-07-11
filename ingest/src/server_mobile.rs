@@ -19,7 +19,8 @@ use helium_proto::services::poc_mobile::{
     RadioThresholdReportRespV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
-    SubscriberLocationReqV1, SubscriberLocationRespV1, WifiHeartbeatIngestReportV1,
+    SubscriberLocationReqV1, SubscriberLocationRespV1, SubscriberMappingEventReqV1,
+    SubscriberMappingEventResV1, VerifiedSubscriberMappingEventV1, WifiHeartbeatIngestReportV1,
     WifiHeartbeatReqV1, WifiHeartbeatRespV1,
 };
 use std::{net::SocketAddr, path::Path};
@@ -42,6 +43,7 @@ pub struct GrpcServer {
     invalidated_radio_threshold_report_sink: FileSinkClient,
     coverage_object_report_sink: FileSinkClient,
     sp_boosted_rewards_ban_sink: FileSinkClient,
+    subscriber_mapping_event_sink: FileSinkClient,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -368,6 +370,33 @@ impl poc_mobile::PocMobile for GrpcServer {
             ServiceProviderBoostedRewardsBannedRadioRespV1 { id },
         ))
     }
+
+    async fn submit_subscriber_mapping_event(
+        &self,
+        request: Request<SubscriberMappingEventReqV1>,
+    ) -> GrpcResult<SubscriberMappingEventResV1> {
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+        let event: SubscriberMappingEventReqV1 = request.into_inner();
+        let subscriber_id = event.subscriber_id.clone();
+
+        custom_tracing::record("subscriber_id", bs58::encode(&subscriber_id).into_string());
+        custom_tracing::record_b58("pub_key", &event.pub_key);
+
+        let report = self
+            .verify_public_key(event.pub_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| VerifiedSubscriberMappingEventV1 {
+                subscriber_id: event.subscriber_id,
+                total_reward_points: event.total_reward_points,
+                timestamp,
+            })?;
+
+        _ = self.subscriber_mapping_event_sink.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(SubscriberMappingEventResV1 { id }))
+    }
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
@@ -484,6 +513,17 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .create()
         .await?;
 
+    let (subscriber_mapping_event_sink, subscriber_mapping_event_server) =
+        file_sink::FileSinkBuilder::new(
+            FileType::VerifiedSubscriberMappingEvent,
+            store_base_path,
+            file_upload.clone(),
+            concat!(env!("CARGO_PKG_NAME"), "_verified_subscriber_mapping_event"),
+        )
+        .roll_time(settings.roll_time)
+        .create()
+        .await?;
+
     let Some(api_token) = settings
         .token
         .as_ref()
@@ -502,6 +542,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         invalidated_radio_threshold_report_sink,
         coverage_object_report_sink,
         sp_boosted_rewards_ban_sink,
+        subscriber_mapping_event_sink,
         required_network: settings.network,
         address: settings.listen_addr,
         api_token,
@@ -524,6 +565,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(invalidated_radio_threshold_report_sink_server)
         .add_task(coverage_object_report_sink_server)
         .add_task(sp_boosted_rewards_ban_sink_server)
+        .add_task(subscriber_mapping_event_server)
         .add_task(grpc_server)
         .build()
         .start()
