@@ -59,7 +59,8 @@ impl Cmd {
                 DataTransferAndPocAllocatedRewardBuckets::new(&epoch),
                 &epoch,
             )
-            .ok_or(anyhow::anyhow!("no rewardable events"))?;
+            .ok_or(anyhow::anyhow!("no rewardable events"))?
+            .1;
         for (_reward_amount, reward) in radio_rewards {
             if let Some(proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
                 hotspot_key,

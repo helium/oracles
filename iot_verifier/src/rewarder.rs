@@ -6,10 +6,14 @@ use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
 use futures::future::LocalBoxFuture;
-use helium_proto::services::poc_lora as proto;
-use helium_proto::services::poc_lora::iot_reward_share::Reward as ProtoReward;
-use helium_proto::services::poc_lora::{UnallocatedReward, UnallocatedRewardType};
-use helium_proto::RewardManifest;
+use helium_proto::{
+    reward_manifest::RewardData::IotRewardData,
+    services::poc_lora::{
+        self as proto, iot_reward_share::Reward as ProtoReward, UnallocatedReward,
+        UnallocatedRewardType,
+    },
+    IotRewardData as ManifestIotRewardData, RewardManifest,
+};
 use humantime_serde::re::humantime;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
@@ -29,6 +33,12 @@ pub struct Rewarder {
     pub reward_period_hours: Duration,
     pub reward_offset: Duration,
     pub price_tracker: PriceTracker,
+}
+
+pub struct RewardPocDcDataPoints {
+    beacon_rewards_per_share: Decimal,
+    witness_rewards_per_share: Decimal,
+    dc_transfer_rewards_per_share: Decimal,
 }
 
 impl ManagedTask for Rewarder {
@@ -116,7 +126,8 @@ impl Rewarder {
         let reward_period = &scheduler.reward_period;
 
         // process rewards for poc and dc
-        reward_poc_and_dc(&self.pool, &self.rewards_sink, reward_period, iot_price).await?;
+        let poc_dc_shares =
+            reward_poc_and_dc(&self.pool, &self.rewards_sink, reward_period, iot_price).await?;
         // process rewards for the operational fund
         reward_operational(&self.rewards_sink, reward_period).await?;
         // process rewards for the oracle
@@ -145,12 +156,24 @@ impl Rewarder {
         transaction.commit().await?;
 
         // now that the db has been purged, safe to write out the manifest
+        let reward_data = ManifestIotRewardData {
+            poc_bones_per_beacon_reward_share: Some(helium_proto::Decimal {
+                value: poc_dc_shares.beacon_rewards_per_share.to_string(),
+            }),
+            poc_bones_per_witness_reward_share: Some(helium_proto::Decimal {
+                value: poc_dc_shares.witness_rewards_per_share.to_string(),
+            }),
+            dc_bones_per_share: Some(helium_proto::Decimal {
+                value: poc_dc_shares.dc_transfer_rewards_per_share.to_string(),
+            }),
+        };
         self.reward_manifests_sink
             .write(
                 RewardManifest {
                     start_timestamp: scheduler.reward_period.start.encode_timestamp(),
                     end_timestamp: scheduler.reward_period.end.encode_timestamp(),
                     written_files,
+                    reward_data: Some(IotRewardData(reward_data)),
                 },
                 [],
             )
@@ -205,13 +228,12 @@ impl Rewarder {
         .ok_or(db_store::Error::DecodeError)
     }
 }
-
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     rewards_sink: &file_sink::FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     iot_price: Decimal,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<RewardPocDcDataPoints> {
     let reward_shares = reward_share::aggregate_reward_shares(pool, reward_period).await?;
     let gateway_shares = GatewayShares::new(reward_shares)?;
     let (beacon_rewards_per_share, witness_rewards_per_share, dc_transfer_rewards_per_share) =
@@ -254,7 +276,11 @@ pub async fn reward_poc_and_dc(
         reward_period,
     )
     .await?;
-    Ok(())
+    Ok(RewardPocDcDataPoints {
+        beacon_rewards_per_share,
+        witness_rewards_per_share,
+        dc_transfer_rewards_per_share,
+    })
 }
 
 pub async fn reward_operational(

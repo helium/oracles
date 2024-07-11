@@ -577,7 +577,10 @@ impl CoverageShares {
         self,
         reward_shares: DataTransferAndPocAllocatedRewardBuckets,
         epoch: &'_ Range<DateTime<Utc>>,
-    ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_> {
+    ) -> Option<(
+        CalculatedPocRewardShares,
+        impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_,
+    )> {
         struct ProcessedRadio {
             radio_id: RadioId,
             points: coverage_point_calculator::CoveragePoints,
@@ -615,7 +618,8 @@ impl CoverageShares {
             return None;
         };
 
-        Some(
+        Some((
+            rewards_per_share,
             processed_radios
                 .into_iter()
                 .map(move |radio| {
@@ -638,7 +642,7 @@ impl CoverageShares {
                     (poc_reward, mobile_reward_share)
                 })
                 .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0),
-        )
+        ))
     }
 
     /// Only used for testing
@@ -701,10 +705,10 @@ impl DataTransferAndPocAllocatedRewardBuckets {
 /// Reference:
 /// HIP 122: Amend Service Provider Hex Boosting
 /// https://github.com/helium/HIP/blob/main/0122-amend-service-provider-hex-boosting.md
-#[derive(Debug)]
-struct CalculatedPocRewardShares {
-    normal: Decimal,
-    boost: Decimal,
+#[derive(Copy, Clone, Debug, Default)]
+pub struct CalculatedPocRewardShares {
+    pub(crate) normal: Decimal,
+    pub(crate) boost: Decimal,
 }
 
 impl CalculatedPocRewardShares {
@@ -1499,6 +1503,7 @@ mod test {
         .unwrap()
         .into_rewards(reward_shares, &epoch)
         .unwrap()
+        .1
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1673,6 +1678,7 @@ mod test {
         .unwrap()
         .into_rewards(reward_shares, &epoch)
         .unwrap()
+        .1
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1804,6 +1810,7 @@ mod test {
         .unwrap()
         .into_rewards(reward_shares, &epoch)
         .unwrap()
+        .1
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1935,6 +1942,7 @@ mod test {
         .unwrap()
         .into_rewards(reward_shares, &epoch)
         .unwrap()
+        .1
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1976,6 +1984,8 @@ mod test {
             .expect("failed gw2 parse");
 
         let now = Utc::now();
+        // We should never see any radio shares from owner2, since all of them are
+        // less than or equal to zero.
         let epoch = now - Duration::hours(1)..now;
 
         let uuid_1 = Uuid::new_v4();
@@ -2074,6 +2084,7 @@ mod test {
         for (_reward_amount, mobile_reward) in coverage_shares
             .into_rewards(reward_shares, &epoch)
             .expect("rewards output")
+            .1
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
