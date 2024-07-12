@@ -25,6 +25,10 @@ impl BytesPs {
     fn as_mbps(&self) -> u64 {
         self.0 / Self::BYTES_PER_MEGABYTE
     }
+
+    pub fn as_bps(&self) -> u64 {
+        self.0
+    }
 }
 
 pub(crate) fn clean_speedtests(speedtests: Vec<Speedtest>) -> Vec<Speedtest> {
