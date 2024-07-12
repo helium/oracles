@@ -11,6 +11,7 @@ use crate::{
     sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
     speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor,
+    subscriber_mapping_event::SubscriberMappingEventDeamon,
     telemetry, Settings,
 };
 use anyhow::Result;
@@ -138,6 +139,14 @@ impl Cmd {
                     report_ingest.clone(),
                     speedtests_avg.clone(),
                     gateway_client,
+                )
+                .await?,
+            )
+            .add_task(
+                SubscriberMappingEventDeamon::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    report_ingest.clone(),
                 )
                 .await?,
             )
