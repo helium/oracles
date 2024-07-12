@@ -29,7 +29,7 @@ pub struct HexPoints {
     ///
     /// This is a convenience field for debugging, hexes can reach similar
     /// values through different means, it helps to know the starting value.
-    modeled: Decimal,
+    pub modeled: Decimal,
     /// Points including Coverage affected multipliers
     ///
     /// modeled + (Rank * Assignment)
