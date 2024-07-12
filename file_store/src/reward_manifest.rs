@@ -14,8 +14,8 @@ pub struct RewardManifest {
 #[derive(Clone, Debug)]
 pub enum RewardData {
     MobileRewardData {
-        poc_bones_per_coverage_point: Decimal,
-        boosted_poc_bones_per_coverage_point: Decimal,
+        poc_bones_per_reward_share: Decimal,
+        boosted_poc_bones_per_reward_share: Decimal,
     },
     IotRewardData {
         poc_bones_per_beacon_reward_share: Decimal,
@@ -49,16 +49,16 @@ impl TryFrom<proto::RewardManifest> for RewardManifest {
             reward_data: match value.reward_data {
                 Some(proto::reward_manifest::RewardData::MobileRewardData(reward_data)) => {
                     Some(RewardData::MobileRewardData {
-                        poc_bones_per_coverage_point: reward_data
+                        poc_bones_per_reward_share: reward_data
                             .poc_bones_per_reward_share
-                            .ok_or(DecodeError::empty_field("poc_bones_per_coverage_point"))?
+                            .ok_or(DecodeError::empty_field("poc_bones_per_reward_share"))?
                             .value
                             .parse()
                             .map_err(DecodeError::from)?,
-                        boosted_poc_bones_per_coverage_point: reward_data
+                        boosted_poc_bones_per_reward_share: reward_data
                             .boosted_poc_bones_per_reward_share
                             .ok_or(DecodeError::empty_field(
-                                "boosted_poc_bones_per_coverage_point",
+                                "boosted_poc_bones_per_reward_share",
                             ))?
                             .value
                             .parse()
