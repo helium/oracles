@@ -25,10 +25,13 @@ use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{carrier_service_client::CarrierServiceVerifier, ClientError},
 };
+use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, ops::Range};
 use uuid::Uuid;
+
+mod radio_reward_v2;
 
 /// Total tokens emissions pool per 365 days or 366 days for a leap year
 const TOTAL_EMISSIONS_POOL: Decimal = dec!(30_000_000_000_000_000);
@@ -373,9 +376,10 @@ pub fn coverage_point_to_mobile_reward_share(
     reward_epoch: &Range<DateTime<Utc>>,
     radio_id: &RadioId,
     poc_reward: u64,
+    rewards_per_share: CalculatedPocRewardShares,
     seniority_timestamp: DateTime<Utc>,
     coverage_object_uuid: Uuid,
-) -> proto::MobileRewardShare {
+) -> (proto::MobileRewardShare, proto::MobileRewardShare) {
     let (hotspot_key, cbsd_id) = radio_id.clone();
 
     let boosted_hexes = coverage_points
@@ -392,31 +396,63 @@ pub fn coverage_point_to_mobile_reward_share(
     let location_trust_score_multiplier = to_proto_value(coverage_points.location_trust_multiplier);
     let speedtest_multiplier = to_proto_value(coverage_points.speedtest_multiplier);
 
-    let coverage_points = coverage_points
+    let coverage_points_v1 = coverage_points
         .coverage_points_v1()
         .to_u64()
         .unwrap_or_default();
 
     let coverage_object = Vec::from(coverage_object_uuid.into_bytes());
 
-    proto::MobileRewardShare {
+    let radio_reward_v1 = proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
+        hotspot_key: hotspot_key.clone().into(),
+        cbsd_id: cbsd_id.clone().unwrap_or_default(),
+        poc_reward,
+        coverage_points: coverage_points_v1,
+        seniority_timestamp: seniority_timestamp.encode_timestamp(),
+        coverage_object: coverage_object.clone(),
+        location_trust_score_multiplier,
+        speedtest_multiplier,
+        boosted_hexes,
+        ..Default::default()
+    });
+
+    let radio_reward_v2 = proto::mobile_reward_share::Reward::RadioRewardV2(proto::RadioRewardV2 {
+        hotspot_key: hotspot_key.into(),
+        cbsd_id: cbsd_id.unwrap_or_default(),
+        base_coverage_points_sum: Some(coverage_points.coverage_points.base.proto_decimal()),
+        boosted_coverage_points_sum: Some(coverage_points.coverage_points.boosted.proto_decimal()),
+        base_reward_shares: Some(coverage_points.total_base_shares().proto_decimal()),
+        boosted_reward_shares: Some(coverage_points.total_boosted_shares().proto_decimal()),
+        base_poc_reward: rewards_per_share.base_poc_reward(&coverage_points),
+        boosted_poc_reward: rewards_per_share.boosted_poc_reward(&coverage_points),
+        seniority_timestamp: seniority_timestamp.encode_timestamp(),
+        coverage_object,
+        location_trust_scores: coverage_points.proto_location_trust_scores(),
+        location_trust_score_multiplier: Some(
+            coverage_points.location_trust_multiplier.proto_decimal(),
+        ),
+        speedtests: coverage_points.proto_speedtests(),
+        speedtest_multiplier: Some(coverage_points.speedtest_multiplier.proto_decimal()),
+        boosted_hex_status: coverage_points.proto_boosted_hex_status().into(),
+        covered_hexes: coverage_points.proto_covered_hexes(),
+    });
+
+    let base = proto::MobileRewardShare {
         start_period: reward_epoch.start.encode_timestamp(),
         end_period: reward_epoch.end.encode_timestamp(),
-        reward: Some(proto::mobile_reward_share::Reward::RadioReward(
-            proto::RadioReward {
-                hotspot_key: hotspot_key.into(),
-                cbsd_id: cbsd_id.unwrap_or_default(),
-                poc_reward,
-                coverage_points,
-                seniority_timestamp: seniority_timestamp.encode_timestamp(),
-                coverage_object,
-                location_trust_score_multiplier,
-                speedtest_multiplier,
-                boosted_hexes,
-                ..Default::default()
-            },
-        )),
-    }
+        reward: None,
+    };
+
+    (
+        proto::MobileRewardShare {
+            reward: Some(radio_reward_v1),
+            ..base.clone()
+        },
+        proto::MobileRewardShare {
+            reward: Some(radio_reward_v2),
+            ..base
+        },
+    )
 }
 
 type RadioId = (PublicKeyBinary, Option<String>);
@@ -579,7 +615,7 @@ impl CoverageShares {
         epoch: &'_ Range<DateTime<Utc>>,
     ) -> Option<(
         CalculatedPocRewardShares,
-        impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_,
+        impl Iterator<Item = (u64, proto::MobileRewardShare, proto::MobileRewardShare)> + '_,
     )> {
         struct ProcessedRadio {
             radio_id: RadioId,
@@ -631,17 +667,18 @@ impl CoverageShares {
                     } = radio;
 
                     let poc_reward = rewards_per_share.poc_reward(&points);
-                    let mobile_reward_share = coverage_point_to_mobile_reward_share(
+                    let (mobile_reward_share, v2) = coverage_point_to_mobile_reward_share(
                         points,
                         epoch,
                         &radio_id,
                         poc_reward,
+                        rewards_per_share,
                         seniority.seniority_ts,
                         coverage_obj_uuid,
                     );
-                    (poc_reward, mobile_reward_share)
+                    (poc_reward, mobile_reward_share, v2)
                 })
-                .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0),
+                .filter(|(poc_reward, _mobile_reward, _v2)| *poc_reward > 0),
         ))
     }
 
@@ -748,15 +785,20 @@ impl CalculatedPocRewardShares {
         }
     }
 
-    fn poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
-        let base_reward = (self.normal * points.total_base_shares())
+    fn base_poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
+        (self.normal * points.total_base_shares())
             .to_u64()
-            .unwrap_or_default();
-        let boosted_reward = (self.boost * points.total_boosted_shares())
-            .to_u64()
-            .unwrap_or_default();
+            .unwrap_or_default()
+    }
 
-        base_reward + boosted_reward
+    fn boosted_poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
+        (self.boost * points.total_boosted_shares())
+            .to_u64()
+            .unwrap_or_default()
+    }
+
+    fn poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
+        self.base_poc_reward(points) + self.boosted_poc_reward(points)
     }
 }
 
@@ -1491,7 +1533,7 @@ mod test {
         let mut allocated_poc_rewards = 0_u64;
 
         let epoch = (now - Duration::hours(1))..now;
-        for (reward_amount, mobile_reward) in CoverageShares::new(
+        for (reward_amount, mobile_reward, _v2) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1666,7 +1708,7 @@ mod test {
 
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
 
-        for (_reward_amount, mobile_reward) in CoverageShares::new(
+        for (_reward_amount, mobile_reward, _v2) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1798,7 +1840,7 @@ mod test {
         let epoch = (now - duration)..now;
 
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
-        for (_reward_amount, mobile_reward) in CoverageShares::new(
+        for (_reward_amount, mobile_reward, _v2) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1930,7 +1972,7 @@ mod test {
         let epoch = (now - duration)..now;
 
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
-        for (_reward_amount, mobile_reward) in CoverageShares::new(
+        for (_reward_amount, mobile_reward, _v2) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -2081,7 +2123,7 @@ mod test {
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
         // gw2 does not have enough speedtests for a mulitplier
         let expected_hotspot = gw1;
-        for (_reward_amount, mobile_reward) in coverage_shares
+        for (_reward_amount, mobile_reward, _v2) in coverage_shares
             .into_rewards(reward_shares, &epoch)
             .expect("rewards output")
             .1

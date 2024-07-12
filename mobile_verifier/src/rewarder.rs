@@ -450,12 +450,19 @@ async fn reward_poc(
         {
             // handle poc reward outputs
             let mut allocated_poc_rewards = 0_u64;
-            for (poc_reward_amount, mobile_reward_share) in mobile_reward_shares {
+            for (poc_reward_amount, mobile_reward_share_v1, mobile_reward_share_v2) in
+                mobile_reward_shares
+            {
                 allocated_poc_rewards += poc_reward_amount;
                 mobile_rewards
-                    .write(mobile_reward_share, [])
+                    .write(mobile_reward_share_v1, [])
                     .await?
                     // Await the returned one shot to ensure that we wrote the file
+                    .await??;
+                mobile_rewards
+                    .write(mobile_reward_share_v2, [])
+                    .await?
+                    // Await the returned one shot ot ensure that we wrote the file
                     .await??;
             }
             // calculate any unallocated poc reward
