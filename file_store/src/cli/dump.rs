@@ -27,9 +27,10 @@ use helium_proto::{
         poc_mobile::{
             mobile_reward_share::Reward, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
             CoverageObjectV1, Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare,
-            OracleBoostingReportV1, RadioRewardShare, SpeedtestAvg, SpeedtestIngestReportV1,
-            SpeedtestReqV1, VerifiedInvalidatedRadioThresholdIngestReportV1,
-            VerifiedRadioThresholdIngestReportV1,
+            OracleBoostingReportV1, RadioRewardShare,
+            ServiceProviderBoostedRewardsBannedRadioIngestReportV1, SpeedtestAvg,
+            SpeedtestIngestReportV1, SpeedtestReqV1,
+            VerifiedInvalidatedRadioThresholdIngestReportV1, VerifiedRadioThresholdIngestReportV1,
         },
         router::PacketRouterPacketReportV1,
     },
@@ -379,6 +380,11 @@ impl Cmd {
                         "coverage_claim_time": coverage.coverage_claim_time,
                         "coverage": coverage.coverage,
                     }))?;
+                }
+                FileType::SPBoostedRewardsBannedRadioIngestReport => {
+                    let report =
+                        ServiceProviderBoostedRewardsBannedRadioIngestReportV1::decode(msg)?;
+                    print_json(&json!(report))?;
                 }
                 missing_filetype => println!("No dump for {missing_filetype}"),
             }

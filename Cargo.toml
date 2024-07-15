@@ -26,6 +26,7 @@ members = [
   "solana",
   "task_manager",
   "hex_assignments",
+  "ban_cli"
 ]
 resolver = "2"
 

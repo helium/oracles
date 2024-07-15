@@ -574,7 +574,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7556be6f2b0d82376c1ece1fda4dffd728816ac53bee2c285f3f74269ddc4a97"
 dependencies = [
  "anyhow",
- "clap 4.4.8",
+ "clap 4.5.9",
  "helium-crypto",
  "md5",
 ]
@@ -590,15 +590,16 @@ dependencies = [
 
 [[package]]
 name = "anstream"
-version = "0.6.4"
+version = "0.6.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ab91ebe16eb252986481c5b62f6098f3b698a45e34b5b98200cf20dd2484a44"
+checksum = "418c75fa768af9c03be99d17643f93f79bbba589895012a80e3452a19ddda15b"
 dependencies = [
  "anstyle",
  "anstyle-parse",
  "anstyle-query",
  "anstyle-wincon",
  "colorchoice",
+ "is_terminal_polyfill",
  "utf8parse",
 ]
 
@@ -638,9 +639,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.75"
+version = "1.0.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
+checksum = "b3d1d046238990b9cf5bcde22a3fb3584ee5cf65fb2765f454ed428c7a0063da"
 dependencies = [
  "backtrace",
 ]
@@ -1372,7 +1373,7 @@ version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b02e06ea63498c43bc0217ea4d16605d4e58d85c12fc23f6572ff6d0a840c61"
 dependencies = [
- "itoa 1.0.9",
+ "itoa",
  "num-integer",
  "ryu",
  "time",
@@ -1385,7 +1386,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8161232eda10290f5136610a1eb9de56aceaccd70c963a26a260af20ac24794f"
 dependencies = [
  "base64-simd",
- "itoa 1.0.9",
+ "itoa",
  "num-integer",
  "ryu",
  "time",
@@ -1446,7 +1447,7 @@ dependencies = [
  "http 0.2.11",
  "http-body 0.4.5",
  "hyper 0.14.28",
- "itoa 1.0.9",
+ "itoa",
  "matchit",
  "memchr",
  "mime",
@@ -1475,7 +1476,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.1.0",
  "hyper-util",
- "itoa 1.0.9",
+ "itoa",
  "matchit",
  "memchr",
  "mime",
@@ -1557,6 +1558,23 @@ dependencies = [
  "miniz_oxide 0.5.4",
  "object",
  "rustc-demangle",
+]
+
+[[package]]
+name = "ban_cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap 4.5.9",
+ "csv",
+ "helium-crypto",
+ "helium-proto",
+ "rpassword",
+ "sqlx",
+ "text_io",
+ "tokio",
+ "tonic",
 ]
 
 [[package]]
@@ -1768,7 +1786,7 @@ dependencies = [
  "base64 0.21.7",
  "bs58 0.4.0",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "custom-tracing",
  "db-store",
@@ -1967,18 +1985,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bstr"
-version = "0.2.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba3569f383e8f1598449f1a423e72e99569137b47740b1da11ef19af3d5c3223"
-dependencies = [
- "lazy_static",
- "memchr",
- "regex-automata 0.1.10",
- "serde",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2092,9 +2098,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
-version = "0.4.31"
+version = "0.4.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f2c685bad3eb3d45a01354cedb7d5faa66194d1d58ba6e267a8de788f79db38"
+checksum = "a21f936df1771bf62b77f047b726c4625ff2e8aa607c01ec06e5a05bd8463401"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -2102,7 +2108,7 @@ dependencies = [
  "num-traits",
  "serde",
  "wasm-bindgen",
- "windows-targets 0.48.0",
+ "windows-targets 0.52.0",
 ]
 
 [[package]]
@@ -2156,9 +2162,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.4.8"
+version = "4.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2275f18819641850fa26c89acc84d465c1bf91ce57bc2748b28c420473352f64"
+checksum = "64acc1846d54c1fe936a78dc189c34e28d3f5afc348403f28ecf53660b9b8462"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -2166,23 +2172,23 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.4.8"
+version = "4.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07cdf1b148b25c1e1f7a42225e30a0d99a615cd4637eae7365548dd4529b95bc"
+checksum = "6fb8393d67ba2e7bfaf28a23458e4e2b543cc73a99595511eb207fdb8aede942"
 dependencies = [
  "anstream",
  "anstyle",
- "clap_lex 0.6.0",
- "strsim 0.10.0",
+ "clap_lex 0.7.1",
+ "strsim 0.11.1",
 ]
 
 [[package]]
 name = "clap_derive"
-version = "4.4.7"
+version = "4.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf9804afaaf59a91e75b022a30fb7229a7901f60c755489cc61c9b423b836442"
+checksum = "2bac35c6dafb060fd4d275d9a4ffae97917c13a6327903a8be2153cd964f7085"
 dependencies = [
- "heck 0.4.0",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.58",
@@ -2199,9 +2205,9 @@ dependencies = [
 
 [[package]]
 name = "clap_lex"
-version = "0.6.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
+checksum = "4b82cf0babdbd58558212896d1a4272303a57bdb245c2bf1147185fb45640e70"
 
 [[package]]
 name = "cmake"
@@ -2561,22 +2567,21 @@ dependencies = [
 
 [[package]]
 name = "csv"
-version = "1.1.6"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22813a6dc45b335f9bade10bf7271dc477e81113e89eb251a0bc2a8a81c536e1"
+checksum = "ac574ff4d437a7b5ad237ef331c17ccca63c46479e5b5453eb8e10bb99a759fe"
 dependencies = [
- "bstr",
  "csv-core",
- "itoa 0.4.8",
+ "itoa",
  "ryu",
  "serde",
 ]
 
 [[package]]
 name = "csv-core"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b2466559f260f48ad25fe6317b3c8dac77b5bdb5763ac7d9d6103530663bc90"
+checksum = "5efa2b3d7902f4b634a20cae3c9c4e6209dc4779feb6863329607560143efa70"
 dependencies = [
  "memchr",
 ]
@@ -3192,7 +3197,7 @@ dependencies = [
  "blake3",
  "bytes",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "csv",
  "derive_builder",
@@ -3705,6 +3710,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "heck"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
 name = "helium-anchor-gen"
 version = "0.1.0"
 source = "git+https://github.com/helium/helium-anchor-gen.git#fe60ed1d49e9255bd779a99bdd7928f278c07256"
@@ -3948,7 +3959,7 @@ checksum = "8947b1a6fad4393052c7ba1f4cd97bed3e953a95c79c92ad9b051a04611d9fbb"
 dependencies = [
  "bytes",
  "fnv",
- "itoa 1.0.9",
+ "itoa",
 ]
 
 [[package]]
@@ -3959,7 +3970,7 @@ checksum = "b32afd38673a8016f7c9ae69e5af41a58f81b1d31689040f2f1959594ce194ea"
 dependencies = [
  "bytes",
  "fnv",
- "itoa 1.0.9",
+ "itoa",
 ]
 
 [[package]]
@@ -4055,7 +4066,7 @@ dependencies = [
  "http-body 0.4.5",
  "httparse",
  "httpdate",
- "itoa 1.0.9",
+ "itoa",
  "pin-project-lite",
  "socket2",
  "tokio",
@@ -4078,7 +4089,7 @@ dependencies = [
  "http-body 1.0.0",
  "httparse",
  "httpdate",
- "itoa 1.0.9",
+ "itoa",
  "pin-project-lite",
  "tokio",
 ]
@@ -4262,7 +4273,7 @@ dependencies = [
  "base64 0.21.7",
  "bs58 0.4.0",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "custom-tracing",
  "file-store",
@@ -4330,7 +4341,7 @@ dependencies = [
  "base64 0.21.7",
  "bs58 0.4.0",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "custom-tracing",
  "db-store",
@@ -4372,7 +4383,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "custom-tracing",
  "db-store",
@@ -4411,7 +4422,7 @@ dependencies = [
  "beacon",
  "blake3",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "cmake",
  "config",
  "custom-tracing",
@@ -4462,6 +4473,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f88c5561171189e69df9d98bcf18fd5f9558300f7ea7b801eb8a0fd748bd8745"
 
 [[package]]
+name = "is_terminal_polyfill"
+version = "1.70.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8478577c03552c21db0e2724ffb8986a5ce7af88107e6be5d2ee6e158c12800"
+
+[[package]]
 name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4469,12 +4486,6 @@ checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
 dependencies = [
  "either",
 ]
-
-[[package]]
-name = "itoa"
-version = "0.4.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b71991ff56294aa922b450139ee08b3bfc70982c6b2c7562771375cf73542dd4"
 
 [[package]]
 name = "itoa"
@@ -5001,7 +5012,7 @@ dependencies = [
  "base64 0.21.7",
  "bs58 0.4.0",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "coverage-map",
  "custom-tracing",
@@ -5045,7 +5056,7 @@ dependencies = [
  "angry-purple-tiger 1.0.0",
  "anyhow",
  "base64 0.21.7",
- "clap 4.4.8",
+ "clap 4.5.9",
  "dialoguer",
  "futures",
  "h3o",
@@ -5078,7 +5089,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "custom-tracing",
  "db-store",
@@ -5117,7 +5128,7 @@ dependencies = [
  "backon",
  "base64 0.21.7",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "coverage-map",
  "coverage-point-calculator",
@@ -5806,7 +5817,7 @@ dependencies = [
  "blake3",
  "bs58 0.5.0",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "custom-tracing",
  "file-store",
@@ -5888,7 +5899,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "custom-tracing",
  "file-store",
@@ -6495,7 +6506,7 @@ dependencies = [
  "base64 0.21.7",
  "bs58 0.4.0",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "config",
  "custom-tracing",
  "db-store",
@@ -7014,7 +7025,7 @@ version = "1.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "455182ea6142b14f93f4bc5320a2b31c1f266b66a4a5c858b013302a5d8cbfc3"
 dependencies = [
- "itoa 1.0.9",
+ "itoa",
  "ryu",
  "serde",
 ]
@@ -7025,7 +7036,7 @@ version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4beec8bce849d58d06238cb50db2e1c417cfeafa4c63f692b15c82b7c80f8335"
 dependencies = [
- "itoa 1.0.9",
+ "itoa",
  "serde",
 ]
 
@@ -7047,7 +7058,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3491c14715ca2294c4d6a88f15e84739788c1d030eed8c110436aafdaa2f3fd"
 dependencies = [
  "form_urlencoded",
- "itoa 1.0.9",
+ "itoa",
  "ryu",
  "serde",
 ]
@@ -7247,7 +7258,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "clap 4.4.8",
+ "clap 4.5.9",
  "file-store",
  "futures",
  "helium-anchor-gen",
@@ -8506,7 +8517,7 @@ dependencies = [
  "hkdf",
  "hmac 0.12.1",
  "indexmap 1.9.3",
- "itoa 1.0.9",
+ "itoa",
  "libc",
  "log",
  "md-5",
@@ -8596,6 +8607,12 @@ name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
+
+[[package]]
+name = "strsim"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "strum"
@@ -8739,6 +8756,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "text_io"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5f0c8eb2ad70c12a6a69508f499b3051c924f4b1cfeae85bfad96e6bc5bba46"
+
+[[package]]
 name = "textwrap"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8788,7 +8811,7 @@ version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a561bf4617eebd33bca6434b988f39ed798e527f51a1e797d0ee4f61c0a38376"
 dependencies = [
- "itoa 1.0.9",
+ "itoa",
  "serde",
  "time-core",
  "time-macros",
@@ -9841,7 +9864,7 @@ dependencies = [
  "base64 0.21.7",
  "bincode",
  "bytes",
- "clap 4.4.8",
+ "clap 4.5.9",
  "csv",
  "flate2",
  "helium-crypto",
