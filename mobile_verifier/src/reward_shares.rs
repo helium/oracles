@@ -6,6 +6,7 @@ use crate::{
     seniority::Seniority,
     speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
+    subscriber_mapping_event::VerifiedMappingEventShares,
 };
 use chrono::{DateTime, Duration, Utc};
 use coverage_point_calculator::SPBoostedRewardEligibility;
@@ -187,12 +188,17 @@ impl TransferRewards {
 #[derive(Default)]
 pub struct MapperShares {
     pub discovery_mapping_shares: SubscriberValidatedLocations,
+    pub verified_mapping_event_shares: VerifiedMappingEventShares,
 }
 
 impl MapperShares {
-    pub fn new(discovery_mapping_shares: SubscriberValidatedLocations) -> Self {
+    pub fn new(
+        discovery_mapping_shares: SubscriberValidatedLocations,
+        verified_mapping_event_shares: VerifiedMappingEventShares,
+    ) -> Self {
         Self {
             discovery_mapping_shares,
+            verified_mapping_event_shares,
         }
     }
 
@@ -204,11 +210,15 @@ impl MapperShares {
         // the number of subscribers eligible for discovery location rewards
         let discovery_mappers_count = Decimal::from(self.discovery_mapping_shares.len());
 
+        let verified_mapping_event_count = Decimal::from(self.verified_mapping_event_shares.len());
+
         // calculate the total eligible mapping shares for the epoch
         // this could be simplified as every subscriber is awarded the same share
         // however the function is setup to allow the verification mapper shares to be easily
         // added without impacting code structure ( the per share value for those will be different )
-        let total_mapper_shares = discovery_mappers_count * DISCOVERY_MAPPING_SHARES;
+        let total_mapper_shares =
+            (discovery_mappers_count + verified_mapping_event_count) * DISCOVERY_MAPPING_SHARES;
+
         let res = total_mappers_pool
             .checked_div(total_mapper_shares)
             .unwrap_or(Decimal::ZERO);
@@ -220,7 +230,8 @@ impl MapperShares {
         reward_period: &'_ Range<DateTime<Utc>>,
         reward_per_share: Decimal,
     ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
-        self.discovery_mapping_shares
+        let discovery_rewards = self
+            .discovery_mapping_shares
             .into_iter()
             .map(move |subscriber_id| proto::SubscriberReward {
                 subscriber_id,
@@ -239,7 +250,32 @@ impl MapperShares {
                         reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
                     },
                 )
+            });
+
+        let verified_rewards = self
+            .verified_mapping_event_shares
+            .into_iter()
+            .map(move |verified_share| proto::SubscriberReward {
+                subscriber_id: verified_share.subscriber_id,
+                discovery_location_amount: (Decimal::from(verified_share.total_reward_points)
+                    * reward_per_share)
+                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                    .to_u64()
+                    .unwrap_or_default(),
             })
+            .filter(|subscriber_reward| subscriber_reward.discovery_location_amount > 0)
+            .map(|subscriber_reward| {
+                (
+                    subscriber_reward.discovery_location_amount,
+                    proto::MobileRewardShare {
+                        start_period: reward_period.start.encode_timestamp(),
+                        end_period: reward_period.end.encode_timestamp(),
+                        reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
+                    },
+                )
+            });
+
+        discovery_rewards.chain(verified_rewards)
     }
 }
 
