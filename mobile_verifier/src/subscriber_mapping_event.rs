@@ -1,11 +1,14 @@
+use std::ops::Range;
+
 use crate::Settings;
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_source,
     verified_mapping_event::VerifiedSubscriberMappingEvent,
     FileStore, FileType,
 };
-use futures::stream::StreamExt;
+use futures::{stream::StreamExt, TryStreamExt};
 use sqlx::{Pool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
@@ -91,7 +94,7 @@ impl ManagedTask for SubscriberMappingEventDeamon {
     }
 }
 
-pub async fn save_event(
+async fn save_event(
     event: &VerifiedSubscriberMappingEvent,
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
@@ -108,4 +111,39 @@ pub async fn save_event(
     .execute(exec)
     .await?;
     Ok(())
+}
+
+const SUBSCRIBER_REWARD_PERIOD_IN_DAYS: i64 = 1;
+pub type VerifiedMappingEventShares = Vec<VerifiedMappingEventShare>;
+
+#[derive(sqlx::FromRow)]
+pub struct VerifiedMappingEventShare {
+    pub subscriber_id: Vec<u8>,
+    pub total_reward_points: i64,
+}
+
+pub async fn aggregate_verified_mapping_events(
+    db: impl sqlx::PgExecutor<'_> + Copy,
+    reward_period: &Range<DateTime<Utc>>,
+) -> Result<VerifiedMappingEventShares, sqlx::Error> {
+    let mut rows = sqlx::query_as::<_, VerifiedMappingEventShare>(
+        "SELECT 
+            subscriber_id, 
+            SUM(total_reward_points) AS total_reward_points
+        FROM 
+            verified_mapping_event
+        WHERE timestamp >= $1 AND timestamp < $2
+        GROUP BY 
+            subscriber_id;",
+    )
+    .bind(reward_period.end - Duration::days(SUBSCRIBER_REWARD_PERIOD_IN_DAYS))
+    .bind(reward_period.end)
+    .fetch(db);
+
+    let mut vme_shares = VerifiedMappingEventShares::new();
+    while let Some(share) = rows.try_next().await? {
+        vme_shares.push(share)
+    }
+
+    Ok(vme_shares)
 }

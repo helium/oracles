@@ -9,7 +9,7 @@ use crate::{
     },
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_location, telemetry, Settings,
+    subscriber_location, subscriber_mapping_event, telemetry, Settings,
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -512,8 +512,11 @@ pub async fn reward_mappers(
     let location_shares =
         subscriber_location::aggregate_location_shares(pool, reward_period).await?;
 
+    let vme_shares =
+        subscriber_mapping_event::aggregate_verified_mapping_events(pool, reward_period).await?;
+
     // determine mapping shares based on location shares and data transferred
-    let mapping_shares = MapperShares::new(location_shares);
+    let mapping_shares = MapperShares::new(location_shares, vme_shares);
     let total_mappers_pool =
         reward_shares::get_scheduled_tokens_for_mappers(reward_period.end - reward_period.start);
     let rewards_per_share = mapping_shares.rewards_per_share(total_mappers_pool)?;
