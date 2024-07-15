@@ -25,7 +25,8 @@ members = [
   "reward_scheduler",
   "solana",
   "task_manager",
-  "hex_assignments"
+  "hex_assignments",
+  "ban_cli"
 ]
 resolver = "2"
 

@@ -1,0 +1,33 @@
+[package]
+name = "ban_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = {version = "4.5.9", features = ["derive"]}
+helium-crypto = {version = "0.8.1", features=["sqlx-postgres", "multisig"]}
+helium-proto = {path = "../../proto", features = ["services"]}
+sqlx = {version = "0", features = [
+  "postgres",
+  "uuid",
+  "decimal",
+  "chrono",
+  "macros",
+  "runtime-tokio-rustls",
+]}
+tonic = { version = "0", features = ["tls", "tls-roots"] }
+tokio = { version = "1", default-features = false, features = [
+  "fs",
+  "macros",
+  "signal",
+  "rt-multi-thread",
+  "rt",
+  "process",
+  "time"
+] }
+rpassword = "7.3.1"
+anyhow = "1.0.86"
+csv = "1.3.0"
+text_io = "0.1.12"
+chrono = "0.4.38"
+
