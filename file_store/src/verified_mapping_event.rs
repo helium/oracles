@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct VerifiedSubscriberMappingEvent {
-    pub subscriber_id: String,
+    pub subscriber_id: Vec<u8>,
     pub total_reward_points: u64,
     pub timestamp: DateTime<Utc>,
 }
