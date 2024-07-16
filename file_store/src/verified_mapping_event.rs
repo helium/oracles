@@ -34,7 +34,7 @@ impl From<VerifiedSubscriberMappingEvent> for VerifiedSubscriberMappingEventV1 {
         let timestamp = v.timestamp();
         VerifiedSubscriberMappingEventV1 {
             subscriber_id: v.subscriber_id,
-            total_reward_points: v.total_reward_points as u64,
+            total_reward_points: v.total_reward_points,
             timestamp,
         }
     }
