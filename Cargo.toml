@@ -73,6 +73,7 @@ hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", fe
 helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
   "services",
 ] }
+beacon = { git = "https://github.com/helium/proto", branch = "master" }
 solana-client = "1.18"
 solana-sdk = "1.18"
 solana-program = "1.18"
@@ -82,7 +83,6 @@ reqwest = { version = "0", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-beacon = { git = "https://github.com/helium/proto", branch = "master" }
 humantime = "2"
 humantime-serde = "1"
 metrics = ">=0.22"
