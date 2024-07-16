@@ -667,18 +667,19 @@ impl CoverageShares {
                     } = radio;
 
                     let poc_reward = rewards_per_share.poc_reward(&points);
-                    let (mobile_reward_share, v2) = coverage_point_to_mobile_reward_share(
-                        points,
-                        epoch,
-                        &radio_id,
-                        poc_reward,
-                        rewards_per_share,
-                        seniority.seniority_ts,
-                        coverage_obj_uuid,
-                    );
-                    (poc_reward, mobile_reward_share, v2)
+                    let (mobile_reward_v1, mobile_reward_v2) =
+                        coverage_point_to_mobile_reward_share(
+                            points,
+                            epoch,
+                            &radio_id,
+                            poc_reward,
+                            rewards_per_share,
+                            seniority.seniority_ts,
+                            coverage_obj_uuid,
+                        );
+                    (poc_reward, mobile_reward_v1, mobile_reward_v2)
                 })
-                .filter(|(poc_reward, _mobile_reward, _v2)| *poc_reward > 0),
+                .filter(|(poc_reward, _mobile_reward_v1, _mobile_reward_v2)| *poc_reward > 0),
         ))
     }
 
