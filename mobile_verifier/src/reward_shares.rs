@@ -1533,7 +1533,7 @@ mod test {
         let mut allocated_poc_rewards = 0_u64;
 
         let epoch = (now - Duration::hours(1))..now;
-        for (reward_amount, mobile_reward, _v2) in CoverageShares::new(
+        for (reward_amount, _mobile_reward_v1, mobile_reward_v2) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1547,17 +1547,22 @@ mod test {
         .unwrap()
         .1
         {
-            let radio_reward = match mobile_reward.reward {
-                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+            let radio_reward = match mobile_reward_v2.reward {
+                Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
                 _ => unreachable!(),
             };
             let owner = owners
                 .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
                 .expect("Could not find owner")
                 .clone();
-            assert_eq!(reward_amount, radio_reward.poc_reward);
+
+            let base = radio_reward.base_poc_reward;
+            let boosted = radio_reward.boosted_poc_reward;
+            let poc_reward = base + boosted;
+            assert_eq!(reward_amount, poc_reward);
+
             allocated_poc_rewards += reward_amount;
-            *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
+            *owner_rewards.entry(owner).or_default() += poc_reward;
         }
 
         assert_eq!(
@@ -1708,7 +1713,7 @@ mod test {
 
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
 
-        for (_reward_amount, mobile_reward, _v2) in CoverageShares::new(
+        for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1722,8 +1727,8 @@ mod test {
         .unwrap()
         .1
         {
-            let radio_reward = match mobile_reward.reward {
-                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+            let radio_reward = match mobile_reward_v2.reward {
+                Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
                 _ => unreachable!(),
             };
             let owner = owners
@@ -1731,9 +1736,10 @@ mod test {
                 .expect("Could not find owner")
                 .clone();
 
-            *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
+            let base = radio_reward.base_poc_reward;
+            let boosted = radio_reward.boosted_poc_reward;
+            *owner_rewards.entry(owner).or_default() += base + boosted;
         }
-        println!("owner rewards {:?}", owner_rewards);
 
         // wifi
         let owner1_reward = *owner_rewards
@@ -1840,7 +1846,7 @@ mod test {
         let epoch = (now - duration)..now;
 
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
-        for (_reward_amount, mobile_reward, _v2) in CoverageShares::new(
+        for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1854,8 +1860,8 @@ mod test {
         .unwrap()
         .1
         {
-            let radio_reward = match mobile_reward.reward {
-                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+            let radio_reward = match mobile_reward_v2.reward {
+                Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
                 _ => unreachable!(),
             };
             let owner = owners
@@ -1863,7 +1869,9 @@ mod test {
                 .expect("Could not find owner")
                 .clone();
 
-            *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
+            let base = radio_reward.base_poc_reward;
+            let boosted = radio_reward.boosted_poc_reward;
+            *owner_rewards.entry(owner).or_default() += base + boosted;
         }
 
         // wifi
@@ -1972,7 +1980,7 @@ mod test {
         let epoch = (now - duration)..now;
 
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
-        for (_reward_amount, mobile_reward, _v2) in CoverageShares::new(
+        for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1986,8 +1994,8 @@ mod test {
         .unwrap()
         .1
         {
-            let radio_reward = match mobile_reward.reward {
-                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+            let radio_reward = match mobile_reward_v2.reward {
+                Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
                 _ => unreachable!(),
             };
             let owner = owners
@@ -1995,11 +2003,11 @@ mod test {
                 .expect("Could not find owner")
                 .clone();
 
-            *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
+            let base = radio_reward.base_poc_reward;
+            let boosted = radio_reward.boosted_poc_reward;
+            *owner_rewards.entry(owner).or_default() += base + boosted;
         }
 
-        // These were different, now they are the same:
-        println!("owner rewards {:?}", owner_rewards);
         // wifi
         let owner1_reward = *owner_rewards
             .get(&owner1)
@@ -2123,13 +2131,13 @@ mod test {
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
         // gw2 does not have enough speedtests for a mulitplier
         let expected_hotspot = gw1;
-        for (_reward_amount, mobile_reward, _v2) in coverage_shares
+        for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in coverage_shares
             .into_rewards(reward_shares, &epoch)
             .expect("rewards output")
             .1
         {
-            let radio_reward = match mobile_reward.reward {
-                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+            let radio_reward = match mobile_reward_v2.reward {
+                Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
                 _ => unreachable!(),
             };
             let actual_hotspot = PublicKeyBinary::from(radio_reward.hotspot_key);
