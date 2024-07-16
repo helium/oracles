@@ -6,9 +6,9 @@ use file_store::{
 use futures::{stream, StreamExt};
 use helium_proto::{
     services::poc_mobile::{
-        mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare,
-        OracleBoostingHexAssignment, OracleBoostingReportV1, RadioReward, ServiceProviderReward,
-        SpeedtestAvg, SubscriberReward, UnallocatedReward,
+        mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward,
+        MobileRewardShare, OracleBoostingHexAssignment, OracleBoostingReportV1, RadioReward,
+        RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
     },
     Message,
 };
@@ -19,10 +19,10 @@ use mobile_config::{
 };
 
 use mobile_verifier::boosting_oracles::AssignedCoverageObjects;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 
 #[derive(Debug, Clone)]
@@ -98,14 +98,39 @@ impl MockFileSinkReceiver {
             .collect()
     }
 
-    pub async fn receive_radio_reward(&mut self) -> RadioReward {
-        match self.receive("receive_radio_reward").await {
+    pub async fn receive_radio_reward_v1(&mut self) -> RadioReward {
+        match self.receive("receive_radio_reward_v1").await {
             Some(bytes) => {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected radio reward");
                 println!("mobile_reward: {:?}", mobile_reward);
                 match mobile_reward.reward {
                     Some(MobileReward::RadioReward(r)) => r,
+                    _ => panic!("failed to get radio reward"),
+                }
+            }
+            None => panic!("failed to receive radio reward"),
+        }
+    }
+
+    pub async fn receive_radio_reward(&mut self) -> RadioRewardV2 {
+        // NOTE(mj): When v1 rewards stop being written, remove this receiver
+        // and the comparison.
+        let radio_reward_v1 = self.receive_radio_reward_v1().await;
+        match self.receive("receive_radio_reward").await {
+            Some(bytes) => {
+                let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
+                    .expect("failed to decode expected radio reward v2");
+                match mobile_reward.reward {
+                    Some(MobileReward::RadioRewardV2(r)) => {
+                        assert_eq!(
+                            r.total_poc_reward(),
+                            radio_reward_v1.poc_reward,
+                            "mismatch in poc rewards between v1 and v2"
+                        );
+                        println!("mobile_reward: {:?}\n", r);
+                        r
+                    }
                     _ => panic!("failed to get radio reward"),
                 }
             }
@@ -183,6 +208,53 @@ pub fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
         },
         MockFileSinkReceiver { receiver: rx },
     )
+}
+
+pub trait RadioRewardV2Ext {
+    fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex>;
+    fn nth_boosted_hex(&self, index: usize) -> radio_reward_v2::CoveredHex;
+    fn boosted_hexes_len(&self) -> usize;
+    fn total_poc_reward(&self) -> u64;
+    fn total_coverage_points(&self) -> u64;
+}
+
+impl RadioRewardV2Ext for RadioRewardV2 {
+    fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex> {
+        self.covered_hexes.to_vec()
+    }
+
+    fn boosted_hexes_len(&self) -> usize {
+        self.covered_hexes
+            .iter()
+            .filter(|hex| hex.boosted_multiplier > 0)
+            .collect::<Vec<_>>()
+            .len()
+    }
+
+    fn nth_boosted_hex(&self, index: usize) -> radio_reward_v2::CoveredHex {
+        self.covered_hexes
+            .iter()
+            .filter(|hex| hex.boosted_multiplier > 0)
+            .cloned()
+            .collect::<Vec<_>>()
+            .get(index)
+            .unwrap_or_else(|| panic!("expected {index} in boosted_hexes"))
+            .clone()
+    }
+
+    fn total_poc_reward(&self) -> u64 {
+        self.base_poc_reward + self.boosted_poc_reward
+    }
+
+    fn total_coverage_points(&self) -> u64 {
+        let base = self.base_coverage_points_sum.clone().unwrap_or_default();
+        let boosted = self.boosted_coverage_points_sum.clone().unwrap_or_default();
+
+        let base = Decimal::from_str(&base.value).expect("decoding base cp");
+        let boosted = Decimal::from_str(&boosted.value).expect("decoding boosted cp");
+
+        (base + boosted).to_u64().unwrap()
+    }
 }
 
 pub fn seconds(s: u64) -> std::time::Duration {

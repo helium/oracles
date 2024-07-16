@@ -1,4 +1,4 @@
-use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient};
+use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
@@ -9,8 +9,8 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     poc_lora::UnallocatedRewardType,
     poc_mobile::{
-        CoverageObjectValidity, HeartbeatValidity, RadioReward, SeniorityUpdateReason, SignalLevel,
-        UnallocatedReward,
+        CoverageObjectValidity, HeartbeatValidity, RadioRewardV2, SeniorityUpdateReason,
+        SignalLevel, UnallocatedReward,
     },
 };
 use hextree::Cell;
@@ -199,28 +199,30 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let exp_reward_3 =
         rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(0));
 
-    assert_eq!(exp_reward_1, hotspot_2.poc_reward); // 20x boost
-    assert_eq!(exp_reward_2, hotspot_1.poc_reward); // 10x boost
-    assert_eq!(exp_reward_3, hotspot_3.poc_reward); // no boost
+    assert_eq!(exp_reward_1, hotspot_2.total_poc_reward()); // 20x boost
+    assert_eq!(exp_reward_2, hotspot_1.total_poc_reward()); // 10x boost
+    assert_eq!(exp_reward_3, hotspot_3.total_poc_reward()); // no boost
 
     // assert the boosted hexes in the radio rewards
     // assert the number of boosted hexes for each radio
-    assert_eq!(1, hotspot_2.boosted_hexes.len());
-    assert_eq!(1, hotspot_1.boosted_hexes.len());
-    // hotspot 3 has no boosted hexes as all its hex boosts are 1x multiplier
-    // and those get filtered out as they dont affect points
-    assert_eq!(0, hotspot_3.boosted_hexes.len());
+    assert_eq!(1, hotspot_2.boosted_hexes_len());
+    assert_eq!(1, hotspot_1.boosted_hexes_len());
+    // hotspot 3 has 1 boosted hex at 1x, it does not effect rewards, but all
+    // covered hexes are reported with their corresponding boost values.
+    assert_eq!(1, hotspot_3.boosted_hexes_len());
 
     // assert the hex boost multiplier values
-    assert_eq!(20, hotspot_2.boosted_hexes[0].multiplier);
-    assert_eq!(10, hotspot_1.boosted_hexes[0].multiplier);
+    assert_eq!(20, hotspot_2.nth_boosted_hex(0).boosted_multiplier);
+    assert_eq!(10, hotspot_1.nth_boosted_hex(0).boosted_multiplier);
+    assert_eq!(1, hotspot_3.nth_boosted_hex(0).boosted_multiplier);
 
     // assert the hex boost location values
-    assert_eq!(0x8a1fb49642dffff_u64, hotspot_2.boosted_hexes[0].location);
-    assert_eq!(0x8a1fb466d2dffff_u64, hotspot_1.boosted_hexes[0].location);
+    assert_eq!(0x8a1fb49642dffff_u64, hotspot_2.nth_boosted_hex(0).location);
+    assert_eq!(0x8a1fb466d2dffff_u64, hotspot_1.nth_boosted_hex(0).location);
 
     // confirm the total rewards allocated matches expectations
-    let poc_sum = hotspot_1.poc_reward + hotspot_2.poc_reward + hotspot_3.poc_reward;
+    let poc_sum =
+        hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
     let total = poc_sum + unallocated_reward.amount;
     assert_eq!(total_poc_emissions, total);
 
@@ -337,29 +339,29 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
         let exp_reward_2 = 16393442622950;
         let exp_reward_3 = 16393442622950;
 
-        assert_eq!(exp_reward_1, poc_rewards[0].poc_reward);
+        assert_eq!(exp_reward_1, poc_rewards[0].total_poc_reward());
         assert_eq!(
             HOTSPOT_2.to_string(),
             PublicKeyBinary::from(poc_rewards[0].hotspot_key.clone()).to_string()
         );
-        assert_eq!(exp_reward_2, poc_rewards[1].poc_reward);
+        assert_eq!(exp_reward_2, poc_rewards[1].total_poc_reward());
         assert_eq!(
             HOTSPOT_1.to_string(),
             PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
         );
-        assert_eq!(exp_reward_3, poc_rewards[2].poc_reward);
+        assert_eq!(exp_reward_3, poc_rewards[2].total_poc_reward());
         assert_eq!(
             HOTSPOT_3.to_string(),
             PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
         );
 
         // assert the number of boosted hexes for each radio
-        assert_eq!(0, poc_rewards[0].boosted_hexes.len());
-        assert_eq!(0, poc_rewards[1].boosted_hexes.len());
-        assert_eq!(0, poc_rewards[2].boosted_hexes.len());
+        assert_eq!(0, poc_rewards[0].boosted_hexes_len());
+        assert_eq!(0, poc_rewards[1].boosted_hexes_len());
+        assert_eq!(0, poc_rewards[2].boosted_hexes_len());
 
         // confirm the total rewards allocated matches expectations
-        let poc_sum: u64 = poc_rewards.iter().map(|r| r.poc_reward).sum();
+        let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
         let unallocated_sum: u64 = unallocated_reward.amount;
         let total = poc_sum + unallocated_sum;
 
@@ -547,38 +549,42 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     let exp_reward_2 = rounded(hex_coverage(1)) + rounded(boost_coverage(19));
     let exp_reward_3 = rounded(hex_coverage(1)) + rounded(boost_coverage(0));
 
-    assert_eq!(exp_reward_1, hotspot_1.poc_reward); // 2 at 10x boost
-    assert_eq!(exp_reward_2, hotspot_2.poc_reward); // 1 at 20x boost
-    assert_eq!(exp_reward_3, hotspot_3.poc_reward); // 1 at no boost
+    assert_eq!(exp_reward_1, hotspot_1.total_poc_reward()); // 2 at 10x boost
+    assert_eq!(exp_reward_2, hotspot_2.total_poc_reward()); // 1 at 20x boost
+    assert_eq!(exp_reward_3, hotspot_3.total_poc_reward()); // 1 at no boost
 
     // hotspot 1 and 2 should have the same coverage points, but different poc rewards.
-    assert_eq!(hotspot_1.coverage_points, hotspot_2.coverage_points);
-    assert_ne!(hotspot_1.poc_reward, hotspot_2.poc_reward);
+    assert_eq!(
+        hotspot_1.total_coverage_points(),
+        hotspot_2.total_coverage_points()
+    );
+    assert_ne!(hotspot_1.total_poc_reward(), hotspot_2.total_poc_reward());
 
     // assert the number of boosted hexes for each radio
-    assert_eq!(1, hotspot_2.boosted_hexes.len());
-    assert_eq!(2, hotspot_1.boosted_hexes.len());
-    // hotspot 3 has no boosted hexes as all its hex boosts are 1x multiplier
-    // and those get filtered out as they dont affect points
-    assert_eq!(0, hotspot_3.boosted_hexes.len());
+    assert_eq!(1, hotspot_2.boosted_hexes_len());
+    assert_eq!(2, hotspot_1.boosted_hexes_len());
+    // hotspot 3 has 1 boosted hex at 1x, it does not effect rewards, but all
+    // covered hexes are reported with their corresponding boost values.
+    assert_eq!(1, hotspot_3.boosted_hexes_len());
 
     // assert the hex boost multiplier values
     // as hotspot 3 has 2 covered hexes, it should have 2 boosted hexes
     // sort order in the vec for these is not guaranteed, so sort them
-    let mut hotspot_1_boosted_hexes = hotspot_1.boosted_hexes.clone();
+    let mut hotspot_1_boosted_hexes = hotspot_1.boosted_hexes();
     hotspot_1_boosted_hexes.sort_by(|a, b| b.location.cmp(&a.location));
 
-    assert_eq!(20, hotspot_2.boosted_hexes[0].multiplier);
-    assert_eq!(10, hotspot_1_boosted_hexes[1].multiplier);
-    assert_eq!(10, hotspot_1_boosted_hexes[1].multiplier);
+    assert_eq!(20, hotspot_2.nth_boosted_hex(0).boosted_multiplier);
+    assert_eq!(10, hotspot_1_boosted_hexes[0].boosted_multiplier);
+    assert_eq!(10, hotspot_1_boosted_hexes[1].boosted_multiplier);
 
     // assert the hex boost location values
     assert_eq!(0x8a1fb46622dffff_u64, hotspot_1_boosted_hexes[0].location);
     assert_eq!(0x8a1fb46622d7fff_u64, hotspot_1_boosted_hexes[1].location);
-    assert_eq!(0x8a1fb49642dffff_u64, hotspot_2.boosted_hexes[0].location);
+    assert_eq!(0x8a1fb49642dffff_u64, hotspot_2.nth_boosted_hex(0).location);
 
     // confirm the total rewards allocated matches expectations
-    let poc_sum = hotspot_1.poc_reward + hotspot_2.poc_reward + hotspot_3.poc_reward;
+    let poc_sum =
+        hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
     let total = poc_sum + unallocated_reward.amount;
     assert_eq!(total_poc_emissions, total);
 
@@ -670,17 +676,17 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
         let exp_reward_2 = 16_393_442_622_950;
         let exp_reward_3 = 16_393_442_622_950;
 
-        assert_eq!(exp_reward_1, poc_rewards[0].poc_reward);
+        assert_eq!(exp_reward_1, poc_rewards[0].total_poc_reward());
         assert_eq!(
             HOTSPOT_2.to_string(),
             PublicKeyBinary::from(poc_rewards[0].hotspot_key.clone()).to_string()
         );
-        assert_eq!(exp_reward_2, poc_rewards[1].poc_reward);
+        assert_eq!(exp_reward_2, poc_rewards[1].total_poc_reward());
         assert_eq!(
             HOTSPOT_1.to_string(),
             PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
         );
-        assert_eq!(exp_reward_3, poc_rewards[2].poc_reward);
+        assert_eq!(exp_reward_3, poc_rewards[2].total_poc_reward());
         assert_eq!(
             HOTSPOT_3.to_string(),
             PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
@@ -688,12 +694,12 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
 
         // assert the number of boosted hexes for each radio
         // all will be zero as the boost period has expired for the single boosted hex
-        assert_eq!(0, poc_rewards[0].boosted_hexes.len());
-        assert_eq!(0, poc_rewards[1].boosted_hexes.len());
-        assert_eq!(0, poc_rewards[2].boosted_hexes.len());
+        assert_eq!(0, poc_rewards[0].boosted_hexes_len());
+        assert_eq!(0, poc_rewards[1].boosted_hexes_len());
+        assert_eq!(0, poc_rewards[2].boosted_hexes_len());
 
         // confirm the total rewards allocated matches expectations
-        let poc_sum: u64 = poc_rewards.iter().map(|r| r.poc_reward).sum();
+        let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
         let unallocated_sum: u64 = unallocated_reward.amount;
         let total = poc_sum + unallocated_sum;
 
@@ -851,26 +857,27 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     let exp_reward_3 =
         rounded(regular_share * dec!(75)) + rounded(boosted_share * dec!(75) * dec!(0));
 
-    assert_eq!(exp_reward_1, hotspot_1.poc_reward);
-    assert_eq!(exp_reward_2, hotspot_2.poc_reward);
-    assert_eq!(exp_reward_3, hotspot_3.poc_reward);
+    assert_eq!(exp_reward_1, hotspot_1.total_poc_reward());
+    assert_eq!(exp_reward_2, hotspot_2.total_poc_reward());
+    assert_eq!(exp_reward_3, hotspot_3.total_poc_reward());
 
     // assert the number of boosted hexes for each radio
     //hotspot 1 has one boosted hex
-    assert_eq!(1, hotspot_1.boosted_hexes.len());
+    assert_eq!(1, hotspot_1.boosted_hexes_len());
     //hotspot 2 has no boosted hexes
-    assert_eq!(0, hotspot_2.boosted_hexes.len());
+    assert_eq!(0, hotspot_2.boosted_hexes_len());
     // hotspot 3 has a boosted location but as its location trust score
     // is reduced the boost does not get applied
-    assert_eq!(0, hotspot_3.boosted_hexes.len());
+    assert_eq!(0, hotspot_3.boosted_hexes_len());
 
     // assert the hex boost multiplier values
     // assert_eq!(2, hotspot_1.boosted_hexes[0].multiplier);
-    assert_eq!(2, hotspot_1.boosted_hexes[0].multiplier);
-    assert_eq!(0x8a1fb466d2dffff_u64, hotspot_1.boosted_hexes[0].location);
+    assert_eq!(2, hotspot_1.nth_boosted_hex(0).boosted_multiplier);
+    assert_eq!(0x8a1fb466d2dffff_u64, hotspot_1.nth_boosted_hex(0).location);
 
     // confirm the total rewards allocated matches expectations
-    let poc_sum = hotspot_1.poc_reward + hotspot_2.poc_reward + hotspot_3.poc_reward;
+    let poc_sum =
+        hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
     let total = poc_sum + unallocated_reward.amount;
 
     let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
@@ -1030,26 +1037,27 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     let exp_reward_3 =
         rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(0));
 
-    assert_eq!(exp_reward_1, hotspot_1.poc_reward);
-    assert_eq!(exp_reward_2, hotspot_2.poc_reward);
-    assert_eq!(exp_reward_3, hotspot_3.poc_reward);
+    assert_eq!(exp_reward_1, hotspot_1.total_poc_reward());
+    assert_eq!(exp_reward_2, hotspot_2.total_poc_reward());
+    assert_eq!(exp_reward_3, hotspot_3.total_poc_reward());
 
     // assert the number of boosted hexes for each radio
     //hotspot 1 has one boosted hex
-    assert_eq!(1, hotspot_1.boosted_hexes.len());
+    assert_eq!(1, hotspot_1.boosted_hexes_len());
     //hotspot 2 has no boosted hexes
-    assert_eq!(0, hotspot_2.boosted_hexes.len());
+    assert_eq!(0, hotspot_2.boosted_hexes_len());
     // hotspot 3 has a boosted location but as its location trust score
     // is reduced the boost does not get applied
-    assert_eq!(0, hotspot_3.boosted_hexes.len());
+    assert_eq!(0, hotspot_3.boosted_hexes_len());
 
     // assert the hex boost multiplier values
     // assert_eq!(2, hotspot_1.boosted_hexes[0].multiplier);
-    assert_eq!(2, hotspot_1.boosted_hexes[0].multiplier);
-    assert_eq!(0x8a1fb466d2dffff_u64, hotspot_1.boosted_hexes[0].location);
+    assert_eq!(2, hotspot_1.nth_boosted_hex(0).boosted_multiplier);
+    assert_eq!(0x8a1fb466d2dffff_u64, hotspot_1.nth_boosted_hex(0).location);
 
     // confirm the total rewards allocated matches expectations
-    let poc_sum = hotspot_1.poc_reward + hotspot_2.poc_reward + hotspot_3.poc_reward;
+    let poc_sum =
+        hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
     let total = poc_sum + unallocated_reward.amount;
 
     let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
@@ -1234,34 +1242,35 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     let exp_reward_3 =
         rounded(regular_share * dec!(75) * dec!(1)) + rounded(boosted_share * dec!(75) * dec!(0));
 
-    assert_eq!(exp_reward_1, hotspot_1.poc_reward);
-    assert_eq!(exp_reward_2, hotspot_2.poc_reward);
-    assert_eq!(exp_reward_3, hotspot_3.poc_reward);
+    assert_eq!(exp_reward_1, hotspot_1.total_poc_reward());
+    assert_eq!(exp_reward_2, hotspot_2.total_poc_reward());
+    assert_eq!(exp_reward_3, hotspot_3.total_poc_reward());
 
     // assert the number of boosted hexes for each radio
-    assert_eq!(1, hotspot_2.boosted_hexes.len());
-    assert_eq!(2, hotspot_1.boosted_hexes.len());
-    // hotspot 3 has no boosted hexes as all its hex boosts are 1x multiplier
-    // and those get filtered out as they dont affect points
-    assert_eq!(0, hotspot_3.boosted_hexes.len());
+    assert_eq!(1, hotspot_2.boosted_hexes_len());
+    assert_eq!(2, hotspot_1.boosted_hexes_len());
+    // hotspot 3 has 1 boosted hex at 1x, it does not effect rewards, but all
+    // covered hexes are reported with their corresponding boost values.
+    assert_eq!(1, hotspot_3.boosted_hexes_len());
 
     // assert the hex boost multiplier values
     // as hotspot 3 has 2 covered hexes, it should have 2 boosted hexes
     // sort order in the vec for these is not guaranteed, so sort them
-    let mut hotspot_1_boosted_hexes = hotspot_1.boosted_hexes.clone();
+    let mut hotspot_1_boosted_hexes = hotspot_1.boosted_hexes();
     hotspot_1_boosted_hexes.sort_by(|a, b| b.location.cmp(&a.location));
 
-    assert_eq!(20, hotspot_2.boosted_hexes[0].multiplier);
-    assert_eq!(10, hotspot_1_boosted_hexes[1].multiplier);
-    assert_eq!(10, hotspot_1_boosted_hexes[1].multiplier);
+    assert_eq!(20, hotspot_2.nth_boosted_hex(0).boosted_multiplier);
+    assert_eq!(10, hotspot_1_boosted_hexes[1].boosted_multiplier);
+    assert_eq!(10, hotspot_1_boosted_hexes[1].boosted_multiplier);
 
     // assert the hex boost location values
     assert_eq!(0x8a1fb46622dffff_u64, hotspot_1_boosted_hexes[0].location);
     assert_eq!(0x8a1fb46622d7fff_u64, hotspot_1_boosted_hexes[1].location);
-    assert_eq!(0x8a1fb49642dffff_u64, hotspot_2.boosted_hexes[0].location);
+    assert_eq!(0x8a1fb49642dffff_u64, hotspot_2.nth_boosted_hex(0).location);
 
     // confirm the total rewards allocated matches expectations
-    let poc_sum = hotspot_1.poc_reward + hotspot_2.poc_reward + hotspot_3.poc_reward;
+    let poc_sum =
+        hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
     let total = poc_sum + unallocated_reward.amount;
 
     let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
@@ -1284,7 +1293,7 @@ fn rounded(num: Decimal) -> u64 {
 
 async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver,
-) -> anyhow::Result<(Vec<RadioReward>, UnallocatedReward)> {
+) -> anyhow::Result<(Vec<RadioRewardV2>, UnallocatedReward)> {
     receive_expected_rewards_maybe_unallocated(mobile_rewards, ExpectUnallocated::Yes).await
 }
 
@@ -1296,7 +1305,7 @@ enum ExpectUnallocated {
 async fn receive_expected_rewards_maybe_unallocated(
     mobile_rewards: &mut MockFileSinkReceiver,
     expect_unallocated: ExpectUnallocated,
-) -> anyhow::Result<(Vec<RadioReward>, UnallocatedReward)> {
+) -> anyhow::Result<(Vec<RadioRewardV2>, UnallocatedReward)> {
     // get the filestore outputs from rewards run
     let radio_reward1 = mobile_rewards.receive_radio_reward().await;
     let radio_reward2 = mobile_rewards.receive_radio_reward().await;
@@ -1309,7 +1318,7 @@ async fn receive_expected_rewards_maybe_unallocated(
     let unallocated_poc_reward = match expect_unallocated {
         ExpectUnallocated::Yes => mobile_rewards.receive_unallocated_reward().await,
         ExpectUnallocated::NoWhenValue(max_emission) => {
-            let total: u64 = poc_rewards.iter().map(|p| p.poc_reward).sum();
+            let total: u64 = poc_rewards.iter().map(|p| p.total_poc_reward()).sum();
             let emitted_is_total = total == max_emission;
             tracing::info!(
                 emitted_is_total,
