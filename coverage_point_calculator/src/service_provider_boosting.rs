@@ -20,7 +20,7 @@ pub(crate) const MIN_WIFI_TRUST_MULTIPLIER: Decimal = dec!(0.75);
 pub(crate) const MAX_AVERAGE_DISTANCE: Decimal = dec!(50);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ServiceProviderBoostedRewardEligibility {
+pub enum SPBoostedRewardEligibility {
     Eligible,
     /// Service Provider can invalidate boosted rewards of a hotspot
     ///

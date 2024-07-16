@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 use chrono::Utc;
 use coverage_map::{BoostedHexMap, RankedCoverage, SignalLevel, UnrankedCoverage};
 use coverage_point_calculator::{
-    BytesPs, CoveragePoints, LocationTrust, RadioType, Result,
-    ServiceProviderBoostedRewardEligibility, Speedtest, SpeedtestTier,
+    BytesPs, CoveragePoints, LocationTrust, RadioType, Result, SPBoostedRewardEligibility,
+    Speedtest, SpeedtestTier,
 };
 use hex_assignments::{assignment::HexAssignments, Assignment};
 use rust_decimal_macros::dec;
@@ -52,7 +52,7 @@ fn base_radio_coverage_points() {
     ] {
         let coverage_points = CoveragePoints::new(
             radio_type,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtests.clone(),
             location_trust_scores.clone(),
             hexes.clone(),
@@ -113,7 +113,7 @@ fn radios_with_coverage() {
     ] {
         let coverage_points = CoveragePoints::new(
             radio_type,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             default_speedtests.clone(),
             default_location_trust_scores.clone(),
             base_hex_iter.clone().take(num_hexes).collect(),
@@ -240,7 +240,7 @@ fn cbrs_outdoor_with_mixed_signal_level_coverage() -> Result {
 
     let radio = CoveragePoints::new(
         RadioType::OutdoorCbrs,
-        ServiceProviderBoostedRewardEligibility::Eligible,
+        SPBoostedRewardEligibility::Eligible,
         Speedtest::mock(SpeedtestTier::Good),
         vec![], // Location Trust is ignored for Cbrs
         vec![
@@ -372,7 +372,7 @@ fn indoor_cbrs_radio(
 ) -> Result<CoveragePoints> {
     CoveragePoints::new(
         RadioType::IndoorCbrs,
-        ServiceProviderBoostedRewardEligibility::Eligible,
+        SPBoostedRewardEligibility::Eligible,
         Speedtest::mock(speedtest_tier),
         vec![],
         coverage.to_owned(),
@@ -385,7 +385,7 @@ fn outdoor_cbrs_radio(
 ) -> Result<CoveragePoints> {
     CoveragePoints::new(
         RadioType::OutdoorCbrs,
-        ServiceProviderBoostedRewardEligibility::Eligible,
+        SPBoostedRewardEligibility::Eligible,
         Speedtest::mock(speedtest_tier),
         vec![],
         coverage.to_owned(),
