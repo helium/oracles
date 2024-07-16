@@ -122,14 +122,13 @@ impl MockFileSinkReceiver {
                 let mobile_reward = MobileRewardShare::decode(bytes.as_slice())
                     .expect("failed to decode expected radio reward v2");
                 match mobile_reward.reward {
-                    Some(MobileReward::RadioRewardV2(r)) => {
+                    Some(MobileReward::RadioRewardV2(reward)) => {
                         assert_eq!(
-                            r.total_poc_reward(),
+                            reward.total_poc_reward(),
                             radio_reward_v1.poc_reward,
                             "mismatch in poc rewards between v1 and v2"
                         );
-                        println!("mobile_reward: {:?}\n", r);
-                        r
+                        reward
                     }
                     _ => panic!("failed to get radio reward"),
                 }
