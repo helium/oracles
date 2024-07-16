@@ -64,7 +64,7 @@
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
     location::{asserted_distance_to_trust_multiplier, LocationTrust},
-    service_provider_boosting::ServiceProviderBoostedRewardEligibility,
+    service_provider_boosting::SPBoostedRewardEligibility,
     speedtest::{BytesPs, Speedtest, SpeedtestTier},
 };
 use coverage_map::SignalLevel;
@@ -132,7 +132,7 @@ pub struct CoveragePoints {
     /// Input Radio Type
     pub radio_type: RadioType,
     /// Input ServiceProviderBoostedRewardEligibility
-    pub service_provider_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility,
+    pub service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     /// Derived Eligibility for Boosted Hex Rewards
     pub boosted_hex_eligibility: BoostedHexStatus,
     /// Speedtests used in calculcation
@@ -146,7 +146,7 @@ pub struct CoveragePoints {
 impl CoveragePoints {
     pub fn new(
         radio_type: RadioType,
-        service_provider_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility,
+        service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
         speedtests: Vec<Speedtest>,
         location_trust_scores: Vec<LocationTrust>,
         ranked_coverage: Vec<coverage_map::RankedCoverage>,
@@ -240,18 +240,18 @@ impl BoostedHexStatus {
         radio_type: RadioType,
         location_trust_multiplier: Decimal,
         location_trust_scores: &[LocationTrust],
-        service_provider_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility,
+        service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     ) -> Self {
         match service_provider_boosted_reward_eligibility {
             // hip-125: if radio has been banned by service provider, no boosting
-            ServiceProviderBoostedRewardEligibility::ServiceProviderBanned => {
+            SPBoostedRewardEligibility::ServiceProviderBanned => {
                 Self::ServiceProviderBanned
             }
             // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
-            ServiceProviderBoostedRewardEligibility::RadioThresholdNotMet => {
+            SPBoostedRewardEligibility::RadioThresholdNotMet => {
                 Self::RadioThresholdNotMet
             }
-            ServiceProviderBoostedRewardEligibility::Eligible => {
+            SPBoostedRewardEligibility::Eligible => {
                 // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
                 if radio_type.is_wifi() && location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
                     return Self::WifiLocationScoreBelowThreshold(location_trust_multiplier);
@@ -362,7 +362,7 @@ mod tests {
     ) {
         let wifi = CoveragePoints::new(
             RadioType::IndoorWifi,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             vec![RankedCoverage {
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn hip_84_radio_meets_minimum_subscriber_threshold_for_boosted_hexes() {
-        let calculate_wifi = |eligibility: ServiceProviderBoostedRewardEligibility| {
+        let calculate_wifi = |eligibility: SPBoostedRewardEligibility| {
             CoveragePoints::new(
                 RadioType::IndoorWifi,
                 eligibility,
@@ -409,13 +409,13 @@ mod tests {
 
         // Radio meeting the threshold is eligible for boosted hexes.
         // Boosted hex provides radio with more than base_points.
-        let verified_wifi = calculate_wifi(ServiceProviderBoostedRewardEligibility::Eligible);
+        let verified_wifi = calculate_wifi(SPBoostedRewardEligibility::Eligible);
         assert_eq!(base_points * dec!(5), verified_wifi.coverage_points_v1());
 
         // Radio not meeting the threshold is not eligible for boosted hexes.
         // Boost from hex is not applied, radio receives base points.
         let unverified_wifi =
-            calculate_wifi(ServiceProviderBoostedRewardEligibility::RadioThresholdNotMet);
+            calculate_wifi(SPBoostedRewardEligibility::RadioThresholdNotMet);
         assert_eq!(base_points, unverified_wifi.coverage_points_v1());
     }
 
@@ -424,7 +424,7 @@ mod tests {
         let calculate_wifi = |location_trust_scores: Vec<LocationTrust>| {
             CoveragePoints::new(
                 RadioType::IndoorWifi,
-                ServiceProviderBoostedRewardEligibility::Eligible,
+                SPBoostedRewardEligibility::Eligible,
                 speedtest_maximum(),
                 location_trust_scores,
                 vec![RankedCoverage {
@@ -462,7 +462,7 @@ mod tests {
         let calculate_wifi = |location_trust_scores: Vec<LocationTrust>| {
             CoveragePoints::new(
                 RadioType::IndoorWifi,
-                ServiceProviderBoostedRewardEligibility::Eligible,
+                SPBoostedRewardEligibility::Eligible,
                 speedtest_maximum(),
                 location_trust_scores,
                 vec![RankedCoverage {
@@ -498,7 +498,7 @@ mod tests {
         let calculate_indoor_cbrs = |speedtests: Vec<Speedtest>| {
             CoveragePoints::new(
                 RadioType::IndoorCbrs,
-                ServiceProviderBoostedRewardEligibility::Eligible,
+                SPBoostedRewardEligibility::Eligible,
                 speedtests,
                 location_trust_maximum(),
                 vec![RankedCoverage {
@@ -586,7 +586,7 @@ mod tests {
         use Assignment::*;
         let indoor_cbrs = CoveragePoints::new(
             RadioType::IndoorCbrs,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             vec![
@@ -643,7 +643,7 @@ mod tests {
     ) {
         let outdoor_wifi = CoveragePoints::new(
             radio_type,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             vec![RankedCoverage {
@@ -672,7 +672,7 @@ mod tests {
     ) {
         let indoor_wifi = CoveragePoints::new(
             radio_type,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             vec![
@@ -715,7 +715,7 @@ mod tests {
         // Location scores are averaged together
         let indoor_wifi = CoveragePoints::new(
             RadioType::IndoorWifi,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_with_scores(&[dec!(0.1), dec!(0.2), dec!(0.3), dec!(0.4)]),
             vec![RankedCoverage {
@@ -759,7 +759,7 @@ mod tests {
         ];
         let indoor_wifi = CoveragePoints::new(
             RadioType::IndoorWifi,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             covered_hexes.clone(),
@@ -782,7 +782,7 @@ mod tests {
     ) {
         let outdoor_cbrs = CoveragePoints::new(
             RadioType::OutdoorCbrs,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             vec![RankedCoverage {
@@ -809,7 +809,7 @@ mod tests {
     ) {
         let indoor_cbrs = CoveragePoints::new(
             RadioType::IndoorCbrs,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             vec![RankedCoverage {
@@ -838,7 +838,7 @@ mod tests {
     ) {
         let outdoor_wifi = CoveragePoints::new(
             RadioType::OutdoorWifi,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             vec![RankedCoverage {
@@ -865,7 +865,7 @@ mod tests {
     ) {
         let indoor_wifi = CoveragePoints::new(
             RadioType::IndoorWifi,
-            ServiceProviderBoostedRewardEligibility::Eligible,
+            SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             vec![RankedCoverage {
@@ -890,7 +890,7 @@ mod tests {
             trust_score: dec!(0.0),
         }];
 
-        let wifi_bad_trust_score = |sp_status: ServiceProviderBoostedRewardEligibility| {
+        let wifi_bad_trust_score = |sp_status: SPBoostedRewardEligibility| {
             BoostedHexStatus::new(
                 RadioType::IndoorWifi,
                 location::multiplier(RadioType::IndoorWifi, &bad_location),
@@ -900,15 +900,15 @@ mod tests {
         };
 
         assert_eq!(
-            wifi_bad_trust_score(ServiceProviderBoostedRewardEligibility::Eligible),
+            wifi_bad_trust_score(SPBoostedRewardEligibility::Eligible),
             BoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(0)),
         );
         assert_eq!(
-            wifi_bad_trust_score(ServiceProviderBoostedRewardEligibility::ServiceProviderBanned),
+            wifi_bad_trust_score(SPBoostedRewardEligibility::ServiceProviderBanned),
             BoostedHexStatus::ServiceProviderBanned
         );
         assert_eq!(
-            wifi_bad_trust_score(ServiceProviderBoostedRewardEligibility::RadioThresholdNotMet),
+            wifi_bad_trust_score(SPBoostedRewardEligibility::RadioThresholdNotMet),
             BoostedHexStatus::RadioThresholdNotMet
         );
     }

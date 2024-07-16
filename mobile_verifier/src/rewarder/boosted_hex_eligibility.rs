@@ -1,4 +1,4 @@
-use coverage_point_calculator::ServiceProviderBoostedRewardEligibility;
+use coverage_point_calculator::SPBoostedRewardEligibility;
 use helium_crypto::PublicKeyBinary;
 
 use crate::{radio_threshold::VerifiedRadioThresholds, sp_boosted_rewards_bans::BannedRadios};
@@ -21,13 +21,13 @@ impl BoostedHexEligibility {
         &self,
         key: PublicKeyBinary,
         cbsd_id_opt: Option<String>,
-    ) -> ServiceProviderBoostedRewardEligibility {
+    ) -> SPBoostedRewardEligibility {
         if self.banned_radios.contains(&key, cbsd_id_opt.as_deref()) {
-            ServiceProviderBoostedRewardEligibility::ServiceProviderBanned
+            SPBoostedRewardEligibility::ServiceProviderBanned
         } else if self.radio_thresholds.is_verified(key, cbsd_id_opt) {
-            ServiceProviderBoostedRewardEligibility::Eligible
+            SPBoostedRewardEligibility::Eligible
         } else {
-            ServiceProviderBoostedRewardEligibility::RadioThresholdNotMet
+            SPBoostedRewardEligibility::RadioThresholdNotMet
         }
     }
 }
@@ -56,14 +56,14 @@ mod tests {
         let eligibility = boosted_hex_eligibility.eligibility(pub_key.clone(), None);
 
         assert_eq!(
-            ServiceProviderBoostedRewardEligibility::ServiceProviderBanned,
+            SPBoostedRewardEligibility::ServiceProviderBanned,
             eligibility
         );
 
         let eligibility = boosted_hex_eligibility.eligibility(pub_key, Some(cbsd_id));
 
         assert_eq!(
-            ServiceProviderBoostedRewardEligibility::ServiceProviderBanned,
+            SPBoostedRewardEligibility::ServiceProviderBanned,
             eligibility
         );
     }
@@ -81,14 +81,14 @@ mod tests {
         let eligibility = boosted_hex_eligibility.eligibility(pub_key.clone(), None);
 
         assert_eq!(
-            ServiceProviderBoostedRewardEligibility::RadioThresholdNotMet,
+            SPBoostedRewardEligibility::RadioThresholdNotMet,
             eligibility
         );
 
         let eligibility = boosted_hex_eligibility.eligibility(pub_key, Some(cbsd_id));
 
         assert_eq!(
-            ServiceProviderBoostedRewardEligibility::RadioThresholdNotMet,
+            SPBoostedRewardEligibility::RadioThresholdNotMet,
             eligibility
         );
     }
@@ -109,17 +109,11 @@ mod tests {
 
         let eligibility = boosted_hex_eligibility.eligibility(pub_key.clone(), None);
 
-        assert_eq!(
-            ServiceProviderBoostedRewardEligibility::Eligible,
-            eligibility
-        );
+        assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
 
         let eligibility = boosted_hex_eligibility.eligibility(pub_key, Some(cbsd_id));
 
-        assert_eq!(
-            ServiceProviderBoostedRewardEligibility::Eligible,
-            eligibility
-        );
+        assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
     }
 
     fn generate_keypair() -> Keypair {

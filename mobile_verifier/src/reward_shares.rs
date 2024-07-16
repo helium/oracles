@@ -8,7 +8,7 @@ use crate::{
     subscriber_location::SubscriberValidatedLocations,
 };
 use chrono::{DateTime, Duration, Utc};
-use coverage_point_calculator::ServiceProviderBoostedRewardEligibility;
+use coverage_point_calculator::SPBoostedRewardEligibility;
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -427,7 +427,7 @@ struct RadioInfo {
     coverage_obj_uuid: Uuid,
     seniority: Seniority,
     trust_scores: Vec<coverage_point_calculator::LocationTrust>,
-    sp_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility,
+    sp_boosted_reward_eligibility: SPBoostedRewardEligibility,
     speedtests: Vec<coverage_point_calculator::Speedtest>,
 }
 
@@ -2035,7 +2035,7 @@ mod test {
                     inserted_at: now,
                     update_reason: 0,
                 },
-                sp_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility::Eligible,
+                sp_boosted_reward_eligibility: SPBoostedRewardEligibility::Eligible,
                 speedtests: vec![
                     coverage_point_calculator::Speedtest {
                         upload_speed: coverage_point_calculator::BytesPs::new(100_000_000),
@@ -2068,7 +2068,7 @@ mod test {
                     inserted_at: now,
                     update_reason: 0,
                 },
-                sp_boosted_reward_eligibility: ServiceProviderBoostedRewardEligibility::Eligible,
+                sp_boosted_reward_eligibility: SPBoostedRewardEligibility::Eligible,
                 speedtests: vec![],
             },
         );
