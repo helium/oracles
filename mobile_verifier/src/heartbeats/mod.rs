@@ -542,14 +542,8 @@ impl ValidatedHeartbeat {
                 let max_distance = coverage_object.max_distance_m(hb_latlng).round() as u32;
 
                 let location_trust_score_multiplier = if !is_valid {
-                    // QUESTION: Invalid heartbeats dropped the location trust multiplier to 0.25x.
-                    // Should invalid heartbeats still use the lowest possible multiplier?
                     dec!(0)
                 } else if max_distance >= max_distance_to_coverage {
-                    // QUESTION: Heartbeats with hexes further than the allowed
-                    // limit dropped the location trust multiplier to 0.25x.
-                    // Should covered hexes exceeding the limit fully negate coverage?
-
                     // Furthest hex in Heartbeat exceeds allowed coverage distance
                     dec!(0)
                 } else {
