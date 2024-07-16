@@ -58,6 +58,9 @@ impl RadioRewardV2Ext for coverage_point_calculator::CoveragePoints {
             coverage_point_calculator::BoostedHexStatus::ServiceProviderBanned => {
                 BoostedHexStatus::ServiceProviderBan
             }
+            coverage_point_calculator::BoostedHexStatus::AverageAssertedDistanceOverLimit(_) => {
+                BoostedHexStatus::AverageAssertedDistanceOverLimit
+            }
         }
     }
 

@@ -244,13 +244,9 @@ impl BoostedHexStatus {
     ) -> Self {
         match service_provider_boosted_reward_eligibility {
             // hip-125: if radio has been banned by service provider, no boosting
-            SPBoostedRewardEligibility::ServiceProviderBanned => {
-                Self::ServiceProviderBanned
-            }
+            SPBoostedRewardEligibility::ServiceProviderBanned => Self::ServiceProviderBanned,
             // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
-            SPBoostedRewardEligibility::RadioThresholdNotMet => {
-                Self::RadioThresholdNotMet
-            }
+            SPBoostedRewardEligibility::RadioThresholdNotMet => Self::RadioThresholdNotMet,
             SPBoostedRewardEligibility::Eligible => {
                 // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
                 if radio_type.is_wifi() && location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
@@ -414,8 +410,7 @@ mod tests {
 
         // Radio not meeting the threshold is not eligible for boosted hexes.
         // Boost from hex is not applied, radio receives base points.
-        let unverified_wifi =
-            calculate_wifi(SPBoostedRewardEligibility::RadioThresholdNotMet);
+        let unverified_wifi = calculate_wifi(SPBoostedRewardEligibility::RadioThresholdNotMet);
         assert_eq!(base_points, unverified_wifi.coverage_points_v1());
     }
 

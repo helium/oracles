@@ -1617,7 +1617,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=bbalser/radio-reward-v2#6f67db8dbea9613dc9819ffc50387390d82195ba"
+source = "git+https://github.com/helium/proto?branch=bbalser/radio-reward-v2#728635eb6826f7947449007603b882aa0b64f372"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -1627,7 +1627,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -3801,7 +3801,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=bbalser/radio-reward-v2#6f67db8dbea9613dc9819ffc50387390d82195ba"
+source = "git+https://github.com/helium/proto?branch=bbalser/radio-reward-v2#728635eb6826f7947449007603b882aa0b64f372"
 dependencies = [
  "bytes",
  "prost",
