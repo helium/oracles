@@ -877,6 +877,7 @@ mod test {
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
         subscriber_location::SubscriberValidatedLocations,
+        subscriber_mapping_event::VerifiedMappingEventShare,
     };
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
@@ -929,17 +930,24 @@ mod test {
             location_shares.push(n.encode_to_vec());
         }
 
+        // simulate 10k vme shares
+        let mut vme_shares = VerifiedMappingEventShares::new();
+        for n in 0..NUM_SUBSCRIBERS {
+            vme_shares.push(VerifiedMappingEventShare {
+                subscriber_id: n.encode_to_vec(),
+                total_reward_points: 30,
+            });
+        }
+
         // calculate discovery mapping rewards for a 24hr period
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
 
-        // translate location shares into discovery mapping shares
-        let mapping_shares = MapperShares::new(location_shares);
+        // translate location shares into shares
+        let shares = MapperShares::new(location_shares, vme_shares);
         let total_mappers_pool =
             reward_shares::get_scheduled_tokens_for_mappers(epoch.end - epoch.start);
-        let rewards_per_share = mapping_shares
-            .rewards_per_share(total_mappers_pool)
-            .unwrap();
+        let rewards_per_share = shares.rewards_per_share(total_mappers_pool).unwrap();
 
         // verify total rewards for the epoch
         let total_epoch_rewards = get_total_scheduled_tokens(epoch.end - epoch.start)
@@ -955,12 +963,13 @@ mod test {
             .unwrap_or(0);
         assert_eq!(16_438_356_164_383, total_mapper_rewards);
 
-        let expected_reward_per_subscriber = total_mapper_rewards / NUM_SUBSCRIBERS;
+        // We have 2x more subscriber rewarded (for same amount as mappers 30)
+        let expected_reward_per_subscriber = total_mapper_rewards / NUM_SUBSCRIBERS / 2;
 
         // get the summed rewards allocated to subscribers for discovery location
         let mut allocated_mapper_rewards = 0_u64;
         for (reward_amount, subscriber_share) in
-            mapping_shares.into_subscriber_rewards(&epoch, rewards_per_share)
+            shares.into_subscriber_rewards(&epoch, rewards_per_share)
         {
             if let Some(MobileReward::SubscriberReward(r)) = subscriber_share.reward {
                 assert_eq!(expected_reward_per_subscriber, r.discovery_location_amount);
