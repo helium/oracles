@@ -373,7 +373,6 @@ impl ValidatedHeartbeat {
         gateway_info_resolver: &impl GatewayResolver,
         coverage_object_cache: &CoverageObjectCache,
         last_location_cache: &LocationCache,
-        max_distance_to_asserted: u32,
         max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
         geofence: &impl GeofenceValidator,
@@ -538,17 +537,29 @@ impl ValidatedHeartbeat {
                         true
                     }
                 };
+
                 let distance_to_asserted = asserted_latlng.distance_m(hb_latlng).round() as i64;
-                let location_trust_score_multiplier = if is_valid
-		// The heartbeat location to asserted location must be less than the max_distance_to_asserted value:
-                    && distance_to_asserted <= max_distance_to_asserted as i64
-		// The heartbeat location to every associated coverage hex must be less than max_distance_to_coverage:
-		    && coverage_object.max_distance_m(hb_latlng).round() as u32 <= max_distance_to_coverage
-                {
-                    dec!(1.0)
+                let max_distance = coverage_object.max_distance_m(hb_latlng).round() as u32;
+
+                let location_trust_score_multiplier = if !is_valid {
+                    dec!(0)
+                } else if max_distance >= max_distance_to_coverage {
+                    // Furthest hex in Heartbeat exceeds allowed coverage distance
+                    dec!(0)
                 } else {
-                    dec!(0.25)
+                    // HIP-119 maximum asserted distance check
+                    use coverage_point_calculator::{
+                        asserted_distance_to_trust_multiplier, RadioType,
+                    };
+                    let radio_type = match (heartbeat.hb_type, coverage_object.meta.indoor) {
+                        (HbType::Cbrs, true) => RadioType::IndoorCbrs,
+                        (HbType::Cbrs, false) => RadioType::OutdoorCbrs,
+                        (HbType::Wifi, true) => RadioType::IndoorWifi,
+                        (HbType::Wifi, false) => RadioType::OutdoorWifi,
+                    };
+                    asserted_distance_to_trust_multiplier(radio_type, distance_to_asserted as u32)
                 };
+
                 Ok(Self::new(
                     heartbeat,
                     cell_type,
@@ -575,7 +586,6 @@ impl ValidatedHeartbeat {
         gateway_info_resolver: &'a impl GatewayResolver,
         coverage_object_cache: &'a CoverageObjectCache,
         last_location_cache: &'a LocationCache,
-        max_distance_to_asserted: u32,
         max_distance_to_coverage: u32,
         epoch: &'a Range<DateTime<Utc>>,
         geofence: &'a impl GeofenceValidator,
@@ -586,7 +596,6 @@ impl ValidatedHeartbeat {
                 gateway_info_resolver,
                 coverage_object_cache,
                 last_location_cache,
-                max_distance_to_asserted,
                 max_distance_to_coverage,
                 epoch,
                 geofence,

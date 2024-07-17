@@ -362,7 +362,6 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         &coverage_objects,
         &location_cache,
         2000,
-        2000,
         &epoch,
         &MockGeofence,
     ));
