@@ -54,23 +54,7 @@ impl ManagedTask for GrpcServer {
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let api_token = self.api_token.clone();
-        let address = self.address;
-        Box::pin(async move {
-            transport::Server::builder()
-                .layer(custom_tracing::grpc_layer::new_with_span(make_span))
-                .layer(poc_metrics::request_layer!("ingest_server_grpc_connection"))
-                .add_service(poc_mobile::Server::with_interceptor(
-                    *self,
-                    move |req: Request<()>| match req.metadata().get("authorization") {
-                        Some(t) if api_token == t => Ok(req),
-                        _ => Err(Status::unauthenticated("No valid auth token")),
-                    },
-                ))
-                .serve_with_shutdown(address, shutdown)
-                .map_err(Error::from)
-                .await
-        })
+        Box::pin(self.run(shutdown))
     }
 }
 
@@ -83,6 +67,57 @@ fn make_span(_request: &http::request::Request<helium_proto::services::Body>) ->
 }
 
 impl GrpcServer {
+    pub fn new(
+        heartbeat_report_sink: FileSinkClient,
+        wifi_heartbeat_report_sink: FileSinkClient,
+        speedtest_report_sink: FileSinkClient,
+        data_transfer_session_sink: FileSinkClient,
+        subscriber_location_report_sink: FileSinkClient,
+        radio_threshold_report_sink: FileSinkClient,
+        invalidated_radio_threshold_report_sink: FileSinkClient,
+        coverage_object_report_sink: FileSinkClient,
+        sp_boosted_rewards_ban_sink: FileSinkClient,
+        subscriber_mapping_event_sink: FileSinkClient,
+        required_network: Network,
+        address: SocketAddr,
+        api_token: MetadataValue<Ascii>,
+    ) -> Self {
+        GrpcServer {
+            heartbeat_report_sink,
+            wifi_heartbeat_report_sink,
+            speedtest_report_sink,
+            data_transfer_session_sink,
+            subscriber_location_report_sink,
+            radio_threshold_report_sink,
+            invalidated_radio_threshold_report_sink,
+            coverage_object_report_sink,
+            sp_boosted_rewards_ban_sink,
+            subscriber_mapping_event_sink,
+            required_network,
+            address,
+            api_token,
+        }
+    }
+
+    pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        let api_token = self.api_token.clone();
+        let address = self.address;
+
+        transport::Server::builder()
+            .layer(custom_tracing::grpc_layer::new_with_span(make_span))
+            .layer(poc_metrics::request_layer!("ingest_server_grpc_connection"))
+            .add_service(poc_mobile::Server::with_interceptor(
+                self,
+                move |req: Request<()>| match req.metadata().get("authorization") {
+                    Some(t) if api_token == t => Ok(req),
+                    _ => Err(Status::unauthenticated("No valid auth token")),
+                },
+            ))
+            .serve_with_shutdown(address, shutdown)
+            .map_err(Error::from)
+            .await
+    }
+
     fn verify_network(&self, public_key: PublicKey) -> VerifyResult<PublicKey> {
         if self.required_network == public_key.network {
             Ok(public_key)
@@ -532,7 +567,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         bail!("expected valid api token in settings");
     };
 
-    let grpc_server = GrpcServer {
+    let grpc_server = GrpcServer::new(
         heartbeat_report_sink,
         wifi_heartbeat_report_sink,
         speedtest_report_sink,
@@ -543,10 +578,10 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         coverage_object_report_sink,
         sp_boosted_rewards_ban_sink,
         subscriber_mapping_event_sink,
-        required_network: settings.network,
-        address: settings.listen_addr,
+        settings.network,
+        settings.listen_addr,
         api_token,
-    };
+    );
 
     tracing::info!(
         "grpc listening on {} and server mode {:?}",
