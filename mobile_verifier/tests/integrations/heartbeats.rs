@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use futures_util::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::HeartbeatValidity;
+use helium_proto::services::poc_mobile::{HeartbeatValidity, LocationSource};
 use mobile_verifier::{
     cell_type::CellType,
     heartbeats::{HbType, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
@@ -27,6 +27,7 @@ async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
             coverage_object: Some(coverage_object),
             location_validation_timestamp: None,
             timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+            location_source: LocationSource::Skyhook,
         },
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: Some(1000), // Cannot be null
@@ -64,6 +65,7 @@ async fn test_save_cbrs_heartbeat(pool: PgPool) -> anyhow::Result<()> {
             coverage_object: Some(coverage_object),
             location_validation_timestamp: None,
             timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
+            location_source: LocationSource::Gps,
         },
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: None,
