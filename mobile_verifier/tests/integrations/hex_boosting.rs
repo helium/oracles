@@ -8,7 +8,7 @@ use file_store::{
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, HeartbeatValidity, LocationSource, RadioReward, SeniorityUpdateReason,
-    SignalLevel, UnallocatedReward,
+    SignalLevel, UnallocatedReward, UnallocatedRewardType,
 };
 use hextree::Cell;
 use mobile_config::boosted_hex_info::BoostedHexInfo;
