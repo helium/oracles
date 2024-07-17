@@ -86,12 +86,14 @@ impl Speedtest {
     }
 
     pub fn multiplier(&self) -> Decimal {
+        self.tier().multiplier()
+    }
+
+    pub fn tier(&self) -> SpeedtestTier {
         let upload = SpeedtestTier::from_upload(self.upload_speed);
         let download = SpeedtestTier::from_download(self.download_speed);
         let latency = SpeedtestTier::from_latency(self.latency_millis);
-
-        let tier = upload.min(download).min(latency);
-        tier.multiplier()
+        upload.min(download).min(latency)
     }
 
     pub fn avg(speedtests: &[Self]) -> Self {
