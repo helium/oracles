@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
+use helium_crypto::PublicKeyBinary;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
-const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
+pub const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
 
 type Millis = u32;
 
