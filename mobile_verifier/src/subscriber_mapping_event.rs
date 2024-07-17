@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use crate::Settings;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
@@ -10,6 +8,7 @@ use file_store::{
 };
 use futures::{stream::StreamExt, TryStreamExt};
 use sqlx::{Pool, Postgres, Transaction};
+use std::ops::Range;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
@@ -116,7 +115,7 @@ async fn save_event(
 const SUBSCRIBER_REWARD_PERIOD_IN_DAYS: i64 = 1;
 pub type VerifiedMappingEventShares = Vec<VerifiedMappingEventShare>;
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, PartialEq, Debug)]
 pub struct VerifiedMappingEventShare {
     pub subscriber_id: Vec<u8>,
     pub total_reward_points: i64,
