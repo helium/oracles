@@ -1,4 +1,4 @@
-use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient};
+use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
@@ -6,7 +6,7 @@ use file_store::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    CoverageObjectValidity, GatewayReward, HeartbeatValidity, RadioReward, SeniorityUpdateReason,
+    CoverageObjectValidity, GatewayReward, HeartbeatValidity, RadioRewardV2, SeniorityUpdateReason,
     SignalLevel, UnallocatedReward, UnallocatedRewardType,
 };
 use mobile_verifier::{
@@ -62,17 +62,17 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         let hotspot_1_reward = 9_758_001_263_661;
         let hotspot_2_reward = 39_032_005_054_644;
         let hotspot_3_reward = 390_320_050_546;
-        assert_eq!(hotspot_1_reward, poc_rewards[0].poc_reward);
+        assert_eq!(hotspot_1_reward, poc_rewards[0].total_poc_reward());
         assert_eq!(
             HOTSPOT_1.to_string(),
             PublicKeyBinary::from(poc_rewards[0].hotspot_key.clone()).to_string()
         );
-        assert_eq!(hotspot_2_reward, poc_rewards[1].poc_reward);
+        assert_eq!(hotspot_2_reward, poc_rewards[1].total_poc_reward());
         assert_eq!(
             HOTSPOT_3.to_string(),
             PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
         );
-        assert_eq!(hotspot_3_reward, poc_rewards[2].poc_reward);
+        assert_eq!(hotspot_3_reward, poc_rewards[2].total_poc_reward());
         assert_eq!(
             HOTSPOT_2.to_string(),
             PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
@@ -81,9 +81,9 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         // assert the boosted hexes in the radio rewards
         // boosted hexes will contain the used multiplier for each boosted hex
         // in this test there are no boosted hexes
-        assert_eq!(0, poc_rewards[0].boosted_hexes.len());
-        assert_eq!(0, poc_rewards[1].boosted_hexes.len());
-        assert_eq!(0, poc_rewards[2].boosted_hexes.len());
+        assert_eq!(0, poc_rewards[0].boosted_hexes_len());
+        assert_eq!(0, poc_rewards[1].boosted_hexes_len());
+        assert_eq!(0, poc_rewards[2].boosted_hexes_len());
 
         // assert unallocated amount
         assert_eq!(
@@ -110,7 +110,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         );
 
         // confirm the total rewards allocated matches expectations
-        let poc_sum: u64 = poc_rewards.iter().map(|r| r.poc_reward).sum();
+        let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
         let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
         let unallocated_sum: u64 = unallocated_poc_reward.amount;
         let total = poc_sum + dc_sum + unallocated_sum;
@@ -133,7 +133,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
 async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver,
-) -> anyhow::Result<(Vec<RadioReward>, Vec<GatewayReward>, UnallocatedReward)> {
+) -> anyhow::Result<(Vec<RadioRewardV2>, Vec<GatewayReward>, UnallocatedReward)> {
     // get the filestore outputs from rewards run
 
     // expect 3 gateway rewards for dc transfer

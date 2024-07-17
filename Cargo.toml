@@ -25,7 +25,7 @@ members = [
   "reward_scheduler",
   "solana",
   "task_manager",
-  "hex_assignments"
+  "hex_assignments",
 ]
 resolver = "2"
 
@@ -73,6 +73,7 @@ hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", fe
 helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
   "services",
 ] }
+beacon = { git = "https://github.com/helium/proto", branch = "master" }
 solana-client = "1.18"
 solana-sdk = "1.18"
 solana-program = "1.18"
@@ -82,7 +83,6 @@ reqwest = { version = "0", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-beacon = { git = "https://github.com/helium/proto", branch = "master" }
 humantime = "2"
 humantime-serde = "1"
 metrics = ">=0.22"
@@ -123,3 +123,13 @@ derive_builder = "0"
 
 [patch.crates-io]
 sqlx = { git = "https://github.com/helium/sqlx.git", rev = "92a2268f02e0cac6fccb34d3e926347071dbb88d" }
+
+# When attempting to test proto changes without needing to push a branch you can
+# patch the github url to point to your local proto repo.
+# 
+# Patching for beacon must point directly to the crate, it will not look in the
+# repo for sibling crates.
+# 
+# [patch.'https://github.com/helium/proto']
+# helium-proto = { path = "../proto" }
+# beacon = { path = "../proto/beacon" }

@@ -18,6 +18,7 @@ impl Cmd {
         let mut file_stream = file_source::source([&self.path]);
 
         let mut radio_reward = vec![];
+        let mut radio_reward_v2 = vec![];
         let mut gateway_reward = vec![];
         let mut subscriber_reward = vec![];
         let mut service_provider_reward = vec![];
@@ -33,6 +34,14 @@ impl Cmd {
                         "cbsd_id": reward.cbsd_id,
                         "poc_reward": reward.poc_reward,
                         "boosted_hexes": reward.boosted_hexes,
+                    })),
+                    RadioRewardV2(reward) => radio_reward_v2.push(json!({
+                        "hotspot_key": PublicKey::try_from(reward.hotspot_key)?.to_string(),
+                        "cbsd_id": reward.cbsd_id,
+                        "base_poc_reward": reward.base_poc_reward,
+                        "boosted_poc_reward" : reward.boosted_poc_reward,
+                        "total_poc_reward": reward.base_poc_reward + reward.boosted_poc_reward,
+                        "covered_hexes": reward.covered_hexes
                     })),
                     GatewayReward(reward) => gateway_reward.push(json!({
                         "hotspot_key": PublicKey::try_from(reward.hotspot_key)?.to_string(),
@@ -57,6 +66,7 @@ impl Cmd {
 
         print_json(&json!({
             "radio_reward": radio_reward,
+            "radio_reward": radio_reward_v2,
             "gateway_reward": gateway_reward,
             "subscriber_reward": subscriber_reward,
             "service_provider_reward": service_provider_reward,

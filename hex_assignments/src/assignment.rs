@@ -1,5 +1,5 @@
 use anyhow::Result;
-use helium_proto::services::poc_mobile::oracle_boosting_hex_assignment::Assignment as ProtoAssignment;
+use helium_proto::services::poc_mobile::OracleBoostingAssignment as ProtoAssignment;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::fmt;
