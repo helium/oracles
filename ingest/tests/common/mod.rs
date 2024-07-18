@@ -3,7 +3,8 @@ use backon::{ExponentialBuilder, Retryable};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::{KeyTag, Keypair, Network, Sign};
 use helium_proto::services::poc_mobile::{
-    Client as PocMobileClient, SubscriberMappingEventReqV1, SubscriberMappingEventResV1,
+    Client as PocMobileClient, VerifiedSubscriberMappingEventReqV1,
+    VerifiedSubscriberMappingEventResV1,
 };
 use ingest::server_mobile::GrpcServer;
 use prost::Message;
@@ -85,16 +86,16 @@ impl TestClient {
         }
     }
 
-    pub async fn submit_subscriber_mapping_event(
+    pub async fn submit_verified_subscriber_mapping_event(
         &mut self,
         subscriber_id: Vec<u8>,
         total_reward_points: u64,
-    ) -> anyhow::Result<SubscriberMappingEventResV1> {
-        let mut req = SubscriberMappingEventReqV1 {
+    ) -> anyhow::Result<VerifiedSubscriberMappingEventResV1> {
+        let mut req = VerifiedSubscriberMappingEventReqV1 {
             subscriber_id,
             total_reward_points,
             timestamp: 0,
-            pub_key: self.key_pair.public_key().to_vec(),
+            verification_mapping_pubkey: self.key_pair.public_key().to_vec(),
             signature: vec![],
         };
 
@@ -105,7 +106,10 @@ impl TestClient {
 
         metadata.insert("authorization", self.authorization.clone());
 
-        let res = self.client.submit_subscriber_mapping_event(request).await?;
+        let res = self
+            .client
+            .submit_verified_subscriber_mapping_event(request)
+            .await?;
 
         Ok(res.into_inner())
     }
