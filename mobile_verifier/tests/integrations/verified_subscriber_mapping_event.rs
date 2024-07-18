@@ -5,10 +5,12 @@ use file_store::{
     verified_subscriber_mapping_event_ingest_report::VerifiedSubscriberMappingEventIngestReport,
     FileInfo,
 };
+use helium_crypto::{KeyTag, Keypair, PublicKeyBinary};
 use mobile_verifier::verified_subscriber_mapping_event::{
     aggregate_verified_mapping_events, VerifiedMappingEventShare, VerifiedMappingEventShares,
     VerifiedSubscriberMappingEventDeamon,
 };
+use rand::rngs::OsRng;
 use sqlx::{PgPool, Pool, Postgres};
 use std::{collections::HashMap, ops::Range};
 
@@ -23,7 +25,7 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
         deamon.run(listener).await.expect("failed to complete task");
     });
 
-    let (fis, reports) = file_info_stream();
+    let (fis, mut reports) = file_info_stream();
     tx.send(fis).await?;
 
     let mut retry = 0;
@@ -32,11 +34,10 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
     while retry <= MAX_RETRIES {
         let saved_vmes = select_events(&pool).await?;
         if reports.len() == saved_vmes.len() {
-            assert!(reports.iter().all(|r| {
-                match r.report.clone() {
-                    None => false,
-                    Some(event) => saved_vmes.contains(&event),
-                }
+            assert!(reports.iter_mut().all(|r| {
+                // We ahve to do this because we do not store verification_mapping_pubkey in DB
+                r.report.verification_mapping_pubkey = vec![].into();
+                saved_vmes.contains(&r.report)
             }));
             break;
         } else {
@@ -81,30 +82,36 @@ fn file_info_stream() -> (
         size: 0,
     };
 
+    let key_pair = generate_keypair();
+    let public_key_binary: PublicKeyBinary = key_pair.public_key().to_owned().into();
+
     let reports = vec![
         VerifiedSubscriberMappingEventIngestReport {
             received_timestamp: Utc::now(),
-            report: Some(VerifiedSubscriberMappingEvent {
+            report: VerifiedSubscriberMappingEvent {
                 subscriber_id: vec![0],
                 total_reward_points: 100,
                 timestamp: Utc::now(),
-            }),
+                verification_mapping_pubkey: public_key_binary.clone(),
+            },
         },
         VerifiedSubscriberMappingEventIngestReport {
             received_timestamp: Utc::now() - Duration::seconds(10),
-            report: Some(VerifiedSubscriberMappingEvent {
+            report: VerifiedSubscriberMappingEvent {
                 subscriber_id: vec![1],
                 total_reward_points: 101,
                 timestamp: Utc::now() - Duration::seconds(10),
-            }),
+                verification_mapping_pubkey: public_key_binary.clone(),
+            },
         },
         VerifiedSubscriberMappingEventIngestReport {
             received_timestamp: Utc::now(),
-            report: Some(VerifiedSubscriberMappingEvent {
+            report: VerifiedSubscriberMappingEvent {
                 subscriber_id: vec![1],
                 total_reward_points: 99,
                 timestamp: Utc::now(),
-            }),
+                verification_mapping_pubkey: public_key_binary.clone(),
+            },
         },
     ];
     (
@@ -119,13 +126,9 @@ fn reports_to_shares(
     let mut reward_map: HashMap<Vec<u8>, i64> = HashMap::new();
 
     for report in reports {
-        match report.report {
-            None => (),
-            Some(event) => {
-                let entry = reward_map.entry(event.subscriber_id).or_insert(0);
-                *entry += event.total_reward_points as i64;
-            }
-        }
+        let event = report.report;
+        let entry = reward_map.entry(event.subscriber_id).or_insert(0);
+        *entry += event.total_reward_points as i64;
     }
 
     reward_map
@@ -155,4 +158,8 @@ async fn select_events(
     .await?
     .into_iter()
     .collect::<Vec<VerifiedSubscriberMappingEvent>>())
+}
+
+fn generate_keypair() -> Keypair {
+    Keypair::generate(KeyTag::default(), &mut OsRng)
 }
