@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct VerifiedSubscriberMappingEventIngestReport {
     pub received_timestamp: DateTime<Utc>,
-    pub report: Option<VerifiedSubscriberMappingEvent>,
+    pub report: VerifiedSubscriberMappingEvent,
 }
 
 impl MsgDecode for VerifiedSubscriberMappingEventIngestReport {
@@ -34,13 +34,12 @@ impl TryFrom<VerifiedSubscriberMappingEventIngestReportV1>
 {
     type Error = Error;
     fn try_from(v: VerifiedSubscriberMappingEventIngestReportV1) -> Result<Self> {
-        let received_timestamp = v.timestamp()?;
         Ok(Self {
-            received_timestamp,
-            report: match v.report {
-                None => None,
-                Some(event) => Some(event.try_into()?),
-            },
+            received_timestamp: v.timestamp()?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("ingest VerifiedSubscriberMappingEvent report"))?
+                .try_into()?,
         })
     }
 }

@@ -77,10 +77,7 @@ impl VerifiedSubscriberMappingEventDeamon {
         let mut reports = file.into_stream(&mut transaction).await?;
 
         while let Some(report) = reports.next().await {
-            match report.report {
-                Some(event) => save_event(&event, &mut transaction).await?,
-                None => tracing::debug!("no report"),
-            }
+            save_event(&report.report, &mut transaction).await?;
         }
 
         transaction.commit().await?;
