@@ -24,7 +24,8 @@ pub mod reward_manifest;
 mod settings;
 pub mod speedtest;
 pub mod traits;
-pub mod verified_mapping_event;
+pub mod verified_subscriber_mapping_event;
+pub mod verified_subscriber_mapping_event_ingest_report;
 pub mod wifi_heartbeat;
 
 pub use crate::file_store::FileStore;

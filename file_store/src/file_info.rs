@@ -160,7 +160,8 @@ pub const LANDTYPE_DATA_SET: &str = "landtype";
 pub const SP_BOOSTED_REWARDS_BANNED_RADIO: &str = "service_provider_boosted_rewards_banned_radio";
 pub const VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO: &str =
     "verified_service_provider_boosted_rewards_banned_radio";
-pub const VERIFIED_SUBSCRIBER_MAPPING_EVENT: &str = "verified_subscriber_mapping_event";
+pub const VERIFIED_SUBSCRIBER_MAPPING_EVENT_REPORT: &str =
+    "verified_subscriber_mapping_event_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -215,7 +216,7 @@ pub enum FileType {
     VerifiedInvalidatedRadioThresholdIngestReport,
     SPBoostedRewardsBannedRadioIngestReport,
     VerifiedSPBoostedRewardsBannedRadioIngestReport,
-    VerifiedSubscriberMappingEvent,
+    VerifiedSubscriberMappingEventIngestReportV1,
 }
 
 impl fmt::Display for FileType {
@@ -281,7 +282,9 @@ impl fmt::Display for FileType {
             Self::VerifiedSPBoostedRewardsBannedRadioIngestReport => {
                 VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO
             }
-            Self::VerifiedSubscriberMappingEvent => VERIFIED_SUBSCRIBER_MAPPING_EVENT,
+            Self::VerifiedSubscriberMappingEventIngestReportV1 => {
+                VERIFIED_SUBSCRIBER_MAPPING_EVENT_REPORT
+            }
         };
         f.write_str(s)
     }
@@ -350,7 +353,9 @@ impl FileType {
             Self::VerifiedSPBoostedRewardsBannedRadioIngestReport => {
                 VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO
             }
-            Self::VerifiedSubscriberMappingEvent => VERIFIED_SUBSCRIBER_MAPPING_EVENT,
+            Self::VerifiedSubscriberMappingEventIngestReportV1 => {
+                VERIFIED_SUBSCRIBER_MAPPING_EVENT_REPORT
+            }
         }
     }
 }
@@ -419,7 +424,9 @@ impl FromStr for FileType {
             VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO => {
                 Self::VerifiedSPBoostedRewardsBannedRadioIngestReport
             }
-            VERIFIED_SUBSCRIBER_MAPPING_EVENT => Self::VerifiedSubscriberMappingEvent,
+            VERIFIED_SUBSCRIBER_MAPPING_EVENT_REPORT => {
+                Self::VerifiedSubscriberMappingEventIngestReportV1
+            }
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

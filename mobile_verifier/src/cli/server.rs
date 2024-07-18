@@ -11,8 +11,9 @@ use crate::{
     sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
     speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor,
-    subscriber_mapping_event::SubscriberMappingEventDeamon,
-    telemetry, Settings,
+    telemetry,
+    verified_subscriber_mapping_event::VerifiedSubscriberMappingEventDeamon,
+    Settings,
 };
 use anyhow::Result;
 use file_store::{file_sink, file_upload, FileStore, FileType};
@@ -143,7 +144,7 @@ impl Cmd {
                 .await?,
             )
             .add_task(
-                SubscriberMappingEventDeamon::create_managed_task(
+                VerifiedSubscriberMappingEventDeamon::create_managed_task(
                     pool.clone(),
                     settings,
                     report_ingest.clone(),
