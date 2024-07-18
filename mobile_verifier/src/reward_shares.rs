@@ -6,7 +6,7 @@ use crate::{
     seniority::Seniority,
     speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
-    subscriber_mapping_event::VerifiedMappingEventShares,
+    verified_subscriber_mapping_event::VerifiedMappingEventShares,
 };
 use chrono::{DateTime, Duration, Utc};
 use coverage_point_calculator::SPBoostedRewardEligibility;
@@ -877,7 +877,7 @@ mod test {
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
         subscriber_location::SubscriberValidatedLocations,
-        subscriber_mapping_event::VerifiedMappingEventShare,
+        verified_subscriber_mapping_event::VerifiedMappingEventShare,
     };
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;

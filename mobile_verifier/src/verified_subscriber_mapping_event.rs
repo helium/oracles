@@ -3,7 +3,8 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_source,
-    verified_mapping_event::VerifiedSubscriberMappingEvent,
+    verified_subscriber_mapping_event::VerifiedSubscriberMappingEvent,
+    verified_subscriber_mapping_event_ingest_report::VerifiedSubscriberMappingEventIngestReport,
     FileStore, FileType,
 };
 use futures::{stream::StreamExt, TryStreamExt};
@@ -12,15 +13,15 @@ use std::ops::Range;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-pub struct SubscriberMappingEventDeamon {
+pub struct VerifiedSubscriberMappingEventDeamon {
     pool: Pool<Postgres>,
-    events: Receiver<FileInfoStream<VerifiedSubscriberMappingEvent>>,
+    events: Receiver<FileInfoStream<VerifiedSubscriberMappingEventIngestReport>>,
 }
 
-impl SubscriberMappingEventDeamon {
+impl VerifiedSubscriberMappingEventDeamon {
     pub fn new(
         pool: Pool<Postgres>,
-        events: Receiver<FileInfoStream<VerifiedSubscriberMappingEvent>>,
+        events: Receiver<FileInfoStream<VerifiedSubscriberMappingEventIngestReport>>,
     ) -> Self {
         Self { pool, events }
     }
@@ -31,11 +32,11 @@ impl SubscriberMappingEventDeamon {
         file_store: FileStore,
     ) -> anyhow::Result<impl ManagedTask> {
         let (events, event_server) =
-            file_source::continuous_source::<VerifiedSubscriberMappingEvent, _>()
+            file_source::continuous_source::<VerifiedSubscriberMappingEventIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::VerifiedSubscriberMappingEvent.to_string())
+                .prefix(FileType::VerifiedSubscriberMappingEventIngestReportV1.to_string())
                 .create()
                 .await?;
 
@@ -66,17 +67,20 @@ impl SubscriberMappingEventDeamon {
 
     async fn process_file(
         &self,
-        file: FileInfoStream<VerifiedSubscriberMappingEvent>,
+        file: FileInfoStream<VerifiedSubscriberMappingEventIngestReport>,
     ) -> anyhow::Result<()> {
         tracing::info!(
             "Processing Verified Mapping Event file {}",
             file.file_info.key
         );
         let mut transaction = self.pool.begin().await?;
-        let mut events = file.into_stream(&mut transaction).await?;
+        let mut reports = file.into_stream(&mut transaction).await?;
 
-        while let Some(event) = events.next().await {
-            save_event(&event, &mut transaction).await?;
+        while let Some(report) = reports.next().await {
+            match report.report {
+                Some(event) => save_event(&event, &mut transaction).await?,
+                None => tracing::debug!("no report"),
+            }
         }
 
         transaction.commit().await?;
@@ -84,7 +88,7 @@ impl SubscriberMappingEventDeamon {
     }
 }
 
-impl ManagedTask for SubscriberMappingEventDeamon {
+impl ManagedTask for VerifiedSubscriberMappingEventDeamon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -109,6 +113,7 @@ async fn save_event(
     .bind(event.timestamp)
     .execute(exec)
     .await?;
+
     Ok(())
 }
 

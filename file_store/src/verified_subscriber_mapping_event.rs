@@ -3,7 +3,7 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
-use helium_proto::services::poc_mobile::VerifiedSubscriberMappingEventV1;
+use helium_proto::services::poc_mobile::VerifiedSubscriberMappingEventReqV1;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
@@ -15,10 +15,10 @@ pub struct VerifiedSubscriberMappingEvent {
 }
 
 impl MsgDecode for VerifiedSubscriberMappingEvent {
-    type Msg = VerifiedSubscriberMappingEventV1;
+    type Msg = VerifiedSubscriberMappingEventReqV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedSubscriberMappingEventV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedSubscriberMappingEventReqV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.timestamp.to_timestamp()
     }
@@ -30,20 +30,22 @@ impl MsgTimestamp<u64> for VerifiedSubscriberMappingEvent {
     }
 }
 
-impl From<VerifiedSubscriberMappingEvent> for VerifiedSubscriberMappingEventV1 {
+impl From<VerifiedSubscriberMappingEvent> for VerifiedSubscriberMappingEventReqV1 {
     fn from(v: VerifiedSubscriberMappingEvent) -> Self {
         let timestamp = v.timestamp();
-        VerifiedSubscriberMappingEventV1 {
+        VerifiedSubscriberMappingEventReqV1 {
             subscriber_id: v.subscriber_id,
             total_reward_points: v.total_reward_points,
             timestamp,
+            verification_mapping_pubkey: vec![],
+            signature: vec![],
         }
     }
 }
 
-impl TryFrom<VerifiedSubscriberMappingEventV1> for VerifiedSubscriberMappingEvent {
+impl TryFrom<VerifiedSubscriberMappingEventReqV1> for VerifiedSubscriberMappingEvent {
     type Error = Error;
-    fn try_from(v: VerifiedSubscriberMappingEventV1) -> Result<Self> {
+    fn try_from(v: VerifiedSubscriberMappingEventReqV1) -> Result<Self> {
         let timestamp = v.timestamp()?;
         Ok(Self {
             subscriber_id: v.subscriber_id,
@@ -52,6 +54,7 @@ impl TryFrom<VerifiedSubscriberMappingEventV1> for VerifiedSubscriberMappingEven
         })
     }
 }
+
 impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for VerifiedSubscriberMappingEvent {
     fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
         Ok(Self {
