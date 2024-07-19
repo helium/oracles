@@ -15,6 +15,7 @@ use file_store::{
     FileStore, FileType,
 };
 use futures_util::TryFutureExt;
+use helium_proto::services::packet_verifier::{InvalidPacket, ValidPacket};
 use iot_config::client::{org_client::Orgs, OrgClient};
 use solana::burn::SolanaRpc;
 use sqlx::{Pool, Postgres};
@@ -28,8 +29,8 @@ struct Daemon<O> {
     pool: Pool<Postgres>,
     verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, SharedCachedOrgClient<O>>,
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
-    valid_packets: FileSinkClient,
-    invalid_packets: FileSinkClient,
+    valid_packets: FileSinkClient<ValidPacket>,
+    invalid_packets: FileSinkClient<InvalidPacket>,
     minimum_allowed_balance: u64,
 }
 
