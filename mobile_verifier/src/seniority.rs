@@ -134,7 +134,10 @@ impl<'a> SeniorityUpdate<'a> {
 
 impl SeniorityUpdate<'_> {
     #[allow(deprecated)]
-    pub async fn write(&self, seniorities: &FileSinkClient) -> anyhow::Result<()> {
+    pub async fn write(
+        &self,
+        seniorities: &FileSinkClient<proto::SeniorityUpdate>,
+    ) -> anyhow::Result<()> {
         if let SeniorityUpdateAction::Insert {
             new_seniority,
             update_reason,

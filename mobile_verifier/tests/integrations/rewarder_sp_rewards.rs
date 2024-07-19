@@ -4,7 +4,9 @@ use std::string::ToString;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use helium_proto::{
-    services::poc_mobile::{ServiceProviderReward, UnallocatedReward, UnallocatedRewardType},
+    services::poc_mobile::{
+        MobileRewardShare, ServiceProviderReward, UnallocatedReward, UnallocatedRewardType,
+    },
     ServiceProvider,
 };
 use rust_decimal::prelude::*;
@@ -143,7 +145,7 @@ async fn test_service_provider_rewards_invalid_sp(pool: PgPool) -> anyhow::Resul
 }
 
 async fn receive_expected_rewards(
-    mobile_rewards: &mut MockFileSinkReceiver,
+    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
 ) -> anyhow::Result<(ServiceProviderReward, UnallocatedReward)> {
     // get the filestore outputs from rewards run
     // we will have 3 radio rewards, 1 wifi radio and 2 cbrs radios

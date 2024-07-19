@@ -14,6 +14,7 @@ use file_store::{
     FileStore, FileType,
 };
 use futures::{stream::StreamExt, TryFutureExt};
+use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
 use sqlx::{Pool, Postgres};
 use std::{
@@ -28,8 +29,8 @@ pub struct WifiHeartbeatDaemon<GIR, GFV> {
     gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
     max_distance_to_coverage: u32,
-    heartbeat_sink: FileSinkClient,
-    seniority_sink: FileSinkClient,
+    heartbeat_sink: FileSinkClient<proto::Heartbeat>,
+    seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
     geofence: GFV,
 }
 
@@ -44,8 +45,8 @@ where
         settings: &Settings,
         file_store: FileStore,
         gateway_resolver: GIR,
-        valid_heartbeats: FileSinkClient,
-        seniority_updates: FileSinkClient,
+        valid_heartbeats: FileSinkClient<proto::Heartbeat>,
+        seniority_updates: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
     ) -> anyhow::Result<impl ManagedTask> {
         // Wifi Heartbeats
@@ -80,8 +81,8 @@ where
         gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
         max_distance_to_coverage: u32,
-        heartbeat_sink: FileSinkClient,
-        seniority_sink: FileSinkClient,
+        heartbeat_sink: FileSinkClient<proto::Heartbeat>,
+        seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
     ) -> Self {
         Self {

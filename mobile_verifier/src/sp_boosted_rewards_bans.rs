@@ -17,7 +17,8 @@ use helium_proto::services::{
         service_provider_boosted_rewards_banned_radio_req_v1::{
             KeyType as ProtoKeyType, SpBoostedRewardsBannedRadioReason,
         },
-        SeniorityUpdateReason, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+        SeniorityUpdate as SeniorityUpdateProto, SeniorityUpdateReason,
+        ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
         ServiceProviderBoostedRewardsBannedRadioVerificationStatus,
         VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     },
@@ -117,8 +118,8 @@ pub struct ServiceProviderBoostedRewardsBanIngestor<AV> {
     pool: PgPool,
     authorization_verifier: AV,
     receiver: Receiver<FileInfoStream<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>>,
-    verified_sink: FileSinkClient,
-    seniority_update_sink: FileSinkClient,
+    verified_sink: FileSinkClient<VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
+    seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
 }
 
 impl<AV> ManagedTask for ServiceProviderBoostedRewardsBanIngestor<AV>
@@ -150,7 +151,7 @@ where
         file_store: FileStore,
         authorization_verifier: AV,
         settings: &Settings,
-        seniority_update_sink: FileSinkClient,
+        seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_sink, verified_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::VerifiedSPBoostedRewardsBannedRadioIngestReport,
@@ -420,7 +421,9 @@ mod tests {
     use chrono::Duration;
     use file_store::file_sink::Message;
     use helium_crypto::{KeyTag, Keypair, PublicKey};
-    use helium_proto::services::poc_mobile::ServiceProviderBoostedRewardsBannedRadioReqV1;
+    use helium_proto::services::poc_mobile::{
+        SeniorityUpdate as SeniorityUpdateProto, ServiceProviderBoostedRewardsBannedRadioReqV1,
+    };
     use rand::rngs::OsRng;
     use tokio::sync::mpsc;
 
@@ -447,8 +450,9 @@ mod tests {
 
     struct TestSetup<AV> {
         ingestor: ServiceProviderBoostedRewardsBanIngestor<AV>,
-        _verified_receiver: Receiver<Message>,
-        _seniority_receiver: Receiver<Message>,
+        _verified_receiver:
+            Receiver<Message<VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1>>,
+        _seniority_receiver: Receiver<Message<SeniorityUpdateProto>>,
     }
 
     impl<AV> TestSetup<AV> {

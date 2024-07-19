@@ -6,8 +6,8 @@ use file_store::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    CoverageObjectValidity, GatewayReward, HeartbeatValidity, RadioRewardV2, SeniorityUpdateReason,
-    SignalLevel,
+    CoverageObjectValidity, GatewayReward, HeartbeatValidity, MobileRewardShare, RadioRewardV2,
+    SeniorityUpdateReason, SignalLevel, UnallocatedReward, UnallocatedRewardType,
 };
 use mobile_verifier::{
     cell_type::CellType,
