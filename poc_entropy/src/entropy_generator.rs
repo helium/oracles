@@ -117,7 +117,7 @@ impl EntropyGenerator {
 
     pub async fn run(
         &mut self,
-        file_sink: file_sink::FileSinkClient,
+        file_sink: file_sink::FileSinkClient<EntropyReportV1>,
         shutdown: &triggered::Listener,
     ) -> anyhow::Result<()> {
         tracing::info!("started entropy generator");
@@ -147,7 +147,7 @@ impl EntropyGenerator {
 
     async fn handle_entropy_tick(
         &mut self,
-        file_sink: &file_sink::FileSinkClient,
+        file_sink: &file_sink::FileSinkClient<EntropyReportV1>,
     ) -> anyhow::Result<()> {
         let source_data = match Self::get_entropy(&self.client).await {
             Ok(data) => data,
