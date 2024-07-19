@@ -210,18 +210,24 @@ impl MapperShares {
         // the number of subscribers eligible for discovery location rewards
         let discovery_mappers_count = Decimal::from(self.discovery_mapping_shares.len());
 
-        let verified_mapping_event_count = Decimal::from(self.verified_mapping_event_shares.len());
-
         // calculate the total eligible mapping shares for the epoch
         // this could be simplified as every subscriber is awarded the same share
         // however the function is setup to allow the verification mapper shares to be easily
         // added without impacting code structure ( the per share value for those will be different )
-        let total_mapper_shares =
-            (discovery_mappers_count + verified_mapping_event_count) * DISCOVERY_MAPPING_SHARES;
+        let total_mapper_shares = discovery_mappers_count * DISCOVERY_MAPPING_SHARES;
+
+        let total_verified_mapping_event_shares: Decimal = self
+            .verified_mapping_event_shares
+            .iter()
+            .map(|share| Decimal::from(share.total_reward_points))
+            .sum();
+
+        let total_shares = total_mapper_shares + total_verified_mapping_event_shares;
 
         let res = total_mappers_pool
-            .checked_div(total_mapper_shares)
+            .checked_div(total_shares)
             .unwrap_or(Decimal::ZERO);
+
         Ok(res)
     }
 
