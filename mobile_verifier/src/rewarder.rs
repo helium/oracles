@@ -524,6 +524,7 @@ pub async fn reward_mappers(
 
     // translate discovery mapping shares into subscriber rewards
     let mut allocated_mapping_rewards = 0_u64;
+
     for (reward_amount, mapping_share) in
         mapping_shares.into_subscriber_rewards(reward_period, rewards_per_share)
     {
