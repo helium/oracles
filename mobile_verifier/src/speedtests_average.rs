@@ -89,7 +89,10 @@ impl From<Vec<Speedtest>> for SpeedtestAverage {
 }
 
 impl SpeedtestAverage {
-    pub async fn write(&self, filesink: &FileSinkClient) -> file_store::Result {
+    pub async fn write(
+        &self,
+        filesink: &FileSinkClient<proto::SpeedtestAvg>,
+    ) -> file_store::Result {
         filesink
             .write(
                 proto::SpeedtestAvg {
@@ -205,7 +208,10 @@ pub struct SpeedtestAverages {
 }
 
 impl SpeedtestAverages {
-    pub async fn write_all(&self, sink: &FileSinkClient) -> anyhow::Result<()> {
+    pub async fn write_all(
+        &self,
+        sink: &FileSinkClient<proto::SpeedtestAvg>,
+    ) -> anyhow::Result<()> {
         for speedtest in self.averages.values() {
             speedtest.write(sink).await?;
         }

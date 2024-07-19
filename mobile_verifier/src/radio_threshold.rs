@@ -35,8 +35,8 @@ pub struct RadioThresholdIngestor<AV> {
     pool: PgPool,
     reports_receiver: Receiver<FileInfoStream<RadioThresholdIngestReport>>,
     invalid_reports_receiver: Receiver<FileInfoStream<InvalidatedRadioThresholdIngestReport>>,
-    verified_report_sink: FileSinkClient,
-    verified_invalid_report_sink: FileSinkClient,
+    verified_report_sink: FileSinkClient<VerifiedRadioThresholdIngestReportV1>,
+    verified_invalid_report_sink: FileSinkClient<VerifiedInvalidatedRadioThresholdIngestReportV1>,
     authorization_verifier: AV,
 }
 
@@ -134,8 +134,10 @@ where
         pool: sqlx::Pool<Postgres>,
         reports_receiver: Receiver<FileInfoStream<RadioThresholdIngestReport>>,
         invalid_reports_receiver: Receiver<FileInfoStream<InvalidatedRadioThresholdIngestReport>>,
-        verified_report_sink: FileSinkClient,
-        verified_invalid_report_sink: FileSinkClient,
+        verified_report_sink: FileSinkClient<VerifiedRadioThresholdIngestReportV1>,
+        verified_invalid_report_sink: FileSinkClient<
+            VerifiedInvalidatedRadioThresholdIngestReportV1,
+        >,
         authorization_verifier: AV,
     ) -> Self {
         Self {

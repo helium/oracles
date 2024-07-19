@@ -73,7 +73,7 @@ pub struct CoverageDaemon {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-    coverage_obj_sink: FileSinkClient,
+    coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
     new_coverage_object_notifier: NewCoverageObjectNotifier,
 }
 
@@ -126,7 +126,7 @@ impl CoverageDaemon {
         pool: PgPool,
         auth_client: AuthorizationClient,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-        coverage_obj_sink: FileSinkClient,
+        coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> Self {
         Self {
@@ -272,7 +272,10 @@ impl CoverageObject {
         }
     }
 
-    pub async fn write(&self, coverage_objects: &FileSinkClient) -> anyhow::Result<()> {
+    pub async fn write(
+        &self,
+        coverage_objects: &FileSinkClient<proto::CoverageObjectV1>,
+    ) -> anyhow::Result<()> {
         coverage_objects
             .write(
                 proto::CoverageObjectV1 {

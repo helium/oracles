@@ -3,7 +3,9 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store::mobile_subscriber::{SubscriberLocationIngestReport, SubscriberLocationReq};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::poc_mobile::{SubscriberReward, UnallocatedReward, UnallocatedRewardType},
+    services::poc_mobile::{
+        MobileRewardShare, SubscriberReward, UnallocatedReward, UnallocatedRewardType,
+    },
     Message,
 };
 use mobile_verifier::{reward_shares, rewarder, subscriber_location};
@@ -95,7 +97,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
 }
 
 async fn receive_expected_rewards(
-    mobile_rewards: &mut MockFileSinkReceiver,
+    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
 ) -> anyhow::Result<(Vec<SubscriberReward>, UnallocatedReward)> {
     // get the filestore outputs from rewards run
     // we will have 3 radio rewards, 1 wifi radio and 2 cbrs radios

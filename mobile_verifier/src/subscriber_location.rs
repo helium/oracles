@@ -36,7 +36,7 @@ pub struct SubscriberLocationIngestor<AV, EV> {
     authorization_verifier: AV,
     entity_verifier: EV,
     reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
-    verified_report_sink: FileSinkClient,
+    verified_report_sink: FileSinkClient<VerifiedSubscriberLocationIngestReportV1>,
 }
 
 impl<AV, EV> SubscriberLocationIngestor<AV, EV>
@@ -92,7 +92,7 @@ where
         authorization_verifier: AV,
         entity_verifier: EV,
         reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
-        verified_report_sink: FileSinkClient,
+        verified_report_sink: FileSinkClient<VerifiedSubscriberLocationIngestReportV1>,
     ) -> Self {
         Self {
             pool,

@@ -1292,7 +1292,7 @@ fn rounded(num: Decimal) -> u64 {
 }
 
 async fn receive_expected_rewards(
-    mobile_rewards: &mut MockFileSinkReceiver,
+    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
 ) -> anyhow::Result<(Vec<RadioRewardV2>, UnallocatedReward)> {
     receive_expected_rewards_maybe_unallocated(mobile_rewards, ExpectUnallocated::Yes).await
 }
@@ -1303,7 +1303,7 @@ enum ExpectUnallocated {
 }
 
 async fn receive_expected_rewards_maybe_unallocated(
-    mobile_rewards: &mut MockFileSinkReceiver,
+    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
     expect_unallocated: ExpectUnallocated,
 ) -> anyhow::Result<(Vec<RadioRewardV2>, UnallocatedReward)> {
     // get the filestore outputs from rewards run

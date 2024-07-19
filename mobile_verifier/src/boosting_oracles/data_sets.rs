@@ -244,7 +244,14 @@ where
     }
 }
 
-impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization, FileSinkClient> {
+impl
+    DataSetDownloaderDaemon<
+        Footfall,
+        Landtype,
+        Urbanization,
+        FileSinkClient<proto::OracleBoostingReportV1>,
+    >
+{
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
@@ -518,7 +525,7 @@ pub trait DataSetProcessor: Send + Sync + 'static {
 }
 
 #[async_trait::async_trait]
-impl DataSetProcessor for FileSinkClient {
+impl DataSetProcessor for FileSinkClient<proto::OracleBoostingReportV1> {
     async fn set_all_oracle_boosting_assignments(
         &self,
         pool: &PgPool,
@@ -725,7 +732,10 @@ impl AssignedCoverageObjects {
         Ok(Self { coverage_objs })
     }
 
-    async fn write(&self, boosting_reports: &FileSinkClient) -> file_store::Result {
+    async fn write(
+        &self,
+        boosting_reports: &FileSinkClient<proto::OracleBoostingReportV1>,
+    ) -> file_store::Result {
         let timestamp = Utc::now().encode_timestamp();
         for (uuid, hexes) in self.coverage_objs.iter() {
             let assignments: Vec<_> = hexes

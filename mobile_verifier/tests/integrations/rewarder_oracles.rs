@@ -1,6 +1,8 @@
 use crate::common::{self, MockFileSinkReceiver};
 use chrono::{Duration as ChronoDuration, Utc};
-use helium_proto::services::poc_mobile::{UnallocatedReward, UnallocatedRewardType};
+use helium_proto::services::poc_mobile::{
+    MobileRewardShare, UnallocatedReward, UnallocatedRewardType,
+};
 use mobile_verifier::{reward_shares, rewarder};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -43,7 +45,7 @@ async fn test_oracle_rewards(_pool: PgPool) -> anyhow::Result<()> {
 }
 
 async fn receive_expected_rewards(
-    mobile_rewards: &mut MockFileSinkReceiver,
+    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
 ) -> anyhow::Result<UnallocatedReward> {
     // expect one unallocated reward
     // as oracle rewards are currently 100% unallocated

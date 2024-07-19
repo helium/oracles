@@ -17,7 +17,7 @@ use futures::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    SpeedtestIngestReportV1, SpeedtestVerificationResult,
+    SpeedtestAvg as SpeedtestAvgProto, SpeedtestIngestReportV1, SpeedtestVerificationResult,
     VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
 use mobile_config::client::gateway_client::GatewayInfoResolver;
@@ -57,8 +57,8 @@ pub struct SpeedtestDaemon<GIR> {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_info_resolver: GIR,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
-    speedtest_avg_file_sink: FileSinkClient,
-    verified_speedtest_file_sink: FileSinkClient,
+    speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
+    verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
 }
 
 impl<GIR> SpeedtestDaemon<GIR>
@@ -70,7 +70,7 @@ where
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
-        speedtests_avg: FileSinkClient,
+        speedtests_avg: FileSinkClient<SpeedtestAvgProto>,
         gateway_resolver: GIR,
     ) -> anyhow::Result<impl ManagedTask> {
         let (speedtests_validity, speedtests_validity_server) = file_sink::FileSinkBuilder::new(
@@ -112,8 +112,8 @@ where
         pool: sqlx::Pool<sqlx::Postgres>,
         gateway_info_resolver: GIR,
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
-        speedtest_avg_file_sink: FileSinkClient,
-        verified_speedtest_file_sink: FileSinkClient,
+        speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
+        verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
     ) -> Self {
         Self {
             pool,
