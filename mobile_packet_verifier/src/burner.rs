@@ -31,12 +31,12 @@ impl PayerTotals {
 }
 
 pub struct Burner<S> {
-    valid_sessions: FileSinkClient,
+    valid_sessions: FileSinkClient<ValidDataTransferSession>,
     solana: S,
 }
 
 impl<S> Burner<S> {
-    pub fn new(valid_sessions: FileSinkClient, solana: S) -> Self {
+    pub fn new(valid_sessions: FileSinkClient<ValidDataTransferSession>, solana: S) -> Self {
         Self {
             valid_sessions,
             solana,
