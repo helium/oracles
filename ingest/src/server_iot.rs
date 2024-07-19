@@ -33,8 +33,8 @@ type Nonce = [u8; 32];
 
 #[derive(Debug)]
 struct StreamState {
-    beacon_report_sink: FileSinkClient,
-    witness_report_sink: FileSinkClient,
+    beacon_report_sink: FileSinkClient<LoraBeaconIngestReportV1>,
+    witness_report_sink: FileSinkClient<LoraWitnessIngestReportV1>,
     required_network: Network,
     pub_key_bytes: Option<Vec<u8>>,
     session_key: Option<PublicKey>,
@@ -170,8 +170,8 @@ impl StreamState {
 
 #[derive(Clone, Debug)]
 pub struct GrpcServer {
-    pub beacon_report_sink: FileSinkClient,
-    pub witness_report_sink: FileSinkClient,
+    pub beacon_report_sink: FileSinkClient<LoraBeaconIngestReportV1>,
+    pub witness_report_sink: FileSinkClient<LoraWitnessIngestReportV1>,
     pub required_network: Network,
     pub address: SocketAddr,
     pub session_key_offer_timeout: std::time::Duration,
@@ -239,7 +239,7 @@ where
 }
 
 async fn handle_beacon_report(
-    file_sink: &FileSinkClient,
+    file_sink: &FileSinkClient<LoraBeaconIngestReportV1>,
     timestamp: u64,
     report: LoraBeaconReportReqV1,
     signing_key: Option<&PublicKey>,
@@ -264,7 +264,7 @@ async fn handle_beacon_report(
 }
 
 async fn handle_witness_report(
-    file_sink: &FileSinkClient,
+    file_sink: &FileSinkClient<LoraWitnessIngestReportV1>,
     timestamp: u64,
     report: LoraWitnessReportReqV1,
     session_key: Option<&PublicKey>,

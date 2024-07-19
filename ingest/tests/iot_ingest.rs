@@ -1,7 +1,7 @@
 use std::net::{SocketAddr, TcpListener};
 
 use backon::{ExponentialBuilder, Retryable};
-use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
+use file_store::file_sink::{FileSinkClient, FileStoreAsBytes, Message as SinkMessage};
 use helium_crypto::{KeyTag, Keypair, Network, PublicKey, Sign};
 use helium_proto::services::poc_lora::{
     lora_stream_request_v1::Request as StreamRequest,
@@ -405,12 +405,12 @@ async fn stream_stops_on_session_timeout() {
         .await;
 }
 
-struct MockFileSinkReceiver {
-    receiver: tokio::sync::mpsc::Receiver<SinkMessage>,
+struct MockFileSinkReceiver<T> {
+    receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>,
 }
 
-impl MockFileSinkReceiver {
-    async fn receive(&mut self) -> SinkMessage {
+impl<T> MockFileSinkReceiver<T> {
+    async fn receive(&mut self) -> SinkMessage<T> {
         match timeout(seconds(2), self.receiver.recv()).await {
             Ok(Some(msg)) => msg,
             Ok(None) => panic!("server closed connection while waiting for message"),
@@ -423,25 +423,27 @@ impl MockFileSinkReceiver {
             panic!("receiver should have been empty")
         };
     }
+}
 
+impl MockFileSinkReceiver<LoraBeaconIngestReportV1> {
     async fn receive_beacon(&mut self) -> LoraBeaconIngestReportV1 {
         match self.receive().await {
-            SinkMessage::Data(_, bytes) => LoraBeaconIngestReportV1::decode(bytes.as_slice())
-                .expect("decode beacon ingest report"),
+            SinkMessage::Data(_, bytes) => bytes,
             _ => panic!("invalid beacon message"),
         }
     }
+}
 
+impl MockFileSinkReceiver<LoraWitnessIngestReportV1> {
     async fn receive_witness(&mut self) -> LoraWitnessIngestReportV1 {
         match self.receive().await {
-            SinkMessage::Data(_, bytes) => LoraWitnessIngestReportV1::decode(bytes.as_slice())
-                .expect("decode witness ingest report"),
+            SinkMessage::Data(_, bytes) => bytes,
             _ => panic!("invalid witness message"),
         }
     }
 }
 
-fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
+fn create_file_sink<T: FileStoreAsBytes>() -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
     let (tx, rx) = tokio::sync::mpsc::channel(5);
     (
         FileSinkClient::new(tx, "metric"),
@@ -573,8 +575,8 @@ impl TestClient {
 
 fn create_test_server(
     socket_addr: SocketAddr,
-    beacon_file_sink: FileSinkClient,
-    witness_file_sink: FileSinkClient,
+    beacon_file_sink: FileSinkClient<LoraBeaconIngestReportV1>,
+    witness_file_sink: FileSinkClient<LoraWitnessIngestReportV1>,
     offer_timeout: Option<u64>,
     timeout: Option<u64>,
 ) -> GrpcServer {
