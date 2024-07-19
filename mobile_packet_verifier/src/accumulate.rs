@@ -21,7 +21,7 @@ pub async fn accumulate_sessions(
     gateway_info_resolver: &impl GatewayInfoResolver,
     authorization_verifier: &impl AuthorizationVerifier,
     conn: &mut Transaction<'_, Postgres>,
-    invalid_data_session_report_sink: &FileSinkClient,
+    invalid_data_session_report_sink: &FileSinkClient<InvalidDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
 ) -> anyhow::Result<()> {
@@ -131,7 +131,7 @@ async fn is_duplicate(
 }
 
 async fn write_invalid_report(
-    invalid_data_session_report_sink: &FileSinkClient,
+    invalid_data_session_report_sink: &FileSinkClient<InvalidDataTransferIngestReportV1>,
     reason: DataTransferIngestReportStatus,
     report: DataTransferSessionIngestReport,
 ) -> Result<(), file_store::Error> {

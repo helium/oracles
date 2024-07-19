@@ -9,6 +9,7 @@ use file_store::{
     FileSinkBuilder, FileStore, FileType,
 };
 
+use helium_proto::services::poc_mobile::InvalidDataTransferIngestReportV1;
 use mobile_config::client::{
     authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
     AuthorizationClient, GatewayClient,
@@ -29,7 +30,7 @@ pub struct Daemon<S, GIR, AV> {
     min_burn_period: Duration,
     gateway_info_resolver: GIR,
     authorization_verifier: AV,
-    invalid_data_session_report_sink: FileSinkClient,
+    invalid_data_session_report_sink: FileSinkClient<InvalidDataTransferIngestReportV1>,
 }
 
 impl<S, GIR, AV> Daemon<S, GIR, AV> {
@@ -40,7 +41,7 @@ impl<S, GIR, AV> Daemon<S, GIR, AV> {
         burner: Burner<S>,
         gateway_info_resolver: GIR,
         authorization_verifier: AV,
-        invalid_data_session_report_sink: FileSinkClient,
+        invalid_data_session_report_sink: FileSinkClient<InvalidDataTransferIngestReportV1>,
     ) -> Self {
         Self {
             pool,
