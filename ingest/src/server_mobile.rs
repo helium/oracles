@@ -35,16 +35,19 @@ pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 pub type VerifyResult<T> = std::result::Result<T, Status>;
 
 pub struct GrpcServer {
-    heartbeat_report_sink: FileSinkClient,
-    wifi_heartbeat_report_sink: FileSinkClient,
-    speedtest_report_sink: FileSinkClient,
-    data_transfer_session_sink: FileSinkClient,
-    subscriber_location_report_sink: FileSinkClient,
-    radio_threshold_report_sink: FileSinkClient,
-    invalidated_radio_threshold_report_sink: FileSinkClient,
-    coverage_object_report_sink: FileSinkClient,
-    sp_boosted_rewards_ban_sink: FileSinkClient,
-    subscriber_mapping_event_sink: FileSinkClient,
+    heartbeat_report_sink: FileSinkClient<CellHeartbeatIngestReportV1>,
+    wifi_heartbeat_report_sink: FileSinkClient<WifiHeartbeatIngestReportV1>,
+    speedtest_report_sink: FileSinkClient<SpeedtestIngestReportV1>,
+    data_transfer_session_sink: FileSinkClient<DataTransferSessionIngestReportV1>,
+    subscriber_location_report_sink: FileSinkClient<SubscriberLocationIngestReportV1>,
+    radio_threshold_report_sink: FileSinkClient<RadioThresholdIngestReportV1>,
+    invalidated_radio_threshold_report_sink:
+        FileSinkClient<InvalidatedRadioThresholdIngestReportV1>,
+    coverage_object_report_sink: FileSinkClient<CoverageObjectIngestReportV1>,
+    sp_boosted_rewards_ban_sink:
+        FileSinkClient<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
+    subscriber_mapping_event_sink:
+        FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -70,16 +73,16 @@ fn make_span(_request: &http::request::Request<helium_proto::services::Body>) ->
 impl GrpcServer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        heartbeat_report_sink: FileSinkClient,
-        wifi_heartbeat_report_sink: FileSinkClient,
-        speedtest_report_sink: FileSinkClient,
-        data_transfer_session_sink: FileSinkClient,
-        subscriber_location_report_sink: FileSinkClient,
-        radio_threshold_report_sink: FileSinkClient,
-        invalidated_radio_threshold_report_sink: FileSinkClient,
-        coverage_object_report_sink: FileSinkClient,
-        sp_boosted_rewards_ban_sink: FileSinkClient,
-        subscriber_mapping_event_sink: FileSinkClient,
+        heartbeat_report_sink: FileSinkClient<CellHeartbeatIngestReportV1>,
+        wifi_heartbeat_report_sink: FileSinkClient<WifiHeartbeatIngestReportV1>,
+        speedtest_report_sink: FileSinkClient<SpeedtestIngestReportV1>,
+        data_transfer_session_sink: FileSinkClient<DataTransferSessionIngestReportV1>,
+        subscriber_location_report_sink: FileSinkClient<SubscriberLocationIngestReportV1>,
+        radio_threshold_report_sink: FileSinkClient<RadioThresholdIngestReportV1>,
+        invalidated_radio_threshold_report_sink: FileSinkClient<InvalidatedRadioThresholdIngestReportV1>,
+        coverage_object_report_sink: FileSinkClient<CoverageObjectIngestReportV1>,
+        sp_boosted_rewards_ban_sink: FileSinkClient<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
+        subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
         required_network: Network,
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
