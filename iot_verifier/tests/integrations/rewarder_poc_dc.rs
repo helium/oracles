@@ -1,7 +1,9 @@
 use crate::common::{self, MockFileSinkReceiver};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_lora::{GatewayReward, UnallocatedReward, UnallocatedRewardType};
+use helium_proto::services::poc_lora::{
+    GatewayReward, IotRewardShare, UnallocatedReward, UnallocatedRewardType,
+};
 use iot_verifier::{
     poc_report::ReportType,
     reward_share::{self, GatewayDCShare, GatewayPocShare},
@@ -113,7 +115,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 }
 
 async fn receive_expected_rewards(
-    iot_rewards: &mut MockFileSinkReceiver,
+    iot_rewards: &mut MockFileSinkReceiver<IotRewardShare>,
 ) -> anyhow::Result<(Vec<GatewayReward>, UnallocatedReward)> {
     // get the filestore outputs from rewards run
     // we will have 3 gateway rewards and one unallocated reward

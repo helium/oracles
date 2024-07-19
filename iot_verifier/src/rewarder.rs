@@ -28,8 +28,8 @@ const REWARDS_NOT_CURRENT_DELAY_PERIOD: Duration = Duration::from_secs(5 * 60);
 
 pub struct Rewarder {
     pub pool: Pool<Postgres>,
-    pub rewards_sink: file_sink::FileSinkClient,
-    pub reward_manifests_sink: file_sink::FileSinkClient,
+    pub rewards_sink: file_sink::FileSinkClient<proto::IotRewardShare>,
+    pub reward_manifests_sink: file_sink::FileSinkClient<RewardManifest>,
     pub reward_period_hours: Duration,
     pub reward_offset: Duration,
     pub price_tracker: PriceTracker,
@@ -53,8 +53,8 @@ impl ManagedTask for Rewarder {
 impl Rewarder {
     pub async fn new(
         pool: PgPool,
-        rewards_sink: file_sink::FileSinkClient,
-        reward_manifests_sink: file_sink::FileSinkClient,
+        rewards_sink: file_sink::FileSinkClient<proto::IotRewardShare>,
+        reward_manifests_sink: file_sink::FileSinkClient<RewardManifest>,
         reward_period_hours: Duration,
         reward_offset: Duration,
         price_tracker: PriceTracker,
@@ -230,7 +230,7 @@ impl Rewarder {
 }
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
-    rewards_sink: &file_sink::FileSinkClient,
+    rewards_sink: &file_sink::FileSinkClient<proto::IotRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
     iot_price: Decimal,
 ) -> anyhow::Result<RewardPocDcDataPoints> {
@@ -284,7 +284,7 @@ pub async fn reward_poc_and_dc(
 }
 
 pub async fn reward_operational(
-    rewards_sink: &file_sink::FileSinkClient,
+    rewards_sink: &file_sink::FileSinkClient<proto::IotRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
     let total_operational_rewards =
@@ -329,7 +329,7 @@ pub async fn reward_operational(
 }
 
 pub async fn reward_oracles(
-    rewards_sink: &file_sink::FileSinkClient,
+    rewards_sink: &file_sink::FileSinkClient<proto::IotRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
     // atm 100% of oracle rewards are assigned to 'unallocated'
@@ -352,7 +352,7 @@ pub async fn reward_oracles(
 }
 
 async fn write_unallocated_reward(
-    rewards_sink: &file_sink::FileSinkClient,
+    rewards_sink: &file_sink::FileSinkClient<proto::IotRewardShare>,
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
     reward_period: &'_ Range<DateTime<Utc>>,

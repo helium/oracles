@@ -16,7 +16,7 @@ pub struct PacketLoader {
     pub cache: String,
     gateway_cache: GatewayCache,
     file_receiver: Receiver<FileInfoStream<IotValidPacket>>,
-    file_sink: file_sink::FileSinkClient,
+    file_sink: file_sink::FileSinkClient<NonRewardablePacket>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -42,7 +42,7 @@ impl PacketLoader {
         pool: PgPool,
         gateway_cache: GatewayCache,
         file_receiver: Receiver<FileInfoStream<IotValidPacket>>,
-        file_sink: file_sink::FileSinkClient,
+        file_sink: file_sink::FileSinkClient<NonRewardablePacket>,
     ) -> Self {
         tracing::info!("from_settings packet loader");
         let cache = settings.cache.clone();
