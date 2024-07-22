@@ -1,7 +1,7 @@
 use blake3::hash;
 use chrono::{DateTime, Utc};
 use file_store::{
-    file_sink::{FileSinkClient, FileStoreAsBytes, Message as SinkMessage},
+    file_sink::{FileSinkClient, Message as SinkMessage},
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
     iot_witness_report::{IotWitnessIngestReport, IotWitnessReport},
     traits::{IngestId, MsgTimestamp},
@@ -31,7 +31,8 @@ use sqlx::{PgPool, Postgres, Transaction};
 use std::{self, ops::DerefMut, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, sync::Mutex, time::timeout};
 
-pub fn create_file_sink<T: FileStoreAsBytes>() -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
+pub fn create_file_sink<T: file_store::traits::MsgBytes>(
+) -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
     let (tx, rx) = tokio::sync::mpsc::channel(10);
 
     (
