@@ -1,4 +1,4 @@
-use crate::{file_upload::FileUpload, Error, Result};
+use crate::{file_upload::FileUpload, traits::MsgBytes, Error, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
@@ -122,7 +122,7 @@ impl FileSinkBuilder {
 
     pub async fn create<T>(self) -> Result<(FileSinkClient<T>, FileSink<T>)>
     where
-        T: FileStoreAsBytes,
+        T: MsgBytes,
     {
         let (tx, rx) = message_channel(50);
 
@@ -160,7 +160,7 @@ const OK_LABEL: Label = Label::from_static_parts("status", "ok");
 const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
 const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-impl<T: FileStoreAsBytes> FileSinkClient<T> {
+impl<T> FileSinkClient<T> {
     pub fn new(sender: MessageSender<T>, metric: &'static str) -> Self {
         Self { sender, metric }
     }
@@ -275,7 +275,7 @@ impl ActiveSink {
     }
 }
 
-impl<T: FileStoreAsBytes + Send + Sync + 'static> ManagedTask for FileSink<T> {
+impl<T: MsgBytes + Send + Sync + 'static> ManagedTask for FileSink<T> {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -290,17 +290,7 @@ impl<T: FileStoreAsBytes + Send + Sync + 'static> ManagedTask for FileSink<T> {
     }
 }
 
-pub trait FileStoreAsBytes {
-    fn as_bytes(&self) -> bytes::Bytes;
-}
-
-impl<T: prost::Message> FileStoreAsBytes for T {
-    fn as_bytes(&self) -> bytes::Bytes {
-        bytes::Bytes::from(self.encode_to_vec())
-    }
-}
-
-impl<T: FileStoreAsBytes> FileSink<T> {
+impl<T: MsgBytes> FileSink<T> {
     async fn init(&mut self) -> Result {
         fs::create_dir_all(&self.target_path).await?;
         fs::create_dir_all(&self.tmp_path).await?;

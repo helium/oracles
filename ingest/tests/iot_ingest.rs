@@ -1,7 +1,7 @@
 use std::net::{SocketAddr, TcpListener};
 
 use backon::{ExponentialBuilder, Retryable};
-use file_store::file_sink::{FileSinkClient, FileStoreAsBytes, Message as SinkMessage};
+use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
 use helium_crypto::{KeyTag, Keypair, Network, PublicKey, Sign};
 use helium_proto::services::poc_lora::{
     lora_stream_request_v1::Request as StreamRequest,
@@ -443,7 +443,8 @@ impl MockFileSinkReceiver<LoraWitnessIngestReportV1> {
     }
 }
 
-fn create_file_sink<T: FileStoreAsBytes>() -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
+fn create_file_sink<T: file_store::traits::MsgBytes>(
+) -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
     let (tx, rx) = tokio::sync::mpsc::channel(5);
     (
         FileSinkClient::new(tx, "metric"),
