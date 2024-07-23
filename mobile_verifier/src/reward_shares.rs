@@ -804,7 +804,7 @@ impl CalculatedPocRewardShares {
 }
 
 pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
-    (TOTAL_EMISSIONS_POOL / dec!(366) / Decimal::from(Duration::hours(24).num_seconds()))
+    (TOTAL_EMISSIONS_POOL / dec!(365) / Decimal::from(Duration::hours(24).num_seconds()))
         * Decimal::from(duration.num_seconds())
 }
 
@@ -910,14 +910,14 @@ mod test {
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        assert_eq!(81_967_213_114_754, total_epoch_rewards);
+        assert_eq!(82_191_780_821_917, total_epoch_rewards);
 
         // verify total rewards allocated to mappers the epoch
         let total_mapper_rewards = get_scheduled_tokens_for_mappers(epoch.end - epoch.start)
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        assert_eq!(16_393_442_622_950, total_mapper_rewards);
+        assert_eq!(16_438_356_164_383, total_mapper_rewards);
 
         let expected_reward_per_subscriber = total_mapper_rewards / NUM_SUBSCRIBERS;
 
@@ -934,13 +934,13 @@ mod test {
         }
 
         // verify the total rewards awarded for discovery mapping
-        assert_eq!(16_393_442_620_000, allocated_mapper_rewards);
+        assert_eq!(16_438_356_160_000, allocated_mapper_rewards);
 
         // confirm the unallocated service provider reward amounts
         // this should not be more than the total number of subscribers ( 10 k)
         // as we can at max drop one bone per subscriber due to rounding
         let unallocated_mapper_reward_amount = total_mapper_rewards - allocated_mapper_rewards;
-        assert_eq!(unallocated_mapper_reward_amount, 2950);
+        assert_eq!(unallocated_mapper_reward_amount, 4383);
         assert!(unallocated_mapper_reward_amount < NUM_SUBSCRIBERS);
     }
 
@@ -980,7 +980,7 @@ mod test {
         // total_rewards will be in bones
         assert_eq!(
             (total_rewards / dec!(1_000_000) * dec!(24)).trunc(),
-            dec!(49_180_327)
+            dec!(49_315_068)
         );
 
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(&epoch);
@@ -1046,11 +1046,11 @@ mod test {
         // for POC and data transfer (which is 60% of the daily total emissions).
         let available_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start)
             - data_transfer_rewards.reward_sum;
-        assert_eq!(available_poc_rewards.trunc(), dec!(16_393_442_622_950));
+        assert_eq!(available_poc_rewards.trunc(), dec!(16_438_356_164_383));
         assert_eq!(
             // Rewards are automatically scaled
             data_transfer_rewards.reward(&owner).trunc(),
-            dec!(32_786_885_245_901)
+            dec!(32_876_712_328_767)
         );
         assert_eq!(data_transfer_rewards.reward_scale().round_dp(1), dec!(0.5));
     }
@@ -1570,31 +1570,31 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            260_213_374_966
+            260_926_288_322
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            975_800_156_122
+            978_473_581_207
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            32_526_671_870
+            32_615_786_040
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
         let owner5_reward = *owner_rewards
             .get(&owner5)
             .expect("Could not fetch owner5 rewards");
-        assert_eq!(owner5_reward, 520_426_749_934);
+        assert_eq!(owner5_reward, 521_852_576_647);
 
         let owner6_reward = *owner_rewards
             .get(&owner6)
             .expect("Could not fetch owner6 rewards");
-        assert_eq!(owner6_reward, 130_106_687_483);
+        assert_eq!(owner6_reward, 130_463_144_161);
 
         // confirm owner 6 reward is 0.25 of owner 5's reward
         // this is due to owner 6's hotspot not having a validation location timestamp
@@ -1604,7 +1604,7 @@ mod test {
         let owner7_reward = *owner_rewards
             .get(&owner6)
             .expect("Could not fetch owner7 rewards");
-        assert_eq!(owner7_reward, 130_106_687_483);
+        assert_eq!(owner7_reward, 130_463_144_161);
 
         // confirm owner 7 reward is 0.25 of owner 5's reward
         // owner 7's hotspot does have a validation location timestamp
@@ -1613,7 +1613,7 @@ mod test {
         assert_eq!((owner5_reward as f64 * 0.25) as u64, owner7_reward);
 
         // confirm total sum of allocated poc rewards
-        assert_eq!(allocated_poc_rewards, 2_049_180_327_858);
+        assert_eq!(allocated_poc_rewards, 2_054_794_520_538);
 
         // confirm the unallocated poc reward amounts
         let unallocated_sp_reward_amount = (reward_shares.total_poc()
@@ -1621,7 +1621,7 @@ mod test {
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 10);
+        assert_eq!(unallocated_sp_reward_amount, 9);
     }
 
     #[tokio::test]
@@ -1746,13 +1746,13 @@ mod test {
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-        assert_eq!(owner1_reward, 1_639_344_262_295);
+        assert_eq!(owner1_reward, 1_643_835_616_438);
 
         // sercomm
         let owner2_reward = *owner_rewards
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
-        assert_eq!(owner2_reward, 409_836_065_573);
+        assert_eq!(owner2_reward, 410_958_904_109);
     }
 
     #[tokio::test]
@@ -2013,13 +2013,13 @@ mod test {
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-        assert_eq!(owner1_reward, 1_639_344_262_295);
+        assert_eq!(owner1_reward, 1_643_835_616_438);
 
         // sercomm
         let owner2_reward = *owner_rewards
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
-        assert_eq!(owner2_reward, 409_836_065_573);
+        assert_eq!(owner2_reward, 410_958_904_109);
     }
 
     /// Test to ensure that rewards that are zeroed are not written out.
@@ -2203,7 +2203,7 @@ mod test {
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 341_530_053_644);
+        assert_eq!(unallocated_sp_reward_amount, 342_465_752_424);
     }
 
     #[tokio::test]

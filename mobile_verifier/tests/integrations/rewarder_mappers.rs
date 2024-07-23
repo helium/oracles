@@ -43,7 +43,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
             subscriber_rewards[0].subscriber_id
         );
         assert_eq!(
-            5_464_480_874_316,
+            5_479_452_054_794,
             subscriber_rewards[0].discovery_location_amount
         );
 
@@ -52,7 +52,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
             subscriber_rewards[1].subscriber_id
         );
         assert_eq!(
-            5_464_480_874_316,
+            5_479_452_054_794,
             subscriber_rewards[2].discovery_location_amount
         );
 
@@ -61,7 +61,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
             subscriber_rewards[2].subscriber_id
         );
         assert_eq!(
-            5_464_480_874_316,
+            5_479_452_054_794,
             subscriber_rewards[2].discovery_location_amount
         );
 
@@ -70,7 +70,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
             UnallocatedRewardType::Mapper as i32,
             unallocated_reward.reward_type
         );
-        assert_eq!(2, unallocated_reward.amount);
+        assert_eq!(1, unallocated_reward.amount);
 
         // confirm the total rewards allocated matches expectations
         let expected_sum = reward_shares::get_scheduled_tokens_for_mappers(epoch.end - epoch.start)

@@ -7,7 +7,7 @@ use file_store::{
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, GatewayReward, HeartbeatValidity, RadioRewardV2, SeniorityUpdateReason,
-    SignalLevel, UnallocatedReward, UnallocatedRewardType,
+    SignalLevel,
 };
 use mobile_verifier::{
     cell_type::CellType,
@@ -57,11 +57,11 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         ),
         receive_expected_rewards(&mut mobile_rewards)
     );
-    if let Ok((poc_rewards, dc_rewards, unallocated_poc_reward)) = rewards {
+    if let Ok((poc_rewards, dc_rewards)) = rewards {
         // assert poc reward outputs
-        let hotspot_1_reward = 9_758_001_263_661;
-        let hotspot_2_reward = 39_032_005_054_644;
-        let hotspot_3_reward = 390_320_050_546;
+        let hotspot_1_reward = 9_784_735_514_514;
+        let hotspot_2_reward = 39_138_942_058_056;
+        let hotspot_3_reward = 391_389_420_580;
         assert_eq!(hotspot_1_reward, poc_rewards[0].total_poc_reward());
         assert_eq!(
             HOTSPOT_1.to_string(),
@@ -85,13 +85,6 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         assert_eq!(0, poc_rewards[1].boosted_hexes_len());
         assert_eq!(0, poc_rewards[2].boosted_hexes_len());
 
-        // assert unallocated amount
-        assert_eq!(
-            UnallocatedRewardType::Poc as i32,
-            unallocated_poc_reward.reward_type
-        );
-        assert_eq!(1, unallocated_poc_reward.amount);
-
         // assert the dc reward outputs
         assert_eq!(500_000, dc_rewards[0].dc_transfer_reward);
         assert_eq!(
@@ -112,8 +105,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         // confirm the total rewards allocated matches expectations
         let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
         let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
-        let unallocated_sum: u64 = unallocated_poc_reward.amount;
-        let total = poc_sum + dc_sum + unallocated_sum;
+        let total = poc_sum + dc_sum;
 
         let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
             .to_u64()
@@ -133,7 +125,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
 async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver,
-) -> anyhow::Result<(Vec<RadioRewardV2>, Vec<GatewayReward>, UnallocatedReward)> {
+) -> anyhow::Result<(Vec<RadioRewardV2>, Vec<GatewayReward>)> {
     // get the filestore outputs from rewards run
 
     // expect 3 gateway rewards for dc transfer
@@ -152,13 +144,10 @@ async fn receive_expected_rewards(
     // after sorting reward 1 = cbrs radio1, 2 = cbrs radio2, 3 = wifi radio
     poc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
 
-    // expect one unallocated reward for poc
-    let unallocated_poc_reward = mobile_rewards.receive_unallocated_reward().await;
-
     // should be no further msgs
     mobile_rewards.assert_no_messages();
 
-    Ok((poc_rewards, dc_rewards, unallocated_poc_reward))
+    Ok((poc_rewards, dc_rewards))
 }
 
 async fn seed_heartbeats(

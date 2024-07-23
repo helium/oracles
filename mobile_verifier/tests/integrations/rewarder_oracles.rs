@@ -23,7 +23,7 @@ async fn test_oracle_rewards(_pool: PgPool) -> anyhow::Result<()> {
             unallocated_reward.reward_type
         );
         // confirm our unallocated amount
-        assert_eq!(3_278_688_524_590, unallocated_reward.amount);
+        assert_eq!(3_287_671_232_876, unallocated_reward.amount);
 
         // confirm the total rewards allocated matches expectations
         let expected_sum = reward_shares::get_scheduled_tokens_for_oracles(epoch.end - epoch.start)

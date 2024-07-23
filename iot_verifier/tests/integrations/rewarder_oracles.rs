@@ -20,7 +20,7 @@ async fn test_oracles(_pool: PgPool) -> anyhow::Result<()> {
         let expected_total = reward_share::get_scheduled_oracle_tokens(epoch.end - epoch.start)
             .to_u64()
             .unwrap();
-        assert_eq!(unallocated_oracle_reward.amount, 6_215_846_994_535);
+        assert_eq!(unallocated_oracle_reward.amount, 6_232_876_712_328);
         assert_eq!(unallocated_oracle_reward.amount, expected_total);
 
         // confirm the ops percentage amount matches expectations
