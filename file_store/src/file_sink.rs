@@ -66,7 +66,7 @@ pub struct FileSinkBuilder {
     roll_time: Duration,
     file_upload: FileUpload,
     auto_commit: bool,
-    metric: &'static str,
+    metric: String,
 }
 
 impl FileSinkBuilder {
@@ -74,7 +74,7 @@ impl FileSinkBuilder {
         prefix: impl ToString,
         target_path: &Path,
         file_upload: FileUpload,
-        metric: &'static str,
+        metric: impl Into<String>,
     ) -> Self {
         Self {
             prefix: prefix.to_string(),
@@ -84,7 +84,7 @@ impl FileSinkBuilder {
             roll_time: Duration::from_secs(DEFAULT_SINK_ROLL_SECS),
             file_upload,
             auto_commit: true,
-            metric,
+            metric: metric.into(),
         }
     }
 
@@ -131,7 +131,7 @@ impl FileSinkBuilder {
             metric: self.metric,
         };
 
-        metrics::counter!(client.metric, vec![OK_LABEL]);
+        metrics::counter!(client.metric.clone(), vec![OK_LABEL]);
 
         let mut sink = FileSink {
             target_path: self.target_path,
@@ -153,7 +153,7 @@ impl FileSinkBuilder {
 #[derive(Debug, Clone)]
 pub struct FileSinkClient<T> {
     pub sender: MessageSender<T>,
-    pub metric: &'static str,
+    pub metric: String,
 }
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
@@ -161,8 +161,11 @@ const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
 const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl<T> FileSinkClient<T> {
-    pub fn new(sender: MessageSender<T>, metric: &'static str) -> Self {
-        Self { sender, metric }
+    pub fn new(sender: MessageSender<T>, metric: impl Into<String>) -> Self {
+        Self {
+            sender,
+            metric: metric.into(),
+        }
     }
 
     pub async fn write(
@@ -176,7 +179,7 @@ impl<T> FileSinkClient<T> {
             result = self.sender.send_timeout(Message::Data(on_write_tx, item), SEND_TIMEOUT) => match result {
                 Ok(_) => {
                     metrics::counter!(
-                        self.metric,
+                        self.metric.clone(),
                         labels
                             .chain(std::iter::once(OK_LABEL))
                             .collect::<Vec<Label>>()
@@ -186,7 +189,7 @@ impl<T> FileSinkClient<T> {
                 }
                 Err(SendTimeoutError::Closed(_)) => {
                     metrics::counter!(
-                        self.metric,
+                        self.metric.clone(),
                         labels
                             .chain(std::iter::once(ERROR_LABEL))
                             .collect::<Vec<Label>>()
