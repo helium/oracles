@@ -1,8 +1,60 @@
+use std::path::Path;
+
+use crate::{
+    file_sink::FileSinkClient, file_upload::FileUpload, FileSink, FileSinkBuilder, FileType, Result,
+};
 use helium_proto::{
     self as proto,
     services::{packet_verifier, poc_lora, poc_mobile},
     Message,
 };
+
+#[async_trait::async_trait]
+pub trait FileSinkWriteExt
+where
+    Self: Sized + MsgBytes,
+{
+    async fn file_sink(
+        target_path: &Path,
+        file_upload: FileUpload,
+        metric_prefix: &'static str,
+    ) -> Result<(FileSinkClient<Self>, FileSink<Self>)> {
+        let builder = FileSinkBuilder::new(
+            Self::file_type().to_string(),
+            target_path,
+            file_upload,
+            format!("{}_{}", metric_prefix, Self::metric_suffix()),
+        )
+        .auto_commit(false);
+
+        let file_sink = builder.create().await?;
+        Ok(file_sink)
+    }
+    fn file_type() -> FileType;
+    fn metric_suffix() -> &'static str;
+}
+
+#[async_trait::async_trait]
+impl FileSinkWriteExt for packet_verifier::InvalidPacket {
+    fn file_type() -> FileType {
+        FileType::InvalidPacket
+    }
+
+    fn metric_suffix() -> &'static str {
+        "invalid_packets"
+    }
+}
+
+#[async_trait::async_trait]
+impl FileSinkWriteExt for packet_verifier::ValidPacket {
+    fn file_type() -> FileType {
+        FileType::IotValidPacket
+    }
+
+    fn metric_suffix() -> &'static str {
+        "valid_packets"
+    }
+}
 
 pub trait MsgBytes {
     fn as_bytes(&self) -> bytes::Bytes;

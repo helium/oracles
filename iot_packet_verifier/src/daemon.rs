@@ -8,10 +8,10 @@ use crate::{
 use anyhow::{bail, Result};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::FileSinkBuilder,
     file_sink::FileSinkClient,
     file_source, file_upload,
-    iot_packet::PacketRouterPacketReport,
+    iot_packet::{IotValidPacket, PacketRouterPacketReport},
+    traits::FileSinkWriteExt,
     FileStore, FileType,
 };
 use futures_util::TryFutureExt;
@@ -138,25 +138,13 @@ impl Cmd {
         let store_base_path = std::path::Path::new(&settings.cache);
 
         // Verified packets:
-        let (valid_packets, valid_packets_server) = FileSinkBuilder::new(
-            FileType::IotValidPacket,
-            store_base_path,
-            file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_valid_packets"),
-        )
-        .auto_commit(false)
-        .create()
-        .await?;
+        let (valid_packets, valid_packets_server) =
+            ValidPacket::file_sink(store_base_path, file_upload.clone(), env!("CARGO_PKG_NAME"))
+                .await?;
 
-        let (invalid_packets, invalid_packets_server) = FileSinkBuilder::new(
-            FileType::InvalidPacket,
-            store_base_path,
-            file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
-        )
-        .auto_commit(false)
-        .create()
-        .await?;
+        let (invalid_packets, invalid_packets_server) =
+            InvalidPacket::file_sink(store_base_path, file_upload.clone(), env!("CARGO_PKG_NAME"))
+                .await?;
 
         let org_client = Arc::new(Mutex::new(CachedOrgClient::new(OrgClient::from_settings(
             &settings.iot_config_client,
