@@ -27,12 +27,6 @@ pub struct Org {
     pub constraints: Option<Vec<DevAddrConstraint>>,
 }
 
-#[derive(Debug, Serialize)]
-#[allow(dead_code)]
-pub struct OrgList {
-    orgs: Vec<Org>,
-}
-
 impl FromRow<'_, PgRow> for Org {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
         let delegate_keys = row
