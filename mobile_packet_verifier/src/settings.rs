@@ -34,6 +34,13 @@ pub struct Settings {
     pub purger_interval: Duration,
     #[serde(with = "humantime_serde", default = "default_purger_max_age")]
     pub purger_max_age: Duration,
+    // default delay between retry attempts at submitting solana txns, in seconds
+    #[serde(default = "default_txn_retry_delay")]
+    pub txn_retry_delay: Duration,
+}
+
+pub fn default_txn_retry_delay() -> Duration {
+    humantime::parse_duration("1 seconds").unwrap()
 }
 
 fn default_purger_interval() -> Duration {

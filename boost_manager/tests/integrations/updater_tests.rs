@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use boost_manager::{db, updater::Updater, OnChainStatus};
 use chrono::{DateTime, Utc};
 use file_store::hex_boost::BoostedHexActivation;
-use solana::{start_boost::SolanaNetwork, GetSignature};
+use solana::{start_boost::SolanaNetwork, GetSignature, IsErrorBlockhashNotFound};
 use solana_sdk::signature::Signature;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{string::ToString, sync::Mutex, time::Duration};
@@ -45,6 +45,12 @@ impl MockSolanaConnection {
     }
 }
 
+impl IsErrorBlockhashNotFound for Error {
+    fn is_error_blockhash_not_found(&self) -> bool {
+        false
+    }
+}
+
 #[async_trait]
 impl SolanaNetwork for MockSolanaConnection {
     type Error = Error;
@@ -71,6 +77,13 @@ impl SolanaNetwork for MockSolanaConnection {
     async fn confirm_transaction(&self, _id: &str) -> Result<bool, Self::Error> {
         Ok(true)
     }
+
+    async fn sign_transaction(
+        &self,
+        transaction: &Self::Transaction,
+    ) -> Result<Self::Transaction, Self::Error> {
+        Ok(transaction.clone())
+    }
 }
 
 impl GetSignature for MockTransaction {
@@ -89,6 +102,7 @@ async fn test_process_activations_success(pool: PgPool) -> anyhow::Result<()> {
         Duration::from_secs(10),
         10,
         solana_connection,
+        Duration::from_millis(10),
     )?;
 
     let mut txn = pool.begin().await?;
@@ -118,14 +132,16 @@ async fn test_process_activations_failure(pool: PgPool) -> anyhow::Result<()> {
         Duration::from_secs(10),
         10,
         solana_connection,
+        Duration::from_millis(10),
     )?;
 
     let mut txn = pool.begin().await?;
     seed_activations(&mut txn, now).await?;
     txn.commit().await?;
 
-    // ensure the activations are processed at least 10 times
+    // process the activations
     // submit_txn will bork each time
+    // a failing txn will by default be retried 10 times
     // pushing the retries value to exceed max and
     // thus forcing it to FAILED status
     for _ in 1..=11 {
