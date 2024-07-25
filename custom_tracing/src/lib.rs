@@ -51,7 +51,7 @@ pub fn record<T>(field: &str, value: T)
 where
     T: std::fmt::Display,
 {
-    Span::current().record(field, &tracing::field::display(value));
+    Span::current().record(field, tracing::field::display(value));
 }
 
 pub fn record_b58(key: &str, pub_key: &[u8]) {

@@ -850,6 +850,7 @@ async fn remove_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 pub struct RouteList {
     routes: Vec<Route>,
 }

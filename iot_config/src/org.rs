@@ -28,6 +28,7 @@ pub struct Org {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 pub struct OrgList {
     orgs: Vec<Org>,
 }
