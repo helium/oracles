@@ -94,7 +94,7 @@ impl SolanaRpc {
             return Err(SolanaRpcError::FailedToReadKeypairError);
         };
         let provider =
-            RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::confirmed());
+            RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());
         let program_cache = BurnProgramCache::new(&provider, dc_mint, dnt_mint).await?;
         if program_cache.dc_burn_authority != keypair.pubkey() {
             return Err(SolanaRpcError::InvalidKeypair);
@@ -219,7 +219,7 @@ impl SolanaNetwork for SolanaRpc {
                 data_credits::id(),
                 &self.cluster,
                 std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
-                Some(CommitmentConfig::confirmed()),
+                Some(CommitmentConfig::finalized()),
             );
 
             let args = instruction::BurnDelegatedDataCreditsV0 {
@@ -261,7 +261,7 @@ impl SolanaNetwork for SolanaRpc {
             .provider
             .send_and_confirm_transaction_with_spinner_and_config(
                 tx,
-                CommitmentConfig::confirmed(),
+                CommitmentConfig::finalized(),
                 config,
             )) {
             Ok(signature) => {
@@ -287,7 +287,7 @@ impl SolanaNetwork for SolanaRpc {
             self.provider
                 .get_signature_status_with_commitment_and_history(
                     txn,
-                    CommitmentConfig::confirmed(),
+                    CommitmentConfig::finalized(),
                     true,
                 )
                 .await?,

@@ -78,7 +78,7 @@ impl SolanaNetwork for SolanaRpc {
                 hexboosting::id(),
                 &self.cluster,
                 std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
-                Some(CommitmentConfig::confirmed()),
+                Some(CommitmentConfig::finalized()),
             );
             for update in batch {
                 let account = accounts::StartBoostV0 {
@@ -138,7 +138,7 @@ impl SolanaNetwork for SolanaRpc {
             self.provider
                 .get_signature_status_with_commitment_and_history(
                     &txn,
-                    CommitmentConfig::confirmed(),
+                    CommitmentConfig::finalized(),
                     true,
                 )
                 .await?,
