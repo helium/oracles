@@ -18,7 +18,7 @@ db-store = { path = "../db_store" }
 file-store = { path = "../file_store" }
 futures = { workspace = true }
 futures-util = { workspace = true }
-helium-crypto = { workspace = true }
+helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
 helium-proto = { workspace = true }
 hextree = { workspace = true }
 http = { workspace = true }

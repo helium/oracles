@@ -32,7 +32,7 @@ futures-util = { workspace = true }
 prost = { workspace = true }
 once_cell = { workspace = true }
 helium-proto = { workspace = true }
-helium-crypto = { workspace = true }
+helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
 humantime = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
