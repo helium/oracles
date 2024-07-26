@@ -154,7 +154,7 @@ impl PendingTables for PgPool {
             VALUES ($1, $2, $3, $4)
             "#,
         )
-        .bind(&signature.to_string())
+        .bind(signature.to_string())
         .bind(payer)
         .bind(amount as i64)
         .bind(Utc::now())
@@ -195,7 +195,7 @@ impl<'a> PendingTablesTransaction<'a> for Transaction<'a, Postgres> {
         signature: &Signature,
     ) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
-            .bind(&signature.to_string())
+            .bind(signature.to_string())
             .execute(self)
             .await?;
         Ok(())

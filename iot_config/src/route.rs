@@ -849,17 +849,6 @@ async fn remove_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
     Ok(query_builder.build_query_as::<Skf>().fetch_all(db).await?)
 }
 
-#[derive(Debug, Serialize)]
-pub struct RouteList {
-    routes: Vec<Route>,
-}
-
-impl RouteList {
-    pub fn count(&self) -> usize {
-        self.routes.len()
-    }
-}
-
 impl From<proto::RouteV1> for Route {
     fn from(route: proto::RouteV1) -> Self {
         let net_id: NetIdField = route.net_id.into();
