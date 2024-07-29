@@ -95,7 +95,7 @@ impl TestClient {
             subscriber_id,
             total_reward_points,
             timestamp: 0,
-            verification_mapping_pubkey: self.key_pair.public_key().to_vec(),
+            carrier_mapping_key: self.key_pair.public_key().to_vec(),
             signature: vec![],
         };
 

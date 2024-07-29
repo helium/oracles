@@ -35,8 +35,8 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
         let saved_vmes = select_events(&pool).await?;
         if reports.len() == saved_vmes.len() {
             assert!(reports.iter_mut().all(|r| {
-                // We ahve to do this because we do not store verification_mapping_pubkey in DB
-                r.report.verification_mapping_pubkey = vec![].into();
+                // We have to do this because we do not store carrier_mapping_key in DB
+                r.report.carrier_mapping_key = vec![].into();
                 saved_vmes.contains(&r.report)
             }));
             break;
@@ -92,7 +92,7 @@ fn file_info_stream() -> (
                 subscriber_id: vec![0],
                 total_reward_points: 100,
                 timestamp: Utc::now(),
-                verification_mapping_pubkey: public_key_binary.clone(),
+                carrier_mapping_key: public_key_binary.clone(),
             },
         },
         VerifiedSubscriberMappingEventIngestReport {
@@ -101,7 +101,7 @@ fn file_info_stream() -> (
                 subscriber_id: vec![1],
                 total_reward_points: 101,
                 timestamp: Utc::now() - Duration::seconds(10),
-                verification_mapping_pubkey: public_key_binary.clone(),
+                carrier_mapping_key: public_key_binary.clone(),
             },
         },
         VerifiedSubscriberMappingEventIngestReport {
@@ -110,7 +110,7 @@ fn file_info_stream() -> (
                 subscriber_id: vec![1],
                 total_reward_points: 99,
                 timestamp: Utc::now(),
-                verification_mapping_pubkey: public_key_binary.clone(),
+                carrier_mapping_key: public_key_binary.clone(),
             },
         },
     ];
