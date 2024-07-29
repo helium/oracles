@@ -6,7 +6,6 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::VerifiedSubscriberMappingEventReqV1;
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct VerifiedSubscriberMappingEvent {
@@ -54,17 +53,6 @@ impl TryFrom<VerifiedSubscriberMappingEventReqV1> for VerifiedSubscriberMappingE
             total_reward_points: v.total_reward_points,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
-        })
-    }
-}
-
-impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for VerifiedSubscriberMappingEvent {
-    fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-        Ok(Self {
-            subscriber_id: row.get::<Vec<u8>, &str>("subscriber_id"),
-            total_reward_points: row.get::<i32, &str>("total_reward_points") as u64,
-            timestamp: row.get::<DateTime<Utc>, &str>("timestamp"),
-            carrier_mapping_key: vec![].into(),
         })
     }
 }

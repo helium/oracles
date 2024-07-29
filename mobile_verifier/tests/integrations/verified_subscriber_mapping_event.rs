@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::FileInfoStream,
     verified_subscriber_mapping_event::VerifiedSubscriberMappingEvent,
@@ -11,7 +11,7 @@ use mobile_verifier::verified_subscriber_mapping_event::{
     VerifiedSubscriberMappingEventDeamon,
 };
 use rand::rngs::OsRng;
-use sqlx::{PgPool, Pool, Postgres};
+use sqlx::{PgPool, Pool, Postgres, Row};
 use std::{collections::HashMap, ops::Range};
 
 #[sqlx::test]
@@ -145,7 +145,7 @@ fn reports_to_shares(
 async fn select_events(
     pool: &Pool<Postgres>,
 ) -> anyhow::Result<Vec<VerifiedSubscriberMappingEvent>> {
-    Ok(sqlx::query_as::<_, VerifiedSubscriberMappingEvent>(
+    let rows = sqlx::query(
         r#"
             SELECT 
                 subscriber_id,
@@ -155,9 +155,19 @@ async fn select_events(
         "#,
     )
     .fetch_all(pool)
-    .await?
-    .into_iter()
-    .collect::<Vec<VerifiedSubscriberMappingEvent>>())
+    .await?;
+
+    let events = rows
+        .into_iter()
+        .map(|row| VerifiedSubscriberMappingEvent {
+            subscriber_id: row.get::<Vec<u8>, _>("subscriber_id"),
+            total_reward_points: row.get::<i32, _>("total_reward_points") as u64,
+            timestamp: row.get::<DateTime<Utc>, _>("timestamp"),
+            carrier_mapping_key: vec![].into(),
+        })
+        .collect::<Vec<VerifiedSubscriberMappingEvent>>();
+
+    Ok(events)
 }
 
 fn generate_keypair() -> Keypair {
