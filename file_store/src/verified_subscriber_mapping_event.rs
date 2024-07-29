@@ -13,7 +13,7 @@ pub struct VerifiedSubscriberMappingEvent {
     pub subscriber_id: Vec<u8>,
     pub total_reward_points: u64,
     pub timestamp: DateTime<Utc>,
-    pub verification_mapping_pubkey: PublicKeyBinary,
+    pub carrier_mapping_key: PublicKeyBinary,
 }
 
 impl MsgDecode for VerifiedSubscriberMappingEvent {
@@ -39,7 +39,7 @@ impl From<VerifiedSubscriberMappingEvent> for VerifiedSubscriberMappingEventReqV
             subscriber_id: v.subscriber_id,
             total_reward_points: v.total_reward_points,
             timestamp,
-            verification_mapping_pubkey: v.verification_mapping_pubkey.into(),
+            carrier_mapping_key: v.carrier_mapping_key.into(),
             signature: vec![],
         }
     }
@@ -53,7 +53,7 @@ impl TryFrom<VerifiedSubscriberMappingEventReqV1> for VerifiedSubscriberMappingE
             subscriber_id: v.subscriber_id,
             total_reward_points: v.total_reward_points,
             timestamp,
-            verification_mapping_pubkey: v.verification_mapping_pubkey.into(),
+            carrier_mapping_key: v.carrier_mapping_key.into(),
         })
     }
 }
@@ -64,7 +64,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for VerifiedSubscriberMappingEvent
             subscriber_id: row.get::<Vec<u8>, &str>("subscriber_id"),
             total_reward_points: row.get::<i32, &str>("total_reward_points") as u64,
             timestamp: row.get::<DateTime<Utc>, &str>("timestamp"),
-            verification_mapping_pubkey: vec![].into(),
+            carrier_mapping_key: vec![].into(),
         })
     }
 }

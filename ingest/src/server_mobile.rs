@@ -417,10 +417,10 @@ impl poc_mobile::PocMobile for GrpcServer {
         let subscriber_id = event.subscriber_id.clone();
 
         custom_tracing::record("subscriber_id", bs58::encode(&subscriber_id).into_string());
-        custom_tracing::record_b58("pub_key", &event.verification_mapping_pubkey);
+        custom_tracing::record_b58("pub_key", &event.carrier_mapping_key);
 
         let report = self
-            .verify_public_key(event.verification_mapping_pubkey.as_ref())
+            .verify_public_key(event.carrier_mapping_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))
             .map(|(_, event)| VerifiedSubscriberMappingEventIngestReportV1 {
