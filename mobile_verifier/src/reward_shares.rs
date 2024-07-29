@@ -222,7 +222,7 @@ impl MapperShares {
             .map(|share| Decimal::from(share.total_reward_points))
             .sum();
 
-        let total_shares = total_mapper_shares + total_verified_mapping_event_shares;
+        let total_shares = total_disco_mapper_shares + total_verified_mapping_event_shares;
 
         let res = total_mappers_pool
             .checked_div(total_shares)
