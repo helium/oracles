@@ -16,7 +16,7 @@ pub struct VerifiedSubscriberMappingEvent {
     pub subscriber_id: Vec<u8>,
     pub total_reward_points: u64,
     pub timestamp: DateTime<Utc>,
-    pub carrier_pub_key: PublicKeyBinary,
+    pub verification_mapping_pubkey: PublicKeyBinary,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct VerifiedSubscriberMappingEventIngestReport {
@@ -39,7 +39,7 @@ impl TryFrom<VerifiedSubscriberMappingEventReqV1> for VerifiedSubscriberMappingE
             subscriber_id: v.subscriber_id,
             total_reward_points: v.total_reward_points,
             timestamp: v.timestamp.to_timestamp()?,
-            carrier_pub_key: v.carrier_pub_key.into(),
+            verification_mapping_pubkey: v.verification_mapping_pubkey.into(),
         })
     }
 }
@@ -51,7 +51,7 @@ impl From<VerifiedSubscriberMappingEvent> for VerifiedSubscriberMappingEventReqV
             subscriber_id: v.subscriber_id,
             total_reward_points: v.total_reward_points,
             timestamp,
-            carrier_pub_key: v.carrier_pub_key.into(),
+            verification_mapping_pubkey: v.verification_mapping_pubkey.into(),
             signature: vec![],
         }
     }
@@ -131,7 +131,7 @@ mod tests {
                 subscriber_id: subscriber_id.clone(),
                 total_reward_points: 1000,
                 timestamp: 1712624400,
-                carrier_pub_key: carrier_pubkey.as_ref().into(),
+                verification_mapping_pubkey: carrier_pubkey.as_ref().into(),
                 signature: vec![],
             }),
         };
@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(subscriber_id, report.report.subscriber_id);
         assert_eq!(1000, report.report.total_reward_points);
         assert_eq!(parse_dt("2024-04-09 01:00:00"), report.report.timestamp);
-        assert_eq!(carrier_pubkey, report.report.carrier_pub_key);
+        assert_eq!(carrier_pubkey, report.report.verification_mapping_pubkey);
 
         Ok(())
     }
