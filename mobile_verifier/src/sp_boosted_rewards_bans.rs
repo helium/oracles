@@ -5,8 +5,9 @@ use file_store::{
     file_info_poller::{
         FileInfoPollerConfigBuilder, FileInfoStream, LookbackBehavior, ProstFileInfoPollerParser,
     },
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_upload::FileUpload,
+    traits::FileSinkWriteExt,
     FileStore, FileType,
 };
 use futures::{prelude::future::LocalBoxFuture, StreamExt, TryFutureExt, TryStreamExt};
@@ -153,15 +154,13 @@ where
         settings: &Settings,
         seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (verified_sink, verified_sink_server) = file_sink::FileSinkBuilder::new(
-            FileType::VerifiedSPBoostedRewardsBannedRadioIngestReport,
-            settings.store_base_path(),
-            file_upload,
-            concat!(env!("CARGO_PKG_NAME"), "_verified_sp_boosted_rewards_ban"),
-        )
-        .auto_commit(false)
-        .create()
-        .await?;
+        let (verified_sink, verified_sink_server) =
+            VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1::file_sink(
+                settings.store_base_path(),
+                file_upload,
+                env!("CARGO_PKG_NAME"),
+            )
+            .await?;
 
         let (receiver, ingest_server) = FileInfoPollerConfigBuilder::<
             ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
@@ -333,7 +332,7 @@ pub mod db {
             let radio_key = row.get::<String, &str>("radio_key");
             match radio_type {
                 HbType::Wifi => set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?),
-                HbType::Cbrs => set.insert_cbrs(radio_key),
+                HbType::Cbrs => set.insert_cbrs(radio_key.into()),
             };
 
             Ok(set)

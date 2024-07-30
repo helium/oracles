@@ -7,13 +7,13 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use file_store::{
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::{TimestampDecode, TimestampEncode},
-    FileStore, FileType,
+    traits::{FileSinkWriteExt, TimestampDecode, TimestampEncode},
+    FileStore,
 };
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
-use helium_proto::services::poc_mobile as proto;
+use helium_proto::services::poc_mobile::{self as proto, OracleBoostingReportV1};
 use hextree::disktree::DiskTreeMap;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -259,15 +259,16 @@ impl
         new_coverage_object_notification: NewCoverageObjectNotification,
     ) -> anyhow::Result<impl ManagedTask> {
         let (oracle_boosting_reports, oracle_boosting_reports_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::OracleBoostingReport,
+            OracleBoostingReportV1::file_sink_opts(
                 settings.store_base_path(),
                 file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
+                env!("CARGO_PKG_NAME"),
+                |builder| {
+                    builder
+                        .auto_commit(true)
+                        .roll_time(Duration::from_secs(15 * 60))
+                },
             )
-            .auto_commit(true)
-            .roll_time(Duration::from_secs(15 * 60))
-            .create()
             .await?;
 
         let urbanization = Urbanization::new(None);

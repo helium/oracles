@@ -105,7 +105,11 @@ impl_msg_bytes!(
     FileType::InvalidPacket,
     "invalid_packets"
 );
-impl_msg_bytes!(packet_verifier::ValidDataTransferSession);
+impl_msg_bytes!(
+    packet_verifier::ValidDataTransferSession,
+    FileType::ValidDataTransferSession,
+    "valid_data_transfer_session"
+);
 impl_msg_bytes!(
     packet_verifier::ValidPacket,
     FileType::IotValidPacket,
@@ -152,33 +156,61 @@ impl_msg_bytes!(
     FileType::CoverageObjectIngestReport,
     "coverage_object_report"
 );
-impl_msg_bytes!(poc_mobile::CoverageObjectV1);
+impl_msg_bytes!(
+    poc_mobile::CoverageObjectV1,
+    FileType::CoverageObject,
+    "coverage_object"
+);
 impl_msg_bytes!(
     poc_mobile::DataTransferSessionIngestReportV1,
     FileType::DataTransferSessionIngestReport,
     "mobile_data_transfer_session_report"
 );
-impl_msg_bytes!(poc_mobile::Heartbeat);
-impl_msg_bytes!(poc_mobile::InvalidDataTransferIngestReportV1);
+impl_msg_bytes!(
+    poc_mobile::Heartbeat,
+    FileType::ValidatedHeartbeat,
+    "heartbeat"
+);
+impl_msg_bytes!(
+    poc_mobile::InvalidDataTransferIngestReportV1,
+    FileType::InvalidDataTransferSessionIngestReport,
+    "invalid_data_transfer_session"
+);
 impl_msg_bytes!(
     poc_mobile::InvalidatedRadioThresholdIngestReportV1,
     FileType::InvalidatedRadioThresholdIngestReport,
     "invalidated_radio_threshold_ingest_report"
 );
-impl_msg_bytes!(poc_mobile::MobileRewardShare);
-impl_msg_bytes!(poc_mobile::OracleBoostingReportV1);
+impl_msg_bytes!(
+    poc_mobile::MobileRewardShare,
+    FileType::MobileRewardShare,
+    "radio_reward_share"
+);
+impl_msg_bytes!(
+    poc_mobile::OracleBoostingReportV1,
+    FileType::OracleBoostingReport,
+    "oracle_boosting_report"
+);
 impl_msg_bytes!(
     poc_mobile::RadioThresholdIngestReportV1,
     FileType::RadioThresholdIngestReport,
     "radio_threshold_ingest_report"
 );
-impl_msg_bytes!(poc_mobile::SeniorityUpdate);
+impl_msg_bytes!(
+    poc_mobile::SeniorityUpdate,
+    FileType::SeniorityUpdate,
+    "seniority_update"
+);
 impl_msg_bytes!(
     poc_mobile::ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     FileType::SPBoostedRewardsBannedRadioIngestReport,
     "service_provider_boosted_rewards_banned_radio"
 );
-impl_msg_bytes!(poc_mobile::SpeedtestAvg);
+impl_msg_bytes!(
+    poc_mobile::SpeedtestAvg,
+    FileType::SpeedtestAvg,
+    "speedtest_average"
+);
 impl_msg_bytes!(
     poc_mobile::SpeedtestIngestReportV1,
     FileType::CellSpeedtestIngestReport,
@@ -189,11 +221,31 @@ impl_msg_bytes!(
     FileType::SubscriberLocationIngestReport,
     "subscriber_location_report"
 );
-impl_msg_bytes!(poc_mobile::VerifiedInvalidatedRadioThresholdIngestReportV1);
-impl_msg_bytes!(poc_mobile::VerifiedRadioThresholdIngestReportV1);
-impl_msg_bytes!(poc_mobile::VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1);
-impl_msg_bytes!(poc_mobile::VerifiedSpeedtest);
-impl_msg_bytes!(poc_mobile::VerifiedSubscriberLocationIngestReportV1);
+impl_msg_bytes!(
+    poc_mobile::VerifiedInvalidatedRadioThresholdIngestReportV1,
+    FileType::VerifiedInvalidatedRadioThresholdIngestReport,
+    "verified_invalidated_radio_threshold"
+);
+impl_msg_bytes!(
+    poc_mobile::VerifiedRadioThresholdIngestReportV1,
+    FileType::VerifiedRadioThresholdIngestReport,
+    "verified_radio_threshold"
+);
+impl_msg_bytes!(
+    poc_mobile::VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    FileType::VerifiedSPBoostedRewardsBannedRadioIngestReport,
+    "verified_sp_boosted_rewards_ban"
+);
+impl_msg_bytes!(
+    poc_mobile::VerifiedSpeedtest,
+    FileType::VerifiedSpeedtest,
+    "verified_speedtest"
+);
+impl_msg_bytes!(
+    poc_mobile::VerifiedSubscriberLocationIngestReportV1,
+    FileType::VerifiedSubscriberLocationIngestReport,
+    "verified_subscriber_location"
+);
 impl_msg_bytes!(
     poc_mobile::WifiHeartbeatIngestReportV1,
     FileType::WifiHeartbeatIngestReport,
@@ -209,5 +261,5 @@ impl_msg_bytes!(proto::PriceReportV1);
 impl_msg_bytes!(
     proto::RewardManifest,
     FileType::RewardManifest,
-    "iot_reward_manifest"
+    "reward_manifest"
 );

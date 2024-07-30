@@ -15,7 +15,8 @@ use crate::{
     telemetry, Settings,
 };
 use anyhow::Result;
-use file_store::{file_sink, file_upload, FileStore, FileType};
+use file_store::{file_upload, traits::FileSinkWriteExt, FileStore};
+use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate, SpeedtestAvg};
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
     CarrierServiceClient, GatewayClient,
@@ -48,38 +49,41 @@ impl Cmd {
         let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
         let hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
 
-        let (valid_heartbeats, valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
-            FileType::ValidatedHeartbeat,
+        let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_heartbeat"),
+            env!("CARGO_PKG_NAME"),
+            |builder| {
+                builder
+                    .auto_commit(false)
+                    .roll_time(Duration::from_secs(15 * 60))
+            },
         )
-        .auto_commit(false)
-        .roll_time(Duration::from_secs(15 * 60))
-        .create()
         .await?;
 
         // Seniority updates
-        let (seniority_updates, seniority_updates_server) = file_sink::FileSinkBuilder::new(
-            FileType::SeniorityUpdate,
+        let (seniority_updates, seniority_updates_server) = SeniorityUpdate::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_seniority_update"),
+            env!("CARGO_PKG_NAME"),
+            |builder| {
+                builder
+                    .auto_commit(false)
+                    .roll_time(Duration::from_secs(15 * 60))
+            },
         )
-        .auto_commit(false)
-        .roll_time(Duration::from_secs(15 * 60))
-        .create()
         .await?;
 
-        let (speedtests_avg, speedtests_avg_server) = file_sink::FileSinkBuilder::new(
-            FileType::SpeedtestAvg,
+        let (speedtests_avg, speedtests_avg_server) = SpeedtestAvg::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
+            env!("CARGO_PKG_NAME"),
+            |builder| {
+                builder
+                    .auto_commit(false)
+                    .roll_time(Duration::from_secs(15 * 60))
+            },
         )
-        .auto_commit(false)
-        .roll_time(Duration::from_secs(15 * 60))
-        .create()
         .await?;
 
         let usa_region_paths = settings.usa_region_paths()?;
