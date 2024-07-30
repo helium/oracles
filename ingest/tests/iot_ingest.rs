@@ -428,7 +428,7 @@ impl<T> MockFileSinkReceiver<T> {
 impl MockFileSinkReceiver<LoraBeaconIngestReportV1> {
     async fn receive_beacon(&mut self) -> LoraBeaconIngestReportV1 {
         match self.receive().await {
-            SinkMessage::Data(_, bytes) => bytes,
+            SinkMessage::Data(_, msg) => msg,
             _ => panic!("invalid beacon message"),
         }
     }
@@ -437,7 +437,7 @@ impl MockFileSinkReceiver<LoraBeaconIngestReportV1> {
 impl MockFileSinkReceiver<LoraWitnessIngestReportV1> {
     async fn receive_witness(&mut self) -> LoraWitnessIngestReportV1 {
         match self.receive().await {
-            SinkMessage::Data(_, bytes) => bytes,
+            SinkMessage::Data(_, msg) => msg,
             _ => panic!("invalid witness message"),
         }
     }
