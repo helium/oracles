@@ -31,7 +31,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use std::{self, ops::DerefMut, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, sync::Mutex, time::timeout};
 
-pub fn create_file_sink<T: file_store::traits::FileSinkBytes>(
+pub fn create_file_sink<T: file_store::traits::MsgBytes>(
 ) -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
     let (tx, rx) = tokio::sync::mpsc::channel(10);
 
