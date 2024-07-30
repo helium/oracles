@@ -100,11 +100,11 @@ impl Server {
                 .await?;
 
         // setup the writer for our updated hexes
-        let (updated_hexes_sink, updated_hexes_sink_server) = BoostedHexUpdateV1::file_sink_opts(
+        let (updated_hexes_sink, updated_hexes_sink_server) = BoostedHexUpdateV1::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(Duration::from_secs(5 * 60)),
             env!("CARGO_PKG_NAME"),
-            |builder| builder.roll_time(Duration::from_secs(5 * 60)),
         )
         .await?;
 

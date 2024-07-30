@@ -1,14 +1,18 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use crate::{
-    file_sink::FileSinkClient, file_upload::FileUpload, traits::msg_bytes::MsgBytes, FileSink,
-    FileSinkBuilder, FileType, Result,
+    file_sink::{FileSinkClient, DEFAULT_SINK_ROLL_SECS},
+    file_upload::FileUpload,
+    traits::msg_bytes::MsgBytes,
+    FileSink, FileSinkBuilder, FileType, Result,
 };
 use helium_proto::{
     self as proto,
     services::{packet_verifier, poc_lora, poc_mobile},
     Message,
 };
+
+pub const DEFAULT_ROLL_TIME: Duration = Duration::from_secs(DEFAULT_SINK_ROLL_SECS);
 
 #[async_trait::async_trait]
 pub trait FileSinkWriteExt
@@ -18,22 +22,15 @@ where
     const FILE_TYPE: FileType;
     const METRIC_SUFFIX: &'static str;
 
+    // The `auto_commit` option and `roll_time` option are incompatible with
+    // each other. It doesn't make sense to roll a file every so often _and_
+    // commit it every time something is written. If a roll_time is provided,
+    // `auto_commit` is set to false.
     async fn file_sink(
         target_path: &Path,
         file_upload: FileUpload,
+        roll_time: Option<Duration>,
         metric_prefix: &str,
-    ) -> Result<FileSinkBuilder> {
-        Self::file_sink_opts(target_path, file_upload, metric_prefix, |builder| {
-            builder.auto_commit(false)
-        })
-        .await
-    }
-
-    async fn file_sink_opts(
-        target_path: &Path,
-        file_upload: FileUpload,
-        metric_prefix: &str,
-        opts_fn: impl FnOnce(FileSinkBuilder) -> FileSinkBuilder + Send,
     ) -> Result<(FileSinkClient<Self>, FileSink<Self>)> {
         let builder = FileSinkBuilder::new(
             Self::FILE_TYPE.to_string(),
@@ -41,9 +38,14 @@ where
             file_upload,
             format!("{}_{}", metric_prefix, Self::METRIC_SUFFIX),
         );
-        let builder_opts = opts_fn(builder);
 
-        let file_sink = builder_opts.create().await?;
+        let builder = if let Some(duration) = roll_time {
+            builder.auto_commit(false).roll_time(duration)
+        } else {
+            builder.auto_commit(true)
+        };
+
+        let file_sink = builder.create().await?;
         Ok(file_sink)
     }
 }

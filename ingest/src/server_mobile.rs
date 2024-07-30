@@ -444,84 +444,83 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let store_base_path = Path::new(&settings.cache);
 
     let (heartbeat_report_sink, heartbeat_report_sink_server) =
-        CellHeartbeatIngestReportV1::file_sink_opts(
+        CellHeartbeatIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(settings.roll_time),
             env!("CARGO_PKG_NAME"),
-            |builder| builder.roll_time(settings.roll_time),
         )
         .await?;
 
     let (wifi_heartbeat_report_sink, wifi_heartbeat_report_sink_server) =
-        WifiHeartbeatIngestReportV1::file_sink_opts(
+        WifiHeartbeatIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(settings.roll_time),
             env!("CARGO_PKG_NAME"),
-            |builder| builder.roll_time(settings.roll_time),
         )
         .await?;
 
     // speedtests
-    let (speedtest_report_sink, speedtest_report_sink_server) =
-        SpeedtestIngestReportV1::file_sink_opts(
-            store_base_path,
-            file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_speedtest_report"),
-            |builder| builder.roll_time(settings.roll_time),
-        )
-        .await?;
+    let (speedtest_report_sink, speedtest_report_sink_server) = SpeedtestIngestReportV1::file_sink(
+        store_base_path,
+        file_upload.clone(),
+        Some(settings.roll_time),
+        env!("CARGO_PKG_NAME"),
+    )
+    .await?;
 
     let (data_transfer_session_sink, data_transfer_session_sink_server) =
-        DataTransferSessionIngestReportV1::file_sink_opts(
+        DataTransferSessionIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(settings.roll_time),
             env!("CARGO_PKG_NAME"),
-            |builder| builder.roll_time(settings.roll_time),
         )
         .await?;
 
     let (subscriber_location_report_sink, subscriber_location_report_sink_server) =
-        SubscriberLocationIngestReportV1::file_sink_opts(
+        SubscriberLocationIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(settings.roll_time),
             env!("CARGO_PKG_NAME"),
-            |builder| builder.roll_time(settings.roll_time),
         )
         .await?;
 
     let (radio_threshold_report_sink, radio_threshold_report_sink_server) =
-        RadioThresholdIngestReportV1::file_sink_opts(
+        RadioThresholdIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(settings.roll_time),
             env!("CARGO_PKG_NAME"),
-            |builder| builder.roll_time(settings.roll_time),
         )
         .await?;
 
     let (invalidated_radio_threshold_report_sink, invalidated_radio_threshold_report_sink_server) =
-        InvalidatedRadioThresholdIngestReportV1::file_sink_opts(
+        InvalidatedRadioThresholdIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(settings.roll_time),
             env!("CARGO_PKG_NAME"),
-            |builder| builder.roll_time(settings.roll_time),
         )
         .await?;
 
     let (coverage_object_report_sink, coverage_object_report_sink_server) =
-        CoverageObjectIngestReportV1::file_sink_opts(
+        CoverageObjectIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(settings.roll_time),
             env!("CARGO_PKG_NAME"),
-            |builder| builder.roll_time(settings.roll_time),
         )
         .await?;
 
     let (sp_boosted_rewards_ban_sink, sp_boosted_rewards_ban_sink_server) =
-        ServiceProviderBoostedRewardsBannedRadioIngestReportV1::file_sink_opts(
+        ServiceProviderBoostedRewardsBannedRadioIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(settings.roll_time),
             env!("CARGO_PKG_NAME"),
-            |builder| builder.roll_time(settings.roll_time),
         )
         .await?;
 

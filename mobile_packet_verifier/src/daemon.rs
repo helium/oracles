@@ -141,20 +141,20 @@ impl Cmd {
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
-        let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink_opts(
+        let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
             store_base_path,
             file_upload.clone(),
+            None,
             env!("CARGO_PKG_NAME"),
-            |builder| builder.auto_commit(true),
         )
         .await?;
 
         let (invalid_sessions, invalid_sessions_server) =
-            InvalidDataTransferIngestReportV1::file_sink_opts(
+            InvalidDataTransferIngestReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
+                None,
                 env!("CARGO_PKG_NAME"),
-                |builder| builder.auto_commit(false),
             )
             .await?;
 

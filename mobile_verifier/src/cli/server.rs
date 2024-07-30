@@ -49,40 +49,28 @@ impl Cmd {
         let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
         let hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
 
-        let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink_opts(
+        let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
-            |builder| {
-                builder
-                    .auto_commit(false)
-                    .roll_time(Duration::from_secs(15 * 60))
-            },
         )
         .await?;
 
         // Seniority updates
-        let (seniority_updates, seniority_updates_server) = SeniorityUpdate::file_sink_opts(
+        let (seniority_updates, seniority_updates_server) = SeniorityUpdate::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
-            |builder| {
-                builder
-                    .auto_commit(false)
-                    .roll_time(Duration::from_secs(15 * 60))
-            },
         )
         .await?;
 
-        let (speedtests_avg, speedtests_avg_server) = SpeedtestAvg::file_sink_opts(
+        let (speedtests_avg, speedtests_avg_server) = SpeedtestAvg::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
-            |builder| {
-                builder
-                    .auto_commit(false)
-                    .roll_time(Duration::from_secs(15 * 60))
-            },
         )
         .await?;
 
