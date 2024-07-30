@@ -443,7 +443,7 @@ impl MockFileSinkReceiver<LoraWitnessIngestReportV1> {
     }
 }
 
-fn create_file_sink<T: file_store::traits::MsgBytes>(
+fn create_file_sink<T: file_store::traits::FileSinkBytes>(
 ) -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
     let (tx, rx) = tokio::sync::mpsc::channel(5);
     (
