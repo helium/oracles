@@ -86,7 +86,7 @@ pub fn create_file_sink() -> (FileSinkClient<BoostedHexUpdateProto>, MockFileSin
     (
         FileSinkClient {
             sender: tx,
-            metric: "metric",
+            metric: "metric".into(),
         },
         MockFileSinkReceiver { receiver: rx },
     )
