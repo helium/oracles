@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
     mobile_radio_invalidated_threshold::{
@@ -11,6 +11,7 @@ use file_store::{
     mobile_radio_threshold::{
         RadioThresholdIngestReport, RadioThresholdReportReq, VerifiedRadioThresholdIngestReport,
     },
+    traits::FileSinkWriteExt,
     FileStore, FileType,
 };
 use futures::{StreamExt, TryStreamExt};
@@ -69,28 +70,19 @@ where
         authorization_verifier: AV,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_radio_threshold, verified_radio_threshold_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::VerifiedRadioThresholdIngestReport,
+            VerifiedRadioThresholdIngestReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_verified_radio_threshold"),
+                env!("CARGO_PKG_NAME"),
             )
-            .auto_commit(false)
-            .create()
             .await?;
 
         let (verified_invalidated_radio_threshold, verified_invalidated_radio_threshold_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::VerifiedInvalidatedRadioThresholdIngestReport,
+            VerifiedInvalidatedRadioThresholdIngestReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                concat!(
-                    env!("CARGO_PKG_NAME"),
-                    "_verified_invalidated_radio_threshold"
-                ),
+                env!("CARGO_PKG_NAME"),
             )
-            .auto_commit(false)
-            .create()
             .await?;
 
         let (radio_threshold_ingest, radio_threshold_ingest_server) =

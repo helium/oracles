@@ -7,10 +7,10 @@ use chrono::{DateTime, Utc};
 use file_store::{
     coverage::{self, CoverageObjectIngestReport},
     file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
-    traits::TimestampEncode,
+    traits::{FileSinkWriteExt, TimestampEncode},
     FileStore, FileType,
 };
 use futures::{
@@ -20,7 +20,9 @@ use futures::{
 use h3o::{CellIndex, LatLng};
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
-    poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
+    poc_mobile::{
+        self as proto, CoverageObjectV1, CoverageObjectValidity, SignalLevel as SignalLevelProto,
+    },
 };
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
@@ -86,15 +88,16 @@ impl CoverageDaemon {
         auth_client: AuthorizationClient,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
-            FileType::CoverageObject,
+        let (valid_coverage_objs, valid_coverage_objs_server) = CoverageObjectV1::file_sink_opts(
             settings.store_base_path(),
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
+            env!("CARGO_PKG_NAME"),
+            |builder| {
+                builder
+                    .auto_commit(false)
+                    .roll_time(Duration::from_secs(15 * 60))
+            },
         )
-        .auto_commit(false)
-        .roll_time(Duration::from_secs(15 * 60))
-        .create()
         .await?;
 
         let (coverage_objs, coverage_objs_server) =

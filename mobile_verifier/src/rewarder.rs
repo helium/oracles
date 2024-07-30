@@ -15,18 +15,17 @@ use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::TimestampEncode,
-    FileType,
+    traits::{FileSinkWriteExt, TimestampEncode},
 };
 use futures_util::TryFutureExt;
 
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
-    services::{
-        poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
-        poc_mobile::UnallocatedReward, poc_mobile::UnallocatedRewardType,
+    services::poc_mobile::{
+        self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
+        UnallocatedReward, UnallocatedRewardType,
     },
     MobileRewardData as ManifestMobileRewardData, RewardManifest,
 };
@@ -79,24 +78,18 @@ where
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
-        let (mobile_rewards, mobile_rewards_server) = file_sink::FileSinkBuilder::new(
-            FileType::MobileRewardShare,
+        let (mobile_rewards, mobile_rewards_server) = MobileRewardShare::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
+            env!("CARGO_PKG_NAME"),
         )
-        .auto_commit(false)
-        .create()
         .await?;
 
-        let (reward_manifests, reward_manifests_server) = file_sink::FileSinkBuilder::new(
-            FileType::RewardManifest,
+        let (reward_manifests, reward_manifests_server) = RewardManifest::file_sink(
             settings.store_base_path(),
             file_upload,
-            concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
+            env!("CARGO_PKG_NAME"),
         )
-        .auto_commit(false)
-        .create()
         .await?;
 
         let rewarder = Rewarder::new(

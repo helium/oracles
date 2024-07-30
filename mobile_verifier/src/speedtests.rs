@@ -5,10 +5,11 @@ use crate::{
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    traits::FileSinkWriteExt,
     FileStore, FileType,
 };
 use futures::{
@@ -73,16 +74,18 @@ where
         speedtests_avg: FileSinkClient<SpeedtestAvgProto>,
         gateway_resolver: GIR,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (speedtests_validity, speedtests_validity_server) = file_sink::FileSinkBuilder::new(
-            FileType::VerifiedSpeedtest,
-            settings.store_base_path(),
-            file_upload,
-            concat!(env!("CARGO_PKG_NAME"), "_verified_speedtest"),
-        )
-        .auto_commit(false)
-        .roll_time(Duration::from_secs(15 * 60))
-        .create()
-        .await?;
+        let (speedtests_validity, speedtests_validity_server) =
+            VerifiedSpeedtestProto::file_sink_opts(
+                settings.store_base_path(),
+                file_upload,
+                env!("CARGO_PKG_NAME"),
+                |builder| {
+                    builder
+                        .auto_commit(false)
+                        .roll_time(Duration::from_secs(15 * 60))
+                },
+            )
+            .await?;
 
         let (speedtests, speedtests_server) =
             file_source::continuous_source::<CellSpeedtestIngestReport, _>()

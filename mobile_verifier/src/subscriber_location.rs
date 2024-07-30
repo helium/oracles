@@ -1,13 +1,14 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
     mobile_subscriber::{
         SubscriberLocationIngestReport, SubscriberLocationReq,
         VerifiedSubscriberLocationIngestReport,
     },
+    traits::FileSinkWriteExt,
     FileStore, FileType,
 };
 use futures::{StreamExt, TryStreamExt};
@@ -53,14 +54,11 @@ where
         entity_verifier: EV,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_subscriber_location, verified_subscriber_location_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::VerifiedSubscriberLocationIngestReport,
+            VerifiedSubscriberLocationIngestReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_verified_subscriber_location"),
+                env!("CARGO_PKG_NAME"),
             )
-            .auto_commit(false)
-            .create()
             .await?;
 
         let (subscriber_location_ingest, subscriber_location_ingest_server) =
