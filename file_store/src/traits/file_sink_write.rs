@@ -261,7 +261,11 @@ impl_msg_bytes!(
     FileType::EntropyReport,
     "report_submission"
 );
-impl_msg_bytes!(proto::PriceReportV1);
+impl_msg_bytes!(
+    proto::PriceReportV1,
+    FileType::PriceReport,
+    "report_submission"
+);
 impl_msg_bytes!(
     proto::RewardManifest,
     FileType::RewardManifest,
