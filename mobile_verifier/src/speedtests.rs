@@ -74,18 +74,13 @@ where
         speedtests_avg: FileSinkClient<SpeedtestAvgProto>,
         gateway_resolver: GIR,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (speedtests_validity, speedtests_validity_server) =
-            VerifiedSpeedtestProto::file_sink_opts(
-                settings.store_base_path(),
-                file_upload,
-                env!("CARGO_PKG_NAME"),
-                |builder| {
-                    builder
-                        .auto_commit(false)
-                        .roll_time(Duration::from_secs(15 * 60))
-                },
-            )
-            .await?;
+        let (speedtests_validity, speedtests_validity_server) = VerifiedSpeedtestProto::file_sink(
+            settings.store_base_path(),
+            file_upload,
+            Some(Duration::from_secs(15 * 60)),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
 
         let (speedtests, speedtests_server) =
             file_source::continuous_source::<CellSpeedtestIngestReport, _>()

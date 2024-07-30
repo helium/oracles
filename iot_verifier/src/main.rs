@@ -2,8 +2,12 @@ use crate::entropy_loader::EntropyLoader;
 use anyhow::Result;
 use clap::Parser;
 use file_store::{
-    entropy_report::EntropyReport, file_info_poller::LookbackBehavior, file_source, file_upload,
-    iot_packet::IotValidPacket, traits::FileSinkWriteExt, FileStore, FileType,
+    entropy_report::EntropyReport,
+    file_info_poller::LookbackBehavior,
+    file_source, file_upload,
+    iot_packet::IotValidPacket,
+    traits::{FileSinkWriteExt, DEFAULT_ROLL_TIME},
+    FileStore, FileType,
 };
 use helium_proto::{
     services::poc_lora::{
@@ -117,14 +121,22 @@ impl Server {
         // *
 
         // Gateway reward shares sink
-        let (rewards_sink, gateway_rewards_sink_server) =
-            IotRewardShare::file_sink(store_base_path, file_upload.clone(), env!("CARGO_PKG_NAME"))
-                .await?;
+        let (rewards_sink, gateway_rewards_sink_server) = IotRewardShare::file_sink(
+            store_base_path,
+            file_upload.clone(),
+            Some(DEFAULT_ROLL_TIME),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
 
         // Reward manifest
-        let (reward_manifests_sink, reward_manifests_sink_server) =
-            RewardManifest::file_sink(store_base_path, file_upload.clone(), env!("CARGO_PKG_NAME"))
-                .await?;
+        let (reward_manifests_sink, reward_manifests_sink_server) = RewardManifest::file_sink(
+            store_base_path,
+            file_upload.clone(),
+            Some(DEFAULT_ROLL_TIME),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
 
         let rewarder = Rewarder {
             pool: pool.clone(),
@@ -162,11 +174,11 @@ impl Server {
         // *
 
         let (non_rewardable_packet_sink, non_rewardable_packet_sink_server) =
-            NonRewardablePacket::file_sink_opts(
+            NonRewardablePacket::file_sink(
                 store_base_path,
                 file_upload.clone(),
+                Some(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
-                |builder| builder.roll_time(Duration::from_secs(5 * 60)),
             )
             .await?;
 
@@ -198,6 +210,7 @@ impl Server {
             LoraInvalidBeaconReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
+                Some(DEFAULT_ROLL_TIME),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -206,6 +219,7 @@ impl Server {
             LoraInvalidWitnessReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
+                Some(DEFAULT_ROLL_TIME),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -226,28 +240,28 @@ impl Server {
         // *
 
         let (runner_invalid_beacon_sink, runner_invalid_beacon_sink_server) =
-            LoraInvalidBeaconReportV1::file_sink_opts(
+            LoraInvalidBeaconReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
+                Some(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
-                |builder| builder.roll_time(Duration::from_secs(5 * 60)),
             )
             .await?;
 
         let (runner_invalid_witness_sink, runner_invalid_witness_sink_server) =
-            LoraInvalidWitnessReportV1::file_sink_opts(
+            LoraInvalidWitnessReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
+                Some(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
-                |builder| builder.roll_time(Duration::from_secs(5 * 60)),
             )
             .await?;
 
-        let (runner_poc_sink, runner_poc_sink_server) = LoraPocV1::file_sink_opts(
+        let (runner_poc_sink, runner_poc_sink_server) = LoraPocV1::file_sink(
             store_base_path,
             file_upload.clone(),
+            Some(Duration::from_secs(2 * 60)),
             env!("CARGO_PKG_NAME"),
-            |builder| builder.roll_time(Duration::from_secs(2 * 60)),
         )
         .await?;
 

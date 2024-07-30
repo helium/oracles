@@ -259,15 +259,11 @@ impl
         new_coverage_object_notification: NewCoverageObjectNotification,
     ) -> anyhow::Result<impl ManagedTask> {
         let (oracle_boosting_reports, oracle_boosting_reports_server) =
-            OracleBoostingReportV1::file_sink_opts(
+            OracleBoostingReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
+                Some(Duration::from_secs(15 * 60)),
                 env!("CARGO_PKG_NAME"),
-                |builder| {
-                    builder
-                        .auto_commit(true)
-                        .roll_time(Duration::from_secs(15 * 60))
-                },
             )
             .await?;
 
