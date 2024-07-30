@@ -2,10 +2,9 @@ use crate::Settings;
 use anyhow::{Error, Result};
 use chrono::Utc;
 use file_store::{
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_upload,
-    traits::MsgVerify,
-    FileType,
+    traits::{FileSinkWriteExt, MsgVerify},
 };
 use futures::{
     future::{LocalBoxFuture, TryFutureExt},
@@ -363,26 +362,23 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let store_base_path = Path::new(&settings.cache);
 
     // iot beacon reports
-    let (beacon_report_sink, beacon_report_sink_server) = file_sink::FileSinkBuilder::new(
-        FileType::IotBeaconIngestReport,
+    let (beacon_report_sink, beacon_report_sink_server) = LoraBeaconIngestReportV1::file_sink_opts(
         store_base_path,
         file_upload.clone(),
-        concat!(env!("CARGO_PKG_NAME"), "_beacon_report"),
+        env!("CARGO_PKG_NAME"),
+        |builder| builder.roll_time(Duration::from_secs(5 * 60)),
     )
-    .roll_time(Duration::from_secs(5 * 60))
-    .create()
     .await?;
 
     // iot witness reports
-    let (witness_report_sink, witness_report_sink_server) = file_sink::FileSinkBuilder::new(
-        FileType::IotWitnessIngestReport,
-        store_base_path,
-        file_upload.clone(),
-        concat!(env!("CARGO_PKG_NAME"), "_witness_report"),
-    )
-    .roll_time(Duration::from_secs(5 * 60))
-    .create()
-    .await?;
+    let (witness_report_sink, witness_report_sink_server) =
+        LoraWitnessIngestReportV1::file_sink_opts(
+            store_base_path,
+            file_upload.clone(),
+            env!("CARGO_PKG_NAME"),
+            |builder| builder.roll_time(Duration::from_secs(5 * 60)),
+        )
+        .await?;
 
     let grpc_server = GrpcServer {
         beacon_report_sink,
