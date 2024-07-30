@@ -2,8 +2,15 @@ use crate::entropy_loader::EntropyLoader;
 use anyhow::Result;
 use clap::Parser;
 use file_store::{
-    entropy_report::EntropyReport, file_info_poller::LookbackBehavior, file_sink, file_source,
-    file_upload, iot_packet::IotValidPacket, FileStore, FileType,
+    entropy_report::EntropyReport, file_info_poller::LookbackBehavior, file_source, file_upload,
+    iot_packet::IotValidPacket, traits::FileSinkWriteExt, FileStore, FileType,
+};
+use helium_proto::{
+    services::poc_lora::{
+        IotRewardShare, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1, LoraPocV1,
+        NonRewardablePacket,
+    },
+    RewardManifest,
 };
 use iot_config::client::Client as IotConfigClient;
 use iot_verifier::{
@@ -110,27 +117,14 @@ impl Server {
         // *
 
         // Gateway reward shares sink
-        let (rewards_sink, gateway_rewards_sink_server) = file_sink::FileSinkBuilder::new(
-            FileType::IotRewardShare,
-            store_base_path,
-            file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_gateway_reward_shares"),
-        )
-        .auto_commit(false)
-        .create()
-        .await?;
+        let (rewards_sink, gateway_rewards_sink_server) =
+            IotRewardShare::file_sink(store_base_path, file_upload.clone(), env!("CARGO_PKG_NAME"))
+                .await?;
 
         // Reward manifest
         let (reward_manifests_sink, reward_manifests_sink_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::RewardManifest,
-                store_base_path,
-                file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_iot_reward_manifest"),
-            )
-            .auto_commit(false)
-            .create()
-            .await?;
+            RewardManifest::file_sink(store_base_path, file_upload.clone(), env!("CARGO_PKG_NAME"))
+                .await?;
 
         let rewarder = Rewarder {
             pool: pool.clone(),
@@ -168,14 +162,12 @@ impl Server {
         // *
 
         let (non_rewardable_packet_sink, non_rewardable_packet_sink_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::NonRewardablePacket,
+            NonRewardablePacket::file_sink_opts(
                 store_base_path,
                 file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_non_rewardable_packet"),
+                env!("CARGO_PKG_NAME"),
+                |builder| builder.roll_time(Duration::from_secs(5 * 60)),
             )
-            .roll_time(Duration::from_secs(5 * 60))
-            .create()
             .await?;
 
         let packet_store = FileStore::from_settings(&settings.packet_ingest).await?;
@@ -202,27 +194,22 @@ impl Server {
         // *
         // setup the purger requirements
         // *
-
         let (purger_invalid_beacon_sink, purger_invalid_beacon_sink_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::IotInvalidBeaconReport,
+            LoraInvalidBeaconReportV1::file_sink_opts(
                 store_base_path,
                 file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon"),
+                env!("CARGO_PKG_NAME"),
+                |builder| builder.auto_commit(false),
             )
-            .auto_commit(false)
-            .create()
             .await?;
 
         let (purger_invalid_witness_sink, purger_invalid_witness_sink_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::IotInvalidWitnessReport,
+            LoraInvalidWitnessReportV1::file_sink_opts(
                 store_base_path,
                 file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
+                env!("CARGO_PKG_NAME"),
+                |builder| builder.auto_commit(false),
             )
-            .auto_commit(false)
-            .create()
             .await?;
 
         let purger = purger::Purger::new(
@@ -241,35 +228,29 @@ impl Server {
         // *
 
         let (runner_invalid_beacon_sink, runner_invalid_beacon_sink_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::IotInvalidBeaconReport,
+            LoraInvalidBeaconReportV1::file_sink_opts(
                 store_base_path,
                 file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon_report"),
+                env!("CARGO_PKG_NAME"),
+                |builder| builder.roll_time(Duration::from_secs(5 * 60)),
             )
-            .roll_time(Duration::from_secs(5 * 60))
-            .create()
             .await?;
 
         let (runner_invalid_witness_sink, runner_invalid_witness_sink_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::IotInvalidWitnessReport,
+            LoraInvalidWitnessReportV1::file_sink_opts(
                 store_base_path,
                 file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
+                env!("CARGO_PKG_NAME"),
+                |builder| builder.roll_time(Duration::from_secs(5 * 60)),
             )
-            .roll_time(Duration::from_secs(5 * 60))
-            .create()
             .await?;
 
-        let (runner_poc_sink, runner_poc_sink_server) = file_sink::FileSinkBuilder::new(
-            FileType::IotPoc,
+        let (runner_poc_sink, runner_poc_sink_server) = LoraPocV1::file_sink_opts(
             store_base_path,
             file_upload.clone(),
             concat!(env!("CARGO_PKG_NAME"), "_valid_poc"),
+            |builder| builder.roll_time(Duration::from_secs(2 * 60)),
         )
-        .roll_time(Duration::from_secs(2 * 60))
-        .create()
         .await?;
 
         let runner = runner::Runner::from_settings(
