@@ -22,17 +22,11 @@ where
         target_path: &Path,
         file_upload: FileUpload,
         metric_prefix: &str,
-    ) -> Result<(FileSinkClient<Self>, FileSink<Self>)> {
-        let builder = FileSinkBuilder::new(
-            Self::FILE_TYPE.to_string(),
-            target_path,
-            file_upload,
-            format!("{}_{}", metric_prefix, Self::METRIC_SUFFIX),
-        )
-        .auto_commit(false);
-
-        let file_sink = builder.create().await?;
-        Ok(file_sink)
+    ) -> Result<FileSinkBuilder> {
+        Self::file_sink_opts(target_path, file_upload, metric_prefix, |builder| {
+            builder.auto_commit(false)
+        })
+        .await
     }
 
     async fn file_sink_opts(

@@ -195,20 +195,18 @@ impl Server {
         // setup the purger requirements
         // *
         let (purger_invalid_beacon_sink, purger_invalid_beacon_sink_server) =
-            LoraInvalidBeaconReportV1::file_sink_opts(
+            LoraInvalidBeaconReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
                 env!("CARGO_PKG_NAME"),
-                |builder| builder.auto_commit(false),
             )
             .await?;
 
         let (purger_invalid_witness_sink, purger_invalid_witness_sink_server) =
-            LoraInvalidWitnessReportV1::file_sink_opts(
+            LoraInvalidWitnessReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
                 env!("CARGO_PKG_NAME"),
-                |builder| builder.auto_commit(false),
             )
             .await?;
 
@@ -248,7 +246,7 @@ impl Server {
         let (runner_poc_sink, runner_poc_sink_server) = LoraPocV1::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_valid_poc"),
+            env!("CARGO_PKG_NAME"),
             |builder| builder.roll_time(Duration::from_secs(2 * 60)),
         )
         .await?;
