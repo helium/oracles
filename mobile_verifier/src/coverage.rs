@@ -20,9 +20,7 @@ use futures::{
 use h3o::{CellIndex, LatLng};
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
-    poc_mobile::{
-        self as proto, CoverageObjectV1, CoverageObjectValidity, SignalLevel as SignalLevelProto,
-    },
+    poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
@@ -88,17 +86,18 @@ impl CoverageDaemon {
         auth_client: AuthorizationClient,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (valid_coverage_objs, valid_coverage_objs_server) = CoverageObjectV1::file_sink_opts(
-            settings.store_base_path(),
-            file_upload.clone(),
-            env!("CARGO_PKG_NAME"),
-            |builder| {
-                builder
-                    .auto_commit(false)
-                    .roll_time(Duration::from_secs(15 * 60))
-            },
-        )
-        .await?;
+        let (valid_coverage_objs, valid_coverage_objs_server) =
+            proto::CoverageObjectV1::file_sink_opts(
+                settings.store_base_path(),
+                file_upload.clone(),
+                env!("CARGO_PKG_NAME"),
+                |builder| {
+                    builder
+                        .auto_commit(false)
+                        .roll_time(Duration::from_secs(15 * 60))
+                },
+            )
+            .await?;
 
         let (coverage_objs, coverage_objs_server) =
             file_source::continuous_source::<CoverageObjectIngestReport, _>()
@@ -129,7 +128,7 @@ impl CoverageDaemon {
         pool: PgPool,
         auth_client: AuthorizationClient,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-        coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
+        coverage_obj_sink: FileSinkClient<CoverageObjectV1>,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> Self {
         Self {
