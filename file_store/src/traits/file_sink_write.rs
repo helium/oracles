@@ -199,7 +199,11 @@ impl_msg_bytes!(
     FileType::WifiHeartbeatIngestReport,
     "wifi_heartbeat_report"
 );
-impl_msg_bytes!(proto::BoostedHexUpdateV1);
+impl_msg_bytes!(
+    proto::BoostedHexUpdateV1,
+    FileType::BoostedHexUpdate,
+    "boosted_hex_update"
+);
 impl_msg_bytes!(proto::EntropyReportV1);
 impl_msg_bytes!(proto::PriceReportV1);
 impl_msg_bytes!(

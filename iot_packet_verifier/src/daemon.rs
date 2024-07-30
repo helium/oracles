@@ -10,7 +10,7 @@ use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
     file_source, file_upload,
-    iot_packet::{IotValidPacket, PacketRouterPacketReport},
+    iot_packet::PacketRouterPacketReport,
     traits::FileSinkWriteExt,
     FileStore, FileType,
 };
