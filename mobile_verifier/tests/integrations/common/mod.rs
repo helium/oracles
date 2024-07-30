@@ -180,7 +180,7 @@ pub fn create_file_sink<T>() -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
     (
         FileSinkClient {
             sender: tx,
-            metric: "metric",
+            metric: "metric".into(),
         },
         MockFileSinkReceiver { receiver: rx },
     )
