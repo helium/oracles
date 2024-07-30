@@ -1,4 +1,4 @@
-use crate::{file_upload::FileUpload, traits::MsgBytes, Error, Result};
+use crate::{file_upload::FileUpload, traits::FileSinkBytes, Error, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
@@ -122,7 +122,7 @@ impl FileSinkBuilder {
 
     pub async fn create<T>(self) -> Result<(FileSinkClient<T>, FileSink<T>)>
     where
-        T: MsgBytes,
+        T: FileSinkBytes,
     {
         let (tx, rx) = message_channel(50);
 
@@ -278,7 +278,7 @@ impl ActiveSink {
     }
 }
 
-impl<T: MsgBytes + Send + Sync + 'static> ManagedTask for FileSink<T> {
+impl<T: FileSinkBytes + Send + Sync + 'static> ManagedTask for FileSink<T> {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -293,7 +293,7 @@ impl<T: MsgBytes + Send + Sync + 'static> ManagedTask for FileSink<T> {
     }
 }
 
-impl<T: MsgBytes> FileSink<T> {
+impl<T: FileSinkBytes> FileSink<T> {
     async fn init(&mut self) -> Result {
         fs::create_dir_all(&self.target_path).await?;
         fs::create_dir_all(&self.tmp_path).await?;
