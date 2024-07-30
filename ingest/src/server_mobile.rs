@@ -2,10 +2,9 @@ use crate::Settings;
 use anyhow::{bail, Error, Result};
 use chrono::Utc;
 use file_store::{
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_upload,
-    traits::MsgVerify,
-    FileType,
+    traits::{FileSinkWriteExt, MsgVerify},
 };
 use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
@@ -444,111 +443,86 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let store_base_path = Path::new(&settings.cache);
 
-    let (heartbeat_report_sink, heartbeat_report_sink_server) = file_sink::FileSinkBuilder::new(
-        FileType::CbrsHeartbeatIngestReport,
-        store_base_path,
-        file_upload.clone(),
-        concat!(env!("CARGO_PKG_NAME"), "_heartbeat_report"),
-    )
-    .roll_time(settings.roll_time)
-    .create()
-    .await?;
-
-    let (wifi_heartbeat_report_sink, wifi_heartbeat_report_sink_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::WifiHeartbeatIngestReport,
+    let (heartbeat_report_sink, heartbeat_report_sink_server) =
+        CellHeartbeatIngestReportV1::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_wifi_heartbeat_report"),
+            env!("CARGO_PKG_NAME"),
+            |builder| builder.roll_time(settings.roll_time),
         )
-        .roll_time(settings.roll_time)
-        .create()
+        .await?;
+
+    let (wifi_heartbeat_report_sink, wifi_heartbeat_report_sink_server) =
+        WifiHeartbeatIngestReportV1::file_sink_opts(
+            store_base_path,
+            file_upload.clone(),
+            env!("CARGO_PKG_NAME"),
+            |builder| builder.roll_time(settings.roll_time),
+        )
         .await?;
 
     // speedtests
-    let (speedtest_report_sink, speedtest_report_sink_server) = file_sink::FileSinkBuilder::new(
-        FileType::CellSpeedtestIngestReport,
-        store_base_path,
-        file_upload.clone(),
-        concat!(env!("CARGO_PKG_NAME"), "_speedtest_report"),
-    )
-    .roll_time(settings.roll_time)
-    .create()
-    .await?;
-
-    let (data_transfer_session_sink, data_transfer_session_sink_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::DataTransferSessionIngestReport,
+    let (speedtest_report_sink, speedtest_report_sink_server) =
+        SpeedtestIngestReportV1::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(
-                env!("CARGO_PKG_NAME"),
-                "_mobile_data_transfer_session_report"
-            ),
+            concat!(env!("CARGO_PKG_NAME"), "_speedtest_report"),
+            |builder| builder.roll_time(settings.roll_time),
         )
-        .roll_time(settings.roll_time)
-        .create()
+        .await?;
+
+    let (data_transfer_session_sink, data_transfer_session_sink_server) =
+        DataTransferSessionIngestReportV1::file_sink_opts(
+            store_base_path,
+            file_upload.clone(),
+            env!("CARGO_PKG_NAME"),
+            |builder| builder.roll_time(settings.roll_time),
+        )
         .await?;
 
     let (subscriber_location_report_sink, subscriber_location_report_sink_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::SubscriberLocationIngestReport,
+        SubscriberLocationIngestReportV1::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_subscriber_location_report"),
+            env!("CARGO_PKG_NAME"),
+            |builder| builder.roll_time(settings.roll_time),
         )
-        .roll_time(settings.roll_time)
-        .create()
         .await?;
 
     let (radio_threshold_report_sink, radio_threshold_report_sink_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::RadioThresholdIngestReport,
+        RadioThresholdIngestReportV1::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_radio_threshold_ingest_report"),
+            env!("CARGO_PKG_NAME"),
+            |builder| builder.roll_time(settings.roll_time),
         )
-        .roll_time(settings.roll_time)
-        .create()
         .await?;
 
     let (invalidated_radio_threshold_report_sink, invalidated_radio_threshold_report_sink_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::InvalidatedRadioThresholdIngestReport,
+        InvalidatedRadioThresholdIngestReportV1::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(
-                env!("CARGO_PKG_NAME"),
-                "_invalidated_radio_threshold_ingest_report"
-            ),
+            env!("CARGO_PKG_NAME"),
+            |builder| builder.roll_time(settings.roll_time),
         )
-        .roll_time(settings.roll_time)
-        .create()
         .await?;
 
     let (coverage_object_report_sink, coverage_object_report_sink_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::CoverageObjectIngestReport,
+        CoverageObjectIngestReportV1::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_coverage_object_report"),
+            env!("CARGO_PKG_NAME"),
+            |builder| builder.roll_time(settings.roll_time),
         )
-        .roll_time(settings.roll_time)
-        .create()
         .await?;
 
     let (sp_boosted_rewards_ban_sink, sp_boosted_rewards_ban_sink_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::SPBoostedRewardsBannedRadioIngestReport,
+        ServiceProviderBoostedRewardsBannedRadioIngestReportV1::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(
-                env!("CARGO_PKG_NAME"),
-                "_service_provider_boosted_rewards_banned_radio"
-            ),
+            env!("CARGO_PKG_NAME"),
+            |builder| builder.roll_time(settings.roll_time),
         )
-        .roll_time(settings.roll_time)
-        .create()
         .await?;
 
     let (subscriber_mapping_event_sink, subscriber_mapping_event_server) =
