@@ -6,10 +6,13 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source, file_upload,
     mobile_session::DataTransferSessionIngestReport,
-    FileSinkBuilder, FileStore, FileType,
+    traits::FileSinkWriteExt,
+    FileStore, FileType,
 };
 
-use helium_proto::services::poc_mobile::InvalidDataTransferIngestReportV1;
+use helium_proto::services::{
+    packet_verifier::ValidDataTransferSession, poc_mobile::InvalidDataTransferIngestReportV1,
+};
 use mobile_config::client::{
     authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
     AuthorizationClient, GatewayClient,
@@ -138,25 +141,22 @@ impl Cmd {
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
-        let (valid_sessions, valid_sessions_server) = FileSinkBuilder::new(
-            FileType::ValidDataTransferSession,
+        let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink_opts(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_valid_data_transfer_session"),
+            env!("CARGO_PKG_NAME"),
+            |builder| builder.auto_commit(true),
         )
-        .auto_commit(true)
-        .create()
         .await?;
 
-        let (invalid_sessions, invalid_sessions_server) = FileSinkBuilder::new(
-            FileType::InvalidDataTransferSessionIngestReport,
-            store_base_path,
-            file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_invalid_data_transfer_session"),
-        )
-        .auto_commit(false)
-        .create()
-        .await?;
+        let (invalid_sessions, invalid_sessions_server) =
+            InvalidDataTransferIngestReportV1::file_sink_opts(
+                store_base_path,
+                file_upload.clone(),
+                env!("CARGO_PKG_NAME"),
+                |builder| builder.auto_commit(false),
+            )
+            .await?;
 
         let burner = Burner::new(valid_sessions, solana);
 
