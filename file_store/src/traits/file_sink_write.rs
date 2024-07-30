@@ -256,7 +256,11 @@ impl_msg_bytes!(
     FileType::BoostedHexUpdate,
     "boosted_hex_update"
 );
-impl_msg_bytes!(proto::EntropyReportV1);
+impl_msg_bytes!(
+    proto::EntropyReportV1,
+    FileType::EntropyReport,
+    "report_submission"
+);
 impl_msg_bytes!(proto::PriceReportV1);
 impl_msg_bytes!(
     proto::RewardManifest,
