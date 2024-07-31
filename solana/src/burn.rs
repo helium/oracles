@@ -8,16 +8,14 @@ use helium_anchor_gen::{
     helium_sub_daos::{self, DaoV0, SubDaoV0},
 };
 use helium_crypto::PublicKeyBinary;
+use helium_lib::client::SolanaRpcClient;
 use itertools::Itertools;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{
-    client_error::ClientError, nonblocking::rpc_client::RpcClient, rpc_response::Response,
-};
+use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     compute_budget::ComputeBudgetInstruction,
-    program_pack::Pack,
     pubkey::Pubkey,
     signature::{read_keypair_file, Keypair, Signature},
     signer::Signer,
@@ -77,7 +75,7 @@ impl Settings {
 }
 
 pub struct SolanaRpc {
-    provider: RpcClient,
+    provider: SolanaRpcClient,
     program_cache: BurnProgramCache,
     cluster: String,
     keypair: [u8; 64],
@@ -93,12 +91,15 @@ impl SolanaRpc {
         let Ok(keypair) = read_keypair_file(&settings.burn_keypair) else {
             return Err(SolanaRpcError::FailedToReadKeypairError);
         };
-        let provider =
-            RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());
+        let provider = SolanaRpcClient::new_with_commitment(
+            settings.rpc_url.clone(),
+            CommitmentConfig::finalized(),
+        );
         let program_cache = BurnProgramCache::new(&provider, dc_mint, dnt_mint).await?;
         if program_cache.dc_burn_authority != keypair.pubkey() {
             return Err(SolanaRpcError::InvalidKeypair);
         }
+
         Ok(Arc::new(Self {
             cluster: settings.cluster.clone(),
             provider,
@@ -111,42 +112,36 @@ impl SolanaRpc {
     }
 }
 
+impl AsRef<SolanaRpcClient> for SolanaRpc {
+    fn as_ref(&self) -> &helium_lib::client::SolanaRpcClient {
+        &self.provider
+    }
+}
+
 #[async_trait]
 impl SolanaNetwork for SolanaRpc {
     type Error = SolanaRpcError;
     type Transaction = Transaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
-        let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
-        let (escrow_account, _) = Pubkey::find_program_address(
-            &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
-            &data_credits::ID,
-        );
-        let account_data = match self
-            .provider
-            .get_account_with_commitment(&escrow_account, CommitmentConfig::finalized())
-            .await?
-        {
-            Response { value: None, .. } => {
-                tracing::info!(%payer, "Account not found, therefore no balance");
-                return Ok(0);
+        let escrow_account = escrow_dc_account_for_payer(&self.program_cache.sub_dao, payer);
+        let amount = match helium_lib::token::balance_for_address(&self, &escrow_account).await? {
+            Some(token_balance) => token_balance.amount.amount,
+            None => {
+                tracing::info!(%payer, "Account not found, no balance");
+                0
             }
-            Response {
-                value: Some(account),
-                ..
-            } => account.data,
         };
-        let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
 
         if self.payers_to_monitor.contains(payer) {
             metrics::gauge!(
                 "balance",
                 "payer" => payer.to_string()
             )
-            .set(account_layout.amount as f64);
+            .set(amount as f64);
         }
 
-        Ok(account_layout.amount)
+        Ok(amount)
     }
 
     async fn make_burn_transaction(
@@ -306,7 +301,7 @@ pub const MAX_RECENT_PRIORITY_FEE_ACCOUNTS: usize = 128;
 impl PriorityFee {
     pub async fn get_estimate(
         &self,
-        provider: &RpcClient,
+        provider: &SolanaRpcClient,
         accounts: &[Pubkey],
         min_priority_fee: u64,
     ) -> Result<u64, ClientError> {
@@ -376,7 +371,7 @@ pub struct BurnProgramCache {
 
 impl BurnProgramCache {
     pub async fn new(
-        provider: &RpcClient,
+        provider: &SolanaRpcClient,
         dc_mint: Pubkey,
         dnt_mint: Pubkey,
     ) -> Result<Self, SolanaRpcError> {
@@ -517,8 +512,17 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
     }
 }
 
+fn escrow_dc_account_for_payer(sub_dao: &Pubkey, payer: &PublicKeyBinary) -> Pubkey {
+    let ddc_key = delegated_data_credits(sub_dao, payer);
+    let (escrow_account, _) = Pubkey::find_program_address(
+        &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
+        &data_credits::ID,
+    );
+    escrow_account
+}
+
 /// Returns the PDA for the Delegated Data Credits of the given `payer`.
-pub fn delegated_data_credits(sub_dao: &Pubkey, payer: &PublicKeyBinary) -> Pubkey {
+fn delegated_data_credits(sub_dao: &Pubkey, payer: &PublicKeyBinary) -> Pubkey {
     let mut hasher = Sha256::new();
     hasher.update(payer.to_string());
     let sha_digest = hasher.finalize();

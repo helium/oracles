@@ -49,6 +49,10 @@ pub enum SolanaRpcError {
     FailedToReadKeypairError,
     #[error("crypto error: {0}")]
     Crypto(#[from] helium_crypto::Error),
+    #[error("helium-lib error: {0}")]
+    HeliumLib(#[from] helium_lib::error::Error),
+    #[error("Parse Solana Pubkey from slice error: {0}")]
+    ParsePubkeyFromSliceError(#[from] std::array::TryFromSliceError),
 }
 
 impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
