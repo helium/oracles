@@ -7446,6 +7446,7 @@ dependencies = [
  "futures",
  "helium-anchor-gen 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git)",
  "helium-crypto",
+ "helium-lib",
  "itertools",
  "metrics",
  "serde",
