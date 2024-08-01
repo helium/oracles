@@ -50,6 +50,7 @@ impl Cmd {
                     SubscriberReward(reward) => subscriber_reward.push(json!({
                         "subscriber_id": uuid::Uuid::from_slice(&reward.subscriber_id).unwrap(),
                         "discovery_location_amount": reward.discovery_location_amount,
+                        "verification_mapping_amount": reward.verification_mapping_amount,
                     })),
                     ServiceProviderReward(reward) => service_provider_reward.push(json!({
                         "service_provider": reward.service_provider_id,
