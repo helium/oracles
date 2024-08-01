@@ -5,7 +5,7 @@ mod common;
 
 #[tokio::test]
 async fn submit_verified_subscriber_mapping_event() -> anyhow::Result<()> {
-    let (mut client, file_sink_rx, trigger) = common::setup_mobile().await?;
+    let (mut client, trigger) = common::setup_mobile().await?;
 
     let subscriber_id = vec![0];
     let total_reward_points = 100;
@@ -18,7 +18,7 @@ async fn submit_verified_subscriber_mapping_event() -> anyhow::Result<()> {
 
     let timestamp: String = res.unwrap().id;
 
-    match common::recv(file_sink_rx).await {
+    match client.recv().await {
         Ok(data) => {
             let report = VerifiedSubscriberMappingEventIngestReportV1::decode(data.as_slice())
                 .expect("unable to decode into VerifiedSubscriberMappingEventIngestReportV1");

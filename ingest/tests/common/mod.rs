@@ -18,11 +18,7 @@ use tonic::{
 };
 use triggered::Trigger;
 
-pub async fn setup_mobile() -> anyhow::Result<(
-    TestClient,
-    Receiver<file_store::file_sink::Message>,
-    Trigger,
-)> {
+pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let key_pair = generate_keypair();
 
     let (file_sink_tx, file_sink_rx) = tokio::sync::mpsc::channel(10);
@@ -61,19 +57,25 @@ pub async fn setup_mobile() -> anyhow::Result<(
         grpc_server.run(listener).await
     });
 
-    let client = TestClient::new(socket_addr, key_pair, token.to_string()).await;
+    let client = TestClient::new(socket_addr, key_pair, token.to_string(), file_sink_rx).await;
 
-    Ok((client, file_sink_rx, trigger))
+    Ok((client, trigger))
 }
 
 pub struct TestClient {
     client: PocMobileClient<Channel>,
     key_pair: Arc<Keypair>,
     authorization: MetadataValue<Ascii>,
+    file_sink_rx: Receiver<file_store::file_sink::Message>,
 }
 
 impl TestClient {
-    pub async fn new(socket_addr: SocketAddr, key_pair: Keypair, api_token: String) -> TestClient {
+    pub async fn new(
+        socket_addr: SocketAddr,
+        key_pair: Keypair,
+        api_token: String,
+        file_sink_rx: Receiver<file_store::file_sink::Message>,
+    ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
             .retry(&ExponentialBuilder::default())
             .await
@@ -83,6 +85,18 @@ impl TestClient {
             client,
             key_pair: Arc::new(key_pair),
             authorization: format!("Bearer {}", api_token).try_into().unwrap(),
+            file_sink_rx,
+        }
+    }
+
+    pub async fn recv(mut self) -> anyhow::Result<Vec<u8>> {
+        match self.file_sink_rx.recv().await {
+            Some(msg) => match msg {
+                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
+                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
+                file_store::file_sink::Message::Data(_, data) => Ok(data),
+            },
+            None => bail!("got none"),
         }
     }
 
@@ -117,15 +131,4 @@ impl TestClient {
 
 pub fn generate_keypair() -> Keypair {
     Keypair::generate(KeyTag::default(), &mut OsRng)
-}
-
-pub async fn recv(mut rx: Receiver<file_store::file_sink::Message>) -> anyhow::Result<Vec<u8>> {
-    match rx.recv().await {
-        Some(msg) => match msg {
-            file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
-            file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
-            file_store::file_sink::Message::Data(_, data) => Ok(data),
-        },
-        None => bail!("got none"),
-    }
 }
