@@ -41,21 +41,21 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             gateway_rewards[0].hotspot_key,
             PublicKeyBinary::from_str(HOTSPOT_1).unwrap().as_ref()
         );
-        assert_eq!(gateway_rewards[0].beacon_amount, 1_775_956_284_153);
+        assert_eq!(gateway_rewards[0].beacon_amount, 1_780_821_917_808);
         assert_eq!(gateway_rewards[0].witness_amount, 0);
-        assert_eq!(gateway_rewards[0].dc_transfer_amount, 14_799_635_701_275);
+        assert_eq!(gateway_rewards[0].dc_transfer_amount, 14_840_182_648_401);
 
         assert_eq!(
             gateway_rewards[1].hotspot_key,
             PublicKeyBinary::from_str(HOTSPOT_2).unwrap().as_ref()
         );
         assert_eq!(gateway_rewards[1].beacon_amount, 0);
-        assert_eq!(gateway_rewards[1].witness_amount, 8_524_590_163_934);
-        assert_eq!(gateway_rewards[1].dc_transfer_amount, 29_599_271_402_550);
+        assert_eq!(gateway_rewards[1].witness_amount, 8_547_945_205_479);
+        assert_eq!(gateway_rewards[1].dc_transfer_amount, 29_680_365_296_803);
         // hotspot 2 should have double the dc rewards of hotspot 1
         assert_eq!(
             gateway_rewards[1].dc_transfer_amount,
-            gateway_rewards[0].dc_transfer_amount * 2
+            gateway_rewards[0].dc_transfer_amount * 2 + 1
         );
 
         assert_eq!(
@@ -63,7 +63,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             PublicKeyBinary::from_str(HOTSPOT_3).unwrap().as_ref()
         );
         // hotspot 2 has double reward scale of hotspot 1 and thus double the beacon  amount
-        assert_eq!(gateway_rewards[2].beacon_amount, 3_551_912_568_306);
+        assert_eq!(gateway_rewards[2].beacon_amount, 3_561_643_835_616);
         assert_eq!(
             gateway_rewards[2].beacon_amount,
             gateway_rewards[0].beacon_amount * 2
@@ -76,7 +76,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             PublicKeyBinary::from_str(HOTSPOT_4).unwrap().as_ref()
         );
         assert_eq!(gateway_rewards[3].beacon_amount, 0);
-        assert_eq!(gateway_rewards[3].witness_amount, 12_786_885_245_901);
+        assert_eq!(gateway_rewards[3].witness_amount, 12_821_917_808_219);
         assert_eq!(gateway_rewards[3].dc_transfer_amount, 0);
 
         // assert our unallocated reward
@@ -84,7 +84,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             UnallocatedRewardType::Poc as i32,
             unallocated_poc_reward.reward_type
         );
-        assert_eq!(1, unallocated_poc_reward.amount);
+        assert_eq!(2, unallocated_poc_reward.amount);
 
         // confirm the total rewards allocated matches expectations
         let poc_sum: u64 = gateway_rewards

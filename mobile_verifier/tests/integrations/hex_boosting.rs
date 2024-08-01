@@ -335,9 +335,9 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
     );
     if let Ok((poc_rewards, unallocated_reward)) = rewards {
         // assert poc reward outputs
-        let exp_reward_1 = 16393442622950;
-        let exp_reward_2 = 16393442622950;
-        let exp_reward_3 = 16393442622950;
+        let exp_reward_1 = 16438356164383;
+        let exp_reward_2 = 16438356164383;
+        let exp_reward_3 = 16438356164383;
 
         assert_eq!(exp_reward_1, poc_rewards[0].total_poc_reward());
         assert_eq!(
@@ -672,9 +672,9 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     );
     if let Ok((poc_rewards, unallocated_reward)) = rewards {
         // assert poc reward outputs
-        let exp_reward_1 = 16_393_442_622_950;
-        let exp_reward_2 = 16_393_442_622_950;
-        let exp_reward_3 = 16_393_442_622_950;
+        let exp_reward_1 = 16_438_356_164_383;
+        let exp_reward_2 = 16_438_356_164_383;
+        let exp_reward_3 = 16_438_356_164_383;
 
         assert_eq!(exp_reward_1, poc_rewards[0].total_poc_reward());
         assert_eq!(

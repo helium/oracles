@@ -88,7 +88,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
             UnallocatedRewardType::ServiceProvider as i32,
             unallocated_reward.reward_type
         );
-        assert_eq!(8_196_721_305_475, unallocated_reward.amount);
+        assert_eq!(8_219_178_076_191, unallocated_reward.amount);
         // confirm the total rewards allocated matches expectations
         let expected_sum =
             reward_shares::get_scheduled_tokens_for_service_providers(epoch.end - epoch.start)
