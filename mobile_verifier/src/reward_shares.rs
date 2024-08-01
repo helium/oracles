@@ -236,52 +236,70 @@ impl MapperShares {
         reward_period: &'_ Range<DateTime<Utc>>,
         reward_per_share: Decimal,
     ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
-        let discovery_rewards = self
-            .discovery_mapping_shares
+        let mut subscriber_rewards: HashMap<Vec<u8>, proto::SubscriberReward> = HashMap::new();
+
+        // Accumulate rewards from discovery_mapping_shares
+        for subscriber_id in self.discovery_mapping_shares {
+            let discovery_location_amount = (DISCOVERY_MAPPING_SHARES * reward_per_share)
+                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                .to_u64()
+                .unwrap_or_default();
+
+            if discovery_location_amount > 0 {
+                subscriber_rewards
+                    .entry(subscriber_id.clone())
+                    .and_modify(|reward| {
+                        reward.discovery_location_amount += discovery_location_amount;
+                    })
+                    .or_insert_with(|| proto::SubscriberReward {
+                        subscriber_id: subscriber_id.clone(),
+                        discovery_location_amount,
+                        verification_mapping_amount: 0,
+                    });
+            }
+        }
+
+        // Accumulate rewards from verified_mapping_event_shares
+        for verified_share in self.verified_mapping_event_shares {
+            let verification_mapping_amount = (Decimal::from(verified_share.total_reward_points)
+                * reward_per_share)
+                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                .to_u64()
+                .unwrap_or_default();
+
+            if verification_mapping_amount > 0 {
+                subscriber_rewards
+                    .entry(verified_share.subscriber_id.clone())
+                    .and_modify(|reward| {
+                        reward.verification_mapping_amount += verification_mapping_amount;
+                    })
+                    .or_insert_with(|| proto::SubscriberReward {
+                        subscriber_id: verified_share.subscriber_id.clone(),
+                        discovery_location_amount: 0,
+                        verification_mapping_amount,
+                    });
+            }
+        }
+
+        // Create the MobileRewardShare for each subscriber
+        subscriber_rewards
             .into_iter()
-            .map(move |subscriber_id| proto::SubscriberReward {
-                subscriber_id,
-                discovery_location_amount: (DISCOVERY_MAPPING_SHARES * reward_per_share)
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or_default(),
+            .filter(|(_, reward)| {
+                reward.discovery_location_amount > 0 || reward.verification_mapping_amount > 0
             })
-            .filter(|subscriber_reward| subscriber_reward.discovery_location_amount > 0)
-            .map(|subscriber_reward| {
+            .map(move |(_, subscriber_reward)| {
+                let total_reward_amount = subscriber_reward.discovery_location_amount
+                    + subscriber_reward.verification_mapping_amount;
+
                 (
-                    subscriber_reward.discovery_location_amount,
+                    total_reward_amount,
                     proto::MobileRewardShare {
                         start_period: reward_period.start.encode_timestamp(),
                         end_period: reward_period.end.encode_timestamp(),
                         reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
                     },
                 )
-            });
-
-        let verified_rewards = self
-            .verified_mapping_event_shares
-            .into_iter()
-            .map(move |verified_share| proto::SubscriberReward {
-                subscriber_id: verified_share.subscriber_id,
-                discovery_location_amount: (Decimal::from(verified_share.total_reward_points)
-                    * reward_per_share)
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or_default(),
             })
-            .filter(|subscriber_reward| subscriber_reward.discovery_location_amount > 0)
-            .map(|subscriber_reward| {
-                (
-                    subscriber_reward.discovery_location_amount,
-                    proto::MobileRewardShare {
-                        start_period: reward_period.start.encode_timestamp(),
-                        end_period: reward_period.end.encode_timestamp(),
-                        reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
-                    },
-                )
-            });
-
-        discovery_rewards.chain(verified_rewards)
     }
 }
 
@@ -923,7 +941,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn discover_mapping_amount() {
+    async fn subscriber_rewards() {
         // test based on example defined at https://github.com/helium/oracles/issues/422
         // NOTE: the example defined above lists values in mobile tokens, whereas
         //       this test uses mobile bones
@@ -969,8 +987,7 @@ mod test {
             .unwrap_or(0);
         assert_eq!(16_438_356_164_383, total_mapper_rewards);
 
-        // We have 2x more subscriber rewarded (for same amount as mappers 30)
-        let expected_reward_per_subscriber = total_mapper_rewards / NUM_SUBSCRIBERS / 2;
+        let expected_reward_per_subscriber = total_mapper_rewards / NUM_SUBSCRIBERS;
 
         // get the summed rewards allocated to subscribers for discovery location
         let mut allocated_mapper_rewards = 0_u64;
@@ -978,8 +995,14 @@ mod test {
             shares.into_subscriber_rewards(&epoch, rewards_per_share)
         {
             if let Some(MobileReward::SubscriberReward(r)) = subscriber_share.reward {
-                assert_eq!(expected_reward_per_subscriber, r.discovery_location_amount);
-                assert_eq!(reward_amount, r.discovery_location_amount);
+                assert_eq!(
+                    expected_reward_per_subscriber,
+                    r.discovery_location_amount + r.verification_mapping_amount
+                );
+                assert_eq!(
+                    reward_amount,
+                    r.discovery_location_amount + r.verification_mapping_amount
+                );
                 allocated_mapper_rewards += reward_amount;
             }
         }
