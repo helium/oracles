@@ -214,7 +214,7 @@ impl MapperShares {
         // this could be simplified as every subscriber is awarded the same share
         // however the function is setup to allow the verification mapper shares to be easily
         // added without impacting code structure ( the per share value for those will be different )
-        let total_mapper_shares = discovery_mappers_count * DISCOVERY_MAPPING_SHARES;
+        let total_disco_mapper_shares = discovery_mappers_count * DISCOVERY_MAPPING_SHARES;
 
         let total_verified_mapping_event_shares: Decimal = self
             .verified_mapping_event_shares
