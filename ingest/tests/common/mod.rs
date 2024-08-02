@@ -9,8 +9,8 @@ use helium_proto::services::poc_mobile::{
 use ingest::server_mobile::GrpcServer;
 use prost::Message;
 use rand::rngs::OsRng;
-use std::{net::SocketAddr, sync::Arc};
-use tokio::{net::TcpListener, sync::mpsc::Receiver};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::{net::TcpListener, sync::mpsc::Receiver, time::timeout};
 use tonic::{
     metadata::{Ascii, MetadataValue},
     transport::Channel,
@@ -90,13 +90,14 @@ impl TestClient {
     }
 
     pub async fn recv(mut self) -> anyhow::Result<Vec<u8>> {
-        match self.file_sink_rx.recv().await {
-            Some(msg) => match msg {
+        match timeout(Duration::from_secs(2), self.file_sink_rx.recv()).await {
+            Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
                 file_store::file_sink::Message::Data(_, data) => Ok(data),
             },
-            None => bail!("got none"),
+            Ok(None) => bail!("got none"),
+            Err(reason) => bail!("got error {reason}"),
         }
     }
 
