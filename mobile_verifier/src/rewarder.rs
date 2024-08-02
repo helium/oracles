@@ -17,7 +17,7 @@ use db_store::meta;
 use file_store::{
     file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::{FileSinkWriteExt, TimestampEncode},
+    traits::{FileSinkWriteExt, TimestampEncode, DEFAULT_ROLL_TIME},
 };
 use futures_util::TryFutureExt;
 
@@ -81,6 +81,7 @@ where
         let (mobile_rewards, mobile_rewards_server) = MobileRewardShare::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
+            Some(DEFAULT_ROLL_TIME),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -88,6 +89,7 @@ where
         let (reward_manifests, reward_manifests_server) = RewardManifest::file_sink(
             settings.store_base_path(),
             file_upload,
+            Some(DEFAULT_ROLL_TIME),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

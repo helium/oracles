@@ -124,7 +124,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 }
 
 async fn receive_expected_rewards(
-    mobile_rewards: &mut MockFileSinkReceiver,
+    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
 ) -> anyhow::Result<(Vec<RadioRewardV2>, Vec<GatewayReward>)> {
     // get the filestore outputs from rewards run
 

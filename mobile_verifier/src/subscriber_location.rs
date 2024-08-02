@@ -8,7 +8,7 @@ use file_store::{
         SubscriberLocationIngestReport, SubscriberLocationReq,
         VerifiedSubscriberLocationIngestReport,
     },
-    traits::FileSinkWriteExt,
+    traits::{FileSinkWriteExt, DEFAULT_ROLL_TIME},
     FileStore, FileType,
 };
 use futures::{StreamExt, TryStreamExt};
@@ -57,6 +57,7 @@ where
             VerifiedSubscriberLocationIngestReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
+                Some(DEFAULT_ROLL_TIME),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;

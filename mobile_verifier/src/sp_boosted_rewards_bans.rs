@@ -7,7 +7,7 @@ use file_store::{
     },
     file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::FileSinkWriteExt,
+    traits::{FileSinkWriteExt, DEFAULT_ROLL_TIME},
     FileStore, FileType,
 };
 use futures::{prelude::future::LocalBoxFuture, StreamExt, TryFutureExt, TryStreamExt};
@@ -158,6 +158,7 @@ where
             VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload,
+                Some(DEFAULT_ROLL_TIME),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -332,7 +333,7 @@ pub mod db {
             let radio_key = row.get::<String, &str>("radio_key");
             match radio_type {
                 HbType::Wifi => set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?),
-                HbType::Cbrs => set.insert_cbrs(radio_key.into()),
+                HbType::Cbrs => set.insert_cbrs(radio_key),
             };
 
             Ok(set)
