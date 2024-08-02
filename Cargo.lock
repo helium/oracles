@@ -1617,17 +1617,17 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#62e22b2a4fb7de6f2ba7d67f933d77d4ad52a882"
+source = "git+https://github.com/helium/proto?branch=macpie/verification_mapping#368791278461bb763fe5224f81b41305c22665ba"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -1776,7 +1776,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -2618,7 +2618,7 @@ dependencies = [
  "axum 0.7.4",
  "bs58 0.4.0",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "http 0.2.11",
  "notify",
  "serde",
@@ -3200,7 +3200,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "hex-literal",
  "http 0.2.11",
  "lazy_static",
@@ -3776,7 +3776,7 @@ dependencies = [
  "h3o",
  "helium-anchor-gen",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
  "hex",
  "itertools",
  "jsonrpc_client",
@@ -3801,6 +3801,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=macpie/verification_mapping#368791278461bb763fe5224f81b41305c22665ba"
 dependencies = [
  "bytes",
  "prost",
@@ -3809,6 +3810,18 @@ dependencies = [
  "serde_json",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "helium-proto"
+version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=master#62e22b2a4fb7de6f2ba7d67f933d77d4ad52a882"
+dependencies = [
+ "bytes",
+ "prost",
+ "prost-build",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3852,7 +3865,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -4268,7 +4281,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "http 0.2.11",
  "humantime-serde",
  "metrics",
@@ -4337,7 +4350,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -4379,7 +4392,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -4421,7 +4434,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -5009,7 +5022,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -5049,7 +5062,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5085,7 +5098,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -5129,7 +5142,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "hex-assignments",
  "hextree",
  "http-serde",
@@ -5812,7 +5825,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "http 0.2.11",
  "hyper 0.14.28",
  "jsonrpsee",
@@ -5895,7 +5908,7 @@ dependencies = [
  "futures-util",
  "helium-anchor-gen",
  "helium-lib",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -6502,7 +6515,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/verification_mapping)",
  "humantime-serde",
  "lazy_static",
  "metrics",
@@ -9850,7 +9863,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
  "twox-hash",
  "xorf",
