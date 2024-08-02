@@ -278,11 +278,11 @@ impl MapperShares {
 
         // Create the MobileRewardShare for each subscriber
         subscriber_rewards
-            .into_iter()
-            .filter(|(_, reward)| {
+            .into_values()
+            .filter(|reward| {
                 reward.discovery_location_amount > 0 || reward.verification_mapping_amount > 0
             })
-            .map(move |(_, subscriber_reward)| {
+            .map(|subscriber_reward| {
                 let total_reward_amount = subscriber_reward.discovery_location_amount
                     + subscriber_reward.verification_mapping_amount;
 

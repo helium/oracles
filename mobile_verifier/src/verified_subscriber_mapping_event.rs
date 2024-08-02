@@ -7,7 +7,7 @@ use file_store::{
     verified_subscriber_mapping_event_ingest_report::VerifiedSubscriberMappingEventIngestReport,
     FileStore, FileType,
 };
-use futures::{stream::StreamExt, TryStreamExt};
+use futures::stream::StreamExt;
 use sqlx::{Pool, Postgres, Transaction};
 use std::ops::Range;
 use task_manager::{ManagedTask, TaskManager};
@@ -127,7 +127,7 @@ pub async fn aggregate_verified_mapping_events(
     db: impl sqlx::PgExecutor<'_> + Copy,
     reward_period: &Range<DateTime<Utc>>,
 ) -> Result<VerifiedMappingEventShares, sqlx::Error> {
-    let mut rows = sqlx::query_as::<_, VerifiedMappingEventShare>(
+    let vme_shares = sqlx::query_as::<_, VerifiedMappingEventShare>(
         "SELECT 
             subscriber_id, 
             SUM(total_reward_points) AS total_reward_points
@@ -139,12 +139,8 @@ pub async fn aggregate_verified_mapping_events(
     )
     .bind(reward_period.end - Duration::days(SUBSCRIBER_REWARD_PERIOD_IN_DAYS))
     .bind(reward_period.end)
-    .fetch(db);
-
-    let mut vme_shares = VerifiedMappingEventShares::new();
-    while let Some(share) = rows.try_next().await? {
-        vme_shares.push(share)
-    }
+    .fetch_all(db)
+    .await?;
 
     Ok(vme_shares)
 }
