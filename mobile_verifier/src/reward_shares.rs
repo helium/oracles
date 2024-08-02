@@ -249,7 +249,7 @@ impl MapperShares {
                 subscriber_rewards
                     .entry(subscriber_id.clone())
                     .and_modify(|reward| {
-                        reward.discovery_location_amount += discovery_location_amount;
+                        reward.discovery_location_amount = discovery_location_amount;
                     })
                     .or_insert_with(|| proto::SubscriberReward {
                         subscriber_id: subscriber_id.clone(),
@@ -271,7 +271,7 @@ impl MapperShares {
                 subscriber_rewards
                     .entry(verified_share.subscriber_id.clone())
                     .and_modify(|reward| {
-                        reward.verification_mapping_amount += verification_mapping_amount;
+                        reward.verification_mapping_amount = verification_mapping_amount;
                     })
                     .or_insert_with(|| proto::SubscriberReward {
                         subscriber_id: verified_share.subscriber_id.clone(),
