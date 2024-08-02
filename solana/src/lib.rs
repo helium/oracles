@@ -4,6 +4,11 @@ use solana_sdk::signature::Signature;
 use solana_sdk::transaction::Transaction;
 use std::time::SystemTimeError;
 
+pub use helium_lib::{
+    dao::SubDao,
+    keypair::{Keypair, Pubkey},
+};
+
 pub mod burn;
 pub mod start_boost;
 
@@ -48,6 +53,10 @@ pub enum SolanaRpcError {
     FailedToReadKeypairError,
     #[error("crypto error: {0}")]
     Crypto(#[from] helium_crypto::Error),
+    #[error("helium-lib error: {0}")]
+    HeliumLib(#[from] helium_lib::error::Error),
+    #[error("Parse Solana Pubkey from slice error: {0}")]
+    ParsePubkeyFromSliceError(#[from] std::array::TryFromSliceError),
 }
 
 impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
