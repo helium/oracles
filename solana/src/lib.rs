@@ -4,6 +4,11 @@ use solana_sdk::signature::Signature;
 use solana_sdk::transaction::Transaction;
 use std::time::SystemTimeError;
 
+pub use helium_lib::{
+    dao::SubDao,
+    keypair::{Keypair, Pubkey},
+};
+
 pub mod burn;
 pub mod carrier;
 pub mod start_boost;
