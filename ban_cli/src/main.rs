@@ -98,7 +98,14 @@ impl From<RadioKey> for service_provider_boosted_rewards_banned_radio_req_v1::Ke
 }
 
 #[derive(clap::Parser, Debug)]
-struct Args {
+enum Cli {
+    File(FileArgs),
+    Unban(SingleArgs),
+    Ban(SingleArgs),
+}
+
+#[derive(clap::Args, Debug)]
+struct FileArgs {
     #[arg(long)]
     csv: PathBuf,
     #[command(flatten)]
@@ -107,6 +114,16 @@ struct Args {
     ingestor: IngestorArgs,
     #[arg(long)]
     radio_type: RadioType,
+}
+
+#[derive(clap::Args, Debug)]
+struct SingleArgs {
+    #[command(flatten)]
+    ingestor: IngestorArgs,
+    #[arg(long)]
+    radio_type: RadioType,
+    #[arg(long)]
+    radio_key: String,
 }
 
 #[derive(Debug)]
@@ -118,7 +135,48 @@ struct MobileIngestor {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
+    let cli = Cli::parse();
+    match cli {
+        Cli::File(args) => ban_file(args).await?,
+        Cli::Unban(args) => {
+            let radio_key = into_radiokey(args.radio_type, args.radio_key)?;
+            println!("Unbanning: {radio_key:?}\n");
+            print!("Continue [Y/n]: ");
+            let response: String = text_io::read!();
+
+            match response.to_lowercase().as_str() {
+                "yes" | "y" => {
+                    let mut mobile_ingestor = args.ingestor.to_mobile_ingestor()?;
+                    unban_radios(&mut mobile_ingestor, vec![radio_key]).await?;
+                }
+                _ => {
+                    println!("Bailing");
+                }
+            }
+        }
+        Cli::Ban(args) => {
+            let radio_key = into_radiokey(args.radio_type, args.radio_key)?;
+            println!("Banning: {radio_key:?}\n");
+            print!("Continue [Y/n]: ");
+            let response: String = text_io::read!();
+
+            match response.to_lowercase().as_str() {
+                "yes" | "y" => {
+                    let mut mobile_ingestor = args.ingestor.to_mobile_ingestor()?;
+                    ban_radios(&mut mobile_ingestor, vec![radio_key]).await?;
+                }
+                _ => {
+                    println!("Bailing");
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn ban_file(args: FileArgs) -> anyhow::Result<()> {
+    //let args = Args::parse();
     let radio_type = args.radio_type;
 
     let pool = PgPoolOptions::new()
