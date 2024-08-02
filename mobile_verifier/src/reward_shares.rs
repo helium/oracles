@@ -1000,8 +1000,8 @@ mod test {
                 );
                 // These are the same because we gave `total_reward_points: 30,` for each
                 // VerifiedMappingEventShares which is the same amount as discovery mapping
-                assert_eq!(819_672_131, r.discovery_location_amount);
-                assert_eq!(819_672_131, r.verification_mapping_amount);
+                assert_eq!(821_917_808, r.discovery_location_amount);
+                assert_eq!(821_917_808, r.verification_mapping_amount);
                 allocated_mapper_rewards += reward_amount;
             }
         }

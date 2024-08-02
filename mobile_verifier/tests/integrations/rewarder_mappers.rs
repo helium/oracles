@@ -32,6 +32,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
         rewarder::reward_mappers(&pool, &mobile_rewards_client, &epoch),
         receive_expected_rewards(&mut mobile_rewards)
     );
+
     if let Ok((subscriber_rewards, unallocated_reward)) = rewards {
         // assert the mapper rewards
         // all 3 subscribers will have an equal share,
@@ -101,7 +102,9 @@ async fn receive_expected_rewards(
     let subscriber_reward1 = mobile_rewards.receive_subscriber_reward().await;
     let subscriber_reward2 = mobile_rewards.receive_subscriber_reward().await;
     let subscriber_reward3 = mobile_rewards.receive_subscriber_reward().await;
-    let subscriber_rewards = vec![subscriber_reward1, subscriber_reward2, subscriber_reward3];
+    let mut subscriber_rewards = vec![subscriber_reward1, subscriber_reward2, subscriber_reward3];
+
+    subscriber_rewards.sort_by(|a, b| a.subscriber_id.cmp(&b.subscriber_id));
 
     // expect one unallocated reward
     let unallocated_reward = mobile_rewards.receive_unallocated_reward().await;
