@@ -7,6 +7,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     Speedtest, SpeedtestAvg, SpeedtestAvgValidity, SpeedtestIngestReportV1, SpeedtestReqV1,
+    SpeedtestVerificationResult, VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +35,10 @@ impl MsgDecode for CellSpeedtestIngestReport {
     type Msg = SpeedtestIngestReportV1;
 }
 
+impl MsgDecode for VerifiedSpeedtest {
+    type Msg = VerifiedSpeedtestProto;
+}
+
 impl MsgTimestamp<Result<DateTime<Utc>>> for SpeedtestReqV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.timestamp.to_timestamp()
@@ -55,6 +60,18 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for SpeedtestIngestReportV1 {
 impl MsgTimestamp<u64> for CellSpeedtestIngestReport {
     fn timestamp(&self) -> u64 {
         self.received_timestamp.encode_timestamp_millis()
+    }
+}
+
+impl MsgTimestamp<u64> for VerifiedSpeedtest {
+    fn timestamp(&self) -> u64 {
+        self.timestamp.encode_timestamp_millis()
+    }
+}
+
+impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedSpeedtestProto {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.timestamp.to_timestamp_millis()
     }
 }
 
@@ -108,6 +125,42 @@ impl From<CellSpeedtestIngestReport> for SpeedtestIngestReportV1 {
         Self {
             received_timestamp,
             report: Some(report),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct VerifiedSpeedtest {
+    pub timestamp: DateTime<Utc>,
+    pub report: CellSpeedtestIngestReport,
+    pub result: SpeedtestVerificationResult,
+}
+
+impl TryFrom<VerifiedSpeedtestProto> for VerifiedSpeedtest {
+    type Error = Error;
+    fn try_from(v: VerifiedSpeedtestProto) -> Result<Self> {
+        let result = SpeedtestVerificationResult::try_from(v.result).map_err(|_| {
+            DecodeError::unsupported_status_reason("verified_speedtest_proto", v.result)
+        })?;
+        Ok(Self {
+            timestamp: v.timestamp()?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("ingest verified speedtest report"))?
+                .try_into()?,
+            result,
+        })
+    }
+}
+
+impl From<VerifiedSpeedtest> for VerifiedSpeedtestProto {
+    fn from(v: VerifiedSpeedtest) -> Self {
+        let timestamp = v.timestamp();
+        let report: SpeedtestIngestReportV1 = v.report.into();
+        Self {
+            timestamp,
+            report: Some(report),
+            result: v.result as i32,
         }
     }
 }

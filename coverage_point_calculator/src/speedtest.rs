@@ -2,8 +2,8 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
-const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
+pub const MIN_REQUIRED_SPEEDTEST_SAMPLES: usize = 2;
+pub const MAX_ALLOWED_SPEEDTEST_SAMPLES: usize = 6;
 
 type Millis = u32;
 
@@ -86,12 +86,14 @@ impl Speedtest {
     }
 
     pub fn multiplier(&self) -> Decimal {
+        self.tier().multiplier()
+    }
+
+    pub fn tier(&self) -> SpeedtestTier {
         let upload = SpeedtestTier::from_upload(self.upload_speed);
         let download = SpeedtestTier::from_download(self.download_speed);
         let latency = SpeedtestTier::from_latency(self.latency_millis);
-
-        let tier = upload.min(download).min(latency);
-        tier.multiplier()
+        upload.min(download).min(latency)
     }
 
     pub fn avg(speedtests: &[Self]) -> Self {
