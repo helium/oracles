@@ -203,11 +203,6 @@ impl MapperShares {
     }
 
     pub fn rewards_per_share(&self, total_mappers_pool: Decimal) -> anyhow::Result<Decimal> {
-        // note: currently rewards_per_share calculation only takes into
-        // consideration discovery mapping shares
-        // in the future it will also need to take into account
-        // verification mapping shares
-        // the number of subscribers eligible for discovery location rewards
         let discovery_mappers_count = Decimal::from(self.discovery_mapping_shares.len());
 
         // calculate the total eligible mapping shares for the epoch
@@ -238,14 +233,14 @@ impl MapperShares {
     ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
         let mut subscriber_rewards: HashMap<Vec<u8>, proto::SubscriberReward> = HashMap::new();
 
-        // Accumulate rewards from discovery_mapping_shares
-        for subscriber_id in self.discovery_mapping_shares {
-            let discovery_location_amount = (DISCOVERY_MAPPING_SHARES * reward_per_share)
-                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                .to_u64()
-                .unwrap_or_default();
+        let discovery_location_amount = (DISCOVERY_MAPPING_SHARES * reward_per_share)
+            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+            .to_u64()
+            .unwrap_or_default();
 
-            if discovery_location_amount > 0 {
+        if discovery_location_amount > 0 {
+            // Collect rewards from discovery_mapping_shares
+            for subscriber_id in self.discovery_mapping_shares {
                 subscriber_rewards
                     .entry(subscriber_id.clone())
                     .and_modify(|reward| {
@@ -259,7 +254,7 @@ impl MapperShares {
             }
         }
 
-        // Accumulate rewards from verified_mapping_event_shares
+        // Collect rewards from verified_mapping_event_shares
         for verified_share in self.verified_mapping_event_shares {
             let verification_mapping_amount = (Decimal::from(verified_share.total_reward_points)
                 * reward_per_share)
