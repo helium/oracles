@@ -3781,7 +3781,7 @@ dependencies = [
 [[package]]
 name = "helium-lib"
 version = "0.0.0"
-source = "git+https://github.com/helium/helium-wallet-rs.git?branch=master#6b8a6bbf343027087a401cd907c9f6c848991aac"
+source = "git+https://github.com/helium/helium-wallet-rs.git?branch=mj/oracles-updates#979dc86854294bfb476c49138ae003b9dfb343e0"
 dependencies = [
  "anchor-client",
  "anchor-spl",
@@ -3811,7 +3811,7 @@ dependencies = [
  "solana-sdk",
  "solana-transaction-status",
  "spl-account-compression",
- "spl-associated-token-account 3.0.2",
+ "spl-associated-token-account 2.3.0",
  "thiserror",
  "tonic",
  "tracing",
