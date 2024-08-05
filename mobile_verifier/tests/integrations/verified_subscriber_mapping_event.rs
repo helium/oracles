@@ -83,11 +83,6 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn are_timestamps_within_one_millisecond(t1: DateTime<Utc>, t2: DateTime<Utc>) -> bool {
-    let duration = t1.signed_duration_since(t2);
-    duration.num_milliseconds() < 1
-}
-
 fn file_info_stream() -> (
     FileInfoStream<VerifiedSubscriberMappingEventIngestReport>,
     Vec<VerifiedSubscriberMappingEventIngestReport>,
