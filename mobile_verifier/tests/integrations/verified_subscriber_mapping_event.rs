@@ -35,15 +35,20 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
         let mut saved_vmes = select_events(&pool).await?;
 
         if reports.len() == saved_vmes.len() {
-            // We have to do this because we do not store carrier_mapping_key in DB
+            let now = Utc::now();
+
             for vme in &mut saved_vmes {
+                // We have to do this because we do not store carrier_mapping_key in DB
                 vme.carrier_mapping_key = public_key_binary.clone();
-                println!("vme {:?}", vme);
+                // We also update timestamp because github action return a different timestamp
+                // just few nanoseconds later
+                vme.timestamp = now;
+                println!("vme    {:?}", vme);
             }
 
             assert!(reports.iter_mut().all(|r| {
+                r.report.timestamp = now;
                 println!("report {:?}", r.report);
-
                 saved_vmes.contains(&r.report)
             }));
             break;
@@ -76,6 +81,11 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
     trigger.trigger();
 
     Ok(())
+}
+
+fn are_timestamps_within_one_millisecond(t1: DateTime<Utc>, t2: DateTime<Utc>) -> bool {
+    let duration = t1.signed_duration_since(t2);
+    duration.num_milliseconds() < 1
 }
 
 fn file_info_stream() -> (
