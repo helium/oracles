@@ -25,18 +25,25 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
         deamon.run(listener).await.expect("failed to complete task");
     });
 
-    let (fis, mut reports) = file_info_stream();
+    let (fis, mut reports, public_key_binary) = file_info_stream();
     tx.send(fis).await?;
 
     let mut retry = 0;
     const MAX_RETRIES: u32 = 10;
     const RETRY_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
     while retry <= MAX_RETRIES {
-        let saved_vmes = select_events(&pool).await?;
+        let mut saved_vmes = select_events(&pool).await?;
+
         if reports.len() == saved_vmes.len() {
+            // We have to do this because we do not store carrier_mapping_key in DB
+            for vme in &mut saved_vmes {
+                vme.carrier_mapping_key = public_key_binary.clone();
+                println!("vme {:?}", vme);
+            }
+
             assert!(reports.iter_mut().all(|r| {
-                // We have to do this because we do not store carrier_mapping_key in DB
-                r.report.carrier_mapping_key = vec![].into();
+                println!("report {:?}", r.report);
+
                 saved_vmes.contains(&r.report)
             }));
             break;
@@ -74,6 +81,7 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
 fn file_info_stream() -> (
     FileInfoStream<VerifiedSubscriberMappingEventIngestReport>,
     Vec<VerifiedSubscriberMappingEventIngestReport>,
+    PublicKeyBinary,
 ) {
     let file_info = FileInfo {
         key: "test_file_info".to_string(),
@@ -117,6 +125,7 @@ fn file_info_stream() -> (
     (
         FileInfoStream::new("default".to_string(), file_info, reports.clone()),
         reports,
+        public_key_binary,
     )
 }
 
