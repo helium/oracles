@@ -1,6 +1,6 @@
 use crate::{error::invalid_configuration, Error, Result, Settings};
 use sqlx::{
-    postgres::{PgConnectOptions, Postgres},
+    postgres::{PgConnectOptions, PgSslMode, Postgres},
     Pool,
 };
 
@@ -18,6 +18,13 @@ pub async fn connect(settings: &Settings) -> Result<Pool<Postgres>> {
     let client = aws_sdk_sts::Client::new(&aws_config);
     let connect_parameters = ConnectParameters::try_from(settings)?;
     let connect_options = connect_parameters.connect_options(&client).await?;
+    let connect_options = if let Some(ref ca_path) = settings.ca_path {
+        connect_options
+            .ssl_mode(PgSslMode::VerifyCa)
+            .ssl_root_cert(ca_path)
+    } else {
+        connect_options
+    };
 
     let pool = settings
         .pool_options()
