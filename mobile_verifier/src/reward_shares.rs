@@ -6,7 +6,7 @@ use crate::{
     seniority::Seniority,
     speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
-    verified_subscriber_mapping_event::VerifiedMappingEventShares,
+    verified_subscriber_mapping_event::VerifiedSubscriberMappingEventShares,
 };
 use chrono::{DateTime, Duration, Utc};
 use coverage_point_calculator::SPBoostedRewardEligibility;
@@ -188,13 +188,13 @@ impl TransferRewards {
 #[derive(Default)]
 pub struct MapperShares {
     pub discovery_mapping_shares: SubscriberValidatedLocations,
-    pub verified_mapping_event_shares: VerifiedMappingEventShares,
+    pub verified_mapping_event_shares: VerifiedSubscriberMappingEventShares,
 }
 
 impl MapperShares {
     pub fn new(
         discovery_mapping_shares: SubscriberValidatedLocations,
-        verified_mapping_event_shares: VerifiedMappingEventShares,
+        verified_mapping_event_shares: VerifiedSubscriberMappingEventShares,
     ) -> Self {
         Self {
             discovery_mapping_shares,
@@ -896,7 +896,7 @@ mod test {
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
         subscriber_location::SubscriberValidatedLocations,
-        verified_subscriber_mapping_event::VerifiedMappingEventShare,
+        verified_subscriber_mapping_event::VerifiedSubscriberMappingEventShare,
     };
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
@@ -949,10 +949,10 @@ mod test {
             location_shares.push(n.encode_to_vec());
         }
 
-        // simulate 10k vme shares
-        let mut vme_shares = VerifiedMappingEventShares::new();
+        // simulate 10k vsme shares
+        let mut vsme_shares = VerifiedSubscriberMappingEventShares::new();
         for n in 0..NUM_SUBSCRIBERS {
-            vme_shares.push(VerifiedMappingEventShare {
+            vsme_shares.push(VerifiedSubscriberMappingEventShare {
                 subscriber_id: n.encode_to_vec(),
                 total_reward_points: 30,
             });
@@ -963,7 +963,7 @@ mod test {
         let epoch = (now - Duration::hours(24))..now;
 
         // translate location shares into shares
-        let shares = MapperShares::new(location_shares, vme_shares);
+        let shares = MapperShares::new(location_shares, vsme_shares);
         let total_mappers_pool =
             reward_shares::get_scheduled_tokens_for_mappers(epoch.end - epoch.start);
         let rewards_per_share = shares.rewards_per_share(total_mappers_pool).unwrap();
