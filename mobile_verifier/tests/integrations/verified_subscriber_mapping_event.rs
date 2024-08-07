@@ -7,8 +7,8 @@ use file_store::{
 };
 use helium_crypto::{KeyTag, Keypair, PublicKeyBinary};
 use mobile_verifier::verified_subscriber_mapping_event::{
-    aggregate_verified_mapping_events, VerifiedMappingEventShare, VerifiedMappingEventShares,
-    VerifiedSubscriberMappingEventDeamon,
+    aggregate_verified_mapping_events, VerifiedSubscriberMappingEventDeamon,
+    VerifiedSubscriberMappingEventShare, VerifiedSubscriberMappingEventShares,
 };
 use rand::rngs::OsRng;
 use sqlx::{PgPool, Pool, Postgres, Row};
@@ -32,28 +32,28 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
     const MAX_RETRIES: u32 = 10;
     const RETRY_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
     while retry <= MAX_RETRIES {
-        let mut saved_vmes = select_events(&pool).await?;
+        let mut saved_vsmes = select_events(&pool).await?;
 
-        if reports.len() == saved_vmes.len() {
+        if reports.len() == saved_vsmes.len() {
             let now = Utc::now();
 
-            for vme in &mut saved_vmes {
+            for vsme in &mut saved_vsmes {
                 // We have to do this because we do not store carrier_mapping_key in DB
-                vme.carrier_mapping_key = public_key_binary.clone();
+                vsme.carrier_mapping_key = public_key_binary.clone();
                 // We also update timestamp because github action return a different timestamp
                 // just few nanoseconds later
-                vme.timestamp = now;
-                println!("vme    {:?}", vme);
+                vsme.timestamp = now;
+                println!("vsme    {:?}", vsme);
             }
 
             assert!(reports.iter_mut().all(|r| {
                 r.report.timestamp = now;
                 println!("report {:?}", r.report);
-                saved_vmes.contains(&r.report)
+                saved_vsmes.contains(&r.report)
             }));
             break;
         } else {
-            tracing::debug!("wrong saved_vmes.len() {}", saved_vmes.len());
+            tracing::debug!("wrong saved_vsmes.len() {}", saved_vsmes.len());
             retry += 1;
             tokio::time::sleep(RETRY_WAIT).await;
         }
@@ -136,7 +136,7 @@ fn file_info_stream() -> (
 
 fn reports_to_shares(
     reports: Vec<VerifiedSubscriberMappingEventIngestReport>,
-) -> VerifiedMappingEventShares {
+) -> VerifiedSubscriberMappingEventShares {
     let mut reward_map: HashMap<Vec<u8>, i64> = HashMap::new();
 
     for report in reports {
@@ -148,7 +148,7 @@ fn reports_to_shares(
     reward_map
         .into_iter()
         .map(
-            |(subscriber_id, total_reward_points)| VerifiedMappingEventShare {
+            |(subscriber_id, total_reward_points)| VerifiedSubscriberMappingEventShare {
                 subscriber_id,
                 total_reward_points,
             },

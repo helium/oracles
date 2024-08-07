@@ -115,10 +115,10 @@ async fn save_event(
 }
 
 const SUBSCRIBER_REWARD_PERIOD_IN_DAYS: i64 = 1;
-pub type VerifiedMappingEventShares = Vec<VerifiedMappingEventShare>;
+pub type VerifiedSubscriberMappingEventShares = Vec<VerifiedSubscriberMappingEventShare>;
 
 #[derive(sqlx::FromRow, PartialEq, Debug)]
-pub struct VerifiedMappingEventShare {
+pub struct VerifiedSubscriberMappingEventShare {
     pub subscriber_id: Vec<u8>,
     pub total_reward_points: i64,
 }
@@ -126,8 +126,8 @@ pub struct VerifiedMappingEventShare {
 pub async fn aggregate_verified_mapping_events(
     db: impl sqlx::PgExecutor<'_> + Copy,
     reward_period: &Range<DateTime<Utc>>,
-) -> Result<VerifiedMappingEventShares, sqlx::Error> {
-    let vme_shares = sqlx::query_as::<_, VerifiedMappingEventShare>(
+) -> Result<VerifiedSubscriberMappingEventShares, sqlx::Error> {
+    let vsme_shares = sqlx::query_as::<_, VerifiedSubscriberMappingEventShare>(
         "SELECT 
             subscriber_id, 
             SUM(total_reward_points) AS total_reward_points
@@ -142,5 +142,5 @@ pub async fn aggregate_verified_mapping_events(
     .fetch_all(db)
     .await?;
 
-    Ok(vme_shares)
+    Ok(vsme_shares)
 }
