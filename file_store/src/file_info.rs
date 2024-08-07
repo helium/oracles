@@ -160,8 +160,10 @@ pub const LANDTYPE_DATA_SET: &str = "landtype";
 pub const SP_BOOSTED_REWARDS_BANNED_RADIO: &str = "service_provider_boosted_rewards_banned_radio";
 pub const VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO: &str =
     "verified_service_provider_boosted_rewards_banned_radio";
-pub const VERIFIED_SUBSCRIBER_MAPPING_INGEST_REPORT: &str =
-    "verified_subscriber_mapping_ingest_report";
+pub const SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT: &str =
+    "subscriber_verified_mapping_ingest_report";
+pub const VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT: &str =
+    "verified_subscriber_verified_mapping_ingest_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -216,7 +218,8 @@ pub enum FileType {
     VerifiedInvalidatedRadioThresholdIngestReport,
     SPBoostedRewardsBannedRadioIngestReport,
     VerifiedSPBoostedRewardsBannedRadioIngestReport,
-    VerifiedSubscriberMappingEventIngestReportV1,
+    SubscriberVerifiedMappingEventIngestReport,
+    VerifiedSubscriberVerifiedMappingEventIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -282,8 +285,11 @@ impl fmt::Display for FileType {
             Self::VerifiedSPBoostedRewardsBannedRadioIngestReport => {
                 VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO
             }
-            Self::VerifiedSubscriberMappingEventIngestReportV1 => {
-                VERIFIED_SUBSCRIBER_MAPPING_INGEST_REPORT
+            Self::SubscriberVerifiedMappingEventIngestReport => {
+                SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
+            }
+            Self::VerifiedSubscriberVerifiedMappingEventIngestReport => {
+                VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
             }
         };
         f.write_str(s)
@@ -353,8 +359,11 @@ impl FileType {
             Self::VerifiedSPBoostedRewardsBannedRadioIngestReport => {
                 VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO
             }
-            Self::VerifiedSubscriberMappingEventIngestReportV1 => {
-                VERIFIED_SUBSCRIBER_MAPPING_INGEST_REPORT
+            Self::SubscriberVerifiedMappingEventIngestReport => {
+                SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
+            }
+            Self::VerifiedSubscriberVerifiedMappingEventIngestReport => {
+                VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
             }
         }
     }
@@ -424,8 +433,11 @@ impl FromStr for FileType {
             VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO => {
                 Self::VerifiedSPBoostedRewardsBannedRadioIngestReport
             }
-            VERIFIED_SUBSCRIBER_MAPPING_INGEST_REPORT => {
-                Self::VerifiedSubscriberMappingEventIngestReportV1
+            SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT => {
+                Self::SubscriberVerifiedMappingEventIngestReport
+            }
+            VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT => {
+                Self::VerifiedSubscriberVerifiedMappingEventIngestReport
             }
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };

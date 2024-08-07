@@ -1,4 +1,4 @@
-use helium_proto::services::poc_mobile::VerifiedSubscriberMappingEventIngestReportV1;
+use helium_proto::services::poc_mobile::SubscriberVerifiedMappingEventIngestReportV1;
 use prost::Message;
 
 mod common;
@@ -20,8 +20,8 @@ async fn submit_verified_subscriber_mapping_event() -> anyhow::Result<()> {
 
     match client.recv().await {
         Ok(data) => {
-            let report = VerifiedSubscriberMappingEventIngestReportV1::decode(data.as_slice())
-                .expect("unable to decode into VerifiedSubscriberMappingEventIngestReportV1");
+            let report = SubscriberVerifiedMappingEventIngestReportV1::decode(data.as_slice())
+                .expect("unable to decode into SubscriberVerifiedMappingEventIngestReportV1");
 
             assert_eq!(timestamp, report.received_timestamp.to_string());
 

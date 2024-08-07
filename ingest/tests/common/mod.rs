@@ -3,8 +3,8 @@ use backon::{ExponentialBuilder, Retryable};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::{KeyTag, Keypair, Network, Sign};
 use helium_proto::services::poc_mobile::{
-    Client as PocMobileClient, VerifiedSubscriberMappingEventReqV1,
-    VerifiedSubscriberMappingEventResV1,
+    Client as PocMobileClient, SubscriberVerifiedMappingEventReqV1,
+    SubscriberVerifiedMappingEventResV1,
 };
 use ingest::server_mobile::GrpcServer;
 use prost::Message;
@@ -105,8 +105,8 @@ impl TestClient {
         &mut self,
         subscriber_id: Vec<u8>,
         total_reward_points: u64,
-    ) -> anyhow::Result<VerifiedSubscriberMappingEventResV1> {
-        let mut req = VerifiedSubscriberMappingEventReqV1 {
+    ) -> anyhow::Result<SubscriberVerifiedMappingEventResV1> {
+        let mut req = SubscriberVerifiedMappingEventReqV1 {
             subscriber_id,
             total_reward_points,
             timestamp: 0,
@@ -123,7 +123,7 @@ impl TestClient {
 
         let res = self
             .client
-            .submit_verified_subscriber_mapping_event(request)
+            .submit_subscriber_verified_mapping_event(request)
             .await?;
 
         Ok(res.into_inner())
