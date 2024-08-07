@@ -265,7 +265,7 @@ pub async fn aggregate_verified_mapping_events(
             subscriber_id, 
             SUM(total_reward_points) AS total_reward_points
         FROM 
-        verified_subscriber_verified_mapping_event
+            verified_subscriber_verified_mapping_event
         WHERE received_timestamp >= $1 AND received_timestamp < $2
         GROUP BY 
             subscriber_id;",
@@ -276,4 +276,17 @@ pub async fn aggregate_verified_mapping_events(
     .await?;
 
     Ok(vsme_shares)
+}
+
+pub async fn clear(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    timestamp: &DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "DELETE FROM verified_subscriber_verified_mapping_event WHERE received_timestamp < $1",
+    )
+    .bind(timestamp)
+    .execute(&mut *tx)
+    .await?;
+    Ok(())
 }

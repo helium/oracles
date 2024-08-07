@@ -297,6 +297,7 @@ where
         data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.start).await?;
         coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
         sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_period.start).await?;
+        subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.end).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
