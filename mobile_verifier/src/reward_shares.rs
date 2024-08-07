@@ -6,7 +6,7 @@ use crate::{
     seniority::Seniority,
     speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
-    verified_subscriber_mapping_event::VerifiedSubscriberMappingEventShares,
+    subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
 };
 use chrono::{DateTime, Duration, Utc};
 use coverage_point_calculator::SPBoostedRewardEligibility;
@@ -188,13 +188,13 @@ impl TransferRewards {
 #[derive(Default)]
 pub struct MapperShares {
     pub discovery_mapping_shares: SubscriberValidatedLocations,
-    pub verified_mapping_event_shares: VerifiedSubscriberMappingEventShares,
+    pub verified_mapping_event_shares: VerifiedSubscriberVerifiedMappingEventShares,
 }
 
 impl MapperShares {
     pub fn new(
         discovery_mapping_shares: SubscriberValidatedLocations,
-        verified_mapping_event_shares: VerifiedSubscriberMappingEventShares,
+        verified_mapping_event_shares: VerifiedSubscriberVerifiedMappingEventShares,
     ) -> Self {
         Self {
             discovery_mapping_shares,
@@ -896,7 +896,7 @@ mod test {
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
         subscriber_location::SubscriberValidatedLocations,
-        verified_subscriber_mapping_event::VerifiedSubscriberMappingEventShare,
+        subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShare,
     };
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
@@ -950,9 +950,9 @@ mod test {
         }
 
         // simulate 10k vsme shares
-        let mut vsme_shares = VerifiedSubscriberMappingEventShares::new();
+        let mut vsme_shares = VerifiedSubscriberVerifiedMappingEventShares::new();
         for n in 0..NUM_SUBSCRIBERS {
-            vsme_shares.push(VerifiedSubscriberMappingEventShare {
+            vsme_shares.push(VerifiedSubscriberVerifiedMappingEventShare {
                 subscriber_id: n.encode_to_vec(),
                 total_reward_points: 30,
             });

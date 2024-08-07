@@ -20,8 +20,8 @@ use helium_proto::services::poc_mobile::{
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1,
-    VerifiedSubscriberMappingEventIngestReportV1, VerifiedSubscriberMappingEventReqV1,
-    VerifiedSubscriberMappingEventResV1, WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1,
+    SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventReqV1,
+    SubscriberVerifiedMappingEventResV1, WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1,
     WifiHeartbeatRespV1,
 };
 use std::{net::SocketAddr, path::Path};
@@ -408,12 +408,12 @@ impl poc_mobile::PocMobile for GrpcServer {
         ))
     }
 
-    async fn submit_verified_subscriber_mapping_event(
+    async fn submit_subscriber_verified_mapping_event(
         &self,
-        request: Request<VerifiedSubscriberMappingEventReqV1>,
-    ) -> GrpcResult<VerifiedSubscriberMappingEventResV1> {
+        request: Request<SubscriberVerifiedMappingEventReqV1>,
+    ) -> GrpcResult<SubscriberVerifiedMappingEventResV1> {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
-        let event: VerifiedSubscriberMappingEventReqV1 = request.into_inner();
+        let event: SubscriberVerifiedMappingEventReqV1 = request.into_inner();
         let subscriber_id = event.subscriber_id.clone();
 
         custom_tracing::record("subscriber_id", bs58::encode(&subscriber_id).into_string());
@@ -423,7 +423,7 @@ impl poc_mobile::PocMobile for GrpcServer {
             .verify_public_key(event.carrier_mapping_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))
-            .map(|(_, event)| VerifiedSubscriberMappingEventIngestReportV1 {
+            .map(|(_, event)| SubscriberVerifiedMappingEventIngestReportV1 {
                 received_timestamp: timestamp,
                 report: Some(event),
             })?;
@@ -431,7 +431,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         _ = self.subscriber_mapping_event_sink.write(report, []).await;
 
         let id = timestamp.to_string();
-        Ok(Response::new(VerifiedSubscriberMappingEventResV1 { id }))
+        Ok(Response::new(SubscriberVerifiedMappingEventResV1 { id }))
     }
 }
 
@@ -551,12 +551,12 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (subscriber_mapping_event_sink, subscriber_mapping_event_server) =
         file_sink::FileSinkBuilder::new(
-            FileType::VerifiedSubscriberMappingEventIngestReportV1,
+            FileType::SubscriberVerifiedMappingEventIngestReport,
             store_base_path,
             file_upload.clone(),
             concat!(
                 env!("CARGO_PKG_NAME"),
-                "_verified_subscriber_mapping_event_ingest_report"
+                "_subscriber_verified_mapping_event_ingest_report"
             ),
         )
         .roll_time(settings.roll_time)

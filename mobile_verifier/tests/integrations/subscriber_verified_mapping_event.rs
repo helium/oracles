@@ -1,33 +1,48 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream,
-    verified_subscriber_mapping_event::VerifiedSubscriberMappingEvent,
-    verified_subscriber_mapping_event_ingest_report::VerifiedSubscriberMappingEventIngestReport,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient,
+    subscriber_verified_mapping_event::SubscriberVerifiedMappingEvent,
+    subscriber_verified_mapping_event_ingest_report::SubscriberVerifiedMappingEventIngestReport,
     FileInfo,
 };
 use helium_crypto::{KeyTag, Keypair, PublicKeyBinary};
-use mobile_verifier::verified_subscriber_mapping_event::{
-    aggregate_verified_mapping_events, VerifiedSubscriberMappingEventDeamon,
-    VerifiedSubscriberMappingEventShare, VerifiedSubscriberMappingEventShares,
+use helium_proto::services::poc_mobile::VerifiedSubscriberVerifiedMappingEventIngestReportV1;
+use mobile_verifier::subscriber_verified_mapping_event::{
+    aggregate_verified_mapping_events, SubscriberVerifiedMappingEventDeamon,
+    VerifiedSubscriberVerifiedMappingEventShare, VerifiedSubscriberVerifiedMappingEventShares,
 };
+use prost::Message;
 use rand::rngs::OsRng;
 use sqlx::{PgPool, Pool, Postgres, Row};
 use std::{collections::HashMap, ops::Range};
+use tokio::time::timeout;
+
+use crate::common::{MockAuthorizationClient, MockEntityClient};
 
 #[sqlx::test]
 async fn main_test(pool: PgPool) -> anyhow::Result<()> {
-    let (tx, rx) = tokio::sync::mpsc::channel(10);
+    let (reports_tx, reports_rx) = tokio::sync::mpsc::channel(10);
+    let (sink_tx, mut sink_rx) = tokio::sync::mpsc::channel(10);
     let (trigger, listener) = triggered::trigger();
     let task_pool = pool.clone();
 
     tokio::spawn(async move {
-        let deamon = VerifiedSubscriberMappingEventDeamon::new(task_pool, rx);
+        let deamon = SubscriberVerifiedMappingEventDeamon::new(
+            task_pool,
+            MockAuthorizationClient::new(),
+            MockEntityClient::new(),
+            reports_rx,
+            FileSinkClient::new(sink_tx, "metric"),
+        );
+
         deamon.run(listener).await.expect("failed to complete task");
     });
 
+    // Sending reports as if they are coming from ingestor
     let (fis, mut reports, public_key_binary) = file_info_stream();
-    tx.send(fis).await?;
+    reports_tx.send(fis).await?;
 
+    // Testing that each report we sent made it into DB
     let mut retry = 0;
     const MAX_RETRIES: u32 = 10;
     const RETRY_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
@@ -65,12 +80,53 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
         MAX_RETRIES
     );
 
+    // Testing that each report we sent made it on verified report FileSink
+    for expected_report in reports.clone() {
+        match timeout(std::time::Duration::from_secs(2), sink_rx.recv()).await {
+            Ok(Some(msg)) => match msg {
+                file_store::file_sink::Message::Commit(_) => panic!("got Commit"),
+                file_store::file_sink::Message::Rollback(_) => panic!("got Rollback"),
+                file_store::file_sink::Message::Data(_, data) => {
+                    let proto_verified_report = VerifiedSubscriberVerifiedMappingEventIngestReportV1::decode(data.as_slice())
+                        .expect("unable to decode into VerifiedSubscriberVerifiedMappingEventIngestReportV1");
+
+                    let rcv_report: SubscriberVerifiedMappingEventIngestReport =
+                        proto_verified_report.report.unwrap().try_into()?;
+
+                    assert!(timestamp_match(
+                        expected_report.received_timestamp,
+                        rcv_report.received_timestamp
+                    ));
+                    assert_eq!(
+                        expected_report.report.subscriber_id,
+                        rcv_report.report.subscriber_id
+                    );
+                    assert_eq!(
+                        expected_report.report.total_reward_points,
+                        rcv_report.report.total_reward_points
+                    );
+                    assert_eq!(
+                        expected_report.report.carrier_mapping_key,
+                        rcv_report.report.carrier_mapping_key
+                    );
+
+                    assert!(timestamp_match(
+                        expected_report.received_timestamp,
+                        rcv_report.report.timestamp
+                    ));
+                }
+            },
+            Ok(None) => panic!("got none"),
+            Err(reason) => panic!("got error {reason}"),
+        }
+    }
+
     // Testing aggregate_verified_mapping_events now
     let reward_period = Range {
         start: Utc::now() - Duration::days(1),
         end: Utc::now(),
     };
-    let mut shares_from_reports = reports_to_shares(reports);
+    let mut shares_from_reports = reports_to_shares(reports.clone());
     shares_from_reports.sort_by(|a, b| a.subscriber_id.cmp(&b.subscriber_id));
 
     let mut shares = aggregate_verified_mapping_events(&pool, &reward_period).await?;
@@ -83,9 +139,14 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn timestamp_match(dt1: DateTime<Utc>, dt2: DateTime<Utc>) -> bool {
+    let difference = dt1.signed_duration_since(dt2);
+    difference.num_seconds().abs() < 1
+}
+
 fn file_info_stream() -> (
-    FileInfoStream<VerifiedSubscriberMappingEventIngestReport>,
-    Vec<VerifiedSubscriberMappingEventIngestReport>,
+    FileInfoStream<SubscriberVerifiedMappingEventIngestReport>,
+    Vec<SubscriberVerifiedMappingEventIngestReport>,
     PublicKeyBinary,
 ) {
     let file_info = FileInfo {
@@ -99,27 +160,27 @@ fn file_info_stream() -> (
     let public_key_binary: PublicKeyBinary = key_pair.public_key().to_owned().into();
 
     let reports = vec![
-        VerifiedSubscriberMappingEventIngestReport {
+        SubscriberVerifiedMappingEventIngestReport {
             received_timestamp: Utc::now(),
-            report: VerifiedSubscriberMappingEvent {
+            report: SubscriberVerifiedMappingEvent {
                 subscriber_id: vec![0],
                 total_reward_points: 100,
                 timestamp: Utc::now(),
                 carrier_mapping_key: public_key_binary.clone(),
             },
         },
-        VerifiedSubscriberMappingEventIngestReport {
+        SubscriberVerifiedMappingEventIngestReport {
             received_timestamp: Utc::now() - Duration::seconds(10),
-            report: VerifiedSubscriberMappingEvent {
+            report: SubscriberVerifiedMappingEvent {
                 subscriber_id: vec![1],
                 total_reward_points: 101,
                 timestamp: Utc::now() - Duration::seconds(10),
                 carrier_mapping_key: public_key_binary.clone(),
             },
         },
-        VerifiedSubscriberMappingEventIngestReport {
+        SubscriberVerifiedMappingEventIngestReport {
             received_timestamp: Utc::now(),
-            report: VerifiedSubscriberMappingEvent {
+            report: SubscriberVerifiedMappingEvent {
                 subscriber_id: vec![1],
                 total_reward_points: 99,
                 timestamp: Utc::now(),
@@ -135,8 +196,8 @@ fn file_info_stream() -> (
 }
 
 fn reports_to_shares(
-    reports: Vec<VerifiedSubscriberMappingEventIngestReport>,
-) -> VerifiedSubscriberMappingEventShares {
+    reports: Vec<SubscriberVerifiedMappingEventIngestReport>,
+) -> VerifiedSubscriberVerifiedMappingEventShares {
     let mut reward_map: HashMap<Vec<u8>, i64> = HashMap::new();
 
     for report in reports {
@@ -148,7 +209,7 @@ fn reports_to_shares(
     reward_map
         .into_iter()
         .map(
-            |(subscriber_id, total_reward_points)| VerifiedSubscriberMappingEventShare {
+            |(subscriber_id, total_reward_points)| VerifiedSubscriberVerifiedMappingEventShare {
                 subscriber_id,
                 total_reward_points,
             },
@@ -158,14 +219,14 @@ fn reports_to_shares(
 
 async fn select_events(
     pool: &Pool<Postgres>,
-) -> anyhow::Result<Vec<VerifiedSubscriberMappingEvent>> {
+) -> anyhow::Result<Vec<SubscriberVerifiedMappingEvent>> {
     let rows = sqlx::query(
         r#"
             SELECT 
                 subscriber_id,
                 total_reward_points,
-                timestamp
-            FROM verified_mapping_event
+                received_timestamp
+            FROM verified_subscriber_verified_mapping_event
         "#,
     )
     .fetch_all(pool)
@@ -173,13 +234,13 @@ async fn select_events(
 
     let events = rows
         .into_iter()
-        .map(|row| VerifiedSubscriberMappingEvent {
+        .map(|row| SubscriberVerifiedMappingEvent {
             subscriber_id: row.get::<Vec<u8>, _>("subscriber_id"),
             total_reward_points: row.get::<i32, _>("total_reward_points") as u64,
-            timestamp: row.get::<DateTime<Utc>, _>("timestamp"),
+            timestamp: row.get::<DateTime<Utc>, _>("received_timestamp"),
             carrier_mapping_key: vec![].into(),
         })
-        .collect::<Vec<VerifiedSubscriberMappingEvent>>();
+        .collect::<Vec<SubscriberVerifiedMappingEvent>>();
 
     Ok(events)
 }
