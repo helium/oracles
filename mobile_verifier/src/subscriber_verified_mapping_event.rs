@@ -232,7 +232,7 @@ async fn save_to_db(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        INSERT INTO verified_subscriber_verified_mapping_event (subscriber_id, total_reward_points, received_timestamp)
+        INSERT INTO subscriber_verified_mapping_event (subscriber_id, total_reward_points, received_timestamp)
         VALUES ($1, $2, $3)
         ON CONFLICT (subscriber_id, received_timestamp) DO NOTHING
         "#,
@@ -265,12 +265,12 @@ pub async fn aggregate_verified_mapping_events(
             subscriber_id, 
             SUM(total_reward_points) AS total_reward_points
         FROM 
-            verified_subscriber_verified_mapping_event
+            subscriber_verified_mapping_event
         WHERE received_timestamp >= $1 AND received_timestamp < $2
         GROUP BY 
             subscriber_id;",
     )
-    .bind(reward_period.end - Duration::days(SUBSCRIBER_REWARD_PERIOD_IN_DAYS))
+    .bind(reward_period.start - Duration::days(SUBSCRIBER_REWARD_PERIOD_IN_DAYS))
     .bind(reward_period.end)
     .fetch_all(db)
     .await?;
@@ -282,11 +282,9 @@ pub async fn clear(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "DELETE FROM verified_subscriber_verified_mapping_event WHERE received_timestamp < $1",
-    )
-    .bind(timestamp)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("DELETE FROM subscriber_verified_mapping_event WHERE received_timestamp < $1")
+        .bind(timestamp)
+        .execute(&mut *tx)
+        .await?;
     Ok(())
 }

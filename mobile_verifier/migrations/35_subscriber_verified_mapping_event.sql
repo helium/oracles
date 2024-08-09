@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS verified_subscriber_verified_mapping_event (
+CREATE TABLE IF NOT EXISTS subscriber_verified_mapping_event (
     subscriber_id BYTEA NOT NULL,
     total_reward_points INTEGER NOT NULL,
     received_timestamp TIMESTAMPTZ,
