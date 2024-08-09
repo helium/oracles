@@ -1,6 +1,6 @@
 use crate::common::{self, MockFileSinkReceiver};
 use chrono::{Duration as ChronoDuration, Utc};
-use helium_proto::services::poc_lora::OperationalReward;
+use helium_proto::services::poc_lora::{IotRewardShare, OperationalReward};
 use iot_verifier::{reward_share, rewarder};
 use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
@@ -34,7 +34,7 @@ async fn test_operations() -> anyhow::Result<()> {
 }
 
 async fn receive_expected_rewards(
-    iot_rewards: &mut MockFileSinkReceiver,
+    iot_rewards: &mut MockFileSinkReceiver<IotRewardShare>,
 ) -> anyhow::Result<OperationalReward> {
     // expect one operational reward msg
     let reward = iot_rewards.receive_operational_reward().await;

@@ -40,7 +40,7 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
 }
 
 pub struct MockFileSinkReceiver {
-    pub receiver: tokio::sync::mpsc::Receiver<SinkMessage>,
+    pub receiver: tokio::sync::mpsc::Receiver<SinkMessage<BoostedHexUpdateProto>>,
 }
 
 impl MockFileSinkReceiver {
@@ -48,7 +48,7 @@ impl MockFileSinkReceiver {
         match timeout(seconds(2), self.receiver.recv()).await {
             Ok(Some(SinkMessage::Data(on_write_tx, msg))) => {
                 let _ = on_write_tx.send(Ok(()));
-                Some(msg)
+                Some(msg.encode_to_vec())
             }
             Ok(None) => None,
             Err(e) => panic!("timeout while waiting for message1 {:?}", e),
@@ -81,12 +81,12 @@ impl MockFileSinkReceiver {
     }
 }
 
-pub fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
+pub fn create_file_sink() -> (FileSinkClient<BoostedHexUpdateProto>, MockFileSinkReceiver) {
     let (tx, rx) = tokio::sync::mpsc::channel(20);
     (
         FileSinkClient {
             sender: tx,
-            metric: "metric",
+            metric: "metric".into(),
         },
         MockFileSinkReceiver { receiver: rx },
     )

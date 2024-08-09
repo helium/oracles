@@ -32,8 +32,8 @@ pub struct Purger {
     pub beacon_stale_period: Duration,
     pub witness_stale_period: Duration,
     pub entropy_stale_period: Duration,
-    pub invalid_beacon_sink: FileSinkClient,
-    pub invalid_witness_sink: FileSinkClient,
+    pub invalid_beacon_sink: FileSinkClient<LoraInvalidBeaconReportV1>,
+    pub invalid_witness_sink: FileSinkClient<LoraInvalidWitnessReportV1>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -56,8 +56,8 @@ impl Purger {
         witness_stale_period: Duration,
         entropy_stale_period: Duration,
         pool: PgPool,
-        invalid_beacon_sink: FileSinkClient,
-        invalid_witness_sink: FileSinkClient,
+        invalid_beacon_sink: FileSinkClient<LoraInvalidBeaconReportV1>,
+        invalid_witness_sink: FileSinkClient<LoraInvalidWitnessReportV1>,
     ) -> Result<Self, NewPurgerError> {
         Ok(Self {
             pool,

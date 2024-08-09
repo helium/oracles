@@ -1,4 +1,4 @@
-use crate::{file_upload::FileUpload, Error, Result};
+use crate::{file_upload::FileUpload, traits::MsgBytes, Error, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
@@ -45,16 +45,16 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
 }
 
 #[derive(Debug)]
-pub enum Message {
-    Data(oneshot::Sender<Result>, Vec<u8>),
+pub enum Message<T> {
+    Data(oneshot::Sender<Result>, T),
     Commit(oneshot::Sender<Result<FileManifest>>),
     Rollback(oneshot::Sender<Result<FileManifest>>),
 }
 
-pub type MessageSender = mpsc::Sender<Message>;
-pub type MessageReceiver = mpsc::Receiver<Message>;
+pub type MessageSender<T> = mpsc::Sender<Message<T>>;
+pub type MessageReceiver<T> = mpsc::Receiver<Message<T>>;
 
-fn message_channel(size: usize) -> (MessageSender, MessageReceiver) {
+fn message_channel<T>(size: usize) -> (MessageSender<T>, MessageReceiver<T>) {
     mpsc::channel(size)
 }
 
@@ -66,7 +66,7 @@ pub struct FileSinkBuilder {
     roll_time: Duration,
     file_upload: FileUpload,
     auto_commit: bool,
-    metric: &'static str,
+    metric: String,
 }
 
 impl FileSinkBuilder {
@@ -74,7 +74,7 @@ impl FileSinkBuilder {
         prefix: impl ToString,
         target_path: &Path,
         file_upload: FileUpload,
-        metric: &'static str,
+        metric: impl Into<String>,
     ) -> Self {
         Self {
             prefix: prefix.to_string(),
@@ -84,7 +84,7 @@ impl FileSinkBuilder {
             roll_time: Duration::from_secs(DEFAULT_SINK_ROLL_SECS),
             file_upload,
             auto_commit: true,
-            metric,
+            metric: metric.into(),
         }
     }
 
@@ -120,7 +120,10 @@ impl FileSinkBuilder {
         }
     }
 
-    pub async fn create(self) -> Result<(FileSinkClient, FileSink)> {
+    pub async fn create<T>(self) -> Result<(FileSinkClient<T>, FileSink<T>)>
+    where
+        T: MsgBytes,
+    {
         let (tx, rx) = message_channel(50);
 
         let client = FileSinkClient {
@@ -128,7 +131,7 @@ impl FileSinkBuilder {
             metric: self.metric,
         };
 
-        metrics::counter!(client.metric, vec![OK_LABEL]);
+        metrics::counter!(client.metric.clone(), vec![OK_LABEL]);
 
         let mut sink = FileSink {
             target_path: self.target_path,
@@ -148,33 +151,35 @@ impl FileSinkBuilder {
 }
 
 #[derive(Debug, Clone)]
-pub struct FileSinkClient {
-    pub sender: MessageSender,
-    pub metric: &'static str,
+pub struct FileSinkClient<T> {
+    pub sender: MessageSender<T>,
+    pub metric: String,
 }
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
 const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
 const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-impl FileSinkClient {
-    pub fn new(sender: MessageSender, metric: &'static str) -> Self {
-        Self { sender, metric }
+impl<T> FileSinkClient<T> {
+    pub fn new(sender: MessageSender<T>, metric: impl Into<String>) -> Self {
+        Self {
+            sender,
+            metric: metric.into(),
+        }
     }
 
-    pub async fn write<T: prost::Message>(
+    pub async fn write(
         &self,
         item: T,
         labels: impl IntoIterator<Item = &(&'static str, &'static str)>,
     ) -> Result<oneshot::Receiver<Result>> {
         let (on_write_tx, on_write_rx) = oneshot::channel();
-        let bytes = item.encode_to_vec();
         let labels = labels.into_iter().map(Label::from);
         tokio::select! {
-            result = self.sender.send_timeout(Message::Data(on_write_tx, bytes), SEND_TIMEOUT) => match result {
+            result = self.sender.send_timeout(Message::Data(on_write_tx, item), SEND_TIMEOUT) => match result {
                 Ok(_) => {
                     metrics::counter!(
-                        self.metric,
+                        self.metric.clone(),
                         labels
                             .chain(std::iter::once(OK_LABEL))
                             .collect::<Vec<Label>>()
@@ -184,7 +189,7 @@ impl FileSinkClient {
                 }
                 Err(SendTimeoutError::Closed(_)) => {
                     metrics::counter!(
-                        self.metric,
+                        self.metric.clone(),
                         labels
                             .chain(std::iter::once(ERROR_LABEL))
                             .collect::<Vec<Label>>()
@@ -203,7 +208,7 @@ impl FileSinkClient {
     /// Writes all messages to the file sink, return the last oneshot
     pub async fn write_all(
         &self,
-        items: impl IntoIterator<Item = impl prost::Message>,
+        items: impl IntoIterator<Item = T>,
     ) -> Result<Option<oneshot::Receiver<Result>>> {
         let mut last_oneshot = None;
         for item in items {
@@ -244,14 +249,14 @@ impl FileSinkClient {
 }
 
 #[derive(Debug)]
-pub struct FileSink {
+pub struct FileSink<T> {
     target_path: PathBuf,
     tmp_path: PathBuf,
     prefix: String,
     max_size: usize,
     roll_time: Duration,
 
-    messages: MessageReceiver,
+    messages: MessageReceiver<T>,
     file_upload: FileUpload,
     staged_files: Vec<PathBuf>,
     auto_commit: bool,
@@ -273,7 +278,7 @@ impl ActiveSink {
     }
 }
 
-impl ManagedTask for FileSink {
+impl<T: MsgBytes + Send + Sync + 'static> ManagedTask for FileSink<T> {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -288,7 +293,7 @@ impl ManagedTask for FileSink {
     }
 }
 
-impl FileSink {
+impl<T: MsgBytes> FileSink<T> {
     async fn init(&mut self) -> Result {
         fs::create_dir_all(&self.target_path).await?;
         fs::create_dir_all(&self.tmp_path).await?;
@@ -350,8 +355,8 @@ impl FileSink {
                 _ = shutdown.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
-                    Some(Message::Data(on_write_tx, bytes)) => {
-                        let res = match self.write(Bytes::from(bytes)).await {
+                    Some(Message::Data(on_write_tx, item)) => {
+                        let res = match self.write(item.as_bytes()).await {
                             Ok(_) => Ok(()),
                             Err(err) => {
                                 tracing::error!("failed to store {}: {err:?}", &self.prefix);

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
-use file_store::{file_sink, file_upload, FileType};
+use file_store::{file_upload, traits::FileSinkWriteExt};
+use helium_proto::PriceReportV1;
 use price::{cli::check, PriceGenerator, Settings};
 use std::{
     path::{self, PathBuf},
@@ -81,14 +82,12 @@ impl Server {
 
         let store_base_path = path::Path::new(&settings.cache);
 
-        let (price_sink, price_sink_server) = file_sink::FileSinkBuilder::new(
-            FileType::PriceReport,
+        let (price_sink, price_sink_server) = PriceReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
+            Some(Duration::from_secs(PRICE_SINK_ROLL_SECS)),
+            env!("CARGO_PKG_NAME"),
         )
-        .roll_time(Duration::from_secs(PRICE_SINK_ROLL_SECS))
-        .create()
         .await?;
 
         let mut task_manager = TaskManager::new();

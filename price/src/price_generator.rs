@@ -37,7 +37,7 @@ pub struct PriceGenerator {
     default_price: Option<u64>,
     stale_price_duration: Duration,
     latest_price_file: PathBuf,
-    file_sink: file_sink::FileSinkClient,
+    file_sink: file_sink::FileSinkClient<PriceReportV1>,
 }
 
 impl AsRef<RpcClient> for PriceGenerator {
@@ -99,7 +99,7 @@ impl PriceGenerator {
         settings: &Settings,
         token: Token,
         default_price: Option<u64>,
-        file_sink: file_sink::FileSinkClient,
+        file_sink: file_sink::FileSinkClient<PriceReportV1>,
     ) -> Result<Self> {
         let client = RpcClient::new(settings.source.clone());
         Ok(Self {

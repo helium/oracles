@@ -7,13 +7,13 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use file_store::{
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::{TimestampDecode, TimestampEncode},
-    FileStore, FileType,
+    traits::{FileSinkWriteExt, TimestampDecode, TimestampEncode},
+    FileStore,
 };
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
-use helium_proto::services::poc_mobile as proto;
+use helium_proto::services::poc_mobile::{self as proto, OracleBoostingReportV1};
 use hextree::disktree::DiskTreeMap;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -244,7 +244,14 @@ where
     }
 }
 
-impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization, FileSinkClient> {
+impl
+    DataSetDownloaderDaemon<
+        Footfall,
+        Landtype,
+        Urbanization,
+        FileSinkClient<proto::OracleBoostingReportV1>,
+    >
+{
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
@@ -252,15 +259,12 @@ impl DataSetDownloaderDaemon<Footfall, Landtype, Urbanization, FileSinkClient> {
         new_coverage_object_notification: NewCoverageObjectNotification,
     ) -> anyhow::Result<impl ManagedTask> {
         let (oracle_boosting_reports, oracle_boosting_reports_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::OracleBoostingReport,
+            OracleBoostingReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_oracle_boosting_report"),
+                Some(Duration::from_secs(15 * 60)),
+                env!("CARGO_PKG_NAME"),
             )
-            .auto_commit(true)
-            .roll_time(Duration::from_secs(15 * 60))
-            .create()
             .await?;
 
         let urbanization = Urbanization::new(None);
@@ -518,7 +522,7 @@ pub trait DataSetProcessor: Send + Sync + 'static {
 }
 
 #[async_trait::async_trait]
-impl DataSetProcessor for FileSinkClient {
+impl DataSetProcessor for FileSinkClient<proto::OracleBoostingReportV1> {
     async fn set_all_oracle_boosting_assignments(
         &self,
         pool: &PgPool,
@@ -725,7 +729,10 @@ impl AssignedCoverageObjects {
         Ok(Self { coverage_objs })
     }
 
-    async fn write(&self, boosting_reports: &FileSinkClient) -> file_store::Result {
+    async fn write(
+        &self,
+        boosting_reports: &FileSinkClient<proto::OracleBoostingReportV1>,
+    ) -> file_store::Result {
         let timestamp = Utc::now().encode_timestamp();
         for (uuid, hexes) in self.coverage_objs.iter() {
             let assignments: Vec<_> = hexes

@@ -31,7 +31,8 @@ use sqlx::{PgPool, Postgres, Transaction};
 use std::{self, ops::DerefMut, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, sync::Mutex, time::timeout};
 
-pub fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
+pub fn create_file_sink<T: file_store::traits::MsgBytes>(
+) -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
     let (tx, rx) = tokio::sync::mpsc::channel(10);
 
     (
@@ -40,12 +41,12 @@ pub fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
     )
 }
 
-pub struct MockFileSinkReceiver {
-    pub receiver: tokio::sync::mpsc::Receiver<SinkMessage>,
+pub struct MockFileSinkReceiver<T> {
+    pub receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>,
 }
 
-impl MockFileSinkReceiver {
-    pub async fn receive(&mut self) -> Option<Vec<u8>> {
+impl<T: std::fmt::Debug> MockFileSinkReceiver<T> {
+    pub async fn receive(&mut self) -> Option<T> {
         match timeout(seconds(2), self.receiver.recv()).await {
             Ok(Some(SinkMessage::Data(on_write_tx, msg))) => {
                 let _ = on_write_tx.send(Ok(()));
@@ -65,37 +66,38 @@ impl MockFileSinkReceiver {
             panic!("receiver should have been empty")
         };
     }
+}
 
+impl MockFileSinkReceiver<LoraPocV1> {
     pub async fn receive_valid_poc(&mut self) -> LoraPocV1 {
         match self.receive().await {
-            Some(bytes) => {
-                LoraPocV1::decode(bytes.as_slice()).expect("failed to decode expected valid poc")
-            }
+            Some(msg) => msg,
             None => panic!("failed to receive valid poc"),
         }
     }
-
+}
+impl MockFileSinkReceiver<LoraInvalidBeaconReportV1> {
     pub async fn receive_invalid_beacon(&mut self) -> LoraInvalidBeaconReportV1 {
         match self.receive().await {
-            Some(bytes) => LoraInvalidBeaconReportV1::decode(bytes.as_slice())
-                .expect("failed to decode expected invalid beacon report"),
+            Some(msg) => msg,
             None => panic!("failed to receive invalid beacon"),
         }
     }
+}
 
+impl MockFileSinkReceiver<LoraInvalidWitnessReportV1> {
     pub async fn receive_invalid_witness(&mut self) -> LoraInvalidWitnessReportV1 {
         match self.receive().await {
-            Some(bytes) => LoraInvalidWitnessReportV1::decode(bytes.as_slice())
-                .expect("failed to decode expected invalid witness report"),
+            Some(msg) => msg,
             None => panic!("failed to receive invalid witness"),
         }
     }
+}
 
+impl MockFileSinkReceiver<IotRewardShare> {
     pub async fn receive_gateway_reward(&mut self) -> GatewayReward {
         match self.receive().await {
-            Some(bytes) => {
-                let iot_reward = IotRewardShare::decode(bytes.as_slice())
-                    .expect("failed to decode expected gateway reward");
+            Some(iot_reward) => {
                 println!("iot_reward: {:?}", iot_reward);
                 match iot_reward.reward {
                     Some(IotReward::GatewayReward(r)) => r,
@@ -108,9 +110,7 @@ impl MockFileSinkReceiver {
 
     pub async fn receive_operational_reward(&mut self) -> OperationalReward {
         match self.receive().await {
-            Some(bytes) => {
-                let iot_reward = IotRewardShare::decode(bytes.as_slice())
-                    .expect("failed to decode expected operational reward");
+            Some(iot_reward) => {
                 println!("iot_reward: {:?}", iot_reward);
                 match iot_reward.reward {
                     Some(IotReward::OperationalReward(r)) => r,
@@ -123,9 +123,7 @@ impl MockFileSinkReceiver {
 
     pub async fn receive_unallocated_reward(&mut self) -> UnallocatedReward {
         match self.receive().await {
-            Some(bytes) => {
-                let iot_reward = IotRewardShare::decode(bytes.as_slice())
-                    .expect("failed to decode expected unallocated reward");
+            Some(iot_reward) => {
                 println!("iot_reward: {:?}", iot_reward);
                 match iot_reward.reward {
                     Some(IotReward::UnallocatedReward(r)) => r,

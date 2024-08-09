@@ -19,7 +19,7 @@ const LAST_PROCESSED_TIMESTAMP_KEY: &str = "last_processed_hex_boosting_info";
 pub struct Watcher<A> {
     pub pool: Pool<Postgres>,
     pub hex_boosting_client: A,
-    pub file_sink: FileSinkClient,
+    pub file_sink: FileSinkClient<BoostedHexUpdateProto>,
 }
 
 impl<A> ManagedTask for Watcher<A>
@@ -45,7 +45,7 @@ where
 {
     pub async fn new(
         pool: Pool<Postgres>,
-        file_sink: FileSinkClient,
+        file_sink: FileSinkClient<BoostedHexUpdateProto>,
         hex_boosting_client: A,
     ) -> Result<Self> {
         Ok(Self {
