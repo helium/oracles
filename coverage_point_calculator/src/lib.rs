@@ -125,7 +125,7 @@ pub struct CoveragePoints {
     ///
     /// Coverage trust of a Radio
     pub location_trust_multiplier: Decimal,
-    /// Speedtest Mulitplier, maximum of 1
+    /// Speedtest Multiplier, maximum of 1
     ///
     /// Backhaul of a Radio
     pub speedtest_multiplier: Decimal,
@@ -135,12 +135,14 @@ pub struct CoveragePoints {
     pub service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     /// Derived Eligibility for Boosted Hex Rewards
     pub boosted_hex_eligibility: BoostedHexStatus,
-    /// Speedtests used in calculcation
+    /// Speedtests used in calculation
     pub speedtests: Vec<Speedtest>,
     /// Location Trust Scores used in calculation
     pub location_trust_scores: Vec<LocationTrust>,
     /// Covered Hexes used in calculation
     pub covered_hexes: Vec<CoveredHex>,
+    /// Average speedtest used in calculation
+    pub speedtest_avg: Speedtest,
 }
 
 impl CoveragePoints {
@@ -165,12 +167,13 @@ impl CoveragePoints {
         let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
 
         let speedtests = speedtest::clean_speedtests(speedtests);
-        let speedtest_multiplier = speedtest::multiplier(&speedtests);
+        let (speedtest_multiplier, speedtest_avg) = speedtest::multiplier(&speedtests);
 
         Ok(CoveragePoints {
             coverage_points: hex_coverage_points,
             location_trust_multiplier,
             speedtest_multiplier,
+            speedtest_avg,
             radio_type,
             service_provider_boosted_reward_eligibility,
             boosted_hex_eligibility: boost_eligibility,

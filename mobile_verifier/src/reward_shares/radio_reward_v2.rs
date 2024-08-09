@@ -19,6 +19,7 @@ impl ToProtoDecimal for rust_decimal::Decimal {
 pub trait RadioRewardV2Ext {
     fn proto_location_trust_scores(&self) -> Vec<LocationTrustScore>;
     fn proto_speedtests(&self) -> Vec<Speedtest>;
+    fn proto_speedtest_avg(&self) -> Speedtest;
     fn proto_boosted_hex_status(&self) -> BoostedHexStatus;
     fn proto_covered_hexes(&self) -> Vec<CoveredHex>;
 }
@@ -32,6 +33,16 @@ impl RadioRewardV2Ext for coverage_point_calculator::CoveragePoints {
                 trust_score: Some(lt.trust_score.proto_decimal()),
             })
             .collect()
+    }
+
+    fn proto_speedtest_avg(&self) -> Speedtest {
+        let st = self.speedtest_avg;
+        helium_proto::services::poc_mobile::Speedtest {
+            upload_speed_bps: st.upload_speed.as_bps(),
+            download_speed_bps: st.download_speed.as_bps(),
+            latency_ms: st.latency_millis,
+            timestamp: st.timestamp.encode_timestamp(),
+        }
     }
 
     fn proto_speedtests(&self) -> Vec<Speedtest> {

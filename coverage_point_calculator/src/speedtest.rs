@@ -39,13 +39,15 @@ pub(crate) fn clean_speedtests(speedtests: Vec<Speedtest>) -> Vec<Speedtest> {
     cleaned
 }
 
-pub(crate) fn multiplier(speedtests: &[Speedtest]) -> Decimal {
+// Returns multiplier and speedtest (average)
+pub(crate) fn multiplier(speedtests: &[Speedtest]) -> (Decimal, Speedtest) {
+    let avg = Speedtest::avg(speedtests);
+
     if speedtests.len() < MIN_REQUIRED_SPEEDTEST_SAMPLES {
-        return dec!(0);
+        return (dec!(0), avg);
     }
 
-    let avg = Speedtest::avg(speedtests);
-    avg.multiplier()
+    (avg.multiplier(), avg)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
