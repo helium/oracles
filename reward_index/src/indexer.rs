@@ -163,7 +163,7 @@ impl Indexer {
                             key: bs58::encode(&r.subscriber_id).into_string(),
                             reward_type: RewardType::MobileSubscriber,
                         },
-                        r.discovery_location_amount,
+                        r.discovery_location_amount + r.verification_mapping_amount,
                     ))),
                     Some(MobileReward::ServiceProviderReward(r)) => {
                         ServiceProvider::try_from(r.service_provider_id)

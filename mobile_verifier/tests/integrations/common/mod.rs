@@ -4,18 +4,26 @@ use file_store::{
     traits::TimestampEncode,
 };
 use futures::{stream, StreamExt};
+use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::poc_mobile::{
-        mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward,
-        MobileRewardShare, OracleBoostingHexAssignment, OracleBoostingReportV1, RadioReward,
-        RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
+    services::{
+        mobile_config::NetworkKeyRole,
+        poc_mobile::{
+            mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward,
+            MobileRewardShare, OracleBoostingHexAssignment, OracleBoostingReportV1, RadioReward,
+            RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward,
+            UnallocatedReward,
+        },
     },
     Message,
 };
 use hex_assignments::{Assignment, HexAssignment, HexBoostData};
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
-    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
+    client::{
+        authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
+        hex_boosting_client::HexBoostingInfoResolver, ClientError,
+    },
 };
 
 use mobile_verifier::boosting_oracles::AssignedCoverageObjects;
@@ -24,6 +32,7 @@ use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::{collections::HashMap, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
+use tonic::async_trait;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -321,4 +330,44 @@ pub async fn set_unassigned_oracle_boosting_assignments(
     }
     assigned_coverage_objs.save(pool).await?;
     Ok(output)
+}
+
+#[derive(Clone)]
+pub struct MockAuthorizationClient {}
+
+impl MockAuthorizationClient {
+    pub fn new() -> MockAuthorizationClient {
+        Self {}
+    }
+}
+
+#[async_trait]
+impl AuthorizationVerifier for MockAuthorizationClient {
+    type Error = ClientError;
+
+    async fn verify_authorized_key(
+        &self,
+        _pubkey: &PublicKeyBinary,
+        _role: NetworkKeyRole,
+    ) -> Result<bool, ClientError> {
+        Ok(true)
+    }
+}
+
+#[derive(Clone)]
+pub struct MockEntityClient {}
+
+impl MockEntityClient {
+    pub fn new() -> MockEntityClient {
+        Self {}
+    }
+}
+
+#[async_trait]
+impl EntityVerifier for MockEntityClient {
+    type Error = ClientError;
+
+    async fn verify_rewardable_entity(&self, _entity_id: &[u8]) -> Result<bool, ClientError> {
+        Ok(true)
+    }
 }

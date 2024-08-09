@@ -3,7 +3,7 @@ use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::{
     iot_config, mobile_config,
     poc_lora::{LoraBeaconReportReqV1, LoraStreamSessionInitV1, LoraWitnessReportReqV1},
-    poc_mobile::ServiceProviderBoostedRewardsBannedRadioReqV1,
+    poc_mobile::{self, ServiceProviderBoostedRewardsBannedRadioReqV1},
 };
 use helium_proto::{
     services::poc_mobile::{
@@ -94,6 +94,7 @@ impl_msg_verify!(mobile_config::GatewayInfoStreamResV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexModifiedInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexInfoStreamResV1, signature);
+impl_msg_verify!(poc_mobile::SubscriberVerifiedMappingEventReqV1, signature);
 
 #[cfg(test)]
 mod test {
