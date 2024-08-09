@@ -1159,6 +1159,100 @@ mod test {
         }]
     }
 
+    #[tokio::test]
+    async fn check_speedtest_avg_in_radio_reward_v2() {
+        let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner1 parse");
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let mut owners = HashMap::new();
+        owners.insert(gw1.clone(), owner1.clone());
+        let c1 = "P27-SCE4255W2107CW5000015".to_string();
+        let cov_obj_1 = Uuid::new_v4();
+
+        let now = Utc::now();
+        let timestamp = now - Duration::minutes(20);
+
+        let heartbeat_rewards = vec![HeartbeatReward {
+            cbsd_id: Some(c1.clone()),
+            hotspot_key: gw1.clone(),
+            coverage_object: cov_obj_1,
+            cell_type: CellType::from_cbsd_id(&c1).unwrap(),
+            distances_to_asserted: None,
+            trust_score_multipliers: vec![dec!(1.0)],
+        }]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
+
+        let mut hex_coverage = HashMap::new();
+        hex_coverage.insert(
+            (OwnedKeyType::from(c1.clone()), cov_obj_1),
+            simple_hex_coverage(&c1, 0x8a1fb46622dffff),
+        );
+
+        let st1 = Speedtest {
+            report: CellSpeedtest {
+                pubkey: gw1.clone(),
+                timestamp,
+                upload_speed: bytes_per_s(10),
+                download_speed: bytes_per_s(100),
+                latency: 50,
+                serial: "".to_string(),
+            },
+        };
+        let st2 = Speedtest {
+            report: CellSpeedtest {
+                pubkey: gw1.clone(),
+                timestamp,
+                upload_speed: bytes_per_s(20),
+                download_speed: bytes_per_s(200),
+                latency: 100,
+                serial: "".to_string(),
+            },
+        };
+
+        let gw1_speedtests = vec![st1, st2];
+
+        let gw1_average = SpeedtestAverage::from(gw1_speedtests);
+        let mut averages = HashMap::new();
+        averages.insert(gw1.clone(), gw1_average);
+
+        let speedtest_avgs = SpeedtestAverages { averages };
+
+        let duration = Duration::hours(1);
+        let epoch = (now - duration)..now;
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
+
+        let epoch = (now - Duration::hours(1))..now;
+        let (_reward_amount, _mobile_reward_v1, mobile_reward_v2) = CoverageShares::new(
+            &hex_coverage,
+            stream::iter(heartbeat_rewards),
+            &speedtest_avgs,
+            &BoostedHexes::default(),
+            &BoostedHexEligibility::default(),
+            &epoch,
+        )
+        .await
+        .unwrap()
+        .into_rewards(reward_shares, &epoch)
+        .unwrap()
+        .1
+        .next()
+        .unwrap();
+
+        let radio_reward = match mobile_reward_v2.reward {
+            Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
+            _ => unreachable!(),
+        };
+        let speedtest_avg = radio_reward.speedtest_average.unwrap();
+        assert_eq!(speedtest_avg.upload_speed_bps, bytes_per_s(15));
+        assert_eq!(speedtest_avg.download_speed_bps, bytes_per_s(150));
+        assert_eq!(speedtest_avg.latency_ms, 75);
+    }
+
     /// Test to ensure that different speedtest averages correctly afferct reward shares.
     #[tokio::test]
     async fn ensure_speedtest_averages_affect_reward_shares() {

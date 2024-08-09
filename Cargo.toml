@@ -124,7 +124,6 @@ derive_builder = "0"
 [patch.crates-io]
 sqlx = { git = "https://github.com/helium/sqlx.git", rev = "92a2268f02e0cac6fccb34d3e926347071dbb88d" }
 
-
 # When attempting to test proto changes without needing to push a branch you can
 # patch the github url to point to your local proto repo.
 # 
