@@ -95,6 +95,14 @@ impl Speedtest {
     }
 
     pub fn avg(speedtests: &[Self]) -> Self {
+        if speedtests.is_empty() {
+            return Self {
+                upload_speed: BytesPs::new(0),
+                download_speed: BytesPs::new(0),
+                latency_millis: 0,
+                timestamp: Utc::now(),
+            };
+        }
         let mut download = 0;
         let mut upload = 0;
         let mut latency = 0;
@@ -193,6 +201,14 @@ mod tests {
         assert_eq!(Degraded, SpeedtestTier::from_latency(74));
         assert_eq!(Poor, SpeedtestTier::from_latency(99));
         assert_eq!(Fail, SpeedtestTier::from_latency(101));
+    }
+
+    #[test]
+    fn speedtest_avg_should_not_panic() {
+        let avg = Speedtest::avg(&[]);
+        assert_eq!(avg.upload_speed, BytesPs(0));
+        assert_eq!(avg.download_speed, BytesPs(0));
+        assert_eq!(avg.latency_millis, 0);
     }
 
     #[test]
