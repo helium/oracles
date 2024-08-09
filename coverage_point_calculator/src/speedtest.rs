@@ -225,11 +225,11 @@ mod tests {
 
         assert_eq!(
             dec!(0),
-            multiplier(&speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES - 1))
+            multiplier(&speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES - 1)).0
         );
         assert_eq!(
             dec!(1),
-            multiplier(&speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES))
+            multiplier(&speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES)).0
         );
     }
 
@@ -280,7 +280,7 @@ mod tests {
         ]);
 
         // Old speedtests should be unused
-        assert_eq!(dec!(1), multiplier(&speedtests));
+        assert_eq!(dec!(1), multiplier(&speedtests).0);
     }
 
     #[test]
