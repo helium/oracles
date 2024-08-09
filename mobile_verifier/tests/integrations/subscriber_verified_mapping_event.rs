@@ -226,7 +226,7 @@ async fn select_events(
                 subscriber_id,
                 total_reward_points,
                 received_timestamp
-            FROM verified_subscriber_verified_mapping_event
+            FROM subscriber_verified_mapping_event
         "#,
     )
     .fetch_all(pool)
