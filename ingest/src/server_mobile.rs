@@ -414,9 +414,8 @@ impl poc_mobile::PocMobile for GrpcServer {
     ) -> GrpcResult<SubscriberVerifiedMappingEventResV1> {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event: SubscriberVerifiedMappingEventReqV1 = request.into_inner();
-        let subscriber_id = event.subscriber_id.clone();
 
-        custom_tracing::record("subscriber_id", bs58::encode(&subscriber_id).into_string());
+        custom_tracing::record_b58("subscriber_id", &event.subscriber_id);
         custom_tracing::record_b58("pub_key", &event.carrier_mapping_key);
 
         let report = self
