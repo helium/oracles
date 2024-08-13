@@ -262,7 +262,7 @@ pub async fn aggregate_verified_mapping_events(
     let vsme_shares = sqlx::query_as::<_, VerifiedSubscriberVerifiedMappingEventShare>(
         "SELECT 
             subscriber_id, 
-            SUM(total_reward_points) AS total_reward_points
+            SUM(total_reward_points)::BIGINT AS total_reward_points
         FROM 
             subscriber_verified_mapping_event
         WHERE received_timestamp >= $1 AND received_timestamp < $2
