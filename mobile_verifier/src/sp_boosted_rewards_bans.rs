@@ -320,17 +320,20 @@ pub mod db {
 
     pub async fn get_banned_radios(
         pool: &PgPool,
+        ban_type: SpBoostedRewardsBannedRadioBanType,
         date_time: DateTime<Utc>,
     ) -> anyhow::Result<BannedRadios> {
         sqlx::query(
             r#"
                 SELECT distinct radio_type, radio_key
                 FROM sp_boosted_rewards_bans
-                WHERE received_timestamp <= $1
-                    AND until > $1 
-                    AND COALESCE(invalidated_at > $1, TRUE)
+                WHERE ban_type = $1
+                    AND received_timestamp <= $2
+                    AND until > $2 
+                    AND COALESCE(invalidated_at > $2, TRUE)
             "#,
         )
+        .bind(ban_type.as_str_name())
         .bind(date_time)
         .fetch(pool)
         .map_err(anyhow::Error::from)
@@ -548,7 +551,12 @@ mod tests {
             .await?;
         transaction.commit().await?;
 
-        let banned_radios = db::get_banned_radios(&pool, Utc::now()).await?;
+        let banned_radios = db::get_banned_radios(
+            &pool,
+            SpBoostedRewardsBannedRadioBanType::BoostedHex,
+            Utc::now(),
+        )
+        .await?;
         let result =
             banned_radios.contains(&keypair.public_key().to_owned().into(), Some(&cbsd_id));
 
@@ -567,7 +575,12 @@ mod tests {
             .await?;
         transaction.commit().await?;
 
-        let banned_radios = db::get_banned_radios(&pool, Utc::now()).await?;
+        let banned_radios = db::get_banned_radios(
+            &pool,
+            SpBoostedRewardsBannedRadioBanType::BoostedHex,
+            Utc::now(),
+        )
+        .await?;
         let result =
             banned_radios.contains(&keypair.public_key().to_owned().into(), Some(&cbsd_id));
 
@@ -594,7 +607,12 @@ mod tests {
             .await?;
         transaction.commit().await?;
 
-        let banned_radios = db::get_banned_radios(&pool, Utc::now()).await?;
+        let banned_radios = db::get_banned_radios(
+            &pool,
+            SpBoostedRewardsBannedRadioBanType::BoostedHex,
+            Utc::now(),
+        )
+        .await?;
         let result = banned_radios.contains(&keypair.public_key().to_owned().into(), None);
 
         assert!(result);
@@ -612,7 +630,12 @@ mod tests {
             .await?;
         transaction.commit().await?;
 
-        let banned_radios = db::get_banned_radios(&pool, Utc::now()).await?;
+        let banned_radios = db::get_banned_radios(
+            &pool,
+            SpBoostedRewardsBannedRadioBanType::BoostedHex,
+            Utc::now(),
+        )
+        .await?;
         let result = banned_radios.contains(&keypair.public_key().to_owned().into(), None);
 
         assert!(!result);

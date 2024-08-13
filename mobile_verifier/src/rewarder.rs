@@ -24,8 +24,9 @@ use futures_util::TryFutureExt;
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
-        self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
-        UnallocatedReward, UnallocatedRewardType,
+        self as proto, mobile_reward_share::Reward as ProtoReward,
+        service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType,
+        MobileRewardShare, UnallocatedReward, UnallocatedRewardType,
     },
     MobileRewardData as ManifestMobileRewardData, RewardManifest,
 };
@@ -427,7 +428,12 @@ async fn reward_poc(
 
     let boosted_hex_eligibility = BoostedHexEligibility::new(
         radio_threshold::verified_radio_thresholds(pool, reward_period).await?,
-        sp_boosted_rewards_bans::db::get_banned_radios(pool, reward_period.end).await?,
+        sp_boosted_rewards_bans::db::get_banned_radios(
+            pool,
+            SpBoostedRewardsBannedRadioBanType::BoostedHex,
+            reward_period.end,
+        )
+        .await?,
     );
 
     let coverage_shares = CoverageShares::new(
