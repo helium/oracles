@@ -1627,7 +1627,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -3801,6 +3801,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=master#2916bcd01d740171ac8d49a29d1ea892419820f0"
 dependencies = [
  "bytes",
  "prost",
@@ -9850,7 +9851,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
  "twox-hash",
  "xorf",
