@@ -236,7 +236,7 @@ async fn select_events(
         .into_iter()
         .map(|row| SubscriberVerifiedMappingEvent {
             subscriber_id: row.get::<Vec<u8>, _>("subscriber_id"),
-            total_reward_points: row.get::<i32, _>("total_reward_points") as u64,
+            total_reward_points: row.get::<i64, _>("total_reward_points") as u64,
             timestamp: row.get::<DateTime<Utc>, _>("received_timestamp"),
             carrier_mapping_key: vec![].into(),
         })
