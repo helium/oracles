@@ -1,5 +1,5 @@
 use crate::Settings;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::{self, FileSinkClient},
@@ -246,7 +246,6 @@ async fn save_to_db(
     Ok(())
 }
 
-const SUBSCRIBER_REWARD_PERIOD_IN_DAYS: i64 = 1;
 pub type VerifiedSubscriberVerifiedMappingEventShares =
     Vec<VerifiedSubscriberVerifiedMappingEventShare>;
 
@@ -270,7 +269,7 @@ pub async fn aggregate_verified_mapping_events(
         GROUP BY 
             subscriber_id;",
     )
-    .bind(reward_period.start - Duration::days(SUBSCRIBER_REWARD_PERIOD_IN_DAYS))
+    .bind(reward_period.start)
     .bind(reward_period.end)
     .fetch_all(db)
     .await?;
