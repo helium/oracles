@@ -11,7 +11,7 @@ use crate::{
     sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
     speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor,
-    subscriber_verified_mapping_event::SubscriberVerifiedMappingEventDeamon,
+    subscriber_verified_mapping_event::SubscriberVerifiedMappingEventDaemon,
     telemetry, Settings,
 };
 use anyhow::Result;
@@ -143,7 +143,7 @@ impl Cmd {
                 .await?,
             )
             .add_task(
-                SubscriberVerifiedMappingEventDeamon::create_managed_task(
+                SubscriberVerifiedMappingEventDaemon::create_managed_task(
                     pool.clone(),
                     settings,
                     auth_client.clone(),

@@ -27,7 +27,7 @@ use std::ops::Range;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-pub struct SubscriberVerifiedMappingEventDeamon<AV, EV> {
+pub struct SubscriberVerifiedMappingEventDaemon<AV, EV> {
     pool: Pool<Postgres>,
     authorization_verifier: AV,
     entity_verifier: EV,
@@ -35,7 +35,7 @@ pub struct SubscriberVerifiedMappingEventDeamon<AV, EV> {
     verified_report_sink: FileSinkClient,
 }
 
-impl<AV, EV> SubscriberVerifiedMappingEventDeamon<AV, EV>
+impl<AV, EV> SubscriberVerifiedMappingEventDaemon<AV, EV>
 where
     AV: AuthorizationVerifier + Send + Sync + 'static,
     EV: EntityVerifier + Send + Sync + 'static,
@@ -213,7 +213,7 @@ where
     }
 }
 
-impl<AV, EV> ManagedTask for SubscriberVerifiedMappingEventDeamon<AV, EV>
+impl<AV, EV> ManagedTask for SubscriberVerifiedMappingEventDaemon<AV, EV>
 where
     AV: AuthorizationVerifier + Send + Sync + 'static,
     EV: EntityVerifier + Send + Sync + 'static,

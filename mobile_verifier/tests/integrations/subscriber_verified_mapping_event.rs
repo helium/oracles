@@ -8,7 +8,7 @@ use file_store::{
 use helium_crypto::{KeyTag, Keypair, PublicKeyBinary};
 use helium_proto::services::poc_mobile::VerifiedSubscriberVerifiedMappingEventIngestReportV1;
 use mobile_verifier::subscriber_verified_mapping_event::{
-    aggregate_verified_mapping_events, SubscriberVerifiedMappingEventDeamon,
+    aggregate_verified_mapping_events, SubscriberVerifiedMappingEventDaemon,
     VerifiedSubscriberVerifiedMappingEventShare, VerifiedSubscriberVerifiedMappingEventShares,
 };
 use prost::Message;
@@ -27,7 +27,7 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
     let task_pool = pool.clone();
 
     tokio::spawn(async move {
-        let deamon = SubscriberVerifiedMappingEventDeamon::new(
+        let deamon = SubscriberVerifiedMappingEventDaemon::new(
             task_pool,
             MockAuthorizationClient::new(),
             MockEntityClient::new(),
