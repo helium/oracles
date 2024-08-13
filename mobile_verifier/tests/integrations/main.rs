@@ -11,3 +11,4 @@ mod rewarder_poc_dc;
 mod rewarder_sp_rewards;
 mod seniority;
 mod speedtests;
+mod subscriber_verified_mapping_event;

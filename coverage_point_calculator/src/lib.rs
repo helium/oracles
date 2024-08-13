@@ -75,7 +75,7 @@ use service_provider_boosting::{MAX_AVERAGE_DISTANCE, MIN_WIFI_TRUST_MULTIPLIER}
 mod hexes;
 mod location;
 mod service_provider_boosting;
-mod speedtest;
+pub mod speedtest;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
 

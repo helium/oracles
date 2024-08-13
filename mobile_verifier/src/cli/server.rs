@@ -11,6 +11,7 @@ use crate::{
     sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
     speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor,
+    subscriber_verified_mapping_event::SubscriberVerifiedMappingEventDaemon,
     telemetry, Settings,
 };
 use anyhow::Result;
@@ -142,6 +143,17 @@ impl Cmd {
                 .await?,
             )
             .add_task(
+                SubscriberVerifiedMappingEventDaemon::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    auth_client.clone(),
+                    entity_client.clone(),
+                    report_ingest.clone(),
+                    file_upload.clone(),
+                )
+                .await?,
+            )
+            .add_task(
                 CoverageDaemon::create_managed_task(
                     pool.clone(),
                     settings,
@@ -168,7 +180,7 @@ impl Cmd {
                     file_upload.clone(),
                     report_ingest.clone(),
                     auth_client.clone(),
-                    entity_client,
+                    entity_client.clone(),
                 )
                 .await?,
             )

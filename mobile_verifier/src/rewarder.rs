@@ -9,7 +9,7 @@ use crate::{
     },
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_location, telemetry, Settings,
+    subscriber_location, subscriber_verified_mapping_event, telemetry, Settings,
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -297,6 +297,7 @@ where
         data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.start).await?;
         coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
         sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_period.start).await?;
+        subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.end).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
@@ -512,14 +513,19 @@ pub async fn reward_mappers(
     let location_shares =
         subscriber_location::aggregate_location_shares(pool, reward_period).await?;
 
+    let vsme_shares =
+        subscriber_verified_mapping_event::aggregate_verified_mapping_events(pool, reward_period)
+            .await?;
+
     // determine mapping shares based on location shares and data transferred
-    let mapping_shares = MapperShares::new(location_shares);
+    let mapping_shares = MapperShares::new(location_shares, vsme_shares);
     let total_mappers_pool =
         reward_shares::get_scheduled_tokens_for_mappers(reward_period.end - reward_period.start);
     let rewards_per_share = mapping_shares.rewards_per_share(total_mappers_pool)?;
 
     // translate discovery mapping shares into subscriber rewards
     let mut allocated_mapping_rewards = 0_u64;
+
     for (reward_amount, mapping_share) in
         mapping_shares.into_subscriber_rewards(reward_period, rewards_per_share)
     {
