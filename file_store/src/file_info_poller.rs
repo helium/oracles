@@ -429,7 +429,7 @@ impl FileInfoPollerState for sqlx::Pool<sqlx::Postgres> {
         .bind(process_name)
         .bind(file_type)
         .bind(MAX_SIZE_OF_FILES_PROCESSED_TABLE - 1)
-        .fetch_one(self)
+        .fetch_optional(self)
         .await
         .map_err(Error::from)
     }
