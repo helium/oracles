@@ -23,7 +23,10 @@ pub mod mobile_transfer;
 pub mod reward_manifest;
 mod settings;
 pub mod speedtest;
+pub mod subscriber_verified_mapping_event;
+pub mod subscriber_verified_mapping_event_ingest_report;
 pub mod traits;
+pub mod verified_subscriber_verified_mapping_event_ingest_report;
 pub mod wifi_heartbeat;
 
 pub use crate::file_store::FileStore;

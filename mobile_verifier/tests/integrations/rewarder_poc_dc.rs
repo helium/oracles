@@ -6,8 +6,8 @@ use file_store::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    CoverageObjectValidity, GatewayReward, HeartbeatValidity, RadioRewardV2, SeniorityUpdateReason,
-    SignalLevel,
+    CoverageObjectValidity, GatewayReward, HeartbeatValidity, LocationSource, RadioRewardV2,
+    SeniorityUpdateReason, SignalLevel,
 };
 use mobile_verifier::{
     cell_type::CellType,
@@ -175,6 +175,7 @@ async fn seed_heartbeats(
                 coverage_object: Some(cov_obj_1.coverage_object.uuid),
                 location_validation_timestamp: None,
                 timestamp: ts + ChronoDuration::hours(n),
+                location_source: LocationSource::Gps,
             },
             cell_type: CellType::SercommIndoor,
             distance_to_asserted: None,
@@ -203,6 +204,7 @@ async fn seed_heartbeats(
                 coverage_object: Some(cov_obj_2.coverage_object.uuid),
                 location_validation_timestamp: None,
                 timestamp: ts + ChronoDuration::hours(n),
+                location_source: LocationSource::Gps,
             },
             cell_type: CellType::SercommOutdoor,
             distance_to_asserted: None,
@@ -230,6 +232,7 @@ async fn seed_heartbeats(
                 coverage_object: Some(cov_obj_3.coverage_object.uuid),
                 location_validation_timestamp: Some(ts - ChronoDuration::hours(24)),
                 timestamp: ts + ChronoDuration::hours(n),
+                location_source: LocationSource::Skyhook,
             },
             cell_type: CellType::NovaGenericWifiIndoor,
             distance_to_asserted: Some(10),

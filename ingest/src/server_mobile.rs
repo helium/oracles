@@ -19,8 +19,10 @@ use helium_proto::services::poc_mobile::{
     RadioThresholdReportRespV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
-    SubscriberLocationReqV1, SubscriberLocationRespV1, WifiHeartbeatIngestReportV1,
-    WifiHeartbeatReqV1, WifiHeartbeatRespV1,
+    SubscriberLocationReqV1, SubscriberLocationRespV1,
+    SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventReqV1,
+    SubscriberVerifiedMappingEventResV1, WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1,
+    WifiHeartbeatRespV1,
 };
 use std::{net::SocketAddr, path::Path};
 use task_manager::{ManagedTask, TaskManager};
@@ -42,6 +44,7 @@ pub struct GrpcServer {
     invalidated_radio_threshold_report_sink: FileSinkClient,
     coverage_object_report_sink: FileSinkClient,
     sp_boosted_rewards_ban_sink: FileSinkClient,
+    subscriber_mapping_event_sink: FileSinkClient,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -52,23 +55,7 @@ impl ManagedTask for GrpcServer {
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let api_token = self.api_token.clone();
-        let address = self.address;
-        Box::pin(async move {
-            transport::Server::builder()
-                .layer(custom_tracing::grpc_layer::new_with_span(make_span))
-                .layer(poc_metrics::request_layer!("ingest_server_grpc_connection"))
-                .add_service(poc_mobile::Server::with_interceptor(
-                    *self,
-                    move |req: Request<()>| match req.metadata().get("authorization") {
-                        Some(t) if api_token == t => Ok(req),
-                        _ => Err(Status::unauthenticated("No valid auth token")),
-                    },
-                ))
-                .serve_with_shutdown(address, shutdown)
-                .map_err(Error::from)
-                .await
-        })
+        Box::pin(self.run(shutdown))
     }
 }
 
@@ -81,6 +68,58 @@ fn make_span(_request: &http::request::Request<helium_proto::services::Body>) ->
 }
 
 impl GrpcServer {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        heartbeat_report_sink: FileSinkClient,
+        wifi_heartbeat_report_sink: FileSinkClient,
+        speedtest_report_sink: FileSinkClient,
+        data_transfer_session_sink: FileSinkClient,
+        subscriber_location_report_sink: FileSinkClient,
+        radio_threshold_report_sink: FileSinkClient,
+        invalidated_radio_threshold_report_sink: FileSinkClient,
+        coverage_object_report_sink: FileSinkClient,
+        sp_boosted_rewards_ban_sink: FileSinkClient,
+        subscriber_mapping_event_sink: FileSinkClient,
+        required_network: Network,
+        address: SocketAddr,
+        api_token: MetadataValue<Ascii>,
+    ) -> Self {
+        GrpcServer {
+            heartbeat_report_sink,
+            wifi_heartbeat_report_sink,
+            speedtest_report_sink,
+            data_transfer_session_sink,
+            subscriber_location_report_sink,
+            radio_threshold_report_sink,
+            invalidated_radio_threshold_report_sink,
+            coverage_object_report_sink,
+            sp_boosted_rewards_ban_sink,
+            subscriber_mapping_event_sink,
+            required_network,
+            address,
+            api_token,
+        }
+    }
+
+    pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        let api_token = self.api_token.clone();
+        let address = self.address;
+
+        transport::Server::builder()
+            .layer(custom_tracing::grpc_layer::new_with_span(make_span))
+            .layer(poc_metrics::request_layer!("ingest_server_grpc_connection"))
+            .add_service(poc_mobile::Server::with_interceptor(
+                self,
+                move |req: Request<()>| match req.metadata().get("authorization") {
+                    Some(t) if api_token == t => Ok(req),
+                    _ => Err(Status::unauthenticated("No valid auth token")),
+                },
+            ))
+            .serve_with_shutdown(address, shutdown)
+            .map_err(Error::from)
+            .await
+    }
+
     fn verify_network(&self, public_key: PublicKey) -> VerifyResult<PublicKey> {
         if self.required_network == public_key.network {
             Ok(public_key)
@@ -368,6 +407,31 @@ impl poc_mobile::PocMobile for GrpcServer {
             ServiceProviderBoostedRewardsBannedRadioRespV1 { id },
         ))
     }
+
+    async fn submit_subscriber_verified_mapping_event(
+        &self,
+        request: Request<SubscriberVerifiedMappingEventReqV1>,
+    ) -> GrpcResult<SubscriberVerifiedMappingEventResV1> {
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+        let event: SubscriberVerifiedMappingEventReqV1 = request.into_inner();
+
+        custom_tracing::record_b58("subscriber_id", &event.subscriber_id);
+        custom_tracing::record_b58("pub_key", &event.carrier_mapping_key);
+
+        let report = self
+            .verify_public_key(event.carrier_mapping_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| SubscriberVerifiedMappingEventIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(event),
+            })?;
+
+        _ = self.subscriber_mapping_event_sink.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(SubscriberVerifiedMappingEventResV1 { id }))
+    }
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
@@ -484,6 +548,20 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .create()
         .await?;
 
+    let (subscriber_mapping_event_sink, subscriber_mapping_event_server) =
+        file_sink::FileSinkBuilder::new(
+            FileType::SubscriberVerifiedMappingEventIngestReport,
+            store_base_path,
+            file_upload.clone(),
+            concat!(
+                env!("CARGO_PKG_NAME"),
+                "_subscriber_verified_mapping_event_ingest_report"
+            ),
+        )
+        .roll_time(settings.roll_time)
+        .create()
+        .await?;
+
     let Some(api_token) = settings
         .token
         .as_ref()
@@ -492,7 +570,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         bail!("expected valid api token in settings");
     };
 
-    let grpc_server = GrpcServer {
+    let grpc_server = GrpcServer::new(
         heartbeat_report_sink,
         wifi_heartbeat_report_sink,
         speedtest_report_sink,
@@ -502,10 +580,11 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         invalidated_radio_threshold_report_sink,
         coverage_object_report_sink,
         sp_boosted_rewards_ban_sink,
-        required_network: settings.network,
-        address: settings.listen_addr,
+        subscriber_mapping_event_sink,
+        settings.network,
+        settings.listen_addr,
         api_token,
-    };
+    );
 
     tracing::info!(
         "grpc listening on {} and server mode {:?}",
@@ -524,6 +603,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(invalidated_radio_threshold_report_sink_server)
         .add_task(coverage_object_report_sink_server)
         .add_task(sp_boosted_rewards_ban_sink_server)
+        .add_task(subscriber_mapping_event_server)
         .add_task(grpc_server)
         .build()
         .start()

@@ -4,7 +4,9 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1};
+use helium_proto::services::poc_mobile::{
+    LocationSource, WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -17,6 +19,7 @@ pub struct WifiHeartbeat {
     pub location_validation_timestamp: Option<DateTime<Utc>>,
     pub coverage_object: Vec<u8>,
     pub timestamp: DateTime<Utc>,
+    pub location_source: LocationSource,
 }
 
 impl WifiHeartbeat {
@@ -47,6 +50,7 @@ impl TryFrom<WifiHeartbeatReqV1> for WifiHeartbeat {
         } else {
             v.location_validation_timestamp.to_timestamp().ok()
         };
+        let location_source = v.location_source();
         Ok(Self {
             pubkey: v.pub_key.into(),
             lat: v.lat,
@@ -55,6 +59,7 @@ impl TryFrom<WifiHeartbeatReqV1> for WifiHeartbeat {
             coverage_object: v.coverage_object,
             timestamp: v.timestamp.to_timestamp()?,
             location_validation_timestamp,
+            location_source,
         })
     }
 }
@@ -107,6 +112,7 @@ mod tests {
                 coverage_object: vec![],
                 timestamp: Utc::now().timestamp() as u64,
                 location_validation_timestamp: now as u64,
+                location_source: LocationSource::Skyhook.into(),
                 signature: vec![],
             }),
         };
@@ -120,6 +126,7 @@ mod tests {
                 coverage_object: vec![],
                 timestamp: Utc::now().timestamp() as u64,
                 location_validation_timestamp: 0,
+                location_source: LocationSource::Gps.into(),
                 signature: vec![],
             }),
         };

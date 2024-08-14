@@ -1617,7 +1617,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=kurotych/speedtest_avg_radio_reward_v2#9f56138c6708cc2e2095593168d8e3b6de11a017"
+source = "git+https://github.com/helium/proto?branch=kurotych/speedtest_avg_radio_reward_v2#8d060118f1c9f77990c9e4938b2416fbd7012069"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3801,7 +3801,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=kurotych/speedtest_avg_radio_reward_v2#9f56138c6708cc2e2095593168d8e3b6de11a017"
+source = "git+https://github.com/helium/proto?branch=kurotych/speedtest_avg_radio_reward_v2#8d060118f1c9f77990c9e4938b2416fbd7012069"
 dependencies = [
  "bytes",
  "prost",

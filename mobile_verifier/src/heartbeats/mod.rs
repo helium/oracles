@@ -18,7 +18,7 @@ use file_store::{
 use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile as proto;
+use helium_proto::services::poc_mobile::{self as proto, LocationSource};
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -207,6 +207,7 @@ pub struct Heartbeat {
     pub lon: f64,
     pub coverage_object: Option<Uuid>,
     pub location_validation_timestamp: Option<DateTime<Utc>>,
+    pub location_source: LocationSource,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -254,6 +255,7 @@ impl From<CbrsHeartbeatIngestReport> for Heartbeat {
             lat: value.report.lat,
             lon: value.report.lon,
             location_validation_timestamp: None,
+            location_source: LocationSource::Gps,
             timestamp: value.received_timestamp,
         }
     }
@@ -270,6 +272,7 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
             lat: value.report.lat,
             lon: value.report.lon,
             location_validation_timestamp: value.report.location_validation_timestamp,
+            location_source: value.report.location_source,
             timestamp: value.received_timestamp,
         }
     }
@@ -629,6 +632,7 @@ impl ValidatedHeartbeat {
                         .location_validation_timestamp
                         .map_or(0, |v| v.timestamp() as u64),
                     distance_to_asserted: self.distance_to_asserted.map_or(0, |v| v as u64),
+                    location_source: self.heartbeat.location_source.into(),
                     ..Default::default()
                 },
                 &[("validity", self.validity.as_str_name())],
@@ -796,6 +800,7 @@ mod test {
                 cbsd_id: None,
                 coverage_object: Some(coverage_object),
                 location_validation_timestamp: None,
+                location_source: LocationSource::Skyhook,
             },
             validity: Default::default(),
             location_trust_score_multiplier: dec!(1.0),
