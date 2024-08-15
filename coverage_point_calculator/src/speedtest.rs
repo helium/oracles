@@ -39,13 +39,15 @@ pub(crate) fn clean_speedtests(speedtests: Vec<Speedtest>) -> Vec<Speedtest> {
     cleaned
 }
 
-pub(crate) fn multiplier(speedtests: &[Speedtest]) -> Decimal {
+// Returns multiplier and speedtest (average)
+pub(crate) fn multiplier(speedtests: &[Speedtest]) -> (Decimal, Speedtest) {
+    let avg = Speedtest::avg(speedtests);
+
     if speedtests.len() < MIN_REQUIRED_SPEEDTEST_SAMPLES {
-        return dec!(0);
+        return (dec!(0), avg);
     }
 
-    let avg = Speedtest::avg(speedtests);
-    avg.multiplier()
+    (avg.multiplier(), avg)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -97,6 +99,14 @@ impl Speedtest {
     }
 
     pub fn avg(speedtests: &[Self]) -> Self {
+        if speedtests.is_empty() {
+            return Self {
+                upload_speed: BytesPs::new(0),
+                download_speed: BytesPs::new(0),
+                latency_millis: 0,
+                timestamp: Utc::now(),
+            };
+        }
         let mut download = 0;
         let mut upload = 0;
         let mut latency = 0;
@@ -198,6 +208,14 @@ mod tests {
     }
 
     #[test]
+    fn speedtest_avg_should_not_panic() {
+        let avg = Speedtest::avg(&[]);
+        assert_eq!(avg.upload_speed, BytesPs(0));
+        assert_eq!(avg.download_speed, BytesPs(0));
+        assert_eq!(avg.latency_millis, 0);
+    }
+
+    #[test]
     fn minimum_required_speedtests_provided_for_multiplier_above_zero() {
         let speedtest = Speedtest {
             upload_speed: BytesPs::mbps(15),
@@ -209,11 +227,11 @@ mod tests {
 
         assert_eq!(
             dec!(0),
-            multiplier(&speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES - 1))
+            multiplier(&speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES - 1)).0
         );
         assert_eq!(
             dec!(1),
-            multiplier(&speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES))
+            multiplier(&speedtests(MIN_REQUIRED_SPEEDTEST_SAMPLES)).0
         );
     }
 
@@ -264,7 +282,7 @@ mod tests {
         ]);
 
         // Old speedtests should be unused
-        assert_eq!(dec!(1), multiplier(&speedtests));
+        assert_eq!(dec!(1), multiplier(&speedtests).0);
     }
 
     #[test]
