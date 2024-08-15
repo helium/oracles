@@ -70,10 +70,10 @@ helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = 
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
-helium-proto = { git = "https://github.com/helium/proto", branch = "kurotych/speedtest_avg_radio_reward_v2", features = [
+helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
   "services",
 ] }
-beacon = { git = "https://github.com/helium/proto", branch = "kurotych/speedtest_avg_radio_reward_v2" }
+beacon = { git = "https://github.com/helium/proto", branch = "master" }
 solana-client = "1.18"
 solana-sdk = "1.18"
 solana-program = "1.18"
