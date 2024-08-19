@@ -5,17 +5,13 @@ use file_store::{
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::{
-    services::{
-        mobile_config::NetworkKeyRole,
-        poc_mobile::{
-            mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward,
-            MobileRewardShare, OracleBoostingHexAssignment, OracleBoostingReportV1, RadioReward,
-            RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward,
-            UnallocatedReward,
-        },
+use helium_proto::services::{
+    mobile_config::NetworkKeyRole,
+    poc_mobile::{
+        mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward,
+        MobileRewardShare, OracleBoostingHexAssignment, OracleBoostingReportV1, RadioReward,
+        RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
     },
-    Message,
 };
 use hex_assignments::{Assignment, HexAssignment, HexBoostData};
 use mobile_config::{

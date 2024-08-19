@@ -45,8 +45,7 @@ pub struct GrpcServer {
     coverage_object_report_sink: FileSinkClient<CoverageObjectIngestReportV1>,
     sp_boosted_rewards_ban_sink:
         FileSinkClient<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
-    subscriber_mapping_event_sink:
-        FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
+    subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -78,9 +77,13 @@ impl GrpcServer {
         data_transfer_session_sink: FileSinkClient<DataTransferSessionIngestReportV1>,
         subscriber_location_report_sink: FileSinkClient<SubscriberLocationIngestReportV1>,
         radio_threshold_report_sink: FileSinkClient<RadioThresholdIngestReportV1>,
-        invalidated_radio_threshold_report_sink: FileSinkClient<InvalidatedRadioThresholdIngestReportV1>,
+        invalidated_radio_threshold_report_sink: FileSinkClient<
+            InvalidatedRadioThresholdIngestReportV1,
+        >,
         coverage_object_report_sink: FileSinkClient<CoverageObjectIngestReportV1>,
-        sp_boosted_rewards_ban_sink: FileSinkClient<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
+        sp_boosted_rewards_ban_sink: FileSinkClient<
+            ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+        >,
         subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
         required_network: Network,
         address: SocketAddr,
@@ -525,17 +528,12 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .await?;
 
     let (subscriber_mapping_event_sink, subscriber_mapping_event_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::SubscriberVerifiedMappingEventIngestReport,
+        SubscriberVerifiedMappingEventIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            concat!(
-                env!("CARGO_PKG_NAME"),
-                "_subscriber_verified_mapping_event_ingest_report"
-            ),
+            Some(settings.roll_time),
+            env!("CARGO_PKG_NAME"),
         )
-        .roll_time(settings.roll_time)
-        .create()
         .await?;
 
     let Some(api_token) = settings

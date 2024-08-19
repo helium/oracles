@@ -6,12 +6,10 @@ use file_store::{
     FileInfo,
 };
 use helium_crypto::{KeyTag, Keypair, PublicKeyBinary};
-use helium_proto::services::poc_mobile::VerifiedSubscriberVerifiedMappingEventIngestReportV1;
 use mobile_verifier::subscriber_verified_mapping_event::{
     aggregate_verified_mapping_events, SubscriberVerifiedMappingEventDaemon,
     VerifiedSubscriberVerifiedMappingEventShare, VerifiedSubscriberVerifiedMappingEventShares,
 };
-use prost::Message;
 use rand::rngs::OsRng;
 use sqlx::{PgPool, Pool, Postgres, Row};
 use std::{collections::HashMap, ops::Range};
@@ -86,10 +84,7 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => panic!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => panic!("got Rollback"),
-                file_store::file_sink::Message::Data(_, data) => {
-                    let proto_verified_report = VerifiedSubscriberVerifiedMappingEventIngestReportV1::decode(data.as_slice())
-                        .expect("unable to decode into VerifiedSubscriberVerifiedMappingEventIngestReportV1");
-
+                file_store::file_sink::Message::Data(_, proto_verified_report) => {
                     let rcv_report: SubscriberVerifiedMappingEventIngestReport =
                         proto_verified_report.report.unwrap().try_into()?;
 

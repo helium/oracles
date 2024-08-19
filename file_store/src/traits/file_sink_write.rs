@@ -188,6 +188,11 @@ impl_file_sink!(
     "subscriber_location_report"
 );
 impl_file_sink!(
+    poc_mobile::SubscriberVerifiedMappingEventIngestReportV1,
+    FileType::SubscriberVerifiedMappingEventIngestReport,
+    "subscriber_verified_mapping_event_ingest_report"
+);
+impl_file_sink!(
     poc_mobile::VerifiedInvalidatedRadioThresholdIngestReportV1,
     FileType::VerifiedInvalidatedRadioThresholdIngestReport,
     "verified_invalidated_radio_threshold"
@@ -211,6 +216,11 @@ impl_file_sink!(
     poc_mobile::VerifiedSubscriberLocationIngestReportV1,
     FileType::VerifiedSubscriberLocationIngestReport,
     "verified_subscriber_location"
+);
+impl_file_sink!(
+    poc_mobile::VerifiedSubscriberVerifiedMappingEventIngestReportV1,
+    FileType::VerifiedSubscriberVerifiedMappingEventIngestReport,
+    "verified_subscriber_verified_mapping_event_ingest_report"
 );
 impl_file_sink!(
     poc_mobile::WifiHeartbeatIngestReportV1,

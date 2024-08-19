@@ -9,8 +9,8 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     poc_lora::UnallocatedRewardType,
     poc_mobile::{
-        CoverageObjectValidity, HeartbeatValidity, LocationSource, RadioRewardV2,
-        SeniorityUpdateReason, SignalLevel, UnallocatedReward,
+        CoverageObjectValidity, HeartbeatValidity, LocationSource, MobileRewardShare,
+        RadioRewardV2, SeniorityUpdateReason, SignalLevel, UnallocatedReward,
     },
 };
 use hextree::Cell;
