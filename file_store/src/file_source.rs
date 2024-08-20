@@ -1,6 +1,6 @@
 use crate::{
     file_info_poller::{FileInfoPollerConfigBuilder, MsgDecodeFileInfoPollerParser},
-    file_sink, BytesMutStream, Error,
+    file_sink, BytesMutStream, Error, FileStore,
 };
 use async_compression::tokio::bufread::GzipDecoder;
 use futures::{
@@ -11,11 +11,12 @@ use std::path::{Path, PathBuf};
 use tokio::{fs::File, io::BufReader};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
-pub fn continuous_source<T, S>() -> FileInfoPollerConfigBuilder<T, S, MsgDecodeFileInfoPollerParser>
+pub fn continuous_source<T, S>(
+) -> FileInfoPollerConfigBuilder<T, S, FileStore, MsgDecodeFileInfoPollerParser>
 where
     T: Clone,
 {
-    FileInfoPollerConfigBuilder::<T, S, MsgDecodeFileInfoPollerParser>::default()
+    FileInfoPollerConfigBuilder::<T, S, FileStore, MsgDecodeFileInfoPollerParser>::default()
         .parser(MsgDecodeFileInfoPollerParser)
 }
 

@@ -40,6 +40,19 @@ pub trait FileInfoPollerStateRecorder {
     async fn record(self, process_name: &str, file_info: &FileInfo) -> Result;
 }
 
+#[async_trait::async_trait]
+pub trait FileInfoPollerStore: Send + Sync + 'static {
+    async fn list_all<A, B>(&self, file_type: &str, after: A, before: B) -> Result<Vec<FileInfo>>
+    where
+        A: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
+        B: Into<Option<DateTime<Utc>>> + Send + Sync + Copy;
+
+    async fn get_raw<K>(&self, key: K) -> Result<ByteStream>
+    where
+        K: Into<String> + Send + Sync;
+}
+
+#[derive(Debug)]
 pub struct FileInfoStream<T> {
     pub file_info: FileInfo,
     process_name: String,
@@ -84,13 +97,13 @@ pub enum LookbackBehavior {
 
 #[derive(Debug, Clone, Builder)]
 #[builder(pattern = "owned")]
-pub struct FileInfoPollerConfig<T, S, P> {
+pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
     #[builder(default = "DEFAULT_POLL_DURATION")]
     poll_duration: Duration,
-    state: S,
-    store: FileStore,
+    state: State,
+    store: Store,
     prefix: String,
-    parser: P,
+    parser: Parser,
     lookback: LookbackBehavior,
     #[builder(default = "Duration::from_secs(10 * 60)")]
     offset: Duration,
@@ -99,28 +112,33 @@ pub struct FileInfoPollerConfig<T, S, P> {
     #[builder(default = r#""default".to_string()"#)]
     process_name: String,
     #[builder(setter(skip))]
-    p: PhantomData<T>,
+    p: PhantomData<Message>,
 }
 
 #[derive(Clone)]
-pub struct FileInfoPollerServer<T, S, P> {
-    config: FileInfoPollerConfig<T, S, P>,
-    sender: Sender<FileInfoStream<T>>,
+pub struct FileInfoPollerServer<Message, State, Store, Parser> {
+    config: FileInfoPollerConfig<Message, State, Store, Parser>,
+    sender: Sender<FileInfoStream<Message>>,
     file_queue: VecDeque<FileInfo>,
     latest_file_timestamp: Option<DateTime<Utc>>,
     cache: MemoryFileCache,
 }
 
 type FileInfoStreamReceiver<T> = Receiver<FileInfoStream<T>>;
-impl<T, S, P> FileInfoPollerConfigBuilder<T, S, P>
+
+impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, Store, Parser>
 where
-    T: Clone,
-    S: FileInfoPollerState,
-    P: FileInfoPollerParser<T>,
+    Message: Clone,
+    State: FileInfoPollerState,
+    Parser: FileInfoPollerParser<Message>,
+    Store: FileInfoPollerStore,
 {
     pub async fn create(
         self,
-    ) -> Result<(FileInfoStreamReceiver<T>, FileInfoPollerServer<T, S, P>)> {
+    ) -> Result<(
+        FileInfoStreamReceiver<Message>,
+        FileInfoPollerServer<Message, State, Store, Parser>,
+    )> {
         let config = self.build()?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
         let latest_file_timestamp = config
@@ -141,11 +159,11 @@ where
     }
 }
 
-impl<T, S, P> ManagedTask for FileInfoPollerServer<T, S, P>
+impl<Message, State, Parser> ManagedTask for FileInfoPollerServer<Message, State, FileStore, Parser>
 where
-    T: Send + Sync + 'static,
-    S: FileInfoPollerState,
-    P: FileInfoPollerParser<T>,
+    Message: Send + Sync + 'static,
+    State: FileInfoPollerState,
+    Parser: FileInfoPollerParser<Message>,
 {
     fn start_task(
         self: Box<Self>,
@@ -161,11 +179,12 @@ where
     }
 }
 
-impl<T, S, P> FileInfoPollerServer<T, S, P>
+impl<Message, State, Store, Parser> FileInfoPollerServer<Message, State, Store, Parser>
 where
-    T: Send + Sync + 'static,
-    S: FileInfoPollerState,
-    P: FileInfoPollerParser<T>,
+    Message: Send + Sync + 'static,
+    State: FileInfoPollerState,
+    Parser: FileInfoPollerParser<Message>,
+    Store: FileInfoPollerStore + Send + Sync + 'static,
 {
     pub async fn start(
         self,
@@ -355,6 +374,24 @@ async fn cache_file(cache: &MemoryFileCache, file_info: &FileInfo) {
     cache.insert(file_info.key.clone(), true, CACHE_TTL).await;
 }
 
+#[async_trait::async_trait]
+impl FileInfoPollerStore for FileStore {
+    async fn list_all<A, B>(&self, file_type: &str, after: A, before: B) -> Result<Vec<FileInfo>>
+    where
+        A: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
+        B: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
+    {
+        self.list_all(file_type, after, before).await
+    }
+
+    async fn get_raw<K>(&self, key: K) -> Result<ByteStream>
+    where
+        K: Into<String> + Send + Sync,
+    {
+        self.get_raw(key).await
+    }
+}
+
 #[cfg(feature = "sqlx-postgres")]
 #[async_trait::async_trait]
 impl FileInfoPollerStateRecorder for &mut sqlx::Transaction<'_, sqlx::Postgres> {
@@ -426,5 +463,134 @@ impl FileInfoPollerState for sqlx::Pool<sqlx::Postgres> {
         .await
         .map(|_| ())
         .map_err(Error::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use sqlx::{Executor, PgPool};
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    use super::*;
+
+    struct TestParser;
+    struct TestStore(Vec<FileInfo>);
+
+    #[async_trait::async_trait]
+    impl FileInfoPollerParser<String> for TestParser {
+        async fn parse(&self, _byte_stream: ByteStream) -> Result<Vec<String>> {
+            Ok(vec!["Hello".into(), "world".into()])
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl FileInfoPollerStore for TestStore {
+        async fn list_all<A, B>(
+            &self,
+            _file_type: &str,
+            _after: A,
+            _before: B,
+        ) -> Result<Vec<FileInfo>>
+        where
+            A: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
+            B: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
+        {
+            Ok(self.0.to_owned())
+        }
+
+        async fn get_raw<K>(&self, _key: K) -> Result<ByteStream>
+        where
+            K: Into<String> + Send + Sync,
+        {
+            Ok(ByteStream::from_static(
+                b"hello, is it me you're looking for?",
+            ))
+        }
+    }
+
+    #[sqlx::test]
+    async fn test_file_after_oldest_timestamp(pool: PgPool) -> anyhow::Result<()> {
+        pool.execute(
+            r#"
+            CREATE TABLE files_processed (
+                process_name TEXT NOT NULL DEFAULT 'default',
+    	        file_name VARCHAR PRIMARY KEY,
+	            file_type VARCHAR NOT NULL,
+	            file_timestamp TIMESTAMPTZ NOT NULL,
+	            processed_at TIMESTAMPTZ NOT NULL
+            );
+            "#,
+        )
+        .await?;
+
+        let mut infos = vec![];
+        for day_ago in 0..150 {
+            let file_info = FileInfo {
+                key: format!("key-{day_ago}"),
+                prefix: "file_type".to_string(),
+                timestamp: Utc::now() - chrono::Duration::days(day_ago),
+                size: 125,
+            };
+            infos.push(file_info);
+        }
+
+        let (mut receiver, ingest_server) =
+            FileInfoPollerConfigBuilder::<String, _, TestStore, _>::default()
+                .parser(TestParser)
+                .state(pool.clone())
+                .store(TestStore(infos.clone()))
+                .lookback(LookbackBehavior::StartAfter(Utc::now()))
+                .prefix("test-prefix".to_string())
+                .create()
+                .await?;
+
+        let (trigger, shutdown) = triggered::trigger();
+        let _handle = tokio::spawn(async move {
+            let status = ingest_server.run(shutdown).await;
+            println!("ingest server: {status:?}");
+        });
+
+        // "process" all the files.
+        let mut idx = 0;
+        while idx < 150 {
+            let msg = timeout(Duration::from_secs(1), receiver.recv()).await?;
+            idx += 1;
+            println!("{idx} :: got {:?}", msg.map(|x| x.data));
+        }
+
+        // Shutdown the ingest server, we're going to create a new one and start it.
+        // This is more or less equivalent to a restart of the service.
+        let _shutdown = trigger.trigger();
+
+        let (mut receiver, ingest_server) =
+            FileInfoPollerConfigBuilder::<String, _, TestStore, _>::default()
+                .parser(TestParser)
+                .state(pool.clone())
+                .store(TestStore(infos))
+                .lookback(LookbackBehavior::StartAfter(Utc::now()))
+                .prefix("test-prefix".to_string())
+                .create()
+                .await?;
+
+        // The service will immediately "clean" the database
+        let (trigger, shutdown) = triggered::trigger();
+        let _handle = tokio::spawn(async move {
+            let status = ingest_server.run(shutdown).await;
+            println!("ingest server: {status:?}");
+        });
+
+        // Requesting the "same" files from it, none should be returned, because we've already "proessed" them all.
+        let _err = match timeout(Duration::from_secs(1), receiver.recv()).await {
+            Err(_err) => _err,
+            Ok(msg) => {
+                panic!("we got something when we expected nothing.: {msg:?}");
+            }
+        };
+
+        let _shutdown = trigger.trigger();
+
+        Ok(())
     }
 }

@@ -166,6 +166,7 @@ where
             ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
             _,
             _,
+            _,
         >::default()
         .parser(ProstFileInfoPollerParser)
         .state(pool.clone())
