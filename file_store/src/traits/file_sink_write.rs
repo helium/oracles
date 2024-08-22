@@ -19,7 +19,7 @@ pub trait FileSinkWriteExt
 where
     Self: Sized + MsgBytes + Send,
 {
-    const FILE_TYPE: FileType;
+    const FILE_PREFIX: &'static str;
     const METRIC_SUFFIX: &'static str;
 
     // The `auto_commit` option and `roll_time` option are incompatible with
@@ -33,7 +33,7 @@ where
         metric_prefix: &str,
     ) -> Result<(FileSinkClient<Self>, FileSink<Self>)> {
         let builder = FileSinkBuilder::new(
-            Self::FILE_TYPE.to_string(),
+            Self::FILE_PREFIX.to_string(),
             target_path,
             file_upload,
             format!("{}_{}", metric_prefix, Self::METRIC_SUFFIX),
@@ -51,10 +51,10 @@ where
 }
 
 macro_rules! impl_file_sink {
-    ($msg_type:ty, $file_type:expr, $metric_suffix:expr) => {
+    ($msg_type:ty, $file_prefix:expr, $metric_suffix:expr) => {
         #[async_trait::async_trait]
         impl FileSinkWriteExt for $msg_type {
-            const FILE_TYPE: FileType = $file_type;
+            const FILE_PREFIX: &'static str = $file_prefix;
             const METRIC_SUFFIX: &'static str = $metric_suffix;
         }
 
@@ -68,182 +68,182 @@ macro_rules! impl_file_sink {
 
 impl_file_sink!(
     packet_verifier::InvalidPacket,
-    FileType::InvalidPacket,
+    FileType::InvalidPacket.to_str(),
     "invalid_packets"
 );
 impl_file_sink!(
     packet_verifier::ValidDataTransferSession,
-    FileType::ValidDataTransferSession,
+    FileType::ValidDataTransferSession.to_str(),
     "valid_data_transfer_session"
 );
 impl_file_sink!(
     packet_verifier::ValidPacket,
-    FileType::IotValidPacket,
+    FileType::IotValidPacket.to_str(),
     "valid_packets"
 );
 impl_file_sink!(
     poc_lora::IotRewardShare,
-    FileType::IotRewardShare,
+    FileType::IotRewardShare.to_str(),
     "gateway_reward_shares"
 );
 impl_file_sink!(
     poc_lora::LoraBeaconIngestReportV1,
-    FileType::IotBeaconIngestReport,
+    FileType::IotBeaconIngestReport.to_str(),
     "beacon_report"
 );
 impl_file_sink!(
     poc_lora::LoraInvalidBeaconReportV1,
-    FileType::IotInvalidBeaconReport,
+    FileType::IotInvalidBeaconReport.to_str(),
     "invalid_beacon"
 );
 impl_file_sink!(
     poc_lora::LoraInvalidWitnessReportV1,
-    FileType::IotInvalidWitnessReport,
+    FileType::IotInvalidWitnessReport.to_str(),
     "invalid_witness_report"
 );
-impl_file_sink!(poc_lora::LoraPocV1, FileType::IotPoc, "valid_poc");
+impl_file_sink!(poc_lora::LoraPocV1, FileType::IotPoc.to_str(), "valid_poc");
 impl_file_sink!(
     poc_lora::LoraWitnessIngestReportV1,
-    FileType::IotWitnessIngestReport,
+    FileType::IotWitnessIngestReport.to_str(),
     "witness_report"
 );
 impl_file_sink!(
     poc_lora::NonRewardablePacket,
-    FileType::NonRewardablePacket,
+    FileType::NonRewardablePacket.to_str(),
     "non_rewardable_packet"
 );
 impl_file_sink!(
     poc_mobile::CellHeartbeatIngestReportV1,
-    FileType::CbrsHeartbeatIngestReport,
+    FileType::CbrsHeartbeatIngestReport.to_str(),
     "heartbeat_report"
 );
 impl_file_sink!(
     poc_mobile::CoverageObjectIngestReportV1,
-    FileType::CoverageObjectIngestReport,
+    FileType::CoverageObjectIngestReport.to_str(),
     "coverage_object_report"
 );
 impl_file_sink!(
     poc_mobile::CoverageObjectV1,
-    FileType::CoverageObject,
+    FileType::CoverageObject.to_str(),
     "coverage_object"
 );
 impl_file_sink!(
     poc_mobile::DataTransferSessionIngestReportV1,
-    FileType::DataTransferSessionIngestReport,
+    FileType::DataTransferSessionIngestReport.to_str(),
     "mobile_data_transfer_session_report"
 );
 impl_file_sink!(
     poc_mobile::Heartbeat,
-    FileType::ValidatedHeartbeat,
+    FileType::ValidatedHeartbeat.to_str(),
     "heartbeat"
 );
 impl_file_sink!(
     poc_mobile::InvalidDataTransferIngestReportV1,
-    FileType::InvalidDataTransferSessionIngestReport,
+    FileType::InvalidDataTransferSessionIngestReport.to_str(),
     "invalid_data_transfer_session"
 );
 impl_file_sink!(
     poc_mobile::InvalidatedRadioThresholdIngestReportV1,
-    FileType::InvalidatedRadioThresholdIngestReport,
+    FileType::InvalidatedRadioThresholdIngestReport.to_str(),
     "invalidated_radio_threshold_ingest_report"
 );
 impl_file_sink!(
     poc_mobile::MobileRewardShare,
-    FileType::MobileRewardShare,
+    FileType::MobileRewardShare.to_str(),
     "radio_reward_share"
 );
 impl_file_sink!(
     poc_mobile::OracleBoostingReportV1,
-    FileType::OracleBoostingReport,
+    FileType::OracleBoostingReport.to_str(),
     "oracle_boosting_report"
 );
 impl_file_sink!(
     poc_mobile::RadioThresholdIngestReportV1,
-    FileType::RadioThresholdIngestReport,
+    FileType::RadioThresholdIngestReport.to_str(),
     "radio_threshold_ingest_report"
 );
 impl_file_sink!(
     poc_mobile::SeniorityUpdate,
-    FileType::SeniorityUpdate,
+    FileType::SeniorityUpdate.to_str(),
     "seniority_update"
 );
 impl_file_sink!(
     poc_mobile::ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
-    FileType::SPBoostedRewardsBannedRadioIngestReport,
+    FileType::SPBoostedRewardsBannedRadioIngestReport.to_str(),
     "service_provider_boosted_rewards_banned_radio"
 );
 impl_file_sink!(
     poc_mobile::SpeedtestAvg,
-    FileType::SpeedtestAvg,
+    FileType::SpeedtestAvg.to_str(),
     "speedtest_average"
 );
 impl_file_sink!(
     poc_mobile::SpeedtestIngestReportV1,
-    FileType::CellSpeedtestIngestReport,
+    FileType::CellSpeedtestIngestReport.to_str(),
     "speedtest_report"
 );
 impl_file_sink!(
     poc_mobile::SubscriberLocationIngestReportV1,
-    FileType::SubscriberLocationIngestReport,
+    FileType::SubscriberLocationIngestReport.to_str(),
     "subscriber_location_report"
 );
 impl_file_sink!(
     poc_mobile::SubscriberVerifiedMappingEventIngestReportV1,
-    FileType::SubscriberVerifiedMappingEventIngestReport,
+    FileType::SubscriberVerifiedMappingEventIngestReport.to_str(),
     "subscriber_verified_mapping_event_ingest_report"
 );
 impl_file_sink!(
     poc_mobile::VerifiedInvalidatedRadioThresholdIngestReportV1,
-    FileType::VerifiedInvalidatedRadioThresholdIngestReport,
+    FileType::VerifiedInvalidatedRadioThresholdIngestReport.to_str(),
     "verified_invalidated_radio_threshold"
 );
 impl_file_sink!(
     poc_mobile::VerifiedRadioThresholdIngestReportV1,
-    FileType::VerifiedRadioThresholdIngestReport,
+    FileType::VerifiedRadioThresholdIngestReport.to_str(),
     "verified_radio_threshold"
 );
 impl_file_sink!(
     poc_mobile::VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1,
-    FileType::VerifiedSPBoostedRewardsBannedRadioIngestReport,
+    FileType::VerifiedSPBoostedRewardsBannedRadioIngestReport.to_str(),
     "verified_sp_boosted_rewards_ban"
 );
 impl_file_sink!(
     poc_mobile::VerifiedSpeedtest,
-    FileType::VerifiedSpeedtest,
+    FileType::VerifiedSpeedtest.to_str(),
     "verified_speedtest"
 );
 impl_file_sink!(
     poc_mobile::VerifiedSubscriberLocationIngestReportV1,
-    FileType::VerifiedSubscriberLocationIngestReport,
+    FileType::VerifiedSubscriberLocationIngestReport.to_str(),
     "verified_subscriber_location"
 );
 impl_file_sink!(
     poc_mobile::VerifiedSubscriberVerifiedMappingEventIngestReportV1,
-    FileType::VerifiedSubscriberVerifiedMappingEventIngestReport,
+    FileType::VerifiedSubscriberVerifiedMappingEventIngestReport.to_str(),
     "verified_subscriber_verified_mapping_event_ingest_report"
 );
 impl_file_sink!(
     poc_mobile::WifiHeartbeatIngestReportV1,
-    FileType::WifiHeartbeatIngestReport,
+    FileType::WifiHeartbeatIngestReport.to_str(),
     "wifi_heartbeat_report"
 );
 impl_file_sink!(
     proto::BoostedHexUpdateV1,
-    FileType::BoostedHexUpdate,
+    FileType::BoostedHexUpdate.to_str(),
     "boosted_hex_update"
 );
 impl_file_sink!(
     proto::EntropyReportV1,
-    FileType::EntropyReport,
+    FileType::EntropyReport.to_str(),
     "report_submission"
 );
 impl_file_sink!(
     proto::PriceReportV1,
-    FileType::PriceReport,
+    FileType::PriceReport.to_str(),
     "report_submission"
 );
 impl_file_sink!(
     proto::RewardManifest,
-    FileType::RewardManifest,
+    FileType::RewardManifest.to_str(),
     "reward_manifest"
 );
