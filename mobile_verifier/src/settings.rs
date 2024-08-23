@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
 use humantime_serde::re::humantime;
 use serde::Deserialize;
+use solana::carrier;
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -50,6 +51,8 @@ pub struct Settings {
     pub usa_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
     pub usa_fencing_resolution: u8,
+    /// Solana RPC settings
+    pub solana: carrier::Settings,
 }
 
 fn default_fencing_resolution() -> u8 {

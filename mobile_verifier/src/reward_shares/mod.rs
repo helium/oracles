@@ -15,12 +15,7 @@ use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::{
-        poc_mobile as proto,
-        poc_mobile::{
-            mobile_reward_share::Reward as ProtoReward, UnallocatedReward, UnallocatedRewardType,
-        },
-    },
+    services::{poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward},
     ServiceProvider,
 };
 use mobile_config::{
@@ -30,6 +25,7 @@ use mobile_config::{
 use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+use solana::carrier::SolanaNetwork;
 use std::{collections::HashMap, ops::Range};
 use uuid::Uuid;
 
@@ -304,6 +300,11 @@ pub struct ServiceProviderShares {
     pub shares: Vec<ServiceProviderDataSession>,
 }
 
+pub struct ServiceProviderRewards {
+    pub rewards: HashMap<ServiceProvider, Decimal>,
+    pub unallocated_rewards: Decimal,
+}
+
 impl ServiceProviderShares {
     pub fn new(shares: Vec<ServiceProviderDataSession>) -> Self {
         Self { shares }
@@ -348,47 +349,24 @@ impl ServiceProviderShares {
 
     pub fn into_service_provider_rewards(
         self,
-        reward_period: &'_ Range<DateTime<Utc>>,
+        total_sp_rewards: Decimal,
         reward_per_share: Decimal,
-    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
-        self.shares
+    ) -> ServiceProviderRewards {
+        let mut allocated_sp_rewards = Decimal::ZERO;
+        let rewards = self
+            .shares
             .into_iter()
-            .map(move |share| proto::ServiceProviderReward {
-                service_provider_id: share.service_provider as i32,
-                amount: (share.total_dcs * reward_per_share)
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or(0),
+            .map(move |share| {
+                let amount = share.total_dcs * reward_per_share;
+                allocated_sp_rewards += amount;
+                (share.service_provider, amount)
             })
-            .filter(|service_provider_reward| service_provider_reward.amount > 0)
-            .map(|service_provider_reward| {
-                (
-                    service_provider_reward.amount,
-                    proto::MobileRewardShare {
-                        start_period: reward_period.start.encode_timestamp(),
-                        end_period: reward_period.end.encode_timestamp(),
-                        reward: Some(ProtoReward::ServiceProviderReward(service_provider_reward)),
-                    },
-                )
-            })
-    }
-
-    pub fn into_unallocated_reward(
-        unallocated_amount: Decimal,
-        reward_period: &'_ Range<DateTime<Utc>>,
-    ) -> anyhow::Result<proto::MobileRewardShare> {
-        let reward = UnallocatedReward {
-            reward_type: UnallocatedRewardType::ServiceProvider as i32,
-            amount: unallocated_amount
-                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                .to_u64()
-                .unwrap_or(0),
-        };
-        Ok(proto::MobileRewardShare {
-            start_period: reward_period.start.encode_timestamp(),
-            end_period: reward_period.end.encode_timestamp(),
-            reward: Some(ProtoReward::UnallocatedReward(reward)),
-        })
+            .filter(|(_, amount)| !amount.is_zero())
+            .collect();
+        ServiceProviderRewards {
+            rewards,
+            unallocated_rewards: total_sp_rewards - allocated_sp_rewards,
+        }
     }
 
     fn maybe_cap_service_provider_rewards(
@@ -419,6 +397,77 @@ impl ServiceProviderShares {
         Ok(sp)
     }
 }
+
+impl ServiceProviderRewards {
+    pub fn get_total_rewards(&self) -> Decimal {
+        self.rewards.values().sum()
+    }
+
+    // I do not like this function. We shouldn't be modifying the values. We should split them
+    // at some other point.
+    pub async fn get_rewards_allocated_for_promotion(
+        &mut self,
+        solana: &impl SolanaNetwork,
+    ) -> anyhow::Result<HashMap<ServiceProvider, Decimal>> {
+        let mut output = HashMap::new();
+        for (sp, r) in &mut self.rewards {
+            let percent_for_promotion_rewards = solana
+                .fetch_incentive_escrow_fund_percent(service_provider_id_to_carrier_name(*sp))
+                .await?;
+            let promotion_rewards = *r * percent_for_promotion_rewards;
+            *r -= promotion_rewards;
+            output.insert(*sp, promotion_rewards);
+        }
+        Ok(output)
+    }
+
+    pub fn into_service_provider_rewards(
+        self,
+        reward_period: &'_ Range<DateTime<Utc>>,
+    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+        self.rewards
+            .into_iter()
+            .map(|(service_provider_id, reward)| proto::MobileRewardShare {
+                start_period: reward_period.start.encode_timestamp(),
+                end_period: reward_period.end.encode_timestamp(),
+                reward: Some(ProtoReward::ServiceProviderReward(
+                    proto::ServiceProviderReward {
+                        service_provider_id: service_provider_id as i32,
+                        amount: reward
+                            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                            .to_u64()
+                            .unwrap_or(0),
+                    },
+                )),
+            })
+    }
+}
+
+fn service_provider_id_to_carrier_name(sp: ServiceProvider) -> &'static str {
+    match sp {
+        ServiceProvider::HeliumMobile => "Helium Mobile",
+    }
+}
+
+/*
+pub fn unallocated_rewards(
+    unallocated_rewards: Decimal,
+    reward_period: &'_ Range<DateTime<Utc>>,
+) -> anyhow::Result<proto::MobileRewardShare> {
+    let reward = UnallocatedReward {
+        reward_type: UnallocatedRewardType::ServiceProvider as i32,
+        amount: unallocated_rewards
+            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+            .to_u64()
+            .unwrap_or(0),
+    };
+    Ok(proto::MobileRewardShare {
+        start_period: reward_period.start.encode_timestamp(),
+        end_period: reward_period.end.encode_timestamp(),
+        reward: Some(ProtoReward::UnallocatedReward(reward)),
+    })
+}
+*/
 
 /// Returns the equivalent amount of Mobile bones for a specified amount of Data Credits
 pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Decimal {

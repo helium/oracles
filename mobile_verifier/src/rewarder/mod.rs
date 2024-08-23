@@ -2,6 +2,7 @@ use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
+    promotion_reward::{self, AggregatePromotionRewards},
     radio_threshold,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
@@ -41,6 +42,7 @@ use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use rust_decimal_macros::dec;
+use solana::carrier::SolanaRpc;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -56,6 +58,7 @@ pub struct Rewarder<A, B> {
     pool: Pool<Postgres>,
     carrier_client: A,
     hex_service_client: B,
+    solana_rpc: SolanaRpc,
     reward_period_duration: Duration,
     reward_offset: Duration,
     pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
@@ -101,6 +104,7 @@ where
             pool.clone(),
             carrier_service_verifier,
             hex_boosting_info_resolver,
+            SolanaRpc::new(&settings.solana)?,
             settings.reward_period,
             settings.reward_period_offset,
             mobile_rewards,
@@ -122,6 +126,7 @@ where
         pool: Pool<Postgres>,
         carrier_client: A,
         hex_service_client: B,
+        solana_rpc: SolanaRpc,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
@@ -133,6 +138,7 @@ where
             pool,
             carrier_client,
             hex_service_client,
+            solana_rpc,
             reward_period_duration,
             reward_offset,
             mobile_rewards,
@@ -275,6 +281,7 @@ where
         // process rewards for service providers
         reward_service_providers(
             &self.pool,
+            &self.solana_rpc,
             &self.carrier_client,
             &self.mobile_rewards,
             reward_period,
@@ -296,6 +303,7 @@ where
         coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
         sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_period.start).await?;
         subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.end).await?;
+        promotion_reward::clear_promotion_rewards(&mut transaction, &reward_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
@@ -311,6 +319,7 @@ where
             boosted_poc_bones_per_reward_share: Some(helium_proto::Decimal {
                 value: poc_dc_shares.boost.to_string(),
             }),
+            sp_allocations: Vec::new(),
         };
         self.reward_manifests
             .write(
@@ -589,6 +598,7 @@ pub async fn reward_oracles(
 
 pub async fn reward_service_providers(
     pool: &Pool<Postgres>,
+    solana: &SolanaRpc,
     carrier_client: &impl CarrierServiceVerifier<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
@@ -602,21 +612,34 @@ pub async fn reward_service_providers(
         reward_period.end - reward_period.start,
     );
     let rewards_per_share = sp_shares.rewards_per_share(total_sp_rewards, mobile_bone_price)?;
-    // translate service provider shares into service provider rewards
-    // track the amount of allocated reward value as we go
-    let mut allocated_sp_rewards = 0_u64;
-    for (amount, sp_share) in
-        sp_shares.into_service_provider_rewards(reward_period, rewards_per_share)
-    {
-        allocated_sp_rewards += amount;
-        mobile_rewards.write(sp_share.clone(), []).await?.await??;
+    let mut sp_rewards =
+        sp_shares.into_service_provider_rewards(total_sp_rewards, rewards_per_share);
+    let unallocated_sp_rewards = total_sp_rewards - sp_rewards.get_total_rewards();
+    let rewards_allocated_for_promotion = sp_rewards
+        .get_rewards_allocated_for_promotion(solana)
+        .await?;
+    let agg_promotion_rewards = AggregatePromotionRewards::aggregate(pool, reward_period).await?;
+
+    let mut matched_rewards = 0_u64;
+    for (amount, reward) in agg_promotion_rewards.into_rewards(
+        rewards_allocated_for_promotion,
+        unallocated_sp_rewards,
+        reward_period,
+    ) {
+        matched_rewards += amount;
+        mobile_rewards.write(reward, []).await?.await??;
     }
+
+    for reward in sp_rewards.into_service_provider_rewards(reward_period) {
+        mobile_rewards.write(reward, []).await?.await??;
+    }
+
     // write out any unallocated service provider reward
-    let unallocated_sp_reward_amount = total_sp_rewards
+    let unallocated_sp_reward_amount = unallocated_sp_rewards
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0)
-        - allocated_sp_rewards;
+        - matched_rewards;
     write_unallocated_reward(
         mobile_rewards,
         UnallocatedRewardType::ServiceProvider,

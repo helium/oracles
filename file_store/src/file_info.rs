@@ -164,6 +164,8 @@ pub const SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT: &str =
     "subscriber_verified_mapping_ingest_report";
 pub const VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT: &str =
     "verified_subscriber_verified_mapping_ingest_report";
+pub const PROMOTION_REWARD_INGEST_REPORT: &str = "promotion_reward_ingest_report";
+pub const VERIFIED_PROMOTION_REWARD_INGEST_REPORT: &str = "verified_promotion_reward_ingest_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -220,6 +222,8 @@ pub enum FileType {
     VerifiedSPBoostedRewardsBannedRadioIngestReport,
     SubscriberVerifiedMappingEventIngestReport,
     VerifiedSubscriberVerifiedMappingEventIngestReport,
+    PromotionRewardIngestReport,
+    VerifiedPromotionRewardIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -291,6 +295,8 @@ impl fmt::Display for FileType {
             Self::VerifiedSubscriberVerifiedMappingEventIngestReport => {
                 VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
             }
+            Self::PromotionRewardIngestReport => PROMOTION_REWARD_INGEST_REPORT,
+            Self::VerifiedPromotionRewardIngestReport => VERIFIED_PROMOTION_REWARD_INGEST_REPORT,
         };
         f.write_str(s)
     }
@@ -365,6 +371,8 @@ impl FileType {
             Self::VerifiedSubscriberVerifiedMappingEventIngestReport => {
                 VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
             }
+            Self::PromotionRewardIngestReport => PROMOTION_REWARD_INGEST_REPORT,
+            Self::VerifiedPromotionRewardIngestReport => VERIFIED_PROMOTION_REWARD_INGEST_REPORT,
         }
     }
 }
@@ -439,6 +447,8 @@ impl FromStr for FileType {
             VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT => {
                 Self::VerifiedSubscriberVerifiedMappingEventIngestReport
             }
+            PROMOTION_REWARD_INGEST_REPORT => Self::PromotionRewardIngestReport,
+            VERIFIED_PROMOTION_REWARD_INGEST_REPORT => Self::VerifiedPromotionRewardIngestReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
