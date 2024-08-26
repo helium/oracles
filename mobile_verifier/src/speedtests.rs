@@ -5,10 +5,11 @@ use crate::{
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    traits::FileSinkWriteExt,
     FileStore, FileType,
 };
 use futures::{
@@ -17,7 +18,7 @@ use futures::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    SpeedtestIngestReportV1, SpeedtestVerificationResult,
+    SpeedtestAvg as SpeedtestAvgProto, SpeedtestIngestReportV1, SpeedtestVerificationResult,
     VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
 use mobile_config::client::gateway_client::GatewayInfoResolver;
@@ -57,8 +58,8 @@ pub struct SpeedtestDaemon<GIR> {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_info_resolver: GIR,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
-    speedtest_avg_file_sink: FileSinkClient,
-    verified_speedtest_file_sink: FileSinkClient,
+    speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
+    verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
 }
 
 impl<GIR> SpeedtestDaemon<GIR>
@@ -70,18 +71,15 @@ where
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
-        speedtests_avg: FileSinkClient,
+        speedtests_avg: FileSinkClient<SpeedtestAvgProto>,
         gateway_resolver: GIR,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (speedtests_validity, speedtests_validity_server) = file_sink::FileSinkBuilder::new(
-            FileType::VerifiedSpeedtest,
+        let (speedtests_validity, speedtests_validity_server) = VerifiedSpeedtestProto::file_sink(
             settings.store_base_path(),
             file_upload,
-            concat!(env!("CARGO_PKG_NAME"), "_verified_speedtest"),
+            Some(Duration::from_secs(15 * 60)),
+            env!("CARGO_PKG_NAME"),
         )
-        .auto_commit(false)
-        .roll_time(Duration::from_secs(15 * 60))
-        .create()
         .await?;
 
         let (speedtests, speedtests_server) =
@@ -112,8 +110,8 @@ where
         pool: sqlx::Pool<sqlx::Postgres>,
         gateway_info_resolver: GIR,
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
-        speedtest_avg_file_sink: FileSinkClient,
-        verified_speedtest_file_sink: FileSinkClient,
+        speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
+        verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
     ) -> Self {
         Self {
             pool,

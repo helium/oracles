@@ -2,11 +2,12 @@ use crate::Settings;
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
     subscriber_verified_mapping_event::SubscriberVerifiedMappingEvent,
     subscriber_verified_mapping_event_ingest_report::SubscriberVerifiedMappingEventIngestReport,
+    traits::{FileSinkWriteExt, DEFAULT_ROLL_TIME},
     verified_subscriber_verified_mapping_event_ingest_report::VerifiedSubscriberVerifiedMappingEventIngestReport,
     FileStore, FileType,
 };
@@ -32,7 +33,7 @@ pub struct SubscriberVerifiedMappingEventDaemon<AV, EV> {
     authorization_verifier: AV,
     entity_verifier: EV,
     reports_receiver: Receiver<FileInfoStream<SubscriberVerifiedMappingEventIngestReport>>,
-    verified_report_sink: FileSinkClient,
+    verified_report_sink: FileSinkClient<VerifiedSubscriberVerifiedMappingEventIngestReportV1>,
 }
 
 impl<AV, EV> SubscriberVerifiedMappingEventDaemon<AV, EV>
@@ -45,7 +46,7 @@ where
         authorization_verifier: AV,
         entity_verifier: EV,
         reports_receiver: Receiver<FileInfoStream<SubscriberVerifiedMappingEventIngestReport>>,
-        verified_report_sink: FileSinkClient,
+        verified_report_sink: FileSinkClient<VerifiedSubscriberVerifiedMappingEventIngestReportV1>,
     ) -> Self {
         Self {
             pool,
@@ -73,18 +74,14 @@ where
                 .create()
                 .await?;
 
-        let (verified_report_sink, verified_report_sink_server) = file_sink::FileSinkBuilder::new(
-            FileType::VerifiedSubscriberVerifiedMappingEventIngestReport,
-            settings.store_base_path(),
-            file_upload.clone(),
-            concat!(
+        let (verified_report_sink, verified_report_sink_server) =
+            VerifiedSubscriberVerifiedMappingEventIngestReportV1::file_sink(
+                settings.store_base_path(),
+                file_upload.clone(),
+                Some(DEFAULT_ROLL_TIME),
                 env!("CARGO_PKG_NAME"),
-                "_verified_subscriber_verified_mapping_event_ingest_report"
-            ),
-        )
-        .auto_commit(false)
-        .create()
-        .await?;
+            )
+            .await?;
 
         let task = Self::new(
             pool,

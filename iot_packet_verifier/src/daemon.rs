@@ -8,13 +8,14 @@ use crate::{
 use anyhow::{bail, Result};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::FileSinkBuilder,
     file_sink::FileSinkClient,
     file_source, file_upload,
     iot_packet::PacketRouterPacketReport,
+    traits::{FileSinkWriteExt, DEFAULT_ROLL_TIME},
     FileStore, FileType,
 };
 use futures_util::TryFutureExt;
+use helium_proto::services::packet_verifier::{InvalidPacket, ValidPacket};
 use iot_config::client::{org_client::Orgs, OrgClient};
 use solana::burn::SolanaRpc;
 use sqlx::{Pool, Postgres};
@@ -28,8 +29,8 @@ struct Daemon<O> {
     pool: Pool<Postgres>,
     verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, SharedCachedOrgClient<O>>,
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
-    valid_packets: FileSinkClient,
-    invalid_packets: FileSinkClient,
+    valid_packets: FileSinkClient<ValidPacket>,
+    invalid_packets: FileSinkClient<InvalidPacket>,
     minimum_allowed_balance: u64,
 }
 
@@ -137,24 +138,20 @@ impl Cmd {
         let store_base_path = std::path::Path::new(&settings.cache);
 
         // Verified packets:
-        let (valid_packets, valid_packets_server) = FileSinkBuilder::new(
-            FileType::IotValidPacket,
+        let (valid_packets, valid_packets_server) = ValidPacket::file_sink(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_valid_packets"),
+            Some(DEFAULT_ROLL_TIME),
+            env!("CARGO_PKG_NAME"),
         )
-        .auto_commit(false)
-        .create()
         .await?;
 
-        let (invalid_packets, invalid_packets_server) = FileSinkBuilder::new(
-            FileType::InvalidPacket,
+        let (invalid_packets, invalid_packets_server) = InvalidPacket::file_sink(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
+            Some(DEFAULT_ROLL_TIME),
+            env!("CARGO_PKG_NAME"),
         )
-        .auto_commit(false)
-        .create()
         .await?;
 
         let org_client = Arc::new(Mutex::new(CachedOrgClient::new(OrgClient::from_settings(

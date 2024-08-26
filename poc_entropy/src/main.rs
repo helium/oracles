@@ -1,7 +1,8 @@
 use anyhow::{Error, Result};
 use clap::Parser;
-use file_store::{file_sink, file_upload, FileType};
+use file_store::{file_upload, traits::FileSinkWriteExt};
 use futures_util::TryFutureExt;
+use helium_proto::EntropyReportV1;
 use poc_entropy::{entropy_generator::EntropyGenerator, server::ApiServer, Settings};
 use std::{net::SocketAddr, path, time::Duration};
 use tokio::{self, signal};
@@ -70,14 +71,12 @@ impl Server {
 
         let (file_upload, file_upload_server) =
             file_upload::FileUpload::from_settings_tm(&settings.output).await?;
-        let (entropy_sink, entropy_sink_server) = file_sink::FileSinkBuilder::new(
-            FileType::EntropyReport,
+        let (entropy_sink, entropy_sink_server) = EntropyReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
+            Some(Duration::from_secs(ENTROPY_SINK_ROLL_SECS)),
+            env!("CARGO_PKG_NAME"),
         )
-        .roll_time(Duration::from_secs(ENTROPY_SINK_ROLL_SECS))
-        .create()
         .await?;
 
         // server

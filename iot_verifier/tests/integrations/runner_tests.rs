@@ -5,8 +5,8 @@ use denylist::DenyList;
 use futures_util::{stream, StreamExt as FuturesStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{
-    InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraWitnessReportReqV1,
-    VerificationStatus,
+    InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraInvalidBeaconReportV1,
+    LoraInvalidWitnessReportV1, LoraPocV1, LoraWitnessReportReqV1, VerificationStatus,
 };
 use helium_proto::Region as ProtoRegion;
 use iot_config::{
@@ -60,9 +60,9 @@ impl Gateways for MockIotConfigClient {
 
 struct TestContext {
     runner: Runner<MockIotConfigClient>,
-    valid_pocs: MockFileSinkReceiver,
-    invalid_beacons: MockFileSinkReceiver,
-    invalid_witnesses: MockFileSinkReceiver,
+    valid_pocs: MockFileSinkReceiver<LoraPocV1>,
+    invalid_beacons: MockFileSinkReceiver<LoraInvalidBeaconReportV1>,
+    invalid_witnesses: MockFileSinkReceiver<LoraInvalidWitnessReportV1>,
     entropy_ts: DateTime<Utc>,
 }
 

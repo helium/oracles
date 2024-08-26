@@ -6,9 +6,13 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source, file_upload,
     mobile_session::DataTransferSessionIngestReport,
-    FileSinkBuilder, FileStore, FileType,
+    traits::FileSinkWriteExt,
+    FileStore, FileType,
 };
 
+use helium_proto::services::{
+    packet_verifier::ValidDataTransferSession, poc_mobile::InvalidDataTransferIngestReportV1,
+};
 use mobile_config::client::{
     authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
     AuthorizationClient, GatewayClient,
@@ -29,7 +33,7 @@ pub struct Daemon<S, GIR, AV> {
     min_burn_period: Duration,
     gateway_info_resolver: GIR,
     authorization_verifier: AV,
-    invalid_data_session_report_sink: FileSinkClient,
+    invalid_data_session_report_sink: FileSinkClient<InvalidDataTransferIngestReportV1>,
 }
 
 impl<S, GIR, AV> Daemon<S, GIR, AV> {
@@ -40,7 +44,7 @@ impl<S, GIR, AV> Daemon<S, GIR, AV> {
         burner: Burner<S>,
         gateway_info_resolver: GIR,
         authorization_verifier: AV,
-        invalid_data_session_report_sink: FileSinkClient,
+        invalid_data_session_report_sink: FileSinkClient<InvalidDataTransferIngestReportV1>,
     ) -> Self {
         Self {
             pool,
@@ -137,25 +141,22 @@ impl Cmd {
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
-        let (valid_sessions, valid_sessions_server) = FileSinkBuilder::new(
-            FileType::ValidDataTransferSession,
+        let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_valid_data_transfer_session"),
+            None,
+            env!("CARGO_PKG_NAME"),
         )
-        .auto_commit(true)
-        .create()
         .await?;
 
-        let (invalid_sessions, invalid_sessions_server) = FileSinkBuilder::new(
-            FileType::InvalidDataTransferSessionIngestReport,
-            store_base_path,
-            file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_invalid_data_transfer_session"),
-        )
-        .auto_commit(false)
-        .create()
-        .await?;
+        let (invalid_sessions, invalid_sessions_server) =
+            InvalidDataTransferIngestReportV1::file_sink(
+                store_base_path,
+                file_upload.clone(),
+                None,
+                env!("CARGO_PKG_NAME"),
+            )
+            .await?;
 
         let burner = Burner::new(valid_sessions, solana);
 

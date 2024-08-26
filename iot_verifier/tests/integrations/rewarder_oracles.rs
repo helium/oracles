@@ -1,6 +1,6 @@
 use crate::common::{self, MockFileSinkReceiver};
 use chrono::{Duration as ChronoDuration, Utc};
-use helium_proto::services::poc_lora::UnallocatedReward;
+use helium_proto::services::poc_lora::{IotRewardShare, UnallocatedReward};
 use iot_verifier::{reward_share, rewarder};
 use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
@@ -35,7 +35,7 @@ async fn test_oracles(_pool: PgPool) -> anyhow::Result<()> {
 }
 
 async fn receive_expected_rewards(
-    iot_rewards: &mut MockFileSinkReceiver,
+    iot_rewards: &mut MockFileSinkReceiver<IotRewardShare>,
 ) -> anyhow::Result<UnallocatedReward> {
     // expect one unallocated reward
     // as oracle rewards are currently 100% unallocated

@@ -15,18 +15,17 @@ use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::TimestampEncode,
-    FileType,
+    traits::{FileSinkWriteExt, TimestampEncode, DEFAULT_ROLL_TIME},
 };
 use futures_util::TryFutureExt;
 
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
-    services::{
-        poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
-        poc_mobile::UnallocatedReward, poc_mobile::UnallocatedRewardType,
+    services::poc_mobile::{
+        self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
+        UnallocatedReward, UnallocatedRewardType,
     },
     MobileRewardData as ManifestMobileRewardData, RewardManifest,
 };
@@ -58,10 +57,10 @@ pub struct Rewarder<A, B> {
     hex_service_client: B,
     reward_period_duration: Duration,
     reward_offset: Duration,
-    pub mobile_rewards: FileSinkClient,
-    reward_manifests: FileSinkClient,
+    pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
+    reward_manifests: FileSinkClient<RewardManifest>,
     price_tracker: PriceTracker,
-    speedtest_averages: FileSinkClient,
+    speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
 }
 
 impl<A, B> Rewarder<A, B>
@@ -75,28 +74,24 @@ where
         file_upload: FileUpload,
         carrier_service_verifier: A,
         hex_boosting_info_resolver: B,
-        speedtests_avg: FileSinkClient,
+        speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
-        let (mobile_rewards, mobile_rewards_server) = file_sink::FileSinkBuilder::new(
-            FileType::MobileRewardShare,
+        let (mobile_rewards, mobile_rewards_server) = MobileRewardShare::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
+            Some(DEFAULT_ROLL_TIME),
+            env!("CARGO_PKG_NAME"),
         )
-        .auto_commit(false)
-        .create()
         .await?;
 
-        let (reward_manifests, reward_manifests_server) = file_sink::FileSinkBuilder::new(
-            FileType::RewardManifest,
+        let (reward_manifests, reward_manifests_server) = RewardManifest::file_sink(
             settings.store_base_path(),
             file_upload,
-            concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
+            Some(DEFAULT_ROLL_TIME),
+            env!("CARGO_PKG_NAME"),
         )
-        .auto_commit(false)
-        .create()
         .await?;
 
         let rewarder = Rewarder::new(
@@ -126,10 +121,10 @@ where
         hex_service_client: B,
         reward_period_duration: Duration,
         reward_offset: Duration,
-        mobile_rewards: FileSinkClient,
-        reward_manifests: FileSinkClient,
+        mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
+        reward_manifests: FileSinkClient<RewardManifest>,
         price_tracker: PriceTracker,
-        speedtest_averages: FileSinkClient,
+        speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
     ) -> Self {
         Self {
             pool,
@@ -354,8 +349,8 @@ where
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
-    mobile_rewards: &FileSinkClient,
-    speedtest_avg_sink: &FileSinkClient,
+    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
@@ -415,8 +410,8 @@ pub async fn reward_poc_and_dc(
 async fn reward_poc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
-    mobile_rewards: &FileSinkClient,
-    speedtest_avg_sink: &FileSinkClient,
+    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_period: &Range<DateTime<Utc>>,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
@@ -479,7 +474,7 @@ async fn reward_poc(
 }
 
 pub async fn reward_dc(
-    mobile_rewards: &FileSinkClient,
+    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
     transfer_rewards: TransferRewards,
     reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
@@ -504,7 +499,7 @@ pub async fn reward_dc(
 
 pub async fn reward_mappers(
     pool: &Pool<Postgres>,
-    mobile_rewards: &FileSinkClient,
+    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
     // Mapper rewards currently include rewards for discovery mapping only.
@@ -554,7 +549,7 @@ pub async fn reward_mappers(
 }
 
 pub async fn reward_oracles(
-    mobile_rewards: &FileSinkClient,
+    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
     // atm 100% of oracle rewards are assigned to 'unallocated'
@@ -579,7 +574,7 @@ pub async fn reward_oracles(
 pub async fn reward_service_providers(
     pool: &Pool<Postgres>,
     carrier_client: &impl CarrierServiceVerifier<Error = ClientError>,
-    mobile_rewards: &FileSinkClient,
+    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
 ) -> anyhow::Result<()> {
@@ -617,7 +612,7 @@ pub async fn reward_service_providers(
 }
 
 async fn write_unallocated_reward(
-    mobile_rewards: &FileSinkClient,
+    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
     reward_period: &'_ Range<DateTime<Utc>>,

@@ -607,7 +607,7 @@ impl ValidatedHeartbeat {
         })
     }
 
-    pub async fn write(&self, heartbeats: &FileSinkClient) -> file_store::Result {
+    pub async fn write(&self, heartbeats: &FileSinkClient<proto::Heartbeat>) -> file_store::Result {
         heartbeats
             .write(
                 proto::Heartbeat {
@@ -720,8 +720,8 @@ pub(crate) async fn process_validated_heartbeats(
     validated_heartbeats: impl Stream<Item = anyhow::Result<ValidatedHeartbeat>>,
     heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
     coverage_claim_time_cache: &CoverageClaimTimeCache,
-    heartbeat_sink: &FileSinkClient,
-    seniority_sink: &FileSinkClient,
+    heartbeat_sink: &FileSinkClient<proto::Heartbeat>,
+    seniority_sink: &FileSinkClient<proto::SeniorityUpdate>,
     transaction: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<()> {
     let mut validated_heartbeats = pin!(validated_heartbeats);

@@ -5,9 +5,10 @@ use boost_manager::{
 };
 use clap::Parser;
 use file_store::{
-    file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
-    reward_manifest::RewardManifest, FileStore, FileType,
+    file_info_poller::LookbackBehavior, file_source, file_upload, reward_manifest::RewardManifest,
+    traits::FileSinkWriteExt, FileStore, FileType,
 };
+use helium_proto::BoostedHexUpdateV1;
 use mobile_config::client::hex_boosting_client::HexBoostingClient;
 use solana::start_boost::SolanaRpc;
 use std::{
@@ -99,14 +100,12 @@ impl Server {
                 .await?;
 
         // setup the writer for our updated hexes
-        let (updated_hexes_sink, updated_hexes_sink_server) = file_sink::FileSinkBuilder::new(
-            FileType::BoostedHexUpdate,
+        let (updated_hexes_sink, updated_hexes_sink_server) = BoostedHexUpdateV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_boosted_hex_update"),
+            Some(Duration::from_secs(5 * 60)),
+            env!("CARGO_PKG_NAME"),
         )
-        .roll_time(Duration::from_secs(5 * 60))
-        .create()
         .await?;
 
         // The server to monitor rewards and activate any newly seen boosted hexes

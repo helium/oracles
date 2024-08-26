@@ -297,7 +297,7 @@ impl fmt::Display for FileType {
 }
 
 impl FileType {
-    pub fn to_str(&self) -> &'static str {
+    pub const fn to_str(&self) -> &'static str {
         match self {
             Self::InvalidatedRadioThresholdReq => INVALIDATED_RADIO_THRESHOLD_REQ,
             Self::InvalidatedRadioThresholdIngestReport => {

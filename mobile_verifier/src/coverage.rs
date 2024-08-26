@@ -7,10 +7,10 @@ use chrono::{DateTime, Utc};
 use file_store::{
     coverage::{self, CoverageObjectIngestReport},
     file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
-    traits::TimestampEncode,
+    traits::{FileSinkWriteExt, TimestampEncode},
     FileStore, FileType,
 };
 use futures::{
@@ -73,7 +73,7 @@ pub struct CoverageDaemon {
     pool: Pool<Postgres>,
     auth_client: AuthorizationClient,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-    coverage_obj_sink: FileSinkClient,
+    coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
     new_coverage_object_notifier: NewCoverageObjectNotifier,
 }
 
@@ -86,15 +86,12 @@ impl CoverageDaemon {
         auth_client: AuthorizationClient,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
-            FileType::CoverageObject,
+        let (valid_coverage_objs, valid_coverage_objs_server) = proto::CoverageObjectV1::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
-            concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
+            Some(Duration::from_secs(15 * 60)),
+            env!("CARGO_PKG_NAME"),
         )
-        .auto_commit(false)
-        .roll_time(Duration::from_secs(15 * 60))
-        .create()
         .await?;
 
         let (coverage_objs, coverage_objs_server) =
@@ -126,7 +123,7 @@ impl CoverageDaemon {
         pool: PgPool,
         auth_client: AuthorizationClient,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-        coverage_obj_sink: FileSinkClient,
+        coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> Self {
         Self {
@@ -272,7 +269,10 @@ impl CoverageObject {
         }
     }
 
-    pub async fn write(&self, coverage_objects: &FileSinkClient) -> anyhow::Result<()> {
+    pub async fn write(
+        &self,
+        coverage_objects: &FileSinkClient<proto::CoverageObjectV1>,
+    ) -> anyhow::Result<()> {
         coverage_objects
             .write(
                 proto::CoverageObjectV1 {

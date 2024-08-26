@@ -3,8 +3,8 @@ use backon::{ExponentialBuilder, Retryable};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::{KeyTag, Keypair, Network, Sign};
 use helium_proto::services::poc_mobile::{
-    Client as PocMobileClient, SubscriberVerifiedMappingEventReqV1,
-    SubscriberVerifiedMappingEventResV1,
+    Client as PocMobileClient, SubscriberVerifiedMappingEventIngestReportV1,
+    SubscriberVerifiedMappingEventReqV1, SubscriberVerifiedMappingEventResV1,
 };
 use ingest::server_mobile::GrpcServer;
 use prost::Message;
@@ -21,9 +21,6 @@ use triggered::Trigger;
 pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let key_pair = generate_keypair();
 
-    let (file_sink_tx, file_sink_rx) = tokio::sync::mpsc::channel(10);
-    let file_sink = FileSinkClient::new(file_sink_tx, "test_file_sync");
-
     let socket_addr = {
         let tcp_listener = TcpListener::bind("127.0.0.1:0").await?;
         tcp_listener.local_addr()?
@@ -37,18 +34,29 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
 
     let (trigger, listener) = triggered::trigger();
 
+    let (cbrs_heartbeat_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (wifi_heartbeat_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (speedtest_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (data_transfer_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (subscriber_location_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (radio_threshold_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (invalidated_threshold_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (coverage_obj_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (sp_boosted_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (subscriber_mapping_tx, subscriber_mapping_rx) = tokio::sync::mpsc::channel(10);
+
     tokio::spawn(async move {
         let grpc_server = GrpcServer::new(
-            file_sink.clone(),
-            file_sink.clone(),
-            file_sink.clone(),
-            file_sink.clone(),
-            file_sink.clone(),
-            file_sink.clone(),
-            file_sink.clone(),
-            file_sink.clone(),
-            file_sink.clone(),
-            file_sink.clone(),
+            FileSinkClient::new(cbrs_heartbeat_tx, "noop"),
+            FileSinkClient::new(wifi_heartbeat_tx, "noop"),
+            FileSinkClient::new(speedtest_tx, "noop"),
+            FileSinkClient::new(data_transfer_tx, "noop"),
+            FileSinkClient::new(subscriber_location_tx, "noop"),
+            FileSinkClient::new(radio_threshold_tx, "noop"),
+            FileSinkClient::new(invalidated_threshold_tx, "noop"),
+            FileSinkClient::new(coverage_obj_tx, "noop"),
+            FileSinkClient::new(sp_boosted_tx, "noop"),
+            FileSinkClient::new(subscriber_mapping_tx, "test_file_sink"),
             Network::MainNet,
             socket_addr,
             api_token,
@@ -57,7 +65,13 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
         grpc_server.run(listener).await
     });
 
-    let client = TestClient::new(socket_addr, key_pair, token.to_string(), file_sink_rx).await;
+    let client = TestClient::new(
+        socket_addr,
+        key_pair,
+        token.to_string(),
+        subscriber_mapping_rx,
+    )
+    .await;
 
     Ok((client, trigger))
 }
@@ -66,7 +80,8 @@ pub struct TestClient {
     client: PocMobileClient<Channel>,
     key_pair: Arc<Keypair>,
     authorization: MetadataValue<Ascii>,
-    file_sink_rx: Receiver<file_store::file_sink::Message>,
+    file_sink_rx:
+        Receiver<file_store::file_sink::Message<SubscriberVerifiedMappingEventIngestReportV1>>,
 }
 
 impl TestClient {
@@ -74,7 +89,9 @@ impl TestClient {
         socket_addr: SocketAddr,
         key_pair: Keypair,
         api_token: String,
-        file_sink_rx: Receiver<file_store::file_sink::Message>,
+        file_sink_rx: Receiver<
+            file_store::file_sink::Message<SubscriberVerifiedMappingEventIngestReportV1>,
+        >,
     ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
             .retry(&ExponentialBuilder::default())
@@ -89,7 +106,7 @@ impl TestClient {
         }
     }
 
-    pub async fn recv(mut self) -> anyhow::Result<Vec<u8>> {
+    pub async fn recv(mut self) -> anyhow::Result<SubscriberVerifiedMappingEventIngestReportV1> {
         match timeout(Duration::from_secs(2), self.file_sink_rx.recv()).await {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),

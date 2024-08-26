@@ -5,8 +5,9 @@ use file_store::{
     file_info_poller::{
         FileInfoPollerConfigBuilder, FileInfoStream, LookbackBehavior, ProstFileInfoPollerParser,
     },
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_upload::FileUpload,
+    traits::{FileSinkWriteExt, DEFAULT_ROLL_TIME},
     FileStore, FileType,
 };
 use futures::{prelude::future::LocalBoxFuture, StreamExt, TryFutureExt, TryStreamExt};
@@ -17,7 +18,8 @@ use helium_proto::services::{
         service_provider_boosted_rewards_banned_radio_req_v1::{
             KeyType as ProtoKeyType, SpBoostedRewardsBannedRadioReason,
         },
-        SeniorityUpdateReason, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+        SeniorityUpdate as SeniorityUpdateProto, SeniorityUpdateReason,
+        ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
         ServiceProviderBoostedRewardsBannedRadioVerificationStatus,
         VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     },
@@ -117,8 +119,8 @@ pub struct ServiceProviderBoostedRewardsBanIngestor<AV> {
     pool: PgPool,
     authorization_verifier: AV,
     receiver: Receiver<FileInfoStream<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>>,
-    verified_sink: FileSinkClient,
-    seniority_update_sink: FileSinkClient,
+    verified_sink: FileSinkClient<VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
+    seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
 }
 
 impl<AV> ManagedTask for ServiceProviderBoostedRewardsBanIngestor<AV>
@@ -150,17 +152,16 @@ where
         file_store: FileStore,
         authorization_verifier: AV,
         settings: &Settings,
-        seniority_update_sink: FileSinkClient,
+        seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (verified_sink, verified_sink_server) = file_sink::FileSinkBuilder::new(
-            FileType::VerifiedSPBoostedRewardsBannedRadioIngestReport,
-            settings.store_base_path(),
-            file_upload,
-            concat!(env!("CARGO_PKG_NAME"), "_verified_sp_boosted_rewards_ban"),
-        )
-        .auto_commit(false)
-        .create()
-        .await?;
+        let (verified_sink, verified_sink_server) =
+            VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1::file_sink(
+                settings.store_base_path(),
+                file_upload,
+                Some(DEFAULT_ROLL_TIME),
+                env!("CARGO_PKG_NAME"),
+            )
+            .await?;
 
         let (receiver, ingest_server) = FileInfoPollerConfigBuilder::<
             ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
@@ -421,7 +422,9 @@ mod tests {
     use chrono::Duration;
     use file_store::file_sink::Message;
     use helium_crypto::{KeyTag, Keypair, PublicKey};
-    use helium_proto::services::poc_mobile::ServiceProviderBoostedRewardsBannedRadioReqV1;
+    use helium_proto::services::poc_mobile::{
+        SeniorityUpdate as SeniorityUpdateProto, ServiceProviderBoostedRewardsBannedRadioReqV1,
+    };
     use rand::rngs::OsRng;
     use tokio::sync::mpsc;
 
@@ -448,8 +451,9 @@ mod tests {
 
     struct TestSetup<AV> {
         ingestor: ServiceProviderBoostedRewardsBanIngestor<AV>,
-        _verified_receiver: Receiver<Message>,
-        _seniority_receiver: Receiver<Message>,
+        _verified_receiver:
+            Receiver<Message<VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1>>,
+        _seniority_receiver: Receiver<Message<SeniorityUpdateProto>>,
     }
 
     impl<AV> TestSetup<AV> {
