@@ -77,7 +77,7 @@ beacon = { git = "https://github.com/helium/proto", branch = "map/subscriber-ref
 solana-client = "1.18"
 solana-sdk = "1.18"
 solana-program = "1.18"
-spl-token = "3.5.0"
+spl-token = { version = "3.5.0", features = [ "no-entrypoint" ] }
 reqwest = { version = "0", default-features = false, features = [
   "gzip",
   "json",

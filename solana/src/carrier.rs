@@ -65,3 +65,16 @@ impl SolanaRpc {
         Ok(Self { provider, sub_dao })
     }
 }
+
+#[async_trait]
+impl SolanaNetwork for Option<SolanaRpc> {
+    async fn fetch_incentive_escrow_fund_percent(
+        &self,
+        network_name: &str,
+    ) -> Result<Decimal, SolanaRpcError> {
+        match self {
+            Some(ref rpc) => rpc.fetch_incentive_escrow_fund_percent(network_name).await,
+            None => Ok(dec!(0)),
+        }
+    }
+}

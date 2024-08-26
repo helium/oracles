@@ -42,7 +42,7 @@ use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use rust_decimal_macros::dec;
-use solana::carrier::SolanaRpc;
+use solana::carrier::{SolanaNetwork, SolanaRpc};
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -598,7 +598,7 @@ pub async fn reward_oracles(
 
 pub async fn reward_service_providers(
     pool: &Pool<Postgres>,
-    solana: &SolanaRpc,
+    solana: &impl SolanaNetwork,
     carrier_client: &impl CarrierServiceVerifier<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
@@ -612,25 +612,21 @@ pub async fn reward_service_providers(
         reward_period.end - reward_period.start,
     );
     let rewards_per_share = sp_shares.rewards_per_share(total_sp_rewards, mobile_bone_price)?;
-    let mut sp_rewards =
-        sp_shares.into_service_provider_rewards(total_sp_rewards, rewards_per_share);
-    let unallocated_sp_rewards = total_sp_rewards - sp_rewards.get_total_rewards();
-    let rewards_allocated_for_promotion = sp_rewards
-        .get_rewards_allocated_for_promotion(solana)
+    let mut sp_rewards = sp_shares
+        .into_service_provider_rewards(total_sp_rewards, rewards_per_share, solana)
         .await?;
+    let unallocated_sp_rewards = total_sp_rewards - sp_rewards.get_total_rewards();
     let agg_promotion_rewards = AggregatePromotionRewards::aggregate(pool, reward_period).await?;
 
     let mut matched_rewards = 0_u64;
-    for (amount, reward) in agg_promotion_rewards.into_rewards(
-        rewards_allocated_for_promotion,
-        unallocated_sp_rewards,
-        reward_period,
-    ) {
+    for (amount, reward) in
+        agg_promotion_rewards.into_rewards(&mut sp_rewards, unallocated_sp_rewards, reward_period)
+    {
         matched_rewards += amount;
         mobile_rewards.write(reward, []).await?.await??;
     }
 
-    for reward in sp_rewards.into_service_provider_rewards(reward_period) {
+    for reward in sp_rewards.into_mobile_reward_shares(reward_period) {
         mobile_rewards.write(reward, []).await?.await??;
     }
 

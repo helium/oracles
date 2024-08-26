@@ -19,7 +19,6 @@ use helium_proto::{
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, CarrierServiceClient};
 use rust_decimal::prelude::*;
 use rust_decimal::{Decimal, RoundingStrategy};
-use rust_decimal_macros::dec;
 use sqlx::{postgres::PgRow, PgPool, Postgres, Row, Transaction};
 use std::{
     collections::HashMap,
@@ -30,7 +29,7 @@ use std::{
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::Settings;
+use crate::{reward_shares::ServiceProviderRewards, Settings};
 
 pub struct PromotionRewardDaemon {
     pool: PgPool,
@@ -265,14 +264,21 @@ impl sqlx::FromRow<'_, PgRow> for PromotionRewardShares {
     }
 }
 
+// This could use a better name
+#[derive(Copy, Clone, Default)]
+struct SpPromotionRewardShares {
+    shares_per_reward: Decimal,
+    shares_per_matched_reward: Decimal,
+}
+
 impl AggregatePromotionRewards {
     pub async fn aggregate(pool: &PgPool, epoch: &Range<DateTime<Utc>>) -> sqlx::Result<Self> {
         let rewards = sqlx::query_as(
             r#"
             SELECT service_provider, subscriber_id, gateway_key, SUM(shares)
             FROM promotion_rewards
-            GROUP BY service_provider, subscriber_id, gateway_key
             WHERE time_of_reward >= $1 AND time_of_reward < $2
+            GROUP BY service_provider, subscriber_id, gateway_key
             "#,
         )
         .bind(epoch.start)
@@ -282,17 +288,14 @@ impl AggregatePromotionRewards {
         Ok(Self { rewards })
     }
 
-    pub fn into_rewards(
+    pub fn into_rewards<'a>(
         self,
-        rewards_allocated_for_promotion: HashMap<ServiceProvider, Decimal>,
+        sp_rewards: &mut ServiceProviderRewards,
         unallocated_sp_rewards: Decimal,
-        reward_period: &'_ Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
-        let total_rewards_allocated: Decimal = rewards_allocated_for_promotion.values().sum();
-        let sp_share_of_unallocated_pool: HashMap<_, _> = rewards_allocated_for_promotion
-            .iter()
-            .map(|(sp, rewards)| (sp, total_rewards_allocated / rewards))
-            .collect();
+        reward_period: &'a Range<DateTime<Utc>>,
+    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + 'a {
+        let total_promotion_rewards_allocated =
+            sp_rewards.get_total_rewards_allocated_for_promotion();
         let total_shares_per_service_provider = self.rewards.iter().fold(
             HashMap::<ServiceProvider, Decimal>::default(),
             |mut shares, promotion_reward_share| {
@@ -302,62 +305,47 @@ impl AggregatePromotionRewards {
                 shares
             },
         );
-        let shares_per_reward_per_sp: HashMap<_, _> = total_shares_per_service_provider
+        let sp_promotion_reward_shares: HashMap<_, _> = total_shares_per_service_provider
             .iter()
             .map(|(sp, total_shares)| {
-                (
-                    *sp,
-                    rewards_allocated_for_promotion
-                        .get(&sp)
-                        .copied()
-                        .unwrap_or(dec!(0))
+                let rewards_allocated_for_promotion =
+                    sp_rewards.take_rewards_allocated_for_promotion(sp);
+                let share_of_unallocated_pool =
+                    rewards_allocated_for_promotion / total_promotion_rewards_allocated;
+                let sp_share = SpPromotionRewardShares {
+                    shares_per_reward: rewards_allocated_for_promotion / total_shares,
+                    shares_per_matched_reward: unallocated_sp_rewards * share_of_unallocated_pool
                         / total_shares,
-                )
+                };
+                (*sp, sp_share)
             })
             .collect();
-        let shares_per_matched_reward_per_sp: HashMap<_, _> = total_shares_per_service_provider
-            .into_iter()
-            .map(|(sp, total_shares)| {
-                (
-                    sp,
-                    unallocated_sp_rewards
-                        * sp_share_of_unallocated_pool
-                            .get(&sp)
-                            .copied()
-                            .unwrap_or(dec!(0))
-                        / total_shares,
-                )
-            })
-            .collect();
+
         self.rewards
             .into_iter()
             .map(move |reward| {
                 let shares = Decimal::from(reward.shares);
-                let service_provider_amount = (shares_per_reward_per_sp
+                let sp_promotion_reward_share = sp_promotion_reward_shares
                     .get(&reward.service_provider)
                     .copied()
-                    .unwrap_or(dec!(0))
-                    * shares)
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or(0);
-                let matched_amount = (shares_per_matched_reward_per_sp
-                    .get(&reward.service_provider)
-                    .copied()
-                    .unwrap_or(dec!(0))
-                    * shares)
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or(0)
+                    .unwrap_or_default();
+                let service_provider_amount = sp_promotion_reward_share.shares_per_reward * shares;
+                let matched_amount = (sp_promotion_reward_share.shares_per_matched_reward * shares)
                     .min(service_provider_amount);
                 proto::PromotionReward {
                     entity: Some(reward.rewardable_entity.into()),
-                    service_provider_amount,
-                    matched_amount,
+                    service_provider_amount: service_provider_amount
+                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                        .to_u64()
+                        .unwrap_or(0),
+                    matched_amount: matched_amount
+                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                        .to_u64()
+                        .unwrap_or(0),
                 }
             })
             .filter(|x| x.service_provider_amount > 0)
-            .map(|reward| {
+            .map(move |reward| {
                 (
                     reward.matched_amount,
                     proto::MobileRewardShare {

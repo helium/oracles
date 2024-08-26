@@ -70,6 +70,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (_, rewards) = tokio::join!(
         rewarder::reward_service_providers(
             &pool,
+            &None,
             &carrier_client,
             &mobile_rewards_client,
             &epoch,
@@ -128,6 +129,7 @@ async fn test_service_provider_rewards_invalid_sp(pool: PgPool) -> anyhow::Resul
 
     let resp = rewarder::reward_service_providers(
         &pool.clone(),
+        &None,
         &carrier_client.clone(),
         &mobile_rewards_client,
         &epoch,
