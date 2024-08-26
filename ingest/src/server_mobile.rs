@@ -458,10 +458,7 @@ impl poc_mobile::PocMobile for GrpcServer {
                 report: Some(event),
             })?;
 
-        let _ = self
-            .subscriber_referral_eligibility_sink
-            .write(report, [])
-            .await;
+        let _ = self.promotion_reward_sink.write(report, []).await;
 
         let id = received_timestamp.to_string();
         Ok(Response::new(PromotionRewardRespV1 { id }))
@@ -576,17 +573,12 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .await?;
 
     let (subscriber_referral_eligibility_sink, subscriber_referral_eligibility_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::PromotionRewardIngestReport,
+        PromotionRewardIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            concat!(
-                env!("CARGO_PKG_NAME"),
-                "_subscriber_referral_eligibility_ingest_report"
-            ),
+            Some(settings.roll_time),
+            env!("CARGO_PKG_NAME"),
         )
-        .roll_time(settings.roll_time)
-        .create()
         .await?;
 
     let Some(api_token) = settings

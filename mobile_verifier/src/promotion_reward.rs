@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::{self, FileSinkClient},
+    file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
     promotion_reward::{Entity, PromotionReward},
-    traits::TimestampEncode,
+    traits::{FileSinkWriteExt, TimestampEncode},
     FileType,
 };
 use futures::{Stream, StreamExt, TryFutureExt, TryStreamExt};
@@ -35,7 +35,7 @@ pub struct PromotionRewardDaemon {
     pool: PgPool,
     carrier_client: CarrierServiceClient,
     promotion_rewards: Receiver<FileInfoStream<PromotionReward>>,
-    promotion_rewards_sink: FileSinkClient,
+    promotion_rewards_sink: FileSinkClient<VerifiedPromotionRewardV1>,
 }
 
 impl PromotionRewardDaemon {
@@ -47,15 +47,12 @@ impl PromotionRewardDaemon {
         carrier_client: CarrierServiceClient,
     ) -> anyhow::Result<impl ManagedTask> {
         let (promotion_rewards_sink, valid_promotion_rewards_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::VerifiedPromotionRewardIngestReport,
+            VerifiedPromotionRewardV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                concat!(env!("CARGO_PKG_NAME"), "_promotion_reward"),
+                Some(Duration::from_secs(15 * 60)),
+                env!("CARGO_PKG_NAME"),
             )
-            .auto_commit(false)
-            .roll_time(Duration::from_secs(15 * 60))
-            .create()
             .await?;
 
         let (promotion_rewards, promotion_rewards_server) =
@@ -183,7 +180,10 @@ impl VerifiedPromotionReward {
         matches!(self.validity, PromotionRewardStatus::Valid)
     }
 
-    async fn write(&self, promotion_rewards: &FileSinkClient) -> anyhow::Result<()> {
+    async fn write(
+        &self,
+        promotion_rewards: &FileSinkClient<VerifiedPromotionRewardV1>,
+    ) -> anyhow::Result<()> {
         promotion_rewards
             .write(
                 VerifiedPromotionRewardV1 {
