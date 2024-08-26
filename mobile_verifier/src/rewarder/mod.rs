@@ -613,7 +613,7 @@ pub async fn reward_service_providers(
     );
     let rewards_per_share = sp_shares.rewards_per_share(total_sp_rewards, mobile_bone_price)?;
     let mut sp_rewards = sp_shares
-        .into_service_provider_rewards(total_sp_rewards, rewards_per_share, solana)
+        .into_service_provider_rewards(rewards_per_share, solana)
         .await?;
     let unallocated_sp_rewards = total_sp_rewards - sp_rewards.get_total_rewards();
     let agg_promotion_rewards = AggregatePromotionRewards::aggregate(pool, reward_period).await?;

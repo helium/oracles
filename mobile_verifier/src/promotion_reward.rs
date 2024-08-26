@@ -238,20 +238,19 @@ pub async fn clear_promotion_rewards(
 }
 
 pub struct AggregatePromotionRewards {
-    rewards: Vec<PromotionRewardShares>,
+    pub rewards: Vec<PromotionRewardShares>,
 }
 
 pub struct PromotionRewardShares {
-    service_provider: ServiceProvider,
-    rewardable_entity: Entity,
-    shares: u64,
+    pub service_provider: i32,
+    pub rewardable_entity: Entity,
+    pub shares: u64,
 }
 
 impl sqlx::FromRow<'_, PgRow> for PromotionRewardShares {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
         let subscriber_id: Vec<u8> = row.try_get("subscriber_id")?;
         let shares: i64 = row.try_get("shares")?;
-        let service_provider: i64 = row.try_get("service_provider")?;
         Ok(Self {
             rewardable_entity: if subscriber_id.is_empty() {
                 Entity::GatewayKey(row.try_get("gateway_key")?)
@@ -259,7 +258,7 @@ impl sqlx::FromRow<'_, PgRow> for PromotionRewardShares {
                 Entity::SubscriberId(subscriber_id)
             },
             shares: shares as u64,
-            service_provider: ServiceProvider::try_from(service_provider as i32).unwrap(),
+            service_provider: row.try_get("service_provider")?,
         })
     }
 }
@@ -297,7 +296,7 @@ impl AggregatePromotionRewards {
         let total_promotion_rewards_allocated =
             sp_rewards.get_total_rewards_allocated_for_promotion();
         let total_shares_per_service_provider = self.rewards.iter().fold(
-            HashMap::<ServiceProvider, Decimal>::default(),
+            HashMap::<i32, Decimal>::default(),
             |mut shares, promotion_reward_share| {
                 *shares
                     .entry(promotion_reward_share.service_provider)
@@ -308,16 +307,21 @@ impl AggregatePromotionRewards {
         let sp_promotion_reward_shares: HashMap<_, _> = total_shares_per_service_provider
             .iter()
             .map(|(sp, total_shares)| {
-                let rewards_allocated_for_promotion =
-                    sp_rewards.take_rewards_allocated_for_promotion(sp);
-                let share_of_unallocated_pool =
-                    rewards_allocated_for_promotion / total_promotion_rewards_allocated;
-                let sp_share = SpPromotionRewardShares {
-                    shares_per_reward: rewards_allocated_for_promotion / total_shares,
-                    shares_per_matched_reward: unallocated_sp_rewards * share_of_unallocated_pool
-                        / total_shares,
-                };
-                (*sp, sp_share)
+                if total_promotion_rewards_allocated.is_zero() || total_shares.is_zero() {
+                    (*sp, SpPromotionRewardShares::default())
+                } else {
+                    let rewards_allocated_for_promotion =
+                        sp_rewards.take_rewards_allocated_for_promotion(sp);
+                    let share_of_unallocated_pool =
+                        rewards_allocated_for_promotion / total_promotion_rewards_allocated;
+                    let sp_share = SpPromotionRewardShares {
+                        shares_per_reward: rewards_allocated_for_promotion / total_shares,
+                        shares_per_matched_reward: unallocated_sp_rewards
+                            * share_of_unallocated_pool
+                            / total_shares,
+                    };
+                    (*sp, sp_share)
+                }
             })
             .collect();
 
@@ -355,5 +359,185 @@ impl AggregatePromotionRewards {
                     },
                 )
             })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::reward_shares::ServiceProviderReward;
+    use chrono::Duration;
+    use helium_proto::services::poc_mobile::{
+        mobile_reward_share::Reward, promotion_reward::Entity as ProtoEntity, PromotionReward,
+    };
+    use rust_decimal_macros::dec;
+
+    fn aggregate_subcriber_rewards(
+        rewards: impl Iterator<Item = (u64, proto::MobileRewardShare)>,
+    ) -> HashMap<Vec<u8>, (u64, u64)> {
+        let mut aggregated = HashMap::<Vec<u8>, (u64, u64)>::new();
+        for (_, reward) in rewards {
+            match reward.reward {
+                Some(Reward::PromotionReward(PromotionReward {
+                    entity: Some(ProtoEntity::SubscriberId(subscriber_id)),
+                    service_provider_amount,
+                    matched_amount,
+                })) => {
+                    let entry = aggregated.entry(subscriber_id).or_default();
+                    entry.0 += service_provider_amount;
+                    entry.1 += matched_amount;
+                }
+                _ => (),
+            }
+        }
+        aggregated
+    }
+
+    #[test]
+    fn ensure_no_rewards_if_none_allocated() {
+        let now = Utc::now();
+        let epoch = now - Duration::hours(24)..now;
+        let mut rewards = HashMap::new();
+        rewards.insert(
+            0_i32,
+            ServiceProviderReward {
+                for_service_provider: dec!(100),
+                for_promotions: dec!(0),
+            },
+        );
+        let mut sp_rewards = ServiceProviderRewards { rewards };
+        let promotion_rewards = AggregatePromotionRewards {
+            rewards: vec![PromotionRewardShares {
+                service_provider: 0,
+                rewardable_entity: Entity::SubscriberId(vec![0]),
+                shares: 1,
+            }],
+        };
+        let result = aggregate_subcriber_rewards(promotion_rewards.into_rewards(
+            &mut sp_rewards,
+            dec!(0),
+            &epoch,
+        ));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn ensure_no_matched_rewards_if_no_unallocated() {
+        let now = Utc::now();
+        let epoch = now - Duration::hours(24)..now;
+        let mut rewards = HashMap::new();
+        rewards.insert(
+            0_i32,
+            ServiceProviderReward {
+                for_service_provider: dec!(100),
+                for_promotions: dec!(100),
+            },
+        );
+        let mut sp_rewards = ServiceProviderRewards { rewards };
+        let promotion_rewards = AggregatePromotionRewards {
+            rewards: vec![PromotionRewardShares {
+                service_provider: 0,
+                rewardable_entity: Entity::SubscriberId(vec![0]),
+                shares: 1,
+            }],
+        };
+        let result = aggregate_subcriber_rewards(promotion_rewards.into_rewards(
+            &mut sp_rewards,
+            dec!(0),
+            &epoch,
+        ));
+        assert_eq!(sp_rewards.rewards.get(&0).unwrap().for_promotions, dec!(0));
+        let result = result.get(&vec![0]).unwrap();
+        assert_eq!(result.0, 100);
+        assert_eq!(result.1, 0);
+    }
+
+    #[test]
+    fn ensure_fully_matched_rewards_and_correctly_divided() {
+        let now = Utc::now();
+        let epoch = now - Duration::hours(24)..now;
+        let mut rewards = HashMap::new();
+        rewards.insert(
+            0_i32,
+            ServiceProviderReward {
+                for_service_provider: dec!(100),
+                for_promotions: dec!(100),
+            },
+        );
+        let mut sp_rewards = ServiceProviderRewards { rewards };
+        let promotion_rewards = AggregatePromotionRewards {
+            rewards: vec![
+                PromotionRewardShares {
+                    service_provider: 0,
+                    rewardable_entity: Entity::SubscriberId(vec![0]),
+                    shares: 1,
+                },
+                PromotionRewardShares {
+                    service_provider: 0,
+                    rewardable_entity: Entity::SubscriberId(vec![1]),
+                    shares: 2,
+                },
+            ],
+        };
+        let result = aggregate_subcriber_rewards(promotion_rewards.into_rewards(
+            &mut sp_rewards,
+            dec!(100),
+            &epoch,
+        ));
+        assert_eq!(sp_rewards.rewards.get(&0).unwrap().for_promotions, dec!(0));
+        let result1 = result.get(&vec![0]).unwrap();
+        assert_eq!(result1.0, 33);
+        assert_eq!(result1.1, 33);
+        let result2 = result.get(&vec![1]).unwrap();
+        assert_eq!(result2.0, 66);
+        assert_eq!(result2.1, 66);
+    }
+
+    #[test]
+    fn ensure_properly_scaled_unallocated_rewards() {
+        let now = Utc::now();
+        let epoch = now - Duration::hours(24)..now;
+        let mut rewards = HashMap::new();
+        rewards.insert(
+            0_i32,
+            ServiceProviderReward {
+                for_service_provider: dec!(100),
+                for_promotions: dec!(100),
+            },
+        );
+        rewards.insert(
+            1_i32,
+            ServiceProviderReward {
+                for_service_provider: dec!(100),
+                for_promotions: dec!(200),
+            },
+        );
+        let mut sp_rewards = ServiceProviderRewards { rewards };
+        let promotion_rewards = AggregatePromotionRewards {
+            rewards: vec![
+                PromotionRewardShares {
+                    service_provider: 0,
+                    rewardable_entity: Entity::SubscriberId(vec![0]),
+                    shares: 1,
+                },
+                PromotionRewardShares {
+                    service_provider: 1,
+                    rewardable_entity: Entity::SubscriberId(vec![1]),
+                    shares: 1,
+                },
+            ],
+        };
+        let result = aggregate_subcriber_rewards(promotion_rewards.into_rewards(
+            &mut sp_rewards,
+            dec!(100),
+            &epoch,
+        ));
+        assert_eq!(sp_rewards.rewards.get(&0).unwrap().for_promotions, dec!(0));
+        let result1 = result.get(&vec![0]).unwrap();
+        assert_eq!(result1.0, 100);
+        assert_eq!(result1.1, 33);
+        let result2 = result.get(&vec![1]).unwrap();
+        assert_eq!(result2.0, 200);
+        assert_eq!(result2.1, 66);
     }
 }
