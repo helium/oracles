@@ -76,28 +76,29 @@ pub async fn accumulate_sessions(
 
 async fn save_pending_data_transfer_session(
     conn: &mut Transaction<'_, Postgres>,
-    data_transfer_event: DataTransferEvent,
+    data_transfer_event: &DataTransferEvent,
     rewardable_bytes: u64,
-    curr_file_ts: DateTime<Utc>,
+    file_ts: DateTime<Utc>,
+    curr_ts: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     sqlx::query(
         r#"
-            INSERT INTO pending_data_transfer_sessions (pub_key, event_id, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-            ON CONFLICT (pub_key, payer) DO UPDATE SET
+            INSERT INTO pending_data_transfer_sessions (pub_key, event_id, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, recv_timestamp, inserted_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (pub_key, payer, recv_timestamp) DO UPDATE SET
             uploaded_bytes = pending_data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
             downloaded_bytes = pending_data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-            rewardable_bytes = pending_data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
-            last_timestamp = GREATEST(pending_data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+            rewardable_bytes = pending_data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes
         "#,
     )
-    .bind(data_transfer_event.pub_key)
-    .bind(data_transfer_event.event_id)
-    .bind(data_transfer_event.payer)
+    .bind(&data_transfer_event.pub_key)
+    .bind(&data_transfer_event.event_id)
+    .bind(&data_transfer_event.payer)
     .bind(data_transfer_event.upload_bytes as i64)
     .bind(data_transfer_event.download_bytes as i64)
     .bind(rewardable_bytes as i64)
-    .bind(curr_file_ts)
+    .bind(file_ts)
+    .bind(curr_ts)
     .execute(conn)
     .await?;
     Ok(())
