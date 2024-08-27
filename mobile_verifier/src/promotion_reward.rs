@@ -9,6 +9,7 @@ use file_store::{
     FileType,
 };
 use futures::{Stream, StreamExt, TryFutureExt, TryStreamExt};
+use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_mobile::{
         self as proto, PromotionRewardIngestReportV1, PromotionRewardStatus,
@@ -28,8 +29,17 @@ use std::{
 };
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
+use uuid::Uuid;
 
 use crate::{reward_shares::ServiceProviderRewards, Settings};
+
+#[derive(Copy, Clone, sqlx::Type)]
+#[sqlx(type_name = "entity_type")]
+#[sqlx(rename_all = "lowercase")]
+pub enum EntityType {
+    Subscriber,
+    Gateway,
+}
 
 pub struct PromotionRewardDaemon {
     pool: PgPool,
@@ -204,20 +214,20 @@ impl VerifiedPromotionReward {
     }
 
     async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
-        let (subscriber_id, gateway_key) = match self.promotion_reward.entity {
-            Entity::SubscriberId(sub_id) => (Some(sub_id), None),
-            Entity::GatewayKey(gk) => (None, Some(gk)),
+        let (entity, entity_type) = match self.promotion_reward.entity {
+            Entity::SubscriberId(sub_id) => (sub_id.to_string(), EntityType::Subscriber),
+            Entity::GatewayKey(gk) => (gk.to_string(), EntityType::Gateway),
         };
         sqlx::query(
             r#"
-            INSERT INTO promotion_rewards (time_of_reward, subscriber_id, gateway_key, service_provider, shares)
-            VALUES ($1, COALESCE($2, '{}'), COALESCE($3, ''), $4, $5)
+            INSERT INTO promotion_rewards (time_of_reward, entity, entity_type, service_provider, shares)
+            VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT DO NOTHING
             "#
         )
             .bind(self.promotion_reward.timestamp)
-            .bind(subscriber_id)
-            .bind(gateway_key)
+            .bind(entity)
+            .bind(entity_type)
             .bind(self.service_provider.map(|x| x as i64))
             .bind(self.promotion_reward.shares as i64)
             .execute(&mut *transaction)
@@ -249,13 +259,27 @@ pub struct PromotionRewardShares {
 
 impl sqlx::FromRow<'_, PgRow> for PromotionRewardShares {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
-        let subscriber_id: Vec<u8> = row.try_get("subscriber_id")?;
         let shares: i64 = row.try_get("shares")?;
+        let entity_type: EntityType = row.try_get("entity_type")?;
+        let entity: String = row.try_get("entity")?;
         Ok(Self {
-            rewardable_entity: if subscriber_id.is_empty() {
-                Entity::GatewayKey(row.try_get("gateway_key")?)
-            } else {
-                Entity::SubscriberId(subscriber_id)
+            rewardable_entity: match entity_type {
+                EntityType::Subscriber => {
+                    let uuid: Uuid =
+                        entity.parse().map_err(|source| sqlx::Error::ColumnDecode {
+                            index: "entity".to_string(),
+                            source: Box::new(source),
+                        })?;
+                    Entity::SubscriberId(uuid)
+                }
+                EntityType::Gateway => {
+                    let gateway_key: PublicKeyBinary =
+                        entity.parse().map_err(|source| sqlx::Error::ColumnDecode {
+                            index: "entity".to_string(),
+                            source: Box::new(source),
+                        })?;
+                    Entity::GatewayKey(gateway_key)
+                }
             },
             shares: shares as u64,
             service_provider: row.try_get("service_provider")?,
