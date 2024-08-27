@@ -88,13 +88,8 @@ where
                     let Some(file) = file else {
                         anyhow::bail!("FileInfoPoller sender was dropped unexpectedly");
                     };
-                    tracing::info!("Verifying file: {}", file.file_info);
-                    let ts = file.file_info.timestamp;
-                    let mut transaction = self.pool.begin().await?;
-                    let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&self.gateway_info_resolver, &self.authorization_verifier, &mut transaction, &self.invalid_data_session_report_sink, ts, reports).await?;
-                    transaction.commit().await?;
-                    self.invalid_data_session_report_sink.commit().await?;
+
+                    self.process_file(file).await?;
                 },
                 _ = sleep_until(burn_time) => {
                     // It's time to burn
@@ -111,6 +106,33 @@ where
                 _ = shutdown.clone() => return Ok(()),
             }
         }
+    }
+
+    async fn process_file(
+        &self,
+        file: FileInfoStream<DataTransferSessionIngestReport>,
+    ) -> Result<()> {
+        tracing::info!("Verifying file: {}", file.file_info);
+
+        let ts = file.file_info.timestamp;
+        let mut transaction = self.pool.begin().await?;
+        let reports = file.into_stream(&mut transaction).await?;
+
+        accumulate_sessions(
+            &self.gateway_info_resolver,
+            &self.authorization_verifier,
+            &mut transaction,
+            &self.invalid_data_session_report_sink,
+            ts,
+            reports,
+        )
+        .await?;
+
+        transaction.commit().await?;
+        self.invalid_data_session_report_sink.commit().await?;
+        self.pending_data_session_report_sink.commit().await?;
+
+        Ok(())
     }
 }
 
