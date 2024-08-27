@@ -377,17 +377,14 @@ mod test {
     ) -> HashMap<Vec<u8>, (u64, u64)> {
         let mut aggregated = HashMap::<Vec<u8>, (u64, u64)>::new();
         for (_, reward) in rewards {
-            match reward.reward {
-                Some(Reward::PromotionReward(PromotionReward {
+            if let Some(Reward::PromotionReward(PromotionReward {
                     entity: Some(ProtoEntity::SubscriberId(subscriber_id)),
                     service_provider_amount,
                     matched_amount,
-                })) => {
-                    let entry = aggregated.entry(subscriber_id).or_default();
-                    entry.0 += service_provider_amount;
-                    entry.1 += matched_amount;
-                }
-                _ => (),
+                })) = reward.reward {
+                let entry = aggregated.entry(subscriber_id).or_default();
+                entry.0 += service_provider_amount;
+                entry.1 += matched_amount;
             }
         }
         aggregated
