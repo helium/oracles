@@ -146,6 +146,7 @@ pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ing
 pub const INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT: &str =
     "invalid_data_transfer_session_ingest_report";
 pub const VALID_DATA_TRANSFER_SESSION: &str = "valid_data_transfer_session";
+pub const PENDING_DATA_TRANSFER_SESION: &str = "pending_data_transfer_sesion";
 pub const PRICE_REPORT: &str = "price_report";
 pub const MOBILE_REWARD_SHARE: &str = "mobile_reward_share";
 pub const MAPPER_MSG: &str = "mapper_msg";
@@ -193,6 +194,7 @@ pub enum FileType {
     DataTransferSessionIngestReport,
     InvalidDataTransferSessionIngestReport,
     ValidDataTransferSession,
+    PendingDataTransferSession,
     PriceReport,
     MobileRewardShare,
     SubscriberLocationReq,
@@ -270,6 +272,7 @@ impl fmt::Display for FileType {
                 INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT
             }
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
+            Self::PendingDataTransferSession => PENDING_DATA_TRANSFER_SESION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
             Self::MapperMsg => MAPPER_MSG,
@@ -344,6 +347,7 @@ impl FileType {
                 INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT
             }
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
+            Self::PendingDataTransferSession => PENDING_DATA_TRANSFER_SESION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
             Self::MapperMsg => MAPPER_MSG,
@@ -418,6 +422,7 @@ impl FromStr for FileType {
                 Self::InvalidDataTransferSessionIngestReport
             }
             VALID_DATA_TRANSFER_SESSION => Self::ValidDataTransferSession,
+            PENDING_DATA_TRANSFER_SESION => Self::PendingDataTransferSession,
             PRICE_REPORT => Self::PriceReport,
             MOBILE_REWARD_SHARE => Self::MobileRewardShare,
             MAPPER_MSG => Self::MapperMsg,

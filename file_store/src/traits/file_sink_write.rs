@@ -158,6 +158,11 @@ impl_file_sink!(
     "oracle_boosting_report"
 );
 impl_file_sink!(
+    poc_mobile::PendingDataTransferSessionV1,
+    FileType::PendingDataTransferSession.to_str(),
+    "pending_data_transfer_session"
+);
+impl_file_sink!(
     poc_mobile::RadioThresholdIngestReportV1,
     FileType::RadioThresholdIngestReport.to_str(),
     "radio_threshold_ingest_report"
