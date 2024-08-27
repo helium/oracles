@@ -41,6 +41,7 @@ pub struct Daemon<S, GIR, AV> {
 }
 
 impl<S, GIR, AV> Daemon<S, GIR, AV> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         settings: &Settings,
         pool: Pool<Postgres>,
