@@ -9,7 +9,7 @@ use helium_proto::services::mobile_config::NetworkKeyRole;
 use helium_proto::services::poc_mobile::DataTransferSessionSettlementStatus;
 use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
-    InvalidDataTransferIngestReportV1,
+    InvalidDataTransferIngestReportV1, PendingDataTransferSessionV1,
 };
 use mobile_config::client::{
     authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
@@ -23,6 +23,7 @@ pub async fn accumulate_sessions(
     authorization_verifier: &impl AuthorizationVerifier,
     conn: &mut Transaction<'_, Postgres>,
     invalid_data_session_report_sink: &FileSinkClient<InvalidDataTransferIngestReportV1>,
+    pending_data_session_report_sink: &FileSinkClient<PendingDataTransferSessionV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
 ) -> anyhow::Result<()> {
@@ -62,11 +63,15 @@ pub async fn accumulate_sessions(
             DataTransferSessionSettlementStatus::Pending => {
                 save_pending_data_transfer_session(
                     conn,
-                    report.report.data_transfer_usage,
+                    &report.report.data_transfer_usage,
                     report.report.rewardable_bytes,
                     curr_file_ts,
+                    Utc::now(),
                 )
                 .await?;
+                pending_data_session_report_sink
+                    .write(report.report.to_pending_proto(curr_file_ts), [])
+                    .await?;
             }
         }
     }
@@ -292,12 +297,16 @@ mod tests {
         let (invalid_report_tx, mut invalid_report_rx) = tokio::sync::mpsc::channel(1);
         let invalid_data_session_report_sink = FileSinkClient::new(invalid_report_tx, "testing");
 
+        let (pending_report_tx, mut pending_report_rx) = tokio::sync::mpsc::channel(1);
+        let pending_data_session_report_sink = FileSinkClient::new(pending_report_tx, "testing");
+
         let mut conn = pool.begin().await?;
         accumulate_sessions(
             &MockGatewayInfoResolver,
             &AllVerified,
             &mut conn,
             &invalid_data_session_report_sink,
+            &pending_data_session_report_sink,
             Utc::now(),
             reports,
         )
@@ -316,9 +325,14 @@ mod tests {
             .unwrap();
         assert_eq!(settled_rows.len(), 0);
 
-        if invalid_report_rx.try_recv().is_ok() {
-            panic!("expected invalid report sink to be empty")
-        }
+        assert!(
+            invalid_report_rx.try_recv().is_err(),
+            "expected invalid report sink to be empty"
+        );
+        assert!(
+            pending_report_rx.try_recv().is_ok(),
+            "expected pending report sink to have a record"
+        );
 
         Ok(())
     }

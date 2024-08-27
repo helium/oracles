@@ -10,6 +10,7 @@ use helium_proto::services::poc_mobile::{
     DataTransferEvent as DataTransferEventProto, DataTransferRadioAccessTechnology,
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
     DataTransferSessionSettlementStatus, InvalidDataTransferIngestReportV1,
+    PendingDataTransferSessionV1,
 };
 
 use serde::Serialize;
@@ -218,6 +219,26 @@ impl From<DataTransferSessionReq> for DataTransferSessionReqV1 {
             signature: v.signature,
             reward_cancelled: false,
             status: v.status as i32,
+        }
+    }
+}
+
+impl DataTransferSessionReq {
+    pub fn to_pending_proto(
+        self,
+        received_timestamp: DateTime<Utc>,
+    ) -> PendingDataTransferSessionV1 {
+        let event_timestamp = self.data_transfer_usage.timestamp();
+        let received_timestamp = received_timestamp.encode_timestamp_millis();
+
+        PendingDataTransferSessionV1 {
+            pub_key: self.pub_key.into(),
+            payer: self.data_transfer_usage.payer.into(),
+            upload_bytes: self.data_transfer_usage.upload_bytes,
+            download_bytes: self.data_transfer_usage.download_bytes,
+            rewardable_bytes: self.rewardable_bytes,
+            event_timestamp,
+            received_timestamp,
         }
     }
 }
