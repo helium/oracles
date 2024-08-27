@@ -1,11 +1,12 @@
 use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
 use file_store::mobile_session::{
-    DataTransferSessionIngestReport, InvalidDataTransferIngestReport,
+    DataTransferEvent, DataTransferSessionIngestReport, InvalidDataTransferIngestReport,
 };
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
+use helium_proto::services::poc_mobile::DataTransferSessionSettlementStatus;
 use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
     InvalidDataTransferIngestReportV1,
@@ -46,9 +47,70 @@ pub async fn accumulate_sessions(
             write_invalid_report(invalid_data_session_report_sink, report_validity, report).await?;
             continue;
         }
-        let event = report.report.data_transfer_usage;
-        sqlx::query(
-            r#"
+
+        let status = report.report.status;
+        match status {
+            DataTransferSessionSettlementStatus::Settled => {
+                save_settled_data_transfer_session(
+                    conn,
+                    report.report.data_transfer_usage,
+                    report.report.rewardable_bytes,
+                    curr_file_ts,
+                )
+                .await?;
+            }
+            DataTransferSessionSettlementStatus::Pending => {
+                save_pending_data_transfer_session(
+                    conn,
+                    report.report.data_transfer_usage,
+                    report.report.rewardable_bytes,
+                    curr_file_ts,
+                )
+                .await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn save_pending_data_transfer_session(
+    conn: &mut Transaction<'_, Postgres>,
+    data_transfer_event: DataTransferEvent,
+    rewardable_bytes: u64,
+    curr_file_ts: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+            INSERT INTO pending_data_transfer_sessions (pub_key, event_id, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+            ON CONFLICT (pub_key, payer) DO UPDATE SET
+            uploaded_bytes = pending_data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
+            downloaded_bytes = pending_data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
+            rewardable_bytes = pending_data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
+            last_timestamp = GREATEST(pending_data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+        "#,
+    )
+    .bind(data_transfer_event.pub_key)
+    .bind(data_transfer_event.event_id)
+    .bind(data_transfer_event.payer)
+    .bind(data_transfer_event.upload_bytes as i64)
+    .bind(data_transfer_event.download_bytes as i64)
+    .bind(rewardable_bytes as i64)
+    .bind(curr_file_ts)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+async fn save_settled_data_transfer_session(
+    conn: &mut Transaction<'_, Postgres>,
+    data_transfer_event: DataTransferEvent,
+    rewardable_bytes: u64,
+    curr_file_ts: DateTime<Utc>,
+) -> Result<(), anyhow::Error> {
+    sqlx::query(
+        r#"
             INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
             VALUES ($1, $2, $3, $4, $5, $6, $6)
             ON CONFLICT (pub_key, payer) DO UPDATE SET
@@ -57,17 +119,15 @@ pub async fn accumulate_sessions(
             rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
             last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
             "#
-        )
-            .bind(event.pub_key)
-            .bind(event.payer)
-            .bind(event.upload_bytes as i64)
-            .bind(event.download_bytes as i64)
-            .bind(report.report.rewardable_bytes as i64)
-            .bind(curr_file_ts)
-            .execute(&mut *conn)
-            .await?;
-    }
-
+    )
+        .bind(data_transfer_event.pub_key)
+        .bind(data_transfer_event.payer)
+        .bind(data_transfer_event.upload_bytes as i64)
+        .bind(data_transfer_event.download_bytes as i64)
+        .bind(rewardable_bytes as i64)
+        .bind(curr_file_ts)
+        .execute(&mut *conn)
+        .await?;
     Ok(())
 }
 
