@@ -25,8 +25,7 @@ use mobile_config::{
     },
     GatewayClient,
 };
-use rust_decimal::prelude::*;
-use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal::{prelude::*, Decimal, RoundingStrategy};
 use sqlx::{postgres::PgRow, PgPool, Postgres, Row, Transaction};
 use std::{
     collections::HashMap,
