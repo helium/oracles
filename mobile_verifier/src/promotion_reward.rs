@@ -121,7 +121,7 @@ impl PromotionRewardDaemon {
         let reports = file.into_stream(&mut transaction).await?;
 
         let mut verified_promotion_rewards =
-            pin!(VerifiedPromotionReward::validate_promotion_rewards(
+            pin!(ValidatedPromotionReward::validate_promotion_rewards(
                 reports,
                 &self.authorization_verifier,
                 &self.gateway_info_resolver,
@@ -156,7 +156,7 @@ impl ManagedTask for PromotionRewardDaemon {
     }
 }
 
-pub struct VerifiedPromotionReward {
+pub struct ValidatedPromotionReward {
     validity: PromotionRewardStatus,
     promotion_reward: PromotionReward,
 }
@@ -198,7 +198,7 @@ async fn validate_promotion_reward(
     }
 }
 
-impl VerifiedPromotionReward {
+impl ValidatedPromotionReward {
     async fn validate(
         promotion_reward: PromotionReward,
         authorization_verifier: &impl AuthorizationVerifier,
