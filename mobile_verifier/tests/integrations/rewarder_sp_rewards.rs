@@ -40,7 +40,17 @@ impl MockCarrierServiceClient {
 impl CarrierServiceVerifier for MockCarrierServiceClient {
     type Error = ClientError;
 
-    async fn payer_key_to_service_provider<'a>(
+    async fn payer_key_to_service_provider_name(
+        &self,
+        pubkey: &str,
+    ) -> Result<String, ClientError> {
+        match self.valid_sps.get(pubkey) {
+            Some(v) => Ok(v.clone()),
+            None => Err(ClientError::UnknownServiceProvider(pubkey.to_string())),
+        }
+    }
+
+    async fn payer_key_to_service_provider(
         &self,
         pubkey: &str,
     ) -> Result<ServiceProvider, ClientError> {

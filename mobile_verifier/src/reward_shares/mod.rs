@@ -2412,7 +2412,7 @@ mod test {
 
         let mut sp_rewards = HashMap::<i32, u64>::new();
         let mut allocated_sp_rewards = 0_u64;
-        for sp_reward in sp_shares
+        for (_, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, &None)
             .await
             .unwrap()
@@ -2463,7 +2463,7 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        for sp_reward in sp_shares
+        for (_, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, &None)
             .await
             .unwrap()
@@ -2513,7 +2513,7 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        for sp_reward in sp_shares
+        for (_, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, &None)
             .await
             .unwrap()
@@ -2564,7 +2564,7 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        for sp_reward in sp_shares
+        for (_, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, &None)
             .await
             .unwrap()
