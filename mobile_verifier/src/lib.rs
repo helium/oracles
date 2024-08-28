@@ -29,6 +29,12 @@ pub enum GatewayResolution {
     AssertedLocation(u64),
 }
 
+impl GatewayResolution {
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, Self::GatewayNotFound)
+    }
+}
+
 #[async_trait::async_trait]
 pub trait GatewayResolver: Clone + Send + Sync + 'static {
     type Error: Error + Send + Sync + 'static;

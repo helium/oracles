@@ -14,9 +14,8 @@ use coverage_point_calculator::{OracleBoostingStatus, SPBoostedRewardEligibility
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::{
-    services::{poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward},
-    ServiceProvider,
+use helium_proto::services::{
+    poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
 };
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
@@ -311,11 +310,14 @@ impl ServiceProviderShares {
     ) -> anyhow::Result<ServiceProviderShares> {
         let mut sp_shares = ServiceProviderShares::default();
         for (payer, total_dcs) in payer_shares {
-            let service_provider = Self::payer_key_to_service_provider(&payer, client).await?;
+            let service_provider_name =
+                Self::payer_key_to_service_provider_name(&payer, client).await?;
+            let service_provider_id = service_provider_name.parse()?;
             sp_shares.shares.push(ServiceProviderDataSession {
-                service_provider,
+                service_provider_name,
+                service_provider_id,
                 total_dcs: Decimal::from(total_dcs),
-            })
+            });
         }
         Ok(sp_shares)
     }
@@ -355,12 +357,10 @@ impl ServiceProviderShares {
                 continue;
             }
             let percent_for_promotion_rewards = solana
-                .fetch_incentive_escrow_fund_percent(service_provider_id_to_carrier_name(
-                    share.service_provider,
-                ))
+                .fetch_incentive_escrow_fund_percent(&share.service_provider_name)
                 .await?;
             rewards.insert(
-                share.service_provider as i32,
+                share.service_provider_id as ServiceProviderId,
                 ServiceProviderReward {
                     for_promotions: total * percent_for_promotion_rewards,
                     for_service_provider: total - total * percent_for_promotion_rewards,
@@ -390,18 +390,20 @@ impl ServiceProviderShares {
         }
     }
 
-    async fn payer_key_to_service_provider(
+    async fn payer_key_to_service_provider_name(
         payer: &str,
         client: &impl CarrierServiceVerifier<Error = ClientError>,
-    ) -> anyhow::Result<ServiceProvider> {
+    ) -> anyhow::Result<String> {
         tracing::info!(payer, "getting service provider for payer");
-        let sp = client.payer_key_to_service_provider(payer).await?;
+        let sp = client.payer_key_to_service_provider_name(payer).await?;
         Ok(sp)
     }
 }
 
+pub type ServiceProviderId = i32;
+
 pub struct ServiceProviderRewards {
-    pub rewards: HashMap<i32, ServiceProviderReward>,
+    pub rewards: HashMap<ServiceProviderId, ServiceProviderReward>,
 }
 
 pub struct ServiceProviderReward {
@@ -435,28 +437,28 @@ impl ServiceProviderRewards {
     pub fn into_mobile_reward_shares(
         self,
         reward_period: &'_ Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
         self.rewards
             .into_iter()
-            .map(|(service_provider_id, reward)| proto::MobileRewardShare {
-                start_period: reward_period.start.encode_timestamp(),
-                end_period: reward_period.end.encode_timestamp(),
-                reward: Some(ProtoReward::ServiceProviderReward(
-                    proto::ServiceProviderReward {
-                        service_provider_id,
-                        amount: (reward.for_promotions + reward.for_service_provider)
-                            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                            .to_u64()
-                            .unwrap_or(0),
+            .map(|(service_provider_id, reward)| {
+                let amount = (reward.for_promotions + reward.for_service_provider)
+                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                    .to_u64()
+                    .unwrap_or(0);
+                (
+                    amount,
+                    proto::MobileRewardShare {
+                        start_period: reward_period.start.encode_timestamp(),
+                        end_period: reward_period.end.encode_timestamp(),
+                        reward: Some(ProtoReward::ServiceProviderReward(
+                            proto::ServiceProviderReward {
+                                service_provider_id,
+                                amount,
+                            },
+                        )),
                     },
-                )),
+                )
             })
-    }
-}
-
-fn service_provider_id_to_carrier_name(sp: ServiceProvider) -> &'static str {
-    match sp {
-        ServiceProvider::HeliumMobile => "Helium Mobile",
     }
 }
 
@@ -2398,7 +2400,8 @@ mod test {
         let epoch = (now - Duration::hours(1))..now;
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider: sp1,
+            service_provider_id: sp1,
+            service_provider_name: "Helium Mobile".to_string(),
             total_dcs: dec!(1000),
         }];
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);
@@ -2447,7 +2450,8 @@ mod test {
             mobile_bones_to_dc(total_sp_rewards_in_bones, mobile_bone_price);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider: ServiceProvider::HeliumMobile,
+            service_provider_id: ServiceProvider::HeliumMobile,
+            service_provider_name: "Helium Mobile".to_string(),
             // force the service provider to have spend more DC than total rewardable
             total_dcs: total_rewards_value_in_dc * dec!(2.0),
         }];
@@ -2497,7 +2501,8 @@ mod test {
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider: sp1,
+            service_provider_id: sp1,
+            service_provider_name: "Helium Mobile".to_string(),
             total_dcs: dec!(100_000_000),
         }];
 
@@ -2547,7 +2552,8 @@ mod test {
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider: sp1,
+            service_provider_id: sp1,
+            service_provider_name: "Helium Mobile".to_string(),
             total_dcs: dec!(100_000_000_000),
         }];
 

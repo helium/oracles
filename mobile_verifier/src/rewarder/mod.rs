@@ -615,31 +615,31 @@ pub async fn reward_service_providers(
     let mut sp_rewards = sp_shares
         .into_service_provider_rewards(rewards_per_share, solana)
         .await?;
-    let unallocated_sp_rewards = total_sp_rewards - sp_rewards.get_total_rewards();
-    let agg_promotion_rewards = AggregatePromotionRewards::aggregate(pool, reward_period).await?;
+    let mut unallocated_sp_rewards = total_sp_rewards
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+    let agg_promotion_rewards =
+        AggregatePromotionRewards::aggregate(pool, carrier_client, reward_period).await?;
 
-    let mut matched_rewards = 0_u64;
+    let sp_rewards_for_matching = total_sp_rewards - sp_rewards.get_total_rewards();
     for (amount, reward) in
-        agg_promotion_rewards.into_rewards(&mut sp_rewards, unallocated_sp_rewards, reward_period)
+        agg_promotion_rewards.into_rewards(&mut sp_rewards, sp_rewards_for_matching, reward_period)
     {
-        matched_rewards += amount;
+        unallocated_sp_rewards -= amount;
         mobile_rewards.write(reward, []).await?.await??;
     }
 
-    for reward in sp_rewards.into_mobile_reward_shares(reward_period) {
+    for (amount, reward) in sp_rewards.into_mobile_reward_shares(reward_period) {
+        unallocated_sp_rewards -= amount;
         mobile_rewards.write(reward, []).await?.await??;
     }
 
     // write out any unallocated service provider reward
-    let unallocated_sp_reward_amount = unallocated_sp_rewards
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0)
-        - matched_rewards;
     write_unallocated_reward(
         mobile_rewards,
         UnallocatedRewardType::ServiceProvider,
-        unallocated_sp_reward_amount,
+        unallocated_sp_rewards,
         reward_period,
     )
     .await?;

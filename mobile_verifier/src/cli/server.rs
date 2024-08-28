@@ -138,7 +138,7 @@ impl Cmd {
                     file_upload.clone(),
                     report_ingest.clone(),
                     speedtests_avg.clone(),
-                    gateway_client,
+                    gateway_client.clone(),
                 )
                 .await?,
             )
@@ -200,7 +200,9 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     report_ingest.clone(),
-                    carrier_client.clone(),
+                    gateway_client.clone(),
+                    auth_client.clone(),
+                    entity_client.clone(),
                 )
                 .await?,
             )
