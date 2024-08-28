@@ -60,6 +60,7 @@
 //! [boosted-hex-restriction]: https://github.com/helium/oracles/pull/808
 //! [location-gaming]:         https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md
 //! [provider-banning]:        https://github.com/helium/HIP/blob/main/0125-temporary-anti-gaming-measures-for-boosted-hexes.md
+//! [anti-gaming]:             https://github.com/helium/HIP/blob/main/0131-bridging-gap-between-verification-mappers-and-anti-gaming-measures.md
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
@@ -152,6 +153,7 @@ impl CoveragePoints {
         speedtests: Vec<Speedtest>,
         location_trust_scores: Vec<LocationTrust>,
         ranked_coverage: Vec<coverage_map::RankedCoverage>,
+        hip131_ban: bool,
     ) -> Result<CoveragePoints> {
         let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
 
@@ -163,7 +165,7 @@ impl CoveragePoints {
         );
 
         let covered_hexes =
-            hexes::clean_covered_hexes(radio_type, boost_eligibility, ranked_coverage)?;
+            hexes::clean_covered_hexes(radio_type, boost_eligibility, ranked_coverage, hip131_ban)?;
         let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
 
         let speedtests = speedtest::clean_speedtests(speedtests);
@@ -373,6 +375,7 @@ mod tests {
                 assignments: assignments_from(Assignment::C),
                 boosted: NonZeroU32::new(boost_multiplier),
             }],
+            false,
         )
         .unwrap();
 
@@ -398,6 +401,7 @@ mod tests {
                     assignments: assignments_maximum(),
                     boosted: NonZeroU32::new(5),
                 }],
+                false,
             )
             .expect("indoor wifi with location scores")
         };
@@ -434,6 +438,7 @@ mod tests {
                     assignments: assignments_maximum(),
                     boosted: NonZeroU32::new(5),
                 }],
+                false,
             )
             .expect("indoor wifi with location scores")
         };
@@ -472,6 +477,7 @@ mod tests {
                     assignments: assignments_maximum(),
                     boosted: NonZeroU32::new(5),
                 }],
+                false,
             )
             .expect("indoor wifi with location scores")
         };
@@ -508,6 +514,7 @@ mod tests {
                     assignments: assignments_maximum(),
                     boosted: None,
                 }],
+                false,
             )
             .expect("indoor cbrs with speedtests")
         };
@@ -623,6 +630,7 @@ mod tests {
                 ranked_coverage(C, B, C), // 0
                 ranked_coverage(C, C, C), // 0
             ],
+            false,
         )
         .expect("indoor cbrs");
 
@@ -653,6 +661,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
+            false,
         )
         .expect("outdoor wifi");
 
@@ -702,6 +711,7 @@ mod tests {
                     boosted: None,
                 },
             ],
+            false,
         )
         .expect("indoor wifi");
 
@@ -725,6 +735,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
+            false,
         )
         .expect("indoor wifi");
 
@@ -761,6 +772,7 @@ mod tests {
             speedtest_maximum(),
             location_trust_maximum(),
             covered_hexes.clone(),
+            false,
         )
         .expect("indoor wifi");
 
@@ -792,6 +804,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
+            false,
         )
         .expect("outdoor cbrs");
 
@@ -819,6 +832,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
+            false,
         )
         .expect("indoor cbrs");
 
@@ -848,6 +862,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
+            false,
         )
         .expect("indoor cbrs");
 
@@ -875,6 +890,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
+            false,
         )
         .expect("indoor wifi");
 

@@ -56,6 +56,7 @@ fn base_radio_coverage_points() {
             speedtests.clone(),
             location_trust_scores.clone(),
             hexes.clone(),
+            false,
         )
         .unwrap();
 
@@ -117,6 +118,7 @@ fn radios_with_coverage() {
             default_speedtests.clone(),
             default_location_trust_scores.clone(),
             base_hex_iter.clone().take(num_hexes).collect(),
+            false,
         )
         .unwrap();
 
@@ -255,6 +257,7 @@ fn cbrs_outdoor_with_mixed_signal_level_coverage() -> Result {
             top_ranked_coverage(0x8c2681a30648bff, SignalLevel::Low),
             top_ranked_coverage(0x8c2681a30646bff, SignalLevel::Low),
         ],
+        false,
     )
     .unwrap();
 
@@ -376,6 +379,7 @@ fn indoor_cbrs_radio(
         Speedtest::mock(speedtest_tier),
         vec![],
         coverage.to_owned(),
+        false,
     )
 }
 
@@ -389,6 +393,7 @@ fn outdoor_cbrs_radio(
         Speedtest::mock(speedtest_tier),
         vec![],
         coverage.to_owned(),
+        false,
     )
 }
 

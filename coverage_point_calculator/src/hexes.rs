@@ -60,6 +60,7 @@ pub(crate) fn clean_covered_hexes(
     radio_type: RadioType,
     boosted_hex_status: BoostedHexStatus,
     ranked_coverage: Vec<RankedCoverage>,
+    hip131_ban: bool,
 ) -> Result<Vec<CoveredHex>> {
     // verify all hexes can obtain a base coverage point
     let covered_hexes = ranked_coverage
@@ -76,7 +77,9 @@ pub(crate) fn clean_covered_hexes(
 
             // hip-103: if a hex is boosted by a service provider >=1x, the oracle
             // multiplier will automatically be 1x, regardless of boosted_hex_status.
-            let assignment_multiplier = if ranked.boosted.is_some() {
+            let assignment_multiplier = if hip131_ban {
+                dec!(0)
+            } else if ranked.boosted.is_some() {
                 dec!(1)
             } else {
                 ranked.assignments.boosting_multiplier()
@@ -162,6 +165,7 @@ mod tests {
             RadioType::IndoorWifi,
             boost_status,
             vec![unboosted_coverage, boosted_coverage],
+            false,
         )
         .unwrap();
 
@@ -173,5 +177,40 @@ mod tests {
 
         // provider boosted gets oracle assignment bumped to 1x
         assert_eq!(dec!(1), boosted.assignment_multiplier);
+    }
+
+    #[rstest]
+    fn hip131_banned_radio() {
+        let unboosted_coverage = RankedCoverage {
+            hotspot_key: vec![1],
+            cbsd_id: None,
+            hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
+            rank: 1,
+            signal_level: SignalLevel::High,
+            assignments: HexAssignments {
+                footfall: Assignment::A,
+                landtype: Assignment::A,
+                urbanized: Assignment::A,
+            },
+            boosted: NonZeroU32::new(0),
+        };
+
+        let boosted_coverage = RankedCoverage {
+            boosted: NonZeroU32::new(5),
+            ..unboosted_coverage.clone()
+        };
+
+        let covered_hexes = clean_covered_hexes(
+            RadioType::IndoorWifi,
+            BoostedHexStatus::Eligible,
+            vec![unboosted_coverage, boosted_coverage],
+            true,
+        )
+        .unwrap();
+
+        dbg!(&covered_hexes);
+
+        assert_eq!(dec!(0), covered_hexes[0].assignment_multiplier);
+        assert_eq!(dec!(0), covered_hexes[1].assignment_multiplier);
     }
 }
