@@ -3,7 +3,7 @@ use hex_assignments::assignment::HexAssignments;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::{BoostedHexStatus, RadioType, Result};
+use crate::{OracleBoostingStatus, RadioType, Result, SpBoostedHexStatus};
 
 /// Breakdown of points for a hex.
 ///
@@ -58,9 +58,9 @@ pub struct CoveredHex {
 
 pub(crate) fn clean_covered_hexes(
     radio_type: RadioType,
-    boosted_hex_status: BoostedHexStatus,
+    boosted_hex_status: SpBoostedHexStatus,
     ranked_coverage: Vec<RankedCoverage>,
-    hip131_ban: bool,
+    oracle_boosting_status: OracleBoostingStatus,
 ) -> Result<Vec<CoveredHex>> {
     // verify all hexes can obtain a base coverage point
     let covered_hexes = ranked_coverage
@@ -75,9 +75,10 @@ pub(crate) fn clean_covered_hexes(
                 None
             };
 
+            // hip-131: if the radio is banned, it automatically gets an assignment_multiplier of 0.0
             // hip-103: if a hex is boosted by a service provider >=1x, the oracle
             // multiplier will automatically be 1x, regardless of boosted_hex_status.
-            let assignment_multiplier = if hip131_ban {
+            let assignment_multiplier = if oracle_boosting_status == OracleBoostingStatus::Banned {
                 dec!(0)
             } else if ranked.boosted.is_some() {
                 dec!(1)
@@ -135,11 +136,11 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case(BoostedHexStatus::Eligible)]
-    #[case(BoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(999)))]
-    #[case(BoostedHexStatus::RadioThresholdNotMet)]
+    #[case(SpBoostedHexStatus::Eligible)]
+    #[case(SpBoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(999)))]
+    #[case(SpBoostedHexStatus::RadioThresholdNotMet)]
     fn hip_103_provider_boosted_hex_receives_maximum_oracle_boost(
-        #[case] boost_status: BoostedHexStatus,
+        #[case] boost_status: SpBoostedHexStatus,
     ) {
         // Regardless of the radio's eligibility to receive provider boosted
         // rewards, a boosted hex increases the oracle assignment.
@@ -165,7 +166,7 @@ mod tests {
             RadioType::IndoorWifi,
             boost_status,
             vec![unboosted_coverage, boosted_coverage],
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .unwrap();
 
@@ -202,9 +203,9 @@ mod tests {
 
         let covered_hexes = clean_covered_hexes(
             RadioType::IndoorWifi,
-            BoostedHexStatus::Eligible,
+            SpBoostedHexStatus::Eligible,
             vec![unboosted_coverage, boosted_coverage],
-            true,
+            OracleBoostingStatus::Banned,
         )
         .unwrap();
 

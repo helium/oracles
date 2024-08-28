@@ -48,6 +48,10 @@
 //!   - Radio must pass at least 1mb of data from 3 unique phones [HIP-84][provider-boosting]
 //!   - Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
+//! - [OracleBoostingStatus]
+//!   - Eligible: Radio is eligible for normal oracle boosting multipliers
+//!   - Banned: Radio is banned according to hip-131 rules and all assignment_multipliers are 0.0
+//!
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
 //! [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
 //! [wifi-aps]:                https://github.com/helium/HIP/blob/main/0093-addition-of-wifi-aps-to-mobile-subdao.md
@@ -135,7 +139,7 @@ pub struct CoveragePoints {
     /// Input ServiceProviderBoostedRewardEligibility
     pub service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     /// Derived Eligibility for Boosted Hex Rewards
-    pub boosted_hex_eligibility: BoostedHexStatus,
+    pub boosted_hex_eligibility: SpBoostedHexStatus,
     /// Speedtests used in calculation
     pub speedtests: Vec<Speedtest>,
     /// Location Trust Scores used in calculation
@@ -153,19 +157,24 @@ impl CoveragePoints {
         speedtests: Vec<Speedtest>,
         location_trust_scores: Vec<LocationTrust>,
         ranked_coverage: Vec<coverage_map::RankedCoverage>,
-        hip131_ban: bool,
+        oracle_boosting_status: OracleBoostingStatus,
     ) -> Result<CoveragePoints> {
         let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
 
-        let boost_eligibility = BoostedHexStatus::new(
+        let boost_eligibility = SpBoostedHexStatus::new(
             radio_type,
             location_trust_multiplier,
             &location_trust_scores,
             service_provider_boosted_reward_eligibility,
         );
 
-        let covered_hexes =
-            hexes::clean_covered_hexes(radio_type, boost_eligibility, ranked_coverage, hip131_ban)?;
+        let covered_hexes = hexes::clean_covered_hexes(
+            radio_type,
+            boost_eligibility,
+            ranked_coverage,
+            oracle_boosting_status,
+        )?;
+
         let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
 
         let speedtests = speedtest::clean_speedtests(speedtests);
@@ -222,17 +231,23 @@ impl CoveragePoints {
 
     fn boosted_points(&self) -> Decimal {
         match self.boosted_hex_eligibility {
-            BoostedHexStatus::Eligible => self.coverage_points.boosted,
-            BoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
-            BoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
-            BoostedHexStatus::RadioThresholdNotMet => dec!(0),
-            BoostedHexStatus::ServiceProviderBanned => dec!(0),
+            SpBoostedHexStatus::Eligible => self.coverage_points.boosted,
+            SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
+            SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
+            SpBoostedHexStatus::RadioThresholdNotMet => dec!(0),
+            SpBoostedHexStatus::ServiceProviderBanned => dec!(0),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BoostedHexStatus {
+pub enum OracleBoostingStatus {
+    Eligible,
+    Banned,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpBoostedHexStatus {
     Eligible,
     WifiLocationScoreBelowThreshold(Decimal),
     AverageAssertedDistanceOverLimit(Decimal),
@@ -240,7 +255,7 @@ pub enum BoostedHexStatus {
     ServiceProviderBanned,
 }
 
-impl BoostedHexStatus {
+impl SpBoostedHexStatus {
     fn new(
         radio_type: RadioType,
         location_trust_multiplier: Decimal,
@@ -375,7 +390,7 @@ mod tests {
                 assignments: assignments_from(Assignment::C),
                 boosted: NonZeroU32::new(boost_multiplier),
             }],
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .unwrap();
 
@@ -401,7 +416,7 @@ mod tests {
                     assignments: assignments_maximum(),
                     boosted: NonZeroU32::new(5),
                 }],
-                false,
+                OracleBoostingStatus::Eligible,
             )
             .expect("indoor wifi with location scores")
         };
@@ -438,7 +453,7 @@ mod tests {
                     assignments: assignments_maximum(),
                     boosted: NonZeroU32::new(5),
                 }],
-                false,
+                OracleBoostingStatus::Eligible,
             )
             .expect("indoor wifi with location scores")
         };
@@ -477,7 +492,7 @@ mod tests {
                     assignments: assignments_maximum(),
                     boosted: NonZeroU32::new(5),
                 }],
-                false,
+                OracleBoostingStatus::Eligible,
             )
             .expect("indoor wifi with location scores")
         };
@@ -514,7 +529,7 @@ mod tests {
                     assignments: assignments_maximum(),
                     boosted: None,
                 }],
-                false,
+                OracleBoostingStatus::Eligible,
             )
             .expect("indoor cbrs with speedtests")
         };
@@ -630,7 +645,7 @@ mod tests {
                 ranked_coverage(C, B, C), // 0
                 ranked_coverage(C, C, C), // 0
             ],
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .expect("indoor cbrs");
 
@@ -661,7 +676,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .expect("outdoor wifi");
 
@@ -711,7 +726,7 @@ mod tests {
                     boosted: None,
                 },
             ],
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .expect("indoor wifi");
 
@@ -735,7 +750,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .expect("indoor wifi");
 
@@ -772,7 +787,7 @@ mod tests {
             speedtest_maximum(),
             location_trust_maximum(),
             covered_hexes.clone(),
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .expect("indoor wifi");
 
@@ -804,7 +819,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .expect("outdoor cbrs");
 
@@ -832,7 +847,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .expect("indoor cbrs");
 
@@ -862,7 +877,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .expect("indoor cbrs");
 
@@ -890,7 +905,7 @@ mod tests {
                 assignments: assignments_maximum(),
                 boosted: None,
             }],
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .expect("indoor wifi");
 
@@ -905,7 +920,7 @@ mod tests {
         }];
 
         let wifi_bad_trust_score = |sp_status: SPBoostedRewardEligibility| {
-            BoostedHexStatus::new(
+            SpBoostedHexStatus::new(
                 RadioType::IndoorWifi,
                 location::multiplier(RadioType::IndoorWifi, &bad_location),
                 &bad_location,
@@ -915,15 +930,15 @@ mod tests {
 
         assert_eq!(
             wifi_bad_trust_score(SPBoostedRewardEligibility::Eligible),
-            BoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(0)),
+            SpBoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(0)),
         );
         assert_eq!(
             wifi_bad_trust_score(SPBoostedRewardEligibility::ServiceProviderBanned),
-            BoostedHexStatus::ServiceProviderBanned
+            SpBoostedHexStatus::ServiceProviderBanned
         );
         assert_eq!(
             wifi_bad_trust_score(SPBoostedRewardEligibility::RadioThresholdNotMet),
-            BoostedHexStatus::RadioThresholdNotMet
+            SpBoostedHexStatus::RadioThresholdNotMet
         );
     }
 

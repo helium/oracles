@@ -59,17 +59,17 @@ impl RadioRewardV2Ext for coverage_point_calculator::CoveragePoints {
 
     fn proto_boosted_hex_status(&self) -> BoostedHexStatus {
         match self.boosted_hex_eligibility {
-            coverage_point_calculator::BoostedHexStatus::Eligible => BoostedHexStatus::Eligible,
-            coverage_point_calculator::BoostedHexStatus::WifiLocationScoreBelowThreshold(_) => {
+            coverage_point_calculator::SpBoostedHexStatus::Eligible => BoostedHexStatus::Eligible,
+            coverage_point_calculator::SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => {
                 BoostedHexStatus::LocationScoreBelowThreshold
             }
-            coverage_point_calculator::BoostedHexStatus::RadioThresholdNotMet => {
+            coverage_point_calculator::SpBoostedHexStatus::RadioThresholdNotMet => {
                 BoostedHexStatus::RadioThresholdNotMet
             }
-            coverage_point_calculator::BoostedHexStatus::ServiceProviderBanned => {
+            coverage_point_calculator::SpBoostedHexStatus::ServiceProviderBanned => {
                 BoostedHexStatus::ServiceProviderBan
             }
-            coverage_point_calculator::BoostedHexStatus::AverageAssertedDistanceOverLimit(_) => {
+            coverage_point_calculator::SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => {
                 BoostedHexStatus::AverageAssertedDistanceOverLimit
             }
         }

@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 use chrono::Utc;
 use coverage_map::{BoostedHexMap, RankedCoverage, SignalLevel, UnrankedCoverage};
 use coverage_point_calculator::{
-    BytesPs, CoveragePoints, LocationTrust, RadioType, Result, SPBoostedRewardEligibility,
-    Speedtest, SpeedtestTier,
+    BytesPs, CoveragePoints, LocationTrust, OracleBoostingStatus, RadioType, Result,
+    SPBoostedRewardEligibility, Speedtest, SpeedtestTier,
 };
 use hex_assignments::{assignment::HexAssignments, Assignment};
 use rust_decimal_macros::dec;
@@ -56,7 +56,7 @@ fn base_radio_coverage_points() {
             speedtests.clone(),
             location_trust_scores.clone(),
             hexes.clone(),
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .unwrap();
 
@@ -118,7 +118,7 @@ fn radios_with_coverage() {
             default_speedtests.clone(),
             default_location_trust_scores.clone(),
             base_hex_iter.clone().take(num_hexes).collect(),
-            false,
+            OracleBoostingStatus::Eligible,
         )
         .unwrap();
 
@@ -257,7 +257,7 @@ fn cbrs_outdoor_with_mixed_signal_level_coverage() -> Result {
             top_ranked_coverage(0x8c2681a30648bff, SignalLevel::Low),
             top_ranked_coverage(0x8c2681a30646bff, SignalLevel::Low),
         ],
-        false,
+        OracleBoostingStatus::Eligible,
     )
     .unwrap();
 
@@ -379,7 +379,7 @@ fn indoor_cbrs_radio(
         Speedtest::mock(speedtest_tier),
         vec![],
         coverage.to_owned(),
-        false,
+        OracleBoostingStatus::Eligible,
     )
 }
 
@@ -393,7 +393,7 @@ fn outdoor_cbrs_radio(
         Speedtest::mock(speedtest_tier),
         vec![],
         coverage.to_owned(),
-        false,
+        OracleBoostingStatus::Eligible,
     )
 }
 
