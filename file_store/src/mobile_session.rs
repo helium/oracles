@@ -228,7 +228,7 @@ impl DataTransferSessionReq {
         self,
         received_timestamp: DateTime<Utc>,
     ) -> PendingDataTransferSessionV1 {
-        let event_timestamp = self.data_transfer_usage.timestamp();
+        let event_timestamp = self.data_transfer_usage.timestamp.encode_timestamp_millis();
         let received_timestamp = received_timestamp.encode_timestamp_millis();
 
         PendingDataTransferSessionV1 {
