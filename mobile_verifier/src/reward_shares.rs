@@ -1317,7 +1317,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &epoch)
+        .into_rewards(reward_shares, &epoch, BannedRadios::default())
         .unwrap()
         .1
         .next()
