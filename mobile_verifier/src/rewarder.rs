@@ -446,11 +446,18 @@ async fn reward_poc(
     )
     .await?;
 
+    let poc_banned_radios = sp_boosted_rewards_bans::db::get_banned_radios(
+        pool,
+        SpBoostedRewardsBannedRadioBanType::Poc,
+        reward_period.end,
+    )
+    .await?;
+
     let total_poc_rewards = reward_shares.total_poc();
 
     let (unallocated_poc_amount, calculated_poc_rewards_per_share) =
         if let Some((calculated_poc_rewards_per_share, mobile_reward_shares)) =
-            coverage_shares.into_rewards(reward_shares, reward_period)
+            coverage_shares.into_rewards(reward_shares, reward_period, poc_banned_radios)
         {
             // handle poc reward outputs
             let mut allocated_poc_rewards = 0_u64;

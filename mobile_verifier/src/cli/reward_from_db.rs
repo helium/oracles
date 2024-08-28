@@ -4,6 +4,7 @@ use crate::{
         get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
     },
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
+    sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
     Settings,
 };
@@ -58,6 +59,7 @@ impl Cmd {
             .into_rewards(
                 DataTransferAndPocAllocatedRewardBuckets::new(&epoch),
                 &epoch,
+                BannedRadios::default(),
             )
             .ok_or(anyhow::anyhow!("no rewardable events"))?
             .1;

@@ -4,6 +4,7 @@ use crate::{
     heartbeats::HeartbeatReward,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::Seniority,
+    sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
     subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
@@ -642,6 +643,7 @@ impl CoverageShares {
     fn coverage_points(
         &self,
         radio_id: &RadioId,
+        banned: bool,
     ) -> anyhow::Result<coverage_point_calculator::CoveragePoints> {
         let radio_info = self.radio_infos.get(radio_id).unwrap();
 
@@ -660,6 +662,7 @@ impl CoverageShares {
             radio_info.speedtests.clone(),
             radio_info.trust_scores.clone(),
             hexes,
+            banned,
         )?;
 
         Ok(coverage_points)
@@ -669,6 +672,7 @@ impl CoverageShares {
         self,
         reward_shares: DataTransferAndPocAllocatedRewardBuckets,
         epoch: &'_ Range<DateTime<Utc>>,
+        banned_radios: BannedRadios,
     ) -> Option<(
         CalculatedPocRewardShares,
         impl Iterator<Item = (u64, proto::MobileRewardShare, proto::MobileRewardShare)> + '_,
@@ -682,7 +686,10 @@ impl CoverageShares {
 
         let mut processed_radios = vec![];
         for (radio_id, radio_info) in self.radio_infos.iter() {
-            let points = match self.coverage_points(radio_id) {
+            let (pubkey, cbsd_id) = radio_id;
+            let banned = banned_radios.contains(pubkey, cbsd_id.as_deref());
+
+            let points = match self.coverage_points(radio_id, banned) {
                 Ok(points) => points,
                 Err(err) => {
                     tracing::error!(
@@ -741,7 +748,7 @@ impl CoverageShares {
 
     /// Only used for testing
     pub fn test_hotspot_reward_shares(&self, hotspot: &RadioId) -> Decimal {
-        self.coverage_points(hotspot)
+        self.coverage_points(hotspot, false)
             .expect("reward shares for hotspot")
             .total_shares()
     }
@@ -1712,7 +1719,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &epoch)
+        .into_rewards(reward_shares, &epoch, BannedRadios::default())
         .unwrap()
         .1
         {
@@ -1892,7 +1899,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &epoch)
+        .into_rewards(reward_shares, &epoch, BannedRadios::default())
         .unwrap()
         .1
         {
@@ -2025,7 +2032,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &epoch)
+        .into_rewards(reward_shares, &epoch, BannedRadios::default())
         .unwrap()
         .1
         {
@@ -2159,7 +2166,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &epoch)
+        .into_rewards(reward_shares, &epoch, BannedRadios::default())
         .unwrap()
         .1
         {
@@ -2301,7 +2308,7 @@ mod test {
         // gw2 does not have enough speedtests for a mulitplier
         let expected_hotspot = gw1;
         for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in coverage_shares
-            .into_rewards(reward_shares, &epoch)
+            .into_rewards(reward_shares, &epoch, BannedRadios::default())
             .expect("rewards output")
             .1
         {
@@ -2326,7 +2333,7 @@ mod test {
 
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
         assert!(coverage_shares
-            .into_rewards(reward_shares, &epoch)
+            .into_rewards(reward_shares, &epoch, BannedRadios::default())
             .is_none());
     }
 
