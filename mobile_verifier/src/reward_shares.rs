@@ -652,7 +652,6 @@ impl CoverageShares {
     fn coverage_points(
         &self,
         radio_id: &RadioId,
-        oracle_boosting_status: OracleBoostingStatus,
     ) -> anyhow::Result<coverage_point_calculator::CoveragePoints> {
         let radio_info = self.radio_infos.get(radio_id).unwrap();
 
@@ -671,7 +670,7 @@ impl CoverageShares {
             radio_info.speedtests.clone(),
             radio_info.trust_scores.clone(),
             hexes,
-            oracle_boosting_status,
+            radio_info.oracle_boosting_status,
         )?;
 
         Ok(coverage_points)
@@ -694,7 +693,7 @@ impl CoverageShares {
 
         let mut processed_radios = vec![];
         for (radio_id, radio_info) in self.radio_infos.iter() {
-            let points = match self.coverage_points(radio_id, radio_info.oracle_boosting_status) {
+            let points = match self.coverage_points(radio_id) {
                 Ok(points) => points,
                 Err(err) => {
                     tracing::error!(
@@ -753,7 +752,7 @@ impl CoverageShares {
 
     /// Only used for testing
     pub fn test_hotspot_reward_shares(&self, hotspot: &RadioId) -> Decimal {
-        self.coverage_points(hotspot, OracleBoostingStatus::Eligible)
+        self.coverage_points(hotspot)
             .expect("reward shares for hotspot")
             .total_shares()
     }
