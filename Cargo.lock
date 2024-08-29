@@ -1617,17 +1617,17 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session#f9ae660fbc5324d7e399237d17a835f76b36761c"
+source = "git+https://github.com/helium/proto?branch=master#80e529d0e64951554cb4ca8e71c3cd9d30a91bc4"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -1776,7 +1776,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -2618,7 +2618,7 @@ dependencies = [
  "axum 0.7.4",
  "bs58 0.4.0",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "http 0.2.11",
  "notify",
  "serde",
@@ -3200,7 +3200,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "hex-literal",
  "http 0.2.11",
  "lazy_static",
@@ -3776,7 +3776,7 @@ dependencies = [
  "h3o",
  "helium-anchor-gen",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
+ "helium-proto",
  "hex",
  "itertools",
  "jsonrpc_client",
@@ -3801,19 +3801,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#0bc158704baa751b0f8025a189a07b13e48dcff2"
-dependencies = [
- "bytes",
- "prost",
- "prost-build",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "helium-proto"
-version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session#f9ae660fbc5324d7e399237d17a835f76b36761c"
+source = "git+https://github.com/helium/proto?branch=master#80e529d0e64951554cb4ca8e71c3cd9d30a91bc4"
 dependencies = [
  "bytes",
  "prost",
@@ -3865,7 +3853,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -4281,7 +4269,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "http 0.2.11",
  "humantime-serde",
  "metrics",
@@ -4350,7 +4338,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -4392,7 +4380,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -4434,7 +4422,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -5022,7 +5010,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -5062,7 +5050,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5098,7 +5086,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -5143,7 +5131,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "hex-assignments",
  "hextree",
  "http-serde",
@@ -5826,7 +5814,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "http 0.2.11",
  "hyper 0.14.28",
  "jsonrpsee",
@@ -5909,7 +5897,7 @@ dependencies = [
  "futures-util",
  "helium-anchor-gen",
  "helium-lib",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -6516,7 +6504,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/unsettled-transfer-session)",
+ "helium-proto",
  "humantime-serde",
  "lazy_static",
  "metrics",
@@ -9864,7 +9852,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
  "twox-hash",
  "xorf",
