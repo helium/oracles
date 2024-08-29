@@ -1,14 +1,15 @@
 use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
 use file_store::mobile_session::{
-    DataTransferSessionIngestReport, InvalidDataTransferIngestReport,
+    DataTransferEvent, DataTransferSessionIngestReport, InvalidDataTransferIngestReport,
 };
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
+use helium_proto::services::poc_mobile::DataTransferSessionSettlementStatus;
 use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
-    InvalidDataTransferIngestReportV1,
+    InvalidDataTransferIngestReportV1, PendingDataTransferSessionV1,
 };
 use mobile_config::client::{
     authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
@@ -22,6 +23,7 @@ pub async fn accumulate_sessions(
     authorization_verifier: &impl AuthorizationVerifier,
     conn: &mut Transaction<'_, Postgres>,
     invalid_data_session_report_sink: &FileSinkClient<InvalidDataTransferIngestReportV1>,
+    pending_data_session_report_sink: &FileSinkClient<PendingDataTransferSessionV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
 ) -> anyhow::Result<()> {
@@ -46,9 +48,75 @@ pub async fn accumulate_sessions(
             write_invalid_report(invalid_data_session_report_sink, report_validity, report).await?;
             continue;
         }
-        let event = report.report.data_transfer_usage;
-        sqlx::query(
-            r#"
+
+        let status = report.report.status;
+        match status {
+            DataTransferSessionSettlementStatus::Settled => {
+                save_settled_data_transfer_session(
+                    conn,
+                    report.report.data_transfer_usage,
+                    report.report.rewardable_bytes,
+                    curr_file_ts,
+                )
+                .await?;
+            }
+            DataTransferSessionSettlementStatus::Pending => {
+                save_pending_data_transfer_session(
+                    conn,
+                    &report.report.data_transfer_usage,
+                    report.report.rewardable_bytes,
+                    curr_file_ts,
+                    Utc::now(),
+                )
+                .await?;
+                pending_data_session_report_sink
+                    .write(report.report.to_pending_proto(curr_file_ts), [])
+                    .await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn save_pending_data_transfer_session(
+    conn: &mut Transaction<'_, Postgres>,
+    data_transfer_event: &DataTransferEvent,
+    rewardable_bytes: u64,
+    file_ts: DateTime<Utc>,
+    curr_ts: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+            INSERT INTO pending_data_transfer_sessions (pub_key, event_id, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, recv_timestamp, inserted_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (pub_key, payer, recv_timestamp) DO UPDATE SET
+            uploaded_bytes = pending_data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
+            downloaded_bytes = pending_data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
+            rewardable_bytes = pending_data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes
+        "#,
+    )
+    .bind(&data_transfer_event.pub_key)
+    .bind(&data_transfer_event.event_id)
+    .bind(&data_transfer_event.payer)
+    .bind(data_transfer_event.upload_bytes as i64)
+    .bind(data_transfer_event.download_bytes as i64)
+    .bind(rewardable_bytes as i64)
+    .bind(file_ts)
+    .bind(curr_ts)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+async fn save_settled_data_transfer_session(
+    conn: &mut Transaction<'_, Postgres>,
+    data_transfer_event: DataTransferEvent,
+    rewardable_bytes: u64,
+    curr_file_ts: DateTime<Utc>,
+) -> Result<(), anyhow::Error> {
+    sqlx::query(
+        r#"
             INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
             VALUES ($1, $2, $3, $4, $5, $6, $6)
             ON CONFLICT (pub_key, payer) DO UPDATE SET
@@ -57,17 +125,15 @@ pub async fn accumulate_sessions(
             rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
             last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
             "#
-        )
-            .bind(event.pub_key)
-            .bind(event.payer)
-            .bind(event.upload_bytes as i64)
-            .bind(event.download_bytes as i64)
-            .bind(report.report.rewardable_bytes as i64)
-            .bind(curr_file_ts)
-            .execute(&mut *conn)
-            .await?;
-    }
-
+    )
+        .bind(data_transfer_event.pub_key)
+        .bind(data_transfer_event.payer)
+        .bind(data_transfer_event.upload_bytes as i64)
+        .bind(data_transfer_event.download_bytes as i64)
+        .bind(rewardable_bytes as i64)
+        .bind(curr_file_ts)
+        .execute(&mut *conn)
+        .await?;
     Ok(())
 }
 
@@ -146,4 +212,128 @@ async fn write_invalid_report(
         .write(proto, &[("reason", reason.as_str_name())])
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+
+    use file_store::mobile_session::DataTransferSessionReq;
+    use helium_crypto::{KeyTag, Keypair};
+    use mobile_config::gateway_info::{DeviceType, GatewayInfo, GatewayInfoStream};
+    use sqlx::PgPool;
+
+    use super::*;
+
+    #[derive(thiserror::Error, Debug)]
+    enum MockError {}
+
+    #[derive(Clone)]
+    struct MockGatewayInfoResolver;
+
+    #[async_trait::async_trait]
+    impl GatewayInfoResolver for MockGatewayInfoResolver {
+        type Error = MockError;
+
+        async fn resolve_gateway_info(
+            &self,
+            address: &PublicKeyBinary,
+        ) -> Result<Option<GatewayInfo>, Self::Error> {
+            Ok(Some(GatewayInfo {
+                address: address.clone(),
+                metadata: None,
+                device_type: DeviceType::Cbrs,
+            }))
+        }
+
+        async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, Self::Error> {
+            todo!()
+        }
+    }
+
+    struct AllVerified;
+
+    #[async_trait::async_trait]
+    impl AuthorizationVerifier for AllVerified {
+        type Error = MockError;
+
+        async fn verify_authorized_key(
+            &self,
+            _pubkey: &PublicKeyBinary,
+            _role: helium_proto::services::mobile_config::NetworkKeyRole,
+        ) -> Result<bool, Self::Error> {
+            Ok(true)
+        }
+    }
+
+    #[sqlx::test]
+    async fn pending_data_transfer_sessions_not_stored_for_burning(
+        pool: PgPool,
+    ) -> anyhow::Result<()> {
+        use rand::rngs::OsRng;
+        let radio_pubkey = Keypair::generate(KeyTag::default(), &mut OsRng);
+        let signing_pubkey = Keypair::generate(KeyTag::default(), &mut OsRng);
+        let payer_pubkey = Keypair::generate(KeyTag::default(), &mut OsRng);
+
+        let reports = futures::stream::iter(vec![DataTransferSessionIngestReport {
+            received_timestamp: Utc::now(),
+            report: DataTransferSessionReq {
+                data_transfer_usage: DataTransferEvent {
+                    pub_key: radio_pubkey.public_key().to_owned().into(),
+                    upload_bytes: 50,
+                    download_bytes: 50,
+                    radio_access_technology: helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology::default(),
+                    event_id: "event-id".to_string(),
+                    payer: payer_pubkey.public_key().to_owned().into(),
+                    timestamp: Utc::now(),
+                    signature: vec![]
+                },
+                rewardable_bytes: 100,
+                pub_key: signing_pubkey.public_key().to_owned().into(),
+                signature: vec![],
+                status: DataTransferSessionSettlementStatus::Pending,
+            },
+        }]);
+
+        let (invalid_report_tx, mut invalid_report_rx) = tokio::sync::mpsc::channel(1);
+        let invalid_data_session_report_sink = FileSinkClient::new(invalid_report_tx, "testing");
+
+        let (pending_report_tx, mut pending_report_rx) = tokio::sync::mpsc::channel(1);
+        let pending_data_session_report_sink = FileSinkClient::new(pending_report_tx, "testing");
+
+        let mut conn = pool.begin().await?;
+        accumulate_sessions(
+            &MockGatewayInfoResolver,
+            &AllVerified,
+            &mut conn,
+            &invalid_data_session_report_sink,
+            &pending_data_session_report_sink,
+            Utc::now(),
+            reports,
+        )
+        .await?;
+        conn.commit().await?;
+
+        let pending_rows = sqlx::query("SELECT * FROM pending_data_transfer_sessions")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(pending_rows.len(), 1);
+
+        let settled_rows = sqlx::query("SELECT * FROM data_transfer_sessions")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(settled_rows.len(), 0);
+
+        assert!(
+            invalid_report_rx.try_recv().is_err(),
+            "expected invalid report sink to be empty"
+        );
+        assert!(
+            pending_report_rx.try_recv().is_ok(),
+            "expected pending report sink to have a record"
+        );
+
+        Ok(())
+    }
 }
