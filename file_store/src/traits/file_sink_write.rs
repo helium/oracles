@@ -14,6 +14,22 @@ use helium_proto::{
 
 pub const DEFAULT_ROLL_TIME: Duration = Duration::from_secs(DEFAULT_SINK_ROLL_SECS);
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum FileSinkCommitStrategy {
+    /// Writer must manually call [`FileSinkClient::commit()`] for files to be uploaded.
+    /// Files will be collected into tmp storage on `DEFAULT_ROLL_TIME` basis.
+    Manual,
+    /// Writer must manually call [`FileSinkClient::commit()`] for files to be uploaded.
+    /// Files will be collected into tmp storage on provided `roll_time` basis.
+    ManualRollTime(Duration),
+    /// Files will be automatically uploaded when
+    /// [`FileSinkBuilder::max_size()`] is exceeded, or [`DEFAULT_ROLL_TIME`] has elapsed.
+    Automatic,
+    /// Files will be automatically uploaded when
+    /// [`FileSinkBuilder::max_size()`] is exceeded, or provided `roll_time` has elapsed.
+    AutomaticRollTime(Duration),
+}
+
 #[async_trait::async_trait]
 pub trait FileSinkWriteExt
 where
@@ -22,14 +38,10 @@ where
     const FILE_PREFIX: &'static str;
     const METRIC_SUFFIX: &'static str;
 
-    // The `auto_commit` option and `roll_time` option are incompatible with
-    // each other. It doesn't make sense to roll a file every so often _and_
-    // commit it every time something is written. If a roll_time is provided,
-    // `auto_commit` is set to false.
     async fn file_sink(
         target_path: &Path,
         file_upload: FileUpload,
-        roll_time: Option<Duration>,
+        commit_strategy: FileSinkCommitStrategy,
         metric_prefix: &str,
     ) -> Result<(FileSinkClient<Self>, FileSink<Self>)> {
         let builder = FileSinkBuilder::new(
@@ -39,10 +51,19 @@ where
             format!("{}_{}", metric_prefix, Self::METRIC_SUFFIX),
         );
 
-        let builder = if let Some(duration) = roll_time {
-            builder.auto_commit(false).roll_time(duration)
-        } else {
-            builder.auto_commit(true)
+        let builder = match commit_strategy {
+            FileSinkCommitStrategy::Manual => {
+                builder.auto_commit(false).roll_time(DEFAULT_ROLL_TIME)
+            }
+            FileSinkCommitStrategy::ManualRollTime(roll_time) => {
+                builder.auto_commit(false).roll_time(roll_time)
+            }
+            FileSinkCommitStrategy::Automatic => {
+                builder.auto_commit(true).roll_time(DEFAULT_ROLL_TIME)
+            }
+            FileSinkCommitStrategy::AutomaticRollTime(roll_time) => {
+                builder.auto_commit(true).roll_time(roll_time)
+            }
         };
 
         let file_sink = builder.create().await?;

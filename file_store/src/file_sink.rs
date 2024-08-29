@@ -253,12 +253,19 @@ pub struct FileSink<T> {
     target_path: PathBuf,
     tmp_path: PathBuf,
     prefix: String,
+    /// Maximum file size in bytes. If a single write would cause this limit to
+    /// be exceeded, the `active_sink` is rolled.
     max_size: usize,
+    /// Window within which writes can occur to `active_sink`. `roll_time` is
+    /// not checked during writing, so a file may contain items exceeding the
+    /// window of `roll_time`.
     roll_time: Duration,
 
     messages: MessageReceiver<T>,
     file_upload: FileUpload,
     staged_files: Vec<PathBuf>,
+    /// 'commit' the file to s3 automatically when either the `roll_time` is
+    /// surpassed, or `max_size` would be exceeded by an incoming message.
     auto_commit: bool,
 
     active_sink: Option<ActiveSink>,
