@@ -7,7 +7,7 @@ use file_store::{
     file_upload::FileUpload,
     subscriber_verified_mapping_event::SubscriberVerifiedMappingEvent,
     subscriber_verified_mapping_event_ingest_report::SubscriberVerifiedMappingEventIngestReport,
-    traits::{FileSinkWriteExt, DEFAULT_ROLL_TIME},
+    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
     verified_subscriber_verified_mapping_event_ingest_report::VerifiedSubscriberVerifiedMappingEventIngestReport,
     FileStore, FileType,
 };
@@ -78,7 +78,7 @@ where
             VerifiedSubscriberVerifiedMappingEventIngestReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                Some(DEFAULT_ROLL_TIME),
+                FileSinkCommitStrategy::Manual,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;

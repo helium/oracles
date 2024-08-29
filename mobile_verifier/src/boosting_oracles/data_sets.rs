@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use file_store::{
     file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::{FileSinkWriteExt, TimestampDecode, TimestampEncode},
+    traits::{FileSinkCommitStrategy, FileSinkWriteExt, TimestampDecode, TimestampEncode},
     FileStore,
 };
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
@@ -262,7 +262,7 @@ impl
             OracleBoostingReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                Some(Duration::from_secs(15 * 60)),
+                FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(15 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;

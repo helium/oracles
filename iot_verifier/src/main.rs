@@ -6,7 +6,7 @@ use file_store::{
     file_info_poller::LookbackBehavior,
     file_source, file_upload,
     iot_packet::IotValidPacket,
-    traits::{FileSinkWriteExt, DEFAULT_ROLL_TIME},
+    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
     FileStore, FileType,
 };
 use helium_proto::{
@@ -124,7 +124,7 @@ impl Server {
         let (rewards_sink, gateway_rewards_sink_server) = IotRewardShare::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(DEFAULT_ROLL_TIME),
+            FileSinkCommitStrategy::Manual,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -133,7 +133,7 @@ impl Server {
         let (reward_manifests_sink, reward_manifests_sink_server) = RewardManifest::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(DEFAULT_ROLL_TIME),
+            FileSinkCommitStrategy::Manual,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -177,7 +177,7 @@ impl Server {
             NonRewardablePacket::file_sink(
                 store_base_path,
                 file_upload.clone(),
-                Some(Duration::from_secs(5 * 60)),
+                FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -210,7 +210,7 @@ impl Server {
             LoraInvalidBeaconReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
-                Some(DEFAULT_ROLL_TIME),
+                FileSinkCommitStrategy::Manual,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -219,7 +219,7 @@ impl Server {
             LoraInvalidWitnessReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
-                Some(DEFAULT_ROLL_TIME),
+                FileSinkCommitStrategy::Manual,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -243,7 +243,7 @@ impl Server {
             LoraInvalidBeaconReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
-                Some(Duration::from_secs(5 * 60)),
+                FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -252,7 +252,7 @@ impl Server {
             LoraInvalidWitnessReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
-                Some(Duration::from_secs(5 * 60)),
+                FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -260,7 +260,7 @@ impl Server {
         let (runner_poc_sink, runner_poc_sink_server) = LoraPocV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(Duration::from_secs(2 * 60)),
+            FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(2 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

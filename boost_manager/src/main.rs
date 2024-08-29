@@ -5,8 +5,11 @@ use boost_manager::{
 };
 use clap::Parser;
 use file_store::{
-    file_info_poller::LookbackBehavior, file_source, file_upload, reward_manifest::RewardManifest,
-    traits::FileSinkWriteExt, FileStore, FileType,
+    file_info_poller::LookbackBehavior,
+    file_source, file_upload,
+    reward_manifest::RewardManifest,
+    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
+    FileStore, FileType,
 };
 use helium_proto::BoostedHexUpdateV1;
 use mobile_config::client::hex_boosting_client::HexBoostingClient;
@@ -103,7 +106,7 @@ impl Server {
         let (updated_hexes_sink, updated_hexes_sink_server) = BoostedHexUpdateV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(Duration::from_secs(5 * 60)),
+            FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(5 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

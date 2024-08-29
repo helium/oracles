@@ -8,7 +8,7 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source, file_upload,
     mobile_session::DataTransferSessionIngestReport,
-    traits::FileSinkWriteExt,
+    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
     FileStore, FileType,
 };
 
@@ -174,7 +174,7 @@ impl Cmd {
         let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
             store_base_path,
             file_upload.clone(),
-            None,
+            FileSinkCommitStrategy::Automatic,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -183,7 +183,7 @@ impl Cmd {
             InvalidDataTransferIngestReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
-                None,
+                FileSinkCommitStrategy::Manual,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -191,7 +191,7 @@ impl Cmd {
         let (pending_sessions, pending_sessions_server) = PendingDataTransferSessionV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            None,
+            FileSinkCommitStrategy::Manual,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
