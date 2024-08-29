@@ -522,6 +522,7 @@ struct RadioInfo {
     trust_scores: Vec<coverage_point_calculator::LocationTrust>,
     sp_boosted_reward_eligibility: SPBoostedRewardEligibility,
     speedtests: Vec<coverage_point_calculator::Speedtest>,
+    oracle_boosting_status: OracleBoostingStatus,
 }
 
 #[derive(Debug)]
@@ -537,6 +538,7 @@ impl CoverageShares {
         speedtest_averages: &SpeedtestAverages,
         boosted_hexes: &BoostedHexes,
         boosted_hex_eligibility: &BoostedHexEligibility,
+        banned_radios: &BannedRadios,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<Self> {
         let mut radio_infos: HashMap<RadioId, RadioInfo> = HashMap::new();
@@ -607,6 +609,12 @@ impl CoverageShares {
                 })
                 .collect();
 
+            let oracle_boosting_status = if banned_radios.contains(&pubkey, cbsd_id.as_deref()) {
+                OracleBoostingStatus::Banned
+            } else {
+                OracleBoostingStatus::Eligible
+            };
+
             let sp_boosted_reward_eligibility =
                 boosted_hex_eligibility.eligibility(pubkey, cbsd_id);
 
@@ -628,6 +636,7 @@ impl CoverageShares {
                     trust_scores,
                     sp_boosted_reward_eligibility,
                     speedtests,
+                    oracle_boosting_status,
                 },
             );
         }
@@ -672,7 +681,6 @@ impl CoverageShares {
         self,
         reward_shares: DataTransferAndPocAllocatedRewardBuckets,
         epoch: &'_ Range<DateTime<Utc>>,
-        banned_radios: BannedRadios,
     ) -> Option<(
         CalculatedPocRewardShares,
         impl Iterator<Item = (u64, proto::MobileRewardShare, proto::MobileRewardShare)> + '_,
@@ -686,14 +694,7 @@ impl CoverageShares {
 
         let mut processed_radios = vec![];
         for (radio_id, radio_info) in self.radio_infos.iter() {
-            let (pubkey, cbsd_id) = radio_id;
-            let oracle_boosting_status = if banned_radios.contains(pubkey, cbsd_id.as_deref()) {
-                OracleBoostingStatus::Banned
-            } else {
-                OracleBoostingStatus::Eligible
-            };
-
-            let points = match self.coverage_points(radio_id, oracle_boosting_status) {
+            let points = match self.coverage_points(radio_id, radio_info.oracle_boosting_status) {
                 Ok(points) => points,
                 Err(err) => {
                     tracing::error!(
@@ -1317,11 +1318,12 @@ mod test {
             &speedtest_avgs,
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
+            &BannedRadios::default(),
             &epoch,
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &epoch, BannedRadios::default())
+        .into_rewards(reward_shares, &epoch)
         .unwrap()
         .1
         .next()
@@ -1719,11 +1721,12 @@ mod test {
             &speedtest_avgs,
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
+            &BannedRadios::default(),
             &epoch,
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &epoch, BannedRadios::default())
+        .into_rewards(reward_shares, &epoch)
         .unwrap()
         .1
         {
@@ -1899,11 +1902,12 @@ mod test {
             &speedtest_avgs,
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
+            &BannedRadios::default(),
             &epoch,
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &epoch, BannedRadios::default())
+        .into_rewards(reward_shares, &epoch)
         .unwrap()
         .1
         {
@@ -2032,11 +2036,12 @@ mod test {
             &speedtest_avgs,
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
+            &BannedRadios::default(),
             &epoch,
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &epoch, BannedRadios::default())
+        .into_rewards(reward_shares, &epoch)
         .unwrap()
         .1
         {
@@ -2166,11 +2171,12 @@ mod test {
             &speedtest_avgs,
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
+            &BannedRadios::default(),
             &epoch,
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &epoch, BannedRadios::default())
+        .into_rewards(reward_shares, &epoch)
         .unwrap()
         .1
         {
@@ -2280,6 +2286,7 @@ mod test {
                         timestamp: now,
                     },
                 ],
+                oracle_boosting_status: OracleBoostingStatus::Eligible,
             },
         );
         radio_infos.insert(
@@ -2300,6 +2307,7 @@ mod test {
                 },
                 sp_boosted_reward_eligibility: SPBoostedRewardEligibility::Eligible,
                 speedtests: vec![],
+                oracle_boosting_status: OracleBoostingStatus::Eligible,
             },
         );
 
@@ -2312,7 +2320,7 @@ mod test {
         // gw2 does not have enough speedtests for a mulitplier
         let expected_hotspot = gw1;
         for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in coverage_shares
-            .into_rewards(reward_shares, &epoch, BannedRadios::default())
+            .into_rewards(reward_shares, &epoch)
             .expect("rewards output")
             .1
         {
@@ -2337,7 +2345,7 @@ mod test {
 
         let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
         assert!(coverage_shares
-            .into_rewards(reward_shares, &epoch, BannedRadios::default())
+            .into_rewards(reward_shares, &epoch)
             .is_none());
     }
 

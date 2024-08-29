@@ -49,6 +49,7 @@ impl Cmd {
             &speedtest_averages,
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
+            &BannedRadios::default(),
             &epoch,
         )
         .await?;
@@ -59,7 +60,6 @@ impl Cmd {
             .into_rewards(
                 DataTransferAndPocAllocatedRewardBuckets::new(&epoch),
                 &epoch,
-                BannedRadios::default(),
             )
             .ok_or(anyhow::anyhow!("no rewardable events"))?
             .1;
