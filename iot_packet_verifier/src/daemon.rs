@@ -11,7 +11,7 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source, file_upload,
     iot_packet::PacketRouterPacketReport,
-    traits::{FileSinkWriteExt, DEFAULT_ROLL_TIME},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore, FileType,
 };
 use futures_util::TryFutureExt;
@@ -141,7 +141,8 @@ impl Cmd {
         let (valid_packets, valid_packets_server) = ValidPacket::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(DEFAULT_ROLL_TIME),
+            FileSinkCommitStrategy::Manual,
+            FileSinkRollTime::Default,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -149,7 +150,8 @@ impl Cmd {
         let (invalid_packets, invalid_packets_server) = InvalidPacket::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(DEFAULT_ROLL_TIME),
+            FileSinkCommitStrategy::Manual,
+            FileSinkRollTime::Default,
             env!("CARGO_PKG_NAME"),
         )
         .await?;

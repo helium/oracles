@@ -11,7 +11,7 @@ use file_store::{
     mobile_radio_threshold::{
         RadioThresholdIngestReport, RadioThresholdReportReq, VerifiedRadioThresholdIngestReport,
     },
-    traits::{FileSinkWriteExt, DEFAULT_ROLL_TIME},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore, FileType,
 };
 use futures::{StreamExt, TryStreamExt};
@@ -73,7 +73,8 @@ where
             VerifiedRadioThresholdIngestReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                Some(DEFAULT_ROLL_TIME),
+                FileSinkCommitStrategy::Manual,
+                FileSinkRollTime::Default,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -82,7 +83,8 @@ where
             VerifiedInvalidatedRadioThresholdIngestReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                Some(DEFAULT_ROLL_TIME),
+                FileSinkCommitStrategy::Manual,
+                FileSinkRollTime::Default,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;

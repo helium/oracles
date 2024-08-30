@@ -4,7 +4,7 @@ use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient,
     file_upload,
-    traits::{FileSinkWriteExt, MsgVerify},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify},
 };
 use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
@@ -450,7 +450,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         CellHeartbeatIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(settings.roll_time),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -459,7 +460,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         WifiHeartbeatIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(settings.roll_time),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -468,7 +470,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let (speedtest_report_sink, speedtest_report_sink_server) = SpeedtestIngestReportV1::file_sink(
         store_base_path,
         file_upload.clone(),
-        Some(settings.roll_time),
+        FileSinkCommitStrategy::Automatic,
+        FileSinkRollTime::Duration(settings.roll_time),
         env!("CARGO_PKG_NAME"),
     )
     .await?;
@@ -477,7 +480,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         DataTransferSessionIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(settings.roll_time),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -486,7 +490,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         SubscriberLocationIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(settings.roll_time),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -495,7 +500,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         RadioThresholdIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(settings.roll_time),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -504,7 +510,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         InvalidatedRadioThresholdIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(settings.roll_time),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -513,7 +520,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         CoverageObjectIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(settings.roll_time),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -522,7 +530,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         ServiceProviderBoostedRewardsBannedRadioIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(settings.roll_time),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -531,7 +540,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         SubscriberVerifiedMappingEventIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(settings.roll_time),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

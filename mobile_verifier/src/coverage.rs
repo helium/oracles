@@ -10,7 +10,7 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
-    traits::{FileSinkWriteExt, TimestampEncode},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
     FileStore, FileType,
 };
 use futures::{
@@ -89,7 +89,8 @@ impl CoverageDaemon {
         let (valid_coverage_objs, valid_coverage_objs_server) = proto::CoverageObjectV1::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
-            Some(Duration::from_secs(15 * 60)),
+            FileSinkCommitStrategy::Manual,
+            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

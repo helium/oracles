@@ -1,6 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
-use file_store::{file_upload, traits::FileSinkWriteExt};
+use file_store::{
+    file_upload,
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
+};
 use helium_proto::PriceReportV1;
 use price::{cli::check, PriceGenerator, Settings};
 use std::{
@@ -85,7 +88,8 @@ impl Server {
         let (price_sink, price_sink_server) = PriceReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(Duration::from_secs(PRICE_SINK_ROLL_SECS)),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(Duration::from_secs(PRICE_SINK_ROLL_SECS)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
