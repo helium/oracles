@@ -1,6 +1,4 @@
-use crate::{
-    accumulate::accumulate_sessions, burner::Burner, event_ids::EventIdPurger, settings::Settings,
-};
+use crate::{burner::Burner, event_ids::EventIdPurger, settings::Settings};
 use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
 use file_store::{
@@ -13,8 +11,7 @@ use file_store::{
 };
 
 use helium_proto::services::{
-    packet_verifier::ValidDataTransferSession,
-    poc_mobile::{InvalidDataTransferIngestReportV1, PendingDataTransferSessionV1},
+    packet_verifier::ValidDataTransferSession, poc_mobile::InvalidDataTransferIngestReportV1,
 };
 use mobile_config::client::{
     authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
@@ -37,11 +34,9 @@ pub struct Daemon<S, GIR, AV> {
     gateway_info_resolver: GIR,
     authorization_verifier: AV,
     invalid_data_session_report_sink: FileSinkClient<InvalidDataTransferIngestReportV1>,
-    pending_data_session_report_sink: FileSinkClient<PendingDataTransferSessionV1>,
 }
 
 impl<S, GIR, AV> Daemon<S, GIR, AV> {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         settings: &Settings,
         pool: Pool<Postgres>,
@@ -50,7 +45,6 @@ impl<S, GIR, AV> Daemon<S, GIR, AV> {
         gateway_info_resolver: GIR,
         authorization_verifier: AV,
         invalid_data_session_report_sink: FileSinkClient<InvalidDataTransferIngestReportV1>,
-        pending_data_session_report_sink: FileSinkClient<PendingDataTransferSessionV1>,
     ) -> Self {
         Self {
             pool,
@@ -61,7 +55,6 @@ impl<S, GIR, AV> Daemon<S, GIR, AV> {
             gateway_info_resolver,
             authorization_verifier,
             invalid_data_session_report_sink,
-            pending_data_session_report_sink,
         }
     }
 }
@@ -95,8 +88,13 @@ where
                     let Some(file) = file else {
                         anyhow::bail!("FileInfoPoller sender was dropped unexpectedly");
                     };
-
-                    self.process_file(file).await?;
+                    tracing::info!("Verifying file: {}", file.file_info);
+                    let ts = file.file_info.timestamp;
+                    let mut transaction = self.pool.begin().await?;
+                    let reports = file.into_stream(&mut transaction).await?;
+                    crate::accumulate::accumulate_sessions(&self.gateway_info_resolver, &self.authorization_verifier, &mut transaction, &self.invalid_data_session_report_sink, ts, reports).await?;
+                    transaction.commit().await?;
+                    self.invalid_data_session_report_sink.commit().await?;
                 },
                 _ = sleep_until(burn_time) => {
                     // It's time to burn
@@ -113,34 +111,6 @@ where
                 _ = shutdown.clone() => return Ok(()),
             }
         }
-    }
-
-    async fn process_file(
-        &self,
-        file: FileInfoStream<DataTransferSessionIngestReport>,
-    ) -> Result<()> {
-        tracing::info!("Verifying file: {}", file.file_info);
-
-        let ts = file.file_info.timestamp;
-        let mut transaction = self.pool.begin().await?;
-        let reports = file.into_stream(&mut transaction).await?;
-
-        accumulate_sessions(
-            &self.gateway_info_resolver,
-            &self.authorization_verifier,
-            &mut transaction,
-            &self.invalid_data_session_report_sink,
-            &self.pending_data_session_report_sink,
-            ts,
-            reports,
-        )
-        .await?;
-
-        transaction.commit().await?;
-        self.invalid_data_session_report_sink.commit().await?;
-        self.pending_data_session_report_sink.commit().await?;
-
-        Ok(())
     }
 }
 
@@ -190,15 +160,6 @@ impl Cmd {
             )
             .await?;
 
-        let (pending_sessions, pending_sessions_server) = PendingDataTransferSessionV1::file_sink(
-            store_base_path,
-            file_upload.clone(),
-            FileSinkCommitStrategy::Manual,
-            FileSinkRollTime::Default,
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
         let burner = Burner::new(valid_sessions, solana);
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
@@ -226,7 +187,6 @@ impl Cmd {
             gateway_client,
             auth_client,
             invalid_sessions,
-            pending_sessions,
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool, settings);
@@ -235,7 +195,6 @@ impl Cmd {
             .add_task(file_upload_server)
             .add_task(valid_sessions_server)
             .add_task(invalid_sessions_server)
-            .add_task(pending_sessions_server)
             .add_task(reports_server)
             .add_task(event_id_purger)
             .add_task(daemon)
