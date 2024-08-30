@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use file_store::{
     file_upload,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
 };
 use helium_proto::PriceReportV1;
 use price::{cli::check, PriceGenerator, Settings};
@@ -89,7 +89,7 @@ impl Server {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(Duration::from_secs(PRICE_SINK_ROLL_SECS)),
+            FileSinkRollTime::Duration(Duration::from_secs(PRICE_SINK_ROLL_SECS)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

@@ -4,7 +4,7 @@ use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient,
     file_upload,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt, MsgVerify},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify},
 };
 use futures::{
     future::{LocalBoxFuture, TryFutureExt},
@@ -366,7 +366,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         store_base_path,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
-        Some(Duration::from_secs(5 * 60)),
+        FileSinkRollTime::Duration(Duration::from_secs(5 * 60)),
         env!("CARGO_PKG_NAME"),
     )
     .await?;
@@ -376,7 +376,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         store_base_path,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
-        Some(Duration::from_secs(5 * 60)),
+        FileSinkRollTime::Duration(Duration::from_secs(5 * 60)),
         env!("CARGO_PKG_NAME"),
     )
     .await?;

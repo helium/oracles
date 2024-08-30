@@ -2,7 +2,7 @@ use anyhow::{Error, Result};
 use clap::Parser;
 use file_store::{
     file_upload,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
 };
 use futures_util::TryFutureExt;
 use helium_proto::EntropyReportV1;
@@ -78,7 +78,7 @@ impl Server {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(Duration::from_secs(ENTROPY_SINK_ROLL_SECS)),
+            FileSinkRollTime::Duration(Duration::from_secs(ENTROPY_SINK_ROLL_SECS)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

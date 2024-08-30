@@ -10,7 +10,7 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt, TimestampEncode},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
     FileStore, FileType,
 };
 use futures::{
@@ -90,7 +90,7 @@ impl CoverageDaemon {
             settings.store_base_path(),
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
-            Some(Duration::from_secs(15 * 60)),
+            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

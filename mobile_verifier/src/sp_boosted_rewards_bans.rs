@@ -7,7 +7,7 @@ use file_store::{
     },
     file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore, FileType,
 };
 use futures::{prelude::future::LocalBoxFuture, StreamExt, TryFutureExt, TryStreamExt};
@@ -159,7 +159,7 @@ where
                 settings.store_base_path(),
                 file_upload,
                 FileSinkCommitStrategy::Manual,
-                None,
+                FileSinkRollTime::Default,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;

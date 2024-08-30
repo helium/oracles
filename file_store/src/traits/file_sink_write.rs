@@ -23,6 +23,13 @@ pub enum FileSinkCommitStrategy {
     Automatic,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum FileSinkRollTime {
+    /// Default is 3 minutes
+    Default,
+    Duration(Duration),
+}
+
 #[async_trait::async_trait]
 pub trait FileSinkWriteExt
 where
@@ -35,7 +42,7 @@ where
         target_path: &Path,
         file_upload: FileUpload,
         commit_strategy: FileSinkCommitStrategy,
-        roll_time: Option<Duration>,
+        roll_time: FileSinkRollTime,
         metric_prefix: &str,
     ) -> Result<(FileSinkClient<Self>, FileSink<Self>)> {
         let builder = FileSinkBuilder::new(
@@ -55,8 +62,8 @@ where
         };
 
         let builder = match roll_time {
-            Some(duration) => builder.roll_time(duration),
-            None => builder.roll_time(DEFAULT_ROLL_TIME),
+            FileSinkRollTime::Duration(duration) => builder.roll_time(duration),
+            FileSinkRollTime::Default => builder.roll_time(DEFAULT_ROLL_TIME),
         };
 
         let file_sink = builder.create().await?;

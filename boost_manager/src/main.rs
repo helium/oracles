@@ -8,7 +8,7 @@ use file_store::{
     file_info_poller::LookbackBehavior,
     file_source, file_upload,
     reward_manifest::RewardManifest,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore, FileType,
 };
 use helium_proto::BoostedHexUpdateV1;
@@ -107,7 +107,7 @@ impl Server {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(Duration::from_secs(5 * 60)),
+            FileSinkRollTime::Duration(Duration::from_secs(5 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

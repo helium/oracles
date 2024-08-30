@@ -9,7 +9,7 @@ use file_store::{
     file_source,
     file_upload::FileUpload,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore, FileType,
 };
 use futures::{
@@ -78,7 +78,7 @@ where
             settings.store_base_path(),
             file_upload,
             FileSinkCommitStrategy::Manual,
-            Some(Duration::from_secs(15 * 60)),
+            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

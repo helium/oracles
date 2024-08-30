@@ -9,7 +9,10 @@ use chrono::{DateTime, Utc};
 use file_store::{
     file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt, TimestampDecode, TimestampEncode},
+    traits::{
+        FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampDecode,
+        TimestampEncode,
+    },
     FileStore,
 };
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
@@ -263,7 +266,7 @@ impl
                 settings.store_base_path(),
                 file_upload.clone(),
                 FileSinkCommitStrategy::Automatic,
-                Some(Duration::from_secs(15 * 60)),
+                FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;

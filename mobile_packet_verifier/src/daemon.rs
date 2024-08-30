@@ -8,7 +8,7 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source, file_upload,
     mobile_session::DataTransferSessionIngestReport,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore, FileType,
 };
 
@@ -175,7 +175,7 @@ impl Cmd {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            None,
+            FileSinkRollTime::Default,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -185,7 +185,7 @@ impl Cmd {
                 store_base_path,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Manual,
-                None,
+                FileSinkRollTime::Default,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -194,7 +194,7 @@ impl Cmd {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
-            None,
+            FileSinkRollTime::Default,
             env!("CARGO_PKG_NAME"),
         )
         .await?;

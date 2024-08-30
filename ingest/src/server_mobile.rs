@@ -4,7 +4,7 @@ use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient,
     file_upload,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt, MsgVerify},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify},
 };
 use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
@@ -451,7 +451,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(settings.roll_time),
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -461,7 +461,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(settings.roll_time),
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -471,7 +471,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         store_base_path,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
-        Some(settings.roll_time),
+        FileSinkRollTime::Duration(settings.roll_time),
         env!("CARGO_PKG_NAME"),
     )
     .await?;
@@ -481,7 +481,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(settings.roll_time),
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -491,7 +491,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(settings.roll_time),
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -501,7 +501,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(settings.roll_time),
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -511,7 +511,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(settings.roll_time),
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -521,7 +521,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(settings.roll_time),
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -531,7 +531,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(settings.roll_time),
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -541,7 +541,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(settings.roll_time),
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

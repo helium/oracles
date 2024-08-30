@@ -6,7 +6,7 @@ use file_store::{
     file_info_poller::LookbackBehavior,
     file_source, file_upload,
     iot_packet::IotValidPacket,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore, FileType,
 };
 use helium_proto::{
@@ -125,7 +125,7 @@ impl Server {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
-            None,
+            FileSinkRollTime::Default,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -135,7 +135,7 @@ impl Server {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
-            None,
+            FileSinkRollTime::Default,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -180,7 +180,7 @@ impl Server {
                 store_base_path,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Automatic,
-                Some(Duration::from_secs(5 * 60)),
+                FileSinkRollTime::Duration(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -214,7 +214,7 @@ impl Server {
                 store_base_path,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Manual,
-                None,
+                FileSinkRollTime::Default,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -224,7 +224,7 @@ impl Server {
                 store_base_path,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Manual,
-                None,
+                FileSinkRollTime::Default,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -249,7 +249,7 @@ impl Server {
                 store_base_path,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Automatic,
-                Some(Duration::from_secs(5 * 60)),
+                FileSinkRollTime::Duration(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -259,7 +259,7 @@ impl Server {
                 store_base_path,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Automatic,
-                Some(Duration::from_secs(5 * 60)),
+                FileSinkRollTime::Duration(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -268,7 +268,7 @@ impl Server {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
-            Some(Duration::from_secs(2 * 60)),
+            FileSinkRollTime::Duration(Duration::from_secs(2 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
