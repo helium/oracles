@@ -17,17 +17,17 @@ pub const DEFAULT_ROLL_TIME: Duration = Duration::from_secs(DEFAULT_SINK_ROLL_SE
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum FileSinkCommitStrategy {
     /// Writer must manually call [`FileSinkClient::commit()`] for files to be uploaded.
-    /// Files will be collected into tmp storage on `DEFAULT_ROLL_TIME` basis.
     Manual,
-    /// Writer must manually call [`FileSinkClient::commit()`] for files to be uploaded.
-    /// Files will be collected into tmp storage on provided `roll_time` basis.
-    ManualRollTime(Duration),
     /// Files will be automatically uploaded when
     /// [`FileSinkBuilder::max_size()`] is exceeded, or [`DEFAULT_ROLL_TIME`] has elapsed.
     Automatic,
-    /// Files will be automatically uploaded when
-    /// [`FileSinkBuilder::max_size()`] is exceeded, or provided `roll_time` has elapsed.
-    AutomaticRollTime(Duration),
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum FileSinkRollTime {
+    /// Default is 3 minutes
+    Default,
+    Duration(Duration),
 }
 
 #[async_trait::async_trait]
@@ -42,6 +42,7 @@ where
         target_path: &Path,
         file_upload: FileUpload,
         commit_strategy: FileSinkCommitStrategy,
+        roll_time: FileSinkRollTime,
         metric_prefix: &str,
     ) -> Result<(FileSinkClient<Self>, FileSink<Self>)> {
         let builder = FileSinkBuilder::new(
@@ -55,15 +56,14 @@ where
             FileSinkCommitStrategy::Manual => {
                 builder.auto_commit(false).roll_time(DEFAULT_ROLL_TIME)
             }
-            FileSinkCommitStrategy::ManualRollTime(roll_time) => {
-                builder.auto_commit(false).roll_time(roll_time)
-            }
             FileSinkCommitStrategy::Automatic => {
                 builder.auto_commit(true).roll_time(DEFAULT_ROLL_TIME)
             }
-            FileSinkCommitStrategy::AutomaticRollTime(roll_time) => {
-                builder.auto_commit(true).roll_time(roll_time)
-            }
+        };
+
+        let builder = match roll_time {
+            FileSinkRollTime::Duration(duration) => builder.roll_time(duration),
+            FileSinkRollTime::Default => builder.roll_time(DEFAULT_ROLL_TIME),
         };
 
         let file_sink = builder.create().await?;

@@ -17,7 +17,7 @@ use crate::{
 use anyhow::Result;
 use file_store::{
     file_upload,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore,
 };
 use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate, SpeedtestAvg};
@@ -56,7 +56,8 @@ impl Cmd {
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
             store_base_path,
             file_upload.clone(),
-            FileSinkCommitStrategy::ManualRollTime(Duration::from_secs(15 * 60)),
+            FileSinkCommitStrategy::Manual,
+            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -65,7 +66,8 @@ impl Cmd {
         let (seniority_updates, seniority_updates_server) = SeniorityUpdate::file_sink(
             store_base_path,
             file_upload.clone(),
-            FileSinkCommitStrategy::ManualRollTime(Duration::from_secs(15 * 60)),
+            FileSinkCommitStrategy::Manual,
+            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -73,7 +75,8 @@ impl Cmd {
         let (speedtests_avg, speedtests_avg_server) = SpeedtestAvg::file_sink(
             store_base_path,
             file_upload.clone(),
-            FileSinkCommitStrategy::ManualRollTime(Duration::from_secs(15 * 60)),
+            FileSinkCommitStrategy::Manual,
+            FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

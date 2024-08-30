@@ -17,7 +17,7 @@ use db_store::meta;
 use file_store::{
     file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::{FileSinkCommitStrategy, FileSinkWriteExt, TimestampEncode},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
 };
 use futures_util::TryFutureExt;
 
@@ -82,6 +82,7 @@ where
             settings.store_base_path(),
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
+            FileSinkRollTime::Default,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -90,6 +91,7 @@ where
             settings.store_base_path(),
             file_upload,
             FileSinkCommitStrategy::Manual,
+            FileSinkRollTime::Default,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
