@@ -106,7 +106,8 @@ impl Server {
         let (updated_hexes_sink, updated_hexes_sink_server) = BoostedHexUpdateV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(5 * 60)),
+            FileSinkCommitStrategy::Automatic,
+            Some(Duration::from_secs(5 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

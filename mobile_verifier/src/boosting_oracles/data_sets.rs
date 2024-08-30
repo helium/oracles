@@ -262,7 +262,8 @@ impl
             OracleBoostingReportV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(15 * 60)),
+                FileSinkCommitStrategy::Automatic,
+                Some(Duration::from_secs(15 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;

@@ -365,7 +365,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let (beacon_report_sink, beacon_report_sink_server) = LoraBeaconIngestReportV1::file_sink(
         store_base_path,
         file_upload.clone(),
-        FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(5 * 60)),
+        FileSinkCommitStrategy::Automatic,
+        Some(Duration::from_secs(5 * 60)),
         env!("CARGO_PKG_NAME"),
     )
     .await?;
@@ -374,7 +375,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let (witness_report_sink, witness_report_sink_server) = LoraWitnessIngestReportV1::file_sink(
         store_base_path,
         file_upload.clone(),
-        FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(5 * 60)),
+        FileSinkCommitStrategy::Automatic,
+        Some(Duration::from_secs(5 * 60)),
         env!("CARGO_PKG_NAME"),
     )
     .await?;

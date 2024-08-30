@@ -56,7 +56,8 @@ impl Cmd {
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
             store_base_path,
             file_upload.clone(),
-            FileSinkCommitStrategy::ManualRollTime(Duration::from_secs(15 * 60)),
+            FileSinkCommitStrategy::Manual,
+            Some(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -65,7 +66,8 @@ impl Cmd {
         let (seniority_updates, seniority_updates_server) = SeniorityUpdate::file_sink(
             store_base_path,
             file_upload.clone(),
-            FileSinkCommitStrategy::ManualRollTime(Duration::from_secs(15 * 60)),
+            FileSinkCommitStrategy::Manual,
+            Some(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -73,7 +75,8 @@ impl Cmd {
         let (speedtests_avg, speedtests_avg_server) = SpeedtestAvg::file_sink(
             store_base_path,
             file_upload.clone(),
-            FileSinkCommitStrategy::ManualRollTime(Duration::from_secs(15 * 60)),
+            FileSinkCommitStrategy::Manual,
+            Some(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

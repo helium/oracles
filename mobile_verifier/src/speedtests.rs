@@ -77,7 +77,8 @@ where
         let (speedtests_validity, speedtests_validity_server) = VerifiedSpeedtestProto::file_sink(
             settings.store_base_path(),
             file_upload,
-            FileSinkCommitStrategy::ManualRollTime(Duration::from_secs(15 * 60)),
+            FileSinkCommitStrategy::Manual,
+            Some(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

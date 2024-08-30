@@ -58,6 +58,7 @@ where
                 settings.store_base_path(),
                 file_upload.clone(),
                 FileSinkCommitStrategy::Manual,
+                None,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;

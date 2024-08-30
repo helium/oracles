@@ -89,7 +89,8 @@ impl CoverageDaemon {
         let (valid_coverage_objs, valid_coverage_objs_server) = proto::CoverageObjectV1::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
-            FileSinkCommitStrategy::ManualRollTime(Duration::from_secs(15 * 60)),
+            FileSinkCommitStrategy::Manual,
+            Some(Duration::from_secs(15 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

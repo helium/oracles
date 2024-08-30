@@ -88,7 +88,8 @@ impl Server {
         let (price_sink, price_sink_server) = PriceReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(PRICE_SINK_ROLL_SECS)),
+            FileSinkCommitStrategy::Automatic,
+            Some(Duration::from_secs(PRICE_SINK_ROLL_SECS)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;

@@ -125,6 +125,7 @@ impl Server {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
+            None,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -134,6 +135,7 @@ impl Server {
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
+            None,
             env!("CARGO_PKG_NAME"),
         )
         .await?;
@@ -177,7 +179,8 @@ impl Server {
             NonRewardablePacket::file_sink(
                 store_base_path,
                 file_upload.clone(),
-                FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(5 * 60)),
+                FileSinkCommitStrategy::Automatic,
+                Some(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -211,6 +214,7 @@ impl Server {
                 store_base_path,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Manual,
+                None,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -220,6 +224,7 @@ impl Server {
                 store_base_path,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Manual,
+                None,
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -243,7 +248,8 @@ impl Server {
             LoraInvalidBeaconReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
-                FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(5 * 60)),
+                FileSinkCommitStrategy::Automatic,
+                Some(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -252,7 +258,8 @@ impl Server {
             LoraInvalidWitnessReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
-                FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(5 * 60)),
+                FileSinkCommitStrategy::Automatic,
+                Some(Duration::from_secs(5 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;
@@ -260,7 +267,8 @@ impl Server {
         let (runner_poc_sink, runner_poc_sink_server) = LoraPocV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            FileSinkCommitStrategy::AutomaticRollTime(Duration::from_secs(2 * 60)),
+            FileSinkCommitStrategy::Automatic,
+            Some(Duration::from_secs(2 * 60)),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
