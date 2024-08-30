@@ -8,9 +8,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
     DataTransferEvent as DataTransferEventProto, DataTransferRadioAccessTechnology,
-    DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
-    DataTransferSessionSettlementStatus, InvalidDataTransferIngestReportV1,
-    PendingDataTransferSessionV1,
+    DataTransferSessionIngestReportV1, DataTransferSessionReqV1, InvalidDataTransferIngestReportV1,
 };
 
 use serde::Serialize;
@@ -183,7 +181,6 @@ pub struct DataTransferSessionReq {
     pub rewardable_bytes: u64,
     pub pub_key: PublicKeyBinary,
     pub signature: Vec<u8>,
-    pub status: DataTransferSessionSettlementStatus,
 }
 
 impl MsgDecode for DataTransferSessionReq {
@@ -194,7 +191,6 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
     type Error = Error;
 
     fn try_from(v: DataTransferSessionReqV1) -> Result<Self> {
-        let status = v.status();
         Ok(Self {
             rewardable_bytes: v.rewardable_bytes,
             signature: v.signature,
@@ -203,7 +199,6 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
                 .ok_or_else(|| Error::not_found("data transfer usage"))?
                 .try_into()?,
             pub_key: v.pub_key.into(),
-            status,
         })
     }
 }
@@ -217,28 +212,7 @@ impl From<DataTransferSessionReq> for DataTransferSessionReqV1 {
             rewardable_bytes: v.rewardable_bytes,
             pub_key: v.pub_key.into(),
             signature: v.signature,
-            reward_cancelled: false,
-            status: v.status as i32,
-        }
-    }
-}
-
-impl DataTransferSessionReq {
-    pub fn to_pending_proto(
-        self,
-        received_timestamp: DateTime<Utc>,
-    ) -> PendingDataTransferSessionV1 {
-        let event_timestamp = self.data_transfer_usage.timestamp.encode_timestamp_millis();
-        let received_timestamp = received_timestamp.encode_timestamp_millis();
-
-        PendingDataTransferSessionV1 {
-            pub_key: self.pub_key.into(),
-            payer: self.data_transfer_usage.payer.into(),
-            upload_bytes: self.data_transfer_usage.upload_bytes,
-            download_bytes: self.data_transfer_usage.download_bytes,
-            rewardable_bytes: self.rewardable_bytes,
-            event_timestamp,
-            received_timestamp,
+            ..Default::default()
         }
     }
 }

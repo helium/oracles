@@ -41,6 +41,3 @@ http-serde = { workspace = true }
 sha2 = { workspace = true }
 humantime-serde = { workspace = true }
 custom-tracing = { path = "../custom_tracing" }
-
-[dev-dependencies]
-rand = { workspace = true }

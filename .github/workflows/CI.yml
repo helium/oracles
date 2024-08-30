@@ -92,7 +92,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [boost-manager,file-store,iot-config,iot-packet-verifier,iot-verifier,mobile-config,mobile-packet-verifier,mobile-verifier]
+        package: [boost-manager,file-store,iot-config,iot-packet-verifier,iot-verifier,mobile-config,mobile-verifier]
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-tests-postgres-${{ matrix.package }}
       cancel-in-progress: true
@@ -142,7 +142,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [coverage-map,coverage-point-calculator,ingest,reward-scheduler,task-manager]
+        package: [coverage-map,coverage-point-calculator,ingest,mobile-packet-verifier,reward-scheduler,task-manager]
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-tests-${{ matrix.package }}
       cancel-in-progress: true
