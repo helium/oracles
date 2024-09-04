@@ -544,7 +544,7 @@ mod test {
         };
         let result = aggregate_subcriber_rewards(promotion_rewards.into_rewards(
             &mut sp_rewards,
-            dec!(0),
+            dec!(0), // 0 unallocated here
             &epoch,
         ));
         assert_eq!(sp_rewards.rewards.get(&0).unwrap().for_promotions, dec!(0));
@@ -555,6 +555,47 @@ mod test {
 
     #[test]
     fn ensure_fully_matched_rewards_and_correctly_divided() {
+        let now = Utc::now();
+        let epoch = now - Duration::hours(24)..now;
+        let mut rewards = HashMap::new();
+        rewards.insert(
+            0_i32,
+            ServiceProviderReward {
+                for_service_provider: dec!(100),
+                for_promotions: dec!(1000),
+            },
+        );
+        let mut sp_rewards = ServiceProviderRewards { rewards };
+        let promotion_rewards = AggregatePromotionRewards {
+            rewards: vec![
+                ServiceProviderPromotionRewardShares {
+                    service_provider_id: 0,
+                    rewardable_entity: Entity::SubscriberId(vec![0]),
+                    shares: 1,
+                },
+                ServiceProviderPromotionRewardShares {
+                    service_provider_id: 0,
+                    rewardable_entity: Entity::SubscriberId(vec![1]),
+                    shares: 2,
+                },
+            ],
+        };
+        let result = aggregate_subcriber_rewards(promotion_rewards.into_rewards(
+            &mut sp_rewards,
+            dec!(100),
+            &epoch,
+        ));
+        assert_eq!(sp_rewards.rewards.get(&0).unwrap().for_promotions, dec!(0));
+        let result1 = result.get(&vec![0]).unwrap();
+        assert_eq!(result1.0, 333); // promotion rewards 1/3 of a 1000
+        assert_eq!(result1.1, 33); // matched rewards 1/3 of a 100
+        let result2 = result.get(&vec![1]).unwrap();
+        assert_eq!(result2.0, 666);
+        assert_eq!(result2.1, 66);
+    }
+
+    #[test]
+    fn unallocated_does_not_exceed_promotion() {
         let now = Utc::now();
         let epoch = now - Duration::hours(24)..now;
         let mut rewards = HashMap::new();
@@ -582,13 +623,13 @@ mod test {
         };
         let result = aggregate_subcriber_rewards(promotion_rewards.into_rewards(
             &mut sp_rewards,
-            dec!(100),
+            dec!(1000),
             &epoch,
         ));
         assert_eq!(sp_rewards.rewards.get(&0).unwrap().for_promotions, dec!(0));
         let result1 = result.get(&vec![0]).unwrap();
-        assert_eq!(result1.0, 33);
-        assert_eq!(result1.1, 33);
+        assert_eq!(result1.0, 33); // promotion rewards 1/3 of a 100
+        assert_eq!(result1.1, 33); // matched rewards 1/3 of a 100 (not 1000 cause of promotion is 100)
         let result2 = result.get(&vec![1]).unwrap();
         assert_eq!(result2.0, 66);
         assert_eq!(result2.1, 66);
@@ -600,14 +641,14 @@ mod test {
         let epoch = now - Duration::hours(24)..now;
         let mut rewards = HashMap::new();
         rewards.insert(
-            0_i32,
+            0,
             ServiceProviderReward {
                 for_service_provider: dec!(100),
                 for_promotions: dec!(100),
             },
         );
         rewards.insert(
-            1_i32,
+            1,
             ServiceProviderReward {
                 for_service_provider: dec!(100),
                 for_promotions: dec!(200),
@@ -636,9 +677,9 @@ mod test {
         assert_eq!(sp_rewards.rewards.get(&0).unwrap().for_promotions, dec!(0));
         let result1 = result.get(&vec![0]).unwrap();
         assert_eq!(result1.0, 100);
-        assert_eq!(result1.1, 33);
+        assert_eq!(result1.1, 33); // this is due to sp0 only giving 100 (1/3) out of 300 total for_promotions
         let result2 = result.get(&vec![1]).unwrap();
         assert_eq!(result2.0, 200);
-        assert_eq!(result2.1, 66);
+        assert_eq!(result2.1, 66); // this is due to sp1 giving 200 (2/3)
     }
 }
