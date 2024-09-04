@@ -436,16 +436,17 @@ impl AggregatePromotionRewards {
                     .get(&reward.service_provider_id)
                     .copied()
                     .unwrap_or_default();
-                let service_provider_amount = sp_promotion_reward_share.rewards_per_share * shares;
-                let matched_amount = (sp_promotion_reward_share.rewards_per_matched_share * shares)
-                    .min(service_provider_amount);
+                let service_provider_token = sp_promotion_reward_share.rewards_per_share * shares;
+                // Goal here is to never match more than the original promotion amount.
+                let matched_token = (sp_promotion_reward_share.rewards_per_matched_share * shares)
+                    .min(service_provider_token);
                 proto::PromotionReward {
                     entity: Some(reward.rewardable_entity.into()),
-                    service_provider_amount: service_provider_amount
+                    service_provider_amount: service_provider_token
                         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                         .to_u64()
                         .unwrap_or(0),
-                    matched_amount: matched_amount
+                    matched_amount: matched_token
                         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                         .to_u64()
                         .unwrap_or(0),
