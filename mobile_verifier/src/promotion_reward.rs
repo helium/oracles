@@ -348,8 +348,8 @@ impl sqlx::FromRow<'_, PgRow> for PromotionRewardShares {
 // This could use a better name
 #[derive(Copy, Clone, Default)]
 struct SpPromotionRewardShares {
-    shares_per_reward: Decimal,
-    shares_per_matched_reward: Decimal,
+    rewards_per_share: Decimal,
+    rewards_per_matched_share: Decimal,
 }
 
 impl AggregatePromotionRewards {
@@ -418,8 +418,8 @@ impl AggregatePromotionRewards {
                     let share_of_unallocated_pool =
                         rewards_allocated_for_promotion / total_promotion_rewards_allocated;
                     let sp_share = SpPromotionRewardShares {
-                        shares_per_reward: rewards_allocated_for_promotion / total_shares,
-                        shares_per_matched_reward: unallocated_sp_rewards
+                        rewards_per_share: rewards_allocated_for_promotion / total_shares,
+                        rewards_per_matched_share: unallocated_sp_rewards
                             * share_of_unallocated_pool
                             / total_shares,
                     };
@@ -436,8 +436,8 @@ impl AggregatePromotionRewards {
                     .get(&reward.service_provider_id)
                     .copied()
                     .unwrap_or_default();
-                let service_provider_amount = sp_promotion_reward_share.shares_per_reward * shares;
-                let matched_amount = (sp_promotion_reward_share.shares_per_matched_reward * shares)
+                let service_provider_amount = sp_promotion_reward_share.rewards_per_share * shares;
+                let matched_amount = (sp_promotion_reward_share.rewards_per_matched_share * shares)
                     .min(service_provider_amount);
                 proto::PromotionReward {
                     entity: Some(reward.rewardable_entity.into()),
