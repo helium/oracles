@@ -2412,7 +2412,7 @@ mod test {
 
         let mut sp_rewards = HashMap::<i32, u64>::new();
         let mut allocated_sp_rewards = 0_u64;
-        for (_, sp_reward) in sp_shares
+        for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, &None)
             .await
             .unwrap()
@@ -2420,6 +2420,7 @@ mod test {
         {
             if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
+                assert_eq!(reward_amount, r.amount);
                 allocated_sp_rewards += r.amount;
             }
         }
@@ -2463,7 +2464,7 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        for (_, sp_reward) in sp_shares
+        for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, &None)
             .await
             .unwrap()
@@ -2472,6 +2473,7 @@ mod test {
             if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 allocated_sp_rewards += r.amount;
+                assert_eq!(reward_amount, r.amount);
             }
         }
         let sp1_reward_amount = *sp_rewards
@@ -2513,7 +2515,7 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        for (_, sp_reward) in sp_shares
+        for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, &None)
             .await
             .unwrap()
@@ -2522,6 +2524,7 @@ mod test {
             if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 allocated_sp_rewards += r.amount;
+                assert_eq!(reward_amount, r.amount);
             }
         }
 
@@ -2564,7 +2567,7 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        for (_, sp_reward) in sp_shares
+        for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, &None)
             .await
             .unwrap()
@@ -2573,6 +2576,7 @@ mod test {
             if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 allocated_sp_rewards += r.amount;
+                assert_eq!(reward_amount, r.amount);
             }
         }
 
