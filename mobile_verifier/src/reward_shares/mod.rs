@@ -2595,4 +2595,67 @@ mod test {
         .unwrap_or(0);
         assert_eq!(unallocated_sp_reward_amount, 0);
     }
+
+    #[tokio::test]
+    async fn sp_rewards_when_no_promotion_shares_hip114() {
+        let mobile_bone_price = dec!(0.00001);
+
+        let sp1 = ServiceProvider::HeliumMobile;
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(1))..now;
+
+        let service_provider_sessions = vec![ServiceProviderDataSession {
+            service_provider_id: sp1,
+            service_provider_name: "Helium Mobile".to_string(),
+            total_dcs: dec!(1000),
+        }];
+        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
+        let total_sp_rewards = get_scheduled_tokens_for_service_providers(epoch.end - epoch.start);
+        let rewards_per_share = sp_shares
+            .rewards_per_share(total_sp_rewards, mobile_bone_price)
+            .unwrap();
+
+        let mut sp_rewards = HashMap::<i32, u64>::new();
+        let mut allocated_sp_rewards = 0_u64;
+
+        struct Promo;
+
+        #[async_trait::async_trait]
+        impl SolanaNetwork for Promo {
+            async fn fetch_incentive_escrow_fund_percent(
+                &self,
+                _network_name: &str,
+            ) -> Result<Decimal, solana::SolanaRpcError> {
+                Ok(dec!(50))
+            }
+        }
+
+        // Even if we have a promo for 50% as we don't have any promo
+        // shares rewards should return to SP
+        for (reward_amount, sp_reward) in sp_shares
+            .into_service_provider_rewards(rewards_per_share, &Promo)
+            .await
+            .unwrap()
+            .into_mobile_reward_shares(&epoch)
+        {
+            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+                sp_rewards.insert(r.service_provider_id, r.amount);
+                assert_eq!(reward_amount, r.amount);
+                allocated_sp_rewards += r.amount;
+            }
+        }
+
+        let sp1_reward_amount = *sp_rewards
+            .get(&(sp1 as i32))
+            .expect("Could not fetch sp1 shares");
+        assert_eq!(sp1_reward_amount, 1000);
+
+        // confirm the unallocated service provider reward amounts
+        let unallocated_sp_reward_amount = (total_sp_rewards - Decimal::from(allocated_sp_rewards))
+            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+            .to_u64()
+            .unwrap_or(0);
+        assert_eq!(unallocated_sp_reward_amount, 342_465_752_424);
+    }
 }
