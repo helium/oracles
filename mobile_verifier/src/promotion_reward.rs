@@ -198,25 +198,6 @@ async fn validate_promotion_reward(
 }
 
 impl ValidatedPromotionReward {
-    async fn validate(
-        promotion_reward: PromotionReward,
-        authorization_verifier: &impl AuthorizationVerifier,
-        gateway_info_resolver: &impl GatewayResolver,
-        entity_verifier: &impl EntityVerifier,
-    ) -> anyhow::Result<Self> {
-        let validity = validate_promotion_reward(
-            &promotion_reward,
-            authorization_verifier,
-            gateway_info_resolver,
-            entity_verifier,
-        )
-        .await?;
-        Ok(Self {
-            validity,
-            promotion_reward,
-        })
-    }
-
     fn validate_promotion_rewards<'a>(
         promotion_rewards: impl Stream<Item = PromotionReward> + 'a,
         authorization_verifier: &'a impl AuthorizationVerifier,
@@ -224,12 +205,19 @@ impl ValidatedPromotionReward {
         entity_verifier: &'a impl EntityVerifier,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         promotion_rewards.then(move |promotion_reward| async move {
-            Self::validate(
-                promotion_reward,
-                authorization_verifier,
-                gateway_info_resolver,
-                entity_verifier,
-            )
+            async move {
+                let validity = validate_promotion_reward(
+                    &promotion_reward,
+                    authorization_verifier,
+                    gateway_info_resolver,
+                    entity_verifier,
+                )
+                .await?;
+                Ok(Self {
+                    validity,
+                    promotion_reward: promotion_reward,
+                })
+            }
             .await
         })
     }
