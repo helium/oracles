@@ -24,6 +24,7 @@ use mobile_verifier::{
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
+    sp_boosted_rewards_bans::BannedRadios,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     GatewayResolution, GatewayResolver, IsAuthorized,
@@ -497,6 +498,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         &speedtest_avgs,
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
+        &BannedRadios::default(),
         &reward_period,
     )
     .await?;
@@ -599,6 +601,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         &speedtest_avgs,
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
+        &BannedRadios::default(),
         &reward_period,
     )
     .await?;
@@ -887,6 +890,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         &speedtest_avgs,
         &boosted_hexes,
         &BoostedHexEligibility::default(),
+        &BannedRadios::default(),
         &reward_period,
     )
     .await?;
@@ -976,6 +980,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         &speedtest_avgs,
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
+        &BannedRadios::default(),
         &reward_period,
     )
     .await?;
@@ -1077,6 +1082,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         &speedtest_avgs,
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
+        &BannedRadios::default(),
         &reward_period,
     )
     .await?;
@@ -1326,6 +1332,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         &speedtest_avgs,
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
+        &BannedRadios::default(),
         &reward_period,
     )
     .await?;

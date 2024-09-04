@@ -21,6 +21,7 @@ use mobile_verifier::{
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
+    sp_boosted_rewards_bans::BannedRadios,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     GatewayResolution, GatewayResolver,
@@ -402,6 +403,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         &speedtest_avgs,
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
+        &BannedRadios::default(),
         &epoch,
     )
     .await

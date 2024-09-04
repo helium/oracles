@@ -16,7 +16,8 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{
         service_provider_boosted_rewards_banned_radio_req_v1::{
-            KeyType as ProtoKeyType, SpBoostedRewardsBannedRadioReason,
+            KeyType as ProtoKeyType, SpBoostedRewardsBannedRadioBanType,
+            SpBoostedRewardsBannedRadioReason,
         },
         SeniorityUpdate as SeniorityUpdateProto, SeniorityUpdateReason,
         ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
@@ -43,6 +44,7 @@ struct BannedRadioReport {
     key: OwnedKeyType,
     until: DateTime<Utc>,
     reason: SpBoostedRewardsBannedRadioReason,
+    ban_type: SpBoostedRewardsBannedRadioBanType,
 }
 
 impl BannedRadioReport {
@@ -65,6 +67,7 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
             .ok_or_else(|| anyhow::anyhow!("invalid ingest report"))?;
 
         let reason = report.reason();
+        let ban_type = report.ban_type();
 
         let key = match report.key_type {
             Some(ProtoKeyType::CbsdId(cbsd_id)) => OwnedKeyType::Cbrs(cbsd_id),
@@ -88,6 +91,7 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
                 .single()
                 .ok_or_else(|| anyhow::anyhow!("invalid until: {}", report.until))?,
             reason,
+            ban_type,
         })
     }
 }
@@ -316,17 +320,20 @@ pub mod db {
 
     pub async fn get_banned_radios(
         pool: &PgPool,
+        ban_type: SpBoostedRewardsBannedRadioBanType,
         date_time: DateTime<Utc>,
     ) -> anyhow::Result<BannedRadios> {
         sqlx::query(
             r#"
                 SELECT distinct radio_type, radio_key
                 FROM sp_boosted_rewards_bans
-                WHERE received_timestamp <= $1
-                    AND until > $1 
-                    AND COALESCE(invalidated_at > $1, TRUE)
+                WHERE ban_type = $1
+                    AND received_timestamp <= $2
+                    AND until > $2 
+                    AND COALESCE(invalidated_at > $2, TRUE)
             "#,
         )
+        .bind(ban_type.as_str_name())
         .bind(date_time)
         .fetch(pool)
         .map_err(anyhow::Error::from)
@@ -381,10 +388,11 @@ pub mod db {
     ) -> anyhow::Result<()> {
         sqlx::query(
             r#"
-                INSERT INTO sp_boosted_rewards_bans(radio_type, radio_key, received_timestamp, until)
-                VALUES($1,$2,$3,$4)
+                INSERT INTO sp_boosted_rewards_bans(ban_type, radio_type, radio_key, received_timestamp, until)
+                VALUES($1,$2,$3,$4,$5)
             "#,
         )
+        .bind(report.ban_type.as_str_name())
         .bind(report.radio_type())
         .bind(&report.key)
         .bind(report.received_timestamp)
@@ -405,11 +413,13 @@ pub mod db {
             SET invalidated_at = now()
             WHERE radio_type = $1
                 AND radio_key = $2
-               AND received_timestamp <= $3
+                AND ban_type = $3
+                AND received_timestamp <= $4
         "#,
         )
         .bind(report.radio_type())
         .bind(&report.key)
+        .bind(report.ban_type.as_str_name())
         .bind(report.received_timestamp)
         .execute(transaction)
         .await
@@ -497,6 +507,7 @@ mod tests {
                 until: until.timestamp() as u64,
                 signature: vec![],
                 key_type: Some(ProtoKeyType::HotspotKey(key.into())),
+                ban_type: SpBoostedRewardsBannedRadioBanType::BoostedHex as i32,
             }),
         }
     }
@@ -516,6 +527,7 @@ mod tests {
                 until: until.timestamp() as u64,
                 signature: vec![],
                 key_type: Some(ProtoKeyType::CbsdId(cbsd_id)),
+                ban_type: SpBoostedRewardsBannedRadioBanType::BoostedHex as i32,
             }),
         }
     }
@@ -539,7 +551,12 @@ mod tests {
             .await?;
         transaction.commit().await?;
 
-        let banned_radios = db::get_banned_radios(&pool, Utc::now()).await?;
+        let banned_radios = db::get_banned_radios(
+            &pool,
+            SpBoostedRewardsBannedRadioBanType::BoostedHex,
+            Utc::now(),
+        )
+        .await?;
         let result =
             banned_radios.contains(&keypair.public_key().to_owned().into(), Some(&cbsd_id));
 
@@ -558,7 +575,12 @@ mod tests {
             .await?;
         transaction.commit().await?;
 
-        let banned_radios = db::get_banned_radios(&pool, Utc::now()).await?;
+        let banned_radios = db::get_banned_radios(
+            &pool,
+            SpBoostedRewardsBannedRadioBanType::BoostedHex,
+            Utc::now(),
+        )
+        .await?;
         let result =
             banned_radios.contains(&keypair.public_key().to_owned().into(), Some(&cbsd_id));
 
@@ -585,7 +607,12 @@ mod tests {
             .await?;
         transaction.commit().await?;
 
-        let banned_radios = db::get_banned_radios(&pool, Utc::now()).await?;
+        let banned_radios = db::get_banned_radios(
+            &pool,
+            SpBoostedRewardsBannedRadioBanType::BoostedHex,
+            Utc::now(),
+        )
+        .await?;
         let result = banned_radios.contains(&keypair.public_key().to_owned().into(), None);
 
         assert!(result);
@@ -603,7 +630,12 @@ mod tests {
             .await?;
         transaction.commit().await?;
 
-        let banned_radios = db::get_banned_radios(&pool, Utc::now()).await?;
+        let banned_radios = db::get_banned_radios(
+            &pool,
+            SpBoostedRewardsBannedRadioBanType::BoostedHex,
+            Utc::now(),
+        )
+        .await?;
         let result = banned_radios.contains(&keypair.public_key().to_owned().into(), None);
 
         assert!(!result);
