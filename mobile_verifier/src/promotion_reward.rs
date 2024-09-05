@@ -5,7 +5,7 @@ use file_store::{
     file_source,
     file_upload::FileUpload,
     promotion_reward::{Entity, PromotionReward},
-    traits::{FileSinkWriteExt, TimestampEncode},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
     FileType,
 };
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
@@ -63,7 +63,8 @@ impl PromotionRewardDaemon {
             VerifiedPromotionRewardV1::file_sink(
                 settings.store_base_path(),
                 file_upload.clone(),
-                Some(Duration::from_secs(15 * 60)),
+                FileSinkCommitStrategy::Automatic,
+                FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
                 env!("CARGO_PKG_NAME"),
             )
             .await?;

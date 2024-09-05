@@ -47,6 +47,7 @@ pub struct GrpcServer {
     sp_boosted_rewards_ban_sink:
         FileSinkClient<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
     subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
+    promotion_reward_sink: FileSinkClient<PromotionRewardIngestReportV1>,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -86,6 +87,7 @@ impl GrpcServer {
             ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
         >,
         subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
+        promotion_reward_sink: FileSinkClient<PromotionRewardIngestReportV1>,
         required_network: Network,
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
@@ -101,7 +103,7 @@ impl GrpcServer {
             coverage_object_report_sink,
             sp_boosted_rewards_ban_sink,
             subscriber_mapping_event_sink,
-            subscriber_referral_eligibility_sink,
+            promotion_reward_sink,
             required_network,
             address,
             api_token,
@@ -576,7 +578,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         PromotionRewardIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
-            Some(settings.roll_time),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
             env!("CARGO_PKG_NAME"),
         )
         .await?;
