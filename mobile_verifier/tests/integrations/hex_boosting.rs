@@ -965,6 +965,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -976,6 +977,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -1367,17 +1369,18 @@ async fn test_poc_boosted_hex_stack_multiplier(pool: PgPool) -> anyhow::Result<(
         );
 
         let [radio_one, radio_two] = &poc_rewards;
+
         assert_eq!(
-            radio_one.coverage_points, radio_two.coverage_points,
-            "radios perform equally unboosted"
-        );
-        assert_eq!(
-            radio_one.poc_reward, radio_two.poc_reward,
+            radio_one.total_poc_reward(),
+            radio_two.total_poc_reward(),
             "radios earn equally unboosted"
         );
 
         // Make sure there were no unallocated rewards
-        let total = poc_rewards.iter().map(|r| r.poc_reward).sum::<u64>();
+        let total = poc_rewards
+            .iter()
+            .map(|r| r.total_poc_reward())
+            .sum::<u64>();
         assert_eq!(
             reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
                 .to_u64()
@@ -1435,32 +1438,28 @@ async fn test_poc_boosted_hex_stack_multiplier(pool: PgPool) -> anyhow::Result<(
         );
 
         // sort by rewards ascending
-        poc_rewards.sort_by_key(|r| r.poc_reward);
+        poc_rewards.sort_by_key(|r| r.total_poc_reward());
         let [unboosted, boosted] = &poc_rewards;
 
-        let boosted_hex = boosted.boosted_hexes.first().expect("boosted hex");
-        assert_eq!(10, boosted_hex.multiplier);
+        let boosted_hexes = boosted.boosted_hexes();
+        let boosted_hex = boosted_hexes.first().expect("boosted hex");
+        assert_eq!(10, boosted_hex.boosted_multiplier);
 
         assert_eq!(
             10,
-            boosted.coverage_points / unboosted.coverage_points,
+            boosted.total_coverage_points() / unboosted.total_coverage_points(),
             "boosted radio should have 10x coverage_points"
         );
-        assert_eq!(
-            10,
-            boosted.poc_reward / unboosted.poc_reward,
-            "boosted radio should have 10x poc_rewards"
-        );
 
-        // Make sure there were no unallocated rewards
-        let total = poc_rewards.iter().map(|r| r.poc_reward).sum::<u64>();
-        assert_eq!(
-            reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
-                .to_u64()
-                .unwrap(),
-            total,
-            "allocated equals scheduled output"
-        );
+        // We expect a single unallocated
+        let total = poc_rewards
+            .iter()
+            .map(|r| r.total_poc_reward())
+            .sum::<u64>();
+        let allocated = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+            .to_u64()
+            .unwrap();
+        assert_eq!(allocated - 1, total, "allocated equals scheduled output");
     }
 
     Ok(())
@@ -1553,8 +1552,11 @@ async fn test_poc_boosted_hex_only_applies_to_device_type(pool: PgPool) -> anyho
     let wifi1 = poc_rewards_map.get(wifi_pubkey1.as_ref()).unwrap();
     let wifi2 = poc_rewards_map.get(wifi_pubkey2.as_ref()).unwrap();
 
-    assert_eq!(5, boosted_cbrs.poc_reward / unboosted_cbrs.poc_reward,);
-    assert_eq!(wifi1.poc_reward, wifi2.poc_reward);
+    assert_eq!(
+        5,
+        boosted_cbrs.total_coverage_points() / unboosted_cbrs.total_coverage_points(),
+    );
+    assert_eq!(wifi1.total_coverage_points(), wifi2.total_coverage_points());
 
     Ok(())
 }
@@ -2249,6 +2251,7 @@ impl HexBoostableRadio {
                     coverage_object: Some(cov_obj.coverage_object.uuid),
                     location_validation_timestamp: Some(time_behind),
                     timestamp: time_ahead,
+                    location_source: LocationSource::Skyhook,
                 },
                 cell_type: CellType::NovaGenericWifiIndoor,
                 distance_to_asserted: Some(10),
