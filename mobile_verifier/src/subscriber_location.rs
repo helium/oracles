@@ -181,25 +181,17 @@ where
     }
 
     async fn verify_known_carrier_key(&self, public_key: &PublicKeyBinary) -> bool {
-        match self
-            .authorization_verifier
+        self.authorization_verifier
             .verify_authorized_key(public_key, NetworkKeyRole::MobileCarrier)
             .await
-        {
-            Ok(res) => res,
-            Err(_err) => false,
-        }
+            .unwrap_or_default()
     }
 
     async fn verify_subscriber_id(&self, subscriber_id: &[u8]) -> bool {
-        match self
-            .entity_verifier
+        self.entity_verifier
             .verify_rewardable_entity(subscriber_id)
             .await
-        {
-            Ok(res) => res,
-            Err(_err) => false,
-        }
+            .unwrap_or_default()
     }
 }
 

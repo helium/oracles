@@ -145,9 +145,8 @@ pub fn filter_from_bin(bin: &[u8], sign_keys: &[PublicKey]) -> Result<Filter> {
     let verified = sign_keys.iter().any(|pubkey| {
         filter
             .verify(pubkey)
-            .map(|res| {
+            .inspect(|_res| {
                 tracing::info!(%pubkey, "valid denylist signer");
-                res
             })
             .is_ok()
     });

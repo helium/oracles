@@ -174,14 +174,13 @@ fn reduce_hex_res(unclipped: &mut HexMap, clipped: &mut HexMap, hex_list: Vec<Ce
         hexes_at_res = hexes_at_res
             .into_iter()
             .unique()
-            .map(|parent_cell| {
-                let occupied_count = occupied_count(clipped, &parent_cell, density_tgt);
+            .inspect(|parent_cell| {
+                let occupied_count = occupied_count(clipped, parent_cell, density_tgt);
                 let limit = limit(&res, occupied_count);
-                if let Some(count) = unclipped.get(&parent_cell) {
+                if let Some(count) = unclipped.get(parent_cell) {
                     let actual = cmp::min(limit, *count);
-                    clipped.insert(parent_cell, actual);
+                    clipped.insert(*parent_cell, actual);
                 }
-                parent_cell
             })
             .collect()
     }
