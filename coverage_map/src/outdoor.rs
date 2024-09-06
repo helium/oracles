@@ -7,7 +7,9 @@ use chrono::{DateTime, Utc};
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
 
-use crate::{BoostedHexMap, CoverageObject, RankedCoverage, SignalLevel, UnrankedCoverage};
+use crate::{
+    BoostedHexMap, CoverageObject, DeviceType, RankedCoverage, SignalLevel, UnrankedCoverage,
+};
 
 /// Data structure for storing outdoor radios ranked by their coverage level
 pub type OutdoorCellTree = HashMap<Cell, BinaryHeap<OutdoorCoverageLevel>>;
@@ -96,10 +98,11 @@ pub fn clone_outdoor_coverage_into_submap(
 pub fn into_outdoor_coverage_map(
     outdoor: OutdoorCellTree,
     boosted_hexes: &impl BoostedHexMap,
+    device_type: DeviceType,
     epoch_start: DateTime<Utc>,
 ) -> impl Iterator<Item = RankedCoverage> + '_ {
     outdoor.into_iter().flat_map(move |(hex, radios)| {
-        let boosted = boosted_hexes.get_current_multiplier(hex, epoch_start);
+        let boosted = boosted_hexes.get_current_multiplier(hex, device_type, epoch_start);
         radios
             .into_sorted_vec()
             .into_iter()
@@ -138,10 +141,14 @@ mod test {
         {
             insert_outdoor_coverage_object(&mut outdoor_coverage, cov_obj);
         }
-        let ranked: HashMap<_, _> =
-            into_outdoor_coverage_map(outdoor_coverage, &NoBoostedHexes, Utc::now())
-                .map(|x| (x.cbsd_id.clone().unwrap(), x))
-                .collect();
+        let ranked: HashMap<_, _> = into_outdoor_coverage_map(
+            outdoor_coverage,
+            &NoBoostedHexes,
+            DeviceType::CbrsOutdoor,
+            Utc::now(),
+        )
+        .map(|x| (x.cbsd_id.clone().unwrap(), x))
+        .collect();
         assert_eq!(ranked.get("5").unwrap().rank, 1);
         assert_eq!(ranked.get("4").unwrap().rank, 2);
         assert_eq!(ranked.get("3").unwrap().rank, 3);

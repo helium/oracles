@@ -234,8 +234,19 @@ impl BoostedHexes {
 }
 
 impl coverage_map::BoostedHexMap for BoostedHexes {
-    fn get_current_multiplier(&self, location: Cell, ts: DateTime<Utc>) -> Option<NonZeroU32> {
-        self.get_current_multiplier(location, ts)
+    fn get_current_multiplier(
+        &self,
+        location: Cell,
+        device_type: coverage_map::DeviceType,
+        ts: DateTime<Utc>,
+    ) -> Option<NonZeroU32> {
+        let boosted_device_type = match device_type {
+            coverage_map::DeviceType::WifiIndoor => BoostedHexDeviceType::WifiIndoor,
+            coverage_map::DeviceType::WifiOutdoor => BoostedHexDeviceType::WifiOutdoor,
+            coverage_map::DeviceType::CbrsIndoor => BoostedHexDeviceType::CbrsIndoor,
+            coverage_map::DeviceType::CbrsOutdoor => BoostedHexDeviceType::CbrsOutdoor,
+        };
+        self.get_current_multiplier(location, boosted_device_type, ts)
     }
 }
 
