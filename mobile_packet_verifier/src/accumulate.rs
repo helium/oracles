@@ -109,13 +109,10 @@ async fn verify_known_routing_key(
     authorization_verifier: &impl AuthorizationVerifier,
     public_key: &PublicKeyBinary,
 ) -> bool {
-    match authorization_verifier
+    authorization_verifier
         .verify_authorized_key(public_key, NetworkKeyRole::MobileRouter)
         .await
-    {
-        Ok(res) => res,
-        Err(_err) => false,
-    }
+        .unwrap_or_default()
 }
 
 async fn is_duplicate(
