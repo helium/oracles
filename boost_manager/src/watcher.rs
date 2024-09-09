@@ -87,9 +87,9 @@ where
         tracing::info!(
             "modified hexes count since {}: {} ",
             last_processed_ts,
-            boosted_hexes.hexes.len()
+            boosted_hexes.count()
         );
-        for info in boosted_hexes.hexes.values() {
+        for info in boosted_hexes.iter_hexes() {
             let proto: BoostedHexUpdateProto = BoostedHexUpdateProto {
                 timestamp: now.encode_timestamp(),
                 update: Some(info.clone().try_into()?),

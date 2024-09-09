@@ -71,7 +71,7 @@ impl mobile_config::HexBoosting for HexBoostingService {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         tokio::spawn(async move {
-            let stream = boosted_hex_info::db::all_info_stream(&pool);
+            let stream = boosted_hex_info::db::all_info_stream_with_time_now(&pool);
             stream_multi_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 

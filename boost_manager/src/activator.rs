@@ -95,8 +95,7 @@ where
         txn: &mut Transaction<'_, Postgres>,
         manifest: RewardManifest,
     ) -> Result<()> {
-        // get latest boosted hexes info from mobile config
-        let boosted_hexes = BoostedHexes::get_all(&self.hex_boosting_client).await?;
+        let boosted_hexes = BoostedHexes::get_active(&self.hex_boosting_client).await?;
 
         // get the rewards file from the manifest
         let manifest_time = manifest.end_timestamp;
@@ -114,9 +113,9 @@ where
         while let Some(msg) = reward_shares.try_next().await? {
             let share = MobileRewardShare::decode(msg)?;
             if let Some(MobileReward::RadioReward(r)) = share.reward {
-                for hex in r.boosted_hexes.into_iter() {
-                    process_boosted_hex(txn, manifest_time, &boosted_hexes, &hex.try_into()?)
-                        .await?
+                for hex_proto in r.boosted_hexes.into_iter() {
+                    let boosted_hex = hex_proto.try_into()?;
+                    process_boosted_hex(txn, manifest_time, &boosted_hexes, &boosted_hex).await?
                 }
             }
         }
@@ -130,17 +129,19 @@ pub async fn process_boosted_hex(
     boosted_hexes: &BoostedHexes,
     hex: &BoostedHex,
 ) -> Result<()> {
-    match boosted_hexes.hexes.get(&hex.location) {
-        Some(info) => {
-            if info.start_ts.is_none() {
-                db::insert_activated_hex(
-                    txn,
-                    hex.location.into_raw(),
-                    &info.boosted_hex_pubkey.to_string(),
-                    &info.boost_config_pubkey.to_string(),
-                    manifest_time,
-                )
-                .await?;
+    match boosted_hexes.get(&hex.location) {
+        Some(hexes) => {
+            for info in hexes {
+                if info.start_ts.is_none() {
+                    db::insert_activated_hex(
+                        txn,
+                        hex.location.into_raw(),
+                        &info.boosted_hex_pubkey.to_string(),
+                        &info.boost_config_pubkey.to_string(),
+                        manifest_time,
+                    )
+                    .await?;
+                }
             }
         }
         None => {

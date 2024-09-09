@@ -402,6 +402,7 @@ impl BoostedHexMap for NoBoostedHexes {
     fn get_current_multiplier(
         &self,
         _cell: hextree::Cell,
+        _device_type: coverage_map::DeviceType,
         _ts: chrono::DateTime<Utc>,
     ) -> Option<NonZeroU32> {
         None

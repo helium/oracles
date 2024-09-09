@@ -14,7 +14,7 @@ use helium_proto::services::{
     },
 };
 use hextree::Cell;
-use mobile_config::boosted_hex_info::BoostedHexInfo;
+use mobile_config::boosted_hex_info::{BoostedHexDeviceType, BoostedHexInfo};
 use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
@@ -25,7 +25,7 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::{PgPool, Postgres, Transaction};
-use std::{num::NonZeroU32, str::FromStr};
+use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 use uuid::Uuid;
 
 const HOTSPOT_1: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
@@ -106,6 +106,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 2's location
@@ -117,6 +118,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -128,6 +130,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -294,6 +297,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 2's location
@@ -305,6 +309,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -316,6 +321,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -442,6 +448,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 1's second covered location
@@ -453,6 +460,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 2's location
@@ -464,6 +472,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -475,6 +484,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -643,6 +653,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             location: Cell::from_raw(0x8a1fb49642dffff_u64)?,
@@ -653,6 +664,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -771,6 +783,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -782,6 +795,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -951,6 +965,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -962,6 +977,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -1134,6 +1150,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 1's second covered location
@@ -1145,6 +1162,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 2's location
@@ -1156,6 +1174,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -1167,6 +1186,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
+            device_type: BoostedHexDeviceType::All,
         },
     ];
 
@@ -1289,6 +1309,256 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
 
 fn rounded(num: Decimal) -> u64 {
     num.to_u64().unwrap_or_default()
+}
+
+#[sqlx::test]
+async fn test_poc_boosted_hex_stack_multiplier(pool: PgPool) -> anyhow::Result<()> {
+    // This test seeds the database with 2 identically performing radios on
+    // neighboring hexes. Both are eligible for boosted rewards.
+    //
+    // In the first pass, no hexes are boosted, to ensure the radios are equal.
+    // In the second pass, 1 radio is boosted with 2 boosts.
+    //  - legacy boost,   BoostType::All
+    //  - specific boost, BoostType::CbrsIndoor
+    // Rewards are checked to ensure the 2 boosts accumulate correctly.
+
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
+
+    let now = Utc::now();
+    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let boosted_pubkey = PublicKeyBinary::from_str(HOTSPOT_1)?;
+    let unboosted_pubkey = PublicKeyBinary::from_str(HOTSPOT_2)?;
+
+    let boosted_location = Cell::from_raw(0x8a1fb466d2dffff)?;
+    let unboosted_location = Cell::from_raw(0x8a1fb46622d7fff)?;
+
+    let boostable_radios = vec![
+        HexBoostableRadio::cbrs_indoor(boosted_pubkey, boosted_location),
+        HexBoostableRadio::cbrs_indoor(unboosted_pubkey, unboosted_location),
+    ];
+
+    let mut txn = pool.begin().await?;
+    for radio in boostable_radios {
+        radio.seed(epoch.start, &mut txn).await?;
+    }
+    txn.commit().await?;
+    update_assignments(&pool).await?;
+
+    // First pass with no boosted hexes, radios perform the same
+    {
+        let hex_boosting_client = MockHexBoostingClient::new(vec![]);
+        let (_, poc_rewards) = tokio::join!(
+            rewarder::reward_poc_and_dc(
+                &pool,
+                &hex_boosting_client,
+                &mobile_rewards_client,
+                &speedtest_avg_client,
+                &epoch,
+                dec!(0.0001)
+            ),
+            async {
+                let one = mobile_rewards.receive_radio_reward().await;
+                let two = mobile_rewards.receive_radio_reward().await;
+
+                mobile_rewards.assert_no_messages();
+
+                [one, two]
+            },
+        );
+
+        let [radio_one, radio_two] = &poc_rewards;
+
+        assert_eq!(
+            radio_one.total_poc_reward(),
+            radio_two.total_poc_reward(),
+            "radios earn equally unboosted"
+        );
+
+        // Make sure there were no unallocated rewards
+        let total = poc_rewards
+            .iter()
+            .map(|r| r.total_poc_reward())
+            .sum::<u64>();
+        assert_eq!(
+            reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+                .to_u64()
+                .unwrap(),
+            total,
+            "allocated equals scheduled output"
+        );
+    }
+
+    // Second pass with boosted hex, first radio will be setup to receive 10x boost
+    {
+        let base = BoostedHexInfo {
+            location: boosted_location,
+            start_ts: None,
+            end_ts: None,
+            period_length: Duration::days(30),
+            multipliers: vec![],
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)?,
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY)?,
+            version: 0,
+            device_type: BoostedHexDeviceType::All,
+        };
+
+        let boosted_hexes = vec![
+            BoostedHexInfo {
+                multipliers: vec![NonZeroU32::new(3).unwrap()],
+                device_type: BoostedHexDeviceType::All,
+                ..base.clone()
+            },
+            BoostedHexInfo {
+                multipliers: vec![NonZeroU32::new(7).unwrap()],
+                device_type: BoostedHexDeviceType::CbrsIndoor,
+                ..base.clone()
+            },
+        ];
+
+        let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+        let (_, mut poc_rewards) = tokio::join!(
+            rewarder::reward_poc_and_dc(
+                &pool,
+                &hex_boosting_client,
+                &mobile_rewards_client,
+                &speedtest_avg_client,
+                &epoch,
+                dec!(0.0001)
+            ),
+            async move {
+                let one = mobile_rewards.receive_radio_reward().await;
+                let two = mobile_rewards.receive_radio_reward().await;
+
+                mobile_rewards.assert_no_messages();
+
+                [one, two]
+            },
+        );
+
+        // sort by rewards ascending
+        poc_rewards.sort_by_key(|r| r.total_poc_reward());
+        let [unboosted, boosted] = &poc_rewards;
+
+        let boosted_hexes = boosted.boosted_hexes();
+        let boosted_hex = boosted_hexes.first().expect("boosted hex");
+        assert_eq!(10, boosted_hex.boosted_multiplier);
+
+        assert_eq!(
+            10,
+            boosted.total_coverage_points() / unboosted.total_coverage_points(),
+            "boosted radio should have 10x coverage_points"
+        );
+
+        // We expect a single unallocated
+        let total = poc_rewards
+            .iter()
+            .map(|r| r.total_poc_reward())
+            .sum::<u64>();
+        let allocated = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+            .to_u64()
+            .unwrap();
+        assert_eq!(allocated - 1, total, "allocated equals scheduled output");
+    }
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_poc_boosted_hex_only_applies_to_device_type(pool: PgPool) -> anyhow::Result<()> {
+    // This tests ensures that device specific device types don't affect other device types.
+    // There are 2 hexes:
+    // - #1 BoostType::CbrsOutdoor at 5x
+    // - #2 No Boosts
+    //
+    // There are 4 radios that all qualify for hex boosting:
+    // - CbrsOutdoor in boosted hex
+    // - Cbrsoutdoor in unboosted hex
+    // - WifiOutdoor in boosted hex
+    // - WifiOutdoor in unboosted hex
+    //
+    // The boosted cbrs radio should have 5x the rewards of the unboosted cbrs radio.
+    // The wifi radios should have the same rewards.
+    //
+
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
+
+    let now = Utc::now();
+    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let boosted_cbrs_pubkey = PublicKeyBinary::from_str(HOTSPOT_1)?;
+    let unboosted_cbrs_pubkey = PublicKeyBinary::from_str(HOTSPOT_2)?;
+    let wifi_pubkey1 = PublicKeyBinary::from_str(HOTSPOT_3)?;
+    let wifi_pubkey2 = PublicKeyBinary::from_str(HOTSPOT_4)?;
+
+    let boosted_location = Cell::from_raw(0x8a1fb466d2dffff)?;
+    let unboosted_location = Cell::from_raw(0x8a1fb46622d7fff)?;
+
+    let boostable_radios = vec![
+        HexBoostableRadio::cbrs_outdoor(boosted_cbrs_pubkey.clone(), boosted_location),
+        HexBoostableRadio::cbrs_outdoor(unboosted_cbrs_pubkey.clone(), unboosted_location),
+        HexBoostableRadio::wifi_outdoor(wifi_pubkey1.clone(), boosted_location),
+        HexBoostableRadio::wifi_outdoor(wifi_pubkey2.clone(), unboosted_location),
+    ];
+
+    let mut txn = pool.begin().await?;
+    for radio in boostable_radios {
+        radio.seed(epoch.start, &mut txn).await?;
+    }
+    txn.commit().await?;
+    update_assignments(&pool).await?;
+
+    let boosted_hex = BoostedHexInfo {
+        location: boosted_location,
+        start_ts: None,
+        end_ts: None,
+        period_length: Duration::days(30),
+        multipliers: vec![NonZeroU32::new(5).unwrap()],
+        boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)?,
+        boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY)?,
+        version: 0,
+        device_type: BoostedHexDeviceType::CbrsOutdoor,
+    };
+
+    let hex_boosting_client = MockHexBoostingClient::new(vec![boosted_hex]);
+    let (_, poc_rewards_map) = tokio::join!(
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &hex_boosting_client,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &epoch,
+            dec!(0.0001)
+        ),
+        async move {
+            let one = mobile_rewards.receive_radio_reward().await;
+            let two = mobile_rewards.receive_radio_reward().await;
+            let three = mobile_rewards.receive_radio_reward().await;
+            let four = mobile_rewards.receive_radio_reward().await;
+
+            mobile_rewards.assert_no_messages();
+
+            vec![one, two, three, four]
+                .into_iter()
+                .map(|r| (r.hotspot_key.clone(), r))
+                .collect::<HashMap<_, _>>()
+        }
+    );
+
+    let boosted_cbrs = poc_rewards_map.get(boosted_cbrs_pubkey.as_ref()).unwrap();
+    let unboosted_cbrs = poc_rewards_map.get(unboosted_cbrs_pubkey.as_ref()).unwrap();
+    let wifi1 = poc_rewards_map.get(wifi_pubkey1.as_ref()).unwrap();
+    let wifi2 = poc_rewards_map.get(wifi_pubkey2.as_ref()).unwrap();
+
+    assert_eq!(
+        5,
+        boosted_cbrs.total_coverage_points() / unboosted_cbrs.total_coverage_points(),
+    );
+    assert_eq!(wifi1.total_coverage_points(), wifi2.total_coverage_points());
+
+    Ok(())
 }
 
 async fn receive_expected_rewards(
@@ -1902,4 +2172,122 @@ fn get_poc_allocation_buckets(epoch_duration: Duration) -> (Decimal, Decimal) {
     let regular_poc = regular_poc + data_transfer;
 
     (regular_poc, boosted_poc)
+}
+
+/// Hex Boostable Radio Checklist:
+/// - Coverage Object: 1
+/// - Seniority Update: 1
+/// - Heartbeats: 12
+/// - Speedtests: 2
+/// - Radio Threshold: 1
+struct HexBoostableRadio {
+    pubkey: PublicKeyBinary,
+    cbsd_id: Option<String>,
+    hb_type: HbType,
+    is_indoor: bool,
+    location: Cell,
+    heartbeat_count: i64,
+}
+
+impl HexBoostableRadio {
+    fn cbrs_indoor(pubkey: PublicKeyBinary, location: Cell) -> Self {
+        Self::new(pubkey, BoostedHexDeviceType::CbrsIndoor, location)
+    }
+
+    fn cbrs_outdoor(pubkey: PublicKeyBinary, location: Cell) -> Self {
+        Self::new(pubkey, BoostedHexDeviceType::CbrsOutdoor, location)
+    }
+
+    fn wifi_outdoor(pubkey: PublicKeyBinary, location: Cell) -> Self {
+        Self::new(pubkey, BoostedHexDeviceType::WifiOutdoor, location)
+    }
+
+    fn new(pubkey: PublicKeyBinary, boost_type: BoostedHexDeviceType, location: Cell) -> Self {
+        let (hb_type, is_indoor, cbsd_id) = match boost_type {
+            BoostedHexDeviceType::All => panic!("a radio cannot be all types at once"),
+            BoostedHexDeviceType::CbrsIndoor => {
+                (HbType::Cbrs, true, Some(format!("cbsd-indoor-{pubkey}")))
+            }
+            BoostedHexDeviceType::CbrsOutdoor => {
+                (HbType::Cbrs, false, Some(format!("cbsd-outdoor-{pubkey}")))
+            }
+            BoostedHexDeviceType::WifiIndoor => (HbType::Wifi, true, None),
+            BoostedHexDeviceType::WifiOutdoor => (HbType::Wifi, false, None),
+        };
+        Self {
+            pubkey,
+            cbsd_id,
+            hb_type,
+            is_indoor,
+            location,
+            heartbeat_count: 12,
+        }
+    }
+
+    async fn seed(
+        self,
+        timestamp: DateTime<Utc>,
+        txn: &mut Transaction<'_, Postgres>,
+    ) -> anyhow::Result<()> {
+        let cov_obj = create_coverage_object(
+            timestamp,
+            self.cbsd_id.clone(),
+            self.pubkey.clone(),
+            self.location.into_raw(),
+            self.is_indoor,
+        );
+        for n in 0..=self.heartbeat_count {
+            let time_ahead = timestamp + ChronoDuration::hours(n);
+            let time_behind = timestamp - ChronoDuration::hours(24);
+
+            let wifi_heartbeat = ValidatedHeartbeat {
+                heartbeat: Heartbeat {
+                    hb_type: self.hb_type,
+                    hotspot_key: self.pubkey.clone(),
+                    cbsd_id: self.cbsd_id.clone(),
+                    operation_mode: true,
+                    lat: 0.0,
+                    lon: 0.0,
+                    coverage_object: Some(cov_obj.coverage_object.uuid),
+                    location_validation_timestamp: Some(time_behind),
+                    timestamp: time_ahead,
+                    location_source: LocationSource::Skyhook,
+                },
+                cell_type: CellType::NovaGenericWifiIndoor,
+                distance_to_asserted: Some(10),
+                coverage_meta: None,
+                location_trust_score_multiplier: dec!(1.0),
+                validity: HeartbeatValidity::Valid,
+            };
+
+            let speedtest = CellSpeedtest {
+                pubkey: self.pubkey.clone(),
+                serial: format!("serial-{}", self.pubkey),
+                timestamp: timestamp - ChronoDuration::hours(n * 4),
+                upload_speed: 100_000_000,
+                download_speed: 100_000_000,
+                latency: 49,
+            };
+
+            save_seniority_object(time_ahead, &wifi_heartbeat, txn).await?;
+            wifi_heartbeat.save(txn).await?;
+            speedtests::save_speedtest(&speedtest, txn).await?;
+        }
+        cov_obj.save(txn).await?;
+
+        let report = RadioThresholdIngestReport {
+            received_timestamp: Default::default(),
+            report: RadioThresholdReportReq {
+                hotspot_pubkey: self.pubkey.clone(),
+                cbsd_id: self.cbsd_id.clone(),
+                bytes_threshold: 1_000_000,
+                subscriber_threshold: 3,
+                threshold_timestamp: timestamp,
+                carrier_pub_key: CARRIER_HOTSPOT_KEY.parse().unwrap(),
+            },
+        };
+        radio_threshold::save(&report, txn).await?;
+
+        Ok(())
+    }
 }

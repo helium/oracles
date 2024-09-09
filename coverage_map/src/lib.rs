@@ -10,6 +10,14 @@ mod outdoor;
 use indoor::*;
 use outdoor::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceType {
+    WifiIndoor,
+    WifiOutdoor,
+    CbrsIndoor,
+    CbrsOutdoor,
+}
+
 /// Data structure for keeping track of the ranking the coverage in each hex cell for indoor
 /// and outdoor CBRS and WiFi radios.
 #[derive(Clone, Default, Debug)]
@@ -80,23 +88,31 @@ impl CoverageMapBuilder {
     ) -> CoverageMap {
         let mut wifi_hotspots = HashMap::<_, Vec<RankedCoverage>>::new();
         let mut cbrs_radios = HashMap::<_, Vec<RankedCoverage>>::new();
-        for coverage in into_indoor_coverage_map(self.indoor_cbrs, boosted_hexes, epoch_start)
-            .chain(into_indoor_coverage_map(
-                self.indoor_wifi,
-                boosted_hexes,
-                epoch_start,
-            ))
-            .chain(into_outdoor_coverage_map(
-                self.outdoor_cbrs,
-                boosted_hexes,
-                epoch_start,
-            ))
-            .chain(into_outdoor_coverage_map(
-                self.outdoor_wifi,
-                boosted_hexes,
-                epoch_start,
-            ))
-        {
+
+        for coverage in into_indoor_coverage_map(
+            self.indoor_cbrs,
+            boosted_hexes,
+            DeviceType::CbrsIndoor,
+            epoch_start,
+        )
+        .chain(into_indoor_coverage_map(
+            self.indoor_wifi,
+            boosted_hexes,
+            DeviceType::WifiIndoor,
+            epoch_start,
+        ))
+        .chain(into_outdoor_coverage_map(
+            self.outdoor_cbrs,
+            boosted_hexes,
+            DeviceType::CbrsOutdoor,
+            epoch_start,
+        ))
+        .chain(into_outdoor_coverage_map(
+            self.outdoor_wifi,
+            boosted_hexes,
+            DeviceType::WifiOutdoor,
+            epoch_start,
+        )) {
             if let Some(ref cbsd_id) = coverage.cbsd_id {
                 cbrs_radios
                     .entry(cbsd_id.clone())
@@ -183,7 +199,12 @@ pub enum SignalLevel {
 }
 
 pub trait BoostedHexMap {
-    fn get_current_multiplier(&self, cell: Cell, ts: DateTime<Utc>) -> Option<NonZeroU32>;
+    fn get_current_multiplier(
+        &self,
+        cell: Cell,
+        device_type: DeviceType,
+        ts: DateTime<Utc>,
+    ) -> Option<NonZeroU32>;
 }
 
 #[cfg(test)]
@@ -191,7 +212,12 @@ pub(crate) struct NoBoostedHexes;
 
 #[cfg(test)]
 impl BoostedHexMap for NoBoostedHexes {
-    fn get_current_multiplier(&self, _cell: Cell, _ts: DateTime<Utc>) -> Option<NonZeroU32> {
+    fn get_current_multiplier(
+        &self,
+        _cell: Cell,
+        _device_type: DeviceType,
+        _ts: DateTime<Utc>,
+    ) -> Option<NonZeroU32> {
         None
     }
 }
