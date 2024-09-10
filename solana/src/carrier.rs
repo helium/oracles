@@ -35,8 +35,9 @@ impl SolanaNetwork for SolanaRpc {
         );
         let carrier_data = self.provider.get_account_data(&carrier_pda).await?;
         let mut carrier_data = carrier_data.as_ref();
-        let _carrier = CarrierV0::try_deserialize(&mut carrier_data)?;
-        let bps: u16 = 0; // carrier.incentive_escrow_fund_bps (not available right now)
+        let carrier = CarrierV0::try_deserialize(&mut carrier_data)?;
+
+        let bps = carrier.incentive_escrow_fund_bps;
         let percent = Decimal::from(bps) / dec!(10_000);
         Ok(percent)
     }
