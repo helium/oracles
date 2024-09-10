@@ -100,7 +100,7 @@ impl MockFileSinkReceiver<MobileRewardShare> {
     pub async fn receive_radio_reward_v1(&mut self) -> RadioReward {
         match self.receive("receive_radio_reward_v1").await {
             Some(mobile_reward) => {
-                println!("mobile_reward: {:?}", mobile_reward);
+                // println!("mobile_reward: {:?}", mobile_reward);
                 match mobile_reward.reward {
                     Some(MobileReward::RadioReward(r)) => r,
                     _ => panic!("failed to get radio reward"),
@@ -133,7 +133,7 @@ impl MockFileSinkReceiver<MobileRewardShare> {
     pub async fn receive_gateway_reward(&mut self) -> GatewayReward {
         match self.receive("receive_gateway_reward").await {
             Some(mobile_reward) => {
-                println!("mobile_reward: {:?}", mobile_reward);
+                // println!("mobile_reward: {:?}", mobile_reward);
                 match mobile_reward.reward {
                     Some(MobileReward::GatewayReward(r)) => r,
                     _ => panic!("failed to get gateway reward"),
@@ -146,7 +146,7 @@ impl MockFileSinkReceiver<MobileRewardShare> {
     pub async fn receive_service_provider_reward(&mut self) -> ServiceProviderReward {
         match self.receive("receive_service_provider_reward").await {
             Some(mobile_reward) => {
-                println!("mobile_reward: {:?}", mobile_reward);
+                // println!("mobile_reward: {:?}", mobile_reward);
                 match mobile_reward.reward {
                     Some(MobileReward::ServiceProviderReward(r)) => r,
                     _ => panic!("failed to get service provider reward"),
@@ -159,7 +159,7 @@ impl MockFileSinkReceiver<MobileRewardShare> {
     pub async fn receive_subscriber_reward(&mut self) -> SubscriberReward {
         match self.receive("receive_subscriber_reward").await {
             Some(mobile_reward) => {
-                println!("mobile_reward: {:?}", mobile_reward);
+                // println!("mobile_reward: {:?}", mobile_reward);
                 match mobile_reward.reward {
                     Some(MobileReward::SubscriberReward(r)) => r,
                     _ => panic!("failed to get subscriber reward"),
@@ -172,7 +172,7 @@ impl MockFileSinkReceiver<MobileRewardShare> {
     pub async fn receive_unallocated_reward(&mut self) -> UnallocatedReward {
         match self.receive("receive_unallocated_reward").await {
             Some(mobile_reward) => {
-                println!("mobile_reward: {:?}", mobile_reward);
+                // println!("mobile_reward: {:?}", mobile_reward);
                 match mobile_reward.reward {
                     Some(MobileReward::UnallocatedReward(r)) => r,
                     _ => panic!("failed to get unallocated reward"),
