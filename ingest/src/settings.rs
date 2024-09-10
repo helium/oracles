@@ -41,6 +41,8 @@ pub struct Settings {
     pub token: Option<String>,
     /// Target output bucket details Metrics settings
     pub metrics: poc_metrics::Settings,
+    // mobile config client settings
+    pub config_client: mobile_config::ClientSettings,
 }
 
 fn default_roll_time() -> Duration {

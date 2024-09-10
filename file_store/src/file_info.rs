@@ -106,6 +106,11 @@ impl FileInfo {
     }
 }
 
+pub const HEX_USAGE_COUNTS_INGEST_REPORT: &str = "hex_usage_counts_ingest_report";
+pub const HOTSPOT_USAGE_COUNTS_INGEST_REPORT: &str = "hotspot_usage_counts_ingest_report";
+pub const HEX_USAGE_COUNTS_REQ: &str = "hex_usage_counts_req";
+pub const HOTSPOT_USAGE_COUNTS_REQ: &str = "hotspot_usage_counts_req";
+
 pub const INVALIDATED_RADIO_THRESHOLD_REQ: &str = "invalidated_radio_threshold_req";
 pub const INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT: &str =
     "invalidated_radio_threshold_ingest_report";
@@ -220,6 +225,10 @@ pub enum FileType {
     VerifiedSPBoostedRewardsBannedRadioIngestReport,
     SubscriberVerifiedMappingEventIngestReport,
     VerifiedSubscriberVerifiedMappingEventIngestReport,
+    HexUsageCountsIngestReport,
+    HotspotUsageCountsIngestReport,
+    HexUsageCountsReq,
+    HotspotUsageCountsReq,
 }
 
 impl fmt::Display for FileType {
@@ -291,6 +300,10 @@ impl fmt::Display for FileType {
             Self::VerifiedSubscriberVerifiedMappingEventIngestReport => {
                 VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
             }
+            Self::HexUsageCountsIngestReport => HEX_USAGE_COUNTS_INGEST_REPORT,
+            Self::HotspotUsageCountsIngestReport => HOTSPOT_USAGE_COUNTS_INGEST_REPORT,
+            Self::HexUsageCountsReq => HEX_USAGE_COUNTS_REQ,
+            Self::HotspotUsageCountsReq => HOTSPOT_USAGE_COUNTS_REQ,
         };
         f.write_str(s)
     }
@@ -365,6 +378,10 @@ impl FileType {
             Self::VerifiedSubscriberVerifiedMappingEventIngestReport => {
                 VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
             }
+            Self::HexUsageCountsIngestReport => HEX_USAGE_COUNTS_INGEST_REPORT,
+            Self::HotspotUsageCountsIngestReport => HOTSPOT_USAGE_COUNTS_INGEST_REPORT,
+            Self::HexUsageCountsReq => HEX_USAGE_COUNTS_REQ,
+            Self::HotspotUsageCountsReq => HOTSPOT_USAGE_COUNTS_REQ,
         }
     }
 }
@@ -439,6 +456,10 @@ impl FromStr for FileType {
             VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT => {
                 Self::VerifiedSubscriberVerifiedMappingEventIngestReport
             }
+            HEX_USAGE_COUNTS_INGEST_REPORT => Self::HexUsageCountsIngestReport,
+            HOTSPOT_USAGE_COUNTS_INGEST_REPORT => Self::HotspotUsageCountsIngestReport,
+            HEX_USAGE_COUNTS_REQ => Self::HexUsageCountsReq,
+            HOTSPOT_USAGE_COUNTS_REQ => Self::HotspotUsageCountsReq,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
