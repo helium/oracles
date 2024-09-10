@@ -294,7 +294,7 @@ impl MapperShares {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ServiceProviderShares {
     pub shares: Vec<ServiceProviderDataSession>,
 }

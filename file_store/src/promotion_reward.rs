@@ -8,7 +8,7 @@ use helium_proto::services::poc_mobile::{
     self as proto, PromotionRewardIngestReportV1, PromotionRewardReqV1,
 };
 
-#[derive(Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum Entity {
     SubscriberId(Vec<u8>),
     GatewayKey(PublicKeyBinary),

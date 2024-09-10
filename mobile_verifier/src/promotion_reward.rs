@@ -285,6 +285,7 @@ pub struct PromotionRewardShares {
     pub shares: u64,
 }
 
+#[derive(Debug)]
 pub struct ServiceProviderPromotionRewardShares {
     pub service_provider_id: ServiceProviderId,
     pub rewardable_entity: Entity,
