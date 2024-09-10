@@ -322,12 +322,12 @@ impl AggregatePromotionRewards {
     ) -> anyhow::Result<Self> {
         let rewards = sqlx::query_as(
             r#"
-            SELECT subscriber_id, NULL as gateway_key, SUM(shares), carrier_key
+            SELECT subscriber_id, NULL as gateway_key, SUM(shares)::bigint as shares, carrier_key
             FROM subscriber_promotion_rewards
             WHERE time_of_reward >= $1 AND time_of_reward < $2
             GROUP BY subscriber_id, carrier_key
             UNION
-            SELECT NULL as subscriber_id, gateway_key, SUM(shares), carrier_key
+            SELECT NULL as subscriber_id, gateway_key, SUM(shares)::bigint as shares, carrier_key
             FROM gateway_promotion_rewards
             WHERE time_of_reward >= $1 AND time_of_reward < $2
             GROUP BY gateway_key, carrier_key
@@ -349,6 +349,7 @@ impl AggregatePromotionRewards {
         })
         .try_collect()
         .await?;
+
         Ok(Self { rewards })
     }
 
