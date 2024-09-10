@@ -3,6 +3,8 @@ use std::string::ToString;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use file_store::promotion_reward::{self, PromotionReward};
+use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_mobile::{
         MobileRewardShare, ServiceProviderReward, UnallocatedReward, UnallocatedRewardType,
@@ -11,11 +13,15 @@ use helium_proto::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+use solana::{carrier::SolanaNetwork, SolanaRpcError};
 use sqlx::{PgPool, Postgres, Transaction};
+use uuid::Uuid;
 
 use crate::common::{self, MockFileSinkReceiver};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
-use mobile_verifier::{data_session, reward_shares, rewarder};
+use mobile_verifier::{
+    data_session, promotion_reward::save_promotion_reward, reward_shares, rewarder,
+};
 
 const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
@@ -156,6 +162,100 @@ async fn test_service_provider_rewards_invalid_sp(pool: PgPool) -> anyhow::Resul
     Ok(())
 }
 
+#[sqlx::test]
+async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result<()> {
+    // Single SP has allocated shares for a few of their subscribers.
+    // Rewards are matched by the unallocated SP rewards for the subscribers
+
+    let valid_sps = HashMap::from_iter([(PAYER_1.to_string(), SP_1.to_string())]);
+    let carrier_client = MockCarrierServiceClient::new(valid_sps);
+
+    let now = Utc::now();
+    let epoch = (now - ChronoDuration::hours(24))..now;
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+
+    let mut txn = pool.begin().await?;
+    seed_hotspot_data(epoch.end, &mut txn).await?; // DC transferred == 6,000 reward amount
+    seed_sp_promotion_rewards_with_random_subscribers(
+        PAYER_1.to_string().parse().unwrap(),
+        &[1, 2, 3],
+        &mut txn,
+    )
+    .await?;
+    txn.commit().await?;
+
+    // Standin for Solana when grabbing Service Provider incentive percentage
+    struct SPPromotionAllocation(Decimal);
+
+    #[async_trait::async_trait]
+    impl SolanaNetwork for SPPromotionAllocation {
+        async fn fetch_incentive_escrow_fund_percent(
+            &self,
+            _network_name: &str,
+        ) -> Result<Decimal, SolanaRpcError> {
+            Ok(self.0)
+        }
+    }
+
+    let sp_promo_allocation = SPPromotionAllocation(dec!(0.05));
+
+    let (_, rewards) = tokio::join!(
+        rewarder::reward_service_providers(
+            &pool,
+            &sp_promo_allocation,
+            &carrier_client,
+            &mobile_rewards_client,
+            &epoch,
+            dec!(0.0001)
+        ),
+        async move {
+            let mut promos = vec![
+                mobile_rewards.receive_promotion_reward().await,
+                mobile_rewards.receive_promotion_reward().await,
+                mobile_rewards.receive_promotion_reward().await,
+            ];
+            // sort by awarded amount least -> most
+            promos.sort_by_key(|a| a.service_provider_amount);
+
+            let sp_reward = mobile_rewards.receive_service_provider_reward().await;
+            let unallocated = mobile_rewards.receive_unallocated_reward().await;
+
+            mobile_rewards.assert_no_messages();
+
+            (promos, sp_reward, unallocated)
+        }
+    );
+
+    let (promos, sp_reward, unallocated) = rewards;
+    let promo_reward_1 = promos[0].clone();
+    let promo_reward_2 = promos[1].clone();
+    let promo_reward_3 = promos[2].clone();
+
+    // 1 share
+    assert_eq!(promo_reward_1.service_provider_amount, 50);
+    assert_eq!(promo_reward_1.matched_amount, 50);
+
+    // 2 shares
+    assert_eq!(promo_reward_2.service_provider_amount, 100);
+    assert_eq!(promo_reward_2.matched_amount, 100);
+
+    // 3 shares
+    assert_eq!(promo_reward_3.service_provider_amount, 150);
+    assert_eq!(promo_reward_3.matched_amount, 150);
+
+    assert_eq!(sp_reward.amount, 5700);
+
+    let unallocated_sp_rewards = get_unallocated_sp_rewards(&epoch);
+    let expected_unallocated = unallocated_sp_rewards
+        - 5700 // 95% service provider rewards
+        - 300 // 5% service provider promotions
+        - 300; // matched promotion
+
+    assert_eq!(unallocated.amount, expected_unallocated);
+
+    Ok(())
+}
+
 async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
 ) -> anyhow::Result<(ServiceProviderReward, UnallocatedReward)> {
@@ -172,6 +272,32 @@ async fn receive_expected_rewards(
     mobile_rewards.assert_no_messages();
 
     Ok((sp_reward1, unallocated_reward))
+}
+
+// Service Provider promotion rewards are verified during ingest. When you write
+// directly to the database, the assumption is the entity and the payer are
+// valid.
+async fn seed_sp_promotion_rewards_with_random_subscribers(
+    payer: PublicKeyBinary,
+    sub_shares: &[u64],
+    txn: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<()> {
+    for &shares in sub_shares {
+        save_promotion_reward(
+            txn,
+            &PromotionReward {
+                entity: promotion_reward::Entity::SubscriberId(Uuid::new_v4().into()),
+                shares,
+                timestamp: Utc::now() - chrono::Duration::hours(2),
+                received_timestamp: Utc::now(),
+                carrier_pub_key: payer.clone(),
+                signature: vec![],
+            },
+        )
+        .await?;
+    }
+
+    Ok(())
 }
 
 async fn seed_hotspot_data(
@@ -226,4 +352,12 @@ async fn seed_hotspot_data_invalid_sp(
     data_session_1.save(txn).await?;
     data_session_2.save(txn).await?;
     Ok(())
+}
+
+// Helper for turning Decimal -> u64 to compare against output rewards
+fn get_unallocated_sp_rewards(epoch: &std::ops::Range<DateTime<Utc>>) -> u64 {
+    reward_shares::get_scheduled_tokens_for_service_providers(epoch.end - epoch.start)
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0)
 }

@@ -221,7 +221,7 @@ async fn write_promotion_reward(
     Ok(())
 }
 
-async fn save_promotion_reward(
+pub async fn save_promotion_reward(
     transaction: &mut Transaction<'_, Postgres>,
     promotion_reward: &PromotionReward,
 ) -> anyhow::Result<()> {
