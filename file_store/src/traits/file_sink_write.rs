@@ -254,8 +254,8 @@ impl_file_sink!(
     "hex_usage_counts_ingest_report"
 );
 impl_file_sink!(
-    poc_mobile::HotspotUsageCountsIngestReportV1,
-    FileType::HotspotUsageCountsIngestReport.to_str(),
+    poc_mobile::RadioUsageCountsIngestReportV1,
+    FileType::RadioUsageCountsIngestReport.to_str(),
     "hotspot_usage_counts_ingest_report"
 );
 impl_file_sink!(

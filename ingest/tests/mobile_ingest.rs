@@ -92,7 +92,7 @@ async fn submit_hex_usage_report() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn submit_hotspot_usage_report() -> anyhow::Result<()> {
+async fn submit_radio_usage_report() -> anyhow::Result<()> {
     let (mut client, trigger) = common::setup_mobile().await?;
 
     let hotspot_pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
@@ -102,7 +102,7 @@ async fn submit_hotspot_usage_report() -> anyhow::Result<()> {
     let offload_avg_count = 12;
 
     let res = client
-        .submit_hotspot_usage_req(
+        .submit_radio_usage_req(
             hotspot_pubkey.clone(),
             cbsd_id.clone(),
             helium_mobile_subscriber_avg_count,
@@ -115,7 +115,7 @@ async fn submit_hotspot_usage_report() -> anyhow::Result<()> {
 
     let timestamp: String = res.unwrap().id;
 
-    match client.hotspot_usage_recv().await {
+    match client.radio_usage_recv().await {
         Ok(report) => {
             assert_eq!(timestamp, report.received_timestamp.to_string());
 

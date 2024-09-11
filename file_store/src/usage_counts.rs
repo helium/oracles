@@ -9,8 +9,8 @@ use chrono::{DateTime, Utc};
 use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    HexUsageCountsIngestReportV1, HexUsageCountsReqV1, HotspotUsageCountsIngestReportV1,
-    HotspotUsageCountsReqV1,
+    HexUsageCountsIngestReportV1, HexUsageCountsReqV1, RadioUsageCountsIngestReportV1,
+    RadioUsageCountsReqV1,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ pub struct HexUsageCountsReq {
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
-pub struct HotspotUsageCountsReq {
+pub struct RadioUsageCountsReq {
     pub hotspot_pubkey: PublicKeyBinary,
     pub cbsd_id: String,
     pub helium_mobile_subscriber_avg_count: u64,
@@ -40,8 +40,8 @@ impl MsgDecode for HexUsageCountsReq {
     type Msg = HexUsageCountsReqV1;
 }
 
-impl MsgDecode for HotspotUsageCountsReq {
-    type Msg = HotspotUsageCountsReqV1;
+impl MsgDecode for RadioUsageCountsReq {
+    type Msg = RadioUsageCountsReqV1;
 }
 
 impl MsgTimestamp<Result<DateTime<Utc>>> for HexUsageCountsReqV1 {
@@ -56,13 +56,13 @@ impl MsgTimestamp<u64> for HexUsageCountsReq {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for HotspotUsageCountsReqV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for RadioUsageCountsReqV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.timestamp.to_timestamp()
     }
 }
 
-impl MsgTimestamp<u64> for HotspotUsageCountsReq {
+impl MsgTimestamp<u64> for RadioUsageCountsReq {
     fn timestamp(&self) -> u64 {
         self.timestamp.encode_timestamp()
     }
@@ -103,9 +103,9 @@ impl From<HexUsageCountsReq> for HexUsageCountsReqV1 {
     }
 }
 
-impl TryFrom<HotspotUsageCountsReqV1> for HotspotUsageCountsReq {
+impl TryFrom<RadioUsageCountsReqV1> for RadioUsageCountsReq {
     type Error = Error;
-    fn try_from(v: HotspotUsageCountsReqV1) -> Result<Self> {
+    fn try_from(v: RadioUsageCountsReqV1) -> Result<Self> {
         let timestamp = v.timestamp()?;
         Ok(Self {
             hotspot_pubkey: v.hotspot_pubkey.into(),
@@ -119,10 +119,10 @@ impl TryFrom<HotspotUsageCountsReqV1> for HotspotUsageCountsReq {
     }
 }
 
-impl From<HotspotUsageCountsReq> for HotspotUsageCountsReqV1 {
-    fn from(v: HotspotUsageCountsReq) -> Self {
+impl From<RadioUsageCountsReq> for RadioUsageCountsReqV1 {
+    fn from(v: RadioUsageCountsReq) -> Self {
         let timestamp = v.timestamp();
-        HotspotUsageCountsReqV1 {
+        RadioUsageCountsReqV1 {
             hotspot_pubkey: v.hotspot_pubkey.into(),
             cbsd_id: v.cbsd_id,
             helium_mobile_subscriber_avg_count: v.helium_mobile_subscriber_avg_count,
@@ -142,8 +142,8 @@ pub struct HexUsageCountsIngestReport {
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
-pub struct HotspotUsageCountsIngestReport {
-    pub report: HotspotUsageCountsReq,
+pub struct RadioUsageCountsIngestReport {
+    pub report: RadioUsageCountsReq,
     pub received_timestamp: DateTime<Utc>,
 }
 
@@ -151,8 +151,8 @@ impl MsgDecode for HexUsageCountsIngestReport {
     type Msg = HexUsageCountsIngestReportV1;
 }
 
-impl MsgDecode for HotspotUsageCountsIngestReport {
-    type Msg = HotspotUsageCountsIngestReportV1;
+impl MsgDecode for RadioUsageCountsIngestReport {
+    type Msg = RadioUsageCountsIngestReportV1;
 }
 
 impl MsgTimestamp<Result<DateTime<Utc>>> for HexUsageCountsIngestReportV1 {
@@ -167,13 +167,13 @@ impl MsgTimestamp<u64> for HexUsageCountsIngestReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for HotspotUsageCountsIngestReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for RadioUsageCountsIngestReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp()
     }
 }
 
-impl MsgTimestamp<u64> for HotspotUsageCountsIngestReport {
+impl MsgTimestamp<u64> for RadioUsageCountsIngestReport {
     fn timestamp(&self) -> u64 {
         self.received_timestamp.encode_timestamp()
     }
@@ -204,24 +204,24 @@ impl From<HexUsageCountsIngestReport> for HexUsageCountsIngestReportV1 {
     }
 }
 
-impl TryFrom<HotspotUsageCountsIngestReportV1> for HotspotUsageCountsIngestReport {
+impl TryFrom<RadioUsageCountsIngestReportV1> for RadioUsageCountsIngestReport {
     type Error = Error;
-    fn try_from(v: HotspotUsageCountsIngestReportV1) -> Result<Self> {
+    fn try_from(v: RadioUsageCountsIngestReportV1) -> Result<Self> {
         Ok(Self {
             report: v
                 .clone()
                 .report
-                .ok_or_else(|| Error::not_found("ingest HotspotUsageCountsIngestReport report"))?
+                .ok_or_else(|| Error::not_found("ingest RadioUsageCountsIngestReport report"))?
                 .try_into()?,
             received_timestamp: v.timestamp()?,
         })
     }
 }
 
-impl From<HotspotUsageCountsIngestReport> for HotspotUsageCountsIngestReportV1 {
-    fn from(v: HotspotUsageCountsIngestReport) -> Self {
+impl From<RadioUsageCountsIngestReport> for RadioUsageCountsIngestReportV1 {
+    fn from(v: RadioUsageCountsIngestReport) -> Self {
         let received_timestamp = v.received_timestamp;
-        let report: HotspotUsageCountsReqV1 = v.report.into();
+        let report: RadioUsageCountsReqV1 = v.report.into();
         Self {
             report: Some(report),
             received_timestamp: received_timestamp.encode_timestamp(),

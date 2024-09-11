@@ -107,9 +107,9 @@ impl FileInfo {
 }
 
 pub const HEX_USAGE_COUNTS_INGEST_REPORT: &str = "hex_usage_counts_ingest_report";
-pub const HOTSPOT_USAGE_COUNTS_INGEST_REPORT: &str = "hotspot_usage_counts_ingest_report";
+pub const RADIO_USAGE_COUNTS_INGEST_REPORT: &str = "radio_usage_counts_ingest_report";
 pub const HEX_USAGE_COUNTS_REQ: &str = "hex_usage_counts_req";
-pub const HOTSPOT_USAGE_COUNTS_REQ: &str = "hotspot_usage_counts_req";
+pub const RADIO_USAGE_COUNTS_REQ: &str = "radio_usage_counts_req";
 
 pub const INVALIDATED_RADIO_THRESHOLD_REQ: &str = "invalidated_radio_threshold_req";
 pub const INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT: &str =
@@ -226,9 +226,9 @@ pub enum FileType {
     SubscriberVerifiedMappingEventIngestReport,
     VerifiedSubscriberVerifiedMappingEventIngestReport,
     HexUsageCountsIngestReport,
-    HotspotUsageCountsIngestReport,
+    RadioUsageCountsIngestReport,
     HexUsageCountsReq,
-    HotspotUsageCountsReq,
+    RadioUsageCountsReq,
 }
 
 impl fmt::Display for FileType {
@@ -301,9 +301,9 @@ impl fmt::Display for FileType {
                 VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
             }
             Self::HexUsageCountsIngestReport => HEX_USAGE_COUNTS_INGEST_REPORT,
-            Self::HotspotUsageCountsIngestReport => HOTSPOT_USAGE_COUNTS_INGEST_REPORT,
+            Self::RadioUsageCountsIngestReport => RADIO_USAGE_COUNTS_INGEST_REPORT,
             Self::HexUsageCountsReq => HEX_USAGE_COUNTS_REQ,
-            Self::HotspotUsageCountsReq => HOTSPOT_USAGE_COUNTS_REQ,
+            Self::RadioUsageCountsReq => RADIO_USAGE_COUNTS_REQ,
         };
         f.write_str(s)
     }
@@ -379,9 +379,9 @@ impl FileType {
                 VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
             }
             Self::HexUsageCountsIngestReport => HEX_USAGE_COUNTS_INGEST_REPORT,
-            Self::HotspotUsageCountsIngestReport => HOTSPOT_USAGE_COUNTS_INGEST_REPORT,
+            Self::RadioUsageCountsIngestReport => RADIO_USAGE_COUNTS_INGEST_REPORT,
             Self::HexUsageCountsReq => HEX_USAGE_COUNTS_REQ,
-            Self::HotspotUsageCountsReq => HOTSPOT_USAGE_COUNTS_REQ,
+            Self::RadioUsageCountsReq => RADIO_USAGE_COUNTS_REQ,
         }
     }
 }
@@ -457,9 +457,9 @@ impl FromStr for FileType {
                 Self::VerifiedSubscriberVerifiedMappingEventIngestReport
             }
             HEX_USAGE_COUNTS_INGEST_REPORT => Self::HexUsageCountsIngestReport,
-            HOTSPOT_USAGE_COUNTS_INGEST_REPORT => Self::HotspotUsageCountsIngestReport,
+            RADIO_USAGE_COUNTS_INGEST_REPORT => Self::RadioUsageCountsIngestReport,
             HEX_USAGE_COUNTS_REQ => Self::HexUsageCountsReq,
-            HOTSPOT_USAGE_COUNTS_REQ => Self::HotspotUsageCountsReq,
+            RADIO_USAGE_COUNTS_REQ => Self::RadioUsageCountsReq,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

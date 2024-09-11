@@ -1617,7 +1617,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/hip-118-visualization-data#a16173a7a30ec9fa7b2b98bfd2b5f2a24ffa8695"
+source = "git+https://github.com/helium/proto?branch=andymck/hip-118-visualization-data#08ed2cc035cadfee236cc91f12f62e2f57622b2a"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3803,7 +3803,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/hip-118-visualization-data#a16173a7a30ec9fa7b2b98bfd2b5f2a24ffa8695"
+source = "git+https://github.com/helium/proto?branch=andymck/hip-118-visualization-data#08ed2cc035cadfee236cc91f12f62e2f57622b2a"
 dependencies = [
  "bytes",
  "prost",

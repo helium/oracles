@@ -4,7 +4,7 @@ use file_store::file_sink::FileSinkClient;
 use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
     HexUsageCountsIngestReportV1, HexUsageCountsReqV1, HexUsageCountsResV1,
-    HotspotUsageCountsIngestReportV1, HotspotUsageCountsReqV1, HotspotUsageCountsResV1,
+    RadioUsageCountsIngestReportV1, RadioUsageCountsReqV1, RadioUsageCountsResV1,
 };
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -74,7 +74,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let (sp_boosted_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (subscriber_mapping_tx, subscriber_mapping_rx) = tokio::sync::mpsc::channel(10);
     let (hex_usage_count_tx, hex_usage_count_rx) = tokio::sync::mpsc::channel(10);
-    let (hotspot_usage_count_tx, hotspot_usage_count_rx) = tokio::sync::mpsc::channel(10);
+    let (radio_usage_count_tx, radio_usage_count_rx) = tokio::sync::mpsc::channel(10);
 
     let auth_client = MockAuthorizationClient::new();
 
@@ -89,9 +89,9 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             FileSinkClient::new(invalidated_threshold_tx, "noop"),
             FileSinkClient::new(coverage_obj_tx, "noop"),
             FileSinkClient::new(sp_boosted_tx, "noop"),
-            FileSinkClient::new(subscriber_mapping_tx, "test_file_sink"),
-            FileSinkClient::new(hex_usage_count_tx, "noop"),
-            FileSinkClient::new(hotspot_usage_count_tx, "noop"),
+            FileSinkClient::new(subscriber_mapping_tx, "subscriber_mapping_test_file_sink"),
+            FileSinkClient::new(hex_usage_count_tx, "hex_usage_test_file_sink"),
+            FileSinkClient::new(radio_usage_count_tx, "radio_usage_test_file_sink"),
             Network::MainNet,
             socket_addr,
             api_token,
@@ -107,7 +107,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
         token.to_string(),
         subscriber_mapping_rx,
         hex_usage_count_rx,
-        hotspot_usage_count_rx,
+        radio_usage_count_rx,
     )
     .await;
 
@@ -122,8 +122,8 @@ pub struct TestClient {
         Receiver<file_store::file_sink::Message<SubscriberVerifiedMappingEventIngestReportV1>>,
     hex_usage_counts_file_sink_rx:
         Receiver<file_store::file_sink::Message<HexUsageCountsIngestReportV1>>,
-    hotspot_usage_counts_file_sink_rx:
-        Receiver<file_store::file_sink::Message<HotspotUsageCountsIngestReportV1>>,
+    radio_usage_counts_file_sink_rx:
+        Receiver<file_store::file_sink::Message<RadioUsageCountsIngestReportV1>>,
 }
 
 impl TestClient {
@@ -137,8 +137,8 @@ impl TestClient {
         hex_usage_counts_file_sink_rx: Receiver<
             file_store::file_sink::Message<HexUsageCountsIngestReportV1>,
         >,
-        hotspot_usage_counts_file_sink_rx: Receiver<
-            file_store::file_sink::Message<HotspotUsageCountsIngestReportV1>,
+        radio_usage_counts_file_sink_rx: Receiver<
+            file_store::file_sink::Message<RadioUsageCountsIngestReportV1>,
         >,
     ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
@@ -152,7 +152,7 @@ impl TestClient {
             authorization: format!("Bearer {}", api_token).try_into().unwrap(),
             subscriber_mapping_file_sink_rx,
             hex_usage_counts_file_sink_rx,
-            hotspot_usage_counts_file_sink_rx,
+            radio_usage_counts_file_sink_rx,
         }
     }
 
@@ -192,10 +192,10 @@ impl TestClient {
         }
     }
 
-    pub async fn hotspot_usage_recv(mut self) -> anyhow::Result<HotspotUsageCountsIngestReportV1> {
+    pub async fn radio_usage_recv(mut self) -> anyhow::Result<RadioUsageCountsIngestReportV1> {
         match timeout(
             Duration::from_secs(2),
-            self.hotspot_usage_counts_file_sink_rx.recv(),
+            self.radio_usage_counts_file_sink_rx.recv(),
         )
         .await
         {
@@ -268,15 +268,15 @@ impl TestClient {
         Ok(res.into_inner())
     }
 
-    pub async fn submit_hotspot_usage_req(
+    pub async fn submit_radio_usage_req(
         &mut self,
         hotspot_pubkey: PublicKeyBinary,
         cbsd_id: String,
         helium_mobile_subscriber_avg_count: u64,
         helium_mobile_disco_mapping_avg_count: u64,
         offload_avg_count: u64,
-    ) -> anyhow::Result<HotspotUsageCountsResV1> {
-        let mut req = HotspotUsageCountsReqV1 {
+    ) -> anyhow::Result<RadioUsageCountsResV1> {
+        let mut req = RadioUsageCountsReqV1 {
             hotspot_pubkey: hotspot_pubkey.into(),
             cbsd_id,
             helium_mobile_subscriber_avg_count,
@@ -296,7 +296,7 @@ impl TestClient {
 
         let res = self
             .client
-            .submit_hotspot_usage_counts_report(request)
+            .submit_radio_usage_counts_report(request)
             .await?;
 
         Ok(res.into_inner())
