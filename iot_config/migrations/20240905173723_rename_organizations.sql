@@ -1,0 +1,3 @@
+alter table organizations rename to temp_organizations;
+alter table organization_delegate_keys rename to temp_organization_delegate_keys;
+alter table organization_devaddr_constraints rename to temp_organization_devaddr_constraints;

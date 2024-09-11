@@ -60,7 +60,7 @@ pub type DelegateCache = HashSet<PublicKeyBinary>;
 pub async fn delegate_keys_cache(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<(watch::Sender<DelegateCache>, watch::Receiver<DelegateCache>), sqlx::Error> {
-    let key_set = sqlx::query(r#" select delegate_pubkey from organization_delegate_keys "#)
+    let key_set = sqlx::query(r#" select delegate_pubkey from temp_organization_delegate_keys "#)
         .fetch(db)
         .filter_map(|row| async move { row.ok() })
         .map(|row| row.get("delegate_pubkey"))
@@ -249,7 +249,7 @@ pub async fn get_org_netid(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<NetIdField, sqlx::Error> {
     let netid = sqlx::query_scalar::<_, i32>(
-        " select net_id from organization_devaddr_constraints where oui = $1 limit 1 ",
+        " select net_id from temp_organization_devaddr_constraints where oui = $1 limit 1 ",
     )
     .bind(oui as i64)
     .fetch_one(db)
@@ -424,7 +424,7 @@ async fn check_roamer_constraint_count(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
-        " select count(net_id) from organization_devaddr_constraints where net_id = $1 ",
+        " select count(net_id) from temp_organization_devaddr_constraints where net_id = $1 ",
     )
     .bind(i32::from(net_id))
     .fetch_one(db)
@@ -454,9 +454,9 @@ async fn insert_roamer_constraint(
 
 const GET_ORG_SQL: &str = r#"
         select org.oui, org.owner_pubkey, org.payer_pubkey, org.locked,
-            array(select (start_addr, end_addr) from organization_devaddr_constraints org_const where org_const.oui = org.oui) as constraints,
-            array(select delegate_pubkey from organization_delegate_keys org_delegates where org_delegates.oui = org.oui) as delegate_keys
-        from organizations org
+            array(select (start_addr, end_addr) from temp_organization_devaddr_constraints org_const where org_const.oui = org.oui) as constraints,
+            array(select delegate_pubkey from temp_organization_delegate_keys org_delegates where org_delegates.oui = org.oui) as delegate_keys
+        from temp_organizations org
         "#;
 
 pub async fn list(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<Org>, sqlx::Error> {
@@ -485,7 +485,7 @@ pub async fn get_constraints_by_route(
 
     let constraints = sqlx::query(
         r#"
-        select consts.start_addr, consts.end_addr from organization_devaddr_constraints consts
+        select consts.start_addr, consts.end_addr from temp_organization_devaddr_constraints consts
         join routes on routes.oui = consts.oui
         where routes.id = $1
         "#,
@@ -513,7 +513,7 @@ pub async fn get_route_ids_by_route(
         r#"
         select routes.id from routes
         where oui = (
-            select organizations.oui from organizations
+            select temp_organizations.oui from organizations
             join routes on organizations.oui = routes.oui
             where routes.id = $1
         )
@@ -532,7 +532,7 @@ pub async fn get_route_ids_by_route(
 pub async fn is_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
         r#"
-        select locked from organizations where oui = $1
+        select locked from temp_organizations where oui = $1
         "#,
     )
     .bind(oui as i64)
@@ -543,7 +543,7 @@ pub async fn is_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<bool, 
 pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        update organizations
+        update temp_organizations
         set locked = not locked
         where oui = $1
         "#,
@@ -612,9 +612,9 @@ pub async fn get_org_pubkeys_by_route(
     let org = sqlx::query_as::<_, Org>(
         r#"
         select org.oui, org.owner_pubkey, org.payer_pubkey, org.locked,
-            array(select (start_addr, end_addr) from organization_devaddr_constraints org_const where org_const.oui = org.oui) as constraints,
-            array(select delegate_pubkey from organization_delegate_keys org_delegates where org_delegates.oui = org.oui) as delegate_keys
-        from organizations org
+            array(select (start_addr, end_addr) from temp_organization_devaddr_constraints org_const where org_const.oui = org.oui) as constraints,
+            array(select delegate_pubkey from temp_organization_delegate_keys org_delegates where org_delegates.oui = org.oui) as delegate_keys
+        from temp_organizations org
         join routes on org.oui = routes.oui
         where routes.id = $1
         "#,
