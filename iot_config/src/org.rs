@@ -6,8 +6,10 @@ use crate::{
 use futures::stream::StreamExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use serde::Serialize;
-use sqlx::{postgres::PgRow, types::Uuid, FromRow, Row};
+use solana_sdk::pubkey::Pubkey;
+use sqlx::{error::Error as SqlxError, postgres::PgRow, types::Uuid, FromRow, Row};
 use std::collections::HashSet;
+use std::str::FromStr;
 use tokio::sync::watch;
 
 pub mod proto {
@@ -29,26 +31,48 @@ pub struct Org {
 
 impl FromRow<'_, PgRow> for Org {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
-        let delegate_keys = row
-            .get::<Vec<PublicKeyBinary>, &str>("delegate_keys")
-            .into_iter()
-            .map(Some)
-            .collect();
-        let constraints = row
-            .get::<Vec<(i32, i32)>, &str>("constraints")
-            .into_iter()
-            .map(|(start, end)| {
-                Some(DevAddrConstraint {
-                    start_addr: start.into(),
-                    end_addr: end.into(),
+        let owner = PublicKeyBinary::from(
+            Pubkey::from_str(&row.get::<String, _>("authority"))
+                .map_err(|e| SqlxError::Decode(Box::new(e)))?
+                .to_bytes()
+                .as_slice(),
+        );
+
+        let payer = PublicKeyBinary::from_str(&row.get::<String, _>("escrow_key"))
+            .unwrap_or_else(|_| PublicKeyBinary::from(vec![0u8; 33].as_slice()));
+
+        /* let escrow_key = PublicKeyBinary::from_str(&row.get::<String, _>("escrow_key"))
+        .map_err(|e| SqlxError::Decode(Box::new(e)))?; */
+
+        let locked = row.get::<Option<bool>, _>("locked").unwrap_or(false);
+        let raw_delegate_keys: Option<Vec<String>> = row.try_get("delegate_keys")?;
+        let delegate_keys: Option<Vec<PublicKeyBinary>> = raw_delegate_keys.map(|keys| {
+            keys.into_iter()
+                .filter_map(|key| {
+                    Pubkey::from_str(&key)
+                        .ok()
+                        .map(|pubkey| PublicKeyBinary::from(pubkey.to_bytes().as_slice()))
                 })
-            })
-            .collect();
+                .collect()
+        });
+
+        let constraints: Option<Vec<DevAddrConstraint>> = row
+            .try_get::<Option<Vec<(i64, i64)>>, _>("constraints")?
+            .map(|constraints| {
+                constraints
+                    .into_iter()
+                    .map(|(start, end)| DevAddrConstraint {
+                        start_addr: start.try_into().unwrap(),
+                        end_addr: end.try_into().unwrap(),
+                    })
+                    .collect()
+            });
+
         Ok(Self {
             oui: row.get::<i64, &str>("oui") as u64,
-            owner: row.get("owner_pubkey"),
-            payer: row.get("payer_pubkey"),
-            locked: row.get("locked"),
+            owner,
+            payer,
+            locked,
             delegate_keys,
             constraints,
         })
@@ -60,12 +84,18 @@ pub type DelegateCache = HashSet<PublicKeyBinary>;
 pub async fn delegate_keys_cache(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<(watch::Sender<DelegateCache>, watch::Receiver<DelegateCache>), sqlx::Error> {
-    let key_set = sqlx::query(r#" select delegate_pubkey from temp_organization_delegate_keys "#)
-        .fetch(db)
-        .filter_map(|row| async move { row.ok() })
-        .map(|row| row.get("delegate_pubkey"))
-        .collect::<HashSet<PublicKeyBinary>>()
-        .await;
+    let key_set: HashSet<PublicKeyBinary> = sqlx::query_scalar(
+        "SELECT delegate FROM solana_organization_delegate_keys WHERE delegate IS NOT NULL",
+    )
+    .fetch_all(db)
+    .await?
+    .into_iter()
+    .filter_map(|delegate: String| {
+        Pubkey::from_str(&delegate)
+            .ok()
+            .map(|pubkey| PublicKeyBinary::from(pubkey.to_bytes().as_slice()))
+    })
+    .collect();
 
     Ok(watch::channel(key_set))
 }
@@ -248,12 +278,20 @@ pub async fn get_org_netid(
     oui: u64,
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<NetIdField, sqlx::Error> {
-    let netid = sqlx::query_scalar::<_, i32>(
-        " select net_id from temp_organization_devaddr_constraints where oui = $1 limit 1 ",
+    let netid = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT sol_ni.id::bigint
+        FROM solana_organization_devaddr_constraints sol_odc
+        JOIN solana_organizations sol_org ON sol_org.address = sol_odc.organization
+        JOIN solana_net_ids sol_ni ON sol_ni.address = sol_odc.net_id
+        WHERE sol_org.oui = $1::numeric
+        LIMIT 1
+        "#,
     )
-    .bind(oui as i64)
+    .bind(oui.to_string())
     .fetch_one(db)
     .await?;
+
     Ok(netid.into())
 }
 
@@ -424,9 +462,14 @@ async fn check_roamer_constraint_count(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
-        " select count(net_id) from temp_organization_devaddr_constraints where net_id = $1 ",
+        r#"
+        SELECT COUNT(sol_odc.net_id)
+        FROM solana_organization_devaddr_constraints sol_odc
+        JOIN solana_net_ids sol_ni ON sol_odc.net_id = sol_ni.address
+        WHERE sol_ni.id = $1::numeric
+        "#,
     )
-    .bind(i32::from(net_id))
+    .bind(net_id.to_string())
     .fetch_one(db)
     .await
 }
@@ -453,11 +496,25 @@ async fn insert_roamer_constraint(
 }
 
 const GET_ORG_SQL: &str = r#"
-        select org.oui, org.owner_pubkey, org.payer_pubkey, org.locked,
-            array(select (start_addr, end_addr) from temp_organization_devaddr_constraints org_const where org_const.oui = org.oui) as constraints,
-            array(select delegate_pubkey from temp_organization_delegate_keys org_delegates where org_delegates.oui = org.oui) as delegate_keys
-        from temp_organizations org
-        "#;
+SELECT
+    sol_org.oui::bigint,
+    sol_org.authority,
+    sol_org.escrow_key,
+    COALESCE((SELECT locked
+     FROM organization_locks
+     WHERE organization = sol_org.address), false) AS locked,
+    ARRAY(
+        SELECT (start_addr::bigint, end_addr::bigint)
+        FROM solana_organization_devaddr_constraints
+        WHERE organization = sol_org.address
+    ) AS constraints,
+    ARRAY(
+        SELECT delegate
+        FROM solana_organization_delegate_keys
+        WHERE organization = sol_org.address
+    ) AS delegate_keys
+FROM solana_organizations sol_org
+"#;
 
 pub async fn list(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<Org>, sqlx::Error> {
     Ok(sqlx::query_as::<_, Org>(GET_ORG_SQL)
@@ -469,7 +526,7 @@ pub async fn list(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<Org>, sqlx::Error
 
 pub async fn get(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<Option<Org>, sqlx::Error> {
     let mut query: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(GET_ORG_SQL);
-    query.push(" where org.oui = $1 ");
+    query.push(" where sol_org.oui = $1 ");
     query
         .build_query_as::<Org>()
         .bind(oui as i64)
@@ -482,12 +539,13 @@ pub async fn get_constraints_by_route(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<Vec<DevAddrConstraint>, OrgStoreError> {
     let uuid = Uuid::try_parse(route_id)?;
-
     let constraints = sqlx::query(
         r#"
-        select consts.start_addr, consts.end_addr from temp_organization_devaddr_constraints consts
-        join routes on routes.oui = consts.oui
-        where routes.id = $1
+        SELECT sol_odc.start_addr::bigint, sol_odc.end_addr::bigint
+        FROM solana_organization_devaddr_constraints sol_odc
+        JOIN solana_organizations sol_orgs ON sol_odc.organization = sol_orgs.address
+        JOIN routes ON routes.oui = sol_orgs.oui
+        WHERE routes.id = $1
         "#,
     )
     .bind(uuid)
@@ -495,8 +553,8 @@ pub async fn get_constraints_by_route(
     .await?
     .into_iter()
     .map(|row| DevAddrConstraint {
-        start_addr: row.get::<i32, &str>("start_addr").into(),
-        end_addr: row.get::<i32, &str>("end_addr").into(),
+        start_addr: row.get::<i64, &str>("start_addr").try_into().unwrap(),
+        end_addr: row.get::<i64, &str>("end_addr").try_into().unwrap(),
     })
     .collect();
 
@@ -511,12 +569,10 @@ pub async fn get_route_ids_by_route(
 
     let route_ids = sqlx::query(
         r#"
-        select routes.id from routes
-        where oui = (
-            select temp_organizations.oui from organizations
-            join routes on organizations.oui = routes.oui
-            where routes.id = $1
-        )
+        SELECT r2.id
+        FROM routes r1
+        JOIN routes r2 ON r1.oui = r2.oui
+        WHERE r1.id = $1
         "#,
     )
     .bind(uuid)
@@ -532,7 +588,10 @@ pub async fn get_route_ids_by_route(
 pub async fn is_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
         r#"
-        select locked from temp_organizations where oui = $1
+        SELECT COALESCE(org_lock.locked, false)
+        FROM solana_organizations sol_org
+        LEFT JOIN organization_locks org_lock ON sol_org.address = org_lock.organization
+        WHERE sol_org.oui = $1::numeric
         "#,
     )
     .bind(oui as i64)
@@ -543,9 +602,13 @@ pub async fn is_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<bool, 
 pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        update temp_organizations
-        set locked = not locked
-        where oui = $1
+        INSERT INTO organization_locks (organization, locked)
+        SELECT address, NOT COALESCE(ol.locked, false)
+        FROM solana_organizations sol_org
+        LEFT JOIN organization_locks org_lock ON sol_org.address = org_lock.organization
+        WHERE sol_org.oui = $1::numeric
+        ON CONFLICT (organization) DO UPDATE
+        SET locked = NOT organization_locks.locked
         "#,
     )
     .bind(oui as i64)
@@ -611,12 +674,25 @@ pub async fn get_org_pubkeys_by_route(
 
     let org = sqlx::query_as::<_, Org>(
         r#"
-        select org.oui, org.owner_pubkey, org.payer_pubkey, org.locked,
-            array(select (start_addr, end_addr) from temp_organization_devaddr_constraints org_const where org_const.oui = org.oui) as constraints,
-            array(select delegate_pubkey from temp_organization_delegate_keys org_delegates where org_delegates.oui = org.oui) as delegate_keys
-        from temp_organizations org
-        join routes on org.oui = routes.oui
-        where routes.id = $1
+        SELECT
+            sol_org.oui::bigint,
+            sol_org.authority AS owner_pubkey,
+            sol_org.escrow_key AS payer_pubkey,
+            COALESCE(org_lock.locked, false) AS locked,
+            ARRAY(
+                SELECT (start_addr::bigint, end_addr::bigint)
+                FROM solana_organization_devaddr_constraints
+                WHERE organization = sol_org.address
+            ) AS constraints,
+            ARRAY(
+                SELECT delegate
+                FROM solana_organization_delegate_keys
+                WHERE organization = sol_org.address
+            ) AS delegate_keys
+        FROM solana_organizations sol_org
+        JOIN routes r ON sol_org.oui = r.oui
+        LEFT JOIN organization_locks org_lock ON sol_org.address = org_lock.organization
+        WHERE r.id = $1
         "#,
     )
     .bind(uuid)
