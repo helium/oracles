@@ -11,3 +11,4 @@ flamegraph.*
 
 !/minio/bucket-policy.json
 *.bak
+*settings.toml
