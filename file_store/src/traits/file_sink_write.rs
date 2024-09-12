@@ -269,6 +269,11 @@ impl_file_sink!(
     "reward_manifest"
 );
 impl_file_sink!(
+    proto::ServiceProviderAllocationV1,
+    FileType::ServiceProviderAllocationV1.to_str(),
+    "service_provider_allocation_report"
+);
+impl_file_sink!(
     poc_mobile::PromotionRewardIngestReportV1,
     FileType::PromotionRewardIngestReport.to_str(),
     "promotion_reward_ingest_report"

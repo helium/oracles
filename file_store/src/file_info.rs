@@ -166,6 +166,7 @@ pub const VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT: &str =
     "verified_subscriber_verified_mapping_ingest_report";
 pub const PROMOTION_REWARD_INGEST_REPORT: &str = "promotion_reward_ingest_report";
 pub const VERIFIED_PROMOTION_REWARD: &str = "verified_promotion_reward";
+pub const SERVICE_PROVIDER_ALLOCATION_REPORT: &str = "service_provider_allocation_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -224,6 +225,7 @@ pub enum FileType {
     VerifiedSubscriberVerifiedMappingEventIngestReport,
     PromotionRewardIngestReport,
     VerifiedPromotionReward,
+    ServiceProviderAllocationV1,
 }
 
 impl fmt::Display for FileType {
@@ -297,6 +299,7 @@ impl fmt::Display for FileType {
             }
             Self::PromotionRewardIngestReport => PROMOTION_REWARD_INGEST_REPORT,
             Self::VerifiedPromotionReward => VERIFIED_PROMOTION_REWARD,
+            Self::ServiceProviderAllocationV1 => SERVICE_PROVIDER_ALLOCATION_REPORT,
         };
         f.write_str(s)
     }
@@ -373,6 +376,7 @@ impl FileType {
             }
             Self::PromotionRewardIngestReport => PROMOTION_REWARD_INGEST_REPORT,
             Self::VerifiedPromotionReward => VERIFIED_PROMOTION_REWARD,
+            Self::ServiceProviderAllocationV1 => SERVICE_PROVIDER_ALLOCATION_REPORT,
         }
     }
 }
@@ -449,6 +453,7 @@ impl FromStr for FileType {
             }
             PROMOTION_REWARD_INGEST_REPORT => Self::PromotionRewardIngestReport,
             VERIFIED_PROMOTION_REWARD => Self::VerifiedPromotionReward,
+            SERVICE_PROVIDER_ALLOCATION_REPORT => Self::ServiceProviderAllocationV1,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
