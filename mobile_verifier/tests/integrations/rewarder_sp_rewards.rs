@@ -185,19 +185,19 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     txn.commit().await?;
 
     // Standin for Solana when grabbing Service Provider incentive percentage
-    struct SPPromotionAllocation(Decimal);
+    struct SPPromotionAllocation(u16);
 
     #[async_trait::async_trait]
     impl SolanaNetwork for SPPromotionAllocation {
-        async fn fetch_incentive_escrow_fund_percent(
+        async fn fetch_incentive_escrow_fund_bps(
             &self,
             _network_name: &str,
-        ) -> Result<Decimal, SolanaRpcError> {
+        ) -> Result<u16, SolanaRpcError> {
             Ok(self.0)
         }
     }
-
-    let sp_promo_allocation = SPPromotionAllocation(dec!(0.05));
+    // 05.00%
+    let sp_promo_allocation = SPPromotionAllocation(500);
 
     let (_, rewards) = tokio::join!(
         rewarder::reward_service_providers(

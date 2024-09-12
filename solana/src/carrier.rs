@@ -5,26 +5,24 @@ use helium_anchor_gen::{
     helium_sub_daos,
     mobile_entity_manager::{self, CarrierV0},
 };
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::Deserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
 
 #[async_trait]
 pub trait SolanaNetwork {
-    async fn fetch_incentive_escrow_fund_percent(
+    async fn fetch_incentive_escrow_fund_bps(
         &self,
         network_name: &str,
-    ) -> Result<Decimal, SolanaRpcError>;
+    ) -> Result<u16, SolanaRpcError>;
 }
 
 #[async_trait]
 impl SolanaNetwork for SolanaRpc {
-    async fn fetch_incentive_escrow_fund_percent(
+    async fn fetch_incentive_escrow_fund_bps(
         &self,
         network_name: &str,
-    ) -> Result<Decimal, SolanaRpcError> {
+    ) -> Result<u16, SolanaRpcError> {
         let (carrier_pda, _) = Pubkey::find_program_address(
             &[
                 "carrier".as_bytes(),
@@ -38,8 +36,8 @@ impl SolanaNetwork for SolanaRpc {
         let carrier = CarrierV0::try_deserialize(&mut carrier_data)?;
 
         let bps = carrier.incentive_escrow_fund_bps;
-        let percent = Decimal::from(bps) / dec!(10_000);
-        Ok(percent)
+        //let percent = Decimal::from(bps) / dec!(10_000);
+        Ok(bps)
     }
 }
 
@@ -48,7 +46,7 @@ pub struct SolanaRpc {
     sub_dao: Pubkey,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     rpc_url: String,
     dnt_mint: String,
@@ -69,13 +67,13 @@ impl SolanaRpc {
 
 #[async_trait]
 impl SolanaNetwork for Option<SolanaRpc> {
-    async fn fetch_incentive_escrow_fund_percent(
+    async fn fetch_incentive_escrow_fund_bps(
         &self,
         network_name: &str,
-    ) -> Result<Decimal, SolanaRpcError> {
+    ) -> Result<u16, SolanaRpcError> {
         match self {
-            Some(ref rpc) => rpc.fetch_incentive_escrow_fund_percent(network_name).await,
-            None => Ok(dec!(0)),
+            Some(ref rpc) => rpc.fetch_incentive_escrow_fund_bps(network_name).await,
+            None => Ok(0),
         }
     }
 }

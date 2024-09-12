@@ -356,9 +356,11 @@ impl ServiceProviderShares {
             if total.is_zero() {
                 continue;
             }
-            let percent_for_promotion_rewards = solana
-                .fetch_incentive_escrow_fund_percent(&share.service_provider_name)
+            let bps_for_promotion_rewards = solana
+                .fetch_incentive_escrow_fund_bps(&share.service_provider_name)
                 .await?;
+            let percent_for_promotion_rewards =
+                Decimal::from(bps_for_promotion_rewards) / dec!(10_000);
             rewards.insert(
                 share.service_provider_id as ServiceProviderId,
                 ServiceProviderReward {
@@ -2623,11 +2625,12 @@ mod test {
 
         #[async_trait::async_trait]
         impl SolanaNetwork for Promo {
-            async fn fetch_incentive_escrow_fund_percent(
+            async fn fetch_incentive_escrow_fund_bps(
                 &self,
                 _network_name: &str,
-            ) -> Result<Decimal, solana::SolanaRpcError> {
-                Ok(dec!(50))
+            ) -> Result<u16, solana::SolanaRpcError> {
+                // 50.00%
+                Ok(5_000)
             }
         }
 
