@@ -269,8 +269,8 @@ impl_file_sink!(
     "reward_manifest"
 );
 impl_file_sink!(
-    proto::ServiceProviderAllocationV1,
-    FileType::ServiceProviderAllocationV1.to_str(),
+    proto::ServiceProviderPromotionFundV1,
+    FileType::ServiceProviderPromotionFund.to_str(),
     "service_provider_allocation_report"
 );
 impl_file_sink!(
