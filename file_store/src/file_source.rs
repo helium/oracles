@@ -1,5 +1,7 @@
 use crate::{
-    file_info_poller::{FileInfoPollerConfigBuilder, MsgDecodeFileInfoPollerParser},
+    file_info_poller::{
+        FileInfoPollerConfigBuilder, MsgDecodeFileInfoPollerParser, ProstFileInfoPollerParser,
+    },
     file_sink, BytesMutStream, Error, FileStore,
 };
 use async_compression::tokio::bufread::GzipDecoder;
@@ -7,17 +9,43 @@ use futures::{
     stream::{self},
     StreamExt, TryFutureExt, TryStreamExt,
 };
-use std::path::{Path, PathBuf};
+use std::{
+    marker::PhantomData,
+    path::{Path, PathBuf},
+};
 use tokio::{fs::File, io::BufReader};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
+
+pub struct Continuous<Store, Parser>(PhantomData<(Store, Parser)>);
+
+impl Continuous<FileStore, MsgDecodeFileInfoPollerParser> {
+    pub fn msg_source<Msg, State>(
+    ) -> FileInfoPollerConfigBuilder<Msg, State, FileStore, MsgDecodeFileInfoPollerParser>
+    where
+        Msg: Clone,
+    {
+        FileInfoPollerConfigBuilder::<Msg, State, FileStore, MsgDecodeFileInfoPollerParser>::default()
+            .parser(MsgDecodeFileInfoPollerParser)
+    }
+}
+
+impl Continuous<FileStore, ProstFileInfoPollerParser> {
+    pub fn prost_source<Msg, State>(
+    ) -> FileInfoPollerConfigBuilder<Msg, State, FileStore, ProstFileInfoPollerParser>
+    where
+        Msg: Clone,
+    {
+        FileInfoPollerConfigBuilder::<Msg, State, FileStore, ProstFileInfoPollerParser>::default()
+            .parser(ProstFileInfoPollerParser)
+    }
+}
 
 pub fn continuous_source<T, S>(
 ) -> FileInfoPollerConfigBuilder<T, S, FileStore, MsgDecodeFileInfoPollerParser>
 where
     T: Clone,
 {
-    FileInfoPollerConfigBuilder::<T, S, FileStore, MsgDecodeFileInfoPollerParser>::default()
-        .parser(MsgDecodeFileInfoPollerParser)
+    Continuous::msg_source::<T, S>()
 }
 
 pub fn source<I, P>(paths: I) -> BytesMutStream
