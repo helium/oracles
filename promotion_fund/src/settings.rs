@@ -10,11 +10,6 @@ use humantime_serde::re::humantime;
 pub struct Settings {
     /// Temporary storage before writing to S3
     pub file_sink_cache: PathBuf,
-    /// How far back to look for service provider promotion values in s3. If the
-    /// lookback covers multiple files, the values from the latest file will be
-    /// used. (default: 12 hours)
-    #[serde(with = "humantime_serde", default = "default_s3_lookback_duration")]
-    pub s3_lookback_duration: Duration,
     /// How often to check for updates of service provider promotion values from
     /// solana. (default: 6 hours)
     #[serde(with = "humantime_serde", default = "default_solana_check_interval")]
@@ -25,10 +20,6 @@ pub struct Settings {
     pub file_store_output: file_store::Settings,
     /// Metrics Settings
     pub metrics: poc_metrics::Settings,
-}
-
-fn default_s3_lookback_duration() -> Duration {
-    humantime::parse_duration("12 hours").unwrap()
 }
 
 fn default_solana_check_interval() -> Duration {

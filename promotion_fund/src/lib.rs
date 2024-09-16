@@ -1,21 +1,24 @@
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 
 use anyhow::Context;
 use chrono::Utc;
-use file_store::file_info_poller::{self, FileInfoStream};
-use futures::StreamExt;
+use file_store::{
+    file_info_poller::{FileInfoPollerParser, ProstFileInfoPollerParser},
+    file_sink::FileSinkClient,
+    file_upload::FileUpload,
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
+    FileSink, FileStore, FileType,
+};
 use helium_proto::{IntoEnumIterator, ServiceProvider, ServiceProviderPromotionFundV1};
+use settings::Settings;
 use solana::carrier::{SolanaNetwork, SolanaRpc};
-use tokio::{sync::mpsc::Receiver, time::timeout};
 
-pub mod s3;
 pub mod settings;
 pub mod state;
 
 type ServiceProviderInt = i32;
 type BasisPoints = u32;
 
-type S3Receiver = Receiver<FileInfoStream<ServiceProviderPromotionFundV1>>;
 type S3Value = HashMap<ServiceProviderInt, BasisPoints>;
 type SolanaValue = Vec<ServiceProviderPromotionFundV1>;
 
@@ -25,7 +28,7 @@ pub enum Action {
     Noop,
 }
 
-pub fn compare_s3_and_solana_values(s3_current: &S3Value, solana_current: &SolanaValue) -> Action {
+fn compare_s3_and_solana_values(s3_current: &S3Value, solana_current: &SolanaValue) -> Action {
     for sp_fund in solana_current {
         // A Service Provider missing from the S3 file only
         // matters if their Solana BPS is >0.
@@ -38,24 +41,26 @@ pub fn compare_s3_and_solana_values(s3_current: &S3Value, solana_current: &Solan
     Action::Noop
 }
 
-pub async fn fetch_s3_bps(s3_receiver: &mut S3Receiver) -> anyhow::Result<S3Value> {
-    // Files are read from oldest to newest. When more than one file is
-    // within the lookback time the lastest value will always be returned
-    // for a service provider.
+async fn fetch_s3_bps(file_store: FileStore) -> anyhow::Result<S3Value> {
     let mut results = HashMap::new();
-    let wait = Duration::from_secs(2);
 
-    while let Ok(Some(file_info)) = timeout(wait, s3_receiver.recv()).await {
-        let mut stream = file_info.into_stream(file_info_poller::NoState).await?;
-        while let Some(sp_promo_fund_v1) = stream.next().await {
-            results.insert(sp_promo_fund_v1.service_provider, sp_promo_fund_v1.bps);
+    let all = file_store
+        .list_all(FileType::ServiceProviderPromotionFund.to_str(), None, None)
+        .await?;
+
+    if let Some(last) = all.last() {
+        let byte_stream = file_store.get_raw(&last.key).await?;
+        let data: Vec<ServiceProviderPromotionFundV1> =
+            ProstFileInfoPollerParser.parse(byte_stream).await?;
+        for sp_promo_fund in data {
+            results.insert(sp_promo_fund.service_provider, sp_promo_fund.bps);
         }
     }
 
     Ok(results)
 }
 
-pub async fn fetch_solana_bps(client: &SolanaRpc) -> anyhow::Result<SolanaValue> {
+async fn fetch_solana_bps(client: &SolanaRpc) -> anyhow::Result<SolanaValue> {
     let mut results = Vec::new();
     for service_provider in ServiceProvider::iter() {
         let bps = client
@@ -72,6 +77,24 @@ pub async fn fetch_solana_bps(client: &SolanaRpc) -> anyhow::Result<SolanaValue>
     }
 
     Ok(results)
+}
+
+pub async fn make_promotion_fund_file_sink(
+    settings: &Settings,
+    upload: FileUpload,
+) -> anyhow::Result<(
+    FileSinkClient<ServiceProviderPromotionFundV1>,
+    FileSink<ServiceProviderPromotionFundV1>,
+)> {
+    let (sink, sink_server) = ServiceProviderPromotionFundV1::file_sink(
+        &settings.file_sink_cache,
+        upload,
+        FileSinkCommitStrategy::Manual,
+        FileSinkRollTime::Default,
+        env!("CARGO_PKG_NAME"),
+    )
+    .await?;
+    Ok((sink, sink_server))
 }
 
 #[cfg(test)]

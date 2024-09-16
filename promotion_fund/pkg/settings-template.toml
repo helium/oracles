@@ -2,10 +2,6 @@
 #
 file_sink_cache = "/tmp/oracles/promotion-fund"
 
-# How far back in time to check for previously uploaded Service Provider Funds
-#
-s3_lookback_duration = "24 hours"
-
 # How often to check with Solana for updates to Service Provider Funds
 #
 solana_check_interval = "6 hours"
