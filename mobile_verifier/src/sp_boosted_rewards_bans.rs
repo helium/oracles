@@ -2,10 +2,9 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::{
-    file_info_poller::{
-        FileInfoPollerConfigBuilder, FileInfoStream, LookbackBehavior, ProstFileInfoPollerParser,
-    },
+    file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
+    file_source,
     file_upload::FileUpload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore, FileType,
@@ -168,13 +167,10 @@ where
             )
             .await?;
 
-        let (receiver, ingest_server) = FileInfoPollerConfigBuilder::<
+        let (receiver, ingest_server) = file_source::Continuous::prost_source::<
             ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
             _,
-            _,
-            _,
-        >::default()
-        .parser(ProstFileInfoPollerParser)
+        >()
         .state(pool.clone())
         .store(file_store)
         .lookback(LookbackBehavior::StartAfter(settings.start_after))
