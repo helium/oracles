@@ -42,7 +42,6 @@ use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use rust_decimal_macros::dec;
-use solana::carrier::{SolanaNetwork, SolanaRpc};
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -58,7 +57,6 @@ pub struct Rewarder<A, B> {
     pool: Pool<Postgres>,
     carrier_client: A,
     hex_service_client: B,
-    solana_rpc: SolanaRpc,
     reward_period_duration: Duration,
     reward_offset: Duration,
     pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
@@ -104,7 +102,6 @@ where
             pool.clone(),
             carrier_service_verifier,
             hex_boosting_info_resolver,
-            SolanaRpc::new(&settings.solana)?,
             settings.reward_period,
             settings.reward_period_offset,
             mobile_rewards,
@@ -126,7 +123,6 @@ where
         pool: Pool<Postgres>,
         carrier_client: A,
         hex_service_client: B,
-        solana_rpc: SolanaRpc,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
@@ -138,7 +134,6 @@ where
             pool,
             carrier_client,
             hex_service_client,
-            solana_rpc,
             reward_period_duration,
             reward_offset,
             mobile_rewards,
@@ -281,7 +276,6 @@ where
         // process rewards for service providers
         reward_service_providers(
             &self.pool,
-            &self.solana_rpc,
             &self.carrier_client,
             &self.mobile_rewards,
             reward_period,
@@ -598,7 +592,6 @@ pub async fn reward_oracles(
 
 pub async fn reward_service_providers(
     pool: &Pool<Postgres>,
-    solana: &impl SolanaNetwork,
     carrier_client: &impl CarrierServiceVerifier<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_period: &Range<DateTime<Utc>>,

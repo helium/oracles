@@ -5169,7 +5169,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.8",
- "solana",
  "solana-sdk",
  "sqlx",
  "task-manager",
