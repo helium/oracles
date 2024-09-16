@@ -59,42 +59,6 @@ pub trait FileInfoPollerStore: Send + Sync + 'static {
         K: Into<String> + Send + Sync;
 }
 
-/// Utility struct for when you don't need to track if a file has already been
-/// processed, or it is okay if a file is not received.
-pub struct NoState;
-
-#[async_trait::async_trait]
-impl FileInfoPollerState for NoState {
-    async fn latest_timestamp(
-        &self,
-        _process_name: &str,
-        _file_type: &str,
-    ) -> Result<Option<DateTime<Utc>>> {
-        Ok(None)
-    }
-
-    async fn exists(&self, _process_name: &str, _file_info: &FileInfo) -> Result<bool> {
-        Ok(false)
-    }
-
-    // Returns number of items cleaned
-    async fn clean(
-        &self,
-        _process_name: &str,
-        _file_type: &str,
-        _offset: DateTime<Utc>,
-    ) -> Result<u64> {
-        Ok(0)
-    }
-}
-
-#[async_trait::async_trait]
-impl FileInfoPollerStateRecorder for NoState {
-    async fn record(self, _process_name: &str, _file_info: &FileInfo) -> Result {
-        Ok(())
-    }
-}
-
 #[derive(Debug)]
 pub struct FileInfoStream<T> {
     pub file_info: FileInfo,
