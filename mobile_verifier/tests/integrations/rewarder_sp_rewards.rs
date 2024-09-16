@@ -13,7 +13,6 @@ use helium_proto::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use solana::{carrier::SolanaNetwork, SolanaRpcError};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -86,7 +85,6 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (_, rewards) = tokio::join!(
         rewarder::reward_service_providers(
             &pool,
-            &None,
             &carrier_client,
             &mobile_rewards_client,
             &epoch,
@@ -145,7 +143,6 @@ async fn test_service_provider_rewards_invalid_sp(pool: PgPool) -> anyhow::Resul
 
     let resp = rewarder::reward_service_providers(
         &pool.clone(),
-        &None,
         &carrier_client.clone(),
         &mobile_rewards_client,
         &epoch,
@@ -184,25 +181,9 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     .await?;
     txn.commit().await?;
 
-    // Standin for Solana when grabbing Service Provider incentive percentage
-    struct SPPromotionAllocation(u16);
-
-    #[async_trait::async_trait]
-    impl SolanaNetwork for SPPromotionAllocation {
-        async fn fetch_incentive_escrow_fund_bps(
-            &self,
-            _network_name: &str,
-        ) -> Result<u16, SolanaRpcError> {
-            Ok(self.0)
-        }
-    }
-    // 05.00%
-    let sp_promo_allocation = SPPromotionAllocation(500);
-
     let (_, rewards) = tokio::join!(
         rewarder::reward_service_providers(
             &pool,
-            &sp_promo_allocation,
             &carrier_client,
             &mobile_rewards_client,
             &epoch,
