@@ -2,6 +2,10 @@ use crate::{
     coverage::CoveredHexStream,
     data_session::{HotspotMap, ServiceProviderDataSession},
     heartbeats::HeartbeatReward,
+    promotion_reward::{
+        self, funds_db::ServiceProviderFunds, ServiceProviderId,
+        ServiceProviderPromotionRewardShares,
+    },
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::Seniority,
     sp_boosted_rewards_bans::BannedRadios,
@@ -24,7 +28,7 @@ use mobile_config::{
 use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use solana::carrier::SolanaNetwork;
+use sqlx::PgPool;
 use std::{collections::HashMap, ops::Range};
 use uuid::Uuid;
 
@@ -347,7 +351,7 @@ impl ServiceProviderShares {
     pub async fn into_service_provider_rewards(
         self,
         reward_per_share: Decimal,
-        solana: &impl SolanaNetwork,
+        service_provider_funds: ServiceProviderFunds,
     ) -> anyhow::Result<ServiceProviderRewards> {
         let mut rewards = HashMap::new();
 
@@ -356,11 +360,9 @@ impl ServiceProviderShares {
             if total.is_zero() {
                 continue;
             }
-            let bps_for_promotion_rewards = solana
-                .fetch_incentive_escrow_fund_bps(&share.service_provider_name)
-                .await?;
-            let percent_for_promotion_rewards =
-                Decimal::from(bps_for_promotion_rewards) / dec!(10_000);
+            let percent_for_promotion_rewards = service_provider_funds
+                .fetch_incentive_escrow_fund_percent(share.service_provider_id as i32);
+
             rewards.insert(
                 share.service_provider_id as ServiceProviderId,
                 ServiceProviderReward {
@@ -401,8 +403,6 @@ impl ServiceProviderShares {
         Ok(sp)
     }
 }
-
-pub type ServiceProviderId = i32;
 
 pub struct ServiceProviderRewards {
     pub rewards: HashMap<ServiceProviderId, ServiceProviderReward>,
@@ -458,6 +458,105 @@ impl ServiceProviderRewards {
                                 amount,
                             },
                         )),
+                    },
+                )
+            })
+    }
+}
+
+pub struct ServiceProviderPromotionRewards {
+    pub rewards: Vec<ServiceProviderPromotionRewardShares>,
+}
+
+impl ServiceProviderPromotionRewards {
+    pub async fn aggregate(
+        pool: &PgPool,
+        carrier: &impl CarrierServiceVerifier<Error = ClientError>,
+        epoch: &Range<DateTime<Utc>>,
+    ) -> anyhow::Result<Self> {
+        let rewards =
+            promotion_reward::rewards_db::get_promotion_rewards(pool, carrier, epoch).await?;
+
+        Ok(Self { rewards })
+    }
+
+    pub fn into_rewards<'a>(
+        self,
+        sp_rewards: &mut ServiceProviderRewards,
+        unallocated_sp_rewards: Decimal,
+        reward_period: &'a Range<DateTime<Utc>>,
+    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + 'a {
+        // This could use a better name
+        #[derive(Copy, Clone, Default)]
+        struct SpPromotionRewardShares {
+            rewards_per_share: Decimal,
+            rewards_per_matched_share: Decimal,
+        }
+
+        let total_promotion_rewards_allocated =
+            sp_rewards.get_total_rewards_allocated_for_promotion();
+        let total_shares_per_service_provider = self.rewards.iter().fold(
+            HashMap::<i32, Decimal>::default(),
+            |mut shares, promotion_reward_share| {
+                *shares
+                    .entry(promotion_reward_share.service_provider_id)
+                    .or_default() += Decimal::from(promotion_reward_share.shares);
+                shares
+            },
+        );
+        let sp_promotion_reward_shares: HashMap<_, _> = total_shares_per_service_provider
+            .iter()
+            .map(|(sp, total_shares)| {
+                if total_promotion_rewards_allocated.is_zero() || total_shares.is_zero() {
+                    (*sp, SpPromotionRewardShares::default())
+                } else {
+                    let rewards_allocated_for_promotion =
+                        sp_rewards.take_rewards_allocated_for_promotion(sp);
+                    let share_of_unallocated_pool =
+                        rewards_allocated_for_promotion / total_promotion_rewards_allocated;
+                    let sp_share = SpPromotionRewardShares {
+                        rewards_per_share: rewards_allocated_for_promotion / total_shares,
+                        rewards_per_matched_share: unallocated_sp_rewards
+                            * share_of_unallocated_pool
+                            / total_shares,
+                    };
+                    (*sp, sp_share)
+                }
+            })
+            .collect();
+
+        self.rewards
+            .into_iter()
+            .map(move |reward| {
+                let shares = Decimal::from(reward.shares);
+                let sp_promotion_reward_share = sp_promotion_reward_shares
+                    .get(&reward.service_provider_id)
+                    .copied()
+                    .unwrap_or_default();
+                let service_provider_token = sp_promotion_reward_share.rewards_per_share * shares;
+                // Goal here is to never match more than the original promotion amount.
+                let matched_token = (sp_promotion_reward_share.rewards_per_matched_share * shares)
+                    .min(service_provider_token);
+                proto::PromotionReward {
+                    entity: Some(reward.rewardable_entity.into()),
+                    service_provider_amount: service_provider_token
+                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                        .to_u64()
+                        .unwrap_or(0),
+                    matched_amount: matched_token
+                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                        .to_u64()
+                        .unwrap_or(0),
+                }
+            })
+            .filter(|x| x.service_provider_amount > 0)
+            .map(move |reward| {
+                (
+                    reward.service_provider_amount + reward.matched_amount,
+                    proto::MobileRewardShare {
+                        start_period: reward_period.start.encode_timestamp(),
+                        end_period: reward_period.end.encode_timestamp(),
+                        reward: Some(proto::mobile_reward_share::Reward::PromotionReward(reward)),
                     },
                 )
             })
@@ -2414,8 +2513,9 @@ mod test {
 
         let mut sp_rewards = HashMap::<i32, u64>::new();
         let mut allocated_sp_rewards = 0_u64;
+        let service_provider_funds = ServiceProviderFunds::new();
         for (reward_amount, sp_reward) in sp_shares
-            .into_service_provider_rewards(rewards_per_share, &None)
+            .into_service_provider_rewards(rewards_per_share, service_provider_funds)
             .await
             .unwrap()
             .into_mobile_reward_shares(&epoch)
@@ -2466,8 +2566,9 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
+        let service_provider_funds = ServiceProviderFunds::new();
         for (reward_amount, sp_reward) in sp_shares
-            .into_service_provider_rewards(rewards_per_share, &None)
+            .into_service_provider_rewards(rewards_per_share, service_provider_funds)
             .await
             .unwrap()
             .into_mobile_reward_shares(&epoch)
@@ -2517,8 +2618,9 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
+        let service_provider_funds = ServiceProviderFunds::new();
         for (reward_amount, sp_reward) in sp_shares
-            .into_service_provider_rewards(rewards_per_share, &None)
+            .into_service_provider_rewards(rewards_per_share, service_provider_funds)
             .await
             .unwrap()
             .into_mobile_reward_shares(&epoch)
@@ -2569,8 +2671,9 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
+        let service_provider_funds = ServiceProviderFunds::new();
         for (reward_amount, sp_reward) in sp_shares
-            .into_service_provider_rewards(rewards_per_share, &None)
+            .into_service_provider_rewards(rewards_per_share, service_provider_funds)
             .await
             .unwrap()
             .into_mobile_reward_shares(&epoch)
@@ -2621,23 +2724,11 @@ mod test {
         let mut sp_rewards = HashMap::<i32, u64>::new();
         let mut allocated_sp_rewards = 0_u64;
 
-        struct Promo;
-
-        #[async_trait::async_trait]
-        impl SolanaNetwork for Promo {
-            async fn fetch_incentive_escrow_fund_bps(
-                &self,
-                _network_name: &str,
-            ) -> Result<u16, solana::SolanaRpcError> {
-                // 50.00%
-                Ok(5_000)
-            }
-        }
-
+        let service_provider_funds = ServiceProviderFunds::new();
         // Even if we have a promo for 50% as we don't have any promo
         // shares rewards should return to SP
         for (reward_amount, sp_reward) in sp_shares
-            .into_service_provider_rewards(rewards_per_share, &Promo)
+            .into_service_provider_rewards(rewards_per_share, service_provider_funds)
             .await
             .unwrap()
             .into_mobile_reward_shares(&epoch)
