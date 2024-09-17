@@ -362,11 +362,11 @@ pub mod rewards_db {
         tx: &mut Transaction<'_, Postgres>,
         timestamp: &DateTime<Utc>,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("DELETE FROM subscriber_promotion_rewards WHERE time_of_rewards < $1")
+        sqlx::query("DELETE FROM subscriber_promotion_rewards WHERE time_of_reward < $1")
             .bind(timestamp)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("DELETE FROM gateway_promotion_rewards WHERE time_of_rewards < $1")
+        sqlx::query("DELETE FROM gateway_promotion_rewards WHERE time_of_reward < $1")
             .bind(timestamp)
             .execute(&mut *tx)
             .await?;
