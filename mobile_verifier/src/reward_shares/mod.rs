@@ -318,7 +318,7 @@ impl ServiceProviderShares {
             let service_provider = Self::payer_key_to_service_provider(&payer, client).await?;
 
             shares.push(ServiceProviderDataSession {
-                service_provider_id: service_provider,
+                service_provider,
                 total_dcs: Decimal::from(total_dcs),
             });
         }
@@ -360,10 +360,10 @@ impl ServiceProviderShares {
                 continue;
             }
             let percent_for_promotion_rewards = service_provider_funds
-                .fetch_incentive_escrow_fund_percent(share.service_provider_id as i32);
+                .fetch_incentive_escrow_fund_percent(share.service_provider as i32);
 
             rewards.insert(
-                share.service_provider_id as ServiceProviderId,
+                share.service_provider as ServiceProviderId,
                 ServiceProviderReward {
                     for_promotions: total * percent_for_promotion_rewards,
                     for_service_provider: total - total * percent_for_promotion_rewards,
@@ -2500,7 +2500,7 @@ mod test {
         let epoch = (now - Duration::hours(1))..now;
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: sp1,
+            service_provider: sp1,
             total_dcs: dec!(1000),
         }];
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);
@@ -2551,7 +2551,7 @@ mod test {
             mobile_bones_to_dc(total_sp_rewards_in_bones, mobile_bone_price);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: ServiceProvider::HeliumMobile,
+            service_provider: ServiceProvider::HeliumMobile,
             // force the service provider to have spend more DC than total rewardable
             total_dcs: total_rewards_value_in_dc * dec!(2.0),
         }];
@@ -2603,7 +2603,7 @@ mod test {
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: sp1,
+            service_provider: sp1,
             total_dcs: dec!(100_000_000),
         }];
 
@@ -2655,7 +2655,7 @@ mod test {
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: sp1,
+            service_provider: sp1,
             total_dcs: dec!(100_000_000_000),
         }];
 
@@ -2706,7 +2706,7 @@ mod test {
         let epoch = (now - Duration::hours(1))..now;
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: sp1,
+            service_provider: sp1,
             total_dcs: dec!(1000),
         }];
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);

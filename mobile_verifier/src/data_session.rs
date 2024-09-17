@@ -32,7 +32,7 @@ pub struct HotspotReward {
 
 #[derive(Clone, Debug)]
 pub struct ServiceProviderDataSession {
-    pub service_provider_id: ServiceProvider,
+    pub service_provider: ServiceProvider,
     pub total_dcs: Decimal,
 }
 
