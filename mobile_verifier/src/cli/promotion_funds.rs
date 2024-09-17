@@ -1,4 +1,4 @@
-use crate::{promotion_reward::funds_db, Settings};
+use crate::{sp_promotions::funds_db, Settings};
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {

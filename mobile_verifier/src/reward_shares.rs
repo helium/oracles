@@ -2,13 +2,13 @@ use crate::{
     coverage::CoveredHexStream,
     data_session::{HotspotMap, ServiceProviderDataSession},
     heartbeats::HeartbeatReward,
-    promotion_reward::{
-        self, funds_db::ServiceProviderFunds, ServiceProviderId,
-        ServiceProviderPromotionRewardShares,
-    },
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::Seniority,
     sp_boosted_rewards_bans::BannedRadios,
+    sp_promotions::{
+        self, funds_db::ServiceProviderFunds, ServiceProviderId,
+        ServiceProviderPromotionRewardShares,
+    },
     speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
     subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
@@ -474,7 +474,7 @@ impl ServiceProviderPromotionRewards {
         epoch: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<Self> {
         let rewards =
-            promotion_reward::rewards_db::get_promotion_rewards(pool, carrier, epoch).await?;
+            sp_promotions::rewards_db::get_promotion_rewards(pool, carrier, epoch).await?;
 
         Ok(Self { rewards })
     }

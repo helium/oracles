@@ -20,7 +20,7 @@ use crate::common::{self, MockFileSinkReceiver};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use mobile_verifier::{
     data_session,
-    promotion_reward::{
+    sp_promotions::{
         funds_db::save_promotion_fund,
         rewards_db::{self, save_promotion_reward},
         ServiceProviderId,

@@ -2,12 +2,12 @@ use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
-    promotion_reward, radio_threshold,
+    radio_threshold,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, ServiceProviderPromotionRewards, ServiceProviderShares, TransferRewards,
     },
-    sp_boosted_rewards_bans, speedtests,
+    sp_boosted_rewards_bans, sp_promotions, speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, subscriber_verified_mapping_event, telemetry, Settings,
 };
@@ -296,7 +296,7 @@ where
         coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
         sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_period.start).await?;
         subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.end).await?;
-        promotion_reward::clear_promotion_rewards(&mut transaction, &reward_period.start).await?;
+        sp_promotions::clear_promotion_rewards(&mut transaction, &reward_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
@@ -604,7 +604,7 @@ pub async fn reward_service_providers(
         reward_period.end - reward_period.start,
     );
 
-    let sp_promo_funds = promotion_reward::funds_db::get_promotion_funds(pool).await?;
+    let sp_promo_funds = sp_promotions::funds_db::get_promotion_funds(pool).await?;
     let rewards_per_share = sp_shares.rewards_per_share(total_sp_rewards, mobile_bone_price)?;
     let mut sp_rewards =
         sp_shares.into_service_provider_rewards(rewards_per_share, sp_promo_funds)?;

@@ -6,7 +6,7 @@ use crate::{
     data_session::DataSessionIngestor,
     geofence::Geofence,
     heartbeats::{cbrs::CbrsHeartbeatDaemon, wifi::WifiHeartbeatDaemon},
-    promotion_reward::PromotionRewardDaemon,
+    sp_promotions::SpPromotionDaemon,
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
     sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
@@ -195,7 +195,7 @@ impl Cmd {
                 .await?,
             )
             .add_task(
-                PromotionRewardDaemon::create_managed_task(
+                SpPromotionDaemon::create_managed_task(
                     pool.clone(),
                     settings,
                     file_upload.clone(),

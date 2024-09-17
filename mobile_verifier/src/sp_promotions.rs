@@ -47,7 +47,7 @@ pub use rewards_db::clear_promotion_rewards;
 // mobile-verifier when a new carrier is added..
 pub type ServiceProviderId = i32;
 
-pub struct PromotionRewardDaemon {
+pub struct SpPromotionDaemon {
     pool: PgPool,
     gateway_info_resolver: GatewayClient,
     authorization_verifier: AuthorizationClient,
@@ -57,7 +57,7 @@ pub struct PromotionRewardDaemon {
     promotion_rewards_sink: FileSinkClient<VerifiedPromotionRewardV1>,
 }
 
-impl PromotionRewardDaemon {
+impl SpPromotionDaemon {
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
@@ -196,7 +196,7 @@ impl PromotionRewardDaemon {
     }
 }
 
-impl ManagedTask for PromotionRewardDaemon {
+impl ManagedTask for SpPromotionDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
