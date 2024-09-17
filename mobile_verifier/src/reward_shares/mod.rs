@@ -18,8 +18,9 @@ use coverage_point_calculator::{OracleBoostingStatus, SPBoostedRewardEligibility
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::{
-    poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
+use helium_proto::{
+    services::poc_mobile::{self as proto, mobile_reward_share::Reward as ProtoReward},
+    ServiceProvider,
 };
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
@@ -312,18 +313,16 @@ impl ServiceProviderShares {
         payer_shares: HashMap<String, u64>,
         client: &impl CarrierServiceVerifier<Error = ClientError>,
     ) -> anyhow::Result<ServiceProviderShares> {
-        let mut sp_shares = ServiceProviderShares::default();
+        let mut shares = vec![];
         for (payer, total_dcs) in payer_shares {
-            let service_provider_name =
-                Self::payer_key_to_service_provider_name(&payer, client).await?;
-            let service_provider_id = service_provider_name.parse()?;
-            sp_shares.shares.push(ServiceProviderDataSession {
-                service_provider_name,
-                service_provider_id,
+            let service_provider = Self::payer_key_to_service_provider(&payer, client).await?;
+
+            shares.push(ServiceProviderDataSession {
+                service_provider_id: service_provider,
                 total_dcs: Decimal::from(total_dcs),
             });
         }
-        Ok(sp_shares)
+        Ok(Self::new(shares))
     }
 
     fn total_dc(&self) -> Decimal {
@@ -394,12 +393,12 @@ impl ServiceProviderShares {
         }
     }
 
-    async fn payer_key_to_service_provider_name(
+    async fn payer_key_to_service_provider(
         payer: &str,
         client: &impl CarrierServiceVerifier<Error = ClientError>,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<ServiceProvider> {
         tracing::info!(payer, "getting service provider for payer");
-        let sp = client.payer_key_to_service_provider_name(payer).await?;
+        let sp = client.payer_key_to_service_provider(payer).await?;
         Ok(sp)
     }
 }
@@ -2502,7 +2501,6 @@ mod test {
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
             service_provider_id: sp1,
-            service_provider_name: "Helium Mobile".to_string(),
             total_dcs: dec!(1000),
         }];
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);
@@ -2554,7 +2552,6 @@ mod test {
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
             service_provider_id: ServiceProvider::HeliumMobile,
-            service_provider_name: "Helium Mobile".to_string(),
             // force the service provider to have spend more DC than total rewardable
             total_dcs: total_rewards_value_in_dc * dec!(2.0),
         }];
@@ -2607,7 +2604,6 @@ mod test {
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
             service_provider_id: sp1,
-            service_provider_name: "Helium Mobile".to_string(),
             total_dcs: dec!(100_000_000),
         }];
 
@@ -2660,7 +2656,6 @@ mod test {
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
             service_provider_id: sp1,
-            service_provider_name: "Helium Mobile".to_string(),
             total_dcs: dec!(100_000_000_000),
         }];
 
@@ -2712,7 +2707,6 @@ mod test {
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
             service_provider_id: sp1,
-            service_provider_name: "Helium Mobile".to_string(),
             total_dcs: dec!(1000),
         }];
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);
