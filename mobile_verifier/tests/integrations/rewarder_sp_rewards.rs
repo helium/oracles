@@ -21,7 +21,9 @@ use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, Clie
 use mobile_verifier::{
     data_session,
     promotion_reward::{
-        funds_db::save_promotion_fund, rewards_db::save_promotion_reward, ServiceProviderId,
+        funds_db::save_promotion_fund,
+        rewards_db::{self, save_promotion_reward},
+        ServiceProviderId,
     },
     reward_shares, rewarder,
 };
@@ -239,6 +241,16 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
         - 300; // matched promotion
 
     assert_eq!(unallocated.amount, expected_unallocated);
+
+    // Ensure the cleanup job can run
+    let mut txn = pool.begin().await?;
+    rewards_db::clear_promotion_rewards(&mut txn, &Utc::now()).await?;
+    txn.commit().await?;
+
+    let promos =
+        rewards_db::get_promotion_rewards(&pool, &carrier_client, &(epoch.start..Utc::now()))
+            .await?;
+    assert!(promos.is_empty());
 
     Ok(())
 }
