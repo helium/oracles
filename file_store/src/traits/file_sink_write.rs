@@ -271,7 +271,7 @@ impl_file_sink!(
 impl_file_sink!(
     proto::ServiceProviderPromotionFundV1,
     FileType::ServiceProviderPromotionFund.to_str(),
-    "service_provider_allocation_report"
+    "service_provider_promotion_fund"
 );
 impl_file_sink!(
     poc_mobile::PromotionRewardIngestReportV1,
