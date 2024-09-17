@@ -62,16 +62,3 @@ impl SolanaRpc {
         Ok(Self { provider, sub_dao })
     }
 }
-
-#[async_trait]
-impl SolanaNetwork for Option<SolanaRpc> {
-    async fn fetch_incentive_escrow_fund_bps(
-        &self,
-        network_name: &str,
-    ) -> Result<u16, SolanaRpcError> {
-        match self {
-            Some(ref rpc) => rpc.fetch_incentive_escrow_fund_bps(network_name).await,
-            None => Ok(0),
-        }
-    }
-}
