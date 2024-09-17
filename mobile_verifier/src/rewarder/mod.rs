@@ -606,9 +606,8 @@ pub async fn reward_service_providers(
 
     let sp_promo_funds = promotion_reward::funds_db::get_promotion_funds(pool).await?;
     let rewards_per_share = sp_shares.rewards_per_share(total_sp_rewards, mobile_bone_price)?;
-    let mut sp_rewards = sp_shares
-        .into_service_provider_rewards(rewards_per_share, sp_promo_funds)
-        .await?;
+    let mut sp_rewards =
+        sp_shares.into_service_provider_rewards(rewards_per_share, sp_promo_funds)?;
     let mut unallocated_sp_rewards = total_sp_rewards
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()

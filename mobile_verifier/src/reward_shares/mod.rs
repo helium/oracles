@@ -347,7 +347,7 @@ impl ServiceProviderShares {
         ))
     }
 
-    pub async fn into_service_provider_rewards(
+    pub fn into_service_provider_rewards(
         self,
         reward_per_share: Decimal,
         service_provider_funds: ServiceProviderFunds,
@@ -2514,7 +2514,6 @@ mod test {
         let service_provider_funds = ServiceProviderFunds::default();
         for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, service_provider_funds)
-            .await
             .unwrap()
             .into_mobile_reward_shares(&epoch)
         {
@@ -2566,7 +2565,6 @@ mod test {
         let service_provider_funds = ServiceProviderFunds::default();
         for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, service_provider_funds)
-            .await
             .unwrap()
             .into_mobile_reward_shares(&epoch)
         {
@@ -2617,7 +2615,6 @@ mod test {
         let service_provider_funds = ServiceProviderFunds::default();
         for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, service_provider_funds)
-            .await
             .unwrap()
             .into_mobile_reward_shares(&epoch)
         {
@@ -2669,7 +2666,6 @@ mod test {
         let service_provider_funds = ServiceProviderFunds::default();
         for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, service_provider_funds)
-            .await
             .unwrap()
             .into_mobile_reward_shares(&epoch)
         {
@@ -2723,7 +2719,6 @@ mod test {
         // shares rewards should return to SP
         for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, service_provider_funds)
-            .await
             .unwrap()
             .into_mobile_reward_shares(&epoch)
         {
