@@ -2513,7 +2513,7 @@ mod test {
 
         let mut sp_rewards = HashMap::<i32, u64>::new();
         let mut allocated_sp_rewards = 0_u64;
-        let service_provider_funds = ServiceProviderFunds::new();
+        let service_provider_funds = ServiceProviderFunds::default();
         for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, service_provider_funds)
             .await
@@ -2566,7 +2566,7 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        let service_provider_funds = ServiceProviderFunds::new();
+        let service_provider_funds = ServiceProviderFunds::default();
         for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, service_provider_funds)
             .await
@@ -2618,7 +2618,7 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        let service_provider_funds = ServiceProviderFunds::new();
+        let service_provider_funds = ServiceProviderFunds::default();
         for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, service_provider_funds)
             .await
@@ -2671,7 +2671,7 @@ mod test {
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        let service_provider_funds = ServiceProviderFunds::new();
+        let service_provider_funds = ServiceProviderFunds::default();
         for (reward_amount, sp_reward) in sp_shares
             .into_service_provider_rewards(rewards_per_share, service_provider_funds)
             .await
@@ -2724,7 +2724,7 @@ mod test {
         let mut sp_rewards = HashMap::<i32, u64>::new();
         let mut allocated_sp_rewards = 0_u64;
 
-        let service_provider_funds = ServiceProviderFunds::new();
+        let service_provider_funds = ServiceProviderFunds::default();
         // Even if we have a promo for 50% as we don't have any promo
         // shares rewards should return to SP
         for (reward_amount, sp_reward) in sp_shares
