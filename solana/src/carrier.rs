@@ -1,5 +1,4 @@
 use crate::SolanaRpcError;
-use async_trait::async_trait;
 use helium_anchor_gen::{
     anchor_lang::AccountDeserialize,
     helium_sub_daos,
@@ -9,35 +8,7 @@ use serde::Deserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
 
-#[async_trait]
-pub trait SolanaNetwork {
-    async fn fetch_incentive_escrow_fund_bps(
-        &self,
-        network_name: &str,
-    ) -> Result<u16, SolanaRpcError>;
-}
-
-#[async_trait]
-impl SolanaNetwork for SolanaRpc {
-    async fn fetch_incentive_escrow_fund_bps(
-        &self,
-        network_name: &str,
-    ) -> Result<u16, SolanaRpcError> {
-        let (carrier_pda, _) = Pubkey::find_program_address(
-            &[
-                "carrier".as_bytes(),
-                self.sub_dao.as_ref(),
-                network_name.as_bytes(),
-            ],
-            &mobile_entity_manager::ID,
-        );
-        let carrier_data = self.provider.get_account_data(&carrier_pda).await?;
-        let mut carrier_data = carrier_data.as_ref();
-        let carrier = CarrierV0::try_deserialize(&mut carrier_data)?;
-
-        Ok(carrier.incentive_escrow_fund_bps)
-    }
-}
+impl SolanaRpc {}
 
 pub struct SolanaRpc {
     provider: RpcClient,
@@ -60,5 +31,24 @@ impl SolanaRpc {
         let provider =
             RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());
         Ok(Self { provider, sub_dao })
+    }
+
+    pub async fn fetch_incentive_escrow_fund_bps(
+        &self,
+        network_name: &str,
+    ) -> Result<u16, SolanaRpcError> {
+        let (carrier_pda, _) = Pubkey::find_program_address(
+            &[
+                "carrier".as_bytes(),
+                self.sub_dao.as_ref(),
+                network_name.as_bytes(),
+            ],
+            &mobile_entity_manager::ID,
+        );
+        let carrier_data = self.provider.get_account_data(&carrier_pda).await?;
+        let mut carrier_data = carrier_data.as_ref();
+        let carrier = CarrierV0::try_deserialize(&mut carrier_data)?;
+
+        Ok(carrier.incentive_escrow_fund_bps)
     }
 }

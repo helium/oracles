@@ -9,7 +9,7 @@ use file_store::{
 };
 use futures::TryFutureExt;
 use helium_proto::{IntoEnumIterator, ServiceProvider, ServiceProviderPromotionFundV1};
-use solana::carrier::{SolanaNetwork, SolanaRpc};
+use solana::carrier::SolanaRpc;
 use task_manager::ManagedTask;
 use tokio::time::{self, Interval};
 
