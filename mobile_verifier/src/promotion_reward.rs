@@ -10,12 +10,14 @@ use file_store::{
 };
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::{
-    mobile_config::NetworkKeyRole,
-    poc_mobile::{
-        self as proto, PromotionRewardIngestReportV1, PromotionRewardStatus,
-        VerifiedPromotionRewardV1,
+use helium_proto::{
+    services::{
+        mobile_config::NetworkKeyRole,
+        poc_mobile::{
+            PromotionRewardIngestReportV1, PromotionRewardStatus, VerifiedPromotionRewardV1,
+        },
     },
+    ServiceProviderPromotionFundV1,
 };
 use mobile_config::{
     client::{
@@ -25,7 +27,8 @@ use mobile_config::{
     },
     GatewayClient,
 };
-use rust_decimal::{prelude::*, Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use sqlx::{postgres::PgRow, PgPool, Postgres, Row, Transaction};
 use std::{
     collections::HashMap,
@@ -35,16 +38,21 @@ use std::{
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-use crate::{
-    reward_shares::{ServiceProviderId, ServiceProviderRewards},
-    GatewayResolver, Settings,
-};
+use crate::{GatewayResolver, Settings};
+
+pub use rewards_db::clear_promotion_rewards;
+
+// This type is used in lieu of the helium_proto::ServiceProvider enum so we can
+// handle more than a single value without adding a hard deploy dependency to
+// mobile-verifier when a new carrier is added..
+pub type ServiceProviderId = i32;
 
 pub struct PromotionRewardDaemon {
     pool: PgPool,
     gateway_info_resolver: GatewayClient,
     authorization_verifier: AuthorizationClient,
     entity_verifier: EntityClient,
+    promotion_funds: Receiver<FileInfoStream<ServiceProviderPromotionFundV1>>,
     promotion_rewards: Receiver<FileInfoStream<PromotionReward>>,
     promotion_rewards_sink: FileSinkClient<VerifiedPromotionRewardV1>,
 }
@@ -70,11 +78,20 @@ impl PromotionRewardDaemon {
             .await?;
 
         let (promotion_rewards, promotion_rewards_server) =
-            file_source::continuous_source::<PromotionReward, _>()
+            file_source::Continuous::msg_source::<PromotionReward, _>()
+                .state(pool.clone())
+                .store(file_store.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
+                .prefix(FileType::PromotionRewardIngestReport.to_string())
+                .create()
+                .await?;
+
+        let (promotion_funds, promotion_funds_server) =
+            file_source::Continuous::prost_source::<ServiceProviderPromotionFundV1, _>()
                 .state(pool.clone())
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::PromotionRewardIngestReport.to_string())
+                .prefix(FileType::ServiceProviderPromotionFund.to_string())
                 .create()
                 .await?;
 
@@ -83,12 +100,14 @@ impl PromotionRewardDaemon {
             gateway_info_resolver,
             authorization_verifier,
             entity_verifier,
+            promotion_funds,
             promotion_rewards,
             promotion_rewards_sink,
         };
 
         Ok(TaskManager::builder()
             .add_task(valid_promotion_rewards_server)
+            .add_task(promotion_funds_server)
             .add_task(promotion_rewards_server)
             .add_task(promotion_reward_daemon)
             .build())
@@ -103,9 +122,13 @@ impl PromotionRewardDaemon {
                 }
                 Some(file) = self.promotion_rewards.recv() => {
                     let start = Instant::now();
-                    self.process_file(file).await?;
-                    metrics::histogram!("promotion_reward_processing_time")
-                        .record(start.elapsed());
+                    self.process_rewards_file(file).await?;
+                    metrics::histogram!("promotion_reward_processing_time").record(start.elapsed());
+                }
+                Some(file) = self.promotion_funds.recv() => {
+                    let start = Instant::now();
+                    self.process_funds_file(file).await?;
+                    metrics::histogram!("promotion_funds_processing_time").record(start.elapsed());
                 }
             }
         }
@@ -113,8 +136,11 @@ impl PromotionRewardDaemon {
         Ok(())
     }
 
-    async fn process_file(&self, file: FileInfoStream<PromotionReward>) -> anyhow::Result<()> {
-        tracing::info!("Processing promotion reward file {}", file.file_info.key);
+    async fn process_rewards_file(
+        &self,
+        file: FileInfoStream<PromotionReward>,
+    ) -> anyhow::Result<()> {
+        tracing::info!(key = file.file_info.key, "Processing promotion reward file");
 
         let mut transaction = self.pool.begin().await?;
         let mut promotion_rewards = file.into_stream(&mut transaction).await?;
@@ -129,7 +155,7 @@ impl PromotionRewardDaemon {
             .await?;
 
             if promotion_reward_status == PromotionRewardStatus::Valid {
-                save_promotion_reward(&mut transaction, &promotion_reward).await?;
+                rewards_db::save_promotion_reward(&mut transaction, &promotion_reward).await?;
             }
 
             write_promotion_reward(
@@ -142,6 +168,29 @@ impl PromotionRewardDaemon {
 
         self.promotion_rewards_sink.commit().await?;
         transaction.commit().await?;
+
+        Ok(())
+    }
+
+    async fn process_funds_file(
+        &self,
+        file: FileInfoStream<ServiceProviderPromotionFundV1>,
+    ) -> anyhow::Result<()> {
+        tracing::info!(key = file.file_info.key, "Processing promotion funds file");
+
+        let mut txn = self.pool.begin().await?;
+
+        let mut promotion_funds = file.into_stream(&mut txn).await?;
+        while let Some(promotion_fund) = promotion_funds.next().await {
+            funds_db::save_promotion_fund(
+                &mut txn,
+                promotion_fund.service_provider,
+                promotion_fund.bps as u16,
+            )
+            .await?;
+        }
+
+        txn.commit().await?;
 
         Ok(())
     }
@@ -221,13 +270,16 @@ async fn write_promotion_reward(
     Ok(())
 }
 
-pub async fn save_promotion_reward(
-    transaction: &mut Transaction<'_, Postgres>,
-    promotion_reward: &PromotionReward,
-) -> anyhow::Result<()> {
-    match &promotion_reward.entity {
-        Entity::SubscriberId(subscriber_id) => {
-            sqlx::query(
+pub mod rewards_db {
+    use super::*;
+
+    pub async fn save_promotion_reward(
+        transaction: &mut Transaction<'_, Postgres>,
+        promotion_reward: &PromotionReward,
+    ) -> anyhow::Result<()> {
+        match &promotion_reward.entity {
+            Entity::SubscriberId(subscriber_id) => {
+                sqlx::query(
                 r#"
                 INSERT INTO subscriber_promotion_rewards (time_of_reward, subscriber_id, carrier_key, shares)
                 VALUES ($1, $2, $3, $4)
@@ -240,9 +292,9 @@ pub async fn save_promotion_reward(
             .bind(promotion_reward.shares as i64)
             .execute(&mut *transaction)
             .await?;
-        }
-        Entity::GatewayKey(gateway_key) => {
-            sqlx::query(
+            }
+            Entity::GatewayKey(gateway_key) => {
+                sqlx::query(
                 r#"
                 INSERT INTO gateway_promotion_rewards (time_of_reward, gateway_key, carrier_key, shares)
                 VALUES ($1, $2, $3, $4)
@@ -255,34 +307,93 @@ pub async fn save_promotion_reward(
             .bind(promotion_reward.shares as i64)
             .execute(&mut *transaction)
             .await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn get_promotion_rewards(
+        pool: &PgPool,
+        carrier: &impl CarrierServiceVerifier<Error = ClientError>,
+        epoch: &Range<DateTime<Utc>>,
+    ) -> anyhow::Result<Vec<ServiceProviderPromotionRewardShares>> {
+        let rewards = sqlx::query_as(
+            r#"
+        SELECT
+            subscriber_id, NULL as gateway_key, SUM(shares)::bigint as shares, carrier_key
+        FROM
+            subscriber_promotion_rewards
+        WHERE
+            time_of_reward >= $1 AND time_of_reward < $2
+        GROUP BY
+            subscriber_id, carrier_key
+        UNION
+        SELECT
+            NULL as subscriber_id, gateway_key, SUM(shares)::bigint as shares, carrier_key
+        FROM
+            gateway_promotion_rewards
+        WHERE
+            time_of_reward >= $1 AND time_of_reward < $2
+        GROUP
+            BY gateway_key, carrier_key
+        "#,
+        )
+        .bind(epoch.start)
+        .bind(epoch.end)
+        .fetch(pool)
+        .map_err(anyhow::Error::from)
+        .and_then(|x: PromotionRewardShares| async move {
+            let service_provider_id = carrier
+                .payer_key_to_service_provider(&x.carrier_key.to_string())
+                .await?;
+            Ok(ServiceProviderPromotionRewardShares {
+                service_provider_id: service_provider_id as ServiceProviderId,
+                rewardable_entity: x.rewardable_entity,
+                shares: x.shares,
+            })
+        })
+        .try_collect()
+        .await?;
+
+        Ok(rewards)
+    }
+
+    pub async fn clear_promotion_rewards(
+        tx: &mut Transaction<'_, Postgres>,
+        timestamp: &DateTime<Utc>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM subscriber_promotion_rewards WHERE time_of_rewards < $1")
+            .bind(timestamp)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM gateway_promotion_rewards WHERE time_of_rewards < $1")
+            .bind(timestamp)
+            .execute(&mut *tx)
+            .await?;
+        Ok(())
+    }
+
+    struct PromotionRewardShares {
+        pub carrier_key: PublicKeyBinary,
+        pub rewardable_entity: Entity,
+        pub shares: u64,
+    }
+
+    impl sqlx::FromRow<'_, PgRow> for PromotionRewardShares {
+        fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+            let subscriber_id: Option<Vec<u8>> = row.try_get("subscriber_id")?;
+            let shares: i64 = row.try_get("shares")?;
+            Ok(Self {
+                rewardable_entity: if let Some(subscriber_id) = subscriber_id {
+                    Entity::SubscriberId(subscriber_id)
+                } else {
+                    Entity::GatewayKey(row.try_get("gateway_key")?)
+                },
+                shares: shares as u64,
+                carrier_key: row.try_get("carrier_key")?,
+            })
         }
     }
-    Ok(())
-}
-
-pub async fn clear_promotion_rewards(
-    tx: &mut Transaction<'_, Postgres>,
-    timestamp: &DateTime<Utc>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM subscriber_promotion_rewards WHERE time_of_rewards < $1")
-        .bind(timestamp)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM gateway_promotion_rewards WHERE time_of_rewards < $1")
-        .bind(timestamp)
-        .execute(&mut *tx)
-        .await?;
-    Ok(())
-}
-
-pub struct AggregatePromotionRewards {
-    pub rewards: Vec<ServiceProviderPromotionRewardShares>,
-}
-
-pub struct PromotionRewardShares {
-    pub carrier_key: PublicKeyBinary,
-    pub rewardable_entity: Entity,
-    pub shares: u64,
 }
 
 #[derive(Debug)]
@@ -292,151 +403,93 @@ pub struct ServiceProviderPromotionRewardShares {
     pub shares: u64,
 }
 
-impl sqlx::FromRow<'_, PgRow> for PromotionRewardShares {
-    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
-        let subscriber_id: Option<Vec<u8>> = row.try_get("subscriber_id")?;
-        let shares: i64 = row.try_get("shares")?;
-        Ok(Self {
-            rewardable_entity: if let Some(subscriber_id) = subscriber_id {
-                Entity::SubscriberId(subscriber_id)
-            } else {
-                Entity::GatewayKey(row.try_get("gateway_key")?)
-            },
-            shares: shares as u64,
-            carrier_key: row.try_get("carrier_key")?,
-        })
+pub mod funds_db {
+    use super::*;
+
+    #[derive(Debug, Default)]
+    pub struct ServiceProviderFunds(HashMap<ServiceProviderId, u16>);
+
+    impl ServiceProviderFunds {
+        pub(crate) fn fetch_incentive_escrow_fund_percent(
+            &self,
+            service_provider_id: ServiceProviderId,
+        ) -> Decimal {
+            let bps = self
+                .0
+                .get(&service_provider_id)
+                .cloned()
+                .unwrap_or_default();
+            Decimal::from(bps) / dec!(10_000)
+        }
+
+        pub fn new() -> Self {
+            Self(Default::default())
+        }
     }
-}
 
-// This could use a better name
-#[derive(Copy, Clone, Default)]
-struct SpPromotionRewardShares {
-    rewards_per_share: Decimal,
-    rewards_per_matched_share: Decimal,
-}
+    pub async fn get_promotion_funds(pool: &PgPool) -> anyhow::Result<ServiceProviderFunds> {
+        #[derive(Debug, sqlx::FromRow)]
+        struct PromotionFund {
+            #[sqlx(try_from = "i64")]
+            pub service_provider: ServiceProviderId,
+            #[sqlx(try_from = "i64")]
+            pub basis_points: u16,
+        }
 
-impl AggregatePromotionRewards {
-    pub async fn aggregate(
-        pool: &PgPool,
-        carrier: &impl CarrierServiceVerifier<Error = ClientError>,
-        epoch: &Range<DateTime<Utc>>,
-    ) -> anyhow::Result<Self> {
-        let rewards = sqlx::query_as(
+        let funds = sqlx::query_as::<_, PromotionFund>(
             r#"
-            SELECT subscriber_id, NULL as gateway_key, SUM(shares)::bigint as shares, carrier_key
-            FROM subscriber_promotion_rewards
-            WHERE time_of_reward >= $1 AND time_of_reward < $2
-            GROUP BY subscriber_id, carrier_key
-            UNION
-            SELECT NULL as subscriber_id, gateway_key, SUM(shares)::bigint as shares, carrier_key
-            FROM gateway_promotion_rewards
-            WHERE time_of_reward >= $1 AND time_of_reward < $2
-            GROUP BY gateway_key, carrier_key
+            SELECT
+                service_provider, basis_points
+            FROM
+                service_provider_promotion_funds
             "#,
         )
-        .bind(epoch.start)
-        .bind(epoch.end)
-        .fetch(pool)
-        .map_err(anyhow::Error::from)
-        .and_then(|x: PromotionRewardShares| async move {
-            let service_provider_id = carrier
-                .payer_key_to_service_provider(&x.carrier_key.to_string())
-                .await? as ServiceProviderId;
-            Ok(ServiceProviderPromotionRewardShares {
-                service_provider_id,
-                rewardable_entity: x.rewardable_entity,
-                shares: x.shares,
-            })
-        })
-        .try_collect()
+        .fetch_all(pool)
         .await?;
 
-        Ok(Self { rewards })
-    }
-
-    pub fn into_rewards<'a>(
-        self,
-        sp_rewards: &mut ServiceProviderRewards,
-        unallocated_sp_rewards: Decimal,
-        reward_period: &'a Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + 'a {
-        let total_promotion_rewards_allocated =
-            sp_rewards.get_total_rewards_allocated_for_promotion();
-        let total_shares_per_service_provider = self.rewards.iter().fold(
-            HashMap::<i32, Decimal>::default(),
-            |mut shares, promotion_reward_share| {
-                *shares
-                    .entry(promotion_reward_share.service_provider_id)
-                    .or_default() += Decimal::from(promotion_reward_share.shares);
-                shares
-            },
-        );
-        let sp_promotion_reward_shares: HashMap<_, _> = total_shares_per_service_provider
-            .iter()
-            .map(|(sp, total_shares)| {
-                if total_promotion_rewards_allocated.is_zero() || total_shares.is_zero() {
-                    (*sp, SpPromotionRewardShares::default())
-                } else {
-                    let rewards_allocated_for_promotion =
-                        sp_rewards.take_rewards_allocated_for_promotion(sp);
-                    let share_of_unallocated_pool =
-                        rewards_allocated_for_promotion / total_promotion_rewards_allocated;
-                    let sp_share = SpPromotionRewardShares {
-                        rewards_per_share: rewards_allocated_for_promotion / total_shares,
-                        rewards_per_matched_share: unallocated_sp_rewards
-                            * share_of_unallocated_pool
-                            / total_shares,
-                    };
-                    (*sp, sp_share)
-                }
-            })
+        let funds = funds
+            .into_iter()
+            .map(|fund| (fund.service_provider, fund.basis_points))
             .collect();
 
-        self.rewards
-            .into_iter()
-            .map(move |reward| {
-                let shares = Decimal::from(reward.shares);
-                let sp_promotion_reward_share = sp_promotion_reward_shares
-                    .get(&reward.service_provider_id)
-                    .copied()
-                    .unwrap_or_default();
-                let service_provider_token = sp_promotion_reward_share.rewards_per_share * shares;
-                // Goal here is to never match more than the original promotion amount.
-                let matched_token = (sp_promotion_reward_share.rewards_per_matched_share * shares)
-                    .min(service_provider_token);
-                proto::PromotionReward {
-                    entity: Some(reward.rewardable_entity.into()),
-                    service_provider_amount: service_provider_token
-                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                        .to_u64()
-                        .unwrap_or(0),
-                    matched_amount: matched_token
-                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                        .to_u64()
-                        .unwrap_or(0),
-                }
-            })
-            .filter(|x| x.service_provider_amount > 0)
-            .map(move |reward| {
-                (
-                    reward.service_provider_amount + reward.matched_amount,
-                    proto::MobileRewardShare {
-                        start_period: reward_period.start.encode_timestamp(),
-                        end_period: reward_period.end.encode_timestamp(),
-                        reward: Some(proto::mobile_reward_share::Reward::PromotionReward(reward)),
-                    },
-                )
-            })
+        Ok(ServiceProviderFunds(funds))
+    }
+
+    pub async fn save_promotion_fund(
+        transaction: &mut Transaction<'_, Postgres>,
+        service_provider_id: ServiceProviderId,
+        basis_points: u16,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO service_provider_promotion_funds
+                (service_provider, basis_points, inserted_at)
+            VALUES
+                ($1, $2, $3)
+        "#,
+        )
+        .bind(service_provider_id)
+        .bind(basis_points as i64)
+        .bind(Utc::now())
+        .execute(transaction)
+        .await?;
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
     use super::*;
-    use crate::reward_shares::ServiceProviderReward;
+    use crate::reward_shares::{
+        ServiceProviderPromotionRewards, ServiceProviderReward, ServiceProviderRewards,
+    };
     use chrono::Duration;
     use helium_proto::services::poc_mobile::{
-        mobile_reward_share::Reward, promotion_reward::Entity as ProtoEntity, PromotionReward,
+        self as proto, mobile_reward_share::Reward, promotion_reward::Entity as ProtoEntity,
+        PromotionReward,
     };
     use rust_decimal_macros::dec;
 
@@ -472,7 +525,7 @@ mod test {
             },
         );
         let mut sp_rewards = ServiceProviderRewards { rewards };
-        let promotion_rewards = AggregatePromotionRewards {
+        let promotion_rewards = ServiceProviderPromotionRewards {
             rewards: vec![ServiceProviderPromotionRewardShares {
                 service_provider_id: 0,
                 rewardable_entity: Entity::SubscriberId(vec![0]),
@@ -500,7 +553,7 @@ mod test {
             },
         );
         let mut sp_rewards = ServiceProviderRewards { rewards };
-        let promotion_rewards = AggregatePromotionRewards {
+        let promotion_rewards = ServiceProviderPromotionRewards {
             rewards: vec![ServiceProviderPromotionRewardShares {
                 service_provider_id: 0,
                 rewardable_entity: Entity::SubscriberId(vec![0]),
@@ -531,7 +584,7 @@ mod test {
             },
         );
         let mut sp_rewards = ServiceProviderRewards { rewards };
-        let promotion_rewards = AggregatePromotionRewards {
+        let promotion_rewards = ServiceProviderPromotionRewards {
             rewards: vec![
                 ServiceProviderPromotionRewardShares {
                     service_provider_id: 0,
@@ -572,7 +625,7 @@ mod test {
             },
         );
         let mut sp_rewards = ServiceProviderRewards { rewards };
-        let promotion_rewards = AggregatePromotionRewards {
+        let promotion_rewards = ServiceProviderPromotionRewards {
             rewards: vec![
                 ServiceProviderPromotionRewardShares {
                     service_provider_id: 0,
@@ -620,7 +673,7 @@ mod test {
             },
         );
         let mut sp_rewards = ServiceProviderRewards { rewards };
-        let promotion_rewards = AggregatePromotionRewards {
+        let promotion_rewards = ServiceProviderPromotionRewards {
             rewards: vec![
                 ServiceProviderPromotionRewardShares {
                     service_provider_id: 0,
