@@ -176,6 +176,7 @@ impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 
 pub struct Org {
     pub oui: u64,
+    pub escrow_Key: string,
     pub payer: PublicKeyBinary,
     pub locked: bool,
 }

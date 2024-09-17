@@ -152,7 +152,6 @@ impl OrgService {
 #[tonic::async_trait]
 impl iot_config::Org for OrgService {
     async fn list(&self, _request: Request<OrgListReqV1>) -> GrpcResult<OrgListResV1> {
-        tracing::debug!("list orgs");
         telemetry::count_request("org", "list");
 
         let proto_orgs: Vec<OrgV1> = org::list(&self.pool)

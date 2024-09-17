@@ -32,20 +32,11 @@ pub struct Org {
 
 impl FromRow<'_, PgRow> for Org {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
-        let oui_decimal: Decimal = row.try_get("oui")?;
-        let oui: u64 = oui_decimal.to_u64().ok_or_else(|| {
-            SqlxError::Decode(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Failed to convert NUMERIC to u64",
-            )))
-        })?;
-
+        let oui = row.try_get::<i64, &str>("oui")? as u64;
         let owner_str: String = row.get("authority");
         let owner = Pubkey::from_str(&owner_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
-
         let escrow_key = row.get::<String, _>("escrow_key");
-        let locked = row.get::<Option<bool>, _>("locked").unwrap_or(false);
-
+        let locked = row.get::<bool, _>("locked");
         let raw_delegate_keys: Option<Vec<String>> = row.try_get("delegate_keys")?;
         let delegate_keys: Option<Vec<Pubkey>> = raw_delegate_keys.map(|keys| {
             keys.into_iter()
@@ -157,7 +148,6 @@ pub async fn update_org(
                 update_owner(oui, &pubkeybin, &mut txn).await?;
                 tracing::info!(oui, pubkey = %pubkeybin, "owner pubkey updated");
             }
-            // TODO (bry): escrow key update
             Some(proto::Update::Devaddrs(addr_count))
                 if authorizer == UpdateAuthorizer::Admin && is_helium_org =>
             {
@@ -245,15 +235,15 @@ pub async fn get_org_netid(
 ) -> Result<NetIdField, sqlx::Error> {
     let netid = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT sol_ni.id
+        SELECT sol_ni.id::bigint
         FROM solana_organization_devaddr_constraints sol_odc
         JOIN solana_organizations sol_org ON sol_org.address = sol_odc.organization
         JOIN solana_net_ids sol_ni ON sol_ni.address = sol_odc.net_id
-        WHERE sol_org.oui = $1::numeric
+        WHERE sol_org.oui = $1
         LIMIT 1
         "#,
     )
-    .bind(oui.to_string())
+    .bind(Decimal::from(oui))
     .fetch_one(db)
     .await?;
 
@@ -267,20 +257,6 @@ async fn update_owner(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(" update organizations set owner_pubkey = $1 where oui = $2 ")
         .bind(owner_pubkey)
-        .bind(oui as i64)
-        .execute(db)
-        .await
-        .map(|_| ())
-}
-
-// TODO (bry): implement update_escrow_key
-async fn update_payer(
-    oui: u64,
-    payer_pubkey: &PublicKeyBinary,
-    db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(" update organizations set payer_pubkey = $1 where oui = $2 ")
-        .bind(payer_pubkey)
         .bind(oui as i64)
         .execute(db)
         .await
@@ -463,7 +439,7 @@ async fn insert_roamer_constraint(
 
 const GET_ORG_SQL: &str = r#"
 SELECT
-    sol_org.oui,
+    sol_org.oui::bigint,
     sol_org.authority,
     sol_org.escrow_key,
     COALESCE((SELECT locked
@@ -497,7 +473,7 @@ pub async fn get(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<Option<Org>,
     query.push(" where sol_org.oui = $1 ");
     query
         .build_query_as::<Org>()
-        .bind(oui as i64)
+        .bind(Decimal::from(oui))
         .fetch_optional(db)
         .await
 }
@@ -573,10 +549,10 @@ pub async fn is_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<bool, 
         SELECT COALESCE(org_lock.locked, false)
         FROM solana_organizations sol_org
         LEFT JOIN organization_locks org_lock ON sol_org.address = org_lock.organization
-        WHERE sol_org.oui = $1::numeric
+        WHERE sol_org.oui = $1
         "#,
     )
-    .bind(oui as i64)
+    .bind(Decimal::from(oui))
     .fetch_one(db)
     .await
 }
@@ -588,12 +564,12 @@ pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<()
         SELECT address, NOT COALESCE(ol.locked, false)
         FROM solana_organizations sol_org
         LEFT JOIN organization_locks org_lock ON sol_org.address = org_lock.organization
-        WHERE sol_org.oui = $1::numeric
+        WHERE sol_org.oui = $1
         ON CONFLICT (organization) DO UPDATE
         SET locked = NOT organization_locks.locked
         "#,
     )
-    .bind(oui as i64)
+    .bind(Decimal::from(oui))
     .execute(db)
     .await?;
 
