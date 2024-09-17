@@ -5,7 +5,11 @@ use clap::{Parser, Subcommand};
 use file_store::file_upload::FileUpload;
 use helium_proto::ServiceProvider;
 use humantime_serde::re::humantime::format_duration;
-use promotion_fund::{make_promotion_fund_file_sink, settings::Settings, state::State};
+use promotion_fund::{
+    daemon::{fetch_s3_bps, fetch_solana_bps, write_protos, Daemon},
+    make_promotion_fund_file_sink,
+    settings::Settings,
+};
 use solana::carrier::SolanaRpc;
 use task_manager::TaskManager;
 
@@ -35,10 +39,9 @@ enum Cmd {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
-
     let cli = Cli::parse();
     let settings = Settings::new(cli.config).context("reading settings")?;
+    custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
     poc_metrics::start_metrics(&settings.metrics)?;
 
     match cli.cmd {
@@ -55,15 +58,7 @@ async fn run_server(settings: &Settings) -> Result<()> {
     let (promotion_funds_sink, promotion_fund_server) =
         make_promotion_fund_file_sink(settings, upload).await?;
 
-    let s3_current = State::fetch_s3_bps(&settings.file_store_output).await?;
-    let solana_client = SolanaRpc::new(&settings.solana).context("making solana client")?;
-    let check_timer = tokio::time::interval(settings.solana_check_interval);
-    let state = State::new(
-        s3_current,
-        solana_client,
-        promotion_funds_sink,
-        Some(check_timer),
-    );
+    let state = Daemon::from_settings(settings, promotion_funds_sink).await?;
 
     tracing::info!(
         check_interval = %format_duration(settings.solana_check_interval),
@@ -81,7 +76,7 @@ async fn run_server(settings: &Settings) -> Result<()> {
 }
 
 async fn print_s3(settings: &Settings) -> Result<()> {
-    let s3_current = State::fetch_s3_bps(&settings.file_store_output).await?;
+    let s3_current = fetch_s3_bps(&settings.file_store_output).await?;
     if s3_current.is_empty() {
         tracing::warn!("nothing read from s3");
     }
@@ -107,8 +102,10 @@ async fn write_solana(settings: &Settings) -> Result<()> {
     });
 
     let solana = SolanaRpc::new(&settings.solana).context("making solana client")?;
-    let mut state = State::new(Default::default(), solana, promotion_funds_sink, None);
-    state.handle_tick().await?;
+    let promo_funds = fetch_solana_bps(&solana).await?;
+    write_protos(&promotion_funds_sink, promo_funds).await?;
+    tracing::info!("file written, waiting for upload...");
+
     // allow time for the upload to s3
     tokio::time::sleep(Duration::from_secs(5)).await;
 

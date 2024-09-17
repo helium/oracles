@@ -1,20 +1,16 @@
 use std::collections::HashMap;
 
-use anyhow::Context;
-use chrono::Utc;
 use file_store::{
-    file_info_poller::{FileInfoPollerParser, ProstFileInfoPollerParser},
     file_sink::FileSinkClient,
     file_upload::FileUpload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileSink, FileStore, FileType,
+    FileSink,
 };
-use helium_proto::{IntoEnumIterator, ServiceProvider, ServiceProviderPromotionFundV1};
+use helium_proto::ServiceProviderPromotionFundV1;
 use settings::Settings;
-use solana::carrier::{SolanaNetwork, SolanaRpc};
 
+pub mod daemon;
 pub mod settings;
-pub mod state;
 
 type ServiceProviderInt = i32;
 type BasisPoints = u32;
@@ -41,44 +37,6 @@ fn compare_s3_and_solana_values(s3_current: &S3Value, solana_current: &SolanaVal
     Action::Noop
 }
 
-async fn fetch_s3_bps(file_store: FileStore) -> anyhow::Result<S3Value> {
-    let mut results = HashMap::new();
-
-    let all = file_store
-        .list_all(FileType::ServiceProviderPromotionFund.to_str(), None, None)
-        .await?;
-
-    if let Some(last) = all.last() {
-        let byte_stream = file_store.get_raw(&last.key).await?;
-        let data: Vec<ServiceProviderPromotionFundV1> =
-            ProstFileInfoPollerParser.parse(byte_stream).await?;
-        for sp_promo_fund in data {
-            results.insert(sp_promo_fund.service_provider, sp_promo_fund.bps);
-        }
-    }
-
-    Ok(results)
-}
-
-async fn fetch_solana_bps(client: &SolanaRpc) -> anyhow::Result<SolanaValue> {
-    let mut results = Vec::new();
-    for service_provider in ServiceProvider::iter() {
-        let bps = client
-            .fetch_incentive_escrow_fund_bps(&service_provider.to_string())
-            .await
-            .with_context(|| format!("fetching solana bps for {service_provider:?}"))?;
-
-        let proto = ServiceProviderPromotionFundV1 {
-            timestamp: Utc::now().timestamp_millis() as u64,
-            service_provider: service_provider.into(),
-            bps: bps as u32,
-        };
-        results.push(proto);
-    }
-
-    Ok(results)
-}
-
 pub async fn make_promotion_fund_file_sink(
     settings: &Settings,
     upload: FileUpload,
@@ -99,6 +57,8 @@ pub async fn make_promotion_fund_file_sink(
 
 #[cfg(test)]
 mod tests {
+    use helium_proto::ServiceProvider;
+
     use super::*;
 
     #[test]

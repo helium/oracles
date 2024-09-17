@@ -1,3 +1,12 @@
+# RUST_LOG compatible settings string
+#
+log = "promotion_fund=info"
+
+# Destination of file to be watched for dynamically updating log level.
+# Write a RUST_LOG compatible string to see new logs.
+#
+# custom_tracing = "./tracing.cfg"
+
 # Temporary storage for Service Provider Promotion Funds before uploading to S3
 #
 file_sink_cache = "/tmp/oracles/promotion-fund"

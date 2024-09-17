@@ -8,6 +8,11 @@ use humantime_serde::re::humantime;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Settings {
+    /// RUST_LOG compatible settings string.
+    #[serde(default = "default_log")]
+    pub log: String,
+    #[serde(default)]
+    pub custom_tracing: custom_tracing::Settings,
     /// Temporary storage before writing to S3
     pub file_sink_cache: PathBuf,
     /// How often to check for updates of service provider promotion values from
@@ -22,6 +27,10 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
 }
 
+fn default_log() -> String {
+    "promotion_fund=info".to_string()
+}
+
 fn default_solana_check_interval() -> Duration {
     humantime::parse_duration("6 hours").unwrap()
 }
@@ -32,7 +41,7 @@ impl Settings {
     ///
     /// Environemnt overrides have the same name as the entries in the settings
     /// file in uppercase and prefixed with "PROMO_". For example
-    /// "PROMO_LOG_" will override the log setting.
+    /// "PROMO_LOG" will override the log setting.
     pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self, config::ConfigError> {
         let mut builder = Config::builder();
 
