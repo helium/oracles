@@ -485,9 +485,8 @@ impl ServiceProviderPromotionRewards {
         unallocated_sp_rewards: Decimal,
         reward_period: &'a Range<DateTime<Utc>>,
     ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + 'a {
-        // This could use a better name
         #[derive(Copy, Clone, Default)]
-        struct SpPromotionRewardShares {
+        struct RewardSharePlan {
             rewards_per_share: Decimal,
             rewards_per_matched_share: Decimal,
         }
@@ -507,13 +506,13 @@ impl ServiceProviderPromotionRewards {
             .iter()
             .map(|(sp, total_shares)| {
                 if total_promotion_rewards_allocated.is_zero() || total_shares.is_zero() {
-                    (*sp, SpPromotionRewardShares::default())
+                    (*sp, RewardSharePlan::default())
                 } else {
                     let rewards_allocated_for_promotion =
                         sp_rewards.take_rewards_allocated_for_promotion(sp);
                     let share_of_unallocated_pool =
                         rewards_allocated_for_promotion / total_promotion_rewards_allocated;
-                    let sp_share = SpPromotionRewardShares {
+                    let sp_share = RewardSharePlan {
                         rewards_per_share: rewards_allocated_for_promotion / total_shares,
                         rewards_per_matched_share: unallocated_sp_rewards
                             * share_of_unallocated_pool
