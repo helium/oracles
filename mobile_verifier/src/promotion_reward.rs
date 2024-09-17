@@ -472,6 +472,23 @@ pub mod funds_db {
 
         Ok(())
     }
+
+    pub async fn delete_promotion_fund(
+        pool: &PgPool,
+        service_provider_id: ServiceProviderId,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            DELETE FROM service_provider_promotion_funds
+            WHERE service_provider = $1
+        "#,
+        )
+        .bind(service_provider_id)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
