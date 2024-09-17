@@ -7,15 +7,11 @@ use helium_proto::{
     Message, ServiceProvider,
 };
 use retainer::Cache;
-use std::{sync::Arc, time::Duration};
-
+use std::{str::FromStr, sync::Arc, time::Duration};
 #[async_trait]
 pub trait CarrierServiceVerifier {
     type Error;
-
-    async fn payer_key_to_service_provider_name(&self, payer: &str) -> Result<String, Self::Error>;
-
-    async fn payer_key_to_service_provider(
+    async fn payer_key_to_service_provider<'a>(
         &self,
         payer: &str,
     ) -> Result<ServiceProvider, Self::Error>;
@@ -25,7 +21,7 @@ pub struct CarrierServiceClient {
     client: mobile_config::CarrierServiceClient<Channel>,
     signing_key: Arc<Keypair>,
     config_pubkey: PublicKey,
-    cache: Arc<Cache<String, String>>,
+    cache: Arc<Cache<String, ServiceProvider>>,
     cache_ttl: Duration,
 }
 
@@ -33,9 +29,12 @@ pub struct CarrierServiceClient {
 impl CarrierServiceVerifier for CarrierServiceClient {
     type Error = ClientError;
 
-    async fn payer_key_to_service_provider_name(&self, payer: &str) -> Result<String, ClientError> {
+    async fn payer_key_to_service_provider<'a>(
+        &self,
+        payer: &str,
+    ) -> Result<ServiceProvider, ClientError> {
         if let Some(carrier_found) = self.cache.get(&payer.to_string()).await {
-            return Ok(carrier_found.value().clone());
+            return Ok(*carrier_found.value());
         }
 
         let mut request = mobile_config::CarrierKeyToEntityReqV1 {
@@ -49,7 +48,8 @@ impl CarrierServiceVerifier for CarrierServiceClient {
             Ok(verify_res) => {
                 let response = verify_res.into_inner();
                 response.verify(&self.config_pubkey)?;
-                response.entity_key.clone()
+                ServiceProvider::from_str(&response.entity_key)
+                    .map_err(|_| ClientError::UnknownServiceProvider(payer.to_string()))?
             }
             Err(status) if status.code() == tonic::Code::NotFound => {
                 Err(ClientError::UnknownServiceProvider(payer.to_string()))?
@@ -57,20 +57,9 @@ impl CarrierServiceVerifier for CarrierServiceClient {
             Err(status) => Err(status)?,
         };
         self.cache
-            .insert(payer.to_string(), response.clone(), self.cache_ttl)
+            .insert(payer.to_string(), response, self.cache_ttl)
             .await;
         Ok(response)
-    }
-
-    async fn payer_key_to_service_provider(
-        &self,
-        payer: &str,
-    ) -> Result<ServiceProvider, ClientError> {
-        Ok(self
-            .payer_key_to_service_provider_name(payer)
-            .await?
-            .parse()
-            .map_err(|_| ClientError::UnknownServiceProvider(payer.to_string()))?)
     }
 }
 
