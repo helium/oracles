@@ -19,7 +19,11 @@ use uuid::Uuid;
 use crate::common::{self, MockFileSinkReceiver};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use mobile_verifier::{
-    data_session, promotion_reward::save_promotion_reward, reward_shares, rewarder,
+    data_session,
+    promotion_reward::{
+        funds_db::save_promotion_fund, rewards_db::save_promotion_reward, ServiceProviderId,
+    },
+    reward_shares, rewarder,
 };
 
 const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
@@ -179,6 +183,8 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
         &mut txn,
     )
     .await?;
+    // promotions allocated 05.00%
+    seed_sp_promotion_rewards_funds(&[(0, 500)], &mut txn).await?;
     txn.commit().await?;
 
     let (_, rewards) = tokio::join!(
@@ -276,6 +282,17 @@ async fn seed_sp_promotion_rewards_with_random_subscribers(
             },
         )
         .await?;
+    }
+
+    Ok(())
+}
+
+async fn seed_sp_promotion_rewards_funds(
+    sp_fund_allocations: &[(ServiceProviderId, u16)],
+    txn: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<()> {
+    for (sp_id, basis_points) in sp_fund_allocations {
+        save_promotion_fund(txn, *sp_id, *basis_points).await?;
     }
 
     Ok(())
