@@ -7301,8 +7301,6 @@ dependencies = [
  "helium-crypto",
  "itertools",
  "metrics",
- "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "sha2 0.10.8",
  "solana-client",

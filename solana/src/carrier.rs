@@ -8,8 +8,6 @@ use serde::Deserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
 
-impl SolanaRpc {}
-
 pub struct SolanaRpc {
     provider: RpcClient,
     sub_dao: Pubkey,
