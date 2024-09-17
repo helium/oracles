@@ -410,7 +410,7 @@ pub mod funds_db {
     pub struct ServiceProviderFunds(HashMap<ServiceProviderId, u16>);
 
     impl ServiceProviderFunds {
-        pub(crate) fn fetch_incentive_escrow_fund_percent(
+        pub fn fetch_incentive_escrow_fund_percent(
             &self,
             service_provider_id: ServiceProviderId,
         ) -> Decimal {
@@ -420,10 +420,6 @@ pub mod funds_db {
                 .cloned()
                 .unwrap_or_default();
             Decimal::from(bps) / dec!(10_000)
-        }
-
-        pub fn new() -> Self {
-            Self(Default::default())
         }
     }
 
