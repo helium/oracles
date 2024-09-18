@@ -14,7 +14,7 @@ pub struct FileInfo {
 }
 
 lazy_static! {
-    static ref RE: Regex = Regex::new(r"([a-z,_]+).(\d+)(.gz)?").unwrap();
+    static ref RE: Regex = Regex::new(r"([a-z,\d,_]+)\.(\d+)(\.gz)?").unwrap();
 }
 
 impl FromStr for FileInfo {
