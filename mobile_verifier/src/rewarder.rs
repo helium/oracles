@@ -4,8 +4,9 @@ use crate::{
     heartbeats::{self, HeartbeatReward},
     radio_threshold,
     reward_shares::{
-        self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
-        MapperShares, ServiceProviderPromotionRewards, ServiceProviderShares, TransferRewards,
+        self, playground::ServiceProvideRewardInfoColl, CalculatedPocRewardShares, CoverageShares,
+        DataTransferAndPocAllocatedRewardBuckets, MapperShares, ServiceProviderDCSessions,
+        TransferRewards,
     },
     sp_boosted_rewards_bans, sp_promotions, speedtests,
     speedtests_average::SpeedtestAverages,
@@ -598,32 +599,34 @@ pub async fn reward_service_providers(
 ) -> anyhow::Result<()> {
     let payer_dc_sessions =
         data_session::sum_data_sessions_to_dc_by_payer(pool, reward_period).await?;
-    let sp_shares =
-        ServiceProviderShares::from_payers_dc(payer_dc_sessions, carrier_client).await?;
+
+    let mut dc_sessions = ServiceProviderDCSessions::new();
+    for (sp_id, dc_amount) in payer_dc_sessions {
+        let service_provider = carrier_client.payer_key_to_service_provider(&sp_id).await?;
+        dc_sessions.insert(service_provider as i32, Decimal::from(dc_amount));
+    }
+    let promo_funds = sp_promotions::funds_db::get_promotion_funds(pool).await?;
+    let promo_rewards =
+        sp_promotions::rewards_db::get_promotion_rewards(pool, carrier_client, reward_period)
+            .await?;
+
     let total_sp_rewards = reward_shares::get_scheduled_tokens_for_service_providers(
         reward_period.end - reward_period.start,
     );
+    let sps = ServiceProvideRewardInfoColl::new(
+        dc_sessions,
+        promo_funds,
+        promo_rewards,
+        total_sp_rewards,
+        mobile_bone_price,
+    );
 
-    let sp_promo_funds = sp_promotions::funds_db::get_promotion_funds(pool).await?;
-    let rewards_per_share = sp_shares.rewards_per_share(total_sp_rewards, mobile_bone_price)?;
-    let mut sp_rewards =
-        sp_shares.into_service_provider_rewards(rewards_per_share, sp_promo_funds)?;
     let mut unallocated_sp_rewards = total_sp_rewards
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
-    let agg_promotion_rewards =
-        ServiceProviderPromotionRewards::aggregate(pool, carrier_client, reward_period).await?;
 
-    let sp_rewards_for_matching = total_sp_rewards - sp_rewards.get_total_rewards();
-    for (amount, reward) in
-        agg_promotion_rewards.into_rewards(&mut sp_rewards, sp_rewards_for_matching, reward_period)
-    {
-        unallocated_sp_rewards -= amount;
-        mobile_rewards.write(reward, []).await?.await??;
-    }
-
-    for (amount, reward) in sp_rewards.into_mobile_reward_shares(reward_period) {
+    for (amount, reward) in sps.iter_rewards(reward_period) {
         unallocated_sp_rewards -= amount;
         mobile_rewards.write(reward, []).await?.await??;
     }

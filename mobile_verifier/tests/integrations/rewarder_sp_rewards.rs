@@ -19,13 +19,12 @@ use uuid::Uuid;
 use crate::common::{self, MockFileSinkReceiver};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use mobile_verifier::{
-    data_session,
+    data_session, reward_shares, rewarder,
     sp_promotions::{
         funds_db::save_promotion_fund,
         rewards_db::{self, save_promotion_reward},
         ServiceProviderId,
     },
-    reward_shares, rewarder,
 };
 
 const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
