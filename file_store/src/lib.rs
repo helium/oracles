@@ -20,6 +20,7 @@ pub mod mobile_radio_threshold;
 pub mod mobile_session;
 pub mod mobile_subscriber;
 pub mod mobile_transfer;
+pub mod promotion_reward;
 pub mod reward_manifest;
 mod settings;
 pub mod speedtest;
