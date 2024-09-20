@@ -11,6 +11,7 @@ pub mod rewarder;
 pub mod seniority;
 mod settings;
 pub mod sp_boosted_rewards_bans;
+pub mod sp_promotions;
 pub mod speedtests;
 pub mod speedtests_average;
 pub mod subscriber_location;
@@ -27,6 +28,12 @@ pub enum GatewayResolution {
     GatewayNotAsserted,
     AssertedLocation(u64),
     DataOnly,
+}
+
+impl GatewayResolution {
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, GatewayResolution::GatewayNotFound)
+    }
 }
 
 #[async_trait::async_trait]

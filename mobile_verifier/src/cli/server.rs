@@ -9,6 +9,7 @@ use crate::{
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
     sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
+    sp_promotions,
     speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor,
     subscriber_verified_mapping_event::SubscriberVerifiedMappingEventDaemon,
@@ -137,7 +138,7 @@ impl Cmd {
                     file_upload.clone(),
                     report_ingest.clone(),
                     speedtests_avg.clone(),
-                    gateway_client,
+                    gateway_client.clone(),
                 )
                 .await?,
             )
@@ -190,6 +191,18 @@ impl Cmd {
                     file_upload.clone(),
                     report_ingest.clone(),
                     auth_client.clone(),
+                )
+                .await?,
+            )
+            .add_task(
+                sp_promotions::SpPromotionDaemon::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    file_upload.clone(),
+                    report_ingest.clone(),
+                    gateway_client.clone(),
+                    auth_client.clone(),
+                    entity_client.clone(),
                 )
                 .await?,
             )
