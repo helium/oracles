@@ -111,6 +111,9 @@ impl RewardInfoColl {
             self.mobile_bone_price,
         );
         let sp_rewards = self.total_sp_allocation * rewards_per_share;
+        // NOTE(mj): `rewards_per_share * self.dc` vs `sp_rewards * self.dc_perc`
+        // They're veeeeery close. But the % multiplication produces a floating point number
+        // that will typically be rounded down.
 
         self.coll
             .iter()
