@@ -10,19 +10,10 @@ use coverage_point_calculator::{OracleBoostingStatus, SPBoostedRewardEligibility
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::{
-    services::{
-        poc_mobile as proto,
-        poc_mobile::{
-            mobile_reward_share::Reward as ProtoReward, UnallocatedReward, UnallocatedRewardType,
-        },
-    },
-    ServiceProvider,
+use helium_proto::services::{
+    poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
 };
-use mobile_config::{
-    boosted_hex_info::BoostedHexes,
-    client::{carrier_service_client::CarrierServiceVerifier, ClientError},
-};
+use mobile_config::boosted_hex_info::BoostedHexes;
 use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -292,127 +283,6 @@ impl MapperShares {
                     },
                 )
             })
-    }
-}
-
-#[derive(Default)]
-pub struct ServiceProviderShares {
-    pub shares: Vec<ServiceProviderDataSession>,
-}
-
-impl ServiceProviderShares {
-    pub fn new(shares: Vec<ServiceProviderDataSession>) -> Self {
-        Self { shares }
-    }
-
-    pub async fn from_payers_dc(
-        payer_shares: HashMap<String, u64>,
-        client: &impl CarrierServiceVerifier<Error = ClientError>,
-    ) -> anyhow::Result<ServiceProviderShares> {
-        let mut sp_shares = ServiceProviderShares::default();
-        for (payer, total_dcs) in payer_shares {
-            let service_provider = Self::payer_key_to_service_provider(&payer, client).await?;
-            sp_shares.shares.push(ServiceProviderDataSession {
-                service_provider,
-                total_dcs: Decimal::from(total_dcs),
-            })
-        }
-        Ok(sp_shares)
-    }
-
-    fn total_dc(&self) -> Decimal {
-        self.shares.iter().map(|v| v.total_dcs).sum()
-    }
-
-    pub fn rewards_per_share(
-        &self,
-        total_sp_rewards: Decimal,
-        mobile_bone_price: Decimal,
-    ) -> anyhow::Result<Decimal> {
-        // the total amount of DC spent across all service providers
-        let total_sp_dc = self.total_dc();
-        // the total amount of service provider rewards in bones based on the spent DC
-        let total_sp_rewards_used = dc_to_mobile_bones(total_sp_dc, mobile_bone_price);
-        // cap the service provider rewards if used > pool total
-        let capped_sp_rewards_used =
-            Self::maybe_cap_service_provider_rewards(total_sp_rewards_used, total_sp_rewards);
-        Ok(Self::calc_rewards_per_share(
-            capped_sp_rewards_used,
-            total_sp_dc,
-        ))
-    }
-
-    pub fn into_service_provider_rewards(
-        self,
-        reward_period: &'_ Range<DateTime<Utc>>,
-        reward_per_share: Decimal,
-    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
-        self.shares
-            .into_iter()
-            .map(move |share| proto::ServiceProviderReward {
-                service_provider_id: share.service_provider as i32,
-                amount: (share.total_dcs * reward_per_share)
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or(0),
-            })
-            .filter(|service_provider_reward| service_provider_reward.amount > 0)
-            .map(|service_provider_reward| {
-                (
-                    service_provider_reward.amount,
-                    proto::MobileRewardShare {
-                        start_period: reward_period.start.encode_timestamp(),
-                        end_period: reward_period.end.encode_timestamp(),
-                        reward: Some(ProtoReward::ServiceProviderReward(service_provider_reward)),
-                    },
-                )
-            })
-    }
-
-    pub fn into_unallocated_reward(
-        unallocated_amount: Decimal,
-        reward_period: &'_ Range<DateTime<Utc>>,
-    ) -> anyhow::Result<proto::MobileRewardShare> {
-        let reward = UnallocatedReward {
-            reward_type: UnallocatedRewardType::ServiceProvider as i32,
-            amount: unallocated_amount
-                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                .to_u64()
-                .unwrap_or(0),
-        };
-        Ok(proto::MobileRewardShare {
-            start_period: reward_period.start.encode_timestamp(),
-            end_period: reward_period.end.encode_timestamp(),
-            reward: Some(ProtoReward::UnallocatedReward(reward)),
-        })
-    }
-
-    fn maybe_cap_service_provider_rewards(
-        total_sp_rewards_used: Decimal,
-        total_sp_rewards: Decimal,
-    ) -> Decimal {
-        match total_sp_rewards_used <= total_sp_rewards {
-            true => total_sp_rewards_used,
-            false => total_sp_rewards,
-        }
-    }
-
-    fn calc_rewards_per_share(total_rewards: Decimal, total_shares: Decimal) -> Decimal {
-        if total_shares > Decimal::ZERO {
-            (total_rewards / total_shares)
-                .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven)
-        } else {
-            Decimal::ZERO
-        }
-    }
-
-    async fn payer_key_to_service_provider(
-        payer: &str,
-        client: &impl CarrierServiceVerifier<Error = ClientError>,
-    ) -> anyhow::Result<ServiceProvider> {
-        tracing::info!(payer, "getting service provider for payer");
-        let sp = client.payer_key_to_service_provider(payer).await?;
-        Ok(sp)
     }
 }
 
