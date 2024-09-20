@@ -21,6 +21,16 @@ impl ServiceProviderFunds {
     }
 }
 
+impl<F, I> From<F> for ServiceProviderFunds
+where
+    F: IntoIterator<Item = (I, u16)>,
+    I: Into<ServiceProviderId>,
+{
+    fn from(funds: F) -> Self {
+        Self(funds.into_iter().map(|(k, v)| (k.into(), v)).collect())
+    }
+}
+
 pub async fn fetch_promotion_funds(pool: &PgPool) -> anyhow::Result<ServiceProviderFunds> {
     #[derive(Debug, sqlx::FromRow)]
     struct PromotionFund {

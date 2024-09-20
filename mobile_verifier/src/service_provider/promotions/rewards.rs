@@ -5,12 +5,52 @@ use file_store::promotion_reward::{Entity, PromotionReward};
 use futures::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
+use rust_decimal::Decimal;
 use sqlx::{postgres::PgRow, PgPool, Postgres, Row, Transaction};
 
 use crate::service_provider::ServiceProviderId;
 
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct ServiceProviderPromotions(Vec<PromotionRewardShare>);
+
+impl ServiceProviderPromotions {
+    pub fn for_service_provider(
+        &self,
+        service_provider_id: ServiceProviderId,
+    ) -> ServiceProviderPromotions {
+        let promotions = self
+            .0
+            .iter()
+            .filter(|x| x.service_provider_id == service_provider_id)
+            .cloned()
+            .collect();
+        Self(promotions)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn total_shares(&self) -> Decimal {
+        self.0.iter().map(|x| Decimal::from(x.shares)).sum()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &PromotionRewardShare> {
+        self.0.iter()
+    }
+}
+
+impl<F> From<F> for ServiceProviderPromotions
+where
+    F: IntoIterator<Item = PromotionRewardShare>,
+{
+    fn from(promotions: F) -> Self {
+        Self(promotions.into_iter().collect())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct PromotionRewardShares {
+pub struct PromotionRewardShare {
     pub service_provider_id: ServiceProviderId,
     pub rewardable_entity: Entity,
     pub shares: u64,
@@ -59,7 +99,7 @@ pub async fn fetch_promotion_rewards(
     pool: &PgPool,
     carrier: &impl CarrierServiceVerifier<Error = ClientError>,
     epoch: &Range<DateTime<Utc>>,
-) -> anyhow::Result<Vec<PromotionRewardShares>> {
+) -> anyhow::Result<ServiceProviderPromotions> {
     let rewards = sqlx::query_as(
         r#"
         SELECT
@@ -89,7 +129,7 @@ pub async fn fetch_promotion_rewards(
         let service_provider_id = carrier
             .payer_key_to_service_provider(&x.carrier_key.to_string())
             .await?;
-        Ok(PromotionRewardShares {
+        Ok(PromotionRewardShare {
             service_provider_id: service_provider_id as ServiceProviderId,
             rewardable_entity: x.rewardable_entity,
             shares: x.shares,
@@ -98,7 +138,7 @@ pub async fn fetch_promotion_rewards(
     .try_collect()
     .await?;
 
-    Ok(rewards)
+    Ok(ServiceProviderPromotions(rewards))
 }
 
 pub async fn clear_promotion_rewards(

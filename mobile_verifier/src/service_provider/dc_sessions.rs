@@ -87,3 +87,13 @@ impl ServiceProviderDCSessions {
         }
     }
 }
+
+impl<F, I> From<F> for ServiceProviderDCSessions
+where
+    F: IntoIterator<Item = (I, Decimal)>,
+    I: Into<ServiceProviderId>,
+{
+    fn from(iter: F) -> Self {
+        Self(iter.into_iter().map(|(k, v)| (k.into(), v)).collect())
+    }
+}
