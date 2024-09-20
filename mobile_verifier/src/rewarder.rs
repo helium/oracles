@@ -609,6 +609,7 @@ pub async fn reward_service_providers(
         promo_rewards,
         total_sp_rewards,
         mobile_bone_price,
+        reward_period.clone(),
     );
 
     let mut unallocated_sp_rewards = total_sp_rewards
@@ -616,7 +617,7 @@ pub async fn reward_service_providers(
         .to_u64()
         .unwrap_or(0);
 
-    for (amount, reward) in sps.iter_rewards(reward_period) {
+    for (amount, reward) in sps.iter_rewards() {
         unallocated_sp_rewards -= amount;
         mobile_rewards.write(reward, []).await?.await??;
     }

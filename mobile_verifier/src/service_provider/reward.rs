@@ -3,7 +3,7 @@ use std::ops::Range;
 use chrono::{DateTime, Utc};
 
 use file_store::traits::TimestampEncode;
-use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
+use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
 use crate::reward_shares::{dc_to_mobile_bones, DEFAULT_PREC};
@@ -42,6 +42,7 @@ pub struct RewardInfoColl {
     total_sp_allocation: Decimal,
     all_transfer: Decimal,
     mobile_bone_price: Decimal,
+    reward_epoch: Range<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -74,6 +75,7 @@ impl RewardInfoColl {
         rewards: ServiceProviderPromotions,
         total_sp_allocation: Decimal,
         mobile_bone_price: Decimal,
+        reward_epoch: Range<DateTime<Utc>>,
     ) -> Self {
         let all_transfer = dc_sessions.all_transfer();
 
@@ -82,6 +84,7 @@ impl RewardInfoColl {
             all_transfer,
             total_sp_allocation,
             mobile_bone_price,
+            reward_epoch,
         };
 
         let used_allocation = total_sp_allocation.max(all_transfer);
@@ -101,10 +104,7 @@ impl RewardInfoColl {
         me
     }
 
-    pub fn iter_rewards(
-        &self,
-        reward_epoch: &Range<DateTime<Utc>>,
-    ) -> Vec<(u64, proto::MobileRewardShare)> {
+    pub fn iter_rewards(&self) -> Vec<(u64, proto::MobileRewardShare)> {
         let rewards_per_share = rewards_per_share(
             self.all_transfer,
             self.total_sp_allocation,
@@ -115,8 +115,8 @@ impl RewardInfoColl {
         self.coll
             .iter()
             .flat_map(|sp| {
-                let mut rewards = sp.promo_rewards(sp_rewards, reward_epoch);
-                rewards.push(sp.carrier_reward(sp_rewards, reward_epoch));
+                let mut rewards = sp.promo_rewards(sp_rewards, &self.reward_epoch);
+                rewards.push(sp.carrier_reward(sp_rewards, &self.reward_epoch));
                 rewards
             })
             .filter(|(amount, _r)| *amount > 0)
@@ -265,6 +265,8 @@ trait DecimalRoundingExt {
 
 impl DecimalRoundingExt for Decimal {
     fn to_u64_rounded(&self) -> u64 {
+        use rust_decimal::{prelude::ToPrimitive, RoundingStrategy};
+
         self.round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0)
@@ -295,10 +297,10 @@ mod tests {
             }]),
             dec!(0),
             dec!(0.0001),
+            epoch(),
         );
 
-        let epoch = epoch();
-        assert!(sp_infos.iter_rewards(&epoch).is_empty());
+        assert!(sp_infos.iter_rewards().is_empty());
     }
 
     #[test]
@@ -315,10 +317,10 @@ mod tests {
             }]),
             total_rewards,
             dec!(0.001),
+            epoch(),
         );
 
-        let epoch = epoch();
-        let promo_rewards = sp_infos.iter_rewards(&epoch).only_promotion_rewards();
+        let promo_rewards = sp_infos.iter_rewards().only_promotion_rewards();
 
         assert!(!promo_rewards.is_empty());
         for reward in promo_rewards {
@@ -349,10 +351,10 @@ mod tests {
             ]),
             total_rewards,
             dec!(0.00001),
+            epoch(),
         );
 
-        let epoch = epoch();
-        let promo_rewards = sp_infos.iter_rewards(&epoch).only_promotion_rewards();
+        let promo_rewards = sp_infos.iter_rewards().only_promotion_rewards();
         assert_eq!(2, promo_rewards.len());
 
         assert_eq!(promo_rewards[0].service_provider_amount, 333);
@@ -385,10 +387,10 @@ mod tests {
             ]),
             total_rewards,
             dec!(0.00001),
+            epoch(),
         );
 
-        let epoch = epoch();
-        let promo_rewards = sp_infos.iter_rewards(&epoch).only_promotion_rewards();
+        let promo_rewards = sp_infos.iter_rewards().only_promotion_rewards();
         assert_eq!(2, promo_rewards.len());
 
         assert_eq!(promo_rewards[0].service_provider_amount, 333);
@@ -421,10 +423,10 @@ mod tests {
             ]),
             total_rewards,
             dec!(0.00001),
+            epoch(),
         );
 
-        let epoch = epoch();
-        let promo_rewards = sp_infos.iter_rewards(&epoch).only_promotion_rewards();
+        let promo_rewards = sp_infos.iter_rewards().only_promotion_rewards();
         assert_eq!(2, promo_rewards.len());
 
         assert_eq!(promo_rewards[0].service_provider_amount, 3);
