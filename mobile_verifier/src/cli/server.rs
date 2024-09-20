@@ -8,8 +8,8 @@ use crate::{
     heartbeats::{cbrs::CbrsHeartbeatDaemon, wifi::WifiHeartbeatDaemon},
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
+    service_provider,
     sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
-    sp_promotions,
     speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor,
     subscriber_verified_mapping_event::SubscriberVerifiedMappingEventDaemon,
@@ -195,7 +195,7 @@ impl Cmd {
                 .await?,
             )
             .add_task(
-                sp_promotions::SpPromotionDaemon::create_managed_task(
+                service_provider::PromotionDaemon::create_managed_task(
                     pool.clone(),
                     settings,
                     file_upload.clone(),

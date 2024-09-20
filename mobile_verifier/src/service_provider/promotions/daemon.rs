@@ -32,11 +32,11 @@ use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
-    sp_promotions::{funds, rewards},
+    service_provider::promotions::{funds, rewards},
     GatewayResolver, Settings,
 };
 
-pub struct SpPromotionDaemon {
+pub struct PromotionDaemon {
     pool: PgPool,
     gateway_info_resolver: GatewayClient,
     authorization_verifier: AuthorizationClient,
@@ -46,7 +46,7 @@ pub struct SpPromotionDaemon {
     promotion_rewards_sink: FileSinkClient<VerifiedPromotionRewardV1>,
 }
 
-impl ManagedTask for SpPromotionDaemon {
+impl ManagedTask for PromotionDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -60,7 +60,7 @@ impl ManagedTask for SpPromotionDaemon {
     }
 }
 
-impl SpPromotionDaemon {
+impl PromotionDaemon {
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,

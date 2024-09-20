@@ -7,7 +7,14 @@ use helium_crypto::PublicKeyBinary;
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use sqlx::{postgres::PgRow, PgPool, Postgres, Row, Transaction};
 
-use super::ServiceProviderId;
+use crate::service_provider::ServiceProviderId;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PromotionRewardShares {
+    pub service_provider_id: ServiceProviderId,
+    pub rewardable_entity: Entity,
+    pub shares: u64,
+}
 
 pub async fn save_promotion_reward(
     transaction: &mut Transaction<'_, Postgres>,
@@ -48,11 +55,11 @@ pub async fn save_promotion_reward(
     Ok(())
 }
 
-pub async fn get_promotion_rewards(
+pub async fn fetch_promotion_rewards(
     pool: &PgPool,
     carrier: &impl CarrierServiceVerifier<Error = ClientError>,
     epoch: &Range<DateTime<Utc>>,
-) -> anyhow::Result<Vec<ServiceProviderPromotionRewardShares>> {
+) -> anyhow::Result<Vec<PromotionRewardShares>> {
     let rewards = sqlx::query_as(
         r#"
         SELECT
@@ -78,11 +85,11 @@ pub async fn get_promotion_rewards(
     .bind(epoch.end)
     .fetch(pool)
     .map_err(anyhow::Error::from)
-    .and_then(|x: PromotionRewardShares| async move {
+    .and_then(|x: DbPromotionRewardShares| async move {
         let service_provider_id = carrier
             .payer_key_to_service_provider(&x.carrier_key.to_string())
             .await?;
-        Ok(ServiceProviderPromotionRewardShares {
+        Ok(PromotionRewardShares {
             service_provider_id: service_provider_id as ServiceProviderId,
             rewardable_entity: x.rewardable_entity,
             shares: x.shares,
@@ -109,13 +116,13 @@ pub async fn clear_promotion_rewards(
     Ok(())
 }
 
-struct PromotionRewardShares {
+struct DbPromotionRewardShares {
     pub carrier_key: PublicKeyBinary,
     pub rewardable_entity: Entity,
     pub shares: u64,
 }
 
-impl sqlx::FromRow<'_, PgRow> for PromotionRewardShares {
+impl sqlx::FromRow<'_, PgRow> for DbPromotionRewardShares {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
         let subscriber_id: Option<Vec<u8>> = row.try_get("subscriber_id")?;
         let shares: i64 = row.try_get("shares")?;
@@ -129,11 +136,4 @@ impl sqlx::FromRow<'_, PgRow> for PromotionRewardShares {
             carrier_key: row.try_get("carrier_key")?,
         })
     }
-}
-
-#[derive(Debug)]
-pub struct ServiceProviderPromotionRewardShares {
-    pub service_provider_id: ServiceProviderId,
-    pub rewardable_entity: Entity,
-    pub shares: u64,
 }

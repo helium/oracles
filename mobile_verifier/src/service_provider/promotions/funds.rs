@@ -5,16 +5,13 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
 
-use super::ServiceProviderId;
+use crate::service_provider::ServiceProviderId;
 
 #[derive(Debug, Default)]
-pub struct ServiceProviderFunds(HashMap<ServiceProviderId, u16>);
+pub struct ServiceProviderFunds(pub(crate) HashMap<ServiceProviderId, u16>);
 
 impl ServiceProviderFunds {
-    pub fn fetch_incentive_escrow_fund_percent(
-        &self,
-        service_provider_id: ServiceProviderId,
-    ) -> Decimal {
+    pub fn get_fund_percent(&self, service_provider_id: ServiceProviderId) -> Decimal {
         let bps = self
             .0
             .get(&service_provider_id)
@@ -24,7 +21,7 @@ impl ServiceProviderFunds {
     }
 }
 
-pub async fn get_promotion_funds(pool: &PgPool) -> anyhow::Result<ServiceProviderFunds> {
+pub async fn fetch_promotion_funds(pool: &PgPool) -> anyhow::Result<ServiceProviderFunds> {
     #[derive(Debug, sqlx::FromRow)]
     struct PromotionFund {
         #[sqlx(try_from = "i64")]

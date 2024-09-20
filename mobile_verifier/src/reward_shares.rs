@@ -1,11 +1,7 @@
 use crate::{
-    coverage::CoveredHexStream,
-    data_session::{HotspotMap, ServiceProviderDataSession},
-    heartbeats::HeartbeatReward,
-    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
-    seniority::Seniority,
-    sp_boosted_rewards_bans::BannedRadios,
-    speedtests_average::SpeedtestAverages,
+    coverage::CoveredHexStream, data_session::HotspotMap, heartbeats::HeartbeatReward,
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility, seniority::Seniority,
+    sp_boosted_rewards_bans::BannedRadios, speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
     subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
 };
@@ -52,7 +48,7 @@ const BOOSTED_POC_REWARDS_PERCENT: Decimal = dec!(0.1);
 const DC_USD_PRICE: Decimal = dec!(0.00001);
 
 /// Default precision used for rounding
-const DEFAULT_PREC: u32 = 15;
+pub const DEFAULT_PREC: u32 = 15;
 
 /// Percent of total emissions allocated for mapper rewards
 const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
