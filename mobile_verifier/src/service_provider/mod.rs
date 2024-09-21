@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use chrono::{DateTime, Utc};
+use helium_proto::ServiceProviderAllocation;
 pub use promotions::daemon::PromotionDaemon;
 pub use reward::RewardInfoColl;
 
@@ -22,4 +23,9 @@ pub type ServiceProviderId = i32;
 pub fn get_scheduled_tokens(reward_period: &Range<DateTime<Utc>>) -> rust_decimal::Decimal {
     let duration = reward_period.end - reward_period.start;
     crate::reward_shares::get_scheduled_tokens_for_service_providers(duration)
+}
+
+pub fn reward_data_sp_allocations() -> Vec<ServiceProviderAllocation> {
+    // TODO: How do you go from a service provider id to the payer key?
+    vec![]
 }

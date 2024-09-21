@@ -313,8 +313,7 @@ where
             boosted_poc_bones_per_reward_share: Some(helium_proto::Decimal {
                 value: poc_dc_shares.boost.to_string(),
             }),
-            // TODO: Filled in with the next PR
-            sp_allocations: vec![],
+            sp_allocations: service_provider::reward_data_sp_allocations(),
         };
         self.reward_manifests
             .write(
