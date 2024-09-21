@@ -775,6 +775,7 @@ mod test {
             self,
             dc_sessions::ServiceProviderDCSessions,
             promotions::{funds::ServiceProviderFunds, rewards::ServiceProviderPromotions},
+            ServiceProviderRewardInfos,
         },
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
@@ -2229,18 +2230,19 @@ mod test {
         let epoch = (now - Duration::hours(1))..now;
 
         let total_sp_rewards = service_provider::get_scheduled_tokens(&epoch);
-        let sp_reward_infos = service_provider::ServiceProviderRewardInfos::new(
+        let sp_reward_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(sp1, dec!(1000))]),
             ServiceProviderFunds::default(),
             ServiceProviderPromotions::default(),
             total_sp_rewards,
             mobile_bone_price,
+            epoch.clone(),
         );
 
         let mut sp_rewards = HashMap::<i32, u64>::new();
         let mut allocated_sp_rewards = 0_u64;
 
-        for (reward_amount, reward) in sp_reward_infos.iter_rewards(&epoch) {
+        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
             if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 assert_eq!(reward_amount, r.amount);
@@ -2273,19 +2275,20 @@ mod test {
         let total_rewards_value_in_dc =
             mobile_bones_to_dc(total_sp_rewards_in_bones, mobile_bone_price);
 
-        let sp_reward_infos = service_provider::ServiceProviderRewardInfos::new(
+        let sp_reward_infos = ServiceProviderRewardInfos::new(
             // force the service provider to have spend more DC than total rewardable
             ServiceProviderDCSessions::from([(sp1, total_rewards_value_in_dc * dec!(2.0))]),
             ServiceProviderFunds::default(),
             ServiceProviderPromotions::default(),
             total_rewards_value_in_dc,
             mobile_bone_price,
+            epoch.clone(),
         );
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
 
-        for (reward_amount, reward) in sp_reward_infos.iter_rewards(&epoch) {
+        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
             if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 assert_eq!(reward_amount, r.amount);
@@ -2319,18 +2322,19 @@ mod test {
         let epoch = (now - Duration::hours(1))..now;
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
-        let sp_reward_infos = service_provider::ServiceProviderRewardInfos::new(
+        let sp_reward_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(sp1, dec!(100_000_000))]),
             ServiceProviderFunds::default(),
             ServiceProviderPromotions::default(),
             total_sp_rewards_in_bones,
             mobile_bone_price,
+            epoch.clone(),
         );
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
 
-        for (reward_amount, reward) in sp_reward_infos.iter_rewards(&epoch) {
+        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
             if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 assert_eq!(reward_amount, r.amount);
@@ -2364,18 +2368,19 @@ mod test {
         let epoch = (now - Duration::hours(24))..now;
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
-        let sp_reward_infos = service_provider::ServiceProviderRewardInfos::new(
+        let sp_reward_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(sp1, dec!(100_000_000_000))]),
             ServiceProviderFunds::default(),
             ServiceProviderPromotions::default(),
             total_sp_rewards_in_bones,
             mobile_bone_price,
+            epoch.clone(),
         );
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
 
-        for (reward_amount, reward) in sp_reward_infos.iter_rewards(&epoch) {
+        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
             if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 assert_eq!(reward_amount, r.amount);
