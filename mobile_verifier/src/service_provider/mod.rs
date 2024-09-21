@@ -11,7 +11,7 @@ pub mod reward;
 pub mod db {
     pub use super::dc_sessions::fetch_dc_sessions;
     pub use super::promotions::funds::fetch_promotion_funds;
-    pub use super::promotions::rewards::fetch_promotion_rewards;
+    pub use super::promotions::rewards::{clear_promotion_rewards, fetch_promotion_rewards};
 }
 
 // This type is used in lieu of the helium_proto::ServiceProvider enum so we can
