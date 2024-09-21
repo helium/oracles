@@ -3,7 +3,7 @@ use std::ops::Range;
 use chrono::{DateTime, Utc};
 use helium_proto::ServiceProviderAllocation;
 pub use promotions::daemon::PromotionDaemon;
-pub use reward::RewardInfoColl;
+pub use reward::ServiceProviderRewardInfos;
 
 pub mod dc_sessions;
 pub mod promotions;

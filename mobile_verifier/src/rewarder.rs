@@ -597,14 +597,14 @@ pub async fn reward_service_providers(
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
 ) -> anyhow::Result<()> {
-    use service_provider::db;
+    use service_provider::{db, ServiceProviderRewardInfos};
     let dc_sessions = db::fetch_dc_sessions(pool, carrier_client, reward_period).await?;
     let promo_funds = db::fetch_promotion_funds(pool).await?;
     let promo_rewards = db::fetch_promotion_rewards(pool, carrier_client, reward_period).await?;
 
     let total_sp_rewards = service_provider::get_scheduled_tokens(reward_period);
 
-    let sps = service_provider::RewardInfoColl::new(
+    let sps = ServiceProviderRewardInfos::new(
         dc_sessions,
         promo_funds,
         promo_rewards,

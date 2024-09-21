@@ -35,9 +35,9 @@ pub fn rewards_per_share(
     }
 }
 
-/// Container for ['ServiceProvideRewardInfo']
+/// Container for all Service Provider rewarding
 #[derive(Debug)]
-pub struct RewardInfoColl {
+pub struct ServiceProviderRewardInfos {
     coll: Vec<RewardInfo>,
     total_sp_allocation: Decimal,
     all_transfer: Decimal,
@@ -45,30 +45,32 @@ pub struct RewardInfoColl {
     reward_epoch: Range<DateTime<Utc>>,
 }
 
+// Represents a single Service Providers information for rewarding,
+// only used internally.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RewardInfo {
+struct RewardInfo {
     // proto::ServiceProvider enum repr
     sp_id: i32,
 
-    // How much DC in sessions
+    // Total DC transferred for reward epoch
     dc: Decimal,
+    // % of total allocated rewards for dc transfer
+    dc_perc: Decimal,
     // % allocated from DC to promo rewards (found in db from file from on chain)
     allocated_promo_perc: Decimal,
 
-    // % of total allocated rewards for all service providers
-    dc_perc: Decimal,
-    // % of total allocated rewards going towards rewards
+    // % of total allocated rewards going towards promotions
     realized_promo_perc: Decimal,
-    // % usable dc percentage of total rewards
+    // % of total allocated rewards awarded for dc transfer
     realized_dc_perc: Decimal,
-    // % matched promotions from unallocated
+    // % matched promotions from unallocated, can never exceed realized_promo_perc
     matched_promo_perc: Decimal,
 
     // Rewards for the epoch
     promotion_rewards: ServiceProviderPromotions,
 }
 
-impl RewardInfoColl {
+impl ServiceProviderRewardInfos {
     pub fn new(
         dc_sessions: ServiceProviderDCSessions,
         promo_funds: ServiceProviderFunds,
@@ -286,11 +288,11 @@ mod tests {
 
     use super::*;
 
-    use super::RewardInfoColl;
+    use super::ServiceProviderRewardInfos;
 
     #[test]
     fn no_rewards_if_none_allocated() {
-        let sp_infos = RewardInfoColl::new(
+        let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(100))]),
             ServiceProviderFunds::from([(0, 5000)]),
             ServiceProviderPromotions::from([PromotionRewardShare {
@@ -310,7 +312,7 @@ mod tests {
     fn no_matched_rewards_if_no_unallocated() {
         let total_rewards = dec!(1000);
 
-        let sp_infos = RewardInfoColl::new(
+        let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, total_rewards)]),
             ServiceProviderFunds::from([(0, 5000)]),
             ServiceProviderPromotions::from([PromotionRewardShare {
@@ -337,7 +339,7 @@ mod tests {
         let total_rewards = dec!(1100);
         let sp_session = dec!(1000);
 
-        let sp_infos = RewardInfoColl::new(
+        let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, sp_session)]),
             ServiceProviderFunds::from([(0, 10000)]), // All rewards allocated to promotions
             ServiceProviderPromotions::from([
@@ -373,7 +375,7 @@ mod tests {
         let total_rewards = dec!(11_000);
         let sp_session = dec!(1000);
 
-        let sp_infos = RewardInfoColl::new(
+        let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, sp_session)]),
             ServiceProviderFunds::from([(0, 10000)]), // All rewards allocated to promotions
             ServiceProviderPromotions::from([
@@ -409,7 +411,7 @@ mod tests {
         let total_rewards = dec!(1100);
         let sp_session = dec!(1000);
 
-        let sp_infos = RewardInfoColl::new(
+        let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, sp_session)]),
             ServiceProviderFunds::from([(0, 100)]), // Severely limit promotion rewards
             ServiceProviderPromotions::from([

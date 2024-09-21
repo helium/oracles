@@ -2229,7 +2229,7 @@ mod test {
         let epoch = (now - Duration::hours(1))..now;
 
         let total_sp_rewards = service_provider::get_scheduled_tokens(&epoch);
-        let sp_reward_infos = service_provider::RewardInfoColl::new(
+        let sp_reward_infos = service_provider::ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(sp1, dec!(1000))]),
             ServiceProviderFunds::default(),
             ServiceProviderPromotions::default(),
@@ -2273,7 +2273,7 @@ mod test {
         let total_rewards_value_in_dc =
             mobile_bones_to_dc(total_sp_rewards_in_bones, mobile_bone_price);
 
-        let sp_reward_infos = service_provider::RewardInfoColl::new(
+        let sp_reward_infos = service_provider::ServiceProviderRewardInfos::new(
             // force the service provider to have spend more DC than total rewardable
             ServiceProviderDCSessions::from([(sp1, total_rewards_value_in_dc * dec!(2.0))]),
             ServiceProviderFunds::default(),
@@ -2319,7 +2319,7 @@ mod test {
         let epoch = (now - Duration::hours(1))..now;
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
-        let sp_reward_infos = service_provider::RewardInfoColl::new(
+        let sp_reward_infos = service_provider::ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(sp1, dec!(100_000_000))]),
             ServiceProviderFunds::default(),
             ServiceProviderPromotions::default(),
@@ -2364,7 +2364,7 @@ mod test {
         let epoch = (now - Duration::hours(24))..now;
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
-        let sp_reward_infos = service_provider::RewardInfoColl::new(
+        let sp_reward_infos = service_provider::ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(sp1, dec!(100_000_000_000))]),
             ServiceProviderFunds::default(),
             ServiceProviderPromotions::default(),
