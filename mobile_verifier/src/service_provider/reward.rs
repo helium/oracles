@@ -251,7 +251,7 @@ fn distribute_unalloc_over_limit(coll: &mut [RewardInfo], unallocated_perc: Deci
             continue;
         }
         let shares = sp.realized_promo_perc * dec!(100);
-        sp.matched_promo_perc = ((shares / total) * unallocated_perc).round_dp(5);
+        sp.matched_promo_perc = (shares / total) * unallocated_perc;
     }
 }
 
