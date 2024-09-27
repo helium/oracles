@@ -94,6 +94,11 @@ where
     I: Into<ServiceProviderId>,
 {
     fn from(iter: F) -> Self {
-        Self(iter.into_iter().map(|(k, v)| (k.into(), v)).collect())
+        // sum duplicate keys
+        let mut map = HashMap::new();
+        for (k, v) in iter {
+            *map.entry(k.into()).or_insert(Decimal::ZERO) += v;
+        }
+        Self(map)
     }
 }
