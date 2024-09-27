@@ -63,3 +63,4 @@ coverage-map = { path = "../coverage_map" }
 
 [dev-dependencies]
 backon = "0"
+proptest = "1.5.0"

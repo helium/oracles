@@ -284,7 +284,7 @@ mod tests {
     use file_store::promotion_reward::Entity;
     use helium_proto::services::poc_mobile::{MobileRewardShare, PromotionReward};
 
-    use crate::service_provider::promotions::rewards::PromotionRewardShare;
+    use crate::service_provider::{self, promotions::rewards::PromotionRewardShare};
 
     use super::*;
 
@@ -615,6 +615,110 @@ mod tests {
                     }
                 })
                 .collect()
+        }
+    }
+
+    use proptest::prelude::*;
+
+    prop_compose! {
+        fn arb_share()(sp_id in 0..10_i32, ent_id in 0..200u8, shares in 1..=100u64) -> PromotionRewardShare  {
+            PromotionRewardShare {
+                service_provider_id: sp_id,
+                rewardable_entity: Entity::SubscriberId(vec![ent_id]),
+                shares
+            }
+        }
+    }
+
+    prop_compose! {
+        fn arb_dc_session()(
+            sp_id in 0..10_i32,
+            // below 1 trillion
+            dc_session in (0..=1_000_000_000_000_u64).prop_map(Decimal::from)
+        ) -> (i32, Decimal) {
+            (sp_id, dc_session)
+        }
+    }
+
+    prop_compose! {
+        fn arb_fund()(sp_id in 0..10_i32, bps in arb_bps()) -> (i32, u16) {
+            (sp_id, bps)
+        }
+    }
+
+    prop_compose! {
+        fn arb_bps()(bps in 0..=10_000u16) -> u16 { bps }
+    }
+
+    proptest! {
+        // #![proptest_config(ProptestConfig::with_cases(100_000))]
+
+        #[test]
+        fn single_provider_does_not_overallocate(
+            dc_session in any::<u64>().prop_map(Decimal::from),
+            fund_bps in arb_bps(),
+            shares in prop::collection::vec(arb_share(), 0..10),
+            total_allocation in any::<u64>().prop_map(Decimal::from)
+        ) {
+
+            let sp_infos = ServiceProviderRewardInfos::new(
+                ServiceProviderDCSessions::from([(0, dc_session)]),
+                ServiceProviderFunds::from([(0, fund_bps)]),
+                ServiceProviderPromotions::from(shares),
+                total_allocation,
+                dec!(0.00001),
+                epoch()
+            );
+
+            let total_perc= sp_infos.total_percent();
+            assert!(total_perc <= dec!(1));
+
+            let mut allocated = dec!(0);
+            for (amount, _) in sp_infos.iter_rewards() {
+                allocated += Decimal::from(amount);
+            }
+            assert!(allocated <= total_allocation);
+        }
+
+        #[test]
+        fn multiple_provider_does_not_overallocate(
+            dc_sessions in prop::collection::vec(arb_dc_session(), 0..10),
+            funds in prop::collection::vec(arb_fund(), 0..10),
+            promotions in prop::collection::vec(arb_share(), 0..100),
+        ) {
+            let epoch = epoch();
+            let total_allocation = service_provider::get_scheduled_tokens(&epoch);
+
+            let sp_infos = ServiceProviderRewardInfos::new(
+                ServiceProviderDCSessions::from(dc_sessions),
+                ServiceProviderFunds::from(funds),
+                ServiceProviderPromotions::from(promotions),
+                total_allocation,
+                dec!(0.00001),
+                epoch
+            );
+
+            let total_perc= sp_infos.total_percent();
+            prop_assert!(total_perc <= dec!(1));
+
+            let mut allocated = dec!(0);
+            for (amount, _) in sp_infos.iter_rewards() {
+                allocated += Decimal::from(amount);
+            }
+            prop_assert!(allocated <= total_allocation);
+        }
+
+    }
+
+    impl RewardInfo {
+        fn total_percent(&self) -> Decimal {
+            self.realized_dc_perc + self.realized_promo_perc + self.matched_promo_perc
+        }
+    }
+
+    impl ServiceProviderRewardInfos {
+        fn total_percent(&self) -> Decimal {
+            self.coll.iter().map(|x| x.total_percent()).sum()
         }
     }
 }
