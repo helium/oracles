@@ -64,6 +64,7 @@ pub enum DeviceType {
     Cbrs,
     WifiIndoor,
     WifiOutdoor,
+    WifiDataOnly,
 }
 
 impl From<DeviceTypeProto> for DeviceType {
@@ -72,6 +73,7 @@ impl From<DeviceTypeProto> for DeviceType {
             DeviceTypeProto::Cbrs => DeviceType::Cbrs,
             DeviceTypeProto::WifiIndoor => DeviceType::WifiIndoor,
             DeviceTypeProto::WifiOutdoor => DeviceType::WifiOutdoor,
+            DeviceTypeProto::WifiDataOnly => DeviceType::WifiDataOnly,
         }
     }
 }
@@ -88,6 +90,7 @@ impl std::str::FromStr for DeviceType {
             "cbrs" => Self::Cbrs,
             "wifiIndoor" => Self::WifiIndoor,
             "wifiOutdoor" => Self::WifiOutdoor,
+            "wifiDataOnly" => Self::WifiDataOnly,
             _ => return Err(DeviceTypeParseError),
         };
         Ok(result)
