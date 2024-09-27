@@ -27,7 +27,7 @@ use mobile_verifier::{
     sp_boosted_rewards_bans::BannedRadios,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
-    GatewayResolution, GatewayResolver, IsAuthorized,
+    IsAuthorized,
 };
 use rust_decimal_macros::dec;
 use solana_sdk::pubkey::Pubkey;
@@ -35,7 +35,7 @@ use sqlx::PgPool;
 use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;
 
-use crate::common;
+use crate::common::{self, GatewayClientAllOwnersValid};
 
 #[derive(Clone)]
 struct MockGeofence;
@@ -249,21 +249,6 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[derive(Copy, Clone)]
-struct AllOwnersValid;
-
-#[async_trait::async_trait]
-impl GatewayResolver for AllOwnersValid {
-    type Error = std::convert::Infallible;
-
-    async fn resolve_gateway(
-        &self,
-        _address: &PublicKeyBinary,
-    ) -> Result<GatewayResolution, Self::Error> {
-        Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
-    }
-}
-
-#[derive(Copy, Clone)]
 struct AllPubKeysAuthed;
 
 #[async_trait::async_trait]
@@ -414,7 +399,7 @@ async fn process_input(
     let mut transaction = pool.begin().await?;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
         stream::iter(heartbeats.map(Heartbeat::from)),
-        &AllOwnersValid,
+        &GatewayClientAllOwnersValid,
         &coverage_objects,
         &location_cache,
         2000,
@@ -1410,7 +1395,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     let validate = |latlng: LatLng| {
         ValidatedHeartbeat::validate(
             mk_heartbeat(latlng).into(),
-            &AllOwnersValid,
+            &GatewayClientAllOwnersValid,
             &coverage_object_cache,
             &location_cache,
             max_covered_distance,

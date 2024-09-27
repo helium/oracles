@@ -22,7 +22,9 @@ use mobile_config::{
     },
 };
 
-use mobile_verifier::boosting_oracles::AssignedCoverageObjects;
+use mobile_verifier::{
+    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver,
+};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
@@ -345,5 +347,20 @@ impl EntityVerifier for MockEntityClient {
 
     async fn verify_rewardable_entity(&self, _entity_id: &[u8]) -> Result<bool, ClientError> {
         Ok(true)
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct GatewayClientAllOwnersValid;
+
+#[async_trait]
+impl GatewayResolver for GatewayClientAllOwnersValid {
+    type Error = std::convert::Infallible;
+
+    async fn resolve_gateway(
+        &self,
+        _address: &PublicKeyBinary,
+    ) -> Result<GatewayResolution, Self::Error> {
+        Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
     }
 }

@@ -24,7 +24,6 @@ use mobile_verifier::{
     sp_boosted_rewards_bans::BannedRadios,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
-    GatewayResolution, GatewayResolver,
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -32,7 +31,7 @@ use sqlx::PgPool;
 use std::{collections::HashMap, pin::pin};
 use uuid::Uuid;
 
-use crate::common;
+use crate::common::{self, GatewayClientAllOwnersValid};
 
 #[derive(Clone)]
 struct MockGeofence;
@@ -40,21 +39,6 @@ struct MockGeofence;
 impl GeofenceValidator for MockGeofence {
     fn in_valid_region(&self, _heartbeat: &Heartbeat) -> bool {
         true
-    }
-}
-
-#[derive(Copy, Clone)]
-struct AllOwnersValid;
-
-#[async_trait::async_trait]
-impl GatewayResolver for AllOwnersValid {
-    type Error = std::convert::Infallible;
-
-    async fn resolve_gateway(
-        &self,
-        _address: &PublicKeyBinary,
-    ) -> Result<GatewayResolution, Self::Error> {
-        Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
     }
 }
 
@@ -359,7 +343,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     let epoch = start..end;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
         stream::iter(heartbeats.map(Heartbeat::from)),
-        &AllOwnersValid,
+        &GatewayClientAllOwnersValid,
         &coverage_objects,
         &location_cache,
         2000,
