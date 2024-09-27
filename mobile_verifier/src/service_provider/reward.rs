@@ -290,6 +290,158 @@ mod tests {
 
     use super::ServiceProviderRewardInfos;
 
+    impl ServiceProviderRewardInfos {
+        fn iter_sp_rewards(&self, sp_id: i32) -> Vec<MobileRewardShare> {
+            let rewards_per_share = rewards_per_share(
+                self.all_transfer,
+                self.total_sp_allocation,
+                self.mobile_bone_price,
+            );
+            let sp_rewards = self.total_sp_allocation * rewards_per_share;
+
+            for info in self.coll.iter() {
+                if info.sp_id == sp_id {
+                    let mut result = info.promo_rewards(sp_rewards, &self.reward_epoch);
+                    result.push(info.carrier_reward(sp_rewards, &self.reward_epoch));
+                    return result.into_iter().map(|(_, x)| x).collect();
+                }
+            }
+            vec![]
+        }
+        fn single_sp_rewards(
+            &self,
+            sp_id: i32,
+        ) -> (proto::PromotionReward, proto::ServiceProviderReward) {
+            let binding = self.iter_sp_rewards(sp_id);
+            let mut rewards = binding.iter();
+
+            let promo = rewards.next().cloned().unwrap().promotion_reward();
+            let sp = rewards.next().cloned().unwrap().sp_reward();
+
+            (promo, sp)
+        }
+    }
+
+    trait RewardExt {
+        fn promotion_reward(self) -> proto::PromotionReward;
+        fn sp_reward(self) -> proto::ServiceProviderReward;
+    }
+
+    impl RewardExt for proto::MobileRewardShare {
+        fn promotion_reward(self) -> proto::PromotionReward {
+            match self.reward {
+                Some(proto::Reward::PromotionReward(promo)) => promo.clone(),
+                other => panic!("expected promotion reward, got {other:?}"),
+            }
+        }
+
+        fn sp_reward(self) -> proto::ServiceProviderReward {
+            match self.reward {
+                Some(proto::Reward::ServiceProviderReward(promo)) => promo.clone(),
+                other => panic!("expected sp reward, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn unallocated_reward_scaling_1() {
+        let sp_infos = ServiceProviderRewardInfos::new(
+            ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
+            ServiceProviderFunds::from([(0, 5000), (1, 5000)]),
+            ServiceProviderPromotions::from([
+                PromotionRewardShare {
+                    service_provider_id: 0,
+                    rewardable_entity: Entity::SubscriberId(vec![0]),
+                    shares: 1,
+                },
+                PromotionRewardShare {
+                    service_provider_id: 1,
+                    rewardable_entity: Entity::SubscriberId(vec![1]),
+                    shares: 1,
+                },
+            ]),
+            dec!(100),
+            dec!(0.00001),
+            epoch(),
+        );
+
+        let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
+        assert_eq!(promo_1.service_provider_amount, 6);
+        assert_eq!(promo_1.matched_amount, 6);
+        assert_eq!(sp_1.amount, 6);
+
+        let (promo_2, sp_2) = sp_infos.single_sp_rewards(1);
+        assert_eq!(promo_2.service_provider_amount, 3);
+        assert_eq!(promo_2.matched_amount, 3);
+        assert_eq!(sp_2.amount, 3);
+    }
+
+    #[test]
+    fn unallocated_reward_scaling_2() {
+        let sp_infos = ServiceProviderRewardInfos::new(
+            ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
+            ServiceProviderFunds::from([(0, 5000), (1, 10000)]),
+            ServiceProviderPromotions::from([
+                PromotionRewardShare {
+                    service_provider_id: 0,
+                    rewardable_entity: Entity::SubscriberId(vec![0]),
+                    shares: 1,
+                },
+                PromotionRewardShare {
+                    service_provider_id: 1,
+                    rewardable_entity: Entity::SubscriberId(vec![1]),
+                    shares: 1,
+                },
+            ]),
+            dec!(100),
+            dec!(0.00001),
+            epoch(),
+        );
+
+        let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
+        assert_eq!(promo_1.service_provider_amount, 6);
+        assert_eq!(promo_1.matched_amount, 6);
+        assert_eq!(sp_1.amount, 6);
+
+        let (promo_2, sp_2) = sp_infos.single_sp_rewards(1);
+        assert_eq!(promo_2.service_provider_amount, 6);
+        assert_eq!(promo_2.matched_amount, 6);
+        assert_eq!(sp_2.amount, 0);
+    }
+
+    #[test]
+    fn unallocated_reward_scaling_3() {
+        let sp_infos = ServiceProviderRewardInfos::new(
+            ServiceProviderDCSessions::from([(0, dec!(10)), (1, dec!(1000))]),
+            ServiceProviderFunds::from([(0, 10000), (1, 200)]),
+            ServiceProviderPromotions::from([
+                PromotionRewardShare {
+                    service_provider_id: 0,
+                    rewardable_entity: Entity::SubscriberId(vec![0]),
+                    shares: 1,
+                },
+                PromotionRewardShare {
+                    service_provider_id: 1,
+                    rewardable_entity: Entity::SubscriberId(vec![1]),
+                    shares: 1,
+                },
+            ]),
+            dec!(2000),
+            dec!(0.00001),
+            epoch(),
+        );
+
+        let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
+        assert_eq!(promo_1.service_provider_amount, 10);
+        assert_eq!(promo_1.matched_amount, 10);
+        assert_eq!(sp_1.amount, 0);
+
+        let (promo_2, sp_2) = sp_infos.single_sp_rewards(1);
+        assert_eq!(promo_2.service_provider_amount, 20);
+        assert_eq!(promo_2.matched_amount, 20);
+        assert_eq!(sp_2.amount, 980);
+    }
+
     #[test]
     fn no_rewards_if_none_allocated() {
         let sp_infos = ServiceProviderRewardInfos::new(
