@@ -2,6 +2,14 @@ use sqlx::postgres::PgConnectOptions;
 
 pub mod tracker;
 
+#[derive(Debug, Clone, clap::ValueEnum, Copy, sqlx::Type, PartialEq, Eq)]
+#[sqlx(type_name = "radio_type")]
+#[sqlx(rename_all = "lowercase")]
+pub enum RadioType {
+    Wifi,
+    Cbrs,
+}
+
 #[derive(Debug, clap::Args)]
 pub struct DbArgs {
     #[arg(long)]

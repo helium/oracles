@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
-use ban_cli::{tracker::TrackGood, DbArgs};
+use ban_cli::{tracker::TrackGood, DbArgs, RadioType};
 use chrono::{DateTime, Duration, Utc};
 use clap::Parser;
 use helium_crypto::{Keypair, PublicKey, Sign};
@@ -41,14 +41,6 @@ impl IngestorArgs {
             authorization: format!("Bearer {}", token).try_into()?,
         })
     }
-}
-
-#[derive(Debug, Clone, clap::ValueEnum, Copy, sqlx::Type)]
-#[sqlx(type_name = "radio_type")]
-#[sqlx(rename_all = "lowercase")]
-enum RadioType {
-    Wifi,
-    Cbrs,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
