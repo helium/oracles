@@ -488,6 +488,14 @@ impl ValidatedHeartbeat {
             .resolve_gateway(&heartbeat.hotspot_key)
             .await?
         {
+            GatewayResolution::DataOnly => Ok(Self::new(
+                heartbeat,
+                cell_type,
+                dec!(0),
+                None,
+                Some(coverage_object.meta),
+                proto::HeartbeatValidity::DataOnly,
+            )),
             GatewayResolution::GatewayNotFound => Ok(Self::new(
                 heartbeat,
                 cell_type,
