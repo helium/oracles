@@ -19,6 +19,12 @@ pub struct GatewayInfo {
     pub device_type: DeviceType,
 }
 
+impl GatewayInfo {
+    pub fn is_data_only(&self) -> bool {
+        matches!(self.device_type, DeviceType::WifiDataOnly)
+    }
+}
+
 impl TryFrom<GatewayInfoProto> for GatewayInfo {
     type Error = std::num::ParseIntError;
 

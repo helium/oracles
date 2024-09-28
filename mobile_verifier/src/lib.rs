@@ -26,6 +26,7 @@ pub enum GatewayResolution {
     GatewayNotFound,
     GatewayNotAsserted,
     AssertedLocation(u64),
+    DataOnly,
 }
 
 #[async_trait::async_trait]
@@ -47,9 +48,14 @@ impl GatewayResolver for mobile_config::GatewayClient {
         address: &helium_crypto::PublicKeyBinary,
     ) -> Result<GatewayResolution, Self::Error> {
         use mobile_config::client::gateway_client::GatewayInfoResolver;
-        use mobile_config::gateway_info::GatewayInfo;
+        use mobile_config::gateway_info::{DeviceType, GatewayInfo};
+
         match self.resolve_gateway_info(address).await? {
             None => Ok(GatewayResolution::GatewayNotFound),
+            Some(GatewayInfo {
+                device_type: DeviceType::WifiDataOnly,
+                ..
+            }) => Ok(GatewayResolution::DataOnly),
             Some(GatewayInfo {
                 metadata: Some(metadata),
                 ..
