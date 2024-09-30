@@ -184,7 +184,9 @@ where
             .resolve_gateway_info(&pubkey)
             .await?
         {
-            Some(gw_info) if gw_info.is_data_only() => Ok(SpeedtestResult::SpeedtestDataOnly),
+            Some(gw_info) if gw_info.is_data_only() => {
+                Ok(SpeedtestResult::SpeedtestInvalidDeviceType)
+            }
             Some(_) => Ok(SpeedtestResult::SpeedtestValid),
             None => Ok(SpeedtestResult::SpeedtestGatewayNotFound),
         }

@@ -494,7 +494,7 @@ impl ValidatedHeartbeat {
                 dec!(0),
                 None,
                 Some(coverage_object.meta),
-                proto::HeartbeatValidity::DataOnly,
+                proto::HeartbeatValidity::InvalidDeviceType,
             )),
             GatewayResolution::GatewayNotFound => Ok(Self::new(
                 heartbeat,
