@@ -95,14 +95,12 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
                 .to_string()
         );
         assert_eq!(5_999, sp_reward.amount);
-        // assert_eq!(6_000, sp_reward.amount);
 
         assert_eq!(
             UnallocatedRewardType::ServiceProvider as i32,
             unallocated_reward.reward_type
         );
         assert_eq!(8_219_178_076_192, unallocated_reward.amount);
-        // assert_eq!(8_219_178_076_191, unallocated_reward.amount);
 
         // confirm the total rewards allocated matches expectations
         let expected_sum =
