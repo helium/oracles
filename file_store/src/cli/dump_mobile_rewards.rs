@@ -3,6 +3,7 @@ use crate::{file_source, Result, Settings};
 use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile::mobile_reward_share::Reward::*;
+use helium_proto::services::poc_mobile::promotion_reward::Entity;
 use helium_proto::services::poc_mobile::MobileRewardShare;
 use prost::Message;
 use serde_json::json;
@@ -23,6 +24,7 @@ impl Cmd {
         let mut subscriber_reward = vec![];
         let mut service_provider_reward = vec![];
         let mut unallocated_reward = vec![];
+        let mut promotion_reward = vec![];
 
         while let Some(result) = file_stream.next().await {
             let msg = result?;
@@ -60,6 +62,21 @@ impl Cmd {
                         "unallocated_reward_type": reward.reward_type,
                         "amount": reward.amount,
                     })),
+                    PromotionReward(reward) => {
+                        let entity = reward.entity.unwrap();
+                        match entity {
+                            Entity::SubscriberId(id) => promotion_reward.push(json!({
+                                "subscriber_id": uuid::Uuid::from_slice(&id).unwrap(),
+                                "service_provider_amount": reward.service_provider_amount,
+                                "matched_amount": reward.matched_amount,
+                            })),
+                            Entity::GatewayKey(key) => promotion_reward.push(json!({
+                                "gateway_key": PublicKey::try_from(key)?.to_string(),
+                                "service_provider_amount": reward.service_provider_amount,
+                                "matched_amount": reward.matched_amount,
+                            })),
+                        }
+                    }
                 },
                 None => todo!(),
             }
@@ -71,6 +88,7 @@ impl Cmd {
             "gateway_reward": gateway_reward,
             "subscriber_reward": subscriber_reward,
             "service_provider_reward": service_provider_reward,
+            "promotion_reward": promotion_reward,
             "unallocated_reward": unallocated_reward,
         }))?;
 

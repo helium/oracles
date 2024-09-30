@@ -95,6 +95,7 @@ impl_msg_verify!(mobile_config::BoostedHexInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexModifiedInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexInfoStreamResV1, signature);
 impl_msg_verify!(poc_mobile::SubscriberVerifiedMappingEventReqV1, signature);
+impl_msg_verify!(poc_mobile::PromotionRewardReqV1, signature);
 
 #[cfg(test)]
 mod test {

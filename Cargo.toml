@@ -21,6 +21,7 @@ members = [
   "mobile_verifier",
   "poc_entropy",
   "price",
+  "promotion_fund",
   "reward_index",
   "reward_scheduler",
   "solana",
@@ -70,10 +71,10 @@ helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = 
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
-helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
+helium-proto = { git = "https://github.com/helium/proto", branch = "map/subscriber-referral", features = [
   "services",
 ] }
-beacon = { git = "https://github.com/helium/proto", branch = "master" }
+beacon = { git = "https://github.com/helium/proto", branch = "map/subscriber-referral" }
 solana-client = "1.18"
 solana-sdk = "1.18"
 solana-program = "1.18"
