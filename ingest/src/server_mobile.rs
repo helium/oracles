@@ -14,9 +14,13 @@ use helium_proto::services::poc_mobile::{
     CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
-    InvalidatedRadioThresholdReportRespV1, PromotionRewardIngestReportV1, PromotionRewardReqV1,
-    PromotionRewardRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
+    InvalidatedRadioThresholdReportRespV1, InvalidatedRadioThresholdReportRespV1,
+    PromotionRewardIngestReportV1, PromotionRewardReqV1, PromotionRewardRespV1,
+    RadioLocationEstimatesIngestReportV1, RadioLocationEstimatesReqV1,
+    RadioLocationEstimatesRespV1, RadioThresholdIngestReportV1, RadioThresholdIngestReportV1,
+    RadioThresholdReportReqV1, RadioThresholdReportReqV1, RadioThresholdReportRespV1,
     RadioThresholdReportRespV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1,
@@ -48,6 +52,7 @@ pub struct GrpcServer {
         FileSinkClient<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
     subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
     promotion_reward_sink: FileSinkClient<PromotionRewardIngestReportV1>,
+    radio_location_estimate_sink: FileSinkClient<RadioLocationEstimatesIngestReportV1>,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -88,6 +93,7 @@ impl GrpcServer {
         >,
         subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
         promotion_reward_sink: FileSinkClient<PromotionRewardIngestReportV1>,
+        radio_location_estimate_sink: FileSinkClient<RadioLocationEstimatesIngestReportV1>,
         required_network: Network,
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
@@ -104,6 +110,7 @@ impl GrpcServer {
             sp_boosted_rewards_ban_sink,
             subscriber_mapping_event_sink,
             promotion_reward_sink,
+            radio_location_estimate_sink,
             required_network,
             address,
             api_token,
@@ -465,6 +472,30 @@ impl poc_mobile::PocMobile for GrpcServer {
         let id = received_timestamp.to_string();
         Ok(Response::new(PromotionRewardRespV1 { id }))
     }
+
+    async fn submit_radio_location_estimates(
+        &self,
+        request: Request<RadioLocationEstimatesReqV1>,
+    ) -> GrpcResult<RadioLocationEstimatesRespV1> {
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+        let req: RadioLocationEstimatesReqV1 = request.into_inner();
+
+        custom_tracing::record_b58("pub_key", &req.signer);
+
+        let report = self
+            .verify_public_key(req.signer.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, req))
+            .map(|(_, req)| RadioLocationEstimatesIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(req),
+            })?;
+
+        _ = self.radio_location_estimate_sink.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(RadioLocationEstimatesRespV1 { id }))
+    }
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
@@ -584,6 +615,16 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         )
         .await?;
 
+    let (radio_location_estimates_sink, radio_location_estimates_server) =
+        RadioLocationEstimatesIngestReportV1::file_sink(
+            store_base_path,
+            file_upload.clone(),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
+
     let Some(api_token) = settings
         .token
         .as_ref()
@@ -604,6 +645,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         sp_boosted_rewards_ban_sink,
         subscriber_mapping_event_sink,
         subscriber_referral_eligibility_sink,
+        radio_location_estimates_sink,
         settings.network,
         settings.listen_addr,
         api_token,
@@ -628,6 +670,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(sp_boosted_rewards_ban_sink_server)
         .add_task(subscriber_mapping_event_server)
         .add_task(subscriber_referral_eligibility_server)
+        .add_task(radio_location_estimates_server)
         .add_task(grpc_server)
         .build()
         .start()
