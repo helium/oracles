@@ -288,3 +288,8 @@ impl_file_sink!(
     FileType::VerifiedPromotionReward.to_str(),
     "verified_promotion_reward"
 );
+impl_file_sink!(
+    poc_mobile::RadioLocationEstimatesIngestReportV1,
+    FileType::RadioLocationEstimatesIngestReport.to_str(),
+    "radio_location_estimates_ingest_report"
+);
