@@ -4300,6 +4300,8 @@ dependencies = [
  "poc-metrics",
  "prost",
  "rand 0.8.5",
+ "rust_decimal",
+ "rust_decimal_macros",
  "serde",
  "serde_json",
  "sha2 0.10.8",

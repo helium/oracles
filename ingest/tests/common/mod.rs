@@ -3,8 +3,10 @@ use backon::{ExponentialBuilder, Retryable};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::{KeyTag, Keypair, Network, Sign};
 use helium_proto::services::poc_mobile::{
-    Client as PocMobileClient, SubscriberVerifiedMappingEventIngestReportV1,
-    SubscriberVerifiedMappingEventReqV1, SubscriberVerifiedMappingEventResV1,
+    Client as PocMobileClient, RadioLocationEstimateV1, RadioLocationEstimatesIngestReportV1,
+    RadioLocationEstimatesReqV1, RadioLocationEstimatesRespV1,
+    SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventReqV1,
+    SubscriberVerifiedMappingEventResV1,
 };
 use ingest::server_mobile::GrpcServer;
 use prost::Message;
@@ -75,6 +77,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
         key_pair,
         token.to_string(),
         subscriber_mapping_rx,
+        radio_location_estimates_rx,
     )
     .await;
 
@@ -85,8 +88,10 @@ pub struct TestClient {
     client: PocMobileClient<Channel>,
     key_pair: Arc<Keypair>,
     authorization: MetadataValue<Ascii>,
-    file_sink_rx:
+    subscriber_mapping_rx:
         Receiver<file_store::file_sink::Message<SubscriberVerifiedMappingEventIngestReportV1>>,
+    radio_location_estimates_rx:
+        Receiver<file_store::file_sink::Message<RadioLocationEstimatesIngestReportV1>>,
 }
 
 impl TestClient {
@@ -94,8 +99,11 @@ impl TestClient {
         socket_addr: SocketAddr,
         key_pair: Keypair,
         api_token: String,
-        file_sink_rx: Receiver<
+        subscriber_mapping_rx: Receiver<
             file_store::file_sink::Message<SubscriberVerifiedMappingEventIngestReportV1>,
+        >,
+        radio_location_estimates_rx: Receiver<
+            file_store::file_sink::Message<RadioLocationEstimatesIngestReportV1>,
         >,
     ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
@@ -107,12 +115,34 @@ impl TestClient {
             client,
             key_pair: Arc::new(key_pair),
             authorization: format!("Bearer {}", api_token).try_into().unwrap(),
-            file_sink_rx,
+            subscriber_mapping_rx,
+            radio_location_estimates_rx,
         }
     }
 
-    pub async fn recv(mut self) -> anyhow::Result<SubscriberVerifiedMappingEventIngestReportV1> {
-        match timeout(Duration::from_secs(2), self.file_sink_rx.recv()).await {
+    pub async fn recv_subscriber_mapping(
+        mut self,
+    ) -> anyhow::Result<SubscriberVerifiedMappingEventIngestReportV1> {
+        match timeout(Duration::from_secs(2), self.subscriber_mapping_rx.recv()).await {
+            Ok(Some(msg)) => match msg {
+                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
+                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
+                file_store::file_sink::Message::Data(_, data) => Ok(data),
+            },
+            Ok(None) => bail!("got none"),
+            Err(reason) => bail!("got error {reason}"),
+        }
+    }
+
+    pub async fn recv_radio_location_estimates(
+        mut self,
+    ) -> anyhow::Result<RadioLocationEstimatesIngestReportV1> {
+        match timeout(
+            Duration::from_secs(2),
+            self.radio_location_estimates_rx.recv(),
+        )
+        .await
+        {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
@@ -147,6 +177,31 @@ impl TestClient {
             .client
             .submit_subscriber_verified_mapping_event(request)
             .await?;
+
+        Ok(res.into_inner())
+    }
+
+    pub async fn submit_radio_location_estimates(
+        &mut self,
+        radio_id: String,
+        estimates: Vec<RadioLocationEstimateV1>,
+    ) -> anyhow::Result<RadioLocationEstimatesRespV1> {
+        let mut req = RadioLocationEstimatesReqV1 {
+            radio_id,
+            estimates,
+            timestamp: 0,
+            signer: self.key_pair.public_key().to_vec(),
+            signature: vec![],
+        };
+
+        req.signature = self.key_pair.sign(&req.encode_to_vec()).expect("sign");
+
+        let mut request = Request::new(req);
+        let metadata = request.metadata_mut();
+
+        metadata.insert("authorization", self.authorization.clone());
+
+        let res = self.client.submit_radio_location_estimates(request).await?;
 
         Ok(res.into_inner())
     }
