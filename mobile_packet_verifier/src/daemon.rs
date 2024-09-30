@@ -1,4 +1,7 @@
-use crate::{burner::Burner, event_ids::EventIdPurger, settings::Settings};
+use crate::{
+    burner::Burner, event_ids::EventIdPurger, settings::Settings, MobileConfigClients,
+    MobileConfigResolverExt,
+};
 use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
 use file_store::{
@@ -13,10 +16,6 @@ use file_store::{
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::InvalidDataTransferIngestReportV1,
 };
-use mobile_config::client::{
-    authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
-    AuthorizationClient, GatewayClient,
-};
 use solana::burn::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use task_manager::{ManagedTask, TaskManager};
@@ -25,25 +24,23 @@ use tokio::{
     time::{sleep_until, Duration, Instant},
 };
 
-pub struct Daemon<S, GIR, AV> {
+pub struct Daemon<S, MCR> {
     pool: Pool<Postgres>,
     burner: Burner<S>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
     min_burn_period: Duration,
-    gateway_info_resolver: GIR,
-    authorization_verifier: AV,
+    mobile_config_resolver: MCR,
     invalid_data_session_report_sink: FileSinkClient<InvalidDataTransferIngestReportV1>,
 }
 
-impl<S, GIR, AV> Daemon<S, GIR, AV> {
+impl<S, MCR> Daemon<S, MCR> {
     pub fn new(
         settings: &Settings,
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
         burner: Burner<S>,
-        gateway_info_resolver: GIR,
-        authorization_verifier: AV,
+        mobile_config_resolver: MCR,
         invalid_data_session_report_sink: FileSinkClient<InvalidDataTransferIngestReportV1>,
     ) -> Self {
         Self {
@@ -52,18 +49,16 @@ impl<S, GIR, AV> Daemon<S, GIR, AV> {
             reports,
             burn_period: settings.burn_period,
             min_burn_period: settings.min_burn_period,
-            gateway_info_resolver,
-            authorization_verifier,
+            mobile_config_resolver,
             invalid_data_session_report_sink,
         }
     }
 }
 
-impl<S, GIR, AV> ManagedTask for Daemon<S, GIR, AV>
+impl<S, MCR> ManagedTask for Daemon<S, MCR>
 where
     S: SolanaNetwork,
-    GIR: GatewayInfoResolver,
-    AV: AuthorizationVerifier + 'static,
+    MCR: MobileConfigResolverExt + 'static,
 {
     fn start_task(
         self: Box<Self>,
@@ -73,11 +68,10 @@ where
     }
 }
 
-impl<S, GIR, AV> Daemon<S, GIR, AV>
+impl<S, MCR> Daemon<S, MCR>
 where
     S: SolanaNetwork,
-    GIR: GatewayInfoResolver,
-    AV: AuthorizationVerifier,
+    MCR: MobileConfigResolverExt,
 {
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         // Set the initial burn period to one minute
@@ -92,7 +86,7 @@ where
                     let ts = file.file_info.timestamp;
                     let mut transaction = self.pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&self.gateway_info_resolver, &self.authorization_verifier, &mut transaction, &self.invalid_data_session_report_sink, ts, reports).await?;
+                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.invalid_data_session_report_sink, ts, reports).await?;
                     transaction.commit().await?;
                     self.invalid_data_session_report_sink.commit().await?;
                 },
@@ -176,16 +170,14 @@ impl Cmd {
                 .create()
                 .await?;
 
-        let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
-        let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
+        let resolver = MobileConfigClients::new(&settings.config_client)?;
 
         let daemon = Daemon::new(
             settings,
             pool.clone(),
             reports,
             burner,
-            gateway_client,
-            auth_client,
+            resolver,
             invalid_sessions,
         );
 

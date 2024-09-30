@@ -4,22 +4,16 @@ use file_store::mobile_session::{
     DataTransferSessionIngestReport, InvalidDataTransferIngestReport,
 };
 use futures::{Stream, StreamExt};
-use helium_crypto::PublicKeyBinary;
-use helium_proto::services::mobile_config::NetworkKeyRole;
 use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
     InvalidDataTransferIngestReportV1,
 };
-use mobile_config::client::{
-    authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
-};
 use sqlx::{Postgres, Transaction};
 
-use crate::event_ids;
+use crate::{event_ids, MobileConfigResolverExt};
 
 pub async fn accumulate_sessions(
-    gateway_info_resolver: &impl GatewayInfoResolver,
-    authorization_verifier: &impl AuthorizationVerifier,
+    mobile_config: &impl MobileConfigResolverExt,
     conn: &mut Transaction<'_, Postgres>,
     invalid_data_session_report_sink: &FileSinkClient<InvalidDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
@@ -28,21 +22,10 @@ pub async fn accumulate_sessions(
     tokio::pin!(reports);
 
     while let Some(report) = reports.next().await {
-        // If the reward has been cancelled or it fails verification checks then skip
-        // the report and write it out to s3 as invalid
-        if report.report.rewardable_bytes == 0 {
-            write_invalid_report(
-                invalid_data_session_report_sink,
-                DataTransferIngestReportStatus::Cancelled,
-                report,
-            )
-            .await?;
-            continue;
-        }
-
-        let report_validity =
-            verify_report(conn, gateway_info_resolver, authorization_verifier, &report).await?;
+        let report_validity = verify_report(conn, mobile_config, &report).await?;
         if report_validity != DataTransferIngestReportStatus::Valid {
+            // If the reward has been cancelled or it fails verification checks then skip
+            // the report and write it out to s3 as invalid
             write_invalid_report(invalid_data_session_report_sink, report_validity, report).await?;
             continue;
         }
@@ -73,46 +56,29 @@ pub async fn accumulate_sessions(
 
 async fn verify_report(
     txn: &mut Transaction<'_, Postgres>,
-    gateway_info_resolver: &impl GatewayInfoResolver,
-    authorization_verifier: &impl AuthorizationVerifier,
+    mobile_config: &impl MobileConfigResolverExt,
     report: &DataTransferSessionIngestReport,
 ) -> anyhow::Result<DataTransferIngestReportStatus> {
+    if report.report.rewardable_bytes == 0 {
+        return Ok(DataTransferIngestReportStatus::Cancelled);
+    }
+
     if is_duplicate(txn, report).await? {
         return Ok(DataTransferIngestReportStatus::Duplicate);
     }
 
-    if !verify_gateway(
-        gateway_info_resolver,
-        &report.report.data_transfer_usage.pub_key,
-    )
-    .await
-    {
+    let gw_pub_key = &report.report.data_transfer_usage.pub_key;
+    let routing_pub_key = &report.report.pub_key;
+
+    if !mobile_config.is_gateway_known(gw_pub_key).await {
         return Ok(DataTransferIngestReportStatus::InvalidGatewayKey);
-    };
-    if !verify_known_routing_key(authorization_verifier, &report.report.pub_key).await {
-        return Ok(DataTransferIngestReportStatus::InvalidRoutingKey);
-    };
-    Ok(DataTransferIngestReportStatus::Valid)
-}
-
-async fn verify_gateway(
-    gateway_info_resolver: &impl GatewayInfoResolver,
-    public_key: &PublicKeyBinary,
-) -> bool {
-    match gateway_info_resolver.resolve_gateway_info(public_key).await {
-        Ok(res) => res.is_some(),
-        Err(_err) => false,
     }
-}
 
-async fn verify_known_routing_key(
-    authorization_verifier: &impl AuthorizationVerifier,
-    public_key: &PublicKeyBinary,
-) -> bool {
-    authorization_verifier
-        .verify_authorized_key(public_key, NetworkKeyRole::MobileRouter)
-        .await
-        .unwrap_or_default()
+    if !mobile_config.is_routing_key_known(routing_pub_key).await {
+        return Ok(DataTransferIngestReportStatus::InvalidRoutingKey);
+    }
+
+    Ok(DataTransferIngestReportStatus::Valid)
 }
 
 async fn is_duplicate(
@@ -143,4 +109,171 @@ async fn write_invalid_report(
         .write(proto, &[("reason", reason.as_str_name())])
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use file_store::{
+        file_sink::FileSinkClient,
+        mobile_session::{DataTransferEvent, DataTransferSessionReq},
+    };
+    use helium_crypto::PublicKeyBinary;
+    use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
+    use sqlx::PgPool;
+
+    use crate::burner::DataTransferSession;
+
+    use super::*;
+
+    struct MockResolver;
+
+    #[async_trait::async_trait]
+    impl MobileConfigResolverExt for MockResolver {
+        async fn is_gateway_known(&self, _public_key: &PublicKeyBinary) -> bool {
+            true
+        }
+
+        async fn is_routing_key_known(&self, _public_key: &PublicKeyBinary) -> bool {
+            true
+        }
+    }
+
+    #[sqlx::test]
+    async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
+        let mut txn = pool.begin().await?;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+        let invalid_data_session_report_sink = FileSinkClient::new(tx, "test");
+
+        accumulate_sessions(
+            &MockResolver,
+            &mut txn,
+            &invalid_data_session_report_sink,
+            Utc::now(),
+            futures::stream::iter(vec![]),
+        )
+        .await?;
+
+        txn.commit().await?;
+
+        // channel is empty
+        rx.assert_is_empty()?;
+
+        let sessions: Vec<DataTransferSession> =
+            sqlx::query_as("SELECT * from data_transfer_sessions")
+                .fetch_all(&pool)
+                .await?;
+        assert!(sessions.is_empty());
+
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn accumulate_writes_zero_data_event_as_invalid(pool: PgPool) -> anyhow::Result<()> {
+        let mut txn = pool.begin().await?;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+        let invalid_data_session_report_sink = FileSinkClient::new(tx, "test");
+
+        let report = DataTransferSessionIngestReport {
+            report: DataTransferSessionReq {
+                data_transfer_usage: DataTransferEvent {
+                    pub_key: vec![0].into(),
+                    upload_bytes: 0,
+                    download_bytes: 0,
+                    radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
+                    event_id: "test".to_string(),
+                    payer: vec![0].into(),
+                    timestamp: Utc::now(),
+                    signature: vec![],
+                },
+                rewardable_bytes: 0,
+                pub_key: vec![0].into(),
+                signature: vec![],
+            },
+            received_timestamp: Utc::now(),
+        };
+
+        accumulate_sessions(
+            &MockResolver,
+            &mut txn,
+            &invalid_data_session_report_sink,
+            Utc::now(),
+            futures::stream::iter(vec![report]),
+        )
+        .await?;
+
+        txn.commit().await?;
+
+        // single record written to invalid sink
+        match rx.try_recv() {
+            Ok(_) => (),
+            other => panic!("unexpected: {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn write_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
+        let mut txn = pool.begin().await?;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+        let invalid_data_session_report_sink = FileSinkClient::new(tx, "test");
+
+        let report = DataTransferSessionIngestReport {
+            report: DataTransferSessionReq {
+                data_transfer_usage: DataTransferEvent {
+                    pub_key: vec![0].into(),
+                    upload_bytes: 1,
+                    download_bytes: 2,
+                    radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
+                    event_id: "test".to_string(),
+                    payer: vec![0].into(),
+                    timestamp: Utc::now(),
+                    signature: vec![],
+                },
+                rewardable_bytes: 3,
+                pub_key: vec![0].into(),
+                signature: vec![],
+            },
+            received_timestamp: Utc::now(),
+        };
+
+        accumulate_sessions(
+            &MockResolver,
+            &mut txn,
+            &invalid_data_session_report_sink,
+            Utc::now(),
+            futures::stream::iter(vec![report]),
+        )
+        .await?;
+
+        txn.commit().await?;
+
+        // no records written to invalid sink
+        rx.assert_is_empty()?;
+
+        let sessions: Vec<DataTransferSession> =
+            sqlx::query_as("SELECT * from data_transfer_sessions")
+                .fetch_all(&pool)
+                .await?;
+        assert_eq!(sessions.len(), 1);
+
+        Ok(())
+    }
+
+    trait ChannelExt {
+        fn assert_is_empty(&mut self) -> anyhow::Result<()>;
+    }
+
+    impl<T: std::fmt::Debug> ChannelExt for tokio::sync::mpsc::Receiver<T> {
+        fn assert_is_empty(&mut self) -> anyhow::Result<()> {
+            match self.try_recv() {
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => (),
+                other => panic!("unexpected message: {other:?}"),
+            }
+            Ok(())
+        }
+    }
 }
