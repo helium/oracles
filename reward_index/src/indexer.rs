@@ -37,7 +37,6 @@ pub enum RewardType {
     IotOperational,
     MobileSubscriber,
     MobileServiceProvider,
-    MobilePromotion,
     MobileUnallocated,
     IotUnallocated,
 }
@@ -198,7 +197,7 @@ impl Indexer {
                     })) => Ok(Some((
                         RewardKey {
                             key: bs58::encode(&subscriber_id).into_string(),
-                            reward_type: RewardType::MobilePromotion,
+                            reward_type: RewardType::MobileSubscriber,
                         },
                         service_provider_amount + matched_amount,
                     ))),
@@ -209,7 +208,7 @@ impl Indexer {
                     })) => Ok(Some((
                         RewardKey {
                             key: PublicKeyBinary::from(gateway_key).to_string(),
-                            reward_type: RewardType::MobilePromotion,
+                            reward_type: RewardType::MobileGateway,
                         },
                         service_provider_amount + matched_amount,
                     ))),
