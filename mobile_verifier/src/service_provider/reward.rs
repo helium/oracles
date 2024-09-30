@@ -595,8 +595,7 @@ mod tests {
 
     fn epoch() -> Range<DateTime<Utc>> {
         let now = Utc::now();
-        let epoch = now - Duration::hours(24)..now;
-        epoch
+        now - Duration::hours(24)..now
     }
 
     trait PromoRewardFiltersExt {

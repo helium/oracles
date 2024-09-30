@@ -135,65 +135,50 @@ impl MockFileSinkReceiver<MobileRewardShare> {
 
     pub async fn receive_gateway_reward(&mut self) -> GatewayReward {
         match self.receive("receive_gateway_reward").await {
-            Some(mobile_reward) => {
-                // println!("mobile_reward: {:?}", mobile_reward);
-                match mobile_reward.reward {
-                    Some(MobileReward::GatewayReward(r)) => r,
-                    _ => panic!("failed to get gateway reward"),
-                }
-            }
+            Some(mobile_reward) => match mobile_reward.reward {
+                Some(MobileReward::GatewayReward(r)) => r,
+                _ => panic!("failed to get gateway reward"),
+            },
             None => panic!("failed to receive gateway reward"),
         }
     }
 
     pub async fn receive_service_provider_reward(&mut self) -> ServiceProviderReward {
         match self.receive("receive_service_provider_reward").await {
-            Some(mobile_reward) => {
-                // println!("mobile_reward: {:?}", mobile_reward);
-                match mobile_reward.reward {
-                    Some(MobileReward::ServiceProviderReward(r)) => r,
-                    _ => panic!("failed to get service provider reward"),
-                }
-            }
+            Some(mobile_reward) => match mobile_reward.reward {
+                Some(MobileReward::ServiceProviderReward(r)) => r,
+                _ => panic!("failed to get service provider reward"),
+            },
             None => panic!("failed to receive service provider reward"),
         }
     }
 
     pub async fn receive_subscriber_reward(&mut self) -> SubscriberReward {
         match self.receive("receive_subscriber_reward").await {
-            Some(mobile_reward) => {
-                // println!("mobile_reward: {:?}", mobile_reward);
-                match mobile_reward.reward {
-                    Some(MobileReward::SubscriberReward(r)) => r,
-                    _ => panic!("failed to get subscriber reward"),
-                }
-            }
+            Some(mobile_reward) => match mobile_reward.reward {
+                Some(MobileReward::SubscriberReward(r)) => r,
+                _ => panic!("failed to get subscriber reward"),
+            },
             None => panic!("failed to receive subscriber reward"),
         }
     }
 
     pub async fn receive_promotion_reward(&mut self) -> PromotionReward {
         match self.receive("receive_promotion_reward").await {
-            Some(mobile_reward) => {
-                // println!("mobile_reward: {:?}", mobile_reward);
-                match mobile_reward.reward {
-                    Some(MobileReward::PromotionReward(r)) => r,
-                    _ => panic!("failed to get promotion reward"),
-                }
-            }
+            Some(mobile_reward) => match mobile_reward.reward {
+                Some(MobileReward::PromotionReward(r)) => r,
+                _ => panic!("failed to get promotion reward"),
+            },
             None => panic!("failed to receive promotion reward"),
         }
     }
 
     pub async fn receive_unallocated_reward(&mut self) -> UnallocatedReward {
         match self.receive("receive_unallocated_reward").await {
-            Some(mobile_reward) => {
-                // println!("mobile_reward: {:?}", mobile_reward);
-                match mobile_reward.reward {
-                    Some(MobileReward::UnallocatedReward(r)) => r,
-                    _ => panic!("failed to get unallocated reward"),
-                }
-            }
+            Some(mobile_reward) => match mobile_reward.reward {
+                Some(MobileReward::UnallocatedReward(r)) => r,
+                _ => panic!("failed to get unallocated reward"),
+            },
             None => panic!("failed to receive unallocated reward"),
         }
     }
