@@ -37,7 +37,6 @@ pub enum RewardType {
     IotOperational,
     MobileSubscriber,
     MobileServiceProvider,
-    MobilePromotion,
     MobileUnallocated,
     IotUnallocated,
 }
