@@ -236,16 +236,25 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     // Ensure the cleanup job can run
     let mut txn = pool.begin().await?;
 
-    service_provider::promotions::rewards::clear_promotion_rewards(&mut txn, &Utc::now()).await?;
+    service_provider::db::clear_promotion_rewards(&mut txn, &Utc::now()).await?;
     txn.commit().await?;
 
-    let promos = service_provider::promotions::rewards::fetch_promotion_rewards(
+    let promos = service_provider::db::fetch_promotion_rewards(
         &pool,
         &carrier_client,
         &(epoch.start..Utc::now()),
     )
     .await?;
     assert!(promos.is_empty());
+
+    let sp_allocations = service_provider::reward_data_sp_allocations(&pool).await?;
+    assert_eq!(
+        vec![helium_proto::ServiceProviderAllocation {
+            service_provider: 0,
+            incentive_escrow_fund_bps: 1500
+        }],
+        sp_allocations
+    );
 
     Ok(())
 }
