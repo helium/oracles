@@ -273,3 +273,23 @@ impl_file_sink!(
     FileType::RewardManifest.to_str(),
     "reward_manifest"
 );
+impl_file_sink!(
+    proto::ServiceProviderPromotionFundV1,
+    FileType::ServiceProviderPromotionFund.to_str(),
+    "service_provider_promotion_fund"
+);
+impl_file_sink!(
+    poc_mobile::PromotionRewardIngestReportV1,
+    FileType::PromotionRewardIngestReport.to_str(),
+    "promotion_reward_ingest_report"
+);
+impl_file_sink!(
+    poc_mobile::VerifiedPromotionRewardV1,
+    FileType::VerifiedPromotionReward.to_str(),
+    "verified_promotion_reward"
+);
+impl_file_sink!(
+    poc_mobile::RadioLocationEstimatesIngestReportV1,
+    FileType::RadioLocationEstimatesIngestReport.to_str(),
+    "radio_location_estimates_ingest_report"
+);
