@@ -15,6 +15,11 @@ file_sink_cache = "/tmp/oracles/promotion-fund"
 #
 solana_check_interval = "6 hours"
 
+# On startup, how far back do we read from S3 to get the latest Service Provider
+# Fund allocation values.
+#
+# lookback_start_after = 0
+
 [solana]
 # Solana RPC. This may contain a secret
 #

@@ -58,7 +58,7 @@ impl Daemon {
         settings: &Settings,
         file_sink: FileSinkClient<ServiceProviderPromotionFundV1>,
     ) -> anyhow::Result<Self> {
-        let s3_current = fetch_s3_bps(&settings.file_store_output).await?;
+        let s3_current = fetch_s3_bps(settings).await?;
         let solana_client = SolanaRpc::new(&settings.solana).context("making solana client")?;
         let check_timer = tokio::time::interval(settings.solana_check_interval);
 
@@ -117,12 +117,16 @@ impl Daemon {
     }
 }
 
-pub async fn fetch_s3_bps(settings: &file_store::Settings) -> anyhow::Result<S3Value> {
-    let file_store = FileStore::from_settings(settings).await?;
+pub async fn fetch_s3_bps(settings: &Settings) -> anyhow::Result<S3Value> {
+    let file_store = FileStore::from_settings(&settings.file_store_output).await?;
     let mut results = HashMap::new();
 
     let all = file_store
-        .list_all(FileType::ServiceProviderPromotionFund.to_str(), None, None)
+        .list_all(
+            FileType::ServiceProviderPromotionFund.to_str(),
+            settings.lookback_start_after,
+            None,
+        )
         .await?;
 
     if let Some(last) = all.last() {

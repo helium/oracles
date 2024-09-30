@@ -76,7 +76,7 @@ async fn run_server(settings: &Settings) -> Result<()> {
 }
 
 async fn print_s3(settings: &Settings) -> Result<()> {
-    let s3_current = fetch_s3_bps(&settings.file_store_output).await?;
+    let s3_current = fetch_s3_bps(settings).await?;
     if s3_current.is_empty() {
         tracing::warn!("nothing read from s3");
     }

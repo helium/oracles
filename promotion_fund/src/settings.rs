@@ -3,6 +3,7 @@ use std::{
     time::Duration,
 };
 
+use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
 
@@ -19,6 +20,12 @@ pub struct Settings {
     /// solana. (default: 6 hours)
     #[serde(with = "humantime_serde", default = "default_solana_check_interval")]
     pub solana_check_interval: Duration,
+    /// How far back do we go looking for the latest values in s3 on startup. If
+    /// there become many files, update this value to a window just past the
+    /// most recent. Value only used on startup.
+    /// (default: unix epoch)
+    #[serde(default = "default_lookback_start_after")]
+    pub lookback_start_after: DateTime<Utc>,
     /// Solana RPC settings
     pub solana: solana::carrier::Settings,
     /// File Store Bucket Settings
@@ -33,6 +40,10 @@ fn default_log() -> String {
 
 fn default_solana_check_interval() -> Duration {
     humantime::parse_duration("6 hours").unwrap()
+}
+
+fn default_lookback_start_after() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 impl Settings {
