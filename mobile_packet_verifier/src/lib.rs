@@ -33,7 +33,7 @@ pub trait MobileConfigResolverExt {
 #[async_trait::async_trait]
 impl MobileConfigResolverExt for MobileConfigClients {
     async fn is_gateway_known(&self, public_key: &PublicKeyBinary) -> bool {
-        match self.gateway_client.resolve_gateway_info(&public_key).await {
+        match self.gateway_client.resolve_gateway_info(public_key).await {
             Ok(res) => res.is_some(),
             Err(_err) => false,
         }
@@ -41,7 +41,7 @@ impl MobileConfigResolverExt for MobileConfigClients {
 
     async fn is_routing_key_known(&self, public_key: &PublicKeyBinary) -> bool {
         self.auth_client
-            .verify_authorized_key(&public_key, NetworkKeyRole::MobileRouter)
+            .verify_authorized_key(public_key, NetworkKeyRole::MobileRouter)
             .await
             .unwrap_or_default()
     }
