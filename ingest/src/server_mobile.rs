@@ -485,8 +485,6 @@ where
             .verify_public_key(event.carrier_mapping_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event.clone()))?;
-
-        // todo: make this work as part of combinators above ?
         self.verify_known_carrier_key(verified_pubkey).await?;
 
         let report = HexUsageCountsIngestReportV1 {
@@ -513,7 +511,6 @@ where
             .verify_public_key(event.carrier_mapping_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event.clone()))?;
-
         self.verify_known_carrier_key(verified_pubkey).await?;
 
         let report = RadioUsageCountsIngestReportV1 {
