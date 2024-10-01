@@ -22,12 +22,14 @@ pub mod mobile_subscriber;
 pub mod mobile_transfer;
 pub mod promotion_reward;
 pub mod radio_location_estimates;
+pub mod radio_location_estimates_ingest_report;
 pub mod reward_manifest;
 mod settings;
 pub mod speedtest;
 pub mod subscriber_verified_mapping_event;
 pub mod subscriber_verified_mapping_event_ingest_report;
 pub mod traits;
+pub mod verified_radio_location_estimates;
 pub mod verified_subscriber_verified_mapping_event_ingest_report;
 pub mod wifi_heartbeat;
 

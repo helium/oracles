@@ -190,7 +190,7 @@ impl TestClient {
             radio_id,
             estimates,
             timestamp: 0,
-            signer: self.key_pair.public_key().to_vec(),
+            carrier_key: self.key_pair.public_key().to_vec(),
             signature: vec![],
         };
 
