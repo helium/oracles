@@ -5156,6 +5156,7 @@ dependencies = [
  "h3o",
  "helium-crypto",
  "helium-proto",
+ "hex",
  "hex-assignments",
  "hextree",
  "http-serde",
