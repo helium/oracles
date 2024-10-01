@@ -16,8 +16,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{
-        RadioLocationEstimatesIngestReportV1, RadioLocationEstimatesVerificationStatus,
-        VerifiedRadioLocationEstimatesReportV1,
+        RadioLocationEstimatesVerificationStatus, VerifiedRadioLocationEstimatesReportV1,
     },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
