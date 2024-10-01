@@ -480,10 +480,10 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let req: RadioLocationEstimatesReqV1 = request.into_inner();
 
-        custom_tracing::record_b58("pub_key", &req.signer);
+        custom_tracing::record_b58("pub_key", &req.carrier_key);
 
         let report = self
-            .verify_public_key(req.signer.as_ref())
+            .verify_public_key(req.carrier_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, req))
             .map(|(_, req)| RadioLocationEstimatesIngestReportV1 {

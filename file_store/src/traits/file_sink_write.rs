@@ -293,3 +293,8 @@ impl_file_sink!(
     FileType::RadioLocationEstimatesIngestReport.to_str(),
     "radio_location_estimates_ingest_report"
 );
+impl_file_sink!(
+    poc_mobile::VerifiedRadioLocationEstimatesReportV1,
+    FileType::VerifiedRadioLocationEstimatesReport.to_str(),
+    "verified_radio_location_estimates_report"
+);
