@@ -9,58 +9,58 @@ authors.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-compression = { version = "0", features = ["tokio", "gzip"] }
-config = { workspace = true }
-thiserror = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-h3o = { workspace = true, features = ["geo"] }
-hextree = { workspace = true }
-http-serde = { workspace = true }
-clap = { workspace = true }
-sqlx = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+async-trait = { workspace = true }
 base64 = { workspace = true }
-sha2 = { workspace = true }
-lazy_static = { workspace = true }
 chrono = { workspace = true }
-triggered = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
+coverage-map = { path = "../coverage_map" }
+coverage-point-calculator = { path = "../coverage_point_calculator" }
+custom-tracing = { path = "../custom_tracing" }
+db-store = { path = "../db_store" }
+derive_builder = { workspace = true }
+file-store = { path = "../file_store" }
 flate2 = "1"
 futures = { workspace = true }
 futures-util = { workspace = true }
-prost = { workspace = true }
-once_cell = { workspace = true }
-helium-proto = { workspace = true }
+h3o = { workspace = true, features = ["geo"] }
 helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
+helium-proto = { workspace = true }
+hex = "0.4"
+hex-assignments = { path = "../hex_assignments" }
+hextree = { workspace = true }
+http-serde = { workspace = true }
 humantime = { workspace = true }
-rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
-tonic = { workspace = true }
-tokio-stream = { workspace = true }
-tokio-util = { workspace = true }
+humantime-serde = { workspace = true }
+lazy_static = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 mobile-config = { path = "../mobile_config" }
-file-store = { path = "../file_store" }
-db-store = { path = "../db_store" }
+once_cell = { workspace = true }
 poc-metrics = { path = "../metrics" }
-reward-scheduler = { path = "../reward_scheduler" }
 price = { path = "../price" }
+prost = { workspace = true }
 rand = { workspace = true }
-async-trait = { workspace = true }
-retainer = { workspace = true }
-uuid = { workspace = true }
-task-manager = { path = "../task_manager" }
-solana-sdk = { workspace = true }
-derive_builder = { workspace = true }
 regex = "1"
-humantime-serde = { workspace = true }
-custom-tracing = { path = "../custom_tracing" }
-hex-assignments = { path = "../hex_assignments" }
-coverage-point-calculator = { path = "../coverage_point_calculator" }
-coverage-map = { path = "../coverage_map" }
-hex = "0.4"
+retainer = { workspace = true }
+reward-scheduler = { path = "../reward_scheduler" }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+solana-sdk = { workspace = true }
+sqlx = { workspace = true }
+task-manager = { path = "../task_manager" }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+triggered = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 backon = "0"
