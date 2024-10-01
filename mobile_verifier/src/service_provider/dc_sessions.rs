@@ -39,7 +39,7 @@ pub struct ServiceProviderDCSessions(pub(crate) HashMap<ServiceProviderId, Decim
 
 impl ServiceProviderDCSessions {
     pub fn insert(&mut self, service_provider: ServiceProviderId, dc: Decimal) {
-        self.0.insert(service_provider, dc);
+        *self.0.entry(service_provider).or_insert(Decimal::ZERO) += dc;
     }
 
     pub fn all_transfer(&self) -> Decimal {
@@ -94,11 +94,77 @@ where
     I: Into<ServiceProviderId>,
 {
     fn from(iter: F) -> Self {
-        // sum duplicate keys
-        let mut map = HashMap::new();
+        let mut me = Self::default();
         for (k, v) in iter {
-            *map.entry(k.into()).or_insert(Decimal::ZERO) += v;
+            me.insert(k.into(), v);
         }
-        Self(map)
+        me
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+
+    use chrono::Duration;
+    use helium_proto::ServiceProvider;
+
+    use crate::data_session::HotspotDataSession;
+
+    use super::*;
+
+    impl ServiceProviderDCSessions {
+        fn len(&self) -> usize {
+            self.0.len()
+        }
+    }
+
+    #[sqlx::test]
+    fn multiple_payer_keys_accumulate_to_service_provider(pool: PgPool) -> anyhow::Result<()> {
+        // Client always resolves to single service provider no matter payer key
+        struct MockClient;
+
+        #[async_trait::async_trait]
+        impl CarrierServiceVerifier for MockClient {
+            type Error = ClientError;
+
+            async fn payer_key_to_service_provider<'a>(
+                &self,
+                _pubkey: &str,
+            ) -> Result<ServiceProvider, ClientError> {
+                Ok(ServiceProvider::HeliumMobile)
+            }
+        }
+
+        // Save multiple data sessions with different payers
+        let one = HotspotDataSession {
+            pub_key: vec![0].into(),
+            payer: vec![0].into(),
+            upload_bytes: 1_000,
+            download_bytes: 1_000,
+            num_dcs: 2_000,
+            received_timestamp: Utc::now(),
+        };
+        let two = HotspotDataSession {
+            pub_key: vec![1].into(),
+            payer: vec![1].into(),
+            upload_bytes: 1_000,
+            download_bytes: 1_000,
+            num_dcs: 2_000,
+            received_timestamp: Utc::now(),
+        };
+        let mut txn = pool.begin().await?;
+        one.save(&mut txn).await?;
+        two.save(&mut txn).await?;
+        txn.commit().await?;
+
+        let now = Utc::now();
+        let epoch = now - Duration::hours(24)..now;
+
+        // dc sessions should represent single payer, and all dc is combined
+        let map = fetch_dc_sessions(&pool, &MockClient, &epoch).await?;
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.all_transfer(), Decimal::from(4_000));
+
+        Ok(())
     }
 }
