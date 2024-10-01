@@ -39,11 +39,7 @@ impl From<RadioLocationEstimatesReq> for RadioLocationEstimatesReqV1 {
         let timestamp = rle.timestamp();
         RadioLocationEstimatesReqV1 {
             radio_id: rle.radio_id,
-            estimates: rle
-                .estimates
-                .into_iter()
-                .map(|e| e.try_into().unwrap())
-                .collect(),
+            estimates: rle.estimates.into_iter().map(|e| e.into()).collect(),
             timestamp,
             carrier_key: rle.carrier_key.into(),
             signature: vec![],
@@ -80,11 +76,7 @@ impl From<RadioLocationEstimate> for RadioLocationEstimateV1 {
         RadioLocationEstimateV1 {
             radius: Some(to_proto_decimal(rle.radius)),
             confidence: Some(to_proto_decimal(rle.confidence)),
-            events: rle
-                .events
-                .into_iter()
-                .map(|e| e.try_into().unwrap())
-                .collect(),
+            events: rle.events.into_iter().map(|e| e.into()).collect(),
         }
     }
 }
