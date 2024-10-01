@@ -1,18 +1,28 @@
 use crate::Settings;
+use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
+    radio_location_estimates::{RadioLocationEstimate, RadioLocationEstimatesReq},
     radio_location_estimates_ingest_report::RadioLocationEstimatesIngestReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
+    verified_radio_location_estimates::VerifiedRadioLocationEstimatesReport,
     FileStore, FileType,
 };
-use helium_proto::services::poc_mobile::{
-    RadioLocationEstimatesIngestReportV1, VerifiedRadioLocationEstimatesReportV1,
+use futures::{StreamExt, TryStreamExt};
+use helium_crypto::PublicKeyBinary;
+use helium_proto::services::{
+    mobile_config::NetworkKeyRole,
+    poc_mobile::{
+        RadioLocationEstimatesIngestReportV1, RadioLocationEstimatesVerificationStatus,
+        VerifiedRadioLocationEstimatesReportV1,
+    },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
-use sqlx::{Pool, Postgres};
+use sha2::{Digest, Sha256};
+use sqlx::{Pool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
@@ -90,12 +100,81 @@ where
                     tracing::info!("sme deamon shutting down");
                     break;
                 }
-                Some(_file) = self.reports_receiver.recv() => {
-                    // self.process_file(file).await?;
+                Some(file) = self.reports_receiver.recv() => {
+                    self.process_file(file).await?;
                 }
             }
         }
         Ok(())
+    }
+
+    async fn process_file(
+        &self,
+        file_info_stream: FileInfoStream<RadioLocationEstimatesIngestReport>,
+    ) -> anyhow::Result<()> {
+        tracing::info!(
+            "Processing Radio Location Estimates file {}",
+            file_info_stream.file_info.key
+        );
+
+        let mut transaction = self.pool.begin().await?;
+
+        file_info_stream
+            .into_stream(&mut transaction)
+            .await?
+            .map(anyhow::Ok)
+            .try_fold(
+                transaction,
+                |mut transaction, report: RadioLocationEstimatesIngestReport| async move {
+                    let verified_report_status = self.verify_report(&report.report).await;
+
+                    if verified_report_status == RadioLocationEstimatesVerificationStatus::Valid {
+                        save_to_db(&report, &mut transaction).await?;
+                    }
+
+                    let verified_report_proto: VerifiedRadioLocationEstimatesReportV1 =
+                        VerifiedRadioLocationEstimatesReport {
+                            report,
+                            status: verified_report_status,
+                            timestamp: Utc::now(),
+                        }
+                        .into();
+
+                    self.verified_report_sink
+                        .write(
+                            verified_report_proto,
+                            &[("report_status", verified_report_status.as_str_name())],
+                        )
+                        .await?;
+
+                    Ok(transaction)
+                },
+            )
+            .await?
+            .commit()
+            .await?;
+
+        self.verified_report_sink.commit().await?;
+
+        Ok(())
+    }
+
+    async fn verify_report(
+        &self,
+        req: &RadioLocationEstimatesReq,
+    ) -> RadioLocationEstimatesVerificationStatus {
+        if !self.verify_known_carrier_key(&req.carrier_key).await {
+            return RadioLocationEstimatesVerificationStatus::InvalidKey;
+        }
+
+        RadioLocationEstimatesVerificationStatus::Valid
+    }
+
+    async fn verify_known_carrier_key(&self, public_key: &PublicKeyBinary) -> bool {
+        self.authorization_verifier
+            .verify_authorized_key(public_key, NetworkKeyRole::MobileCarrier)
+            .await
+            .unwrap_or_default()
     }
 }
 
@@ -109,4 +188,62 @@ where
     ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
         Box::pin(self.run(shutdown))
     }
+}
+
+async fn save_to_db(
+    report: &RadioLocationEstimatesIngestReport,
+    exec: &mut Transaction<'_, Postgres>,
+) -> Result<(), sqlx::Error> {
+    let estimates = &report.report.estimates;
+    for estimate in estimates {
+        insert_estimate(
+            report.report.radio_id.clone(),
+            report.received_timestamp,
+            estimate,
+            exec,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn insert_estimate(
+    radio_id: String,
+    received_timestamp: DateTime<Utc>,
+    estimate: &RadioLocationEstimate,
+    exec: &mut Transaction<'_, Postgres>,
+) -> Result<(), sqlx::Error> {
+    let radius = estimate.radius;
+    let lat = 0.0;
+    let long = 0.0;
+
+    let key = format!(
+        "{}{}{}{}{}",
+        radio_id, received_timestamp, radius, lat, long
+    );
+
+    let mut hasher = Sha256::new();
+    hasher.update(key);
+    let hashed_key = hasher.finalize();
+
+    sqlx::query(
+        r#"
+        INSERT INTO radio_location_estimates (hashed_key, radio_id, received_timestamp, radius, lat, long, confidence, is_valid)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (hashed_key) DO NOTHING
+        "#,
+    )
+    .bind(hex::encode(hashed_key))
+    .bind(radio_id)
+    .bind(received_timestamp)
+    .bind(estimate.radius)
+    .bind(lat)
+    .bind(long)
+    .bind(estimate.confidence)
+    .bind(true)
+    .execute(exec)
+    .await?;
+
+    Ok(())
 }
