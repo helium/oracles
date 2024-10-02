@@ -9,11 +9,12 @@ use mobile_verifier::{
     coverage::{CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
     heartbeats::{last_location::LocationCache, HbType, Heartbeat, ValidatedHeartbeat},
-    GatewayResolution, GatewayResolver,
 };
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
+
+use crate::common::GatewayClientAllOwnersValid;
 
 const PUB_KEY: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 
@@ -23,21 +24,6 @@ struct MockGeofence;
 impl GeofenceValidator for MockGeofence {
     fn in_valid_region(&self, _heartbeat: &Heartbeat) -> bool {
         true
-    }
-}
-
-#[derive(Copy, Clone)]
-struct AllOwnersValid;
-
-#[async_trait::async_trait]
-impl GatewayResolver for AllOwnersValid {
-    type Error = std::convert::Infallible;
-
-    async fn resolve_gateway(
-        &self,
-        _address: &PublicKeyBinary,
-    ) -> Result<GatewayResolution, Self::Error> {
-        Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
     }
 }
 
@@ -60,7 +46,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
         heartbeat(&hotspot, &coverage_object)
             .location_validation_timestamp(Utc::now())
             .build(),
-        &AllOwnersValid,
+        &GatewayClientAllOwnersValid,
         &coverage_objects,
         &location_cache,
         u32::MAX,
@@ -78,7 +64,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
         heartbeat(&hotspot, &coverage_object)
             .latlng((0.0, 0.0))
             .build(),
-        &AllOwnersValid,
+        &GatewayClientAllOwnersValid,
         &coverage_objects,
         &location_cache,
         u32::MAX,
@@ -122,7 +108,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
         heartbeat(&hotspot, &coverage_object)
             .location_validation_timestamp(Utc::now())
             .build(),
-        &AllOwnersValid,
+        &GatewayClientAllOwnersValid,
         &coverage_objects,
         &location_cache,
         u32::MAX,
@@ -145,7 +131,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
         heartbeat(&hotspot, &coverage_object)
             .latlng((0.0, 0.0))
             .build(),
-        &AllOwnersValid,
+        &GatewayClientAllOwnersValid,
         &coverage_objects,
         &location_cache,
         u32::MAX,
@@ -192,7 +178,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
             .location_validation_timestamp(Utc::now())
             .timestamp(Utc::now() - Duration::hours(12) - Duration::seconds(1))
             .build(),
-        &AllOwnersValid,
+        &GatewayClientAllOwnersValid,
         &coverage_objects,
         &location_cache,
         u32::MAX,
@@ -210,7 +196,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
         heartbeat(&hotspot, &coverage_object)
             .latlng((0.0, 0.0))
             .build(),
-        &AllOwnersValid,
+        &GatewayClientAllOwnersValid,
         &coverage_objects,
         &location_cache,
         u32::MAX,

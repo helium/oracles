@@ -18,8 +18,8 @@ use futures::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    SpeedtestAvg as SpeedtestAvgProto, SpeedtestIngestReportV1, SpeedtestVerificationResult,
-    VerifiedSpeedtest as VerifiedSpeedtestProto,
+    SpeedtestAvg as SpeedtestAvgProto, SpeedtestIngestReportV1,
+    SpeedtestVerificationResult as SpeedtestResult, VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
 use mobile_config::client::gateway_client::GatewayInfoResolver;
 use sqlx::{postgres::PgRow, FromRow, Pool, Postgres, Row, Transaction};
@@ -152,7 +152,7 @@ where
         let mut speedtests = file.into_stream(&mut transaction).await?;
         while let Some(speedtest_report) = speedtests.next().await {
             let result = self.validate_speedtest(&speedtest_report).await?;
-            if result == SpeedtestVerificationResult::SpeedtestValid {
+            if result == SpeedtestResult::SpeedtestValid {
                 save_speedtest(&speedtest_report.report, &mut transaction).await?;
                 let latest_speedtests = get_latest_speedtests_for_pubkey(
                     &speedtest_report.report.pubkey,
@@ -176,24 +176,26 @@ where
     pub async fn validate_speedtest(
         &self,
         speedtest: &CellSpeedtestIngestReport,
-    ) -> anyhow::Result<SpeedtestVerificationResult> {
+    ) -> anyhow::Result<SpeedtestResult> {
         let pubkey = speedtest.report.pubkey.clone();
-        if self
+
+        match self
             .gateway_info_resolver
             .resolve_gateway_info(&pubkey)
             .await?
-            .is_some()
         {
-            Ok(SpeedtestVerificationResult::SpeedtestValid)
-        } else {
-            Ok(SpeedtestVerificationResult::SpeedtestGatewayNotFound)
+            Some(gw_info) if gw_info.is_data_only() => {
+                Ok(SpeedtestResult::SpeedtestInvalidDeviceType)
+            }
+            Some(_) => Ok(SpeedtestResult::SpeedtestValid),
+            None => Ok(SpeedtestResult::SpeedtestGatewayNotFound),
         }
     }
 
     pub async fn write_verified_speedtest(
         &self,
         speedtest_report: CellSpeedtestIngestReport,
-        result: SpeedtestVerificationResult,
+        result: SpeedtestResult,
     ) -> anyhow::Result<()> {
         let ingest_report: SpeedtestIngestReportV1 = speedtest_report.into();
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;

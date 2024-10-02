@@ -19,6 +19,12 @@ pub struct GatewayInfo {
     pub device_type: DeviceType,
 }
 
+impl GatewayInfo {
+    pub fn is_data_only(&self) -> bool {
+        matches!(self.device_type, DeviceType::WifiDataOnly)
+    }
+}
+
 impl TryFrom<GatewayInfoProto> for GatewayInfo {
     type Error = std::num::ParseIntError;
 
@@ -64,6 +70,7 @@ pub enum DeviceType {
     Cbrs,
     WifiIndoor,
     WifiOutdoor,
+    WifiDataOnly,
 }
 
 impl From<DeviceTypeProto> for DeviceType {
@@ -72,6 +79,7 @@ impl From<DeviceTypeProto> for DeviceType {
             DeviceTypeProto::Cbrs => DeviceType::Cbrs,
             DeviceTypeProto::WifiIndoor => DeviceType::WifiIndoor,
             DeviceTypeProto::WifiOutdoor => DeviceType::WifiOutdoor,
+            DeviceTypeProto::WifiDataOnly => DeviceType::WifiDataOnly,
         }
     }
 }
@@ -88,6 +96,7 @@ impl std::str::FromStr for DeviceType {
             "cbrs" => Self::Cbrs,
             "wifiIndoor" => Self::WifiIndoor,
             "wifiOutdoor" => Self::WifiOutdoor,
+            "wifiDataOnly" => Self::WifiDataOnly,
             _ => return Err(DeviceTypeParseError),
         };
         Ok(result)
