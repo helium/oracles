@@ -214,8 +214,8 @@ async fn insert_estimate(
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
     let radius = estimate.radius;
-    let lat = 0.0;
-    let long = 0.0;
+    let lat = estimate.lat;
+    let long = estimate.long;
 
     let key = format!(
         "{}{}{}{}{}",
