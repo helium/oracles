@@ -1,11 +1,7 @@
 use crate::{
-    coverage::CoveredHexStream,
-    data_session::{HotspotMap, ServiceProviderDataSession},
-    heartbeats::HeartbeatReward,
-    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
-    seniority::Seniority,
-    sp_boosted_rewards_bans::BannedRadios,
-    speedtests_average::SpeedtestAverages,
+    coverage::CoveredHexStream, data_session::HotspotMap, heartbeats::HeartbeatReward,
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility, seniority::Seniority,
+    sp_boosted_rewards_bans::BannedRadios, speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
     subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
 };
@@ -14,19 +10,10 @@ use coverage_point_calculator::{OracleBoostingStatus, SPBoostedRewardEligibility
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::{
-    services::{
-        poc_mobile as proto,
-        poc_mobile::{
-            mobile_reward_share::Reward as ProtoReward, UnallocatedReward, UnallocatedRewardType,
-        },
-    },
-    ServiceProvider,
+use helium_proto::services::{
+    poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
 };
-use mobile_config::{
-    boosted_hex_info::BoostedHexes,
-    client::{carrier_service_client::CarrierServiceVerifier, ClientError},
-};
+use mobile_config::boosted_hex_info::BoostedHexes;
 use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -52,7 +39,7 @@ const BOOSTED_POC_REWARDS_PERCENT: Decimal = dec!(0.1);
 const DC_USD_PRICE: Decimal = dec!(0.00001);
 
 /// Default precision used for rounding
-const DEFAULT_PREC: u32 = 15;
+pub const DEFAULT_PREC: u32 = 15;
 
 /// Percent of total emissions allocated for mapper rewards
 const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
@@ -296,127 +283,6 @@ impl MapperShares {
                     },
                 )
             })
-    }
-}
-
-#[derive(Default)]
-pub struct ServiceProviderShares {
-    pub shares: Vec<ServiceProviderDataSession>,
-}
-
-impl ServiceProviderShares {
-    pub fn new(shares: Vec<ServiceProviderDataSession>) -> Self {
-        Self { shares }
-    }
-
-    pub async fn from_payers_dc(
-        payer_shares: HashMap<String, u64>,
-        client: &impl CarrierServiceVerifier<Error = ClientError>,
-    ) -> anyhow::Result<ServiceProviderShares> {
-        let mut sp_shares = ServiceProviderShares::default();
-        for (payer, total_dcs) in payer_shares {
-            let service_provider = Self::payer_key_to_service_provider(&payer, client).await?;
-            sp_shares.shares.push(ServiceProviderDataSession {
-                service_provider,
-                total_dcs: Decimal::from(total_dcs),
-            })
-        }
-        Ok(sp_shares)
-    }
-
-    fn total_dc(&self) -> Decimal {
-        self.shares.iter().map(|v| v.total_dcs).sum()
-    }
-
-    pub fn rewards_per_share(
-        &self,
-        total_sp_rewards: Decimal,
-        mobile_bone_price: Decimal,
-    ) -> anyhow::Result<Decimal> {
-        // the total amount of DC spent across all service providers
-        let total_sp_dc = self.total_dc();
-        // the total amount of service provider rewards in bones based on the spent DC
-        let total_sp_rewards_used = dc_to_mobile_bones(total_sp_dc, mobile_bone_price);
-        // cap the service provider rewards if used > pool total
-        let capped_sp_rewards_used =
-            Self::maybe_cap_service_provider_rewards(total_sp_rewards_used, total_sp_rewards);
-        Ok(Self::calc_rewards_per_share(
-            capped_sp_rewards_used,
-            total_sp_dc,
-        ))
-    }
-
-    pub fn into_service_provider_rewards(
-        self,
-        reward_period: &'_ Range<DateTime<Utc>>,
-        reward_per_share: Decimal,
-    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
-        self.shares
-            .into_iter()
-            .map(move |share| proto::ServiceProviderReward {
-                service_provider_id: share.service_provider as i32,
-                amount: (share.total_dcs * reward_per_share)
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or(0),
-            })
-            .filter(|service_provider_reward| service_provider_reward.amount > 0)
-            .map(|service_provider_reward| {
-                (
-                    service_provider_reward.amount,
-                    proto::MobileRewardShare {
-                        start_period: reward_period.start.encode_timestamp(),
-                        end_period: reward_period.end.encode_timestamp(),
-                        reward: Some(ProtoReward::ServiceProviderReward(service_provider_reward)),
-                    },
-                )
-            })
-    }
-
-    pub fn into_unallocated_reward(
-        unallocated_amount: Decimal,
-        reward_period: &'_ Range<DateTime<Utc>>,
-    ) -> anyhow::Result<proto::MobileRewardShare> {
-        let reward = UnallocatedReward {
-            reward_type: UnallocatedRewardType::ServiceProvider as i32,
-            amount: unallocated_amount
-                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                .to_u64()
-                .unwrap_or(0),
-        };
-        Ok(proto::MobileRewardShare {
-            start_period: reward_period.start.encode_timestamp(),
-            end_period: reward_period.end.encode_timestamp(),
-            reward: Some(ProtoReward::UnallocatedReward(reward)),
-        })
-    }
-
-    fn maybe_cap_service_provider_rewards(
-        total_sp_rewards_used: Decimal,
-        total_sp_rewards: Decimal,
-    ) -> Decimal {
-        match total_sp_rewards_used <= total_sp_rewards {
-            true => total_sp_rewards_used,
-            false => total_sp_rewards,
-        }
-    }
-
-    fn calc_rewards_per_share(total_rewards: Decimal, total_shares: Decimal) -> Decimal {
-        if total_shares > Decimal::ZERO {
-            (total_rewards / total_shares)
-                .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven)
-        } else {
-            Decimal::ZERO
-        }
-    }
-
-    async fn payer_key_to_service_provider(
-        payer: &str,
-        client: &impl CarrierServiceVerifier<Error = ClientError>,
-    ) -> anyhow::Result<ServiceProvider> {
-        tracing::info!(payer, "getting service provider for payer");
-        let sp = client.payer_key_to_service_provider(payer).await?;
-        Ok(sp)
     }
 }
 
@@ -905,6 +771,12 @@ mod test {
         data_session::{self, HotspotDataSession, HotspotReward},
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
         reward_shares,
+        service_provider::{
+            self,
+            dc_sessions::ServiceProviderDCSessions,
+            promotions::{funds::ServiceProviderFunds, rewards::ServiceProviderPromotions},
+            ServiceProviderRewardInfos,
+        },
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
         subscriber_location::SubscriberValidatedLocations,
@@ -2348,8 +2220,8 @@ mod test {
             .is_none());
     }
 
-    #[tokio::test]
-    async fn service_provider_reward_amounts() {
+    #[test]
+    fn service_provider_reward_amounts() {
         let mobile_bone_price = dec!(0.00001);
 
         let sp1 = ServiceProvider::HeliumMobile;
@@ -2357,22 +2229,21 @@ mod test {
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
 
-        let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider: sp1,
-            total_dcs: dec!(1000),
-        }];
-        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
-        let total_sp_rewards = get_scheduled_tokens_for_service_providers(epoch.end - epoch.start);
-        let rewards_per_share = sp_shares
-            .rewards_per_share(total_sp_rewards, mobile_bone_price)
-            .unwrap();
+        let total_sp_rewards = service_provider::get_scheduled_tokens(&epoch);
+        let sp_reward_infos = ServiceProviderRewardInfos::new(
+            ServiceProviderDCSessions::from([(sp1, dec!(1000))]),
+            ServiceProviderFunds::default(),
+            ServiceProviderPromotions::default(),
+            total_sp_rewards,
+            mobile_bone_price,
+            epoch.clone(),
+        );
 
         let mut sp_rewards = HashMap::<i32, u64>::new();
         let mut allocated_sp_rewards = 0_u64;
-        for (reward_amount, sp_reward) in
-            sp_shares.into_service_provider_rewards(&epoch, rewards_per_share)
-        {
-            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+
+        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
+            if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 assert_eq!(reward_amount, r.amount);
                 allocated_sp_rewards += reward_amount;
@@ -2392,8 +2263,8 @@ mod test {
         assert_eq!(unallocated_sp_reward_amount, 342_465_752_424);
     }
 
-    #[tokio::test]
-    async fn service_provider_reward_amounts_capped() {
+    #[test]
+    fn service_provider_reward_amounts_capped() {
         let mobile_bone_price = dec!(1.0);
         let sp1 = ServiceProvider::HeliumMobile;
 
@@ -2404,28 +2275,27 @@ mod test {
         let total_rewards_value_in_dc =
             mobile_bones_to_dc(total_sp_rewards_in_bones, mobile_bone_price);
 
-        let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider: ServiceProvider::HeliumMobile,
+        let sp_reward_infos = ServiceProviderRewardInfos::new(
             // force the service provider to have spend more DC than total rewardable
-            total_dcs: total_rewards_value_in_dc * dec!(2.0),
-        }];
-
-        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
-        let rewards_per_share = sp_shares
-            .rewards_per_share(total_sp_rewards_in_bones, mobile_bone_price)
-            .unwrap();
+            ServiceProviderDCSessions::from([(sp1, total_rewards_value_in_dc * dec!(2.0))]),
+            ServiceProviderFunds::default(),
+            ServiceProviderPromotions::default(),
+            total_rewards_value_in_dc,
+            mobile_bone_price,
+            epoch.clone(),
+        );
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        for (reward_amount, sp_reward) in
-            sp_shares.into_service_provider_rewards(&epoch, rewards_per_share)
-        {
-            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+
+        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
+            if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 assert_eq!(reward_amount, r.amount);
                 allocated_sp_rewards += reward_amount;
             }
         }
+
         let sp1_reward_amount = *sp_rewards
             .get(&(sp1 as i32))
             .expect("Could not fetch sp1 shares");
@@ -2442,8 +2312,8 @@ mod test {
         assert_eq!(unallocated_sp_reward_amount, 0);
     }
 
-    #[tokio::test]
-    async fn service_provider_reward_hip87_ex1() {
+    #[test]
+    fn service_provider_reward_hip87_ex1() {
         // mobile price from hip example and converted to bones
         let mobile_bone_price = dec!(0.0001) / dec!(1_000_000);
         let sp1 = ServiceProvider::HeliumMobile;
@@ -2452,22 +2322,20 @@ mod test {
         let epoch = (now - Duration::hours(1))..now;
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
-        let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider: sp1,
-            total_dcs: dec!(100_000_000),
-        }];
-
-        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
-        let rewards_per_share = sp_shares
-            .rewards_per_share(total_sp_rewards_in_bones, mobile_bone_price)
-            .unwrap();
+        let sp_reward_infos = ServiceProviderRewardInfos::new(
+            ServiceProviderDCSessions::from([(sp1, dec!(100_000_000))]),
+            ServiceProviderFunds::default(),
+            ServiceProviderPromotions::default(),
+            total_sp_rewards_in_bones,
+            mobile_bone_price,
+            epoch.clone(),
+        );
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        for (reward_amount, sp_reward) in
-            sp_shares.into_service_provider_rewards(&epoch, rewards_per_share)
-        {
-            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+
+        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
+            if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 assert_eq!(reward_amount, r.amount);
                 allocated_sp_rewards += reward_amount;
@@ -2490,8 +2358,8 @@ mod test {
         assert_eq!(unallocated_sp_reward_amount, 490_000_000_000_000);
     }
 
-    #[tokio::test]
-    async fn service_provider_reward_hip87_ex2() {
+    #[test]
+    fn service_provider_reward_hip87_ex2() {
         // mobile price from hip example and converted to bones
         let mobile_bone_price = dec!(0.0001) / dec!(1_000_000);
         let sp1 = ServiceProvider::HeliumMobile;
@@ -2500,22 +2368,20 @@ mod test {
         let epoch = (now - Duration::hours(24))..now;
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
-        let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider: sp1,
-            total_dcs: dec!(100_000_000_000),
-        }];
-
-        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
-        let rewards_per_share = sp_shares
-            .rewards_per_share(total_sp_rewards_in_bones, mobile_bone_price)
-            .unwrap();
+        let sp_reward_infos = ServiceProviderRewardInfos::new(
+            ServiceProviderDCSessions::from([(sp1, dec!(100_000_000_000))]),
+            ServiceProviderFunds::default(),
+            ServiceProviderPromotions::default(),
+            total_sp_rewards_in_bones,
+            mobile_bone_price,
+            epoch.clone(),
+        );
 
         let mut sp_rewards = HashMap::new();
         let mut allocated_sp_rewards = 0_u64;
-        for (reward_amount, sp_reward) in
-            sp_shares.into_service_provider_rewards(&epoch, rewards_per_share)
-        {
-            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+
+        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
+            if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
                 assert_eq!(reward_amount, r.amount);
                 allocated_sp_rewards += reward_amount;

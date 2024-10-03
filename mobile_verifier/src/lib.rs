@@ -9,6 +9,7 @@ pub mod radio_threshold;
 pub mod reward_shares;
 pub mod rewarder;
 pub mod seniority;
+pub mod service_provider;
 mod settings;
 pub mod sp_boosted_rewards_bans;
 pub mod speedtests;
@@ -27,6 +28,12 @@ pub enum GatewayResolution {
     GatewayNotAsserted,
     AssertedLocation(u64),
     DataOnly,
+}
+
+impl GatewayResolution {
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, GatewayResolution::GatewayNotFound)
+    }
 }
 
 #[async_trait::async_trait]

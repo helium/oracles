@@ -10,8 +10,6 @@ use futures::{
     TryFutureExt,
 };
 use helium_crypto::PublicKeyBinary;
-use helium_proto::ServiceProvider;
-use rust_decimal::Decimal;
 use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
 use task_manager::{ManagedTask, TaskManager};
@@ -28,12 +26,6 @@ pub struct DataSessionIngestor {
 pub struct HotspotReward {
     pub rewardable_bytes: u64,
     pub rewardable_dc: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct ServiceProviderDataSession {
-    pub service_provider: ServiceProvider,
-    pub total_dcs: Decimal,
 }
 
 pub type HotspotMap = HashMap<PublicKeyBinary, HotspotReward>;
