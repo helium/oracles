@@ -61,11 +61,13 @@ impl ManagedTask for PromotionDaemon {
 }
 
 impl PromotionDaemon {
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store: file_store::FileStore,
+        report_file_store: file_store::FileStore,
+        promotion_file_store: file_store::FileStore,
         gateway_info_resolver: GatewayClient,
         authorization_verifier: AuthorizationClient,
         entity_verifier: EntityClient,
@@ -83,7 +85,7 @@ impl PromotionDaemon {
         let (promotion_rewards, promotion_rewards_server) =
             file_source::Continuous::msg_source::<PromotionReward, _>()
                 .state(pool.clone())
-                .store(file_store.clone())
+                .store(report_file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::PromotionRewardIngestReport.to_string())
                 .create()
@@ -92,7 +94,7 @@ impl PromotionDaemon {
         let (promotion_funds, promotion_funds_server) =
             file_source::Continuous::prost_source::<ServiceProviderPromotionFundV1, _>()
                 .state(pool.clone())
-                .store(file_store)
+                .store(promotion_file_store)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::ServiceProviderPromotionFund.to_string())
                 .create()

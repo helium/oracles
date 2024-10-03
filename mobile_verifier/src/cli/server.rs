@@ -46,6 +46,7 @@ impl Cmd {
         let store_base_path = std::path::Path::new(&settings.cache);
 
         let report_ingest = FileStore::from_settings(&settings.ingest).await?;
+        let promotion_fund_ingest = FileStore::from_settings(&settings.promotion_ingest).await?;
 
         // mobile config clients
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
@@ -200,6 +201,7 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     report_ingest.clone(),
+                    promotion_fund_ingest,
                     gateway_client.clone(),
                     auth_client.clone(),
                     entity_client.clone(),

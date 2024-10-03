@@ -47,6 +47,14 @@ block = 0
 #
 bucket = "mainnet-mobile-ingest"
 
+[promotion_ingest]
+
+# Input bucket details for Service Provider Promotion Funds
+
+# Name of bucket to access ingest data. Required
+#
+bucket = "price"
+
 # Region for bucket. Defaults to below
 #
 # region = "us-west-2"
