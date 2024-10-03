@@ -6139,7 +6139,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "promotion_fund"
+name = "promotion-fund"
 version = "0.1.0"
 dependencies = [
  "anyhow",
