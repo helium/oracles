@@ -7,8 +7,9 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
-    DataTransferEvent as DataTransferEventProto, DataTransferRadioAccessTechnology,
-    DataTransferSessionIngestReportV1, DataTransferSessionReqV1, InvalidDataTransferIngestReportV1,
+    verified_data_transfer_ingest_report_v1, DataTransferEvent as DataTransferEventProto,
+    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
+    InvalidDataTransferIngestReportV1, VerifiedDataTransferIngestReportV1,
 };
 
 use serde::Serialize;
@@ -107,6 +108,31 @@ impl From<InvalidDataTransferIngestReport> for InvalidDataTransferIngestReportV1
         Self {
             report: Some(report),
             reason: v.reason as i32,
+            timestamp,
+        }
+    }
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct VerifiedDataTransferIngestReport {
+    pub report: DataTransferSessionIngestReport,
+    pub status: verified_data_transfer_ingest_report_v1::ReportStatus,
+    pub timestamp: DateTime<Utc>,
+}
+
+impl MsgTimestamp<u64> for VerifiedDataTransferIngestReport {
+    fn timestamp(&self) -> u64 {
+        self.timestamp.encode_timestamp_millis()
+    }
+}
+
+impl From<VerifiedDataTransferIngestReport> for VerifiedDataTransferIngestReportV1 {
+    fn from(v: VerifiedDataTransferIngestReport) -> Self {
+        let timestamp = v.timestamp();
+        let report: DataTransferSessionIngestReportV1 = v.report.into();
+        Self {
+            report: Some(report),
+            status: v.status as i32,
             timestamp,
         }
     }

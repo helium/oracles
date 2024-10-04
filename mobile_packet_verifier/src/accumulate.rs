@@ -1,12 +1,11 @@
 use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
 use file_store::mobile_session::{
-    DataTransferSessionIngestReport, InvalidDataTransferIngestReport,
+    DataTransferSessionIngestReport, VerifiedDataTransferIngestReport,
 };
 use futures::{Stream, StreamExt};
 use helium_proto::services::poc_mobile::{
-    invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
-    InvalidDataTransferIngestReportV1,
+    verified_data_transfer_ingest_report_v1::ReportStatus, VerifiedDataTransferIngestReportV1,
 };
 use sqlx::{Postgres, Transaction};
 
@@ -15,7 +14,7 @@ use crate::{event_ids, MobileConfigResolverExt};
 pub async fn accumulate_sessions(
     mobile_config: &impl MobileConfigResolverExt,
     conn: &mut Transaction<'_, Postgres>,
-    invalid_data_session_report_sink: &FileSinkClient<InvalidDataTransferIngestReportV1>,
+    verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
 ) -> anyhow::Result<()> {
@@ -23,12 +22,21 @@ pub async fn accumulate_sessions(
 
     while let Some(report) = reports.next().await {
         let report_validity = verify_report(conn, mobile_config, &report).await?;
-        if report_validity != DataTransferIngestReportStatus::Valid {
-            // If the reward has been cancelled or it fails verification checks then skip
-            // the report and write it out to s3 as invalid
-            write_invalid_report(invalid_data_session_report_sink, report_validity, report).await?;
+        write_verified_report(
+            verified_data_session_report_sink,
+            report_validity,
+            report.clone(),
+        )
+        .await?;
+
+        if report_validity != ReportStatus::Valid {
             continue;
         }
+
+        if report.report.rewardable_bytes == 0 {
+            continue;
+        }
+
         let event = report.report.data_transfer_usage;
         sqlx::query(
             r#"
@@ -58,27 +66,23 @@ async fn verify_report(
     txn: &mut Transaction<'_, Postgres>,
     mobile_config: &impl MobileConfigResolverExt,
     report: &DataTransferSessionIngestReport,
-) -> anyhow::Result<DataTransferIngestReportStatus> {
-    if report.report.rewardable_bytes == 0 {
-        return Ok(DataTransferIngestReportStatus::Cancelled);
-    }
-
+) -> anyhow::Result<ReportStatus> {
     if is_duplicate(txn, report).await? {
-        return Ok(DataTransferIngestReportStatus::Duplicate);
+        return Ok(ReportStatus::Duplicate);
     }
 
     let gw_pub_key = &report.report.data_transfer_usage.pub_key;
     let routing_pub_key = &report.report.pub_key;
 
     if !mobile_config.is_gateway_known(gw_pub_key).await {
-        return Ok(DataTransferIngestReportStatus::InvalidGatewayKey);
+        return Ok(ReportStatus::InvalidGatewayKey);
     }
 
     if !mobile_config.is_routing_key_known(routing_pub_key).await {
-        return Ok(DataTransferIngestReportStatus::InvalidRoutingKey);
+        return Ok(ReportStatus::InvalidRoutingKey);
     }
 
-    Ok(DataTransferIngestReportStatus::Valid)
+    Ok(ReportStatus::Valid)
 }
 
 async fn is_duplicate(
@@ -93,20 +97,20 @@ async fn is_duplicate(
     .await
 }
 
-async fn write_invalid_report(
-    invalid_data_session_report_sink: &FileSinkClient<InvalidDataTransferIngestReportV1>,
-    reason: DataTransferIngestReportStatus,
+async fn write_verified_report(
+    verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
+    status: ReportStatus,
     report: DataTransferSessionIngestReport,
 ) -> Result<(), file_store::Error> {
-    let proto: InvalidDataTransferIngestReportV1 = InvalidDataTransferIngestReport {
+    let proto: VerifiedDataTransferIngestReportV1 = VerifiedDataTransferIngestReport {
         report,
-        reason,
+        status,
         timestamp: Utc::now(),
     }
     .into();
 
-    invalid_data_session_report_sink
-        .write(proto, &[("reason", reason.as_str_name())])
+    verified_data_session_report_sink
+        .write(proto, &[("status", status.as_str_name())])
         .await?;
     Ok(())
 }
