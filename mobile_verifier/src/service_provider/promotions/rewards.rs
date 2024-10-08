@@ -156,6 +156,54 @@ pub async fn clear_promotion_rewards(
     Ok(())
 }
 
+pub async fn fetch_promotion_rewards(
+    _pool: &PgPool,
+    _carrier: &impl CarrierServiceVerifier<Error = ClientError>,
+    _epoch: &Range<DateTime<Utc>>,
+) -> anyhow::Result<ServiceProviderPromotions> {
+    Ok(ServiceProviderPromotions::default())
+
+    // let rewards = sqlx::query_as(
+    //     r#"
+    //     SELECT
+    //         subscriber_id, NULL as gateway_key, SUM(shares)::bigint as shares, carrier_key
+    //     FROM
+    //         subscriber_promotion_rewards
+    //     WHERE
+    //         time_of_reward >= $1 AND time_of_reward < $2
+    //     GROUP BY
+    //         subscriber_id, carrier_key
+    //     UNION
+    //     SELECT
+    //         NULL as subscriber_id, gateway_key, SUM(shares)::bigint as shares, carrier_key
+    //     FROM
+    //         gateway_promotion_rewards
+    //     WHERE
+    //         time_of_reward >= $1 AND time_of_reward < $2
+    //     GROUP
+    //         BY gateway_key, carrier_key
+    //     "#,
+    // )
+    // .bind(epoch.start)
+    // .bind(epoch.end)
+    // .fetch(pool)
+    // .map_err(anyhow::Error::from)
+    // .and_then(|x: DbPromotionRewardShares| async move {
+    //     let service_provider_id = carrier
+    //         .payer_key_to_service_provider(&x.carrier_key.to_string())
+    //         .await?;
+    //     Ok(PromotionRewardShare {
+    //         service_provider_id: service_provider_id as ServiceProviderId,
+    //         rewardable_entity: x.rewardable_entity,
+    //         shares: x.shares,
+    //     })
+    // })
+    // .try_collect()
+    // .await?;
+
+    // Ok(ServiceProviderPromotions(rewards))
+}
+
 struct DbPromotionRewardShares {
     pub carrier_key: PublicKeyBinary,
     pub rewardable_entity: Entity,
