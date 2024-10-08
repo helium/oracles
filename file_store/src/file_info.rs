@@ -146,6 +146,7 @@ pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ing
 pub const INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT: &str =
     "invalid_data_transfer_session_ingest_report";
 pub const VALID_DATA_TRANSFER_SESSION: &str = "valid_data_transfer_session";
+pub const VERIFIED_DATA_TRANSFER_SESSION: &str = "verified_data_transfer_session";
 pub const PRICE_REPORT: &str = "price_report";
 pub const MOBILE_REWARD_SHARE: &str = "mobile_reward_share";
 pub const MAPPER_MSG: &str = "mapper_msg";
@@ -196,6 +197,7 @@ pub enum FileType {
     DataTransferSessionIngestReport,
     InvalidDataTransferSessionIngestReport,
     ValidDataTransferSession,
+    VerifiedDataTransferSession,
     PriceReport,
     MobileRewardShare,
     SubscriberLocationReq,
@@ -276,6 +278,7 @@ impl fmt::Display for FileType {
                 INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT
             }
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
+            Self::VerifiedDataTransferSession => VERIFIED_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
             Self::MapperMsg => MAPPER_MSG,
@@ -353,6 +356,7 @@ impl FileType {
                 INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT
             }
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
+            Self::VerifiedDataTransferSession => VERIFIED_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
             Self::MapperMsg => MAPPER_MSG,

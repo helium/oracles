@@ -14,7 +14,7 @@ use file_store::{
 };
 
 use helium_proto::services::{
-    packet_verifier::ValidDataTransferSession, poc_mobile::InvalidDataTransferIngestReportV1,
+    packet_verifier::ValidDataTransferSession, poc_mobile::VerifiedDataTransferIngestReportV1,
 };
 use solana::burn::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
@@ -31,7 +31,7 @@ pub struct Daemon<S, MCR> {
     burn_period: Duration,
     min_burn_period: Duration,
     mobile_config_resolver: MCR,
-    invalid_data_session_report_sink: FileSinkClient<InvalidDataTransferIngestReportV1>,
+    verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
@@ -41,7 +41,7 @@ impl<S, MCR> Daemon<S, MCR> {
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
         burner: Burner<S>,
         mobile_config_resolver: MCR,
-        invalid_data_session_report_sink: FileSinkClient<InvalidDataTransferIngestReportV1>,
+        verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
     ) -> Self {
         Self {
             pool,
@@ -50,7 +50,7 @@ impl<S, MCR> Daemon<S, MCR> {
             burn_period: settings.burn_period,
             min_burn_period: settings.min_burn_period,
             mobile_config_resolver,
-            invalid_data_session_report_sink,
+            verified_data_session_report_sink,
         }
     }
 }
@@ -86,9 +86,9 @@ where
                     let ts = file.file_info.timestamp;
                     let mut transaction = self.pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.invalid_data_session_report_sink, ts, reports).await?;
+                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.verified_data_session_report_sink, ts, reports).await?;
                     transaction.commit().await?;
-                    self.invalid_data_session_report_sink.commit().await?;
+                    self.verified_data_session_report_sink.commit().await?;
                 },
                 _ = sleep_until(burn_time) => {
                     // It's time to burn
@@ -145,7 +145,7 @@ impl Cmd {
         .await?;
 
         let (invalid_sessions, invalid_sessions_server) =
-            InvalidDataTransferIngestReportV1::file_sink(
+            VerifiedDataTransferIngestReportV1::file_sink(
                 store_base_path,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Manual,

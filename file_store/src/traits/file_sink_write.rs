@@ -164,6 +164,11 @@ impl_file_sink!(
     "invalid_data_transfer_session"
 );
 impl_file_sink!(
+    poc_mobile::VerifiedDataTransferIngestReportV1,
+    FileType::VerifiedDataTransferSession.to_str(),
+    "verified_data_transfer_session"
+);
+impl_file_sink!(
     poc_mobile::InvalidatedRadioThresholdIngestReportV1,
     FileType::InvalidatedRadioThresholdIngestReport.to_str(),
     "invalidated_radio_threshold_ingest_report"
