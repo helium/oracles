@@ -9,10 +9,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::{
         poc_lora::{iot_reward_share::Reward as IotReward, IotRewardShare},
-        poc_mobile::{
-            mobile_reward_share::Reward as MobileReward, promotion_reward::Entity,
-            MobileRewardShare, PromotionReward,
-        },
+        poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
     },
     Message, ServiceProvider,
 };
@@ -190,28 +187,28 @@ impl Indexer {
                         },
                         r.amount,
                     ))),
-                    Some(MobileReward::PromotionReward(PromotionReward {
-                        entity: Some(Entity::SubscriberId(subscriber_id)),
-                        service_provider_amount,
-                        matched_amount,
-                    })) => Ok(Some((
-                        RewardKey {
-                            key: bs58::encode(&subscriber_id).into_string(),
-                            reward_type: RewardType::MobileSubscriber,
-                        },
-                        service_provider_amount + matched_amount,
-                    ))),
-                    Some(MobileReward::PromotionReward(PromotionReward {
-                        entity: Some(Entity::GatewayKey(gateway_key)),
-                        service_provider_amount,
-                        matched_amount,
-                    })) => Ok(Some((
-                        RewardKey {
-                            key: PublicKeyBinary::from(gateway_key).to_string(),
-                            reward_type: RewardType::MobileGateway,
-                        },
-                        service_provider_amount + matched_amount,
-                    ))),
+                    // Some(MobileReward::PromotionReward(PromotionReward {
+                    //     entity: Some(Entity::SubscriberId(subscriber_id)),
+                    //     service_provider_amount,
+                    //     matched_amount,
+                    // })) => Ok(Some((
+                    //     RewardKey {
+                    //         key: bs58::encode(&subscriber_id).into_string(),
+                    //         reward_type: RewardType::MobileSubscriber,
+                    //     },
+                    //     service_provider_amount + matched_amount,
+                    // ))),
+                    // Some(MobileReward::PromotionReward(PromotionReward {
+                    //     entity: Some(Entity::GatewayKey(gateway_key)),
+                    //     service_provider_amount,
+                    //     matched_amount,
+                    // })) => Ok(Some((
+                    //     RewardKey {
+                    //         key: PublicKeyBinary::from(gateway_key).to_string(),
+                    //         reward_type: RewardType::MobileGateway,
+                    //     },
+                    //     service_provider_amount + matched_amount,
+                    // ))),
                     _ => bail!("got an invalid reward share"),
                 }
             }

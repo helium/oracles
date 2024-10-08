@@ -1617,17 +1617,17 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=mj/verified-data-transfer#d8562d29307abbfc9f92a8c8a2b493336981de3f"
+source = "git+https://github.com/helium/proto?branch=master#47598512b7d282c34b619adf140403feeb138e71"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -1791,7 +1791,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -2642,7 +2642,7 @@ dependencies = [
  "axum 0.7.4",
  "bs58 0.4.0",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "http 0.2.11",
  "notify",
  "serde",
@@ -3242,7 +3242,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "hex-literal",
  "http 0.2.11",
  "lazy_static",
@@ -3806,7 +3806,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.2.10",
+ "getrandom 0.1.16",
  "k256",
  "lazy_static",
  "multihash",
@@ -3855,7 +3855,7 @@ dependencies = [
  "h3o",
  "helium-anchor-gen 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
+ "helium-proto",
  "hex",
  "hex-literal",
  "itertools",
@@ -3882,23 +3882,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#197ff9c6cde7dc0d8334d6b4e27c58779e6a7ce0"
-dependencies = [
- "bytes",
- "prost",
- "prost-build",
- "serde",
- "serde_json",
- "strum",
- "strum_macros",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "helium-proto"
-version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=mj/verified-data-transfer#d8562d29307abbfc9f92a8c8a2b493336981de3f"
+source = "git+https://github.com/helium/proto?branch=master#47598512b7d282c34b619adf140403feeb138e71"
 dependencies = [
  "bytes",
  "prost",
@@ -3961,7 +3945,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -4386,7 +4370,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "http 0.2.11",
  "humantime-serde",
  "metrics",
@@ -4455,7 +4439,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -4497,7 +4481,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -4539,7 +4523,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -5145,7 +5129,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -5185,7 +5169,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5230,7 +5214,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -5274,7 +5258,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "hex-assignments",
  "hextree",
  "http-serde",
@@ -5642,7 +5626,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "681030a937600a36906c185595136d26abfebb4aa9c65701cefcaf8578bb982b"
 dependencies = [
- "proc-macro-crate 3.1.0",
+ "proc-macro-crate 1.1.3",
  "proc-macro2",
  "quote",
  "syn 2.0.58",
@@ -5958,7 +5942,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "http 0.2.11",
  "hyper 0.14.28",
  "jsonrpsee",
@@ -6041,7 +6025,7 @@ dependencies = [
  "futures-util",
  "helium-anchor-gen 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git)",
  "helium-lib",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -6166,7 +6150,7 @@ dependencies = [
  "custom-tracing",
  "file-store",
  "futures",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -6217,7 +6201,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.5.0",
+ "heck 0.4.0",
  "itertools",
  "log",
  "multimap",
@@ -6718,7 +6702,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/verified-data-transfer)",
+ "helium-proto",
  "humantime-serde",
  "lazy_static",
  "metrics",
@@ -9441,7 +9425,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 
