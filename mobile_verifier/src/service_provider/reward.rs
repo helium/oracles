@@ -422,7 +422,6 @@ mod tests {
 
         let sp_2 = sp_infos.single_sp_rewards(1);
         assert_eq!(sp_2.amount, 0);
-        
 
         // let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
         // assert_eq!(promo_1.service_provider_amount, 6);
@@ -624,8 +623,6 @@ mod tests {
     //     assert_eq!(promo_rewards[1].service_provider_amount, 6);
     //     assert_eq!(promo_rewards[1].matched_amount, 6);
     // }
-
-    
 
     // trait PromoRewardFiltersExt {
     //     fn only_promotion_rewards(&self) -> Vec<PromotionReward>;
