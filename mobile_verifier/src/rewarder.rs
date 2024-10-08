@@ -527,9 +527,14 @@ pub async fn reward_mappers(
     let location_shares =
         subscriber_location::aggregate_location_shares(pool, reward_period).await?;
 
+    // Verification mappers can only earn rewards if the qualified for disco mapping
+    // rewards during the same reward_period
     let vsme_shares =
         subscriber_verified_mapping_event::aggregate_verified_mapping_events(pool, reward_period)
-            .await?;
+            .await?
+            .into_iter()
+            .filter(|vsme| location_shares.contains(&vsme.subscriber_id))
+            .collect();
 
     // determine mapping shares based on location shares and data transferred
     let mapping_shares = MapperShares::new(location_shares, vsme_shares);
@@ -564,6 +569,7 @@ pub async fn reward_mappers(
         reward_period,
     )
     .await?;
+
     Ok(())
 }
 
