@@ -1,6 +1,10 @@
 use crate::common::{self, MockFileSinkReceiver};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use file_store::mobile_subscriber::{SubscriberLocationIngestReport, SubscriberLocationReq};
+use file_store::{
+    mobile_subscriber::{SubscriberLocationIngestReport, SubscriberLocationReq},
+    subscriber_verified_mapping_event::SubscriberVerifiedMappingEvent,
+    subscriber_verified_mapping_event_ingest_report::SubscriberVerifiedMappingEventIngestReport,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_mobile::{
@@ -8,7 +12,9 @@ use helium_proto::{
     },
     Message,
 };
-use mobile_verifier::{reward_shares, rewarder, subscriber_location};
+use mobile_verifier::{
+    reward_shares, rewarder, subscriber_location, subscriber_verified_mapping_event,
+};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -93,6 +99,54 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     } else {
         panic!("no rewards received");
     };
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_subscriber_can_only_earn_verification_mapping_if_earned_disco_mapping(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let now = Utc::now();
+    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let mut txn = pool.begin().await?;
+    let sub_loc_report = SubscriberLocationIngestReport {
+        received_timestamp: epoch.end - ChronoDuration::hours(1),
+        report: SubscriberLocationReq {
+            subscriber_id: SUBSCRIBER_1.to_string().encode_to_vec(),
+            timestamp: epoch.end - ChronoDuration::hours(1),
+            carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
+        },
+    };
+    subscriber_location::save(&sub_loc_report, &mut txn).await?;
+
+    let vme_report = SubscriberVerifiedMappingEventIngestReport {
+        received_timestamp: epoch.end - ChronoDuration::hours(1),
+        report: SubscriberVerifiedMappingEvent {
+            subscriber_id: SUBSCRIBER_2.to_string().encode_to_vec(),
+            total_reward_points: 50,
+            timestamp: epoch.end - ChronoDuration::hours(1),
+            carrier_mapping_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
+        },
+    };
+    subscriber_verified_mapping_event::save_to_db(&vme_report, &mut txn).await?;
+
+    txn.commit().await?;
+
+    let (_, rewards) = tokio::join!(
+        rewarder::reward_mappers(&pool, &mobile_rewards_client, &epoch),
+        mobile_rewards.receive_subscriber_reward()
+    );
+
+    mobile_rewards.assert_no_messages();
+
+    let total_pool = reward_shares::get_scheduled_tokens_for_mappers(epoch.end - epoch.start);
+    assert_eq!(
+        rewards.discovery_location_amount + rewards.verification_mapping_amount,
+        total_pool.to_u64().unwrap()
+    );
+
     Ok(())
 }
 
