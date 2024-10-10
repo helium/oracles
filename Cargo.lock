@@ -1617,7 +1617,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=macpie/radio_location_estimates#68faaac22bca564240affb3cacc0a9a2257d1cd1"
+source = "git+https://github.com/helium/proto?branch=macpie/radio_location_estimates#571c0781bf2c06db375a3ff9f837cc94fd11053d"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -1627,7 +1627,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -3257,8 +3257,8 @@ dependencies = [
  "serde_json",
  "sha2 0.10.8",
  "sqlx",
- "strum 0.24.1",
- "strum_macros 0.24.3",
+ "strum",
+ "strum_macros",
  "task-manager",
  "tempfile",
  "thiserror",
@@ -3882,7 +3882,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=macpie/radio_location_estimates#68faaac22bca564240affb3cacc0a9a2257d1cd1"
+source = "git+https://github.com/helium/proto?branch=macpie/radio_location_estimates#571c0781bf2c06db375a3ff9f837cc94fd11053d"
 dependencies = [
  "bytes",
  "prost",
@@ -3905,8 +3905,10 @@ dependencies = [
  "prost-build",
  "serde",
  "serde_json",
- "strum 0.26.3",
- "strum_macros 0.26.4",
+ "strum",
+ "strum_macros",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
@@ -6192,7 +6194,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.5.0",
+ "heck 0.4.0",
  "itertools",
  "log",
  "multimap",
@@ -8814,29 +8816,7 @@ version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
 dependencies = [
- "strum_macros 0.24.3",
-]
-
-[[package]]
-name = "strum"
-version = "0.26.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
-dependencies = [
- "strum_macros 0.26.4",
-]
-
-[[package]]
-name = "strum_macros"
-version = "0.26.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
-dependencies = [
- "heck 0.5.0",
- "proc-macro2",
- "quote",
- "rustversion",
- "syn 2.0.58",
+ "strum_macros",
 ]
 
 [[package]]
@@ -10117,7 +10097,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.9.9",
  "thiserror",
  "twox-hash",
  "xorf",
