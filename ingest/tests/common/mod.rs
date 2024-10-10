@@ -47,8 +47,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let (sp_boosted_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (subscriber_mapping_tx, subscriber_mapping_rx) = tokio::sync::mpsc::channel(10);
     let (promotion_rewards_tx, _rx) = tokio::sync::mpsc::channel(10);
-    let (radio_location_estimates_tx, _radio_location_estimates_rx) =
-        tokio::sync::mpsc::channel(10);
+    let (radio_location_estimates_tx, radio_location_estimates_rx) = tokio::sync::mpsc::channel(10);
 
     tokio::spawn(async move {
         let grpc_server = GrpcServer::new(
