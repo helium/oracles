@@ -194,15 +194,33 @@ async fn save_to_db(
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
     let estimates = &report.report.estimates;
+    let radio_id = &report.report.radio_id;
+    let received_timestamp = report.received_timestamp;
     for estimate in estimates {
-        insert_estimate(
-            report.report.radio_id.clone(),
-            report.received_timestamp,
-            estimate,
-            exec,
-        )
-        .await?;
+        insert_estimate(radio_id.clone(), received_timestamp, estimate, exec).await?;
     }
+    invalidate_old_estimates(radio_id.clone(), received_timestamp, exec).await?;
+
+    Ok(())
+}
+
+async fn invalidate_old_estimates(
+    radio_id: String,
+    timestamp: DateTime<Utc>,
+    exec: &mut Transaction<'_, Postgres>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE radio_location_estimates
+        SET invalided_at = now()
+        WHERE radio_id = $1
+            AND received_timestamp < $2;
+        "#,
+    )
+    .bind(radio_id)
+    .bind(timestamp)
+    .execute(exec)
+    .await?;
 
     Ok(())
 }
@@ -228,7 +246,7 @@ async fn insert_estimate(
 
     sqlx::query(
         r#"
-        INSERT INTO radio_location_estimates (hashed_key, radio_id, received_timestamp, radius, lat, long, confidence, is_valid)
+        INSERT INTO radio_location_estimates (hashed_key, radio_id, received_timestamp, radius, lat, long, confidence)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (hashed_key) DO NOTHING
         "#,
@@ -240,7 +258,6 @@ async fn insert_estimate(
     .bind(lat)
     .bind(long)
     .bind(estimate.confidence)
-    .bind(true)
     .execute(exec)
     .await?;
 

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS radio_location_estimates (
     lat DECIMAL NOT NULL,
     long DECIMAL NOT NULL,
     confidence DECIMAL NOT NULL,
-    is_valid BOOLEAN NOT NULL,
+    invalided_at TIMESTAMPTZ DEFAULT NULL,
     inserted_at TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hashed_key)
 );
