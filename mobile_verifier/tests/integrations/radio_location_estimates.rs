@@ -10,13 +10,15 @@ use file_store::{
     FileInfo,
 };
 use helium_crypto::{KeyTag, Keypair, PublicKeyBinary};
-use mobile_verifier::radio_location_estimates::{hash_key, RadioLocationEstimatesDaemon};
+use mobile_verifier::radio_location_estimates::{
+    clear_invalided, hash_key, RadioLocationEstimatesDaemon,
+};
 use rand::rngs::OsRng;
 use rust_decimal::prelude::FromPrimitive;
 use sqlx::{PgPool, Pool, Postgres, Row};
 
 #[sqlx::test]
-async fn main_test(pool: PgPool) -> anyhow::Result<()> {
+async fn verifier_test(pool: PgPool) -> anyhow::Result<()> {
     let task_pool = pool.clone();
     let (reports_tx, reports_rx) = tokio::sync::mpsc::channel(10);
     let (sink_tx, _sink_rx) = tokio::sync::mpsc::channel(10);
@@ -49,63 +51,12 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
     while retry <= MAX_RETRIES {
         let saved_estimates = select_radio_location_estimates(&pool).await?;
 
+        // Check that we have expected (2) number of estimates saved in DB
+        // 1 should be invalidated and other should be valid
+        // We know the order (invalid first becase we order by in select_radio_location_estimates)
         if expected_n == saved_estimates.len() {
-            let expected1 = &reports[0];
-            let invalid_estimate = &saved_estimates[0];
-            assert_eq!(
-                hash_key(
-                    expected1.report.radio_id.clone(),
-                    expected1.received_timestamp,
-                    expected1.report.estimates[0].radius,
-                    expected1.report.estimates[0].lat,
-                    expected1.report.estimates[0].long
-                ),
-                invalid_estimate.hashed_key
-            );
-
-            assert_eq!(expected1.report.radio_id, invalid_estimate.radio_id);
-            assert!(timestamp_match(
-                expected1.received_timestamp,
-                invalid_estimate.received_timestamp
-            ));
-            assert_eq!(
-                expected1.report.estimates[0].radius,
-                invalid_estimate.radius
-            );
-            assert_eq!(expected1.report.estimates[0].lat, invalid_estimate.lat);
-            assert_eq!(expected1.report.estimates[0].long, invalid_estimate.long);
-            assert_eq!(
-                expected1.report.estimates[0].confidence,
-                invalid_estimate.confidence
-            );
-            assert!(invalid_estimate.invalided_at.is_some());
-
-            let expected2 = &reports[1];
-            let valid_estimate = &saved_estimates[1];
-            assert_eq!(
-                hash_key(
-                    expected2.report.radio_id.clone(),
-                    expected2.received_timestamp,
-                    expected2.report.estimates[0].radius,
-                    expected2.report.estimates[0].lat,
-                    expected2.report.estimates[0].long
-                ),
-                valid_estimate.hashed_key
-            );
-            assert_eq!(expected2.report.radio_id, valid_estimate.radio_id);
-            assert!(timestamp_match(
-                expected2.received_timestamp,
-                valid_estimate.received_timestamp
-            ));
-            assert_eq!(expected2.report.estimates[0].radius, valid_estimate.radius);
-            assert_eq!(expected2.report.estimates[0].lat, valid_estimate.lat);
-            assert_eq!(expected2.report.estimates[0].long, valid_estimate.long);
-            assert_eq!(
-                expected2.report.estimates[0].confidence,
-                valid_estimate.confidence
-            );
-            assert_eq!(None, valid_estimate.invalided_at);
-
+            compare_report_and_estimate(&reports[0], &saved_estimates[0], false);
+            compare_report_and_estimate(&reports[1], &saved_estimates[1], true);
             break;
         } else {
             retry += 1;
@@ -118,6 +69,16 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
         "Exceeded maximum retries: {}",
         MAX_RETRIES
     );
+
+    // Now clear invalidated estimates there should be only 1 left in DB
+    let mut tx = pool.begin().await?;
+    clear_invalided(&mut tx, &Utc::now()).await?;
+    tx.commit().await?;
+
+    let leftover_estimates = select_radio_location_estimates(&pool).await?;
+    assert_eq!(1, leftover_estimates.len());
+    // Check that we have the right estimate left over
+    compare_report_and_estimate(&reports[1], &leftover_estimates[0], true);
 
     trigger.trigger();
 
@@ -191,6 +152,39 @@ fn generate_keypair() -> Keypair {
 fn timestamp_match(dt1: DateTime<Utc>, dt2: DateTime<Utc>) -> bool {
     let difference = dt1.signed_duration_since(dt2);
     difference.num_seconds().abs() < 1
+}
+
+fn compare_report_and_estimate(
+    report: &RadioLocationEstimatesIngestReport,
+    estimate: &RadioLocationEstimateDB,
+    should_be_valid: bool,
+) {
+    assert_eq!(
+        hash_key(
+            report.report.radio_id.clone(),
+            report.received_timestamp,
+            report.report.estimates[0].radius,
+            report.report.estimates[0].lat,
+            report.report.estimates[0].long
+        ),
+        estimate.hashed_key
+    );
+
+    assert_eq!(report.report.radio_id, estimate.radio_id);
+    assert!(timestamp_match(
+        report.received_timestamp,
+        estimate.received_timestamp
+    ));
+    assert_eq!(report.report.estimates[0].radius, estimate.radius);
+    assert_eq!(report.report.estimates[0].lat, estimate.lat);
+    assert_eq!(report.report.estimates[0].long, estimate.long);
+    assert_eq!(report.report.estimates[0].confidence, estimate.confidence);
+
+    if should_be_valid {
+        assert!(estimate.invalided_at.is_none());
+    } else {
+        assert!(estimate.invalided_at.is_some());
+    }
 }
 
 #[derive(Debug)]
