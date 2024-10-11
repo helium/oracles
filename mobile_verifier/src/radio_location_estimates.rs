@@ -21,10 +21,13 @@ use helium_proto::services::{
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
+
+const CONFIDENCE_THRESHOLD: Decimal = dec!(0.75);
 
 pub struct RadioLocationEstimatesDaemon<AV> {
     pool: Pool<Postgres>,
@@ -130,6 +133,9 @@ where
 
                     if verified_report_status == RadioLocationEstimatesVerificationStatus::Valid {
                         save_to_db(&report, &mut transaction).await?;
+
+                        // Once they are saved to DB should we directly write to ban table?
+                        // maybe_ban_radios(&report, &mut transaction).await?;
                     }
 
                     let verified_report_proto: VerifiedRadioLocationEstimatesReportV1 =
@@ -204,6 +210,26 @@ async fn save_to_db(
 
     Ok(())
 }
+
+// TODO: knowing that radio could also be a PublicKey for wifi hotspot.
+// Should we make radio_id in report a binary or some kind of proto enum to have one or other?
+
+// async fn maybe_ban_radios(
+//     report: &RadioLocationEstimatesIngestReport,
+//     exec: &mut Transaction<'_, Postgres>,
+// ) -> Result<(), sqlx::Error> {
+//     let estimates = &report.report.estimates;
+//     let radio_id = &report.report.radio_id;
+//     let mut will_ban = true;
+
+//     for estimate in estimates {
+//         if estimate.confidence > CONFIDENCE_THRESHOLD {
+//             will_ban = false;
+//         }
+//     }
+
+//     Ok(())
+// }
 
 async fn invalidate_old_estimates(
     radio_id: String,
