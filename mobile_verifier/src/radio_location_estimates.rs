@@ -271,3 +271,20 @@ pub fn hash_key(
     let hashed_key = hasher.finalize();
     hex::encode(hashed_key)
 }
+
+pub async fn clear_invalided(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    timestamp: &DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        DELETE FROM radio_location_estimates
+        WHERE invalided_at IS NOT NULL
+            AND invalided_at < $1
+        "#,
+    )
+    .bind(timestamp)
+    .execute(&mut *tx)
+    .await?;
+    Ok(())
+}
