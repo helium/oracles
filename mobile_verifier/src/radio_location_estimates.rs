@@ -20,6 +20,7 @@ use helium_proto::services::{
     },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
+use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
@@ -234,24 +235,16 @@ async fn insert_estimate(
     let radius = estimate.radius;
     let lat = estimate.lat;
     let long = estimate.long;
-
-    let key = format!(
-        "{}{}{}{}{}",
-        radio_id, received_timestamp, radius, lat, long
-    );
-
-    let mut hasher = Sha256::new();
-    hasher.update(key);
-    let hashed_key = hasher.finalize();
+    let hashed_key = hash_key(radio_id.clone(), received_timestamp, radius, lat, long);
 
     sqlx::query(
         r#"
         INSERT INTO radio_location_estimates (hashed_key, radio_id, received_timestamp, radius, lat, long, confidence)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (hashed_key) DO NOTHING
         "#,
     )
-    .bind(hex::encode(hashed_key))
+    .bind(hashed_key)
     .bind(radio_id)
     .bind(received_timestamp)
     .bind(estimate.radius)
@@ -262,4 +255,19 @@ async fn insert_estimate(
     .await?;
 
     Ok(())
+}
+
+pub fn hash_key(
+    radio_id: String,
+    timestamp: DateTime<Utc>,
+    radius: Decimal,
+    lat: Decimal,
+    long: Decimal,
+) -> String {
+    let key = format!("{}{}{}{}{}", radio_id, timestamp, radius, lat, long);
+
+    let mut hasher = Sha256::new();
+    hasher.update(key);
+    let hashed_key = hasher.finalize();
+    hex::encode(hashed_key)
 }
