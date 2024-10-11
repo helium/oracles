@@ -55,7 +55,7 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
             assert_eq!(
                 hash_key(
                     expected1.report.radio_id.clone(),
-                    invalid_estimate.received_timestamp,
+                    expected1.received_timestamp,
                     expected1.report.estimates[0].radius,
                     expected1.report.estimates[0].lat,
                     expected1.report.estimates[0].long
@@ -85,7 +85,7 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
             assert_eq!(
                 hash_key(
                     expected2.report.radio_id.clone(),
-                    valid_estimate.received_timestamp,
+                    expected2.received_timestamp,
                     expected2.report.estimates[0].radius,
                     expected2.report.estimates[0].lat,
                     expected2.report.estimates[0].long
