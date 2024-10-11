@@ -2,7 +2,7 @@ use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
-    radio_threshold,
+    radio_location_estimates, radio_threshold,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
@@ -298,6 +298,7 @@ where
         subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.start).await?;
         service_provider::db::clear_promotion_rewards(&mut transaction, &reward_period.start)
             .await?;
+        radio_location_estimates::clear_invalided(&mut transaction, &reward_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
