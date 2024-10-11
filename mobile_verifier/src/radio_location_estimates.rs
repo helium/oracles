@@ -21,13 +21,12 @@ use helium_proto::services::{
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-const CONFIDENCE_THRESHOLD: Decimal = dec!(0.75);
+// const CONFIDENCE_THRESHOLD: Decimal = dec!(0.75);
 
 pub struct RadioLocationEstimatesDaemon<AV> {
     pool: Pool<Postgres>,
