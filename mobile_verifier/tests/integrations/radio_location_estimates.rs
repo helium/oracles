@@ -4,7 +4,7 @@ use file_store::{
     file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
     radio_location_estimates::{
-        RadioLocationEstimate, RadioLocationEstimateEvent, RadioLocationEstimatesReq,
+        Entity, RadioLocationEstimate, RadioLocationEstimateEvent, RadioLocationEstimatesReq,
     },
     radio_location_estimates_ingest_report::RadioLocationEstimatesIngestReport,
     FileInfo,
@@ -36,7 +36,7 @@ async fn verifier_test(pool: PgPool) -> anyhow::Result<()> {
     });
 
     // Sending reports as if they are coming from ingestor
-    let (fis, reports, _public_key_binary) = file_info_stream();
+    let (fis, reports) = file_info_stream();
     reports_tx.send(fis).await?;
 
     let mut retry = 0;
@@ -88,7 +88,6 @@ async fn verifier_test(pool: PgPool) -> anyhow::Result<()> {
 fn file_info_stream() -> (
     FileInfoStream<RadioLocationEstimatesIngestReport>,
     Vec<RadioLocationEstimatesIngestReport>,
-    PublicKeyBinary,
 ) {
     let file_info = FileInfo {
         key: "test_file_info".to_string(),
@@ -97,14 +96,21 @@ fn file_info_stream() -> (
         size: 0,
     };
 
-    let key_pair = generate_keypair();
-    let public_key_binary: PublicKeyBinary = key_pair.public_key().to_owned().into();
+    let carrier_key_pair = generate_keypair();
+    let carrier_public_key_binary: PublicKeyBinary =
+        carrier_key_pair.public_key().to_owned().into();
+
+    let hotspot_key_pair = generate_keypair();
+    let hotspot_public_key_binary: PublicKeyBinary =
+        hotspot_key_pair.public_key().to_owned().into();
+
+    let entity = Entity::WifiPubKey(hotspot_public_key_binary);
 
     let reports = vec![
         RadioLocationEstimatesIngestReport {
             received_timestamp: Utc::now() - Duration::hours(1),
             report: RadioLocationEstimatesReq {
-                radio_id: "radio_1".to_string(),
+                entity: entity.clone(),
                 estimates: vec![RadioLocationEstimate {
                     radius: rust_decimal::Decimal::from_f32(0.1).unwrap(),
                     lat: rust_decimal::Decimal::from_f32(0.1).unwrap(),
@@ -116,13 +122,13 @@ fn file_info_stream() -> (
                     }],
                 }],
                 timestamp: Utc::now() - Duration::hours(1),
-                carrier_key: public_key_binary.clone(),
+                carrier_key: carrier_public_key_binary.clone(),
             },
         },
         RadioLocationEstimatesIngestReport {
             received_timestamp: Utc::now(),
             report: RadioLocationEstimatesReq {
-                radio_id: "radio_1".to_string(),
+                entity: entity.clone(),
                 estimates: vec![RadioLocationEstimate {
                     radius: rust_decimal::Decimal::from_f32(0.2).unwrap(),
                     lat: rust_decimal::Decimal::from_f32(0.2).unwrap(),
@@ -134,14 +140,13 @@ fn file_info_stream() -> (
                     }],
                 }],
                 timestamp: Utc::now(),
-                carrier_key: public_key_binary.clone(),
+                carrier_key: carrier_public_key_binary.clone(),
             },
         },
     ];
     (
         FileInfoStream::new("default".to_string(), file_info, reports.clone()),
         reports,
-        public_key_binary,
     )
 }
 
@@ -161,7 +166,7 @@ fn compare_report_and_estimate(
 ) {
     assert_eq!(
         hash_key(
-            report.report.radio_id.clone(),
+            &report.report.entity,
             report.received_timestamp,
             report.report.estimates[0].radius,
             report.report.estimates[0].lat,
@@ -170,7 +175,7 @@ fn compare_report_and_estimate(
         estimate.hashed_key
     );
 
-    assert_eq!(report.report.radio_id, estimate.radio_id);
+    assert_eq!(report.report.entity.to_string(), estimate.radio_key);
     assert!(timestamp_match(
         report.received_timestamp,
         estimate.received_timestamp
@@ -190,7 +195,7 @@ fn compare_report_and_estimate(
 #[derive(Debug)]
 pub struct RadioLocationEstimateDB {
     pub hashed_key: String,
-    pub radio_id: String,
+    pub radio_key: String,
     pub received_timestamp: DateTime<Utc>,
     pub radius: rust_decimal::Decimal,
     pub lat: rust_decimal::Decimal,
@@ -204,7 +209,7 @@ pub async fn select_radio_location_estimates(
 ) -> anyhow::Result<Vec<RadioLocationEstimateDB>> {
     let rows = sqlx::query(
         r#"
-        SELECT hashed_key, radio_id, received_timestamp, radius, lat, long, confidence, invalided_at
+        SELECT hashed_key, radio_key, hashed_key, received_timestamp, radius, lat, long, confidence, invalided_at
         FROM radio_location_estimates
         ORDER BY received_timestamp ASC
         "#,
@@ -216,7 +221,7 @@ pub async fn select_radio_location_estimates(
         .into_iter()
         .map(|row| RadioLocationEstimateDB {
             hashed_key: row.get("hashed_key"),
-            radio_id: row.get("radio_id"),
+            radio_key: row.get("radio_key"),
             received_timestamp: row.get("received_timestamp"),
             radius: row.get("radius"),
             lat: row.get("lat"),
