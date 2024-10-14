@@ -1617,7 +1617,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=macpie/radio_location_estimates#571c0781bf2c06db375a3ff9f837cc94fd11053d"
+source = "git+https://github.com/helium/proto?branch=macpie/radio_location_estimates#4cefc5d337a4dddebd3fa3896b3c29f12e86f1ef"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3882,7 +3882,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=macpie/radio_location_estimates#571c0781bf2c06db375a3ff9f837cc94fd11053d"
+source = "git+https://github.com/helium/proto?branch=macpie/radio_location_estimates#4cefc5d337a4dddebd3fa3896b3c29f12e86f1ef"
 dependencies = [
  "bytes",
  "prost",

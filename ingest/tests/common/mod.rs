@@ -1,12 +1,12 @@
 use anyhow::bail;
 use backon::{ExponentialBuilder, Retryable};
 use file_store::file_sink::FileSinkClient;
-use helium_crypto::{KeyTag, Keypair, Network, Sign};
+use helium_crypto::{KeyTag, Keypair, Network, PublicKey, Sign};
 use helium_proto::services::poc_mobile::{
-    Client as PocMobileClient, RadioLocationEstimateV1, RadioLocationEstimatesIngestReportV1,
-    RadioLocationEstimatesReqV1, RadioLocationEstimatesRespV1,
-    SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventReqV1,
-    SubscriberVerifiedMappingEventResV1,
+    radio_location_estimates_req_v1, Client as PocMobileClient, RadioLocationEstimateV1,
+    RadioLocationEstimatesIngestReportV1, RadioLocationEstimatesReqV1,
+    RadioLocationEstimatesRespV1, SubscriberVerifiedMappingEventIngestReportV1,
+    SubscriberVerifiedMappingEventReqV1, SubscriberVerifiedMappingEventResV1,
 };
 use ingest::server_mobile::GrpcServer;
 use prost::Message;
@@ -182,11 +182,13 @@ impl TestClient {
 
     pub async fn submit_radio_location_estimates(
         &mut self,
-        radio_id: String,
+        pub_key: &PublicKey,
         estimates: Vec<RadioLocationEstimateV1>,
     ) -> anyhow::Result<RadioLocationEstimatesRespV1> {
         let mut req = RadioLocationEstimatesReqV1 {
-            radio_id,
+            entity: Some(radio_location_estimates_req_v1::Entity::WifiPubKey(
+                pub_key.into(),
+            )),
             estimates,
             timestamp: 0,
             carrier_key: self.key_pair.public_key().to_vec(),

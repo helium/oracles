@@ -5,14 +5,52 @@ use crate::{
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    RadioLocationEstimateV1, RadioLocationEstimatesReqV1, RleEventV1,
+    self as proto, RadioLocationEstimateV1, RadioLocationEstimatesReqV1, RleEventV1,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Entity {
+    CbrsId(String),
+    WifiPubKey(PublicKeyBinary),
+}
+
+impl fmt::Display for Entity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Entity::CbrsId(id) => write!(f, "{}", id),
+            Entity::WifiPubKey(pub_key) => write!(f, "{}", pub_key),
+        }
+    }
+}
+
+impl From<proto::radio_location_estimates_req_v1::Entity> for Entity {
+    fn from(entity: proto::radio_location_estimates_req_v1::Entity) -> Self {
+        match entity {
+            proto::radio_location_estimates_req_v1::Entity::CbrsId(v) => Entity::CbrsId(v),
+            proto::radio_location_estimates_req_v1::Entity::WifiPubKey(k) => {
+                Entity::WifiPubKey(k.into())
+            }
+        }
+    }
+}
+
+impl From<Entity> for proto::radio_location_estimates_req_v1::Entity {
+    fn from(entity: Entity) -> Self {
+        match entity {
+            Entity::CbrsId(v) => proto::radio_location_estimates_req_v1::Entity::CbrsId(v),
+            Entity::WifiPubKey(k) => {
+                proto::radio_location_estimates_req_v1::Entity::WifiPubKey(k.into())
+            }
+        }
+    }
+}
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct RadioLocationEstimatesReq {
-    pub radio_id: String,
+    pub entity: Entity,
     pub estimates: Vec<RadioLocationEstimate>,
     pub timestamp: DateTime<Utc>,
     pub carrier_key: PublicKeyBinary,
@@ -38,7 +76,7 @@ impl From<RadioLocationEstimatesReq> for RadioLocationEstimatesReqV1 {
     fn from(rle: RadioLocationEstimatesReq) -> Self {
         let timestamp = rle.timestamp();
         RadioLocationEstimatesReqV1 {
-            radio_id: rle.radio_id,
+            entity: Some(rle.entity.into()),
             estimates: rle.estimates.into_iter().map(|e| e.into()).collect(),
             timestamp,
             carrier_key: rle.carrier_key.into(),
@@ -52,7 +90,11 @@ impl TryFrom<RadioLocationEstimatesReqV1> for RadioLocationEstimatesReq {
     fn try_from(req: RadioLocationEstimatesReqV1) -> Result<Self> {
         let timestamp = req.timestamp()?;
         Ok(Self {
-            radio_id: req.radio_id,
+            entity: if let Some(entity) = req.entity {
+                entity.into()
+            } else {
+                return Err(Error::NotFound("entity".to_string()));
+            },
             estimates: req
                 .estimates
                 .into_iter()
