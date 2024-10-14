@@ -1,11 +1,11 @@
-use crate::Settings;
+use crate::{heartbeats::HbType, Settings};
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
-    radio_location_estimates::{RadioLocationEstimate, RadioLocationEstimatesReq},
+    radio_location_estimates::{Entity, RadioLocationEstimate, RadioLocationEstimatesReq},
     radio_location_estimates_ingest_report::RadioLocationEstimatesIngestReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     verified_radio_location_estimates::VerifiedRadioLocationEstimatesReport,
@@ -200,12 +200,12 @@ async fn save_to_db(
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
     let estimates = &report.report.estimates;
-    let radio_id = &report.report.radio_id;
+    let entity = &report.report.entity;
     let received_timestamp = report.received_timestamp;
     for estimate in estimates {
-        insert_estimate(radio_id.clone(), received_timestamp, estimate, exec).await?;
+        insert_estimate(entity, received_timestamp, estimate, exec).await?;
     }
-    invalidate_old_estimates(radio_id.clone(), received_timestamp, exec).await?;
+    invalidate_old_estimates(entity, received_timestamp, exec).await?;
 
     Ok(())
 }
@@ -231,7 +231,7 @@ async fn save_to_db(
 // }
 
 async fn invalidate_old_estimates(
-    radio_id: String,
+    entity: &Entity,
     timestamp: DateTime<Utc>,
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
@@ -239,11 +239,11 @@ async fn invalidate_old_estimates(
         r#"
         UPDATE radio_location_estimates
         SET invalided_at = now()
-        WHERE radio_id = $1
+        WHERE radio_key = $1
             AND received_timestamp < $2;
         "#,
     )
-    .bind(radio_id)
+    .bind(entity.to_string())
     .bind(timestamp)
     .execute(exec)
     .await?;
@@ -252,7 +252,7 @@ async fn invalidate_old_estimates(
 }
 
 async fn insert_estimate(
-    radio_id: String,
+    entity: &Entity,
     received_timestamp: DateTime<Utc>,
     estimate: &RadioLocationEstimate,
     exec: &mut Transaction<'_, Postgres>,
@@ -260,17 +260,18 @@ async fn insert_estimate(
     let radius = estimate.radius;
     let lat = estimate.lat;
     let long = estimate.long;
-    let hashed_key = hash_key(radio_id.clone(), received_timestamp, radius, lat, long);
+    let hashed_key = hash_key(entity, received_timestamp, radius, lat, long);
 
     sqlx::query(
         r#"
-        INSERT INTO radio_location_estimates (hashed_key, radio_id, received_timestamp, radius, lat, long, confidence)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO radio_location_estimates (hashed_key, radio_type, radio_key, received_timestamp, radius, lat, long, confidence)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (hashed_key) DO NOTHING
         "#,
     )
     .bind(hashed_key)
-    .bind(radio_id)
+    .bind(entity_to_radio_type(entity))
+    .bind(entity.to_string())
     .bind(received_timestamp)
     .bind(estimate.radius)
     .bind(lat)
@@ -283,13 +284,13 @@ async fn insert_estimate(
 }
 
 pub fn hash_key(
-    radio_id: String,
+    entity: &Entity,
     timestamp: DateTime<Utc>,
     radius: Decimal,
     lat: Decimal,
     long: Decimal,
 ) -> String {
-    let key = format!("{}{}{}{}{}", radio_id, timestamp, radius, lat, long);
+    let key = format!("{}{}{}{}{}", entity, timestamp, radius, lat, long);
 
     let mut hasher = Sha256::new();
     hasher.update(key);
@@ -312,4 +313,11 @@ pub async fn clear_invalided(
     .execute(&mut *tx)
     .await?;
     Ok(())
+}
+
+fn entity_to_radio_type(entity: &Entity) -> HbType {
+    match entity {
+        Entity::CbrsId(_) => HbType::Cbrs,
+        Entity::WifiPubKey(_) => HbType::Wifi,
+    }
 }

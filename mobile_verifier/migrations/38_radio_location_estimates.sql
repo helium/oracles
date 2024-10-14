@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS radio_location_estimates (
     hashed_key TEXT NOT NULL,
-    radio_id TEXT NOT NULL,
+    radio_type radio_type NOT NULL,
+    radio_key TEXT NOT NULL,
     received_timestamp TIMESTAMPTZ NOT NULL,
     radius DECIMAL NOT NULL,
     lat DECIMAL NOT NULL,
