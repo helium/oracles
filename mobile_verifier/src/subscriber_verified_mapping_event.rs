@@ -216,7 +216,7 @@ where
     }
 }
 
-async fn save_to_db(
+pub async fn save_to_db(
     report: &SubscriberVerifiedMappingEventIngestReport,
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
