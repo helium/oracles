@@ -8,7 +8,10 @@ use helium_proto::services::poc_mobile::{self as proto, LocationSource};
 use mobile_verifier::{
     coverage::{CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::{last_location::LocationCache, HbType, Heartbeat, ValidatedHeartbeat},
+    heartbeats::{
+        last_location::{Key, LocationCache},
+        HbType, Heartbeat, ValidatedHeartbeat,
+    },
 };
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -122,7 +125,9 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
         dec!(1.0)
     );
 
-    location_cache.delete_last_location(&hotspot).await;
+    location_cache
+        .delete_last_location(Key::WifiPubKey(hotspot.clone()))
+        .await;
     transaction = pool.begin().await?;
     validated_heartbeat_1.clone().save(&mut transaction).await?;
     transaction.commit().await?;
