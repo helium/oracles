@@ -17,7 +17,7 @@ use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::{last_location::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
+    heartbeats::{location_cache::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},

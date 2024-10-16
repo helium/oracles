@@ -1,8 +1,9 @@
-use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
+use super::{
+    location_cache::LocationCache, process_validated_heartbeats, Heartbeat, ValidatedHeartbeat,
+};
 use crate::{
     coverage::{CoverageClaimTimeCache, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::LocationCache,
     GatewayResolver, Settings,
 };
 use chrono::{DateTime, Duration, Utc};

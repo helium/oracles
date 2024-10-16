@@ -19,7 +19,7 @@ use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
     heartbeats::{
-        last_location::LocationCache, Heartbeat, HeartbeatReward, KeyType, ValidatedHeartbeat,
+        location_cache::LocationCache, Heartbeat, HeartbeatReward, KeyType, ValidatedHeartbeat,
     },
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,

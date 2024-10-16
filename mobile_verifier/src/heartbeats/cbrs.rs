@@ -1,8 +1,9 @@
-use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
+use super::{
+    location_cache::LocationCache, process_validated_heartbeats, Heartbeat, ValidatedHeartbeat,
+};
 use crate::{
     coverage::{CoverageClaimTimeCache, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::LocationCache,
     GatewayResolver, Settings,
 };
 
@@ -16,7 +17,6 @@ use file_store::{
 };
 use futures::{stream::StreamExt, TryFutureExt};
 use helium_proto::services::poc_mobile as proto;
-use retainer::Cache;
 use sqlx::{Pool, Postgres};
 use std::{
     sync::Arc,
@@ -105,7 +105,7 @@ where
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("Starting CBRS HeartbeatDaemon");
-        let heartbeat_cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
+        let heartbeat_cache = Arc::new(retainer::Cache::<(String, DateTime<Utc>), ()>::new());
 
         let heartbeat_cache_clone = heartbeat_cache.clone();
         tokio::spawn(async move {
@@ -144,7 +144,7 @@ where
     async fn process_file(
         &self,
         file: FileInfoStream<CbrsHeartbeatIngestReport>,
-        heartbeat_cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
+        heartbeat_cache: &Arc<retainer::Cache<(String, DateTime<Utc>), ()>>,
         coverage_claim_time_cache: &CoverageClaimTimeCache,
         coverage_object_cache: &CoverageObjectCache,
     ) -> anyhow::Result<()> {

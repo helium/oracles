@@ -3,9 +3,7 @@ use crate::{
     coverage::{new_coverage_object_notification_channel, CoverageDaemon},
     data_session::DataSessionIngestor,
     geofence::Geofence,
-    heartbeats::{
-        cbrs::CbrsHeartbeatDaemon, last_location::LocationCache, wifi::WifiHeartbeatDaemon,
-    },
+    heartbeats::{cbrs::CbrsHeartbeatDaemon, location_cache::LocationCache, wifi::WifiHeartbeatDaemon},
     radio_location_estimates::RadioLocationEstimatesDaemon,
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
