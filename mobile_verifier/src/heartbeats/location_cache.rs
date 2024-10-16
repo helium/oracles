@@ -1,4 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
+use file_store::radio_location_estimates::Entity;
 use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc};
@@ -61,6 +62,7 @@ impl LocationCache {
                 info!("cleaned {}", size_before - size_after);
             }
         });
+        // TODO: We could spawn an hydrate from DB here?
         Self {
             pool: pool.clone(),
             data,
@@ -71,6 +73,7 @@ impl LocationCache {
         {
             let data = self.data.lock().await;
             if let Some(&value) = data.get(&key) {
+                // TODO: When we get it timestamp more than 12h old should we remove an try to fetch new one?
                 return Ok(Some(value));
             }
         }
@@ -80,6 +83,11 @@ impl LocationCache {
             }
             LocationCacheKey::CbrsId(id) => self.fetch_cbrs_and_insert(id).await,
         }
+    }
+
+    pub async fn get_all(&self) -> HashMap<LocationCacheKey, LocationCacheValue> {
+        let data = self.data.lock().await;
+        data.clone()
     }
 
     pub async fn insert(
@@ -156,5 +164,12 @@ impl LocationCache {
                 Ok(Some(value))
             }
         }
+    }
+}
+
+pub fn key_to_entity(entity: LocationCacheKey) -> Entity {
+    match entity {
+        LocationCacheKey::CbrsId(id) => Entity::CbrsId(id),
+        LocationCacheKey::WifiPubKey(pub_key) => Entity::WifiPubKey(pub_key),
     }
 }
