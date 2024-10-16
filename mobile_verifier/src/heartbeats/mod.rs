@@ -496,6 +496,8 @@ impl ValidatedHeartbeat {
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::InvalidDeviceType,
             )),
+            // TODO do we get there when CBRS?
+            // Should I then update location form here then?
             GatewayResolution::GatewayNotFound => Ok(Self::new(
                 heartbeat,
                 cell_type,

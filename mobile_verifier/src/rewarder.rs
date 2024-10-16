@@ -1,7 +1,8 @@
+use self::boosted_hex_eligibility::BoostedHexEligibility;
 use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
-    heartbeats::{self, HeartbeatReward},
+    heartbeats::{self, last_location::LocationCache, HeartbeatReward},
     radio_location_estimates, radio_threshold,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
@@ -21,7 +22,6 @@ use file_store::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
 };
 use futures_util::TryFutureExt;
-
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -47,8 +47,6 @@ use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
 
-use self::boosted_hex_eligibility::BoostedHexEligibility;
-
 pub mod boosted_hex_eligibility;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
@@ -63,6 +61,7 @@ pub struct Rewarder<A, B> {
     reward_manifests: FileSinkClient<RewardManifest>,
     price_tracker: PriceTracker,
     speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
+    location_cache: LocationCache,
 }
 
 impl<A, B> Rewarder<A, B>
@@ -77,6 +76,7 @@ where
         carrier_service_verifier: A,
         hex_boosting_info_resolver: B,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
+        location_cache: LocationCache,
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
@@ -108,6 +108,7 @@ where
             reward_manifests,
             price_tracker,
             speedtests_avg,
+            location_cache,
         );
 
         Ok(TaskManager::builder()
@@ -129,6 +130,7 @@ where
         reward_manifests: FileSinkClient<RewardManifest>,
         price_tracker: PriceTracker,
         speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
+        location_cache: LocationCache,
     ) -> Self {
         Self {
             pool,
@@ -140,6 +142,7 @@ where
             reward_manifests,
             price_tracker,
             speedtest_averages,
+            location_cache,
         }
     }
 
