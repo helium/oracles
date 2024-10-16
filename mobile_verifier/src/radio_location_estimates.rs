@@ -1,4 +1,6 @@
-use crate::{heartbeats::HbType, Settings};
+use std::str::FromStr;
+
+use crate::{heartbeats::HbType, sp_boosted_rewards_bans::BannedRadios, Settings};
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
@@ -21,12 +23,13 @@ use helium_proto::services::{
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use sha2::{Digest, Sha256};
-use sqlx::{Pool, Postgres, Transaction};
+use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-// const CONFIDENCE_THRESHOLD: Decimal = dec!(0.75);
+const CONFIDENCE_THRESHOLD: Decimal = dec!(0.75);
 
 pub struct RadioLocationEstimatesDaemon<AV> {
     pool: Pool<Postgres>,
@@ -56,9 +59,9 @@ where
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
-        authorization_verifier: AV,
-        file_store: FileStore,
         file_upload: FileUpload,
+        file_store: FileStore,
+        authorization_verifier: AV,
     ) -> anyhow::Result<impl ManagedTask> {
         let (reports_receiver, reports_receiver_server) =
             file_source::continuous_source::<RadioLocationEstimatesIngestReport, _>()
@@ -210,26 +213,6 @@ async fn save_to_db(
     Ok(())
 }
 
-// TODO: knowing that radio could also be a PublicKey for wifi hotspot.
-// Should we make radio_id in report a binary or some kind of proto enum to have one or other?
-
-// async fn maybe_ban_radios(
-//     report: &RadioLocationEstimatesIngestReport,
-//     exec: &mut Transaction<'_, Postgres>,
-// ) -> Result<(), sqlx::Error> {
-//     let estimates = &report.report.estimates;
-//     let radio_id = &report.report.radio_id;
-//     let mut will_ban = true;
-
-//     for estimate in estimates {
-//         if estimate.confidence > CONFIDENCE_THRESHOLD {
-//             will_ban = false;
-//         }
-//     }
-
-//     Ok(())
-// }
-
 async fn invalidate_old_estimates(
     entity: &Entity,
     timestamp: DateTime<Utc>,
@@ -313,6 +296,35 @@ pub async fn clear_invalided(
     .execute(&mut *tx)
     .await?;
     Ok(())
+}
+
+// This is wrong should be a get estimates but will fix later
+pub async fn get_banned_radios(pool: &PgPool) -> anyhow::Result<BannedRadios> {
+    // TODO: Do we still want to ban any radio that is NOT in this table?
+    // Might be multiple per radio
+    // check assertion in circle as well
+    sqlx::query(
+        r#"
+            SELECT radio_type, radio_key
+            FROM radio_location_estimates
+            WHERE confidence < $1
+                AND invalided_at IS NULL
+        "#,
+    )
+    .bind(CONFIDENCE_THRESHOLD)
+    .fetch(pool)
+    .map_err(anyhow::Error::from)
+    .try_fold(BannedRadios::default(), |mut set, row| async move {
+        let radio_type = row.get::<HbType, &str>("radio_type");
+        let radio_key = row.get::<String, &str>("radio_key");
+        match radio_type {
+            HbType::Wifi => set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?),
+            HbType::Cbrs => set.insert_cbrs(radio_key),
+        };
+
+        Ok(set)
+    })
+    .await
 }
 
 fn entity_to_radio_type(entity: &Entity) -> HbType {
