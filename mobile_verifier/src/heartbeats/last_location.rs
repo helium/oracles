@@ -68,7 +68,7 @@ impl LocationCache {
             } else {
                 match key {
                     Key::WifiPubKey(pub_key_bin) => self.fetch_wifi_and_set(pub_key_bin).await?,
-                    Key::CbrsId(_) => None,
+                    Key::CbrsId(id) => self.fetch_cbrs_and_set(id).await?,
                 }
             },
         )
@@ -113,6 +113,35 @@ impl LocationCache {
         self.locations
             .insert(
                 Key::WifiPubKey(pub_key_bin),
+                last_location,
+                last_location
+                    .map(|x| x.duration_to_expiration())
+                    .unwrap_or_else(|| Duration::days(365))
+                    .to_std()?,
+            )
+            .await;
+        Ok(last_location)
+    }
+
+    async fn fetch_cbrs_and_set(&self, cbsd_id: String) -> anyhow::Result<Option<LastLocation>> {
+        let last_location: Option<LastLocation> = sqlx::query_as(
+            r#"
+            SELECT location_validation_timestamp, latest_timestamp, lat, lon
+            FROM cbrs_heartbeats
+            WHERE location_validation_timestamp IS NOT NULL
+                AND latest_timestamp >= $1
+                AND hotspot_key = $2
+            ORDER BY latest_timestamp DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(Utc::now() - Duration::hours(12))
+        .bind(cbsd_id.clone())
+        .fetch_optional(&self.pool)
+        .await?;
+        self.locations
+            .insert(
+                Key::CbrsId(cbsd_id),
                 last_location,
                 last_location
                     .map(|x| x.duration_to_expiration())
