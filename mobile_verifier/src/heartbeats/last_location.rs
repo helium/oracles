@@ -1,9 +1,14 @@
-use std::sync::Arc;
-
 use chrono::{DateTime, Duration, Utc};
 use helium_crypto::PublicKeyBinary;
 use retainer::Cache;
 use sqlx::PgPool;
+use std::sync::Arc;
+
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Key {
+    CbrsId(String),
+    WifiPubKey(PublicKeyBinary),
+}
 
 #[derive(sqlx::FromRow, Copy, Clone)]
 pub struct LastLocation {
@@ -38,7 +43,7 @@ impl LastLocation {
 #[derive(Clone)]
 pub struct LocationCache {
     pool: PgPool,
-    locations: Arc<Cache<PublicKeyBinary, Option<LastLocation>>>,
+    locations: Arc<Cache<Key, Option<LastLocation>>>,
 }
 
 impl LocationCache {
@@ -56,9 +61,39 @@ impl LocationCache {
         }
     }
 
-    async fn fetch_from_db_and_set(
+    pub async fn fetch_last_location(&self, key: Key) -> anyhow::Result<Option<LastLocation>> {
+        Ok(
+            if let Some(last_location) = self.locations.get(&key).await {
+                *last_location
+            } else {
+                match key {
+                    Key::WifiPubKey(pub_key_bin) => self.fetch_wifi_and_set(pub_key_bin).await?,
+                    Key::CbrsId(_) => None,
+                }
+            },
+        )
+    }
+
+    pub async fn set_last_location(
         &self,
-        hotspot: &PublicKeyBinary,
+        key: Key,
+        last_location: LastLocation,
+    ) -> anyhow::Result<()> {
+        let duration_to_expiration = last_location.duration_to_expiration();
+        self.locations
+            .insert(key, Some(last_location), duration_to_expiration.to_std()?)
+            .await;
+        Ok(())
+    }
+
+    /// Only used for testing.
+    pub async fn delete_last_location(&self, key: Key) {
+        self.locations.remove(&key).await;
+    }
+
+    async fn fetch_wifi_and_set(
+        &self,
+        pub_key_bin: PublicKeyBinary,
     ) -> anyhow::Result<Option<LastLocation>> {
         let last_location: Option<LastLocation> = sqlx::query_as(
             r#"
@@ -72,12 +107,12 @@ impl LocationCache {
             "#,
         )
         .bind(Utc::now() - Duration::hours(12))
-        .bind(hotspot)
+        .bind(pub_key_bin.clone())
         .fetch_optional(&self.pool)
         .await?;
         self.locations
             .insert(
-                hotspot.clone(),
+                Key::WifiPubKey(pub_key_bin),
                 last_location,
                 last_location
                     .map(|x| x.duration_to_expiration())
@@ -86,39 +121,5 @@ impl LocationCache {
             )
             .await;
         Ok(last_location)
-    }
-
-    pub async fn fetch_last_location(
-        &self,
-        hotspot: &PublicKeyBinary,
-    ) -> anyhow::Result<Option<LastLocation>> {
-        Ok(
-            if let Some(last_location) = self.locations.get(hotspot).await {
-                *last_location
-            } else {
-                self.fetch_from_db_and_set(hotspot).await?
-            },
-        )
-    }
-
-    pub async fn set_last_location(
-        &self,
-        hotspot: &PublicKeyBinary,
-        last_location: LastLocation,
-    ) -> anyhow::Result<()> {
-        let duration_to_expiration = last_location.duration_to_expiration();
-        self.locations
-            .insert(
-                hotspot.clone(),
-                Some(last_location),
-                duration_to_expiration.to_std()?,
-            )
-            .await;
-        Ok(())
-    }
-
-    /// Only used for testing.
-    pub async fn delete_last_location(&self, hotspot: &PublicKeyBinary) {
-        self.locations.remove(hotspot).await;
     }
 }

@@ -19,6 +19,7 @@ use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{self as proto, LocationSource};
+use last_location::Key;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -521,7 +522,7 @@ impl ValidatedHeartbeat {
                 let is_valid = match heartbeat.location_validation_timestamp {
                     None => {
                         if let Some(last_location) = last_location_cache
-                            .fetch_last_location(&heartbeat.hotspot_key)
+                            .fetch_last_location(Key::WifiPubKey(heartbeat.hotspot_key.clone()))
                             .await?
                         {
                             heartbeat.lat = last_location.lat;
@@ -538,7 +539,7 @@ impl ValidatedHeartbeat {
                     Some(location_validation_timestamp) => {
                         last_location_cache
                             .set_last_location(
-                                &heartbeat.hotspot_key,
+                                Key::WifiPubKey(heartbeat.hotspot_key.clone()),
                                 LastLocation::new(
                                     location_validation_timestamp,
                                     heartbeat.timestamp,
