@@ -1,11 +1,12 @@
-use std::time::Duration;
-
 use crate::{
     boosting_oracles::DataSetDownloaderDaemon,
     coverage::{new_coverage_object_notification_channel, CoverageDaemon},
     data_session::DataSessionIngestor,
     geofence::Geofence,
-    heartbeats::{cbrs::CbrsHeartbeatDaemon, wifi::WifiHeartbeatDaemon},
+    heartbeats::{
+        cbrs::CbrsHeartbeatDaemon, last_location::LocationCache, wifi::WifiHeartbeatDaemon,
+    },
+    radio_location_estimates::RadioLocationEstimatesDaemon,
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
     service_provider,
@@ -26,6 +27,7 @@ use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
     CarrierServiceClient, GatewayClient,
 };
+use std::time::Duration;
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
@@ -103,6 +105,8 @@ impl Cmd {
         let (new_coverage_obj_notifier, new_coverage_obj_notification) =
             new_coverage_object_notification_channel();
 
+        let location_cache = LocationCache::new(&pool);
+
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_heartbeats_server)
@@ -117,6 +121,7 @@ impl Cmd {
                     valid_heartbeats.clone(),
                     seniority_updates.clone(),
                     usa_geofence,
+                    location_cache.clone(),
                 )
                 .await?,
             )
@@ -129,6 +134,7 @@ impl Cmd {
                     valid_heartbeats,
                     seniority_updates.clone(),
                     usa_and_mexico_geofence,
+                    location_cache.clone(),
                 )
                 .await?,
             )
@@ -213,10 +219,20 @@ impl Cmd {
                 ServiceProviderBoostedRewardsBanIngestor::create_managed_task(
                     pool.clone(),
                     file_upload.clone(),
-                    report_ingest,
-                    auth_client,
+                    report_ingest.clone(),
+                    auth_client.clone(),
                     settings,
                     seniority_updates,
+                )
+                .await?,
+            )
+            .add_task(
+                RadioLocationEstimatesDaemon::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    file_upload.clone(),
+                    report_ingest.clone(),
+                    auth_client.clone(),
                 )
                 .await?,
             )
@@ -228,6 +244,7 @@ impl Cmd {
                     carrier_client,
                     hex_boosting_client,
                     speedtests_avg,
+                    location_cache,
                 )
                 .await?,
             )
