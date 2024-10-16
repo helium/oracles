@@ -1,7 +1,8 @@
 pub mod cbrs;
-pub mod last_location;
+pub mod location_cache;
 pub mod wifi;
 
+use self::location_cache::{LocationCache, LocationCacheKey, LocationCacheValue};
 use crate::{
     cell_type::{CellType, CellTypeLabel},
     coverage::{CoverageClaimTimeCache, CoverageObjectCache, CoverageObjectMeta},
@@ -19,15 +20,12 @@ use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{self as proto, LocationSource};
-use last_location::Key;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
 use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
-
-use self::last_location::{LastLocation, LocationCache};
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
 const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
@@ -376,7 +374,7 @@ impl ValidatedHeartbeat {
         mut heartbeat: Heartbeat,
         gateway_info_resolver: &impl GatewayResolver,
         coverage_object_cache: &CoverageObjectCache,
-        last_location_cache: &LocationCache,
+        location_cache: &LocationCache,
         max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
         geofence: &impl GeofenceValidator,
@@ -521,14 +519,13 @@ impl ValidatedHeartbeat {
                 let asserted_latlng: LatLng = CellIndex::try_from(location)?.into();
                 let is_valid = match heartbeat.location_validation_timestamp {
                     None => {
-                        if let Some(last_location) = last_location_cache
-                            .fetch_last_location(Key::WifiPubKey(heartbeat.hotspot_key.clone()))
+                        if let Some(last_location) = location_cache
+                            .get(LocationCacheKey::WifiPubKey(heartbeat.hotspot_key.clone()))
                             .await?
                         {
                             heartbeat.lat = last_location.lat;
                             heartbeat.lon = last_location.lon;
-                            heartbeat.location_validation_timestamp =
-                                Some(last_location.location_validation_timestamp);
+                            heartbeat.location_validation_timestamp = Some(last_location.timestamp);
                             // Can't panic, previous lat and lon must be valid.
                             hb_latlng = heartbeat.centered_latlng().unwrap();
                             true
@@ -537,14 +534,13 @@ impl ValidatedHeartbeat {
                         }
                     }
                     Some(location_validation_timestamp) => {
-                        last_location_cache
-                            .set_last_location(
-                                Key::WifiPubKey(heartbeat.hotspot_key.clone()),
-                                LastLocation::new(
-                                    location_validation_timestamp,
-                                    heartbeat.timestamp,
+                        location_cache
+                            .insert(
+                                LocationCacheKey::WifiPubKey(heartbeat.hotspot_key.clone()),
+                                LocationCacheValue::new(
                                     heartbeat.lat,
                                     heartbeat.lon,
+                                    location_validation_timestamp,
                                 ),
                             )
                             .await?;

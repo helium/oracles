@@ -9,7 +9,7 @@ use mobile_verifier::{
     coverage::{CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
     heartbeats::{
-        last_location::{Key, LocationCache},
+        location_cache::{LocationCache, LocationCacheKey},
         HbType, Heartbeat, ValidatedHeartbeat,
     },
 };
@@ -126,8 +126,9 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
     );
 
     location_cache
-        .delete_last_location(Key::WifiPubKey(hotspot.clone()))
-        .await;
+        .remove(LocationCacheKey::WifiPubKey(hotspot.clone()))
+        .await?;
+
     transaction = pool.begin().await?;
     validated_heartbeat_1.clone().save(&mut transaction).await?;
     transaction.commit().await?;
