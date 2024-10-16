@@ -13,7 +13,7 @@ use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
     data_session,
-    heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
+    heartbeats::{location_cache::LocationCache, HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder, speedtests,
 };
 use rust_decimal::prelude::*;
@@ -44,7 +44,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let boosted_hexes = vec![];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-
+    let location_cache = LocationCache::new(&pool);
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -52,6 +52,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
+            &location_cache,
             &epoch,
             dec!(0.0001)
         ),

@@ -1,6 +1,4 @@
-use std::str::FromStr;
-
-use crate::{heartbeats::HbType, sp_boosted_rewards_bans::BannedRadios, Settings};
+use crate::{heartbeats::HbType, Settings};
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
@@ -23,13 +21,10 @@ use helium_proto::services::{
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
-
-const CONFIDENCE_THRESHOLD: Decimal = dec!(0.75);
 
 pub struct RadioLocationEstimatesDaemon<AV> {
     pool: Pool<Postgres>,
@@ -298,33 +293,36 @@ pub async fn clear_invalided(
     Ok(())
 }
 
-// This is wrong should be a get estimates but will fix later
-pub async fn get_banned_radios(pool: &PgPool) -> anyhow::Result<BannedRadios> {
-    // TODO: Do we still want to ban any radio that is NOT in this table?
-    // Might be multiple per radio
-    // check assertion in circle as well
-    sqlx::query(
+pub async fn get_valid_estimates(
+    pool: &PgPool,
+    radio_key: &Entity,
+    threshold: Decimal,
+) -> anyhow::Result<Vec<(Decimal, Decimal, Decimal)>> {
+    let rows = sqlx::query(
         r#"
-            SELECT radio_type, radio_key
-            FROM radio_location_estimates
-            WHERE confidence < $1
-                AND invalided_at IS NULL
+        SELECT radius, lat, long
+        FROM radio_location_estimates
+        WHERE radio_key = $1
+            AND confidence >= $2
+            AND invalided_at IS NULL
         "#,
     )
-    .bind(CONFIDENCE_THRESHOLD)
-    .fetch(pool)
-    .map_err(anyhow::Error::from)
-    .try_fold(BannedRadios::default(), |mut set, row| async move {
-        let radio_type = row.get::<HbType, &str>("radio_type");
-        let radio_key = row.get::<String, &str>("radio_key");
-        match radio_type {
-            HbType::Wifi => set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?),
-            HbType::Cbrs => set.insert_cbrs(radio_key),
-        };
+    .bind(radio_key.to_string())
+    .bind(threshold)
+    .fetch_all(pool)
+    .await?;
 
-        Ok(set)
-    })
-    .await
+    let results = rows
+        .into_iter()
+        .map(|row| {
+            let radius: Decimal = row.get("radius");
+            let lat: Decimal = row.get("lat");
+            let lon: Decimal = row.get("long");
+            (radius, lat, lon)
+        })
+        .collect();
+
+    Ok(results)
 }
 
 fn entity_to_radio_type(entity: &Entity) -> HbType {

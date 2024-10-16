@@ -2,7 +2,11 @@ use self::boosted_hex_eligibility::BoostedHexEligibility;
 use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
-    heartbeats::{self, location_cache::LocationCache, HeartbeatReward},
+    heartbeats::{
+        self,
+        location_cache::{self, LocationCache},
+        HeartbeatReward,
+    },
     radio_location_estimates, radio_threshold,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
@@ -21,6 +25,7 @@ use file_store::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
 };
 use futures_util::TryFutureExt;
+use h3o::{LatLng, Resolution};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -268,6 +273,7 @@ where
             &self.hex_service_client,
             &self.mobile_rewards,
             &self.speedtest_averages,
+            &self.location_cache,
             reward_period,
             mobile_bone_price,
         )
@@ -362,6 +368,7 @@ pub async fn reward_poc_and_dc(
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
+    location_cache: &LocationCache,
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
@@ -399,6 +406,7 @@ pub async fn reward_poc_and_dc(
         speedtest_avg_sink,
         reward_period,
         reward_shares,
+        location_cache,
     )
     .await?;
 
@@ -425,6 +433,7 @@ async fn reward_poc(
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_period: &Range<DateTime<Utc>>,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
+    location_cache: &LocationCache,
 ) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
     let heartbeats = HeartbeatReward::validated(pool, reward_period);
     let speedtest_averages =
@@ -450,6 +459,27 @@ async fn reward_poc(
         reward_period.end,
     )
     .await?;
+
+    {
+        let locations = location_cache.get_all().await;
+        for (key, value) in locations.iter() {
+            let entity = location_cache::key_to_entity(key.clone());
+            let estimates =
+                radio_location_estimates::get_valid_estimates(pool, &entity, dec!(0.75)).await?;
+            if estimates.is_empty() {
+                // TODO we ban that key
+                todo!()
+            } else {
+                match is_within_radius(value.lat, value.lon, estimates) {
+                    Ok(true) => todo!(),
+                    // TODO we ban that key
+                    Ok(false) => todo!(),
+                    // TODO we ban that key
+                    Err(_) => todo!(),
+                }
+            }
+        }
+    }
 
     let coverage_shares = CoverageShares::new(
         pool,
@@ -495,6 +525,46 @@ async fn reward_poc(
             (total_poc_rewards, CalculatedPocRewardShares::default())
         };
     Ok((unallocated_poc_amount, calculated_poc_rewards_per_share))
+}
+
+fn is_within_radius(
+    lat_a: f64,
+    lon_a: f64,
+    comparators: Vec<(Decimal, Decimal, Decimal)>,
+) -> anyhow::Result<bool> {
+    let resolution = Resolution::Twelve;
+
+    let point_a =
+        LatLng::new(lat_a, lon_a).map_err(|e| anyhow::anyhow!("Invalid LatLng for A: {}", e))?;
+    let h3_index_a = point_a.to_cell(resolution);
+
+    for (radius_meters, lat_b, lon_b) in comparators {
+        let lat_b_f64 = lat_b
+            .to_f64()
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert lat_b to f64"))?;
+        let lon_b_f64 = lon_b
+            .to_f64()
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert lon_b to f64"))?;
+        let radius_meters_f64 = radius_meters
+            .to_f64()
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert radius_meters to f64"))?;
+
+        let point_b = LatLng::new(lat_b_f64, lon_b_f64)
+            .map_err(|e| anyhow::anyhow!("Invalid LatLng for B: {}", e))?;
+        let h3_index_b = point_b.to_cell(resolution);
+
+        let grid_distance = h3_index_a
+            .grid_distance(h3_index_b)
+            .map_err(|e| anyhow::anyhow!("Failed to calculate grid distance: {}", e))?;
+
+        let max_grid_distance = (radius_meters_f64 / 9.0).round() as i32;
+
+        if grid_distance <= max_grid_distance {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 pub async fn reward_dc(
