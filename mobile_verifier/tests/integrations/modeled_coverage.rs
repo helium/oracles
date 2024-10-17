@@ -378,7 +378,7 @@ async fn process_input(
 ) -> anyhow::Result<()> {
     let coverage_objects = CoverageObjectCache::new(pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
-    let location_cache = LocationCache::new(pool);
+    let location_cache = LocationCache::new(pool).await?;
 
     let mut transaction = pool.begin().await?;
     let mut coverage_objs = pin!(CoverageObject::validate_coverage_objects(
@@ -1376,7 +1376,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
 
     let max_covered_distance = 5_000;
     let coverage_object_cache = CoverageObjectCache::new(&pool);
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
 
     let mk_heartbeat = |latlng: LatLng| WifiHeartbeatIngestReport {
         report: WifiHeartbeat {

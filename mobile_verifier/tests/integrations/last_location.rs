@@ -39,7 +39,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
     let epoch_end = epoch_start + Duration::days(2);
 
     let coverage_objects = CoverageObjectCache::new(&pool);
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
 
     let mut transaction = pool.begin().await?;
     let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
@@ -101,7 +101,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
     let epoch_end = epoch_start + Duration::days(2);
 
     let coverage_objects = CoverageObjectCache::new(&pool);
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
 
     let mut transaction = pool.begin().await?;
     let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
@@ -173,7 +173,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
     let epoch_end = epoch_start + Duration::days(2);
 
     let coverage_objects = CoverageObjectCache::new(&pool);
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
 
     let mut transaction = pool.begin().await?;
     let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
