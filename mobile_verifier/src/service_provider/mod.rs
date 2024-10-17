@@ -1,15 +1,14 @@
 use std::ops::Range;
 
 use chrono::{DateTime, Utc};
+
+pub use dc_sessions::{get_dc_sessions, ServiceProviderDCSessions};
+pub use promotions::{get_promotions, ServiceProviderPromotions};
 pub use reward::ServiceProviderRewardInfos;
 
-pub mod dc_sessions;
-pub mod promotions;
-pub mod reward;
-
-pub mod db {
-    pub use super::dc_sessions::fetch_dc_sessions;
-}
+mod dc_sessions;
+mod promotions;
+mod reward;
 
 // This type is used in lieu of the helium_proto::ServiceProvider enum so we can
 // handle more than a single value without adding a hard deploy dependency to

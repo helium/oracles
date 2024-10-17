@@ -1,3 +1,4 @@
+use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -7,10 +8,21 @@ mod proto {
     pub use helium_proto::{Promotion, ServiceProviderPromotion};
 }
 
-#[derive(Debug, Default)]
-pub struct ServiceProviderPromotions(pub(crate) Vec<proto::ServiceProviderPromotion>);
+pub async fn get_promotions(
+    client: &impl CarrierServiceVerifier<Error = ClientError>,
+) -> anyhow::Result<ServiceProviderPromotions> {
+    let promos = client.list_incentive_promotions().await?;
+    Ok(ServiceProviderPromotions(promos))
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ServiceProviderPromotions(Vec<proto::ServiceProviderPromotion>);
 
 impl ServiceProviderPromotions {
+    pub fn into_proto(self) -> Vec<proto::ServiceProviderPromotion> {
+        self.0
+    }
+
     pub(crate) fn get_fund_percent(&self, sp_id: ServiceProviderId) -> Decimal {
         for promo in &self.0 {
             if promo.service_provider == sp_id {

@@ -7,9 +7,7 @@ use crate::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
     },
-    service_provider::{
-        self, dc_sessions::ServiceProviderDCSessions, promotions::ServiceProviderPromotions,
-    },
+    service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, subscriber_verified_mapping_event, telemetry, Settings,
@@ -276,16 +274,13 @@ where
         reward_mappers(&self.pool, &self.mobile_rewards, reward_period).await?;
 
         // process rewards for service providers
-        let dc_sessions = service_provider::db::fetch_dc_sessions(
-            &self.pool,
-            &self.carrier_client,
-            reward_period,
-        )
-        .await?;
-        let sp_promotions = self.carrier_client.list_incentive_promotions().await?;
+        let dc_sessions =
+            service_provider::get_dc_sessions(&self.pool, &self.carrier_client, reward_period)
+                .await?;
+        let sp_promotions = service_provider::get_promotions(&self.carrier_client).await?;
         reward_service_providers(
             dc_sessions,
-            sp_promotions.clone().into(),
+            sp_promotions.clone(),
             &self.mobile_rewards,
             reward_period,
             mobile_bone_price,
@@ -321,7 +316,7 @@ where
             boosted_poc_bones_per_reward_share: Some(helium_proto::Decimal {
                 value: poc_dc_shares.boost.to_string(),
             }),
-            sp_promotions,
+            sp_promotions: sp_promotions.into_proto(),
         };
         self.reward_manifests
             .write(
