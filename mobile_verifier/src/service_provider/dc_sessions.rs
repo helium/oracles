@@ -133,6 +133,12 @@ pub mod tests {
             ) -> Result<ServiceProvider, ClientError> {
                 Ok(ServiceProvider::HeliumMobile)
             }
+
+            async fn list_incentive_promotions(
+                &self,
+            ) -> Result<Vec<ServiceProviderPromotion>, Self::Error> {
+                Ok(vec![])
+            }
         }
 
         // Save multiple data sessions with different payers
