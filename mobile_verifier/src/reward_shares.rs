@@ -772,7 +772,8 @@ mod test {
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
         reward_shares,
         service_provider::{
-            self, dc_sessions::ServiceProviderDCSessions, ServiceProviderRewardInfos,
+            self, dc_sessions::ServiceProviderDCSessions, promotions::ServiceProviderPromotions,
+            ServiceProviderRewardInfos,
         },
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
@@ -2229,7 +2230,7 @@ mod test {
         let total_sp_rewards = service_provider::get_scheduled_tokens(&epoch);
         let sp_reward_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(sp1, dec!(1000))]),
-            vec![],
+            ServiceProviderPromotions::default(),
             total_sp_rewards,
             mobile_bone_price,
             epoch.clone(),
@@ -2274,7 +2275,7 @@ mod test {
         let sp_reward_infos = ServiceProviderRewardInfos::new(
             // force the service provider to have spend more DC than total rewardable
             ServiceProviderDCSessions::from([(sp1, total_rewards_value_in_dc * dec!(2.0))]),
-            vec![],
+            ServiceProviderPromotions::default(),
             total_rewards_value_in_dc,
             mobile_bone_price,
             epoch.clone(),
@@ -2319,7 +2320,7 @@ mod test {
 
         let sp_reward_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(sp1, dec!(100_000_000))]),
-            vec![],
+            ServiceProviderPromotions::default(),
             total_sp_rewards_in_bones,
             mobile_bone_price,
             epoch.clone(),
@@ -2364,7 +2365,7 @@ mod test {
 
         let sp_reward_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(sp1, dec!(100_000_000_000))]),
-            vec![],
+            ServiceProviderPromotions::default(),
             total_sp_rewards_in_bones,
             mobile_bone_price,
             epoch.clone(),

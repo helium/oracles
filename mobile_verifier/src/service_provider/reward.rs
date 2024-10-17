@@ -3,17 +3,19 @@ use std::ops::Range;
 use chrono::{DateTime, Utc};
 
 use file_store::traits::TimestampEncode;
-use helium_proto::{Promotion, ServiceProviderPromotion};
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
 use crate::reward_shares::{dc_to_mobile_bones, DEFAULT_PREC};
 
-use super::dc_sessions::ServiceProviderDCSessions;
+use super::{dc_sessions::ServiceProviderDCSessions, promotions::ServiceProviderPromotions};
 
 mod proto {
-    pub use helium_proto::services::poc_mobile::{
-        mobile_reward_share::Reward, MobileRewardShare, PromotionReward, ServiceProviderReward,
+    pub use helium_proto::{
+        services::poc_mobile::{
+            mobile_reward_share::Reward, MobileRewardShare, PromotionReward, ServiceProviderReward,
+        },
+        Promotion,
     };
 }
 
@@ -64,14 +66,14 @@ struct RewardInfo {
     // % matched promotions from unallocated, can never exceed realized_promo_perc
     matched_promo_perc: Decimal,
 
-    // Rewards for the epoch
-    promotions: Vec<Promotion>,
+    // Active promotions for the epoch
+    promotions: Vec<proto::Promotion>,
 }
 
 impl ServiceProviderRewardInfos {
     pub fn new(
         dc_sessions: ServiceProviderDCSessions,
-        promotions: Vec<ServiceProviderPromotion>,
+        promotions: ServiceProviderPromotions,
         total_sp_allocation: Decimal,
         mobile_bone_price: Decimal,
         reward_epoch: Range<DateTime<Utc>>,
@@ -88,15 +90,8 @@ impl ServiceProviderRewardInfos {
 
         let used_allocation = total_sp_allocation.max(all_transfer);
         for (dc_session, dc_transfer) in dc_sessions.iter() {
-            let mut promo_fund_perc = dec!(0);
-            let mut promos = vec![];
-            for promo in &promotions {
-                if promo.service_provider == dc_session {
-                    promo_fund_perc = Decimal::from(promo.incentive_escrow_fund_bps) / dec!(10_000);
-                    promos = promo.promotions.clone();
-                    break;
-                }
-            }
+            let promo_fund_perc = promotions.get_fund_percent(dc_session);
+            let promos = promotions.get_active_promotions(dc_session);
 
             me.coll.push(RewardInfo::new(
                 dc_session,
@@ -144,7 +139,7 @@ impl RewardInfo {
         dc_transfer: Decimal,
         promo_fund_perc: Decimal,
         total_sp_allocation: Decimal,
-        promotions: Vec<Promotion>,
+        promotions: Vec<proto::Promotion>,
     ) -> Self {
         let dc_perc = dc_transfer / total_sp_allocation;
         let realized_promo_perc = if promotions.is_empty() {
@@ -309,7 +304,7 @@ mod tests {
     fn no_promotions() {
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
-            vec![],
+            ServiceProviderPromotions::default(),
             dec!(100),
             dec!(0.00001),
             epoch(),
@@ -385,8 +380,8 @@ mod tests {
         entity: &str,
         incentive_escrow_fund_bps: u32,
         shares: u32,
-    ) -> ServiceProviderPromotion {
-        ServiceProviderPromotion {
+    ) -> helium_proto::ServiceProviderPromotion {
+        helium_proto::ServiceProviderPromotion {
             service_provider: sp_id,
             incentive_escrow_fund_bps,
             promotions: vec![helium_proto::Promotion {
@@ -402,10 +397,10 @@ mod tests {
     fn unallocated_reward_scaling_1() {
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
-            vec![
+            ServiceProviderPromotions::from(vec![
                 make_test_promotion(0, "promo-0", 5000, 1),
                 make_test_promotion(1, "promo-1", 5000, 1),
-            ],
+            ]),
             dec!(100),
             dec!(0.00001),
             epoch(),
@@ -426,26 +421,26 @@ mod tests {
     fn unallocated_reward_scaling_2() {
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
-            vec![
-                ServiceProviderPromotion {
+            ServiceProviderPromotions::from(vec![
+                helium_proto::ServiceProviderPromotion {
                     service_provider: 0,
                     incentive_escrow_fund_bps: 5000,
-                    promotions: vec![Promotion {
+                    promotions: vec![helium_proto::Promotion {
                         entity: "promo-0".to_string(),
                         shares: 1,
                         ..Default::default()
                     }],
                 },
-                ServiceProviderPromotion {
+                helium_proto::ServiceProviderPromotion {
                     service_provider: 1,
                     incentive_escrow_fund_bps: 10000,
-                    promotions: vec![Promotion {
+                    promotions: vec![helium_proto::Promotion {
                         entity: "promo-1".to_string(),
                         shares: 1,
                         ..Default::default()
                     }],
                 },
-            ],
+            ]),
             dec!(100),
             dec!(0.00001),
             epoch(),
@@ -466,10 +461,10 @@ mod tests {
     fn unallocated_reward_scaling_3() {
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(10)), (1, dec!(1000))]),
-            vec![
+            ServiceProviderPromotions::from(vec![
                 make_test_promotion(0, "promo-0", 10000, 1),
                 make_test_promotion(1, "promo-1", 200, 1),
-            ],
+            ]),
             dec!(2000),
             dec!(0.00001),
             epoch(),
@@ -490,7 +485,7 @@ mod tests {
     fn no_rewards_if_none_allocated() {
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(100))]),
-            vec![make_test_promotion(0, "promo-0", 5000, 1)],
+            ServiceProviderPromotions::from(vec![make_test_promotion(0, "promo-0", 5000, 1)]),
             dec!(0),
             dec!(0.0001),
             epoch(),
@@ -505,7 +500,7 @@ mod tests {
 
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, total_rewards)]),
-            vec![make_test_promotion(0, "promo-0", 5000, 1)],
+            ServiceProviderPromotions::from(vec![make_test_promotion(0, "promo-0", 5000, 1)]),
             total_rewards,
             dec!(0.001),
             epoch(),
@@ -527,7 +522,7 @@ mod tests {
 
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, sp_session)]),
-            vec![ServiceProviderPromotion {
+            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotion {
                 service_provider: 0,
                 incentive_escrow_fund_bps: 10000,
                 promotions: vec![
@@ -542,7 +537,7 @@ mod tests {
                         ..Default::default()
                     },
                 ],
-            }],
+            }]),
             total_rewards,
             dec!(0.00001),
             epoch(),
@@ -566,7 +561,7 @@ mod tests {
 
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, sp_session)]),
-            vec![ServiceProviderPromotion {
+            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotion {
                 service_provider: 0,
                 incentive_escrow_fund_bps: 10000,
                 promotions: vec![
@@ -581,7 +576,7 @@ mod tests {
                         ..Default::default()
                     },
                 ],
-            }],
+            }]),
             total_rewards,
             dec!(0.00001),
             epoch(),
@@ -605,7 +600,7 @@ mod tests {
 
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, sp_session)]),
-            vec![ServiceProviderPromotion {
+            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotion {
                 service_provider: 0,
                 incentive_escrow_fund_bps: 100, // severely limit promotions
                 promotions: vec![
@@ -620,7 +615,7 @@ mod tests {
                         ..Default::default()
                     },
                 ],
-            }],
+            }]),
             total_rewards,
             dec!(0.00001),
             epoch(),
@@ -659,7 +654,7 @@ mod tests {
 
     prop_compose! {
         fn arb_promotion()(entity: String, shares in 1..=100u32) -> helium_proto::Promotion {
-            Promotion { entity, shares, ..Default::default() }
+            proto::Promotion { entity, shares, ..Default::default() }
         }
     }
 
@@ -668,8 +663,8 @@ mod tests {
             sp_id in 0..10_i32,
             bps in arb_bps(),
             promotions in prop::collection::vec(arb_promotion(), 0..10)
-        ) -> ServiceProviderPromotion{
-            ServiceProviderPromotion {
+        ) -> helium_proto::ServiceProviderPromotion {
+            helium_proto::ServiceProviderPromotion {
                 service_provider: sp_id,
                 incentive_escrow_fund_bps: bps,
                 promotions
@@ -703,7 +698,7 @@ mod tests {
 
             let sp_infos = ServiceProviderRewardInfos::new(
                 ServiceProviderDCSessions::from([(0, dc_session)]),
-                promotions,
+                ServiceProviderPromotions::from(promotions),
                 total_allocation,
                 dec!(0.00001),
                 epoch()
@@ -730,7 +725,7 @@ mod tests {
 
             let sp_infos = ServiceProviderRewardInfos::new(
                 ServiceProviderDCSessions::from(dc_sessions),
-                promotions,
+                ServiceProviderPromotions::from(promotions),
                 total_allocation,
                 dec!(0.00001),
                 epoch
