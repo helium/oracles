@@ -321,78 +321,6 @@ mod tests {
         assert_eq!(None, iter.next());
     }
 
-    impl ServiceProviderRewardInfos {
-        fn iter_sp_rewards(&self, sp_id: i32) -> Vec<MobileRewardShare> {
-            let rewards_per_share = rewards_per_share(
-                self.all_transfer,
-                self.total_sp_allocation,
-                self.mobile_bone_price,
-            );
-            let sp_rewards = self.total_sp_allocation * rewards_per_share;
-
-            for info in self.coll.iter() {
-                if info.sp_id == sp_id {
-                    let mut result = info.promo_rewards(sp_rewards, &self.reward_epoch);
-                    result.push(info.carrier_reward(sp_rewards, &self.reward_epoch));
-                    return result.into_iter().map(|(_, x)| x).collect();
-                }
-            }
-            vec![]
-        }
-
-        fn single_sp_rewards(
-            &self,
-            sp_id: i32,
-        ) -> (proto::PromotionReward, proto::ServiceProviderReward) {
-            let binding = self.iter_sp_rewards(sp_id);
-            let mut rewards = binding.iter();
-
-            let promo = rewards.next().cloned().unwrap().promotion_reward();
-            let sp = rewards.next().cloned().unwrap().sp_reward();
-
-            (promo, sp)
-        }
-    }
-
-    trait RewardExt {
-        fn promotion_reward(self) -> proto::PromotionReward;
-        fn sp_reward(self) -> proto::ServiceProviderReward;
-    }
-
-    impl RewardExt for proto::MobileRewardShare {
-        fn promotion_reward(self) -> proto::PromotionReward {
-            match self.reward {
-                Some(proto::Reward::PromotionReward(promo)) => promo.clone(),
-                other => panic!("expected promotion reward, got {other:?}"),
-            }
-        }
-
-        fn sp_reward(self) -> proto::ServiceProviderReward {
-            match self.reward {
-                Some(proto::Reward::ServiceProviderReward(promo)) => promo.clone(),
-                other => panic!("expected sp reward, got {other:?}"),
-            }
-        }
-    }
-
-    fn make_test_promotion(
-        sp_id: i32,
-        entity: &str,
-        incentive_escrow_fund_bps: u32,
-        shares: u32,
-    ) -> helium_proto::ServiceProviderPromotion {
-        helium_proto::ServiceProviderPromotion {
-            service_provider: sp_id,
-            incentive_escrow_fund_bps,
-            promotions: vec![helium_proto::Promotion {
-                entity: entity.to_string(),
-                start_ts: Utc::now().encode_timestamp_millis(),
-                end_ts: Utc::now().encode_timestamp_millis(),
-                shares,
-            }],
-        }
-    }
-
     #[test]
     fn unallocated_reward_scaling_1() {
         let sp_infos = ServiceProviderRewardInfos::new(
@@ -631,25 +559,6 @@ mod tests {
         assert_eq!(promo_rewards[1].matched_amount, 6);
     }
 
-    trait PromoRewardFiltersExt {
-        fn only_promotion_rewards(&self) -> Vec<PromotionReward>;
-    }
-
-    impl PromoRewardFiltersExt for Vec<(u64, MobileRewardShare)> {
-        fn only_promotion_rewards(&self) -> Vec<PromotionReward> {
-            self.clone()
-                .into_iter()
-                .filter_map(|(_, r)| {
-                    if let Some(proto::Reward::PromotionReward(reward)) = r.reward {
-                        Some(reward)
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        }
-    }
-
     use proptest::prelude::*;
 
     prop_compose! {
@@ -749,6 +658,46 @@ mod tests {
 
     }
 
+    trait RewardExt {
+        fn promotion_reward(self) -> proto::PromotionReward;
+        fn sp_reward(self) -> proto::ServiceProviderReward;
+    }
+
+    impl RewardExt for proto::MobileRewardShare {
+        fn promotion_reward(self) -> proto::PromotionReward {
+            match self.reward {
+                Some(proto::Reward::PromotionReward(promo)) => promo.clone(),
+                other => panic!("expected promotion reward, got {other:?}"),
+            }
+        }
+
+        fn sp_reward(self) -> proto::ServiceProviderReward {
+            match self.reward {
+                Some(proto::Reward::ServiceProviderReward(promo)) => promo.clone(),
+                other => panic!("expected sp reward, got {other:?}"),
+            }
+        }
+    }
+
+    trait PromoRewardFiltersExt {
+        fn only_promotion_rewards(&self) -> Vec<PromotionReward>;
+    }
+
+    impl PromoRewardFiltersExt for Vec<(u64, MobileRewardShare)> {
+        fn only_promotion_rewards(&self) -> Vec<PromotionReward> {
+            self.clone()
+                .into_iter()
+                .filter_map(|(_, r)| {
+                    if let Some(proto::Reward::PromotionReward(reward)) = r.reward {
+                        Some(reward)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+    }
+
     impl RewardInfo {
         fn total_percent(&self) -> Decimal {
             self.realized_dc_perc + self.realized_promo_perc + self.matched_promo_perc
@@ -758,6 +707,55 @@ mod tests {
     impl ServiceProviderRewardInfos {
         fn total_percent(&self) -> Decimal {
             self.coll.iter().map(|x| x.total_percent()).sum()
+        }
+
+        fn iter_sp_rewards(&self, sp_id: i32) -> Vec<MobileRewardShare> {
+            let rewards_per_share = rewards_per_share(
+                self.all_transfer,
+                self.total_sp_allocation,
+                self.mobile_bone_price,
+            );
+            let sp_rewards = self.total_sp_allocation * rewards_per_share;
+
+            for info in self.coll.iter() {
+                if info.sp_id == sp_id {
+                    let mut result = info.promo_rewards(sp_rewards, &self.reward_epoch);
+                    result.push(info.carrier_reward(sp_rewards, &self.reward_epoch));
+                    return result.into_iter().map(|(_, x)| x).collect();
+                }
+            }
+            vec![]
+        }
+
+        fn single_sp_rewards(
+            &self,
+            sp_id: i32,
+        ) -> (proto::PromotionReward, proto::ServiceProviderReward) {
+            let binding = self.iter_sp_rewards(sp_id);
+            let mut rewards = binding.iter();
+
+            let promo = rewards.next().cloned().unwrap().promotion_reward();
+            let sp = rewards.next().cloned().unwrap().sp_reward();
+
+            (promo, sp)
+        }
+    }
+
+    fn make_test_promotion(
+        sp_id: i32,
+        entity: &str,
+        incentive_escrow_fund_bps: u32,
+        shares: u32,
+    ) -> helium_proto::ServiceProviderPromotion {
+        helium_proto::ServiceProviderPromotion {
+            service_provider: sp_id,
+            incentive_escrow_fund_bps,
+            promotions: vec![helium_proto::Promotion {
+                entity: entity.to_string(),
+                start_ts: Utc::now().encode_timestamp_millis(),
+                end_ts: Utc::now().encode_timestamp_millis(),
+                shares,
+            }],
         }
     }
 }
