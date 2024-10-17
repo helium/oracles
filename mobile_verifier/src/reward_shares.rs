@@ -772,8 +772,7 @@ mod test {
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
         reward_shares,
         service_provider::{
-            self, dc_sessions::ServiceProviderDCSessions, promotions::ServiceProviderPromotions,
-            ServiceProviderRewardInfos,
+            self, ServiceProviderDCSessions, ServiceProviderPromotions, ServiceProviderRewardInfos,
         },
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,

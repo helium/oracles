@@ -15,9 +15,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::common::{self, MockFileSinkReceiver};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
-use mobile_verifier::{
-    data_session, reward_shares, rewarder, service_provider::db::fetch_dc_sessions,
-};
+use mobile_verifier::{data_session, reward_shares, rewarder, service_provider};
 
 const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
@@ -83,7 +81,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     seed_hotspot_data(epoch.end, &mut txn).await?;
     txn.commit().await?;
 
-    let dc_sessions = fetch_dc_sessions(&pool, &carrier_client, &epoch).await?;
+    let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await?;
     let sp_promotions = carrier_client.list_incentive_promotions().await?;
 
     let (_, rewards) = tokio::join!(
@@ -145,7 +143,7 @@ async fn test_service_provider_rewards_halt_on_invalid_sp(pool: PgPool) -> anyho
     seed_hotspot_data_invalid_sp(epoch.end, &mut txn).await?;
     txn.commit().await.expect("db txn failed");
 
-    let dc_sessions = fetch_dc_sessions(&pool, &carrier_client, &epoch).await;
+    let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await;
     assert_eq!(
         dc_sessions.unwrap_err().to_string(),
         format!("unknown service provider {PAYER_2}")
@@ -194,7 +192,7 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
 
     txn.commit().await?;
 
-    let dc_sessions = fetch_dc_sessions(&pool, &carrier_client, &epoch).await?;
+    let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await?;
     let sp_promotions = carrier_client.list_incentive_promotions().await?;
 
     let (_, rewards) = tokio::join!(

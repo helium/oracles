@@ -12,7 +12,7 @@ use crate::{
 
 use super::ServiceProviderId;
 
-pub async fn fetch_dc_sessions(
+pub async fn get_dc_sessions(
     pool: &PgPool,
     carrier_client: &impl CarrierServiceVerifier<Error = ClientError>,
     reward_period: &Range<DateTime<Utc>>,
@@ -167,7 +167,7 @@ pub mod tests {
         let epoch = now - Duration::hours(24)..now;
 
         // dc sessions should represent single payer, and all dc is combined
-        let map = fetch_dc_sessions(&pool, &MockClient, &epoch).await?;
+        let map = get_dc_sessions(&pool, &MockClient, &epoch).await?;
         assert_eq!(map.len(), 1);
         assert_eq!(map.all_transfer(), Decimal::from(4_000));
 
