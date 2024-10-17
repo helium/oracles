@@ -182,7 +182,7 @@ fn compare_report_and_estimate(
     ));
     assert_eq!(report.report.estimates[0].radius, estimate.radius);
     assert_eq!(report.report.estimates[0].lat, estimate.lat);
-    assert_eq!(report.report.estimates[0].lon, estimate.long);
+    assert_eq!(report.report.estimates[0].lon, estimate.lon);
     assert_eq!(report.report.estimates[0].confidence, estimate.confidence);
 
     if should_be_valid {
@@ -199,7 +199,7 @@ pub struct RadioLocationEstimateDB {
     pub received_timestamp: DateTime<Utc>,
     pub radius: rust_decimal::Decimal,
     pub lat: rust_decimal::Decimal,
-    pub long: rust_decimal::Decimal,
+    pub lon: rust_decimal::Decimal,
     pub confidence: rust_decimal::Decimal,
     pub invalided_at: Option<DateTime<Utc>>,
 }
@@ -209,7 +209,7 @@ pub async fn select_radio_location_estimates(
 ) -> anyhow::Result<Vec<RadioLocationEstimateDB>> {
     let rows = sqlx::query(
         r#"
-        SELECT hashed_key, radio_key, hashed_key, received_timestamp, radius, lat, long, confidence, invalided_at
+        SELECT hashed_key, radio_key, hashed_key, received_timestamp, radius, lat, lon, confidence, invalided_at
         FROM radio_location_estimates
         ORDER BY received_timestamp ASC
         "#,
@@ -225,7 +225,7 @@ pub async fn select_radio_location_estimates(
             received_timestamp: row.get("received_timestamp"),
             radius: row.get("radius"),
             lat: row.get("lat"),
-            long: row.get("long"),
+            lon: row.get("lon"),
             confidence: row.get("confidence"),
             invalided_at: row.try_get("invalided_at").ok(),
         })

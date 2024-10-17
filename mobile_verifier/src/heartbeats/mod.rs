@@ -498,23 +498,20 @@ impl ValidatedHeartbeat {
             // TODO do we get there when CBRS?
             // Should I then update location form here then?
             GatewayResolution::GatewayNotFound if heartbeat.hb_type == HbType::Cbrs => {
-                match (
+                if let (Some(location_validation_timestamp), Some(cbsd_id)) = (
                     heartbeat.location_validation_timestamp,
                     heartbeat.cbsd_id.clone(),
                 ) {
-                    (Some(location_validation_timestamp), Some(cbsd_id)) => {
-                        location_cache
-                            .insert(
-                                LocationCacheKey::CbrsId(cbsd_id),
-                                LocationCacheValue::new(
-                                    heartbeat.lat,
-                                    heartbeat.lon,
-                                    location_validation_timestamp,
-                                ),
-                            )
-                            .await?;
-                    }
-                    (_, _) => (),
+                    location_cache
+                        .insert(
+                            LocationCacheKey::CbrsId(cbsd_id),
+                            LocationCacheValue::new(
+                                heartbeat.lat,
+                                heartbeat.lon,
+                                location_validation_timestamp,
+                            ),
+                        )
+                        .await?;
                 };
 
                 Ok(Self::new(
