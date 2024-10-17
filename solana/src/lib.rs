@@ -32,7 +32,7 @@ pub(crate) use send_with_retry;
 #[derive(thiserror::Error, Debug)]
 pub enum SolanaRpcError {
     #[error("Solana rpc error: {0}")]
-    RpcClientError(#[from] ClientError),
+    RpcClientError(Box<ClientError>),
     #[error("Anchor error: {0}")]
     AnchorError(Box<helium_anchor_gen::anchor_lang::error::Error>),
     #[error("Solana program error: {0}")]
@@ -54,6 +54,12 @@ pub enum SolanaRpcError {
 impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
     fn from(err: helium_anchor_gen::anchor_lang::error::Error) -> Self {
         Self::AnchorError(Box::new(err))
+    }
+}
+
+impl From<ClientError> for SolanaRpcError {
+    fn from(err: ClientError) -> Self {
+        Self::RpcClientError(Box::new(err))
     }
 }
 

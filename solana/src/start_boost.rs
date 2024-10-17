@@ -127,7 +127,7 @@ impl SolanaNetwork for SolanaRpc {
                     transaction = %signature,
                     "hex start boost failed: {err:?}"
                 );
-                Err(SolanaRpcError::RpcClientError(err))
+                Err(SolanaRpcError::RpcClientError(Box::new(err)))
             }
         }
     }
