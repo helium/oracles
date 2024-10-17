@@ -536,7 +536,7 @@ async fn reward_poc(
 fn is_within_radius(
     loc_lat: f64,
     loc_lon: f64,
-    comparators: Vec<(Decimal, Decimal, Decimal)>,
+    estimates: Vec<(Decimal, Decimal, Decimal)>,
 ) -> anyhow::Result<bool> {
     let resolution = Resolution::Twelve;
 
@@ -544,7 +544,7 @@ fn is_within_radius(
         .map_err(|e| anyhow::anyhow!("Invalid LatLng for A: {}", e))?;
     let h3_index_a = point_a.to_cell(resolution);
 
-    for (radius_meters, lat, lon) in comparators {
+    for (radius_meters, lat, lon) in estimates {
         let lat_f64 = lat
             .to_f64()
             .ok_or_else(|| anyhow::anyhow!("Failed to convert lat_b to f64"))?;
