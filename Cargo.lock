@@ -6139,32 +6139,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "promotion-fund"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "clap 4.4.8",
- "config",
- "custom-tracing",
- "file-store",
- "futures",
- "helium-proto",
- "humantime-serde",
- "metrics",
- "metrics-exporter-prometheus",
- "poc-metrics",
- "serde",
- "solana",
- "task-manager",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "triggered",
-]
-
-[[package]]
 name = "proptest"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
