@@ -467,6 +467,8 @@ async fn reward_poc(
         let locations = location_cache.get_all().await;
         for (key, value) in locations.iter() {
             let entity = location_cache::key_to_entity(key.clone());
+            // Estimates are ordered by bigger radius first it should allow us to do less calculation
+            // and find a match faster
             let estimates =
                 radio_location_estimates::get_valid_estimates(pool, &entity, dec!(0.75)).await?;
             if estimates.is_empty() {
