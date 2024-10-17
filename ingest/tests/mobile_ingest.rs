@@ -51,7 +51,7 @@ async fn submit_radio_location_estimates() -> anyhow::Result<()> {
     let estimates = vec![RadioLocationEstimateV1 {
         radius: to_proto_decimal(2.0),
         lat: to_proto_decimal(41.41208),
-        long: to_proto_decimal(-122.19288),
+        lon: to_proto_decimal(-122.19288),
         confidence: to_proto_decimal(0.75),
         events: vec![RleEventV1 {
             id: "event_1".to_string(),

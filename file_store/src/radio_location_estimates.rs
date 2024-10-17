@@ -110,7 +110,7 @@ impl TryFrom<RadioLocationEstimatesReqV1> for RadioLocationEstimatesReq {
 pub struct RadioLocationEstimate {
     pub radius: Decimal,
     pub lat: Decimal,
-    pub long: Decimal,
+    pub lon: Decimal,
     pub confidence: Decimal,
     pub events: Vec<RadioLocationEstimateEvent>,
 }
@@ -120,7 +120,7 @@ impl From<RadioLocationEstimate> for RadioLocationEstimateV1 {
         RadioLocationEstimateV1 {
             radius: Some(to_proto_decimal(rle.radius)),
             lat: Some(to_proto_decimal(rle.lat)),
-            long: Some(to_proto_decimal(rle.long)),
+            lon: Some(to_proto_decimal(rle.lon)),
             confidence: Some(to_proto_decimal(rle.confidence)),
             events: rle.events.into_iter().map(|e| e.into()).collect(),
         }
@@ -133,7 +133,7 @@ impl TryFrom<RadioLocationEstimateV1> for RadioLocationEstimate {
         Ok(Self {
             radius: to_rust_decimal(estimate.radius.unwrap()),
             lat: to_rust_decimal(estimate.lat.unwrap()),
-            long: to_rust_decimal(estimate.long.unwrap()),
+            lon: to_rust_decimal(estimate.lon.unwrap()),
             confidence: to_rust_decimal(estimate.confidence.unwrap()),
             events: estimate
                 .events

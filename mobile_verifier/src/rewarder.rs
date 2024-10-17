@@ -531,28 +531,28 @@ async fn reward_poc(
 }
 
 fn is_within_radius(
-    lat_a: f64,
-    lon_a: f64,
+    loc_lat: f64,
+    loc_lon: f64,
     comparators: Vec<(Decimal, Decimal, Decimal)>,
 ) -> anyhow::Result<bool> {
     let resolution = Resolution::Twelve;
 
-    let point_a =
-        LatLng::new(lat_a, lon_a).map_err(|e| anyhow::anyhow!("Invalid LatLng for A: {}", e))?;
+    let point_a = LatLng::new(loc_lat, loc_lon)
+        .map_err(|e| anyhow::anyhow!("Invalid LatLng for A: {}", e))?;
     let h3_index_a = point_a.to_cell(resolution);
 
-    for (radius_meters, lat_b, lon_b) in comparators {
-        let lat_b_f64 = lat_b
+    for (radius_meters, lat, lon) in comparators {
+        let lat_f64 = lat
             .to_f64()
             .ok_or_else(|| anyhow::anyhow!("Failed to convert lat_b to f64"))?;
-        let lon_b_f64 = lon_b
+        let lon_f64 = lon
             .to_f64()
             .ok_or_else(|| anyhow::anyhow!("Failed to convert lon_b to f64"))?;
         let radius_meters_f64 = radius_meters
             .to_f64()
             .ok_or_else(|| anyhow::anyhow!("Failed to convert radius_meters to f64"))?;
 
-        let point_b = LatLng::new(lat_b_f64, lon_b_f64)
+        let point_b = LatLng::new(lat_f64, lon_f64)
             .map_err(|e| anyhow::anyhow!("Invalid LatLng for B: {}", e))?;
         let h3_index_b = point_b.to_cell(resolution);
 
