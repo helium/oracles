@@ -1617,17 +1617,17 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#47598512b7d282c34b619adf140403feeb138e71"
+source = "git+https://github.com/helium/proto?branch=macpie/radio_location_estimates#289b2095198b63ed5fb7e69dea1c3b8e1a1cb991"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -1791,7 +1791,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -2642,7 +2642,7 @@ dependencies = [
  "axum 0.7.4",
  "bs58 0.4.0",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "http 0.2.11",
  "notify",
  "serde",
@@ -3242,7 +3242,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "hex-literal",
  "http 0.2.11",
  "lazy_static",
@@ -3855,7 +3855,7 @@ dependencies = [
  "h3o",
  "helium-anchor-gen 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
  "hex",
  "hex-literal",
  "itertools",
@@ -3882,7 +3882,23 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#47598512b7d282c34b619adf140403feeb138e71"
+source = "git+https://github.com/helium/proto?branch=macpie/radio_location_estimates#289b2095198b63ed5fb7e69dea1c3b8e1a1cb991"
+dependencies = [
+ "bytes",
+ "prost",
+ "prost-build",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
+name = "helium-proto"
+version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=master#197ff9c6cde7dc0d8334d6b4e27c58779e6a7ce0"
 dependencies = [
  "bytes",
  "prost",
@@ -3945,7 +3961,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -4370,7 +4386,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "http 0.2.11",
  "humantime-serde",
  "metrics",
@@ -4378,6 +4394,8 @@ dependencies = [
  "poc-metrics",
  "prost",
  "rand 0.8.5",
+ "rust_decimal",
+ "rust_decimal_macros",
  "serde",
  "serde_json",
  "sha2 0.10.8",
@@ -4439,7 +4457,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -4481,7 +4499,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -4523,7 +4541,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -5129,7 +5147,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -5169,7 +5187,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5214,7 +5232,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -5258,7 +5276,8 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
+ "hex",
  "hex-assignments",
  "hextree",
  "http-serde",
@@ -5942,7 +5961,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "http 0.2.11",
  "hyper 0.14.28",
  "jsonrpsee",
@@ -6025,7 +6044,7 @@ dependencies = [
  "futures-util",
  "helium-anchor-gen 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git)",
  "helium-lib",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -6676,7 +6695,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=macpie/radio_location_estimates)",
  "humantime-serde",
  "lazy_static",
  "metrics",
@@ -10078,7 +10097,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.9.9",
  "thiserror",
  "twox-hash",
  "xorf",

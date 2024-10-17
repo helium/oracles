@@ -168,6 +168,9 @@ pub const VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT: &str =
 pub const PROMOTION_REWARD_INGEST_REPORT: &str = "promotion_reward_ingest_report";
 pub const VERIFIED_PROMOTION_REWARD: &str = "verified_promotion_reward";
 pub const SERVICE_PROVIDER_PROMOTION_FUND: &str = "service_provider_promotion_fund";
+pub const RADIO_LOCATION_ESTIMATES_INGEST_REPORT: &str = "radio_location_estimates_ingest_report";
+pub const VERIFIED_RADIO_LOCATION_ESTIMATES_REPORT: &str =
+    "verified_radio_location_estimates_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -228,6 +231,8 @@ pub enum FileType {
     PromotionRewardIngestReport,
     VerifiedPromotionReward,
     ServiceProviderPromotionFund,
+    RadioLocationEstimatesIngestReport,
+    VerifiedRadioLocationEstimatesReport,
 }
 
 impl fmt::Display for FileType {
@@ -303,6 +308,8 @@ impl fmt::Display for FileType {
             Self::PromotionRewardIngestReport => PROMOTION_REWARD_INGEST_REPORT,
             Self::VerifiedPromotionReward => VERIFIED_PROMOTION_REWARD,
             Self::ServiceProviderPromotionFund => SERVICE_PROVIDER_PROMOTION_FUND,
+            Self::RadioLocationEstimatesIngestReport => RADIO_LOCATION_ESTIMATES_INGEST_REPORT,
+            Self::VerifiedRadioLocationEstimatesReport => VERIFIED_RADIO_LOCATION_ESTIMATES_REPORT,
         };
         f.write_str(s)
     }
@@ -381,6 +388,8 @@ impl FileType {
             Self::PromotionRewardIngestReport => PROMOTION_REWARD_INGEST_REPORT,
             Self::VerifiedPromotionReward => VERIFIED_PROMOTION_REWARD,
             Self::ServiceProviderPromotionFund => SERVICE_PROVIDER_PROMOTION_FUND,
+            Self::RadioLocationEstimatesIngestReport => RADIO_LOCATION_ESTIMATES_INGEST_REPORT,
+            Self::VerifiedRadioLocationEstimatesReport => VERIFIED_RADIO_LOCATION_ESTIMATES_REPORT,
         }
     }
 }
@@ -458,6 +467,8 @@ impl FromStr for FileType {
             PROMOTION_REWARD_INGEST_REPORT => Self::PromotionRewardIngestReport,
             VERIFIED_PROMOTION_REWARD => Self::VerifiedPromotionReward,
             SERVICE_PROVIDER_PROMOTION_FUND => Self::ServiceProviderPromotionFund,
+            RADIO_LOCATION_ESTIMATES_INGEST_REPORT => Self::RadioLocationEstimatesIngestReport,
+            VERIFIED_RADIO_LOCATION_ESTIMATES_REPORT => Self::VerifiedRadioLocationEstimatesReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

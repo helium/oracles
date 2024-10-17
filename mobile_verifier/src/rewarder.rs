@@ -1,8 +1,9 @@
+use self::boosted_hex_eligibility::BoostedHexEligibility;
 use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
-    heartbeats::{self, HeartbeatReward},
-    radio_threshold,
+    heartbeats::{self, location_cache::LocationCache, HeartbeatReward},
+    radio_location_estimates, radio_threshold,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
@@ -20,7 +21,6 @@ use file_store::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
 };
 use futures_util::TryFutureExt;
-
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -46,8 +46,6 @@ use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
 
-use self::boosted_hex_eligibility::BoostedHexEligibility;
-
 pub mod boosted_hex_eligibility;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
@@ -62,6 +60,8 @@ pub struct Rewarder<A, B> {
     reward_manifests: FileSinkClient<RewardManifest>,
     price_tracker: PriceTracker,
     speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
+    #[allow(dead_code)]
+    location_cache: LocationCache,
 }
 
 impl<A, B> Rewarder<A, B>
@@ -76,6 +76,7 @@ where
         carrier_service_verifier: A,
         hex_boosting_info_resolver: B,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
+        location_cache: LocationCache,
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
@@ -107,6 +108,7 @@ where
             reward_manifests,
             price_tracker,
             speedtests_avg,
+            location_cache,
         );
 
         Ok(TaskManager::builder()
@@ -128,6 +130,7 @@ where
         reward_manifests: FileSinkClient<RewardManifest>,
         price_tracker: PriceTracker,
         speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
+        location_cache: LocationCache,
     ) -> Self {
         Self {
             pool,
@@ -139,6 +142,7 @@ where
             reward_manifests,
             price_tracker,
             speedtest_averages,
+            location_cache,
         }
     }
 
@@ -264,6 +268,7 @@ where
             &self.hex_service_client,
             &self.mobile_rewards,
             &self.speedtest_averages,
+            &self.location_cache,
             reward_period,
             mobile_bone_price,
         )
@@ -298,6 +303,7 @@ where
         subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.start).await?;
         service_provider::db::clear_promotion_rewards(&mut transaction, &reward_period.start)
             .await?;
+        radio_location_estimates::clear_invalided(&mut transaction, &reward_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
@@ -357,6 +363,7 @@ pub async fn reward_poc_and_dc(
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
+    location_cache: &LocationCache,
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
@@ -394,6 +401,7 @@ pub async fn reward_poc_and_dc(
         speedtest_avg_sink,
         reward_period,
         reward_shares,
+        location_cache,
     )
     .await?;
 
@@ -420,6 +428,7 @@ async fn reward_poc(
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_period: &Range<DateTime<Utc>>,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
+    _location_cache: &LocationCache,
 ) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
     let heartbeats = HeartbeatReward::validated(pool, reward_period);
     let speedtest_averages =

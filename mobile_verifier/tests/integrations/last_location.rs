@@ -8,7 +8,10 @@ use helium_proto::services::poc_mobile::{self as proto, LocationSource};
 use mobile_verifier::{
     coverage::{CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::{last_location::LocationCache, HbType, Heartbeat, ValidatedHeartbeat},
+    heartbeats::{
+        location_cache::{LocationCache, LocationCacheKey},
+        HbType, Heartbeat, ValidatedHeartbeat,
+    },
 };
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -36,7 +39,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
     let epoch_end = epoch_start + Duration::days(2);
 
     let coverage_objects = CoverageObjectCache::new(&pool);
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
 
     let mut transaction = pool.begin().await?;
     let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
@@ -98,7 +101,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
     let epoch_end = epoch_start + Duration::days(2);
 
     let coverage_objects = CoverageObjectCache::new(&pool);
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
 
     let mut transaction = pool.begin().await?;
     let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
@@ -122,7 +125,10 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
         dec!(1.0)
     );
 
-    location_cache.delete_last_location(&hotspot).await;
+    location_cache
+        .remove(LocationCacheKey::WifiPubKey(hotspot.clone()))
+        .await?;
+
     transaction = pool.begin().await?;
     validated_heartbeat_1.clone().save(&mut transaction).await?;
     transaction.commit().await?;
@@ -167,7 +173,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
     let epoch_end = epoch_start + Duration::days(2);
 
     let coverage_objects = CoverageObjectCache::new(&pool);
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
 
     let mut transaction = pool.begin().await?;
     let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
@@ -175,8 +181,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
 
     let validated_heartbeat_1 = ValidatedHeartbeat::validate(
         heartbeat(&hotspot, &coverage_object)
-            .location_validation_timestamp(Utc::now())
-            .timestamp(Utc::now() - Duration::hours(12) - Duration::seconds(1))
+            .location_validation_timestamp(Utc::now() - Duration::hours(12) - Duration::seconds(1))
             .build(),
         &GatewayClientAllOwnersValid,
         &coverage_objects,
@@ -239,11 +244,6 @@ impl HeartbeatBuilder {
 
     fn latlng(mut self, latlng: (f64, f64)) -> Self {
         self.latlng = Some(latlng);
-        self
-    }
-
-    fn timestamp(mut self, ts: DateTime<Utc>) -> Self {
-        self.timestamp = Some(ts);
         self
     }
 
