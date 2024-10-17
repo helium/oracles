@@ -73,8 +73,13 @@ impl LocationCache {
         {
             let data = self.data.lock().await;
             if let Some(&value) = data.get(&key) {
-                // TODO: When we get it timestamp more than 12h old should we remove an try to fetch new one?
-                return Ok(Some(value));
+                let now = Utc::now();
+                let twelve_hours_ago = now - Duration::hours(12);
+                if value.timestamp > twelve_hours_ago {
+                    return Ok(None);
+                } else {
+                    return Ok(Some(value));
+                }
             }
         }
         match key {
