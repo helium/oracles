@@ -15,7 +15,9 @@ use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::common::{self, MockFileSinkReceiver};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
-use mobile_verifier::{data_session, reward_shares, rewarder};
+use mobile_verifier::{
+    data_session, reward_shares, rewarder, service_provider::db::fetch_dc_sessions,
+};
 
 const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
@@ -81,10 +83,13 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     seed_hotspot_data(epoch.end, &mut txn).await?;
     txn.commit().await?;
 
+    let dc_sessions = fetch_dc_sessions(&pool, &carrier_client, &epoch).await?;
+    let sp_promotions = carrier_client.list_incentive_promotions().await?;
+
     let (_, rewards) = tokio::join!(
         rewarder::reward_service_providers(
-            &pool,
-            &carrier_client,
+            dc_sessions,
+            sp_promotions,
             &mobile_rewards_client,
             &epoch,
             dec!(0.0001),
@@ -126,14 +131,13 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn test_service_provider_rewards_invalid_sp(pool: PgPool) -> anyhow::Result<()> {
+async fn test_service_provider_rewards_halt_on_invalid_sp(pool: PgPool) -> anyhow::Result<()> {
     // only payer 1 has a corresponding SP key
     // data sessions from payer 2 will result in an error, halting rewards
     let mut valid_sps = HashMap::<String, String>::new();
     valid_sps.insert(PAYER_1.to_string(), SP_1.to_string());
     let carrier_client = MockCarrierServiceClient::new(valid_sps);
 
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let now = Utc::now();
     let epoch = (now - ChronoDuration::hours(24))..now;
 
@@ -141,21 +145,13 @@ async fn test_service_provider_rewards_invalid_sp(pool: PgPool) -> anyhow::Resul
     seed_hotspot_data_invalid_sp(epoch.end, &mut txn).await?;
     txn.commit().await.expect("db txn failed");
 
-    let resp = rewarder::reward_service_providers(
-        &pool.clone(),
-        &carrier_client.clone(),
-        &mobile_rewards_client,
-        &epoch,
-        dec!(0.0001),
-    )
-    .await;
+    let dc_sessions = fetch_dc_sessions(&pool, &carrier_client, &epoch).await;
     assert_eq!(
-        resp.unwrap_err().to_string(),
-        "unknown service provider ".to_string() + PAYER_2
+        dc_sessions.unwrap_err().to_string(),
+        format!("unknown service provider {PAYER_2}")
     );
+    // This is where rewarding would happen if we could properly fetch dc_sessions
 
-    // confirm we get no msgs as rewards halted
-    mobile_rewards.assert_no_messages();
     Ok(())
 }
 
@@ -198,10 +194,13 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
 
     txn.commit().await?;
 
+    let dc_sessions = fetch_dc_sessions(&pool, &carrier_client, &epoch).await?;
+    let sp_promotions = carrier_client.list_incentive_promotions().await?;
+
     let (_, rewards) = tokio::join!(
         rewarder::reward_service_providers(
-            &pool,
-            &carrier_client,
+            dc_sessions,
+            sp_promotions,
             &mobile_rewards_client,
             &epoch,
             dec!(0.00001)
