@@ -139,19 +139,17 @@ impl Indexer {
             settings::Mode::Mobile => {
                 let share = MobileRewardShare::decode(msg)?;
                 match share.reward {
-                    Some(MobileReward::RadioReward(r)) => Ok(Some((
+                    Some(MobileReward::RadioReward(_r)) => {
+                        // RadioReward has been replaced by RadioRewardV2
+                        Ok(None)
+                    }
+                    Some(MobileReward::RadioRewardV2(r)) => Ok(Some((
                         RewardKey {
                             key: PublicKeyBinary::from(r.hotspot_key).to_string(),
                             reward_type: RewardType::MobileGateway,
                         },
-                        r.poc_reward,
+                        r.base_poc_reward + r.boosted_poc_reward,
                     ))),
-                    Some(MobileReward::RadioRewardV2(_)) => {
-                        // NOTE: Eventually radio_reward_v2 will replace
-                        // radio_reward as the source of rewards, then
-                        // radio_reward will cease to be written.
-                        Ok(None)
-                    }
 
                     Some(MobileReward::GatewayReward(r)) => Ok(Some((
                         RewardKey {
