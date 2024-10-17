@@ -305,6 +305,7 @@ pub async fn get_valid_estimates(
         WHERE radio_key = $1
             AND confidence >= $2
             AND invalided_at IS NULL
+        ORDER BY radius DESC, confidence DESC
         "#,
     )
     .bind(radio_key.to_string())
