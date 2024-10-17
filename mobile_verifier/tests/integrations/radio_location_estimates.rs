@@ -114,7 +114,7 @@ fn file_info_stream() -> (
                 estimates: vec![RadioLocationEstimate {
                     radius: rust_decimal::Decimal::from_f32(0.1).unwrap(),
                     lat: rust_decimal::Decimal::from_f32(0.1).unwrap(),
-                    long: rust_decimal::Decimal::from_f32(-0.1).unwrap(),
+                    lon: rust_decimal::Decimal::from_f32(-0.1).unwrap(),
                     confidence: rust_decimal::Decimal::from_f32(0.1).unwrap(),
                     events: vec![RadioLocationEstimateEvent {
                         id: "event_1".to_string(),
@@ -132,7 +132,7 @@ fn file_info_stream() -> (
                 estimates: vec![RadioLocationEstimate {
                     radius: rust_decimal::Decimal::from_f32(0.2).unwrap(),
                     lat: rust_decimal::Decimal::from_f32(0.2).unwrap(),
-                    long: rust_decimal::Decimal::from_f32(-0.2).unwrap(),
+                    lon: rust_decimal::Decimal::from_f32(-0.2).unwrap(),
                     confidence: rust_decimal::Decimal::from_f32(0.2).unwrap(),
                     events: vec![RadioLocationEstimateEvent {
                         id: "event_1".to_string(),
@@ -170,7 +170,7 @@ fn compare_report_and_estimate(
             report.received_timestamp,
             report.report.estimates[0].radius,
             report.report.estimates[0].lat,
-            report.report.estimates[0].long
+            report.report.estimates[0].lon
         ),
         estimate.hashed_key
     );
@@ -182,7 +182,7 @@ fn compare_report_and_estimate(
     ));
     assert_eq!(report.report.estimates[0].radius, estimate.radius);
     assert_eq!(report.report.estimates[0].lat, estimate.lat);
-    assert_eq!(report.report.estimates[0].long, estimate.long);
+    assert_eq!(report.report.estimates[0].lon, estimate.long);
     assert_eq!(report.report.estimates[0].confidence, estimate.confidence);
 
     if should_be_valid {

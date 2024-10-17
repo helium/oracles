@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS radio_location_estimates (
     received_timestamp TIMESTAMPTZ NOT NULL,
     radius DECIMAL NOT NULL,
     lat DECIMAL NOT NULL,
-    long DECIMAL NOT NULL,
+    lon DECIMAL NOT NULL,
     confidence DECIMAL NOT NULL,
     invalided_at TIMESTAMPTZ DEFAULT NULL,
     inserted_at TIMESTAMPTZ DEFAULT now(),
