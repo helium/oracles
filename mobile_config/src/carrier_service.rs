@@ -3,7 +3,10 @@ use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
-    services::mobile_config::{self, CarrierKeyToEntityReqV1, CarrierKeyToEntityResV1},
+    services::mobile_config::{
+        self, CarrierIncentivePromotionListReqV1, CarrierIncentivePromotionListResV1,
+        CarrierKeyToEntityReqV1, CarrierKeyToEntityResV1,
+    },
     Message,
 };
 use sqlx::{Pool, Postgres};
@@ -75,6 +78,28 @@ impl mobile_config::CarrierService for CarrierService {
             signature: vec![],
         };
         response.signature = self.sign_response(&response.encode_to_vec())?;
+        Ok(Response::new(response))
+    }
+
+    async fn list_incentive_promotions(
+        &self,
+        request: Request<CarrierIncentivePromotionListReqV1>,
+    ) -> GrpcResult<CarrierIncentivePromotionListResV1> {
+        let request = request.into_inner();
+        telemetry::count_request("carrier_service", "list_incentive_promotions");
+        custom_tracing::record_b58("signer", &request.signer);
+
+        let signer = verify_public_key(&request.signature)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        let mut response = CarrierIncentivePromotionListResV1 {
+            // TODO: db query
+            service_provider_promotions: vec![],
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        response.signature = self.sign_response(&response.encode_to_vec())?;
+
         Ok(Response::new(response))
     }
 }
