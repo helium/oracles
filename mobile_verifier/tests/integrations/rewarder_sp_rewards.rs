@@ -28,11 +28,19 @@ pub type ValidSpMap = HashMap<String, String>;
 #[derive(Debug, Clone)]
 pub struct MockCarrierServiceClient {
     pub valid_sps: ValidSpMap,
+    pub promotions: Vec<ServiceProviderPromotion>,
 }
 
 impl MockCarrierServiceClient {
     fn new(valid_sps: ValidSpMap) -> Self {
-        Self { valid_sps }
+        Self {
+            valid_sps,
+            promotions: vec![],
+        }
+    }
+
+    fn with_promotions(self, promotions: Vec<ServiceProviderPromotion>) -> Self {
+        Self { promotions, ..self }
     }
 }
 
