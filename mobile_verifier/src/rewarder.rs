@@ -296,8 +296,6 @@ where
         coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
         sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_period.start).await?;
         subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.start).await?;
-        service_provider::db::clear_promotion_rewards(&mut transaction, &reward_period.start)
-            .await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
@@ -605,15 +603,13 @@ pub async fn reward_service_providers(
 ) -> anyhow::Result<()> {
     use service_provider::{db, ServiceProviderRewardInfos};
     let dc_sessions = db::fetch_dc_sessions(pool, carrier_client, reward_period).await?;
-    let promo_funds = db::fetch_promotion_funds(pool).await?;
-    let promo_rewards = db::fetch_promotion_rewards(pool, carrier_client, reward_period).await?;
 
     let total_sp_rewards = service_provider::get_scheduled_tokens(reward_period);
+    let sp_promotions = carrier_client.list_incentive_promotions().await?;
 
     let sps = ServiceProviderRewardInfos::new(
         dc_sessions,
-        promo_funds,
-        promo_rewards,
+        sp_promotions,
         total_sp_rewards,
         mobile_bone_price,
         reward_period.clone(),

@@ -7,7 +7,7 @@ use helium_proto::{
     services::poc_mobile::{
         MobileRewardShare, ServiceProviderReward, UnallocatedReward, UnallocatedRewardType,
     },
-    ServiceProvider,
+    Promotion, ServiceProvider, ServiceProviderPromotion,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -49,6 +49,12 @@ impl CarrierServiceVerifier for MockCarrierServiceClient {
                 .map_err(|_| ClientError::UnknownServiceProvider(pubkey.to_string()))?),
             None => Err(ClientError::UnknownServiceProvider(pubkey.to_string())),
         }
+    }
+
+    async fn list_incentive_promotions(
+        &self,
+    ) -> Result<Vec<ServiceProviderPromotion>, Self::Error> {
+        Ok(self.promotions.clone())
     }
 }
 
@@ -145,109 +151,101 @@ async fn test_service_provider_rewards_invalid_sp(pool: PgPool) -> anyhow::Resul
     Ok(())
 }
 
-// #[sqlx::test]
-// async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result<()> {
-//     // Single SP has allocated shares for a few of their subscribers.
-//     // Rewards are matched by the unallocated SP rewards for the subscribers
+#[sqlx::test]
+async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result<()> {
+    // Single SP has allocated shares for a few of their subscribers.
+    // Rewards are matched by the unallocated SP rewards for the subscribers
 
-//     let valid_sps = HashMap::from_iter([(PAYER_1.to_string(), SP_1.to_string())]);
-//     let carrier_client = MockCarrierServiceClient::new(valid_sps);
+    let valid_sps = HashMap::from_iter([(PAYER_1.to_string(), SP_1.to_string())]);
+    // promotions allocated 15.00%
+    let carrier_client =
+        MockCarrierServiceClient::new(valid_sps).with_promotions(vec![ServiceProviderPromotion {
+            service_provider: 0,
+            incentive_escrow_fund_bps: 1500,
+            promotions: vec![
+                Promotion {
+                    entity: "one".to_string(),
+                    shares: 1,
+                    ..Default::default()
+                },
+                Promotion {
+                    entity: "two".to_string(),
+                    shares: 2,
+                    ..Default::default()
+                },
+                Promotion {
+                    entity: "three".to_string(),
+                    shares: 3,
+                    ..Default::default()
+                },
+            ],
+        }]);
 
-//     let now = Utc::now();
-//     let epoch = (now - ChronoDuration::hours(24))..now;
-//     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let now = Utc::now();
+    let epoch = (now - ChronoDuration::hours(24))..now;
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
 
-//     let mut txn = pool.begin().await?;
-//     seed_hotspot_data(epoch.end, &mut txn).await?; // DC transferred == 6,000 reward amount
-//     seed_sp_promotion_rewards_with_random_subscribers(
-//         PAYER_1.to_string().parse().unwrap(),
-//         &[1, 2, 3],
-//         &mut txn,
-//     )
-//     .await?;
-//     // promotions allocated 10.00%
-//     seed_sp_promotion_rewards_funds(&[(0, 1500)], &mut txn).await?;
-//     txn.commit().await?;
+    let mut txn = pool.begin().await?;
+    seed_hotspot_data(epoch.end, &mut txn).await?; // DC transferred == 6,000 reward amount
 
-//     let (_, rewards) = tokio::join!(
-//         rewarder::reward_service_providers(
-//             &pool,
-//             &carrier_client,
-//             &mobile_rewards_client,
-//             &epoch,
-//             dec!(0.00001)
-//         ),
-//         async move {
-//             let mut promos = vec![
-//                 mobile_rewards.receive_promotion_reward().await,
-//                 mobile_rewards.receive_promotion_reward().await,
-//                 mobile_rewards.receive_promotion_reward().await,
-//             ];
-//             // sort by awarded amount least -> most
-//             promos.sort_by_key(|a| a.service_provider_amount);
+    txn.commit().await?;
 
-//             let sp_reward = mobile_rewards.receive_service_provider_reward().await;
-//             let unallocated = mobile_rewards.receive_unallocated_reward().await;
+    let (_, rewards) = tokio::join!(
+        rewarder::reward_service_providers(
+            &pool,
+            &carrier_client,
+            &mobile_rewards_client,
+            &epoch,
+            dec!(0.00001)
+        ),
+        async move {
+            let mut promos = vec![
+                mobile_rewards.receive_promotion_reward().await,
+                mobile_rewards.receive_promotion_reward().await,
+                mobile_rewards.receive_promotion_reward().await,
+            ];
+            // sort by awarded amount least -> most
+            promos.sort_by_key(|a| a.service_provider_amount);
 
-//             mobile_rewards.assert_no_messages();
+            let sp_reward = mobile_rewards.receive_service_provider_reward().await;
+            let unallocated = mobile_rewards.receive_unallocated_reward().await;
 
-//             (promos, sp_reward, unallocated)
-//         }
-//     );
+            mobile_rewards.assert_no_messages();
 
-//     let (promos, sp_reward, unallocated) = rewards;
-//     let promo_reward_1 = promos[0].clone();
-//     let promo_reward_2 = promos[1].clone();
-//     let promo_reward_3 = promos[2].clone();
+            (promos, sp_reward, unallocated)
+        }
+    );
 
-//     // 1 share
-//     assert_eq!(promo_reward_1.service_provider_amount, 1_500);
-//     assert_eq!(promo_reward_1.matched_amount, 1_500);
+    let (promos, sp_reward, unallocated) = rewards;
+    let promo_reward_1 = promos[0].clone();
+    let promo_reward_2 = promos[1].clone();
+    let promo_reward_3 = promos[2].clone();
 
-//     // 2 shares
-//     assert_eq!(promo_reward_2.service_provider_amount, 3_000);
-//     assert_eq!(promo_reward_2.matched_amount, 3_000);
+    // 1 share
+    assert_eq!(promo_reward_1.service_provider_amount, 1_500);
+    assert_eq!(promo_reward_1.matched_amount, 1_500);
 
-//     // 3 shares
-//     assert_eq!(promo_reward_3.service_provider_amount, 4_500);
-//     assert_eq!(promo_reward_3.matched_amount, 4_500);
+    // 2 shares
+    assert_eq!(promo_reward_2.service_provider_amount, 3_000);
+    assert_eq!(promo_reward_2.matched_amount, 3_000);
 
-//     // dc_percentage * total_sp_allocation rounded down
-//     assert_eq!(sp_reward.amount, 50_999);
+    // 3 shares
+    assert_eq!(promo_reward_3.service_provider_amount, 4_500);
+    assert_eq!(promo_reward_3.matched_amount, 4_500);
 
-//     let unallocated_sp_rewards = get_unallocated_sp_rewards(&epoch);
-//     let expected_unallocated = unallocated_sp_rewards
-//         - 50_999 // 85% service provider rewards rounded down
-//         - 9_000 // 15% service provider promotions
-//         - 9_000; // matched promotion
+    // dc_percentage * total_sp_allocation rounded down
+    assert_eq!(sp_reward.amount, 50_999);
 
-//     assert_eq!(unallocated.amount, expected_unallocated);
+    let unallocated_sp_rewards = get_unallocated_sp_rewards(&epoch);
+    let expected_unallocated = unallocated_sp_rewards
+        - 50_999 // 85% service provider rewards rounded down
+        - 9_000 // 15% service provider promotions
+        - 9_000; // matched promotion
 
-//     // Ensure the cleanup job can run
-//     let mut txn = pool.begin().await?;
+    assert_eq!(unallocated.amount, expected_unallocated);
 
-//     service_provider::db::clear_promotion_rewards(&mut txn, &Utc::now()).await?;
-//     txn.commit().await?;
-
-//     let promos = service_provider::db::fetch_promotion_rewards(
-//         &pool,
-//         &carrier_client,
-//         &(epoch.start..Utc::now()),
-//     )
-//     .await?;
-//     assert!(promos.is_empty());
-
-//     let sp_allocations = service_provider::reward_data_sp_allocations(&pool).await?;
-//     assert_eq!(
-//         vec![helium_proto::ServiceProviderAllocation {
-//             service_provider: 0,
-//             incentive_escrow_fund_bps: 1500
-//         }],
-//         sp_allocations
-//     );
-
-//     Ok(())
-// }
+    Ok(())
+}
 
 async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
@@ -321,47 +319,10 @@ async fn seed_hotspot_data_invalid_sp(
     Ok(())
 }
 
-// // Service Provider promotion rewards are verified during ingest. When you write
-// // directly to the database, the assumption is the entity and the payer are
-// // valid.
-// async fn seed_sp_promotion_rewards_with_random_subscribers(
-//     payer: PublicKeyBinary,
-//     sub_shares: &[u64],
-//     txn: &mut Transaction<'_, Postgres>,
-// ) -> anyhow::Result<()> {
-//     for &shares in sub_shares {
-//         save_promotion_reward(
-//             txn,
-//             &PromotionReward {
-//                 entity: promotion_reward::Entity::SubscriberId(Uuid::new_v4().into()),
-//                 shares,
-//                 timestamp: Utc::now() - chrono::Duration::hours(2),
-//                 received_timestamp: Utc::now(),
-//                 carrier_pub_key: payer.clone(),
-//                 signature: vec![],
-//             },
-//         )
-//         .await?;
-//     }
-
-//     Ok(())
-// }
-
-// async fn seed_sp_promotion_rewards_funds(
-//     sp_fund_allocations: &[(ServiceProviderId, u16)],
-//     txn: &mut Transaction<'_, Postgres>,
-// ) -> anyhow::Result<()> {
-//     for (sp_id, basis_points) in sp_fund_allocations {
-//         save_promotion_fund(txn, *sp_id, *basis_points).await?;
-//     }
-
-//     Ok(())
-// }
-
-// // Helper for turning Decimal -> u64 to compare against output rewards
-// fn get_unallocated_sp_rewards(epoch: &std::ops::Range<DateTime<Utc>>) -> u64 {
-//     reward_shares::get_scheduled_tokens_for_service_providers(epoch.end - epoch.start)
-//         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-//         .to_u64()
-//         .unwrap_or(0)
-// }
+// Helper for turning Decimal -> u64 to compare against output rewards
+fn get_unallocated_sp_rewards(epoch: &std::ops::Range<DateTime<Utc>>) -> u64 {
+    reward_shares::get_scheduled_tokens_for_service_providers(epoch.end - epoch.start)
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0)
+}

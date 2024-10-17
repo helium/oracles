@@ -106,7 +106,7 @@ where
 pub mod tests {
 
     use chrono::Duration;
-    use helium_proto::ServiceProvider;
+    use helium_proto::{ServiceProvider, ServiceProviderPromotion};
 
     use crate::data_session::HotspotDataSession;
 
