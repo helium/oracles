@@ -73,10 +73,7 @@ async fn submit_hex_usage_report() -> anyhow::Result<()> {
                         SERVICE_PROVIDER_SUBSCRIBER_AVG_COUNT,
                         event.service_provider_subscriber_avg_count
                     );
-                    assert_eq!(
-                        DISCO_MAPPING_AVG_COUNT,
-                        event.disco_mapping_avg_count
-                    );
+                    assert_eq!(DISCO_MAPPING_AVG_COUNT, event.disco_mapping_avg_count);
                     assert_eq!(OFFLOAD_AVG_COUNT, event.offload_avg_count);
                 }
             }
