@@ -84,6 +84,8 @@ impl_msg_verify!(mobile_config::AuthorizationListReqV1, signature);
 impl_msg_verify!(mobile_config::AuthorizationListResV1, signature);
 impl_msg_verify!(mobile_config::EntityVerifyReqV1, signature);
 impl_msg_verify!(mobile_config::EntityVerifyResV1, signature);
+impl_msg_verify!(mobile_config::CarrierIncentivePromotionListReqV1, signature);
+impl_msg_verify!(mobile_config::CarrierIncentivePromotionListResV1, signature);
 impl_msg_verify!(mobile_config::CarrierKeyToEntityReqV1, signature);
 impl_msg_verify!(mobile_config::CarrierKeyToEntityResV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoReqV1, signature);
@@ -95,7 +97,6 @@ impl_msg_verify!(mobile_config::BoostedHexInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexModifiedInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexInfoStreamResV1, signature);
 impl_msg_verify!(poc_mobile::SubscriberVerifiedMappingEventReqV1, signature);
-impl_msg_verify!(poc_mobile::PromotionRewardReqV1, signature);
 
 #[cfg(test)]
 mod test {
