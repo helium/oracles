@@ -17,10 +17,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct HexUsageCountsReq {
     pub hex: CellIndex,
-    pub helium_mobile_subscriber_avg_count: u64,
-    pub helium_mobile_disco_mapping_avg_count: u64,
+    pub service_provider_subscriber_avg_count: u64,
+    pub disco_mapping_avg_count: u64,
     pub offload_avg_count: u64,
-    pub tmo_cell_avg_count: u64,
     pub timestamp: DateTime<Utc>,
     pub carrier_mapping_key: PublicKeyBinary,
 }
@@ -29,8 +28,8 @@ pub struct HexUsageCountsReq {
 pub struct RadioUsageCountsReq {
     pub hotspot_pubkey: PublicKeyBinary,
     pub cbsd_id: String,
-    pub helium_mobile_subscriber_avg_count: u64,
-    pub helium_mobile_disco_mapping_avg_count: u64,
+    pub service_provider_subscriber_avg_count: u64,
+    pub disco_mapping_avg_count: u64,
     pub offload_avg_count: u64,
     pub timestamp: DateTime<Utc>,
     pub carrier_mapping_key: PublicKeyBinary,
@@ -77,10 +76,9 @@ impl TryFrom<HexUsageCountsReqV1> for HexUsageCountsReq {
         })?;
         Ok(Self {
             hex,
-            helium_mobile_subscriber_avg_count: v.helium_mobile_subscriber_avg_count,
-            helium_mobile_disco_mapping_avg_count: v.helium_mobile_disco_mapping_avg_count,
+            service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
+            disco_mapping_avg_count: v.disco_mapping_avg_count,
             offload_avg_count: v.offload_avg_count,
-            tmo_cell_avg_count: v.tmo_cell_avg_count,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
         })
@@ -92,10 +90,9 @@ impl From<HexUsageCountsReq> for HexUsageCountsReqV1 {
         let timestamp = v.timestamp();
         HexUsageCountsReqV1 {
             hex: v.hex.into(),
-            helium_mobile_subscriber_avg_count: v.helium_mobile_subscriber_avg_count,
-            helium_mobile_disco_mapping_avg_count: v.helium_mobile_disco_mapping_avg_count,
+            service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
+            disco_mapping_avg_count: v.disco_mapping_avg_count,
             offload_avg_count: v.offload_avg_count,
-            tmo_cell_avg_count: v.tmo_cell_avg_count,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
             signature: vec![],
@@ -110,8 +107,8 @@ impl TryFrom<RadioUsageCountsReqV1> for RadioUsageCountsReq {
         Ok(Self {
             hotspot_pubkey: v.hotspot_pubkey.into(),
             cbsd_id: v.cbsd_id,
-            helium_mobile_subscriber_avg_count: v.helium_mobile_subscriber_avg_count,
-            helium_mobile_disco_mapping_avg_count: v.helium_mobile_disco_mapping_avg_count,
+            service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
+            disco_mapping_avg_count: v.disco_mapping_avg_count,
             offload_avg_count: v.offload_avg_count,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
@@ -125,8 +122,8 @@ impl From<RadioUsageCountsReq> for RadioUsageCountsReqV1 {
         RadioUsageCountsReqV1 {
             hotspot_pubkey: v.hotspot_pubkey.into(),
             cbsd_id: v.cbsd_id,
-            helium_mobile_subscriber_avg_count: v.helium_mobile_subscriber_avg_count,
-            helium_mobile_disco_mapping_avg_count: v.helium_mobile_disco_mapping_avg_count,
+            service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
+            disco_mapping_avg_count: v.disco_mapping_avg_count,
             offload_avg_count: v.offload_avg_count,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
