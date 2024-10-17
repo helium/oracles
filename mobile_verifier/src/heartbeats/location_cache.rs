@@ -3,8 +3,7 @@ use file_store::radio_location_estimates::Entity;
 use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::Mutex;
-use tracing::info;
+use tokio::sync::{Mutex, MutexGuard};
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum LocationCacheKey {
@@ -29,56 +28,57 @@ impl LocationCacheValue {
     }
 }
 
+type LocationCacheData = HashMap<LocationCacheKey, LocationCacheValue>;
+
 /// A cache WiFi/Cbrs heartbeat locations
 #[derive(Clone)]
 pub struct LocationCache {
     pool: PgPool,
-    data: Arc<Mutex<HashMap<LocationCacheKey, LocationCacheValue>>>,
+    wifi: Arc<Mutex<LocationCacheData>>,
+    cbrs: Arc<Mutex<LocationCacheData>>,
 }
 
 impl LocationCache {
     pub fn new(pool: &PgPool) -> Self {
-        let data = Arc::new(Mutex::new(
-            HashMap::<LocationCacheKey, LocationCacheValue>::new(),
-        ));
-        let data_clone = data.clone();
-        tokio::spawn(async move {
-            loop {
-                // Sleep 1 hour
-                let duration = core::time::Duration::from_secs(60 * 60);
-                tokio::time::sleep(duration).await;
-
-                let now = Utc::now();
-                // Set the 12-hour threshold
-                let twelve_hours_ago = now - Duration::hours(12);
-
-                let mut data = data_clone.lock().await;
-                let size_before = data.len() as f64;
-
-                // Retain only values that are within the last 12 hours
-                data.retain(|_, v| v.timestamp > twelve_hours_ago);
-
-                let size_after = data.len() as f64;
-                info!("cleaned {}", size_before - size_after);
-            }
-        });
+        let wifi = Arc::new(Mutex::new(HashMap::new()));
+        let cbrs = Arc::new(Mutex::new(HashMap::new()));
         // TODO: We could spawn an hydrate from DB here?
         Self {
             pool: pool.clone(),
-            data,
+            wifi,
+            cbrs,
         }
     }
 
     pub async fn get(&self, key: LocationCacheKey) -> anyhow::Result<Option<LocationCacheValue>> {
         {
-            let data = self.data.lock().await;
+            let data = self.key_to_lock(&key).await;
+            if let Some(&value) = data.get(&key) {
+                return Ok(Some(value));
+            }
+        }
+        match key {
+            LocationCacheKey::WifiPubKey(pub_key_bin) => {
+                self.fetch_wifi_and_insert(pub_key_bin).await
+            }
+            LocationCacheKey::CbrsId(id) => self.fetch_cbrs_and_insert(id).await,
+        }
+    }
+
+    pub async fn get_recent(
+        &self,
+        key: LocationCacheKey,
+        when: Duration,
+    ) -> anyhow::Result<Option<LocationCacheValue>> {
+        {
+            let data = self.key_to_lock(&key).await;
             if let Some(&value) = data.get(&key) {
                 let now = Utc::now();
-                let twelve_hours_ago = now - Duration::hours(12);
-                if value.timestamp > twelve_hours_ago {
-                    return Ok(None);
-                } else {
+                let before = now - when;
+                if value.timestamp > before {
                     return Ok(Some(value));
+                } else {
+                    return Ok(None);
                 }
             }
         }
@@ -90,9 +90,15 @@ impl LocationCache {
         }
     }
 
-    pub async fn get_all(&self) -> HashMap<LocationCacheKey, LocationCacheValue> {
-        let data = self.data.lock().await;
-        data.clone()
+    pub async fn get_all(&self) -> LocationCacheData {
+        let wifi_data = self.wifi.lock().await;
+        let mut wifi_data_cloned = wifi_data.clone();
+
+        let cbrs_data = self.cbrs.lock().await;
+        let cbrs_data_cloned = cbrs_data.clone();
+
+        wifi_data_cloned.extend(cbrs_data_cloned);
+        wifi_data_cloned
     }
 
     pub async fn insert(
@@ -100,16 +106,23 @@ impl LocationCache {
         key: LocationCacheKey,
         value: LocationCacheValue,
     ) -> anyhow::Result<()> {
-        let mut data = self.data.lock().await;
+        let mut data = self.key_to_lock(&key).await;
         data.insert(key, value);
         Ok(())
     }
 
     /// Only used for testing.
     pub async fn remove(&self, key: LocationCacheKey) -> anyhow::Result<()> {
-        let mut data = self.data.lock().await;
+        let mut data = self.key_to_lock(&key).await;
         data.remove(&key);
         Ok(())
+    }
+
+    async fn key_to_lock(&self, key: &LocationCacheKey) -> MutexGuard<'_, LocationCacheData> {
+        match key {
+            LocationCacheKey::WifiPubKey(_) => self.wifi.lock().await,
+            LocationCacheKey::CbrsId(_) => self.cbrs.lock().await,
+        }
     }
 
     async fn fetch_wifi_and_insert(
@@ -134,8 +147,9 @@ impl LocationCache {
         match sqlx_return {
             None => Ok(None),
             Some(value) => {
-                let mut data = self.data.lock().await;
-                data.insert(LocationCacheKey::WifiPubKey(pub_key_bin), value);
+                let key = LocationCacheKey::WifiPubKey(pub_key_bin);
+                let mut data = self.key_to_lock(&key).await;
+                data.insert(key, value);
                 Ok(Some(value))
             }
         }
@@ -147,12 +161,12 @@ impl LocationCache {
     ) -> anyhow::Result<Option<LocationCacheValue>> {
         let sqlx_return: Option<LocationCacheValue> = sqlx::query_as(
             r#"
-            SELECT lat, lon, location_validation_timestamp AS timestamp
+            SELECT lat, lon, latest_timestamp AS timestamp
             FROM cbrs_heartbeats
-            WHERE location_validation_timestamp IS NOT NULL
-                AND location_validation_timestamp >= $1
+            WHERE latest_timestamp IS NOT NULL
+                AND latest_timestamp >= $1
                 AND hotspot_key = $2
-            ORDER BY location_validation_timestamp DESC
+            ORDER BY latest_timestamp DESC
             LIMIT 1
             "#,
         )
@@ -164,8 +178,9 @@ impl LocationCache {
         match sqlx_return {
             None => Ok(None),
             Some(value) => {
-                let mut data = self.data.lock().await;
-                data.insert(LocationCacheKey::CbrsId(cbsd_id), value);
+                let key = LocationCacheKey::CbrsId(cbsd_id);
+                let mut data = self.key_to_lock(&key).await;
+                data.insert(key, value);
                 Ok(Some(value))
             }
         }

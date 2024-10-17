@@ -181,8 +181,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
 
     let validated_heartbeat_1 = ValidatedHeartbeat::validate(
         heartbeat(&hotspot, &coverage_object)
-            .location_validation_timestamp(Utc::now())
-            .timestamp(Utc::now() - Duration::hours(12) - Duration::seconds(1))
+            .location_validation_timestamp(Utc::now() - Duration::hours(12) - Duration::seconds(1))
             .build(),
         &GatewayClientAllOwnersValid,
         &coverage_objects,
@@ -245,11 +244,6 @@ impl HeartbeatBuilder {
 
     fn latlng(mut self, latlng: (f64, f64)) -> Self {
         self.latlng = Some(latlng);
-        self
-    }
-
-    fn timestamp(mut self, ts: DateTime<Utc>) -> Self {
-        self.timestamp = Some(ts);
         self
     }
 
