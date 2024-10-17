@@ -237,12 +237,12 @@ async fn insert_estimate(
 ) -> Result<(), sqlx::Error> {
     let radius = estimate.radius;
     let lat = estimate.lat;
-    let long = estimate.long;
+    let long = estimate.lon;
     let hashed_key = hash_key(entity, received_timestamp, radius, lat, long);
 
     sqlx::query(
         r#"
-        INSERT INTO radio_location_estimates (hashed_key, radio_type, radio_key, received_timestamp, radius, lat, long, confidence)
+        INSERT INTO radio_location_estimates (hashed_key, radio_type, radio_key, received_timestamp, radius, lat, lon, confidence)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (hashed_key) DO NOTHING
         "#,
@@ -300,7 +300,7 @@ pub async fn get_valid_estimates(
 ) -> anyhow::Result<Vec<(Decimal, Decimal, Decimal)>> {
     let rows = sqlx::query(
         r#"
-        SELECT radius, lat, long
+        SELECT radius, lat, lon
         FROM radio_location_estimates
         WHERE radio_key = $1
             AND confidence >= $2
@@ -317,7 +317,7 @@ pub async fn get_valid_estimates(
         .map(|row| {
             let radius: Decimal = row.get("radius");
             let lat: Decimal = row.get("lat");
-            let lon: Decimal = row.get("long");
+            let lon: Decimal = row.get("lon");
             (radius, lat, lon)
         })
         .collect();
