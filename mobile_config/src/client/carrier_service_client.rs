@@ -5,7 +5,7 @@ use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::{mobile_config, Channel},
-    Message, ServiceProvider, ServiceProviderPromotion,
+    Message, ServiceProvider, ServiceProviderPromotions,
 };
 use retainer::Cache;
 use std::{str::FromStr, sync::Arc, time::Duration};
@@ -17,8 +17,9 @@ pub trait CarrierServiceVerifier {
         payer: &str,
     ) -> Result<ServiceProvider, Self::Error>;
 
-    async fn list_incentive_promotions(&self)
-        -> Result<Vec<ServiceProviderPromotion>, Self::Error>;
+    async fn list_incentive_promotions(
+        &self,
+    ) -> Result<Vec<ServiceProviderPromotions>, Self::Error>;
 }
 #[derive(Clone)]
 pub struct CarrierServiceClient {
@@ -68,7 +69,7 @@ impl CarrierServiceVerifier for CarrierServiceClient {
 
     async fn list_incentive_promotions(
         &self,
-    ) -> Result<Vec<ServiceProviderPromotion>, Self::Error> {
+    ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
         let mut request = mobile_config::CarrierIncentivePromotionListReqV1 {
             timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),

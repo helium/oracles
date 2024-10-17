@@ -4,10 +4,11 @@ use std::string::ToString;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use helium_proto::{
+    service_provider_promotions::Promotion,
     services::poc_mobile::{
         MobileRewardShare, ServiceProviderReward, UnallocatedReward, UnallocatedRewardType,
     },
-    Promotion, ServiceProvider, ServiceProviderPromotion,
+    ServiceProvider, ServiceProviderPromotions,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -28,7 +29,7 @@ pub type ValidSpMap = HashMap<String, String>;
 #[derive(Debug, Clone)]
 pub struct MockCarrierServiceClient {
     pub valid_sps: ValidSpMap,
-    pub promotions: Vec<ServiceProviderPromotion>,
+    pub promotions: Vec<ServiceProviderPromotions>,
 }
 
 impl MockCarrierServiceClient {
@@ -39,7 +40,7 @@ impl MockCarrierServiceClient {
         }
     }
 
-    fn with_promotions(self, promotions: Vec<ServiceProviderPromotion>) -> Self {
+    fn with_promotions(self, promotions: Vec<ServiceProviderPromotions>) -> Self {
         Self { promotions, ..self }
     }
 }
@@ -61,7 +62,7 @@ impl CarrierServiceVerifier for MockCarrierServiceClient {
 
     async fn list_incentive_promotions(
         &self,
-    ) -> Result<Vec<ServiceProviderPromotion>, Self::Error> {
+    ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
         Ok(self.promotions.clone())
     }
 }
@@ -161,7 +162,7 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     let valid_sps = HashMap::from_iter([(PAYER_1.to_string(), SP_1.to_string())]);
     // promotions allocated 15.00%
     let carrier_client =
-        MockCarrierServiceClient::new(valid_sps).with_promotions(vec![ServiceProviderPromotion {
+        MockCarrierServiceClient::new(valid_sps).with_promotions(vec![ServiceProviderPromotions {
             service_provider: 0,
             incentive_escrow_fund_bps: 1500,
             promotions: vec![
