@@ -137,7 +137,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
         .to_u64()
         .unwrap();
 
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -323,7 +323,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -488,7 +488,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -665,7 +665,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -799,7 +799,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         .to_u64()
         .unwrap();
 
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -980,7 +980,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     let total_poc_emissions = reward_shares::get_scheduled_tokens_for_poc(epoch_duration)
         .to_u64()
         .unwrap();
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -1187,7 +1187,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         .to_u64()
         .unwrap();
 
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
