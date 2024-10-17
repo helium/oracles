@@ -7,7 +7,8 @@ use crate::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
     },
-    service_provider, sp_boosted_rewards_bans, speedtests,
+    service_provider::{self, dc_sessions::ServiceProviderDCSessions},
+    sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, subscriber_verified_mapping_event, telemetry, Settings,
 };
@@ -28,7 +29,7 @@ use helium_proto::{
         service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType,
         MobileRewardShare, UnallocatedReward, UnallocatedRewardType,
     },
-    MobileRewardData as ManifestMobileRewardData, RewardManifest,
+    MobileRewardData as ManifestMobileRewardData, RewardManifest, ServiceProviderPromotion,
 };
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
@@ -273,9 +274,16 @@ where
         reward_mappers(&self.pool, &self.mobile_rewards, reward_period).await?;
 
         // process rewards for service providers
-        reward_service_providers(
+        let dc_sessions = service_provider::db::fetch_dc_sessions(
             &self.pool,
             &self.carrier_client,
+            reward_period,
+        )
+        .await?;
+        let sp_promotions = self.carrier_client.list_incentive_promotions().await?;
+        reward_service_providers(
+            dc_sessions,
+            sp_promotions.clone(),
             &self.mobile_rewards,
             reward_period,
             mobile_bone_price,
@@ -311,7 +319,7 @@ where
             boosted_poc_bones_per_reward_share: Some(helium_proto::Decimal {
                 value: poc_dc_shares.boost.to_string(),
             }),
-            // sp_allocations: service_provider::reward_data_sp_allocations(&self.pool).await?,
+            sp_promotions,
         };
         self.reward_manifests
             .write(
@@ -595,17 +603,15 @@ pub async fn reward_oracles(
 }
 
 pub async fn reward_service_providers(
-    pool: &Pool<Postgres>,
-    carrier_client: &impl CarrierServiceVerifier<Error = ClientError>,
+    dc_sessions: ServiceProviderDCSessions,
+    sp_promotions: Vec<ServiceProviderPromotion>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
 ) -> anyhow::Result<()> {
-    use service_provider::{db, ServiceProviderRewardInfos};
-    let dc_sessions = db::fetch_dc_sessions(pool, carrier_client, reward_period).await?;
+    use service_provider::ServiceProviderRewardInfos;
 
     let total_sp_rewards = service_provider::get_scheduled_tokens(reward_period);
-    let sp_promotions = carrier_client.list_incentive_promotions().await?;
 
     let sps = ServiceProviderRewardInfos::new(
         dc_sessions,
