@@ -2,7 +2,11 @@ use self::boosted_hex_eligibility::BoostedHexEligibility;
 use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
-    heartbeats::{self, location_cache::LocationCache, HeartbeatReward},
+    heartbeats::{
+        self,
+        location_cache::{self, LocationCache},
+        HeartbeatReward,
+    },
     radio_location_estimates, radio_threshold,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
@@ -21,6 +25,7 @@ use file_store::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
 };
 use futures_util::TryFutureExt;
+use h3o::{LatLng, Resolution};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -428,7 +433,7 @@ async fn reward_poc(
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_period: &Range<DateTime<Utc>>,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
-    _location_cache: &LocationCache,
+    location_cache: &LocationCache,
 ) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
     let heartbeats = HeartbeatReward::validated(pool, reward_period);
     let speedtest_averages =
@@ -454,6 +459,29 @@ async fn reward_poc(
         reward_period.end,
     )
     .await?;
+
+    {
+        let locations = location_cache.get_all().await;
+        for (key, value) in locations.iter() {
+            let entity = location_cache::key_to_entity(key.clone());
+            // Estimates are ordered by bigger radius first it should allow us to do less calculation
+            // and find a match faster
+            let estimates =
+                radio_location_estimates::get_valid_estimates(pool, &entity, dec!(0.75)).await?;
+            if estimates.is_empty() {
+                // TODO we ban that key
+                todo!()
+            } else {
+                match is_within_radius(value.lat, value.lon, estimates) {
+                    Ok(true) => todo!(),
+                    // TODO we ban that key
+                    Ok(false) => todo!(),
+                    // TODO we ban that key
+                    Err(_) => todo!(),
+                }
+            }
+        }
+    }
 
     let coverage_shares = CoverageShares::new(
         pool,
@@ -499,6 +527,46 @@ async fn reward_poc(
             (total_poc_rewards, CalculatedPocRewardShares::default())
         };
     Ok((unallocated_poc_amount, calculated_poc_rewards_per_share))
+}
+
+fn is_within_radius(
+    loc_lat: f64,
+    loc_lon: f64,
+    estimates: Vec<(Decimal, Decimal, Decimal)>,
+) -> anyhow::Result<bool> {
+    let resolution = Resolution::Twelve;
+
+    let point_a = LatLng::new(loc_lat, loc_lon)
+        .map_err(|e| anyhow::anyhow!("Invalid LatLng for A: {}", e))?;
+    let h3_index_a = point_a.to_cell(resolution);
+
+    for (radius_meters, lat, lon) in estimates {
+        let lat_f64 = lat
+            .to_f64()
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert lat_b to f64"))?;
+        let lon_f64 = lon
+            .to_f64()
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert lon_b to f64"))?;
+        let radius_meters_f64 = radius_meters
+            .to_f64()
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert radius_meters to f64"))?;
+
+        let point_b = LatLng::new(lat_f64, lon_f64)
+            .map_err(|e| anyhow::anyhow!("Invalid LatLng for B: {}", e))?;
+        let h3_index_b = point_b.to_cell(resolution);
+
+        let grid_distance = h3_index_a
+            .grid_distance(h3_index_b)
+            .map_err(|e| anyhow::anyhow!("Failed to calculate grid distance: {}", e))?;
+
+        let max_grid_distance = (radius_meters_f64 / 9.0).round() as i32;
+
+        if grid_distance <= max_grid_distance {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 pub async fn reward_dc(
