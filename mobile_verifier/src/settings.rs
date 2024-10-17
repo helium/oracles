@@ -25,8 +25,6 @@ pub struct Settings {
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub data_transfer_ingest: file_store::Settings,
-    /// S3 ingest reading Service Provider Promotion Funds
-    pub promotion_ingest: file_store::Settings,
     pub output: file_store::Settings,
     /// S3 bucket from which new data sets are downloaded for oracle boosting
     /// assignments

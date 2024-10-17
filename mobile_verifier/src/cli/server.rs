@@ -8,7 +8,6 @@ use crate::{
     heartbeats::{cbrs::CbrsHeartbeatDaemon, wifi::WifiHeartbeatDaemon},
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
-    service_provider,
     sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
     speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor,
@@ -46,7 +45,6 @@ impl Cmd {
         let store_base_path = std::path::Path::new(&settings.cache);
 
         let report_ingest = FileStore::from_settings(&settings.ingest).await?;
-        let promotion_fund_ingest = FileStore::from_settings(&settings.promotion_ingest).await?;
 
         // mobile config clients
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
@@ -192,19 +190,6 @@ impl Cmd {
                     file_upload.clone(),
                     report_ingest.clone(),
                     auth_client.clone(),
-                )
-                .await?,
-            )
-            .add_task(
-                service_provider::PromotionDaemon::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    file_upload.clone(),
-                    report_ingest.clone(),
-                    promotion_fund_ingest,
-                    gateway_client.clone(),
-                    auth_client.clone(),
-                    entity_client.clone(),
                 )
                 .await?,
             )
