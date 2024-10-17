@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 pub use reward::ServiceProviderRewardInfos;
 
 pub mod dc_sessions;
-pub mod funds;
+pub mod promotions;
 pub mod reward;
 
 pub mod db {
