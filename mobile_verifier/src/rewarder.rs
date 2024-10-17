@@ -7,7 +7,9 @@ use crate::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
     },
-    service_provider::{self, dc_sessions::ServiceProviderDCSessions},
+    service_provider::{
+        self, dc_sessions::ServiceProviderDCSessions, promotions::ServiceProviderPromotions,
+    },
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, subscriber_verified_mapping_event, telemetry, Settings,
@@ -29,7 +31,7 @@ use helium_proto::{
         service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType,
         MobileRewardShare, UnallocatedReward, UnallocatedRewardType,
     },
-    MobileRewardData as ManifestMobileRewardData, RewardManifest, ServiceProviderPromotion,
+    MobileRewardData as ManifestMobileRewardData, RewardManifest,
 };
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
@@ -283,7 +285,7 @@ where
         let sp_promotions = self.carrier_client.list_incentive_promotions().await?;
         reward_service_providers(
             dc_sessions,
-            sp_promotions.clone(),
+            sp_promotions.clone().into(),
             &self.mobile_rewards,
             reward_period,
             mobile_bone_price,
@@ -604,7 +606,7 @@ pub async fn reward_oracles(
 
 pub async fn reward_service_providers(
     dc_sessions: ServiceProviderDCSessions,
-    sp_promotions: Vec<ServiceProviderPromotion>,
+    sp_promotions: ServiceProviderPromotions,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,

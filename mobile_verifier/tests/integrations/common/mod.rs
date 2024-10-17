@@ -10,8 +10,7 @@ use helium_proto::services::{
     poc_mobile::{
         mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward,
         MobileRewardShare, OracleBoostingHexAssignment, OracleBoostingReportV1, PromotionReward,
-        RadioReward, RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward,
-        UnallocatedReward,
+        RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
     },
 };
 use hex_assignments::{Assignment, HexAssignment, HexBoostData};

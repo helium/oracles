@@ -89,7 +89,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (_, rewards) = tokio::join!(
         rewarder::reward_service_providers(
             dc_sessions,
-            sp_promotions,
+            sp_promotions.into(),
             &mobile_rewards_client,
             &epoch,
             dec!(0.0001),
@@ -200,7 +200,7 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     let (_, rewards) = tokio::join!(
         rewarder::reward_service_providers(
             dc_sessions,
-            sp_promotions,
+            sp_promotions.into(),
             &mobile_rewards_client,
             &epoch,
             dec!(0.00001)
