@@ -316,7 +316,7 @@ where
             boosted_poc_bones_per_reward_share: Some(helium_proto::Decimal {
                 value: poc_dc_shares.boost.to_string(),
             }),
-            sp_promotions: sp_promotions.into_proto(),
+            service_provider_promotions: sp_promotions.into_proto(),
         };
         self.reward_manifests
             .write(

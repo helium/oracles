@@ -106,7 +106,7 @@ where
 pub mod tests {
 
     use chrono::Duration;
-    use helium_proto::{ServiceProvider, ServiceProviderPromotion};
+    use helium_proto::{ServiceProvider, ServiceProviderPromotions};
 
     use crate::data_session::HotspotDataSession;
 
@@ -136,7 +136,7 @@ pub mod tests {
 
             async fn list_incentive_promotions(
                 &self,
-            ) -> Result<Vec<ServiceProviderPromotion>, Self::Error> {
+            ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
                 Ok(vec![])
             }
         }

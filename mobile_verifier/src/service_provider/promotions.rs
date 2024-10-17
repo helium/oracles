@@ -5,7 +5,7 @@ use rust_decimal_macros::dec;
 use crate::service_provider::ServiceProviderId;
 
 mod proto {
-    pub use helium_proto::{Promotion, ServiceProviderPromotion};
+    pub use helium_proto::{service_provider_promotions::Promotion, ServiceProviderPromotions};
 }
 
 pub async fn get_promotions(
@@ -16,10 +16,10 @@ pub async fn get_promotions(
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct ServiceProviderPromotions(Vec<proto::ServiceProviderPromotion>);
+pub struct ServiceProviderPromotions(Vec<proto::ServiceProviderPromotions>);
 
 impl ServiceProviderPromotions {
-    pub fn into_proto(self) -> Vec<proto::ServiceProviderPromotion> {
+    pub fn into_proto(self) -> Vec<proto::ServiceProviderPromotions> {
         self.0
     }
 
@@ -44,8 +44,8 @@ impl ServiceProviderPromotions {
     }
 }
 
-impl From<Vec<proto::ServiceProviderPromotion>> for ServiceProviderPromotions {
-    fn from(value: Vec<proto::ServiceProviderPromotion>) -> Self {
+impl From<Vec<proto::ServiceProviderPromotions>> for ServiceProviderPromotions {
+    fn from(value: Vec<proto::ServiceProviderPromotions>) -> Self {
         Self(value)
     }
 }

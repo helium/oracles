@@ -12,10 +12,10 @@ use super::{dc_sessions::ServiceProviderDCSessions, promotions::ServiceProviderP
 
 mod proto {
     pub use helium_proto::{
+        service_provider_promotions::Promotion,
         services::poc_mobile::{
             mobile_reward_share::Reward, MobileRewardShare, PromotionReward, ServiceProviderReward,
         },
-        Promotion,
     };
 }
 
@@ -350,19 +350,19 @@ mod tests {
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
             ServiceProviderPromotions::from(vec![
-                helium_proto::ServiceProviderPromotion {
+                helium_proto::ServiceProviderPromotions {
                     service_provider: 0,
                     incentive_escrow_fund_bps: 5000,
-                    promotions: vec![helium_proto::Promotion {
+                    promotions: vec![helium_proto::service_provider_promotions::Promotion {
                         entity: "promo-0".to_string(),
                         shares: 1,
                         ..Default::default()
                     }],
                 },
-                helium_proto::ServiceProviderPromotion {
+                helium_proto::ServiceProviderPromotions {
                     service_provider: 1,
                     incentive_escrow_fund_bps: 10000,
-                    promotions: vec![helium_proto::Promotion {
+                    promotions: vec![helium_proto::service_provider_promotions::Promotion {
                         entity: "promo-1".to_string(),
                         shares: 1,
                         ..Default::default()
@@ -450,16 +450,16 @@ mod tests {
 
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, sp_session)]),
-            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotion {
+            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotions {
                 service_provider: 0,
                 incentive_escrow_fund_bps: 10000,
                 promotions: vec![
-                    helium_proto::Promotion {
+                    helium_proto::service_provider_promotions::Promotion {
                         entity: "promo-0".to_string(),
                         shares: 1,
                         ..Default::default()
                     },
-                    helium_proto::Promotion {
+                    helium_proto::service_provider_promotions::Promotion {
                         entity: "promo-1".to_string(),
                         shares: 2,
                         ..Default::default()
@@ -489,16 +489,16 @@ mod tests {
 
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, sp_session)]),
-            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotion {
+            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotions {
                 service_provider: 0,
                 incentive_escrow_fund_bps: 10000,
                 promotions: vec![
-                    helium_proto::Promotion {
+                    helium_proto::service_provider_promotions::Promotion {
                         entity: "promo-0".to_string(),
                         shares: 1,
                         ..Default::default()
                     },
-                    helium_proto::Promotion {
+                    helium_proto::service_provider_promotions::Promotion {
                         entity: "promo-1".to_string(),
                         shares: 2,
                         ..Default::default()
@@ -528,16 +528,16 @@ mod tests {
 
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, sp_session)]),
-            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotion {
+            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotions {
                 service_provider: 0,
                 incentive_escrow_fund_bps: 100, // severely limit promotions
                 promotions: vec![
-                    helium_proto::Promotion {
+                    helium_proto::service_provider_promotions::Promotion {
                         entity: "promo-0".to_string(),
                         shares: 1,
                         ..Default::default()
                     },
-                    helium_proto::Promotion {
+                    helium_proto::service_provider_promotions::Promotion {
                         entity: "promo-1".to_string(),
                         shares: 2,
                         ..Default::default()
@@ -562,7 +562,7 @@ mod tests {
     use proptest::prelude::*;
 
     prop_compose! {
-        fn arb_promotion()(entity: String, shares in 1..=100u32) -> helium_proto::Promotion {
+        fn arb_promotion()(entity: String, shares in 1..=100u32) -> helium_proto::service_provider_promotions::Promotion {
             proto::Promotion { entity, shares, ..Default::default() }
         }
     }
@@ -572,8 +572,8 @@ mod tests {
             sp_id in 0..10_i32,
             bps in arb_bps(),
             promotions in prop::collection::vec(arb_promotion(), 0..10)
-        ) -> helium_proto::ServiceProviderPromotion {
-            helium_proto::ServiceProviderPromotion {
+        ) -> helium_proto::ServiceProviderPromotions {
+            helium_proto::ServiceProviderPromotions {
                 service_provider: sp_id,
                 incentive_escrow_fund_bps: bps,
                 promotions
@@ -746,11 +746,11 @@ mod tests {
         entity: &str,
         incentive_escrow_fund_bps: u32,
         shares: u32,
-    ) -> helium_proto::ServiceProviderPromotion {
-        helium_proto::ServiceProviderPromotion {
+    ) -> helium_proto::ServiceProviderPromotions {
+        helium_proto::ServiceProviderPromotions {
             service_provider: sp_id,
             incentive_escrow_fund_bps,
-            promotions: vec![helium_proto::Promotion {
+            promotions: vec![helium_proto::service_provider_promotions::Promotion {
                 entity: entity.to_string(),
                 start_ts: Utc::now().encode_timestamp_millis(),
                 end_ts: Utc::now().encode_timestamp_millis(),
