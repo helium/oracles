@@ -1,10 +1,11 @@
 use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
 use async_trait::async_trait;
-use file_store::traits::MsgVerify;
+use chrono::Utc;
+use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::{mobile_config, Channel},
-    Message, ServiceProvider,
+    Message, ServiceProvider, ServiceProviderPromotions,
 };
 use retainer::Cache;
 use std::{str::FromStr, sync::Arc, time::Duration};
@@ -15,6 +16,10 @@ pub trait CarrierServiceVerifier {
         &self,
         payer: &str,
     ) -> Result<ServiceProvider, Self::Error>;
+
+    async fn list_incentive_promotions(
+        &self,
+    ) -> Result<Vec<ServiceProviderPromotions>, Self::Error>;
 }
 #[derive(Clone)]
 pub struct CarrierServiceClient {
@@ -59,6 +64,33 @@ impl CarrierServiceVerifier for CarrierServiceClient {
         self.cache
             .insert(payer.to_string(), response, self.cache_ttl)
             .await;
+        Ok(response)
+    }
+
+    async fn list_incentive_promotions(
+        &self,
+    ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
+        let mut request = mobile_config::CarrierIncentivePromotionListReqV1 {
+            timestamp: Utc::now().encode_timestamp_millis(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+
+        let response = match call_with_retry!(self
+            .client
+            .clone()
+            .list_incentive_promotions(request.clone()))
+        {
+            Ok(verify_res) => {
+                let response = verify_res.into_inner();
+                response.verify(&self.config_pubkey)?;
+                response.service_provider_promotions
+            }
+
+            Err(status) => Err(status)?,
+        };
+
         Ok(response)
     }
 }
