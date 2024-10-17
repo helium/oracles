@@ -461,6 +461,7 @@ async fn reward_poc(
     .await?;
 
     {
+        // TODO: Maybe we should hydrate cache on start to avoid banning too many hotspot
         let locations = location_cache.get_all().await;
         for (key, value) in locations.iter() {
             let entity = location_cache::key_to_entity(key.clone());
