@@ -1,8 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::radio_location_estimates::Entity;
+use futures::StreamExt;
 use helium_crypto::PublicKeyBinary;
-use sqlx::PgPool;
-use std::{collections::HashMap, sync::Arc};
+use sqlx::{PgPool, Row};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 use tokio::sync::{Mutex, MutexGuard};
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -39,15 +40,18 @@ pub struct LocationCache {
 }
 
 impl LocationCache {
-    pub fn new(pool: &PgPool) -> Self {
+    pub async fn new(pool: &PgPool) -> anyhow::Result<Self> {
         let wifi = Arc::new(Mutex::new(HashMap::new()));
         let cbrs = Arc::new(Mutex::new(HashMap::new()));
-        // TODO: We could spawn an hydrate from DB here?
-        Self {
+
+        hydrate_wifi(pool, &wifi).await?;
+        hydrate_cbrs(pool, &cbrs).await?;
+
+        Ok(Self {
             pool: pool.clone(),
             wifi,
             cbrs,
-        }
+        })
     }
 
     pub async fn get(&self, key: LocationCacheKey) -> anyhow::Result<Option<LocationCacheValue>> {
@@ -165,7 +169,7 @@ impl LocationCache {
             FROM cbrs_heartbeats
             WHERE latest_timestamp IS NOT NULL
                 AND latest_timestamp >= $1
-                AND hotspot_key = $2
+                AND cbsd_id = $2
             ORDER BY latest_timestamp DESC
             LIMIT 1
             "#,
@@ -185,6 +189,77 @@ impl LocationCache {
             }
         }
     }
+}
+
+async fn hydrate_wifi(pool: &PgPool, mutex: &Arc<Mutex<LocationCacheData>>) -> anyhow::Result<()> {
+    let mut rows = sqlx::query(
+        r#"
+        SELECT wh.lat, wh.lon, wh.location_validation_timestamp AS timestamp, wh.hotspot_key
+        FROM wifi_heartbeats wh
+        JOIN (
+            SELECT hotspot_key, MAX(location_validation_timestamp) AS max_timestamp
+            FROM wifi_heartbeats
+            WHERE location_validation_timestamp IS NOT NULL
+            GROUP BY hotspot_key
+        ) latest ON wh.hotspot_key = latest.hotspot_key
+                AND wh.location_validation_timestamp = latest.max_timestamp
+    "#,
+    )
+    .fetch(pool);
+
+    while let Some(row_result) = rows.next().await {
+        let row = row_result?;
+
+        let hotspot_key: String = row.get("hotspot_key");
+        let pub_key_bin = PublicKeyBinary::from_str(&hotspot_key)?;
+        let key = LocationCacheKey::WifiPubKey(pub_key_bin);
+
+        let value = LocationCacheValue {
+            lat: row.get("lat"),
+            lon: row.get("lon"),
+            timestamp: row.get("timestamp"),
+        };
+
+        let mut data = mutex.lock().await;
+        data.insert(key.clone(), value);
+    }
+
+    Ok(())
+}
+
+async fn hydrate_cbrs(pool: &PgPool, mutex: &Arc<Mutex<LocationCacheData>>) -> anyhow::Result<()> {
+    let mut rows = sqlx::query(
+        r#"
+        SELECT ch.lat, ch.lon, ch.latest_timestamp AS timestamp, ch.cbsd_id
+        FROM cbrs_heartbeats ch
+        JOIN (
+            SELECT cbsd_id, MAX(latest_timestamp) AS max_timestamp
+            FROM cbrs_heartbeats
+            WHERE latest_timestamp IS NOT NULL
+            GROUP BY cbsd_id
+        ) latest ON ch.cbsd_id = latest.cbsd_id
+                AND ch.latest_timestamp = latest.max_timestamp
+    "#,
+    )
+    .fetch(pool);
+
+    while let Some(row_result) = rows.next().await {
+        let row = row_result?;
+
+        let id: String = row.get("cbsd_id");
+        let key = LocationCacheKey::CbrsId(id);
+
+        let value = LocationCacheValue {
+            lat: row.get("lat"),
+            lon: row.get("lon"),
+            timestamp: row.get("timestamp"),
+        };
+
+        let mut data = mutex.lock().await;
+        data.insert(key.clone(), value);
+    }
+
+    Ok(())
 }
 
 pub fn key_to_entity(entity: LocationCacheKey) -> Entity {

@@ -105,7 +105,7 @@ impl Cmd {
         let (new_coverage_obj_notifier, new_coverage_obj_notification) =
             new_coverage_object_notification_channel();
 
-        let location_cache = LocationCache::new(&pool);
+        let location_cache = LocationCache::new(&pool).await?;
 
         TaskManager::builder()
             .add_task(file_upload_server)
