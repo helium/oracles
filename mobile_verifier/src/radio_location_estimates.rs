@@ -242,11 +242,11 @@ async fn insert_estimate(
 
     sqlx::query(
         r#"
-        INSERT INTO radio_location_estimates 
+        INSERT INTO radio_location_estimates
             (hashed_key, radio_type, radio_key, received_timestamp, hex, grid_distance, confidence)
-        VALUES 
+        VALUES
             ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (hashed_key) 
+        ON CONFLICT (hashed_key)
             DO NOTHING
         "#,
     )
