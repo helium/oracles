@@ -11,3 +11,5 @@ CREATE TABLE IF NOT EXISTS radio_location_estimates (
     inserted_at TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hashed_key)
 );
+
+CREATE INDEX IF NOT EXISTS idx_radio_key_confidence_invalided_at_radius ON radio_location_estimates (radio_key, confidence, invalided_at, radius DESC);

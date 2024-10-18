@@ -266,9 +266,9 @@ pub fn hash_key(
     timestamp: DateTime<Utc>,
     radius: Decimal,
     lat: Decimal,
-    long: Decimal,
+    lon: Decimal,
 ) -> String {
-    let key = format!("{}{}{}{}{}", entity, timestamp, radius, lat, long);
+    let key = format!("{}{}{}{}{}", entity, timestamp, radius, lat, lon);
 
     let mut hasher = Sha256::new();
     hasher.update(key);

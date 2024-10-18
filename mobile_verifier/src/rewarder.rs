@@ -743,18 +743,32 @@ fn is_within_radius(
     Ok(false)
 }
 
-pub async fn get_untrusted_radious(
+pub async fn get_untrusted_radios(
     pool: &Pool<Postgres>,
     location_cache: &LocationCache,
 ) -> anyhow::Result<HashSet<file_store::radio_location_estimates::Entity>> {
     let mut unstrusted: HashSet<file_store::radio_location_estimates::Entity> = HashSet::new();
+    let a = std::time::Instant::now();
+
     let locations = location_cache.get_all().await;
+
+    println!("location_cache duration is: {:?}", a.elapsed());
+
+    let mut db_calls: Vec<Duration> = vec![];
+    let mut fn_calls: Vec<Duration> = vec![];
+
     for (key, value) in locations.iter() {
         let entity = location_cache::key_to_entity(key.clone());
         // Estimates are ordered by bigger radius first it should allow us to do less calculation
         // and find a match faster
+        let b = std::time::Instant::now();
+
         let estimates =
             radio_location_estimates::get_valid_estimates(pool, &entity, dec!(0.75)).await?;
+
+        db_calls.push(b.elapsed());
+        let c = std::time::Instant::now();
+
         if estimates.is_empty() {
             unstrusted.insert(entity);
         } else {
@@ -764,6 +778,33 @@ pub async fn get_untrusted_radious(
                 Err(_) => unstrusted.insert(entity),
             };
         }
+
+        fn_calls.push(c.elapsed());
     }
+    println!(
+        "get_valid_estimates (called: {:?}) avg duration is: {:?}",
+        &db_calls.len(),
+        average_duration(&db_calls)
+    );
+    println!(
+        "is_within_radius  (called: {:?}) avg duration is: {:?}",
+        &fn_calls.len(),
+        average_duration(&fn_calls)
+    );
+
     Ok(unstrusted)
+}
+
+fn average_duration(durations: &Vec<Duration>) -> Option<Duration> {
+    if durations.is_empty() {
+        return None; // Return None if the vector is empty
+    }
+
+    // Sum all durations
+    let total_duration: Duration = durations.iter().sum();
+
+    // Get the average by dividing the total duration by the number of elements
+    let avg_duration = total_duration / (durations.len() as u32);
+
+    Some(avg_duration)
 }
