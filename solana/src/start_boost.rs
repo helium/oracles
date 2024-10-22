@@ -1,4 +1,6 @@
-use crate::{send_with_retry, GetSignature, Keypair, Pubkey, SolanaRpcError};
+use crate::{
+    read_keypair_from_file, send_with_retry, GetSignature, Keypair, Pubkey, SolanaRpcError,
+};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use file_store::hex_boost::BoostedHexActivation;
@@ -9,7 +11,7 @@ use solana_sdk::{
     commitment_config::CommitmentConfig, signature::Signature, signer::Signer,
     transaction::Transaction,
 };
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
@@ -39,7 +41,7 @@ pub struct SolanaRpc {
 
 impl SolanaRpc {
     pub async fn new(settings: &Settings) -> Result<Arc<Self>, SolanaRpcError> {
-        let Ok(keypair) = Keypair::read_from_file(&settings.start_authority_keypair) else {
+        let Ok(keypair) = read_keypair_from_file(&settings.start_authority_keypair) else {
             return Err(SolanaRpcError::FailedToReadKeypairError);
         };
         let provider = client::SolanaRpcClient::new_with_commitment(

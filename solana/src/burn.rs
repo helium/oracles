@@ -1,4 +1,6 @@
-use crate::{send_with_retry, GetSignature, Keypair, Pubkey, SolanaRpcError, SubDao};
+use crate::{
+    read_keypair_from_file, send_with_retry, GetSignature, Keypair, Pubkey, SolanaRpcError, SubDao,
+};
 use async_trait::async_trait;
 use helium_crypto::PublicKeyBinary;
 use helium_lib::{client, dc, token};
@@ -7,8 +9,8 @@ use solana_sdk::{
     commitment_config::CommitmentConfig, signature::Signature, transaction::Transaction,
 };
 use std::convert::Infallible;
+use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
-use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 #[async_trait]
@@ -56,7 +58,7 @@ pub struct SolanaRpc {
 
 impl SolanaRpc {
     pub async fn new(settings: &Settings, sub_dao: SubDao) -> Result<Arc<Self>, SolanaRpcError> {
-        let Ok(keypair) = Keypair::read_from_file(&settings.burn_keypair) else {
+        let Ok(keypair) = read_keypair_from_file(&settings.burn_keypair) else {
             return Err(SolanaRpcError::FailedToReadKeypairError);
         };
 
