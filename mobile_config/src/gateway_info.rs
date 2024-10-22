@@ -151,6 +151,15 @@ pub(crate) mod db {
             .boxed())
     }
 
+    // pub fn filtered_info_stream<'a>(
+    //     db: impl PgExecutor<'a> + 'a,
+    // ) -> impl Stream<Item = GatewayInfo> + 'a {
+    //     sqlx::query_as::<_, GatewayInfo>(GET_METADATA_SQL)
+    //         .fetch(db)
+    //         .filter_map(|metadata| async move { metadata.ok() })
+    //         .boxed()
+    // }
+
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
     ) -> impl Stream<Item = GatewayInfo> + 'a {
