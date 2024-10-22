@@ -22,7 +22,7 @@ macro_rules! send_with_retry {
                 Err(err) => {
                     if attempt < 5 {
                         attempt += 1;
-                        tokio::time::sleep(Duration::from_secs(attempt)).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(attempt)).await;
                         continue;
                     } else {
                         break Err(err);
