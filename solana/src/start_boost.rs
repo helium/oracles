@@ -6,9 +6,7 @@ use helium_lib::{boosting, client};
 use serde::Deserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig,
-    signature::{read_keypair_file, Signature},
-    signer::Signer,
+    commitment_config::CommitmentConfig, signature::Signature, signer::Signer,
     transaction::Transaction,
 };
 use std::{sync::Arc, time::Duration};
@@ -41,7 +39,7 @@ pub struct SolanaRpc {
 
 impl SolanaRpc {
     pub async fn new(settings: &Settings) -> Result<Arc<Self>, SolanaRpcError> {
-        let Ok(keypair) = read_keypair_file(&settings.start_authority_keypair) else {
+        let Ok(keypair) = Keypair::read_from_file(&settings.start_authority_keypair) else {
             return Err(SolanaRpcError::FailedToReadKeypairError);
         };
         let provider = client::SolanaRpcClient::new_with_commitment(
@@ -52,7 +50,7 @@ impl SolanaRpc {
         Ok(Arc::new(Self {
             provider,
             start_authority: keypair.pubkey(),
-            keypair: keypair.into(),
+            keypair,
         }))
     }
 }

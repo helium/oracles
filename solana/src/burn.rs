@@ -4,9 +4,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_lib::{client, dc, token};
 use serde::Deserialize;
 use solana_sdk::{
-    commitment_config::CommitmentConfig,
-    signature::{read_keypair_file, Signature},
-    transaction::Transaction,
+    commitment_config::CommitmentConfig, signature::Signature, transaction::Transaction,
 };
 use std::convert::Infallible;
 use std::{collections::HashMap, str::FromStr};
@@ -58,9 +56,10 @@ pub struct SolanaRpc {
 
 impl SolanaRpc {
     pub async fn new(settings: &Settings, sub_dao: SubDao) -> Result<Arc<Self>, SolanaRpcError> {
-        let Ok(keypair) = read_keypair_file(&settings.burn_keypair) else {
+        let Ok(keypair) = Keypair::read_from_file(&settings.burn_keypair) else {
             return Err(SolanaRpcError::FailedToReadKeypairError);
         };
+
         let provider = client::SolanaRpcClient::new_with_commitment(
             settings.rpc_url.clone(),
             CommitmentConfig::finalized(),
@@ -77,7 +76,7 @@ impl SolanaRpc {
         Ok(Arc::new(Self {
             sub_dao,
             provider,
-            keypair: keypair.into(),
+            keypair,
             payers_to_monitor: settings.payers_to_monitor()?,
         }))
     }
