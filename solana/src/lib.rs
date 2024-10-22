@@ -2,7 +2,7 @@ use solana_client::client_error::ClientError;
 use solana_sdk::pubkey::ParsePubkeyError;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::Transaction;
-use std::time::SystemTimeError;
+use std::{fs::File, io::Read, path::Path, time::SystemTimeError};
 
 pub use helium_lib::{
     dao::SubDao,
@@ -33,6 +33,13 @@ macro_rules! send_with_retry {
     }};
 }
 pub(crate) use send_with_retry;
+
+pub fn read_keypair_from_file<F: AsRef<Path>>(path: F) -> anyhow::Result<Keypair> {
+    let mut file = File::open(path.as_ref())?;
+    let mut sk_buf = [0u8; 64];
+    file.read_exact(&mut sk_buf)?;
+    Ok(Keypair::try_from(&sk_buf)?)
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum SolanaRpcError {

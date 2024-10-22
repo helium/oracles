@@ -3839,7 +3839,7 @@ dependencies = [
 [[package]]
 name = "helium-lib"
 version = "0.0.0"
-source = "git+https://github.com/helium/helium-wallet-rs.git?branch=mj/oracles-updates#a13efec54ec98ad73588b19b9c696719a31553bc"
+source = "git+https://github.com/helium/helium-wallet-rs.git?branch=mj/oracles-updates#d928033da7918876d95d7936802170f3eee7b006"
 dependencies = [
  "anchor-client",
  "anchor-spl",
