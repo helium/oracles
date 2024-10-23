@@ -266,6 +266,25 @@ dependencies = [
 
 [[package]]
 name = "anchor-client"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb48c4a7911038da546dc752655a29fa49f6bd50ebc1edca218bac8da1012acd"
+dependencies = [
+ "anchor-lang 0.29.0",
+ "anyhow",
+ "futures",
+ "regex",
+ "serde",
+ "solana-account-decoder",
+ "solana-client",
+ "solana-sdk",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "anchor-client"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4adc1b211826d72036dc2fcb679a8ef7fe5b9afda376b0b26debe19e28de3ea"
@@ -475,17 +494,15 @@ dependencies = [
 
 [[package]]
 name = "anchor-spl"
-version = "0.30.1"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04bd077c34449319a1e4e0bc21cea572960c9ae0d0fefda0dd7c52fcc3c647a3"
+checksum = "6c4fd6e43b2ca6220d2ef1641539e678bfc31b6cc393cf892b373b5997b6a39a"
 dependencies = [
- "anchor-lang 0.30.1",
- "spl-associated-token-account 3.0.2",
- "spl-pod 0.2.2",
+ "anchor-lang 0.29.0",
+ "solana-program",
+ "spl-associated-token-account 2.3.0",
  "spl-token 4.0.0",
- "spl-token-2022 3.0.2",
- "spl-token-group-interface 0.2.3",
- "spl-token-metadata-interface 0.3.3",
+ "spl-token-2022 0.9.0",
 ]
 
 [[package]]
@@ -2033,9 +2050,9 @@ dependencies = [
 
 [[package]]
 name = "bytemuck"
-version = "1.16.1"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b236fc92302c97ed75b38da1f4917b5cdda4984745740f153a5d3059e48d725e"
+checksum = "8334215b81e418a0a7bdb8ef0849474f40bb10c8b71f1c4ed315cff49f32494d"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -2132,7 +2149,7 @@ dependencies = [
 [[package]]
 name = "circuit-breaker"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -2783,7 +2800,7 @@ dependencies = [
 [[package]]
 name = "data-credits"
 version = "0.2.2"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -3170,7 +3187,7 @@ checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 [[package]]
 name = "fanout"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -3755,23 +3772,23 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 [[package]]
 name = "helium-anchor-gen"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
- "circuit-breaker 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "data-credits 0.2.2 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "fanout 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "helium-entity-manager 0.2.11 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "helium-sub-daos 0.1.8 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "hexboosting 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "lazy-distributor 0.2.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "lazy-transactions 0.2.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "mobile-entity-manager 0.1.3 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "price-oracle 0.2.1 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "rewards-oracle 0.2.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "treasury-management 0.2.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
- "voter-stake-registry 0.3.3 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
+ "circuit-breaker 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "data-credits 0.2.2 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "fanout 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "helium-entity-manager 0.2.11 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "helium-sub-daos 0.1.8 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "hexboosting 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "lazy-distributor 0.2.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "lazy-transactions 0.2.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "mobile-entity-manager 0.1.3 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "price-oracle 0.2.1 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "rewards-oracle 0.2.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "treasury-management 0.2.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
+ "voter-stake-registry 0.3.3 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
 ]
 
 [[package]]
@@ -3824,7 +3841,7 @@ dependencies = [
 [[package]]
 name = "helium-entity-manager"
 version = "0.2.11"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -3842,9 +3859,9 @@ dependencies = [
 [[package]]
 name = "helium-lib"
 version = "0.0.0"
-source = "git+https://github.com/helium/helium-wallet-rs.git?branch=mj/oracles-updates#d928033da7918876d95d7936802170f3eee7b006"
+source = "git+https://github.com/helium/helium-wallet-rs.git?branch=mj/oracles-updates#baaa3c183ab9fdc9a655e00d22d5215233701c03"
 dependencies = [
- "anchor-client",
+ "anchor-client 0.29.0",
  "anchor-spl",
  "angry-purple-tiger 0.1.0",
  "async-trait",
@@ -3853,7 +3870,7 @@ dependencies = [
  "chrono",
  "futures",
  "h3o",
- "helium-anchor-gen 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=main)",
+ "helium-anchor-gen 0.1.0 (git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang)",
  "helium-crypto",
  "helium-proto",
  "hex",
@@ -3898,7 +3915,7 @@ dependencies = [
 [[package]]
 name = "helium-sub-daos"
 version = "0.1.8"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -3961,7 +3978,7 @@ checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
 [[package]]
 name = "hexboosting"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -4781,7 +4798,7 @@ dependencies = [
 [[package]]
 name = "lazy-distributor"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -4799,7 +4816,7 @@ dependencies = [
 [[package]]
 name = "lazy-transactions"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -5184,7 +5201,7 @@ dependencies = [
 [[package]]
 name = "mobile-entity-manager"
 version = "0.1.3"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -6049,7 +6066,7 @@ dependencies = [
 [[package]]
 name = "price-oracle"
 version = "0.2.1"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -6710,7 +6727,7 @@ dependencies = [
 [[package]]
 name = "rewards-oracle"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -7437,7 +7454,7 @@ dependencies = [
 name = "solana"
 version = "0.1.0"
 dependencies = [
- "anchor-client",
+ "anchor-client 0.30.0",
  "anyhow",
  "async-trait",
  "chrono",
@@ -8219,12 +8236,14 @@ dependencies = [
 
 [[package]]
 name = "spl-account-compression"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85c43bd4455d9fb29b9e4f83c087ccffa2f6f41fecfc0549932ae391d00f3378"
+checksum = "dfcf740e5242f2ad63325e600c368702f32db84608fc8b70d70633c68dd1486d"
 dependencies = [
  "anchor-lang 0.29.0",
  "bytemuck",
+ "solana-program",
+ "solana-security-txt",
  "spl-concurrent-merkle-tree",
  "spl-noop",
 ]
@@ -8263,9 +8282,9 @@ dependencies = [
 
 [[package]]
 name = "spl-concurrent-merkle-tree"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "141eaea58588beae81b71d101373a53f096737739873de42d6b1368bc2b8fc30"
+checksum = "c7f5f45b971d82cbb0416fdffad3c9098f259545d54072e83a0a482f60f8f689"
 dependencies = [
  "bytemuck",
  "solana-program",
@@ -8438,6 +8457,20 @@ dependencies = [
 
 [[package]]
 name = "spl-tlv-account-resolution"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "062e148d3eab7b165582757453632ffeef490c02c86a48bfdb4988f63eefb3b9"
+dependencies = [
+ "bytemuck",
+ "solana-program",
+ "spl-discriminator 0.1.1",
+ "spl-pod 0.1.1",
+ "spl-program-error 0.3.1",
+ "spl-type-length-value 0.3.1",
+]
+
+[[package]]
+name = "spl-tlv-account-resolution"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56f335787add7fa711819f9e7c573f8145a5358a709446fe2d24bf2a88117c90"
@@ -8491,6 +8524,28 @@ dependencies = [
  "num-traits",
  "num_enum 0.6.1",
  "solana-program",
+ "thiserror",
+]
+
+[[package]]
+name = "spl-token-2022"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4abf34a65ba420584a0c35f3903f8d727d1f13ababbdc3f714c6b065a686e86"
+dependencies = [
+ "arrayref",
+ "bytemuck",
+ "num-derive 0.4.2",
+ "num-traits",
+ "num_enum 0.7.2",
+ "solana-program",
+ "solana-zk-token-sdk",
+ "spl-memo",
+ "spl-pod 0.1.1",
+ "spl-token 4.0.0",
+ "spl-token-metadata-interface 0.2.0",
+ "spl-transfer-hook-interface 0.3.0",
+ "spl-type-length-value 0.3.1",
  "thiserror",
 ]
 
@@ -8594,6 +8649,22 @@ dependencies = [
  "spl-pod 0.2.2",
  "spl-program-error 0.4.1",
  "spl-type-length-value 0.4.3",
+]
+
+[[package]]
+name = "spl-transfer-hook-interface"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "051d31803f873cabe71aec3c1b849f35248beae5d19a347d93a5c9cccc5d5a9b"
+dependencies = [
+ "arrayref",
+ "bytemuck",
+ "solana-program",
+ "spl-discriminator 0.1.1",
+ "spl-pod 0.1.1",
+ "spl-program-error 0.3.1",
+ "spl-tlv-account-resolution 0.4.0",
+ "spl-type-length-value 0.3.1",
 ]
 
 [[package]]
@@ -8950,18 +9021,18 @@ checksum = "222a222a5bfe1bba4a77b45ec488a741b3cb8872e5e499451fd7d0129c9c7c3d"
 
 [[package]]
 name = "thiserror"
-version = "1.0.61"
+version = "1.0.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c546c80d6be4bc6a00c0f01730c08df82eaa7a7a61f11d656526506112cc1709"
+checksum = "5d11abd9594d9b38965ef50805c5e469ca9cc6f197f883f717e0269a3057b3d5"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.61"
+version = "1.0.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46c3384250002a6d5af4d114f2845d37b57521033f30d5c3f46c4d70e1197533"
+checksum = "ae71770322cbd277e69d762a16c444af02aa0575ac0d174f0b9562d3b37f8602"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9345,7 +9416,7 @@ dependencies = [
 [[package]]
 name = "treasury-management"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
@@ -9602,7 +9673,7 @@ dependencies = [
 [[package]]
 name = "voter-stake-registry"
 version = "0.3.3"
-source = "git+https://github.com/helium/helium-anchor-gen.git?branch=main#ef686c1b0ba0ab2bd0e0377e0bf2a44630938da2"
+source = "git+https://github.com/helium/helium-anchor-gen.git?branch=mj/unbump-anchor-lang#8b020a8f8a5d9bfefbd5ed4179a56179c8f4943a"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.30.1",
