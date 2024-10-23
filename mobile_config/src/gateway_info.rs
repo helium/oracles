@@ -73,6 +73,17 @@ pub enum DeviceType {
     WifiDataOnly,
 }
 
+impl DeviceType {
+    fn to_sql_argument(&self) -> String {
+        match self {
+            DeviceType::Cbrs => "\"cbrs\"".to_string(),
+            DeviceType::WifiIndoor => "\"wifiIndoor\"".to_string(),
+            DeviceType::WifiOutdoor => "\"wifiOutdoor\"".to_string(),
+            DeviceType::WifiDataOnly => "\"wifiDataOnly\"".to_string(),
+        }
+    }
+}
+
 impl From<DeviceTypeProto> for DeviceType {
     fn from(dtp: DeviceTypeProto) -> Self {
         match dtp {
@@ -116,9 +127,11 @@ pub(crate) mod db {
             join key_to_assets kta on infos.asset = kta.asset
         "#;
     const BATCH_SQL_WHERE_SNIPPET: &str = " where kta.entity_key = any($1::bytea[]) ";
+    const DEVICE_TYPES_WHERE_SNIPPET: &str = " where device_type::text = any($1) ";
 
     lazy_static::lazy_static! {
         static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
+        static ref DEVICE_TYPES_METADATA_SQL: String = format!("{GET_METADATA_SQL} {DEVICE_TYPES_WHERE_SNIPPET}");
     }
 
     pub async fn get_info(
@@ -151,22 +164,27 @@ pub(crate) mod db {
             .boxed())
     }
 
-    // pub fn filtered_info_stream<'a>(
-    //     db: impl PgExecutor<'a> + 'a,
-    // ) -> impl Stream<Item = GatewayInfo> + 'a {
-    //     sqlx::query_as::<_, GatewayInfo>(GET_METADATA_SQL)
-    //         .fetch(db)
-    //         .filter_map(|metadata| async move { metadata.ok() })
-    //         .boxed()
-    // }
-
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
+        device_types: &'a [DeviceType],
     ) -> impl Stream<Item = GatewayInfo> + 'a {
-        sqlx::query_as::<_, GatewayInfo>(GET_METADATA_SQL)
-            .fetch(db)
-            .filter_map(|metadata| async move { metadata.ok() })
-            .boxed()
+        match device_types.is_empty() {
+            true => sqlx::query_as::<_, GatewayInfo>(GET_METADATA_SQL)
+                .fetch(db)
+                .filter_map(|metadata| async move { metadata.ok() })
+                .boxed(),
+            false => sqlx::query_as::<_, GatewayInfo>(&DEVICE_TYPES_METADATA_SQL)
+                .bind(
+                    device_types
+                        .into_iter()
+                        .map(|v| v.to_sql_argument())
+                        .into_iter()
+                        .collect::<Vec<_>>(),
+                )
+                .fetch(db)
+                .filter_map(|metadata| async move { metadata.ok() })
+                .boxed(),
+        }
     }
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {
