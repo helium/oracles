@@ -2,7 +2,12 @@ use solana_client::client_error::ClientError;
 use solana_sdk::pubkey::ParsePubkeyError;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::Transaction;
-use std::time::SystemTimeError;
+use std::{fs::File, io::Read, path::Path, time::SystemTimeError};
+
+pub use helium_lib::{
+    dao::SubDao,
+    keypair::{Keypair, Pubkey},
+};
 
 pub mod burn;
 pub mod carrier;
@@ -17,7 +22,7 @@ macro_rules! send_with_retry {
                 Err(err) => {
                     if attempt < 5 {
                         attempt += 1;
-                        tokio::time::sleep(Duration::from_secs(attempt)).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(attempt)).await;
                         continue;
                     } else {
                         break Err(err);
@@ -28,6 +33,13 @@ macro_rules! send_with_retry {
     }};
 }
 pub(crate) use send_with_retry;
+
+pub fn read_keypair_from_file<F: AsRef<Path>>(path: F) -> anyhow::Result<Keypair> {
+    let mut file = File::open(path.as_ref())?;
+    let mut sk_buf = [0u8; 64];
+    file.read_exact(&mut sk_buf)?;
+    Ok(Keypair::try_from(&sk_buf)?)
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum SolanaRpcError {
@@ -49,6 +61,10 @@ pub enum SolanaRpcError {
     FailedToReadKeypairError,
     #[error("crypto error: {0}")]
     Crypto(#[from] helium_crypto::Error),
+    #[error("helium-lib error: {0}")]
+    HeliumLib(#[from] helium_lib::error::Error),
+    #[error("Parse Solana Pubkey from slice error: {0}")]
+    ParsePubkeyFromSliceError(#[from] std::array::TryFromSliceError),
 }
 
 impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
