@@ -4,7 +4,9 @@ use chrono::{DateTime, Utc};
 use file_store::{mobile_session::DataTransferSessionReq, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use sqlx::{prelude::FromRow, Pool, Postgres, Transaction};
+use sqlx::{prelude::FromRow, Pool, Postgres, Row, Transaction};
+
+const METRIC_NAME: &str = "pending_dc_burn";
 
 #[derive(FromRow)]
 pub struct DataTransferSession {
@@ -26,6 +28,7 @@ impl DataTransferSession {
 impl From<DataTransferSession> for ValidDataTransferSession {
     fn from(session: DataTransferSession) -> Self {
         let num_dcs = session.dc_to_burn();
+
         ValidDataTransferSession {
             pub_key: session.pub_key.into(),
             payer: session.payer.into(),
@@ -43,6 +46,27 @@ pub struct PendingPayerBurn {
     pub payer: PublicKeyBinary,
     pub total_dcs: u64,
     pub sessions: Vec<DataTransferSession>,
+}
+
+pub async fn initialize(conn: &Pool<Postgres>) -> anyhow::Result<()> {
+    let results = sqlx::query(
+        r#"
+        SELECT payer, sum(rewardable_bytes) as total_rewardable_bytes
+        FROM data_transfer_sessions
+        GROUP BY payer
+        "#,
+    )
+    .fetch_all(conn)
+    .await?;
+
+    for row in results {
+        let payer: PublicKeyBinary = row.get("payer");
+        let total_rewardable_bytes: u64 = row.get::<i64, _>("total_rewardable_bytes") as u64;
+
+        set_metric(&payer, bytes_to_dc(total_rewardable_bytes));
+    }
+
+    todo!()
 }
 
 pub async fn get_all(conn: &Pool<Postgres>) -> anyhow::Result<Vec<DataTransferSession>> {
@@ -92,6 +116,8 @@ pub async fn save(
     req: &DataTransferSessionReq,
     last_timestamp: DateTime<Utc>,
 ) -> anyhow::Result<()> {
+    let dc_to_burn = bytes_to_dc(req.rewardable_bytes);
+
     sqlx::query(
             r#"
             INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
@@ -112,19 +138,36 @@ pub async fn save(
             .execute(txn)
             .await?;
 
+    increment_metric(&req.data_transfer_usage.payer, dc_to_burn);
+
     Ok(())
 }
 
 pub async fn delete_for_payer(
     conn: &Pool<Postgres>,
     payer: &PublicKeyBinary,
+    burnt_dc: u64,
 ) -> anyhow::Result<()> {
     sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
         .bind(payer)
         .execute(conn)
-        .await
-        .map(|_| ())
-        .map_err(anyhow::Error::from)
+        .await?;
+
+    decrement_metric(payer, burnt_dc);
+
+    Ok(())
+}
+
+fn set_metric(payer: &PublicKeyBinary, value: u64) {
+    metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).set(value as f64);
+}
+
+fn increment_metric(payer: &PublicKeyBinary, value: u64) {
+    metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).increment(value as f64);
+}
+
+fn decrement_metric(payer: &PublicKeyBinary, value: u64) {
+    metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).decrement(value as f64);
 }
 
 const BYTES_PER_DC: u64 = 20_000;

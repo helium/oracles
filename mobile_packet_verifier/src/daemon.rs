@@ -1,6 +1,6 @@
 use crate::{
-    burner::Burner, event_ids::EventIdPurger, settings::Settings, MobileConfigClients,
-    MobileConfigResolverExt,
+    burner::Burner, event_ids::EventIdPurger, pending_burns, settings::Settings,
+    MobileConfigClients, MobileConfigResolverExt,
 };
 use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
@@ -118,6 +118,8 @@ impl Cmd {
         // Set up the postgres pool:
         let pool = settings.database.connect("mobile-packet-verifier").await?;
         sqlx::migrate!().run(&pool).await?;
+
+        pending_burns::initialize(&pool).await?;
 
         // Set up the solana network:
         let solana = if settings.enable_solana_integration {

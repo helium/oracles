@@ -40,7 +40,7 @@ where
             tracing::info!(%total_dcs, %payer, "Burning DC");
             if self.burn_data_credits(&payer, total_dcs).await.is_err() {
                 // We have failed to burn data credits:
-                metrics::counter!("burned", "payer" => payer.to_string(), "success" => "false")
+                metrics::counter!("burned", "payer" => payer.to_string(), "success" => "alse")
                     .increment(total_dcs);
                 continue;
             }
@@ -51,7 +51,7 @@ where
                 .increment(total_dcs);
 
             // Delete from the data transfer session and write out to S3
-            pending_burns::delete_for_payer(pool, &payer).await?;
+            pending_burns::delete_for_payer(pool, &payer, total_dcs).await?;
 
             for session in sessions {
                 self.valid_sessions

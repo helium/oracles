@@ -106,7 +106,7 @@ mod tests {
     use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
     use sqlx::PgPool;
 
-    use crate::burner::DataTransferSession;
+    use crate::pending_burns::DataTransferSession;
 
     use super::*;
 
