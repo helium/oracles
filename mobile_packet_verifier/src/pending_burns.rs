@@ -66,7 +66,7 @@ pub async fn initialize(conn: &Pool<Postgres>) -> anyhow::Result<()> {
         set_metric(&payer, bytes_to_dc(total_rewardable_bytes));
     }
 
-    todo!()
+    Ok(())
 }
 
 pub async fn get_all(conn: &Pool<Postgres>) -> anyhow::Result<Vec<DataTransferSession>> {
