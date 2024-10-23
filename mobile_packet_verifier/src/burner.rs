@@ -1,34 +1,10 @@
-use chrono::{DateTime, Utc};
-use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
+use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
 use solana::burn::SolanaNetwork;
-use sqlx::{FromRow, Pool, Postgres};
-use std::collections::HashMap;
+use sqlx::{Pool, Postgres};
 
-#[derive(FromRow)]
-pub struct DataTransferSession {
-    pub_key: PublicKeyBinary,
-    payer: PublicKeyBinary,
-    uploaded_bytes: i64,
-    downloaded_bytes: i64,
-    rewardable_bytes: i64,
-    first_timestamp: DateTime<Utc>,
-    last_timestamp: DateTime<Utc>,
-}
-
-#[derive(Default)]
-pub struct PayerTotals {
-    total_dcs: u64,
-    sessions: Vec<DataTransferSession>,
-}
-
-impl PayerTotals {
-    fn push_sess(&mut self, sess: DataTransferSession) {
-        self.total_dcs += bytes_to_dc(sess.rewardable_bytes as u64);
-        self.sessions.push(sess);
-    }
-}
+use crate::pending_burns;
 
 pub struct Burner<S> {
     valid_sessions: FileSinkClient<ValidDataTransferSession>,
@@ -44,49 +20,17 @@ impl<S> Burner<S> {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum BurnError<E> {
-    #[error("file store error: {0}")]
-    FileStoreError(#[from] file_store::Error),
-    #[error("sql error: {0}")]
-    SqlError(#[from] sqlx::Error),
-    #[error("solana error: {0}")]
-    SolanaError(E),
-}
-
 impl<S> Burner<S>
 where
     S: SolanaNetwork,
 {
-    pub async fn burn(&self, pool: &Pool<Postgres>) -> Result<(), BurnError<S::Error>> {
-        // Fetch all of the sessions
-        let sessions: Vec<DataTransferSession> =
-            sqlx::query_as("SELECT * FROM data_transfer_sessions")
-                .fetch_all(pool)
-                .await?;
+    pub async fn burn(&self, pool: &Pool<Postgres>) -> anyhow::Result<()> {
+        for payer_pending_burn in pending_burns::get_all_payer_burns(pool).await? {
+            let payer = payer_pending_burn.payer;
+            let total_dcs = payer_pending_burn.total_dcs;
+            let sessions = payer_pending_burn.sessions;
 
-        // Fetch all of the sessions and group by the payer
-        let mut payer_totals = HashMap::<PublicKeyBinary, PayerTotals>::new();
-        for session in sessions.into_iter() {
-            payer_totals
-                .entry(session.payer.clone())
-                .or_default()
-                .push_sess(session);
-        }
-
-        for (
-            payer,
-            PayerTotals {
-                total_dcs,
-                sessions,
-            },
-        ) in payer_totals.into_iter()
-        {
-            let payer_balance = self
-                .solana
-                .payer_balance(&payer)
-                .await
-                .map_err(BurnError::SolanaError)?;
+            let payer_balance = self.solana.payer_balance(&payer).await?;
 
             if payer_balance < total_dcs {
                 tracing::warn!(%payer, %payer_balance, %total_dcs, "Payer does not have enough balance to burn dcs");
@@ -107,28 +51,11 @@ where
                 .increment(total_dcs);
 
             // Delete from the data transfer session and write out to S3
-
-            sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
-                .bind(&payer)
-                .execute(pool)
-                .await?;
+            pending_burns::delete_for_payer(pool, &payer).await?;
 
             for session in sessions {
-                let num_dcs = bytes_to_dc(session.rewardable_bytes as u64);
                 self.valid_sessions
-                    .write(
-                        ValidDataTransferSession {
-                            pub_key: session.pub_key.into(),
-                            payer: session.payer.into(),
-                            upload_bytes: session.uploaded_bytes as u64,
-                            download_bytes: session.downloaded_bytes as u64,
-                            rewardable_bytes: session.rewardable_bytes as u64,
-                            num_dcs,
-                            first_timestamp: session.first_timestamp.encode_timestamp_millis(),
-                            last_timestamp: session.last_timestamp.encode_timestamp_millis(),
-                        },
-                        &[],
-                    )
+                    .write(ValidDataTransferSession::from(session), &[])
                     .await?;
             }
         }
@@ -145,12 +72,4 @@ where
         self.solana.submit_transaction(&txn).await?;
         Ok(())
     }
-}
-
-const BYTES_PER_DC: u64 = 20_000;
-
-fn bytes_to_dc(bytes: u64) -> u64 {
-    let bytes = bytes.max(BYTES_PER_DC);
-    // Integer div/ceil from: https://stackoverflow.com/a/2745086
-    (bytes + BYTES_PER_DC - 1) / BYTES_PER_DC
 }
