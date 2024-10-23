@@ -40,7 +40,7 @@ where
             tracing::info!(%total_dcs, %payer, "Burning DC");
             if self.burn_data_credits(&payer, total_dcs).await.is_err() {
                 // We have failed to burn data credits:
-                metrics::counter!("burned", "payer" => payer.to_string(), "success" => "alse")
+                metrics::counter!("burned", "payer" => payer.to_string(), "success" => "false")
                     .increment(total_dcs);
                 continue;
             }
