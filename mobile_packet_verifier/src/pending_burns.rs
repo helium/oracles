@@ -17,15 +17,22 @@ pub struct DataTransferSession {
     last_timestamp: DateTime<Utc>,
 }
 
+impl DataTransferSession {
+    pub fn dc_to_burn(&self) -> u64 {
+        bytes_to_dc(self.rewardable_bytes as u64)
+    }
+}
+
 impl From<DataTransferSession> for ValidDataTransferSession {
     fn from(session: DataTransferSession) -> Self {
+        let num_dcs = session.dc_to_burn();
         ValidDataTransferSession {
             pub_key: session.pub_key.into(),
             payer: session.payer.into(),
             upload_bytes: session.uploaded_bytes as u64,
             download_bytes: session.downloaded_bytes as u64,
             rewardable_bytes: session.rewardable_bytes as u64,
-            num_dcs: bytes_to_dc(session.rewardable_bytes as u64),
+            num_dcs,
             first_timestamp: session.first_timestamp.encode_timestamp_millis(),
             last_timestamp: session.last_timestamp.encode_timestamp_millis(),
         }
@@ -52,7 +59,7 @@ pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<Pe
         .fold(
             HashMap::<PublicKeyBinary, PendingPayerBurn>::new(),
             |mut map, session| {
-                let dc_to_burn = bytes_to_dc(session.rewardable_bytes as u64);
+                let dc_to_burn = session.dc_to_burn();
 
                 match map.get_mut(&session.payer) {
                     Some(pending_payer_burn) => {
