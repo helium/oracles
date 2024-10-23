@@ -16,7 +16,6 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     // this test. But we're only interested in Authization Errors.
 
     let admin_key = make_keypair(); // unlimited access
-    dbg!(admin_key.public_key());
     let gw_key = make_keypair(); // access to self
     let unknown_key = make_keypair(); // no access
     let server_key = make_keypair(); // signs responses

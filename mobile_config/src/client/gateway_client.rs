@@ -4,7 +4,10 @@ use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
-    services::{mobile_config, Channel},
+    services::{
+        mobile_config::{self, DeviceType},
+        Channel,
+    },
     Message,
 };
 use retainer::Cache;
@@ -50,7 +53,10 @@ pub trait GatewayInfoResolver: Clone + Send + Sync + 'static {
         address: &PublicKeyBinary,
     ) -> Result<Option<GatewayInfo>, Self::Error>;
 
-    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, Self::Error>;
+    async fn stream_gateways_info(
+        &mut self,
+        device_types: &[DeviceType],
+    ) -> Result<GatewayInfoStream, Self::Error>;
 }
 
 #[async_trait::async_trait]
@@ -92,12 +98,18 @@ impl GatewayInfoResolver for GatewayClient {
         Ok(response)
     }
 
+    /// Returns all gateways if device_types is empty
+    /// Otherwise, only selected device_types
     async fn stream_gateways_info(
         &mut self,
+        device_types: &[DeviceType],
     ) -> Result<gateway_info::GatewayInfoStream, Self::Error> {
         let mut req = mobile_config::GatewayInfoStreamReqV1 {
             batch_size: self.batch_size,
-            device_types: vec![],
+            device_types: device_types
+                .into_iter()
+                .map(|v| DeviceType::into(*v))
+                .collect(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
