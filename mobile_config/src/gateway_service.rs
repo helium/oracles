@@ -167,11 +167,7 @@ impl mobile_config::Gateway for GatewayService {
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
-        let device_types: Vec<DeviceType> = request
-            .device_types()
-            .into_iter()
-            .map(|v| v.into())
-            .collect();
+        let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
 
         tokio::spawn(async move {
             let stream = gateway_info::db::all_info_stream(&pool, &device_types);

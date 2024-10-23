@@ -176,9 +176,8 @@ pub(crate) mod db {
             false => sqlx::query_as::<_, GatewayInfo>(&DEVICE_TYPES_METADATA_SQL)
                 .bind(
                     device_types
-                        .into_iter()
+                        .iter()
                         .map(|v| v.to_sql_argument())
-                        .into_iter()
                         .collect::<Vec<_>>(),
                 )
                 .fetch(db)
