@@ -150,7 +150,7 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
         i64::from_str_radix(&gw_info.metadata.clone().unwrap().location, 16).unwrap(),
         asset1_hex_idx
     );
-    assert_eq!(stream.next().await.is_none(), true);
+    assert!(stream.next().await.is_none());
 
     // Check wifi data only
     let req = make_gateway_stream_signed_req(&admin_key, &[DeviceType::WifiDataOnly]);
@@ -162,7 +162,7 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
         .await;
     let gateways = resp.first().unwrap().gateways.clone();
     assert_eq!(gateways.len(), 2);
-    let device_type = gateways.get(0).unwrap().device_type;
+    let device_type = gateways.first().unwrap().device_type;
     assert_eq!(
         DeviceType::try_from(device_type).unwrap(),
         DeviceType::WifiDataOnly
