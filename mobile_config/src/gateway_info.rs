@@ -73,17 +73,6 @@ pub enum DeviceType {
     WifiDataOnly,
 }
 
-impl DeviceType {
-    fn to_sql_argument(&self) -> String {
-        match self {
-            DeviceType::Cbrs => "\"cbrs\"".to_string(),
-            DeviceType::WifiIndoor => "\"wifiIndoor\"".to_string(),
-            DeviceType::WifiOutdoor => "\"wifiOutdoor\"".to_string(),
-            DeviceType::WifiDataOnly => "\"wifiDataOnly\"".to_string(),
-        }
-    }
-}
-
 impl From<DeviceTypeProto> for DeviceType {
     fn from(dtp: DeviceTypeProto) -> Self {
         match dtp {
@@ -99,6 +88,16 @@ impl From<DeviceTypeProto> for DeviceType {
 #[error("invalid device type string")]
 pub struct DeviceTypeParseError;
 
+impl std::fmt::Display for DeviceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeviceType::Cbrs => write!(f, "cbrs"),
+            DeviceType::WifiIndoor => write!(f, "wifiIndoor"),
+            DeviceType::WifiOutdoor => write!(f, "wifiOutdoor"),
+            DeviceType::WifiDataOnly => write!(f, "wifiDataOnly"),
+        }
+    }
+}
 impl std::str::FromStr for DeviceType {
     type Err = DeviceTypeParseError;
 
@@ -177,7 +176,7 @@ pub(crate) mod db {
                 .bind(
                     device_types
                         .iter()
-                        .map(|v| v.to_sql_argument())
+                        .map(|v| format!("\"{}\"", v))
                         .collect::<Vec<_>>(),
                 )
                 .fetch(db)

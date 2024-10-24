@@ -156,11 +156,6 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        tracing::debug!(
-            "fetching all gateways' info. Device types: {:?} ",
-            request.device_types
-        );
-
         let pool = self.metadata_pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
@@ -168,6 +163,11 @@ impl mobile_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
+
+        tracing::debug!(
+            "fetching all gateways' info. Device types: {:?} ",
+            device_types
+        );
 
         tokio::spawn(async move {
             let stream = gateway_info::db::all_info_stream(&pool, &device_types);
