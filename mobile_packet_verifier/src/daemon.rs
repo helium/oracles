@@ -1,6 +1,6 @@
 use crate::{
-    burner::Burner, event_ids::EventIdPurger, settings::Settings, MobileConfigClients,
-    MobileConfigResolverExt,
+    burner::Burner, event_ids::EventIdPurger, pending_burns, settings::Settings,
+    MobileConfigClients, MobileConfigResolverExt,
 };
 use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
@@ -73,23 +73,13 @@ where
     S: SolanaNetwork,
     MCR: MobileConfigResolverExt,
 {
-    pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
+    pub async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
         // Set the initial burn period to one minute
         let mut burn_time = Instant::now() + Duration::from_secs(60);
         loop {
             tokio::select! {
-                file = self.reports.recv() => {
-                    let Some(file) = file else {
-                        anyhow::bail!("FileInfoPoller sender was dropped unexpectedly");
-                    };
-                    tracing::info!("Verifying file: {}", file.file_info);
-                    let ts = file.file_info.timestamp;
-                    let mut transaction = self.pool.begin().await?;
-                    let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.verified_data_session_report_sink, ts, reports).await?;
-                    transaction.commit().await?;
-                    self.verified_data_session_report_sink.commit().await?;
-                },
+                biased;
+                _ = &mut shutdown => return Ok(()),
                 _ = sleep_until(burn_time) => {
                     // It's time to burn
                     match self.burner.burn(&self.pool).await {
@@ -102,7 +92,18 @@ where
                         }
                     }
                 }
-                _ = shutdown.clone() => return Ok(()),
+                file = self.reports.recv() => {
+                    let Some(file) = file else {
+                        anyhow::bail!("FileInfoPoller sender was dropped unexpectedly");
+                    };
+                    tracing::info!("Verifying file: {}", file.file_info);
+                    let ts = file.file_info.timestamp;
+                    let mut transaction = self.pool.begin().await?;
+                    let reports = file.into_stream(&mut transaction).await?;
+                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.verified_data_session_report_sink, ts, reports).await?;
+                    transaction.commit().await?;
+                    self.verified_data_session_report_sink.commit().await?;
+                }
             }
         }
     }
@@ -118,6 +119,8 @@ impl Cmd {
         // Set up the postgres pool:
         let pool = settings.database.connect("mobile-packet-verifier").await?;
         sqlx::migrate!().run(&pool).await?;
+
+        pending_burns::initialize(&pool).await?;
 
         // Set up the solana network:
         let solana = if settings.enable_solana_integration {

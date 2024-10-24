@@ -8,6 +8,7 @@ pub mod accumulate;
 pub mod burner;
 pub mod daemon;
 pub mod event_ids;
+pub mod pending_burns;
 pub mod settings;
 
 pub struct MobileConfigClients {
