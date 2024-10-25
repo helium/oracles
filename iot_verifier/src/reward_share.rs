@@ -1,15 +1,18 @@
-use crate::poc_report::ReportType as PocReportType;
+use std::{collections::HashMap, ops::Range};
+
 use chrono::{DateTime, Duration, Utc};
 use file_store::{iot_packet::IotValidPacket, iot_valid_poc::IotPoc, traits::TimestampEncode};
 use futures::stream::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_lora as proto;
-use helium_proto::services::poc_lora::iot_reward_share::Reward as ProtoReward;
+use helium_proto::services::{
+    poc_lora as proto, poc_lora::iot_reward_share::Reward as ProtoReward,
+};
 use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{Postgres, Transaction};
-use std::{collections::HashMap, ops::Range};
+
+use crate::poc_report::ReportType as PocReportType;
 
 const DEFAULT_PREC: u32 = 15;
 
@@ -26,7 +29,7 @@ lazy_static! {
     // Operations fund is allocated 7% of daily rewards
     static ref OPERATIONS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
     // Oracles fund is allocated 7% of daily rewards
-    static ref ORACLES_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
+    static ref ORACLES_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.03);
     // dc remainer distributed at ration of 4:1 in favour of witnesses
     // ie WITNESS_REWARDS_PER_DAY_PERCENT:BEACON_REWARDS_PER_DAY_PERCENT
     static ref WITNESS_DC_REMAINER_PERCENT: Decimal = dec!(0.80);
