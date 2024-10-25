@@ -9,11 +9,11 @@ use helium_proto::services::poc_mobile::{
 };
 use sqlx::{Postgres, Transaction};
 
-use crate::{event_ids, MobileConfigResolverExt};
+use crate::{event_ids, pending_burns, MobileConfigResolverExt};
 
 pub async fn accumulate_sessions(
     mobile_config: &impl MobileConfigResolverExt,
-    conn: &mut Transaction<'_, Postgres>,
+    txn: &mut Transaction<'_, Postgres>,
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
@@ -21,7 +21,7 @@ pub async fn accumulate_sessions(
     tokio::pin!(reports);
 
     while let Some(report) = reports.next().await {
-        let report_validity = verify_report(conn, mobile_config, &report).await?;
+        let report_validity = verify_report(txn, mobile_config, &report).await?;
         write_verified_report(
             verified_data_session_report_sink,
             report_validity,
@@ -37,26 +37,7 @@ pub async fn accumulate_sessions(
             continue;
         }
 
-        let event = report.report.data_transfer_usage;
-        sqlx::query(
-            r#"
-            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
-            VALUES ($1, $2, $3, $4, $5, $6, $6)
-            ON CONFLICT (pub_key, payer) DO UPDATE SET
-            uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
-            downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
-            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
-            "#
-        )
-            .bind(event.pub_key)
-            .bind(event.payer)
-            .bind(event.upload_bytes as i64)
-            .bind(event.download_bytes as i64)
-            .bind(report.report.rewardable_bytes as i64)
-            .bind(curr_file_ts)
-            .execute(&mut *conn)
-            .await?;
+        pending_burns::save(&mut *txn, &report.report, curr_file_ts).await?;
     }
 
     Ok(())
@@ -125,7 +106,7 @@ mod tests {
     use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
     use sqlx::PgPool;
 
-    use crate::burner::DataTransferSession;
+    use crate::pending_burns::DataTransferSession;
 
     use super::*;
 
