@@ -51,7 +51,7 @@ pub struct PendingPayerBurn {
 pub async fn initialize(conn: &Pool<Postgres>) -> anyhow::Result<()> {
     let results = sqlx::query(
         r#"
-        SELECT payer, sum(rewardable_bytes) as total_rewardable_bytes
+        SELECT payer, sum(rewardable_bytes)::bigint as total_rewardable_bytes
         FROM data_transfer_sessions
         GROUP BY payer
         "#,
