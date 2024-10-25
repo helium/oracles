@@ -176,6 +176,8 @@ pub(crate) mod db {
                 .bind(
                     device_types
                         .iter()
+                        // The device_types field has a jsonb type but is being used as a string,
+                        // which forces us to add quotes.
                         .map(|v| format!("\"{}\"", v))
                         .collect::<Vec<_>>(),
                 )
