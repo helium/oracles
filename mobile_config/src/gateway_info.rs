@@ -88,6 +88,16 @@ impl From<DeviceTypeProto> for DeviceType {
 #[error("invalid device type string")]
 pub struct DeviceTypeParseError;
 
+impl std::fmt::Display for DeviceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeviceType::Cbrs => write!(f, "cbrs"),
+            DeviceType::WifiIndoor => write!(f, "wifiIndoor"),
+            DeviceType::WifiOutdoor => write!(f, "wifiOutdoor"),
+            DeviceType::WifiDataOnly => write!(f, "wifiDataOnly"),
+        }
+    }
+}
 impl std::str::FromStr for DeviceType {
     type Err = DeviceTypeParseError;
 
@@ -116,9 +126,11 @@ pub(crate) mod db {
             join key_to_assets kta on infos.asset = kta.asset
         "#;
     const BATCH_SQL_WHERE_SNIPPET: &str = " where kta.entity_key = any($1::bytea[]) ";
+    const DEVICE_TYPES_WHERE_SNIPPET: &str = " where device_type::text = any($1) ";
 
     lazy_static::lazy_static! {
         static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
+        static ref DEVICE_TYPES_METADATA_SQL: String = format!("{GET_METADATA_SQL} {DEVICE_TYPES_WHERE_SNIPPET}");
     }
 
     pub async fn get_info(
@@ -153,11 +165,26 @@ pub(crate) mod db {
 
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
+        device_types: &'a [DeviceType],
     ) -> impl Stream<Item = GatewayInfo> + 'a {
-        sqlx::query_as::<_, GatewayInfo>(GET_METADATA_SQL)
-            .fetch(db)
-            .filter_map(|metadata| async move { metadata.ok() })
-            .boxed()
+        match device_types.is_empty() {
+            true => sqlx::query_as::<_, GatewayInfo>(GET_METADATA_SQL)
+                .fetch(db)
+                .filter_map(|metadata| async move { metadata.ok() })
+                .boxed(),
+            false => sqlx::query_as::<_, GatewayInfo>(&DEVICE_TYPES_METADATA_SQL)
+                .bind(
+                    device_types
+                        .iter()
+                        // The device_types field has a jsonb type but is being used as a string,
+                        // which forces us to add quotes.
+                        .map(|v| format!("\"{}\"", v))
+                        .collect::<Vec<_>>(),
+                )
+                .fetch(db)
+                .filter_map(|metadata| async move { metadata.ok() })
+                .boxed(),
+        }
     }
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {

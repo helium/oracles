@@ -6,7 +6,9 @@ use file_store::{
     FileInfo,
 };
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::SpeedtestAvgValidity;
+use helium_proto::services::{
+    mobile_config::DeviceType as MobileDeviceType, poc_mobile::SpeedtestAvgValidity,
+};
 use mobile_config::{
     client::gateway_client::GatewayInfoResolver,
     gateway_info::{DeviceType, GatewayInfo, GatewayInfoStream},
@@ -35,7 +37,10 @@ impl GatewayInfoResolver for MockGatewayInfoResolver {
         }))
     }
 
-    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, Self::Error> {
+    async fn stream_gateways_info(
+        &mut self,
+        _device_types: &[MobileDeviceType],
+    ) -> Result<GatewayInfoStream, Self::Error> {
         todo!()
     }
 }

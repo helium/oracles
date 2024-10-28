@@ -1,5 +1,5 @@
 use crate::{
-    gateway_info::{self, GatewayInfo},
+    gateway_info::{self, DeviceType, GatewayInfo},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -156,16 +156,21 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        tracing::debug!("fetching all gateways' info");
-
         let pool = self.metadata_pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
+        let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
+
+        tracing::debug!(
+            "fetching all gateways' info. Device types: {:?} ",
+            device_types
+        );
+
         tokio::spawn(async move {
-            let stream = gateway_info::db::all_info_stream(&pool);
+            let stream = gateway_info::db::all_info_stream(&pool, &device_types);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
