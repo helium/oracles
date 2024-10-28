@@ -65,7 +65,10 @@ impl CarrierService {
         Ok(entity_key)
     }
 
-    async fn fetch_incentive_promotions(&self) -> Result<Vec<ServiceProviderPromotions>, Status> {
+    async fn fetch_incentive_promotions(
+        &self,
+        timestamp: i64,
+    ) -> Result<Vec<ServiceProviderPromotions>, Status> {
         #[derive(Debug, FromRow)]
         struct Local {
             carrier_name: String,
@@ -85,9 +88,11 @@ impl CarrierService {
                 JOIN incentive_escrow_programs iep 
                     on c.address = iep.carrier
                 WHERE 
-                    iep.stop_ts > EXTRACT(EPOCH FROM NOW())
+                    iep.start_ts < $1
+                    AND iep.stop_ts > $1
             "#,
         )
+        .bind(timestamp)
         .fetch_all(&self.metadata_db)
         .await
         .map_err(|_| Status::internal("could not fetch incentive programs"))?;
@@ -147,7 +152,8 @@ impl mobile_config::CarrierService for CarrierService {
         let signer = verify_public_key(&request.signature)?;
         self.verify_request_signature(&signer, &request)?;
 
-        let promotions = self.fetch_incentive_promotions().await?;
+        let timestamp = request.timestamp;
+        let promotions = self.fetch_incentive_promotions(timestamp as i64).await?;
 
         let mut response = CarrierIncentivePromotionListResV1 {
             service_provider_promotions: promotions,
