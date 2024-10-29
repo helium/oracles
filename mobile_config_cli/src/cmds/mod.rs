@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 pub mod admin;
 pub mod authorization;
+pub mod carrier;
 pub mod entity;
 pub mod env;
 pub mod gateway;
@@ -67,6 +68,10 @@ pub enum Commands {
         #[command(subcommand)]
         command: AuthCommands,
     },
+    Carrier {
+        #[command(subcommand)]
+        command: CarrierCommands,
+    },
     /// Entity
     Entity {
         #[command(subcommand)]
@@ -105,6 +110,21 @@ pub struct VerifyNetKey {
 pub struct ListNetKeys {
     #[arg(long, value_enum)]
     pub key_role: NetworkKeyRole,
+    #[arg(from_global)]
+    pub keypair: PathBuf,
+    #[arg(from_global)]
+    pub config_host: String,
+    #[arg(from_global)]
+    pub config_pubkey: String,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CarrierCommands {
+    ListIncentivePromotions(ListIncentivePromotions),
+}
+
+#[derive(Debug, Args)]
+pub struct ListIncentivePromotions {
     #[arg(from_global)]
     pub keypair: PathBuf,
     #[arg(from_global)]

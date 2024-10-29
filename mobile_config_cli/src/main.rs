@@ -1,6 +1,6 @@
 use clap::Parser;
 use mobile_config_cli::{
-    cmds::{self, admin, authorization, entity, env, gateway, Cli, Commands},
+    cmds::{self, admin, authorization, carrier, entity, env, gateway, Cli, Commands},
     Msg, Result,
 };
 
@@ -32,6 +32,11 @@ pub async fn handle_cli(cli: Cli) -> Result<Msg> {
         Commands::Authorization { command } => match command {
             cmds::AuthCommands::VerifyKey(args) => authorization::verify_key_role(args).await,
             cmds::AuthCommands::ListKeys(args) => authorization::list_keys_role(args).await,
+        },
+        Commands::Carrier { command } => match command {
+            cmds::CarrierCommands::ListIncentivePromotions(args) => {
+                carrier::list_incentive_promotions(args).await
+            }
         },
         Commands::Entity { command } => match command {
             cmds::EntityCommands::VerifyEntity(args) => entity::verify_entity(args).await,
