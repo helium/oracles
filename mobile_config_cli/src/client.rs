@@ -8,15 +8,20 @@ use futures::{stream, StreamExt};
 use helium_crypto::{Keypair, PublicKey, Sign, Verify};
 use helium_proto::{
     services::mobile_config::{
-        admin_client, authorization_client, entity_client, gateway_client, AdminAddKeyReqV1,
-        AdminKeyResV1, AdminRemoveKeyReqV1, AuthorizationListReqV1, AuthorizationListResV1,
-        AuthorizationVerifyReqV1, AuthorizationVerifyResV1, EntityVerifyReqV1, EntityVerifyResV1,
-        GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamResV1,
+        admin_client, authorization_client, carrier_service_client, entity_client, gateway_client,
+        AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1, AuthorizationListReqV1,
+        AuthorizationListResV1, AuthorizationVerifyReqV1, AuthorizationVerifyResV1,
+        CarrierIncentivePromotionListReqV1, CarrierIncentivePromotionListResV1, EntityVerifyReqV1,
+        EntityVerifyResV1, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1,
+        GatewayInfoStreamResV1,
     },
     Message,
 };
 use mobile_config::KeyRole;
-use std::str::FromStr;
+use std::{
+    str::FromStr,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 pub struct AdminClient {
     client: admin_client::AdminClient<helium_proto::services::Channel>,
@@ -25,6 +30,11 @@ pub struct AdminClient {
 
 pub struct AuthClient {
     client: authorization_client::AuthorizationClient<helium_proto::services::Channel>,
+    server_pubkey: PublicKey,
+}
+
+pub struct CarrierClient {
+    client: carrier_service_client::CarrierServiceClient<helium_proto::services::Channel>,
     server_pubkey: PublicKey,
 }
 
@@ -142,6 +152,36 @@ impl AuthClient {
     }
 }
 
+impl CarrierClient {
+    pub async fn new(host: &str, server_pubkey: &str) -> Result<Self> {
+        Ok(Self {
+            client: carrier_service_client::CarrierServiceClient::connect(host.to_owned()).await?,
+            server_pubkey: PublicKey::from_str(server_pubkey)?,
+        })
+    }
+
+    pub async fn list_incentive_promotions(
+        &mut self,
+        keypair: &Keypair,
+    ) -> Result<CarrierIncentivePromotionListResV1> {
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let mut request = CarrierIncentivePromotionListReqV1 {
+            timestamp,
+            signer: keypair.public_key().into(),
+            signature: vec![],
+        };
+        request.signature = request.sign(keypair)?;
+        match self.client.list_incentive_promotions(request).await {
+            Ok(response) => {
+                let res = response.into_inner();
+                res.verify(&self.server_pubkey)?;
+                Ok(res)
+            }
+            Err(error) => Err(error)?,
+        }
+    }
+}
+
 impl EntityClient {
     pub async fn new(host: &str, server_pubkey: &str) -> Result<Self> {
         Ok(Self {
@@ -252,6 +292,7 @@ impl_sign!(AuthorizationListReqV1, signature);
 impl_sign!(EntityVerifyReqV1, signature);
 impl_sign!(GatewayInfoReqV1, signature);
 impl_sign!(GatewayInfoBatchReqV1, signature);
+impl_sign!(CarrierIncentivePromotionListReqV1, signature);
 
 pub trait MsgVerify: Message + std::clone::Clone {
     fn verify(&self, verifier: &PublicKey) -> Result
@@ -281,3 +322,4 @@ impl_verify!(AuthorizationListResV1, signature);
 impl_verify!(EntityVerifyResV1, signature);
 impl_verify!(GatewayInfoResV1, signature);
 impl_verify!(GatewayInfoStreamResV1, signature);
+impl_verify!(CarrierIncentivePromotionListResV1, signature);
