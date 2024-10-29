@@ -171,8 +171,14 @@ impl CarrierClient {
             signature: vec![],
         };
         request.signature = request.sign(keypair)?;
-        let res = self.client.list_incentive_promotions(request).await?;
-        Ok(res.into_inner())
+        match self.client.list_incentive_promotions(request).await {
+            Ok(response) => {
+                let res = response.into_inner();
+                res.verify(&self.server_pubkey)?;
+                Ok(res)
+            }
+            Err(error) => Err(error)?,
+        }
     }
 }
 
@@ -316,3 +322,4 @@ impl_verify!(AuthorizationListResV1, signature);
 impl_verify!(EntityVerifyResV1, signature);
 impl_verify!(GatewayInfoResV1, signature);
 impl_verify!(GatewayInfoStreamResV1, signature);
+impl_verify!(CarrierIncentivePromotionListResV1, signature);
