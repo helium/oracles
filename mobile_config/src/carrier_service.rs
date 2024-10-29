@@ -83,7 +83,7 @@ impl CarrierService {
             r#"
                 SELECT 
                     c.name as carrier_name, c.incentive_escrow_fund_bps, 
-                    iep.carrier, iep.start_ts, iep.stop_ts, iep.shares, iep.name as promo_name
+                    iep.carrier, iep.start_ts::bigint, iep.stop_ts::bigint, iep.shares, iep.name as promo_name
                 FROM carriers c
                 JOIN incentive_escrow_programs iep 
                     on c.address = iep.carrier
@@ -95,7 +95,10 @@ impl CarrierService {
         .bind(timestamp)
         .fetch_all(&self.metadata_db)
         .await
-        .map_err(|_| Status::internal("could not fetch incentive programs"))?;
+        .map_err(|err| {
+            tracing::error!(?err, "fetching incentive programs");
+            Status::internal("could not fetch incentive programs")
+        })?;
 
         let mut sp_promotions: HashMap<String, ServiceProviderPromotions> = HashMap::new();
         for row in rows {
