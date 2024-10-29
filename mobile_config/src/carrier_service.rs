@@ -149,7 +149,7 @@ impl mobile_config::CarrierService for CarrierService {
         telemetry::count_request("carrier_service", "list_incentive_promotions");
         custom_tracing::record_b58("signer", &request.signer);
 
-        let signer = verify_public_key(&request.signature)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         let timestamp = request.timestamp;
