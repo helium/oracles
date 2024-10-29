@@ -82,8 +82,12 @@ impl Daemon {
             metadata_pool.clone(),
             settings.signing_keypair()?,
         );
-        let carrier_svc =
-            CarrierService::new(key_cache.clone(), pool.clone(), settings.signing_keypair()?);
+        let carrier_svc = CarrierService::new(
+            key_cache.clone(),
+            pool.clone(),
+            metadata_pool.clone(),
+            settings.signing_keypair()?,
+        );
 
         let hex_boosting_svc = HexBoostingService::new(
             key_cache.clone(),
