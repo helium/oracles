@@ -62,6 +62,7 @@ impl CarrierServiceVerifier for MockCarrierServiceClient {
 
     async fn list_incentive_promotions(
         &self,
+        _epoch_start: &DateTime<Utc>,
     ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
         Ok(self.promotions.clone())
     }
@@ -83,7 +84,9 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
 
     let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await?;
-    let sp_promotions = carrier_client.list_incentive_promotions().await?;
+    let sp_promotions = carrier_client
+        .list_incentive_promotions(&epoch.start)
+        .await?;
 
     let (_, rewards) = tokio::join!(
         rewarder::reward_service_providers(
@@ -194,7 +197,9 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     txn.commit().await?;
 
     let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await?;
-    let sp_promotions = carrier_client.list_incentive_promotions().await?;
+    let sp_promotions = carrier_client
+        .list_incentive_promotions(&epoch.start)
+        .await?;
 
     let (_, rewards) = tokio::join!(
         rewarder::reward_service_providers(
