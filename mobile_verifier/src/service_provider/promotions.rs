@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -10,8 +11,9 @@ mod proto {
 
 pub async fn get_promotions(
     client: &impl CarrierServiceVerifier<Error = ClientError>,
+    epoch_start: &DateTime<Utc>,
 ) -> anyhow::Result<ServiceProviderPromotions> {
-    let promos = client.list_incentive_promotions().await?;
+    let promos = client.list_incentive_promotions(epoch_start).await?;
     Ok(ServiceProviderPromotions(promos))
 }
 
