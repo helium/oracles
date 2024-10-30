@@ -36,6 +36,7 @@ pub enum RewardType {
     MobileServiceProvider,
     MobileUnallocated,
     IotUnallocated,
+    MobilePromotion,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -185,28 +186,13 @@ impl Indexer {
                         },
                         r.amount,
                     ))),
-                    // Some(MobileReward::PromotionReward(PromotionReward {
-                    //     entity: Some(Entity::SubscriberId(subscriber_id)),
-                    //     service_provider_amount,
-                    //     matched_amount,
-                    // })) => Ok(Some((
-                    //     RewardKey {
-                    //         key: bs58::encode(&subscriber_id).into_string(),
-                    //         reward_type: RewardType::MobileSubscriber,
-                    //     },
-                    //     service_provider_amount + matched_amount,
-                    // ))),
-                    // Some(MobileReward::PromotionReward(PromotionReward {
-                    //     entity: Some(Entity::GatewayKey(gateway_key)),
-                    //     service_provider_amount,
-                    //     matched_amount,
-                    // })) => Ok(Some((
-                    //     RewardKey {
-                    //         key: PublicKeyBinary::from(gateway_key).to_string(),
-                    //         reward_type: RewardType::MobileGateway,
-                    //     },
-                    //     service_provider_amount + matched_amount,
-                    // ))),
+                    Some(MobileReward::PromotionReward(promotion)) => Ok(Some((
+                        RewardKey {
+                            key: promotion.entity,
+                            reward_type: RewardType::MobilePromotion,
+                        },
+                        promotion.service_provider_amount + promotion.matched_amount,
+                    ))),
                     _ => bail!("got an invalid reward share"),
                 }
             }

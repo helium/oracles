@@ -71,7 +71,7 @@ impl CarrierServiceVerifier for CarrierServiceClient {
         &self,
     ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
         let mut request = mobile_config::CarrierIncentivePromotionListReqV1 {
-            timestamp: Utc::now().encode_timestamp_millis(),
+            timestamp: Utc::now().encode_timestamp(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
