@@ -20,7 +20,6 @@ pub mod mobile_radio_threshold;
 pub mod mobile_session;
 pub mod mobile_subscriber;
 pub mod mobile_transfer;
-pub mod promotion_reward;
 pub mod radio_location_estimates;
 pub mod radio_location_estimates_ingest_report;
 pub mod reward_manifest;
