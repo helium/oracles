@@ -6,7 +6,7 @@ use file_store::traits::TimestampEncode;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
-use crate::reward_shares::{dc_to_mobile_bones, DEFAULT_PREC};
+use crate::reward_shares::dc_to_mobile_bones;
 
 use super::{dc_sessions::ServiceProviderDCSessions, promotions::ServiceProviderPromotions};
 
@@ -19,29 +19,11 @@ mod proto {
     };
 }
 
-pub fn rewards_per_share(
-    total_sp_dc: Decimal,
-    total_sp_rewards: Decimal,
-    mobile_bone_price: Decimal,
-) -> Decimal {
-    let total_sp_rewards_used = dc_to_mobile_bones(total_sp_dc, mobile_bone_price);
-    let capped_sp_rewards_used = total_sp_rewards_used.min(total_sp_rewards);
-
-    if capped_sp_rewards_used > Decimal::ZERO {
-        (capped_sp_rewards_used / total_sp_dc)
-            .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven)
-    } else {
-        Decimal::ZERO
-    }
-}
-
 /// Container for all Service Provider rewarding
 #[derive(Debug)]
 pub struct ServiceProviderRewardInfos {
     coll: Vec<RewardInfo>,
     total_sp_allocation: Decimal,
-    all_transfer: Decimal,
-    mobile_bone_price: Decimal,
     reward_epoch: Range<DateTime<Utc>>,
 }
 
@@ -52,17 +34,17 @@ struct RewardInfo {
     // proto::ServiceProvider enum repr
     sp_id: i32,
 
-    // Total DC transferred for reward epoch
-    dc: Decimal,
-    // % of total allocated rewards for dc transfer
-    dc_perc: Decimal,
+    // Total DC transferred for reward epoch in Bones
+    bones: Decimal,
+    // % of total allocated rewards for data transfer
+    data_perc: Decimal,
     // % allocated from DC to promo rewards (found in db from file from on chain)
     allocated_promo_perc: Decimal,
 
     // % of total allocated rewards going towards promotions
     realized_promo_perc: Decimal,
-    // % of total allocated rewards awarded for dc transfer
-    realized_dc_perc: Decimal,
+    // % of total allocated rewards awarded for data transfer
+    realized_data_perc: Decimal,
     // % matched promotions from unallocated, can never exceed realized_promo_perc
     matched_promo_perc: Decimal,
 
@@ -74,28 +56,35 @@ impl ServiceProviderRewardInfos {
     pub fn new(
         dc_sessions: ServiceProviderDCSessions,
         promotions: ServiceProviderPromotions,
-        total_sp_allocation: Decimal,
-        mobile_bone_price: Decimal,
+        total_sp_allocation: Decimal, // Bones
+        mobile_bone_price: Decimal,   // Price in Bones
         reward_epoch: Range<DateTime<Utc>>,
     ) -> Self {
-        let all_transfer = dc_sessions.all_transfer();
+        let all_transfer = dc_sessions.all_transfer(); // DC
 
         let mut me = Self {
             coll: vec![],
             total_sp_allocation,
-            all_transfer,
-            mobile_bone_price,
             reward_epoch,
         };
 
-        let used_allocation = total_sp_allocation.max(all_transfer);
-        for (dc_session, dc_transfer) in dc_sessions.iter() {
-            let promo_fund_perc = promotions.get_fund_percent(dc_session);
-            let promos = promotions.get_active_promotions(dc_session);
+        // After this point, we enter percentage land. This number is the basis
+        // for all percentages, our 100%. If the DC transferred in Bones is
+        // greater than the amount of Bones allocated for rewarding, we use the
+        // greater number; to not exceed 100% allocation.
+        //
+        // When rewards are output, the percentages are taken from the allocated
+        // Bones for service providers. Which has the effect of scaling the rewards.
+        let used_allocation =
+            total_sp_allocation.max(dc_to_mobile_bones(all_transfer, mobile_bone_price));
+
+        for (service_provider, dc_transfer) in dc_sessions.iter() {
+            let promo_fund_perc = promotions.get_fund_percent(service_provider);
+            let promos = promotions.get_active_promotions(service_provider);
 
             me.coll.push(RewardInfo::new(
-                dc_session,
-                dc_transfer,
+                service_provider,
+                dc_to_mobile_bones(dc_transfer, mobile_bone_price),
                 promo_fund_perc,
                 used_allocation,
                 promos,
@@ -110,24 +99,9 @@ impl ServiceProviderRewardInfos {
     }
 
     pub fn iter_rewards(&self) -> Vec<(u64, proto::MobileRewardShare)> {
-        let rewards_per_share = rewards_per_share(
-            self.all_transfer,
-            self.total_sp_allocation,
-            self.mobile_bone_price,
-        );
-        let sp_rewards = self.total_sp_allocation * rewards_per_share;
-
-        // NOTE(mj): `rewards_per_share * self.dc` vs `sp_rewards * self.dc_perc`
-        // They're veeeeery close. But the % multiplication produces a floating point number
-        // that will typically be rounded down.
-
         self.coll
             .iter()
-            .flat_map(|sp| {
-                let mut rewards = sp.promo_rewards(sp_rewards, &self.reward_epoch);
-                rewards.push(sp.carrier_reward(sp_rewards, &self.reward_epoch));
-                rewards
-            })
+            .flat_map(|sp| sp.iter_rewards(self.total_sp_allocation, &self.reward_epoch))
             .filter(|(amount, _r)| *amount > 0)
             .collect::<Vec<_>>()
     }
@@ -136,31 +110,41 @@ impl ServiceProviderRewardInfos {
 impl RewardInfo {
     fn new(
         sp_id: i32,
-        dc_transfer: Decimal,
+        bones_transfer: Decimal, // Bones
         promo_fund_perc: Decimal,
-        total_sp_allocation: Decimal,
+        total_sp_allocation: Decimal, // Bones
         promotions: Vec<proto::Promotion>,
     ) -> Self {
-        let dc_perc = dc_transfer / total_sp_allocation;
+        let data_perc = bones_transfer / total_sp_allocation;
         let realized_promo_perc = if promotions.is_empty() {
             dec!(0)
         } else {
-            dc_perc * promo_fund_perc
+            data_perc * promo_fund_perc
         };
-        let realized_dc_perc = dc_perc - realized_promo_perc;
+        let realized_dc_perc = data_perc - realized_promo_perc;
 
         Self {
             sp_id,
-            dc: dc_transfer,
+            bones: bones_transfer,
             allocated_promo_perc: promo_fund_perc,
 
-            dc_perc,
+            data_perc,
             realized_promo_perc,
-            realized_dc_perc,
+            realized_data_perc: realized_dc_perc,
             matched_promo_perc: dec!(0),
 
             promotions,
         }
+    }
+
+    pub fn iter_rewards(
+        &self,
+        total_allocation: Decimal,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> Vec<(u64, proto::MobileRewardShare)> {
+        let mut rewards = self.promo_rewards(total_allocation, reward_period);
+        rewards.push(self.carrier_reward(total_allocation, reward_period));
+        rewards
     }
 
     pub fn carrier_reward(
@@ -168,7 +152,7 @@ impl RewardInfo {
         total_allocation: Decimal,
         reward_period: &Range<DateTime<Utc>>,
     ) -> (u64, proto::MobileRewardShare) {
-        let amount = (total_allocation * self.realized_dc_perc).to_u64_rounded();
+        let amount = (total_allocation * self.realized_data_perc).to_u64_floored(); // Rewarded BONES
 
         (
             amount,
@@ -210,8 +194,8 @@ impl RewardInfo {
         for r in self.promotions.iter() {
             let shares = Decimal::from(r.shares);
 
-            let service_provider_amount = (sp_amount_per_share * shares).to_u64_rounded();
-            let matched_amount = (matched_amount_per_share * shares).to_u64_rounded();
+            let service_provider_amount = (sp_amount_per_share * shares).to_u64_floored();
+            let matched_amount = (matched_amount_per_share * shares).to_u64_floored();
 
             let total_amount = service_provider_amount + matched_amount;
 
@@ -234,7 +218,7 @@ impl RewardInfo {
 }
 
 fn distribute_unallocated(coll: &mut [RewardInfo]) {
-    let allocated_perc = coll.iter().map(|x| x.dc_perc).sum::<Decimal>();
+    let allocated_perc = coll.iter().map(|x| x.data_perc).sum::<Decimal>();
     let unallocated_perc = dec!(1) - allocated_perc;
 
     let maybe_matching_perc = coll
@@ -273,12 +257,12 @@ fn distribute_unalloc_under_limit(coll: &mut [RewardInfo]) {
 }
 
 trait DecimalRoundingExt {
-    fn to_u64_rounded(&self) -> u64;
+    fn to_u64_floored(&self) -> u64;
 }
 
 impl DecimalRoundingExt for Decimal {
-    fn to_u64_rounded(&self) -> u64 {
-        use rust_decimal::{prelude::ToPrimitive, RoundingStrategy};
+    fn to_u64_floored(&self) -> u64 {
+        use rust_decimal::prelude::ToPrimitive;
 
         self.round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
@@ -427,10 +411,10 @@ mod tests {
         let total_rewards = dec!(1000);
 
         let sp_infos = ServiceProviderRewardInfos::new(
-            ServiceProviderDCSessions::from([(0, total_rewards)]),
+            ServiceProviderDCSessions::from([(0, dec!(5000))]),
             ServiceProviderPromotions::from(vec![make_test_promotion(0, "promo-0", 5000, 1)]),
             total_rewards,
-            dec!(0.001),
+            dec!(0.00001),
             epoch(),
         );
 
@@ -559,6 +543,111 @@ mod tests {
         assert_eq!(promo_rewards[1].matched_amount, 6);
     }
 
+    #[test]
+    fn no_matched_promotions_full_bucket_allocation() {
+        // The service providers DC session represents _more_ than the
+        // available amount of sp_rewards for an epoch.
+        // No matching on promotions should occur.
+        let total_rewards = dec!(8_219_178_082_191);
+        let sp_session = dec!(553_949_301);
+
+        let sp_infos = ServiceProviderRewardInfos::new(
+            ServiceProviderDCSessions::from([(0, sp_session)]),
+            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotions {
+                service_provider: 0,
+                incentive_escrow_fund_bps: 396, // severely limit promotions
+                promotions: vec![helium_proto::service_provider_promotions::Promotion {
+                    entity: "promo-1".to_string(),
+                    shares: 100,
+                    ..Default::default()
+                }],
+            }]),
+            total_rewards,
+            dec!(629) / dec!(1_000_000) / dec!(1_000_000),
+            epoch(),
+        );
+
+        let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
+        assert_eq!(promo_1.service_provider_amount, 325_479_452_054);
+        assert_eq!(promo_1.matched_amount, 0);
+        assert_eq!(sp_1.amount, 7_893_698_630_136);
+
+        let mut unallocated = total_rewards.to_u64_floored();
+        for (amount, _reward) in sp_infos.iter_rewards() {
+            unallocated -= amount;
+        }
+
+        assert_eq!(unallocated, 1);
+    }
+
+    #[test]
+    fn no_matched_promotions_multiple_sp_full_bucket_allocation() {
+        // The Service Providers DC sessions far surpass the
+        // available amount of sp_rewards for an epoch.
+        // No matching on promotions should occur.
+        let total_rewards = dec!(8_219_178_082_191);
+        let sp_session = dec!(553_949_301);
+
+        let sp_infos = ServiceProviderRewardInfos::new(
+            ServiceProviderDCSessions::from([(0, sp_session), (1, sp_session)]),
+            ServiceProviderPromotions::from(vec![
+                helium_proto::ServiceProviderPromotions {
+                    service_provider: 0,
+                    incentive_escrow_fund_bps: 396,
+                    promotions: vec![helium_proto::service_provider_promotions::Promotion {
+                        entity: "promo-1".to_string(),
+                        shares: 100,
+                        ..Default::default()
+                    }],
+                },
+                helium_proto::ServiceProviderPromotions {
+                    service_provider: 1,
+                    incentive_escrow_fund_bps: 400,
+                    promotions: vec![helium_proto::service_provider_promotions::Promotion {
+                        entity: "promo-2".to_string(),
+                        shares: 100,
+                        ..Default::default()
+                    }],
+                },
+            ]),
+            total_rewards,
+            dec!(629) / dec!(1_000_000) / dec!(1_000_000),
+            epoch(),
+        );
+
+        let sp_base_reward = dec!(4_109_589_041_095.50);
+        let sp_1_promotion_bones = dec!(162_739_726_027.38); // 3.96%
+        let sp_2_promotion_bones = dec!(164_383_561_643.82); // 4.00%
+
+        let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
+        assert_eq!(
+            sp_1.amount,
+            (sp_base_reward - sp_1_promotion_bones).to_u64_floored()
+        );
+        assert_eq!(
+            promo_1.service_provider_amount,
+            sp_1_promotion_bones.to_u64_floored()
+        );
+        assert_eq!(promo_1.matched_amount, 0);
+
+        let (promo_2, sp_2) = sp_infos.single_sp_rewards(1);
+        assert_eq!(
+            sp_2.amount,
+            (sp_base_reward - sp_2_promotion_bones).to_u64_floored()
+        );
+        assert_eq!(
+            promo_2.service_provider_amount,
+            sp_2_promotion_bones.to_u64_floored()
+        );
+        assert_eq!(promo_2.matched_amount, 0);
+
+        let mut unallocated = total_rewards.to_u64_floored();
+        for (amount, _reward) in sp_infos.iter_rewards() {
+            unallocated -= amount;
+        }
+        assert_eq!(unallocated, 2);
+    }
+
     use proptest::prelude::*;
 
     prop_compose! {
@@ -628,6 +717,7 @@ mod tests {
         fn multiple_provider_does_not_overallocate(
             dc_sessions in prop::collection::vec(arb_dc_session(), 0..10),
             promotions in prop::collection::vec(arb_sp_promotion(), 0..10),
+            mobile_bone_price in 1..5000
         ) {
             let epoch = epoch();
             let total_allocation = service_provider::get_scheduled_tokens(&epoch);
@@ -636,7 +726,7 @@ mod tests {
                 ServiceProviderDCSessions::from(dc_sessions),
                 ServiceProviderPromotions::from(promotions),
                 total_allocation,
-                dec!(0.00001),
+                Decimal::from(mobile_bone_price) / dec!(1_000_000) / dec!(1_000_000),
                 epoch
             );
 
@@ -700,7 +790,7 @@ mod tests {
 
     impl RewardInfo {
         fn total_percent(&self) -> Decimal {
-            self.realized_dc_perc + self.realized_promo_perc + self.matched_promo_perc
+            self.realized_data_perc + self.realized_promo_perc + self.matched_promo_perc
         }
     }
 
@@ -710,18 +800,13 @@ mod tests {
         }
 
         fn iter_sp_rewards(&self, sp_id: i32) -> Vec<MobileRewardShare> {
-            let rewards_per_share = rewards_per_share(
-                self.all_transfer,
-                self.total_sp_allocation,
-                self.mobile_bone_price,
-            );
-            let sp_rewards = self.total_sp_allocation * rewards_per_share;
-
             for info in self.coll.iter() {
                 if info.sp_id == sp_id {
-                    let mut result = info.promo_rewards(sp_rewards, &self.reward_epoch);
-                    result.push(info.carrier_reward(sp_rewards, &self.reward_epoch));
-                    return result.into_iter().map(|(_, x)| x).collect();
+                    return info
+                        .iter_rewards(self.total_sp_allocation, &self.reward_epoch)
+                        .into_iter()
+                        .map(|(_, x)| x)
+                        .collect();
                 }
             }
             vec![]
