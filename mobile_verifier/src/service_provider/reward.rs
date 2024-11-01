@@ -168,7 +168,7 @@ impl RewardInfo {
         total_allocation: Decimal,
         reward_period: &Range<DateTime<Utc>>,
     ) -> (u64, proto::MobileRewardShare) {
-        let amount = (total_allocation * self.realized_dc_perc).to_u64_rounded();
+        let amount = (total_allocation * self.realized_dc_perc).to_u64_floored(); // Rewarded BONES
 
         (
             amount,
@@ -210,8 +210,8 @@ impl RewardInfo {
         for r in self.promotions.iter() {
             let shares = Decimal::from(r.shares);
 
-            let service_provider_amount = (sp_amount_per_share * shares).to_u64_rounded();
-            let matched_amount = (matched_amount_per_share * shares).to_u64_rounded();
+            let service_provider_amount = (sp_amount_per_share * shares).to_u64_floored();
+            let matched_amount = (matched_amount_per_share * shares).to_u64_floored();
 
             let total_amount = service_provider_amount + matched_amount;
 
@@ -273,11 +273,11 @@ fn distribute_unalloc_under_limit(coll: &mut [RewardInfo]) {
 }
 
 trait DecimalRoundingExt {
-    fn to_u64_rounded(&self) -> u64;
+    fn to_u64_floored(&self) -> u64;
 }
 
 impl DecimalRoundingExt for Decimal {
-    fn to_u64_rounded(&self) -> u64 {
+    fn to_u64_floored(&self) -> u64 {
         use rust_decimal::{prelude::ToPrimitive, RoundingStrategy};
 
         self.round_dp_with_strategy(0, RoundingStrategy::ToZero)
