@@ -19,29 +19,11 @@ mod proto {
     };
 }
 
-pub fn rewards_per_share(
-    total_sp_dc: Decimal,
-    total_sp_rewards: Decimal,
-    mobile_bone_price: Decimal,
-) -> Decimal {
-    let total_sp_rewards_used = dc_to_mobile_bones(total_sp_dc, mobile_bone_price);
-    let capped_sp_rewards_used = total_sp_rewards_used.min(total_sp_rewards);
-
-    if capped_sp_rewards_used > Decimal::ZERO {
-        (capped_sp_rewards_used / total_sp_dc)
-            .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven)
-    } else {
-        Decimal::ZERO
-    }
-}
-
 /// Container for all Service Provider rewarding
 #[derive(Debug)]
 pub struct ServiceProviderRewardInfos {
     coll: Vec<RewardInfo>,
     total_sp_allocation: Decimal,
-    all_transfer: Decimal,
-    mobile_bone_price: Decimal,
     reward_epoch: Range<DateTime<Utc>>,
 }
 
