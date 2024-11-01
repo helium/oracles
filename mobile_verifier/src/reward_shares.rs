@@ -2275,7 +2275,7 @@ mod test {
             // force the service provider to have spend more DC than total rewardable
             ServiceProviderDCSessions::from([(sp1, total_rewards_value_in_dc * dec!(2.0))]),
             ServiceProviderPromotions::default(),
-            total_rewards_value_in_dc,
+            total_sp_rewards_in_bones,
             mobile_bone_price,
             epoch.clone(),
         );
