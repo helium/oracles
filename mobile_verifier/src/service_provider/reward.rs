@@ -3,7 +3,7 @@ use std::ops::Range;
 use chrono::{DateTime, Utc};
 
 use file_store::traits::TimestampEncode;
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
 use crate::reward_shares::dc_to_mobile_bones;
@@ -263,7 +263,10 @@ trait DecimalRoundingExt {
 impl DecimalRoundingExt for Decimal {
     fn to_u64_floored(&self) -> u64 {
         use rust_decimal::prelude::ToPrimitive;
-        self.floor().to_u64().unwrap_or(0)
+
+        self.round_dp_with_strategy(0, RoundingStrategy::ToZero)
+            .to_u64()
+            .unwrap_or(0)
     }
 }
 
