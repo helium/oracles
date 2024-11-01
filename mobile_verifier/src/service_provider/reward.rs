@@ -3,10 +3,10 @@ use std::ops::Range;
 use chrono::{DateTime, Utc};
 
 use file_store::traits::TimestampEncode;
-use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::reward_shares::{dc_to_mobile_bones, DEFAULT_PREC};
+use crate::reward_shares::dc_to_mobile_bones;
 
 use super::{dc_sessions::ServiceProviderDCSessions, promotions::ServiceProviderPromotions};
 
@@ -52,17 +52,17 @@ struct RewardInfo {
     // proto::ServiceProvider enum repr
     sp_id: i32,
 
-    // Total DC transferred for reward epoch
-    dc: Decimal,
-    // % of total allocated rewards for dc transfer
-    dc_perc: Decimal,
+    // Total DC transferred for reward epoch in Bones
+    bones: Decimal,
+    // % of total allocated rewards for data transfer
+    data_perc: Decimal,
     // % allocated from DC to promo rewards (found in db from file from on chain)
     allocated_promo_perc: Decimal,
 
     // % of total allocated rewards going towards promotions
     realized_promo_perc: Decimal,
-    // % of total allocated rewards awarded for dc transfer
-    realized_dc_perc: Decimal,
+    // % of total allocated rewards awarded for data transfer
+    realized_data_perc: Decimal,
     // % matched promotions from unallocated, can never exceed realized_promo_perc
     matched_promo_perc: Decimal,
 
@@ -74,28 +74,35 @@ impl ServiceProviderRewardInfos {
     pub fn new(
         dc_sessions: ServiceProviderDCSessions,
         promotions: ServiceProviderPromotions,
-        total_sp_allocation: Decimal,
-        mobile_bone_price: Decimal,
+        total_sp_allocation: Decimal, // Bones
+        mobile_bone_price: Decimal,   // Price in Bones
         reward_epoch: Range<DateTime<Utc>>,
     ) -> Self {
-        let all_transfer = dc_sessions.all_transfer();
+        let all_transfer = dc_sessions.all_transfer(); // DC
 
         let mut me = Self {
             coll: vec![],
             total_sp_allocation,
-            all_transfer,
-            mobile_bone_price,
             reward_epoch,
         };
 
-        let used_allocation = total_sp_allocation.max(all_transfer);
-        for (dc_session, dc_transfer) in dc_sessions.iter() {
-            let promo_fund_perc = promotions.get_fund_percent(dc_session);
-            let promos = promotions.get_active_promotions(dc_session);
+        // After this point, we enter percentage land. This number is the basis
+        // for all percentages, our 100%. If the DC transferred in Bones is
+        // greater than the amount of Bones allocated for rewarding, we use the
+        // greater number; to not exceed 100% allocation.
+        //
+        // When rewards are output, the percentages are taken from the allocated
+        // Bones for service providers. Which has the effect of scaling the rewards.
+        let used_allocation =
+            total_sp_allocation.max(dc_to_mobile_bones(all_transfer, mobile_bone_price));
+
+        for (service_provider, dc_transfer) in dc_sessions.iter() {
+            let promo_fund_perc = promotions.get_fund_percent(service_provider);
+            let promos = promotions.get_active_promotions(service_provider);
 
             me.coll.push(RewardInfo::new(
-                dc_session,
-                dc_transfer,
+                service_provider,
+                dc_to_mobile_bones(dc_transfer, mobile_bone_price),
                 promo_fund_perc,
                 used_allocation,
                 promos,
@@ -121,27 +128,27 @@ impl ServiceProviderRewardInfos {
 impl RewardInfo {
     fn new(
         sp_id: i32,
-        dc_transfer: Decimal,
+        bones_transfer: Decimal, // Bones
         promo_fund_perc: Decimal,
-        total_sp_allocation: Decimal,
+        total_sp_allocation: Decimal, // Bones
         promotions: Vec<proto::Promotion>,
     ) -> Self {
-        let dc_perc = dc_transfer / total_sp_allocation;
+        let data_perc = bones_transfer / total_sp_allocation;
         let realized_promo_perc = if promotions.is_empty() {
             dec!(0)
         } else {
-            dc_perc * promo_fund_perc
+            data_perc * promo_fund_perc
         };
-        let realized_dc_perc = dc_perc - realized_promo_perc;
+        let realized_dc_perc = data_perc - realized_promo_perc;
 
         Self {
             sp_id,
-            dc: dc_transfer,
+            bones: bones_transfer,
             allocated_promo_perc: promo_fund_perc,
 
-            dc_perc,
+            data_perc,
             realized_promo_perc,
-            realized_dc_perc,
+            realized_data_perc: realized_dc_perc,
             matched_promo_perc: dec!(0),
 
             promotions,
@@ -163,7 +170,7 @@ impl RewardInfo {
         total_allocation: Decimal,
         reward_period: &Range<DateTime<Utc>>,
     ) -> (u64, proto::MobileRewardShare) {
-        let amount = (total_allocation * self.realized_dc_perc).to_u64_floored(); // Rewarded BONES
+        let amount = (total_allocation * self.realized_data_perc).to_u64_floored(); // Rewarded BONES
 
         (
             amount,
@@ -229,7 +236,7 @@ impl RewardInfo {
 }
 
 fn distribute_unallocated(coll: &mut [RewardInfo]) {
-    let allocated_perc = coll.iter().map(|x| x.dc_perc).sum::<Decimal>();
+    let allocated_perc = coll.iter().map(|x| x.data_perc).sum::<Decimal>();
     let unallocated_perc = dec!(1) - allocated_perc;
 
     let maybe_matching_perc = coll
@@ -273,11 +280,8 @@ trait DecimalRoundingExt {
 
 impl DecimalRoundingExt for Decimal {
     fn to_u64_floored(&self) -> u64 {
-        use rust_decimal::{prelude::ToPrimitive, RoundingStrategy};
-
-        self.round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or(0)
+        use rust_decimal::prelude::ToPrimitive;
+        self.floor().to_u64().unwrap_or(0)
     }
 }
 
@@ -801,7 +805,7 @@ mod tests {
 
     impl RewardInfo {
         fn total_percent(&self) -> Decimal {
-            self.realized_dc_perc + self.realized_promo_perc + self.matched_promo_perc
+            self.realized_data_perc + self.realized_promo_perc + self.matched_promo_perc
         }
     }
 
