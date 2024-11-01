@@ -110,24 +110,9 @@ impl ServiceProviderRewardInfos {
     }
 
     pub fn iter_rewards(&self) -> Vec<(u64, proto::MobileRewardShare)> {
-        let rewards_per_share = rewards_per_share(
-            self.all_transfer,
-            self.total_sp_allocation,
-            self.mobile_bone_price,
-        );
-        let sp_rewards = self.total_sp_allocation * rewards_per_share;
-
-        // NOTE(mj): `rewards_per_share * self.dc` vs `sp_rewards * self.dc_perc`
-        // They're veeeeery close. But the % multiplication produces a floating point number
-        // that will typically be rounded down.
-
         self.coll
             .iter()
-            .flat_map(|sp| {
-                let mut rewards = sp.promo_rewards(sp_rewards, &self.reward_epoch);
-                rewards.push(sp.carrier_reward(sp_rewards, &self.reward_epoch));
-                rewards
-            })
+            .flat_map(|sp| sp.iter_rewards(self.total_sp_allocation, &self.reward_epoch))
             .filter(|(amount, _r)| *amount > 0)
             .collect::<Vec<_>>()
     }
@@ -161,6 +146,16 @@ impl RewardInfo {
 
             promotions,
         }
+    }
+
+    pub fn iter_rewards(
+        &self,
+        total_allocation: Decimal,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> Vec<(u64, proto::MobileRewardShare)> {
+        let mut rewards = self.promo_rewards(total_allocation, reward_period);
+        rewards.push(self.carrier_reward(total_allocation, reward_period));
+        rewards
     }
 
     pub fn carrier_reward(
@@ -710,18 +705,13 @@ mod tests {
         }
 
         fn iter_sp_rewards(&self, sp_id: i32) -> Vec<MobileRewardShare> {
-            let rewards_per_share = rewards_per_share(
-                self.all_transfer,
-                self.total_sp_allocation,
-                self.mobile_bone_price,
-            );
-            let sp_rewards = self.total_sp_allocation * rewards_per_share;
-
             for info in self.coll.iter() {
                 if info.sp_id == sp_id {
-                    let mut result = info.promo_rewards(sp_rewards, &self.reward_epoch);
-                    result.push(info.carrier_reward(sp_rewards, &self.reward_epoch));
-                    return result.into_iter().map(|(_, x)| x).collect();
+                    return info
+                        .iter_rewards(self.total_sp_allocation, &self.reward_epoch)
+                        .into_iter()
+                        .map(|(_, x)| x)
+                        .collect();
                 }
             }
             vec![]
