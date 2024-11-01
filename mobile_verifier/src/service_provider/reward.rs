@@ -422,10 +422,10 @@ mod tests {
         let total_rewards = dec!(1000);
 
         let sp_infos = ServiceProviderRewardInfos::new(
-            ServiceProviderDCSessions::from([(0, total_rewards)]),
+            ServiceProviderDCSessions::from([(0, dec!(5000))]),
             ServiceProviderPromotions::from(vec![make_test_promotion(0, "promo-0", 5000, 1)]),
             total_rewards,
-            dec!(0.001),
+            dec!(0.00001),
             epoch(),
         );
 
@@ -554,6 +554,111 @@ mod tests {
         assert_eq!(promo_rewards[1].matched_amount, 6);
     }
 
+    #[test]
+    fn no_matched_promotions_full_bucket_allocation() {
+        // The service providers DC session represents _more_ than the
+        // available amount of sp_rewards for an epoch.
+        // No matching on promotions should occur.
+        let total_rewards = dec!(8_219_178_082_191);
+        let sp_session = dec!(553_949_301);
+
+        let sp_infos = ServiceProviderRewardInfos::new(
+            ServiceProviderDCSessions::from([(0, sp_session)]),
+            ServiceProviderPromotions::from(vec![helium_proto::ServiceProviderPromotions {
+                service_provider: 0,
+                incentive_escrow_fund_bps: 396, // severely limit promotions
+                promotions: vec![helium_proto::service_provider_promotions::Promotion {
+                    entity: "promo-1".to_string(),
+                    shares: 100,
+                    ..Default::default()
+                }],
+            }]),
+            total_rewards,
+            dec!(629) / dec!(1_000_000) / dec!(1_000_000),
+            epoch(),
+        );
+
+        let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
+        assert_eq!(promo_1.service_provider_amount, 325_479_452_054);
+        assert_eq!(promo_1.matched_amount, 0);
+        assert_eq!(sp_1.amount, 7_893_698_630_136);
+
+        let mut unallocated = total_rewards.to_u64_floored();
+        for (amount, _reward) in sp_infos.iter_rewards() {
+            unallocated -= amount;
+        }
+
+        assert_eq!(unallocated, 1);
+    }
+
+    #[test]
+    fn no_matched_promotions_multiple_sp_full_bucket_allocation() {
+        // The Service Providers DC sessions far surpass the
+        // available amount of sp_rewards for an epoch.
+        // No matching on promotions should occur.
+        let total_rewards = dec!(8_219_178_082_191);
+        let sp_session = dec!(553_949_301);
+
+        let sp_infos = ServiceProviderRewardInfos::new(
+            ServiceProviderDCSessions::from([(0, sp_session), (1, sp_session)]),
+            ServiceProviderPromotions::from(vec![
+                helium_proto::ServiceProviderPromotions {
+                    service_provider: 0,
+                    incentive_escrow_fund_bps: 396,
+                    promotions: vec![helium_proto::service_provider_promotions::Promotion {
+                        entity: "promo-1".to_string(),
+                        shares: 100,
+                        ..Default::default()
+                    }],
+                },
+                helium_proto::ServiceProviderPromotions {
+                    service_provider: 1,
+                    incentive_escrow_fund_bps: 400,
+                    promotions: vec![helium_proto::service_provider_promotions::Promotion {
+                        entity: "promo-2".to_string(),
+                        shares: 100,
+                        ..Default::default()
+                    }],
+                },
+            ]),
+            total_rewards,
+            dec!(629) / dec!(1_000_000) / dec!(1_000_000),
+            epoch(),
+        );
+
+        let sp_base_reward = dec!(4_109_589_041_095.50);
+        let sp_1_promotion_bones = dec!(162_739_726_027.38); // 3.96%
+        let sp_2_promotion_bones = dec!(164_383_561_643.82); // 4.00%
+
+        let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
+        assert_eq!(
+            sp_1.amount,
+            (sp_base_reward - sp_1_promotion_bones).to_u64_floored()
+        );
+        assert_eq!(
+            promo_1.service_provider_amount,
+            sp_1_promotion_bones.to_u64_floored()
+        );
+        assert_eq!(promo_1.matched_amount, 0);
+
+        let (promo_2, sp_2) = sp_infos.single_sp_rewards(1);
+        assert_eq!(
+            sp_2.amount,
+            (sp_base_reward - sp_2_promotion_bones).to_u64_floored()
+        );
+        assert_eq!(
+            promo_2.service_provider_amount,
+            sp_2_promotion_bones.to_u64_floored()
+        );
+        assert_eq!(promo_2.matched_amount, 0);
+
+        let mut unallocated = total_rewards.to_u64_floored();
+        for (amount, _reward) in sp_infos.iter_rewards() {
+            unallocated -= amount;
+        }
+        assert_eq!(unallocated, 2);
+    }
+
     use proptest::prelude::*;
 
     prop_compose! {
@@ -623,6 +728,7 @@ mod tests {
         fn multiple_provider_does_not_overallocate(
             dc_sessions in prop::collection::vec(arb_dc_session(), 0..10),
             promotions in prop::collection::vec(arb_sp_promotion(), 0..10),
+            mobile_bone_price in 1..5000
         ) {
             let epoch = epoch();
             let total_allocation = service_provider::get_scheduled_tokens(&epoch);
@@ -631,7 +737,7 @@ mod tests {
                 ServiceProviderDCSessions::from(dc_sessions),
                 ServiceProviderPromotions::from(promotions),
                 total_allocation,
-                dec!(0.00001),
+                Decimal::from(mobile_bone_price) / dec!(1_000_000) / dec!(1_000_000),
                 epoch
             );
 
