@@ -88,7 +88,8 @@ impl<'a> SeniorityUpdate<'a> {
 
         if let Some(prev_seniority) = latest_seniority {
             if heartbeat.heartbeat.coverage_object != Some(prev_seniority.uuid) {
-                if prev_seniority.update_reason == HeartbeatNotSeen as i32
+                if [HeartbeatNotSeen as i32, ServiceProviderBan as i32]
+                    .contains(&prev_seniority.update_reason)
                     && coverage_claim_time < prev_seniority.seniority_ts
                 {
                     Self::from_heartbeat(heartbeat, SeniorityUpdateAction::NoAction)
