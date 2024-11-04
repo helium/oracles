@@ -185,7 +185,7 @@ impl SeniorityUpdate<'_> {
                 .bind(self.heartbeat_ts)
                 .bind(self.uuid)
                 .bind(new_seniority)
-                .bind(self.heartbeat_ts)
+                .bind(Utc::now())
                 .bind(update_reason as i32)
                 .bind(self.key.hb_type())
                 .execute(&mut *exec)
