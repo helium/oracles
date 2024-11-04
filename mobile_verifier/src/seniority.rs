@@ -87,10 +87,12 @@ impl<'a> SeniorityUpdate<'a> {
     ) -> anyhow::Result<Self> {
         use proto::SeniorityUpdateReason::*;
 
+        const SENIORITY_UPDATE_SKIP_REASONS: [i32; 2] =
+            [HeartbeatNotSeen as i32, ServiceProviderBan as i32];
+
         if let Some(prev_seniority) = latest_seniority {
             if heartbeat.heartbeat.coverage_object != Some(prev_seniority.uuid) {
-                if [HeartbeatNotSeen as i32, ServiceProviderBan as i32]
-                    .contains(&prev_seniority.update_reason)
+                if SENIORITY_UPDATE_SKIP_REASONS.contains(&prev_seniority.update_reason)
                     && coverage_claim_time < prev_seniority.seniority_ts
                 {
                     Self::from_heartbeat(heartbeat, SeniorityUpdateAction::NoAction)
