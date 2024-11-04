@@ -30,6 +30,7 @@ impl Seniority {
     }
 }
 
+#[derive(Debug)]
 pub struct SeniorityUpdate<'a> {
     key: KeyType<'a>,
     heartbeat_ts: DateTime<Utc>,
@@ -205,6 +206,232 @@ impl SeniorityUpdate<'_> {
                 .await?;
             }
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    use chrono::Utc;
+    use helium_crypto::PublicKeyBinary;
+    use helium_proto::services::poc_mobile::{self, LocationSource};
+    use proto::SeniorityUpdateReason;
+    use rust_decimal::{prelude::FromPrimitive, Decimal};
+    use uuid::Uuid;
+
+    use crate::{
+        cell_type::CellType,
+        heartbeats::{Heartbeat, ValidatedHeartbeat},
+    };
+
+    impl ValidatedHeartbeat {
+        fn generate() -> anyhow::Result<Self> {
+            Ok(Self {
+                heartbeat: Heartbeat {
+                    hb_type: crate::heartbeats::HbType::Wifi,
+                    hotspot_key: PublicKeyBinary::from_str("1trSuseaaeZSW8pqSsYKFkFYTfFVvy8DbPCcne6fYYfry6XqzdN1PwAsqinbGKW2ux9554Dw4ciw1uDTdKjBZfjYeuzCEpd95kmZMPGiHaT5ZwasdPgSzXCSYzqmGeQ97riiqEik9xKKhxU52tjCgLd7HNfpLGT9ceY71FCcKBM3fooUZCSiNNibsVvorBWdWjvetgsHLwjTGuwYMGQ2BpmA15r9t3EGNnrfKMv6E1VmoBcuyPYgi7bBLZYpW16Yua3aHd78Jz8QqBVz51S5xRTwDBmgK41e9tSVSqMcQbcZkXi5W7Jru8QEiUTHWyghHgSYpsvCfcQkVBKkP7fHpM4Jh1YTxY2MEvLaoTzxFLRtrM")?,
+                    cbsd_id: None,
+                    operation_mode: true,
+                    lat: 0.0,
+                    lon: 0.0,
+                    coverage_object: Some(Uuid::new_v4()),
+                    location_validation_timestamp: None,
+                    location_source: LocationSource::Skyhook,
+                    timestamp: Utc::now(),
+                },
+                cell_type: CellType::NovaGenericWifiOutdoor,
+                location_trust_score_multiplier: Decimal::from_u32(0).unwrap(),
+                distance_to_asserted: Some(0),
+                coverage_meta: None,
+                validity: poc_mobile::HeartbeatValidity::Valid,
+            })
+        }
+    }
+
+    impl Seniority {
+        fn generate() -> Self {
+            Self {
+                uuid: Uuid::new_v4(),
+                seniority_ts: Utc::now(),
+                last_heartbeat: Utc::now(),
+                inserted_at: Utc::now(),
+                update_reason: SeniorityUpdateReason::NewCoverageClaimTime as i32,
+            }
+        }
+
+        fn uuid(self, uuid: Uuid) -> Self {
+            Self { uuid, ..self }
+        }
+
+        fn last_heartbeat(self, last_heartbeat: DateTime<Utc>) -> Self {
+            Self {
+                last_heartbeat,
+                ..self
+            }
+        }
+
+        fn update_reason(self, reason: SeniorityUpdateReason) -> Self {
+            Self {
+                update_reason: reason as i32,
+                ..self
+            }
+        }
+    }
+
+    #[test]
+    fn first_coverage_object() -> anyhow::Result<()> {
+        let heartbeat = ValidatedHeartbeat::generate()?;
+        let coverage_claim_time = Utc::now();
+
+        let result =
+            SeniorityUpdate::determine_update_action(&heartbeat, coverage_claim_time, None)?;
+
+        let SeniorityUpdate {
+            action:
+                SeniorityUpdateAction::Insert {
+                    new_seniority,
+                    update_reason,
+                },
+            ..
+        } = result
+        else {
+            panic!("should have return insert action");
+        };
+
+        assert_eq!(new_seniority, coverage_claim_time);
+        assert_eq!(update_reason, SeniorityUpdateReason::NewCoverageClaimTime);
+
+        Ok(())
+    }
+
+    #[test]
+    fn new_heartbeat_same_coverage_object() -> anyhow::Result<()> {
+        let heartbeat = ValidatedHeartbeat::generate()?;
+        let seniority = Seniority::generate().uuid(heartbeat.heartbeat.coverage_object.unwrap());
+
+        let coverage_claim_time = Utc::now();
+
+        let result = SeniorityUpdate::determine_update_action(
+            &heartbeat,
+            coverage_claim_time,
+            Some(seniority.clone()),
+        )?;
+
+        let SeniorityUpdate {
+            action: SeniorityUpdateAction::Update { curr_seniority },
+            ..
+        } = result
+        else {
+            panic!("should have been update action")
+        };
+
+        assert_eq!(seniority.seniority_ts, curr_seniority);
+
+        Ok(())
+    }
+
+    #[test]
+    fn heartbeat_not_seen_for_72_hours() -> anyhow::Result<()> {
+        let heartbeat = ValidatedHeartbeat::generate()?;
+        let seniority = Seniority::generate()
+            .uuid(heartbeat.heartbeat.coverage_object.unwrap())
+            .last_heartbeat(heartbeat.heartbeat.timestamp - Duration::hours(73));
+
+        let coverage_claim_time = heartbeat.heartbeat.timestamp - Duration::hours(1);
+
+        let result = SeniorityUpdate::determine_update_action(
+            &heartbeat,
+            coverage_claim_time,
+            Some(seniority.clone()),
+        )?;
+
+        let SeniorityUpdate {
+            action:
+                SeniorityUpdateAction::Insert {
+                    new_seniority,
+                    update_reason,
+                },
+            ..
+        } = result
+        else {
+            panic!("should have been insert action")
+        };
+
+        assert_eq!(new_seniority, heartbeat.heartbeat.timestamp);
+        assert_eq!(update_reason, SeniorityUpdateReason::HeartbeatNotSeen);
+
+        Ok(())
+    }
+
+    #[test]
+    fn new_coverage_object() -> anyhow::Result<()> {
+        let heartbeat = ValidatedHeartbeat::generate()?;
+        let seniority = Seniority::generate();
+
+        let coverage_claim_time = Utc::now();
+
+        let result = SeniorityUpdate::determine_update_action(
+            &heartbeat,
+            coverage_claim_time,
+            Some(seniority.clone()),
+        )?;
+
+        let SeniorityUpdate {
+            action:
+                SeniorityUpdateAction::Insert {
+                    new_seniority,
+                    update_reason,
+                },
+            ..
+        } = result
+        else {
+            panic!("should have been insert action")
+        };
+
+        assert_eq!(new_seniority, coverage_claim_time);
+        assert_eq!(update_reason, SeniorityUpdateReason::NewCoverageClaimTime);
+
+        Ok(())
+    }
+
+    #[test]
+    fn new_coverage_object_previous_was_heartbeat_not_seen() -> anyhow::Result<()> {
+        let heartbeat = ValidatedHeartbeat::generate()?;
+        let seniority =
+            Seniority::generate().update_reason(SeniorityUpdateReason::HeartbeatNotSeen);
+
+        let coverage_claim_time = seniority.seniority_ts - Duration::seconds(1);
+
+        let result = SeniorityUpdate::determine_update_action(
+            &heartbeat,
+            coverage_claim_time,
+            Some(seniority.clone()),
+        )?;
+
+        assert_eq!(result.action, SeniorityUpdateAction::NoAction);
+
+        Ok(())
+    }
+
+    #[test]
+    fn new_coverage_object_previous_was_service_provider_ban() -> anyhow::Result<()> {
+        let heartbeat = ValidatedHeartbeat::generate()?;
+        let seniority =
+            Seniority::generate().update_reason(SeniorityUpdateReason::ServiceProviderBan);
+
+        let coverage_claim_time = seniority.seniority_ts - Duration::seconds(1);
+
+        let result = SeniorityUpdate::determine_update_action(
+            &heartbeat,
+            coverage_claim_time,
+            Some(seniority.clone()),
+        )?;
+
+        assert_eq!(result.action, SeniorityUpdateAction::NoAction);
+
         Ok(())
     }
 }

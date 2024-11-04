@@ -39,7 +39,7 @@ pub enum HbType {
     Wifi,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum KeyType<'a> {
     Cbrs(&'a str),
     Wifi(&'a PublicKeyBinary),
