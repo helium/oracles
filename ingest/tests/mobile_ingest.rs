@@ -1,7 +1,8 @@
+use h3o::LatLng;
 use helium_crypto::{KeyTag, Keypair, PublicKey};
 use helium_proto::services::poc_mobile::{
-    radio_location_estimates_req_v1::Entity, RadioLocationEstimateV1, RadioLocationEstimatesReqV1,
-    RleEventV1,
+    radio_location_estimates_req_v1::Entity, RadioLocationCorrelationV1, RadioLocationEstimateV1,
+    RadioLocationEstimatesReqV1,
 };
 use rand::rngs::OsRng;
 use rust_decimal::prelude::*;
@@ -48,12 +49,14 @@ async fn submit_radio_location_estimates() -> anyhow::Result<()> {
 
     let key_pair = Keypair::generate(KeyTag::default(), &mut OsRng);
     let public_key = key_pair.public_key();
+    let hex = LatLng::new(41.41208, -122.19288)
+        .unwrap()
+        .to_cell(h3o::Resolution::Twelve);
     let estimates = vec![RadioLocationEstimateV1 {
-        radius: to_proto_decimal(2.0),
-        lat: to_proto_decimal(41.41208),
-        lon: to_proto_decimal(-122.19288),
+        hex: u64::from(hex),
+        grid_distance: 2,
         confidence: to_proto_decimal(0.75),
-        events: vec![RleEventV1 {
+        radio_location_correlations: vec![RadioLocationCorrelationV1 {
             id: "event_1".to_string(),
             timestamp: 0,
         }],

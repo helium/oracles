@@ -4,11 +4,12 @@ use file_store::{
     file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
     radio_location_estimates::{
-        Entity, RadioLocationEstimate, RadioLocationEstimateEvent, RadioLocationEstimatesReq,
+        Entity, RadioLocationCorrelation, RadioLocationEstimate, RadioLocationEstimatesReq,
     },
     radio_location_estimates_ingest_report::RadioLocationEstimatesIngestReport,
     FileInfo,
 };
+use h3o::{CellIndex, LatLng};
 use helium_crypto::{KeyTag, Keypair, PublicKeyBinary};
 use mobile_verifier::radio_location_estimates::{
     clear_invalided, hash_key, RadioLocationEstimatesDaemon,
@@ -112,11 +113,12 @@ fn file_info_stream() -> (
             report: RadioLocationEstimatesReq {
                 entity: entity.clone(),
                 estimates: vec![RadioLocationEstimate {
-                    radius: rust_decimal::Decimal::from_f32(0.1).unwrap(),
-                    lat: rust_decimal::Decimal::from_f32(0.1).unwrap(),
-                    lon: rust_decimal::Decimal::from_f32(-0.1).unwrap(),
+                    hex: LatLng::new(0.1, 0.1)
+                        .unwrap()
+                        .to_cell(h3o::Resolution::Twelve),
+                    grid_distance: 2,
                     confidence: rust_decimal::Decimal::from_f32(0.1).unwrap(),
-                    events: vec![RadioLocationEstimateEvent {
+                    radio_location_correlations: vec![RadioLocationCorrelation {
                         id: "event_1".to_string(),
                         timestamp: Utc::now() - Duration::hours(1),
                     }],
@@ -130,11 +132,12 @@ fn file_info_stream() -> (
             report: RadioLocationEstimatesReq {
                 entity: entity.clone(),
                 estimates: vec![RadioLocationEstimate {
-                    radius: rust_decimal::Decimal::from_f32(0.2).unwrap(),
-                    lat: rust_decimal::Decimal::from_f32(0.2).unwrap(),
-                    lon: rust_decimal::Decimal::from_f32(-0.2).unwrap(),
+                    hex: LatLng::new(0.2, 0.2)
+                        .unwrap()
+                        .to_cell(h3o::Resolution::Twelve),
+                    grid_distance: 2,
                     confidence: rust_decimal::Decimal::from_f32(0.2).unwrap(),
-                    events: vec![RadioLocationEstimateEvent {
+                    radio_location_correlations: vec![RadioLocationCorrelation {
                         id: "event_1".to_string(),
                         timestamp: Utc::now(),
                     }],
@@ -168,9 +171,8 @@ fn compare_report_and_estimate(
         hash_key(
             &report.report.entity,
             report.received_timestamp,
-            report.report.estimates[0].radius,
-            report.report.estimates[0].lat,
-            report.report.estimates[0].lon
+            report.report.estimates[0].hex,
+            report.report.estimates[0].grid_distance,
         ),
         estimate.hashed_key
     );
@@ -180,9 +182,11 @@ fn compare_report_and_estimate(
         report.received_timestamp,
         estimate.received_timestamp
     ));
-    assert_eq!(report.report.estimates[0].radius, estimate.radius);
-    assert_eq!(report.report.estimates[0].lat, estimate.lat);
-    assert_eq!(report.report.estimates[0].lon, estimate.lon);
+    assert_eq!(report.report.estimates[0].hex, estimate.hex);
+    assert_eq!(
+        report.report.estimates[0].grid_distance,
+        estimate.grid_distance
+    );
     assert_eq!(report.report.estimates[0].confidence, estimate.confidence);
 
     if should_be_valid {
@@ -197,9 +201,8 @@ pub struct RadioLocationEstimateDB {
     pub hashed_key: String,
     pub radio_key: String,
     pub received_timestamp: DateTime<Utc>,
-    pub radius: rust_decimal::Decimal,
-    pub lat: rust_decimal::Decimal,
-    pub lon: rust_decimal::Decimal,
+    pub hex: CellIndex,
+    pub grid_distance: u32,
     pub confidence: rust_decimal::Decimal,
     pub invalided_at: Option<DateTime<Utc>>,
 }
@@ -209,7 +212,7 @@ pub async fn select_radio_location_estimates(
 ) -> anyhow::Result<Vec<RadioLocationEstimateDB>> {
     let rows = sqlx::query(
         r#"
-        SELECT hashed_key, radio_key, hashed_key, received_timestamp, radius, lat, lon, confidence, invalided_at
+        SELECT hashed_key, radio_key, hashed_key, received_timestamp, hex, grid_distance, confidence, invalided_at
         FROM radio_location_estimates
         ORDER BY received_timestamp ASC
         "#,
@@ -219,15 +222,18 @@ pub async fn select_radio_location_estimates(
 
     let estimates = rows
         .into_iter()
-        .map(|row| RadioLocationEstimateDB {
-            hashed_key: row.get("hashed_key"),
-            radio_key: row.get("radio_key"),
-            received_timestamp: row.get("received_timestamp"),
-            radius: row.get("radius"),
-            lat: row.get("lat"),
-            lon: row.get("lon"),
-            confidence: row.get("confidence"),
-            invalided_at: row.try_get("invalided_at").ok(),
+        .map(|row| {
+            let hex = row.get::<i64, _>("hex") as u64;
+            let hex = CellIndex::try_from(hex).expect("valid Cell Index");
+            RadioLocationEstimateDB {
+                hashed_key: row.get("hashed_key"),
+                radio_key: row.get("radio_key"),
+                received_timestamp: row.get("received_timestamp"),
+                hex,
+                grid_distance: row.get::<i64, _>("grid_distance") as u32,
+                confidence: row.get("confidence"),
+                invalided_at: row.try_get("invalided_at").ok(),
+            }
         })
         .collect();
 

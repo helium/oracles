@@ -17,6 +17,7 @@ custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 file-store = { path = "../file_store" }
 futures = { workspace = true }
 futures-util = { workspace = true }
+h3o = { workspace = true }
 helium-crypto = { workspace = true }
 helium-proto = { workspace = true }
 http = { workspace = true }

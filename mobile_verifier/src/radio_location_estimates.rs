@@ -12,6 +12,7 @@ use file_store::{
     FileStore, FileType,
 };
 use futures::{StreamExt, TryStreamExt};
+use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -20,9 +21,8 @@ use helium_proto::services::{
     },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
-use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
+use sqlx::{Pool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
@@ -235,25 +235,27 @@ async fn insert_estimate(
     estimate: &RadioLocationEstimate,
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
-    let radius = estimate.radius;
-    let lat = estimate.lat;
-    let long = estimate.lon;
-    let hashed_key = hash_key(entity, received_timestamp, radius, lat, long);
+    let hex = estimate.hex;
+    let grid_distance = estimate.grid_distance;
+
+    let hashed_key = hash_key(entity, received_timestamp, hex, grid_distance);
 
     sqlx::query(
         r#"
-        INSERT INTO radio_location_estimates (hashed_key, radio_type, radio_key, received_timestamp, radius, lat, lon, confidence)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (hashed_key) DO NOTHING
+        INSERT INTO radio_location_estimates 
+            (hashed_key, radio_type, radio_key, received_timestamp, hex, grid_distance, confidence)
+        VALUES 
+            ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (hashed_key) 
+            DO NOTHING
         "#,
     )
     .bind(hashed_key)
     .bind(entity_to_radio_type(entity))
     .bind(entity.to_string())
     .bind(received_timestamp)
-    .bind(estimate.radius)
-    .bind(lat)
-    .bind(long)
+    .bind(u64::from(hex) as i64)
+    .bind(grid_distance as i32)
     .bind(estimate.confidence)
     .execute(exec)
     .await?;
@@ -264,11 +266,10 @@ async fn insert_estimate(
 pub fn hash_key(
     entity: &Entity,
     timestamp: DateTime<Utc>,
-    radius: Decimal,
-    lat: Decimal,
-    long: Decimal,
+    hex: CellIndex,
+    grid_distance: u32,
 ) -> String {
-    let key = format!("{}{}{}{}{}", entity, timestamp, radius, lat, long);
+    let key = format!("{entity}{timestamp}{hex}{grid_distance}");
 
     let mut hasher = Sha256::new();
     hasher.update(key);
@@ -293,38 +294,38 @@ pub async fn clear_invalided(
     Ok(())
 }
 
-pub async fn get_valid_estimates(
-    pool: &PgPool,
-    radio_key: &Entity,
-    threshold: Decimal,
-) -> anyhow::Result<Vec<(Decimal, Decimal, Decimal)>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT radius, lat, lon
-        FROM radio_location_estimates
-        WHERE radio_key = $1
-            AND confidence >= $2
-            AND invalided_at IS NULL
-        ORDER BY radius DESC, confidence DESC
-        "#,
-    )
-    .bind(radio_key.to_string())
-    .bind(threshold)
-    .fetch_all(pool)
-    .await?;
+// async fn get_valid_estimates(
+//     pool: &PgPool,
+//     radio_key: &Entity,
+//     threshold: Decimal,
+// ) -> anyhow::Result<Vec<(CellIndex, u32)>> {
+//     let rows = sqlx::query(
+//         r#"
+//         SELECT hex, grid_distance
+//         FROM radio_location_estimates
+//         WHERE radio_key = $1
+//             AND confidence >= $2
+//             AND invalided_at IS NULL
+//         ORDER BY radius DESC, confidence DESC
+//         "#,
+//     )
+//     .bind(radio_key.to_string())
+//     .bind(threshold)
+//     .fetch_all(pool)
+//     .await?;
 
-    let results = rows
-        .into_iter()
-        .map(|row| {
-            let radius: Decimal = row.get("radius");
-            let lat: Decimal = row.get("lat");
-            let lon: Decimal = row.get("lon");
-            (radius, lat, lon)
-        })
-        .collect();
+//     let results = rows
+//         .into_iter()
+//         .map(|row| {
+//             let hex = CellIndex::from_str(row.get("hex")).unwrap();
+//             let grid_distance = row.get::<i64, _>("grid_distance") as u32;
 
-    Ok(results)
-}
+//             (hex, grid_distance)
+//         })
+//         .collect();
+
+//     Ok(results)
+// }
 
 fn entity_to_radio_type(entity: &Entity) -> HbType {
     match entity {

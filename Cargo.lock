@@ -1615,17 +1615,17 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#0452523b68781b85ea2aba2d1c06edabd5898159"
+source = "git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes#2310830305f2b35124f12e0d48d5b62511a9ce34"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -1789,7 +1789,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -2631,7 +2631,7 @@ dependencies = [
  "axum 0.7.4",
  "bs58 0.4.0",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "http 0.2.11",
  "notify",
  "serde",
@@ -3213,7 +3213,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "hex-literal",
  "http 0.2.11",
  "lazy_static",
@@ -3795,7 +3795,7 @@ dependencies = [
  "h3o",
  "helium-anchor-gen",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
  "hex",
  "hex-literal",
  "itertools",
@@ -3823,6 +3823,22 @@ dependencies = [
 name = "helium-proto"
 version = "0.1.0"
 source = "git+https://github.com/helium/proto?branch=master#0452523b68781b85ea2aba2d1c06edabd5898159"
+dependencies = [
+ "bytes",
+ "prost",
+ "prost-build",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
+name = "helium-proto"
+version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes#2310830305f2b35124f12e0d48d5b62511a9ce34"
 dependencies = [
  "bytes",
  "prost",
@@ -3876,7 +3892,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -4291,8 +4307,9 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
+ "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "http 0.2.11",
  "humantime-serde",
  "metrics",
@@ -4363,7 +4380,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -4405,7 +4422,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -4447,7 +4464,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -5035,7 +5052,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -5075,7 +5092,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5111,7 +5128,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -5155,7 +5172,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "hex",
  "hex-assignments",
  "hextree",
@@ -5840,7 +5857,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "http 0.2.11",
  "hyper 0.14.28",
  "jsonrpsee",
@@ -5923,7 +5940,7 @@ dependencies = [
  "futures-util",
  "helium-anchor-gen",
  "helium-lib",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -6064,7 +6081,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.4.0",
+ "heck 0.5.0",
  "itertools",
  "log",
  "multimap",
@@ -6562,7 +6579,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj/radio_location_esimates_with_hexes)",
  "humantime-serde",
  "lazy_static",
  "metrics",
@@ -9989,7 +10006,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
  "twox-hash",
  "xorf",

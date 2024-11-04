@@ -46,7 +46,6 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let (coverage_obj_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (sp_boosted_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (subscriber_mapping_tx, subscriber_mapping_rx) = tokio::sync::mpsc::channel(10);
-    let (promotion_rewards_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (radio_location_estimates_tx, radio_location_estimates_rx) = tokio::sync::mpsc::channel(10);
 
     tokio::spawn(async move {
@@ -61,7 +60,6 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             FileSinkClient::new(coverage_obj_tx, "noop"),
             FileSinkClient::new(sp_boosted_tx, "noop"),
             FileSinkClient::new(subscriber_mapping_tx, "test_file_sink"),
-            FileSinkClient::new(promotion_rewards_tx, "noop"),
             FileSinkClient::new(radio_location_estimates_tx, "noop"),
             Network::MainNet,
             socket_addr,
