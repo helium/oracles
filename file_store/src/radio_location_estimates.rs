@@ -3,9 +3,10 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
+use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    self as proto, RadioLocationEstimateV1, RadioLocationEstimatesReqV1, RleEventV1,
+    self as proto, RadioLocationCorrelationV1, RadioLocationEstimateV1, RadioLocationEstimatesReqV1,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -108,21 +109,23 @@ impl TryFrom<RadioLocationEstimatesReqV1> for RadioLocationEstimatesReq {
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct RadioLocationEstimate {
-    pub radius: Decimal,
-    pub lat: Decimal,
-    pub lon: Decimal,
+    pub hex: CellIndex,
+    pub grid_distance: u32,
     pub confidence: Decimal,
-    pub events: Vec<RadioLocationEstimateEvent>,
+    pub radio_location_correlations: Vec<RadioLocationCorrelation>,
 }
 
 impl From<RadioLocationEstimate> for RadioLocationEstimateV1 {
     fn from(rle: RadioLocationEstimate) -> Self {
         RadioLocationEstimateV1 {
-            radius: Some(to_proto_decimal(rle.radius)),
-            lat: Some(to_proto_decimal(rle.lat)),
-            lon: Some(to_proto_decimal(rle.lon)),
+            hex: rle.hex.into(),
+            grid_distance: rle.grid_distance,
             confidence: Some(to_proto_decimal(rle.confidence)),
-            events: rle.events.into_iter().map(|e| e.into()).collect(),
+            radio_location_correlations: rle
+                .radio_location_correlations
+                .into_iter()
+                .map(|e| e.into())
+                .collect(),
         }
     }
 }
@@ -130,51 +133,53 @@ impl From<RadioLocationEstimate> for RadioLocationEstimateV1 {
 impl TryFrom<RadioLocationEstimateV1> for RadioLocationEstimate {
     type Error = Error;
     fn try_from(estimate: RadioLocationEstimateV1) -> Result<Self> {
+        let hex = CellIndex::try_from(estimate.hex)
+            .map_err(crate::error::DecodeError::InvalidCellIndexError)?;
+
         Ok(Self {
-            radius: to_rust_decimal(estimate.radius.unwrap()),
-            lat: to_rust_decimal(estimate.lat.unwrap()),
-            lon: to_rust_decimal(estimate.lon.unwrap()),
-            confidence: to_rust_decimal(estimate.confidence.unwrap()),
-            events: estimate
-                .events
+            hex,
+            grid_distance: estimate.grid_distance,
+            confidence: to_rust_decimal(estimate.confidence)?,
+            radio_location_correlations: estimate
+                .radio_location_correlations
                 .into_iter()
-                .map(|e| e.try_into().unwrap())
+                .flat_map(|rlc| rlc.try_into())
                 .collect(),
         })
     }
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
-pub struct RadioLocationEstimateEvent {
+pub struct RadioLocationCorrelation {
     pub id: String,
     pub timestamp: DateTime<Utc>,
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for RleEventV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for RadioLocationCorrelationV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.timestamp.to_timestamp()
     }
 }
 
-impl MsgTimestamp<u64> for RadioLocationEstimateEvent {
+impl MsgTimestamp<u64> for RadioLocationCorrelation {
     fn timestamp(&self) -> u64 {
         self.timestamp.encode_timestamp()
     }
 }
 
-impl From<RadioLocationEstimateEvent> for RleEventV1 {
-    fn from(event: RadioLocationEstimateEvent) -> Self {
+impl From<RadioLocationCorrelation> for RadioLocationCorrelationV1 {
+    fn from(event: RadioLocationCorrelation) -> Self {
         let timestamp = event.timestamp();
-        RleEventV1 {
+        RadioLocationCorrelationV1 {
             id: event.id,
             timestamp,
         }
     }
 }
 
-impl TryFrom<RleEventV1> for RadioLocationEstimateEvent {
+impl TryFrom<RadioLocationCorrelationV1> for RadioLocationCorrelation {
     type Error = Error;
-    fn try_from(event: RleEventV1) -> Result<Self> {
+    fn try_from(event: RadioLocationCorrelationV1) -> Result<Self> {
         let timestamp = event.timestamp()?;
         Ok(Self {
             id: event.id,
@@ -183,9 +188,10 @@ impl TryFrom<RleEventV1> for RadioLocationEstimateEvent {
     }
 }
 
-fn to_rust_decimal(x: helium_proto::Decimal) -> rust_decimal::Decimal {
+fn to_rust_decimal(x: Option<helium_proto::Decimal>) -> Result<rust_decimal::Decimal> {
+    let x = x.ok_or(Error::NotFound("Decimal".to_string()))?;
     let str = x.value.as_str();
-    rust_decimal::Decimal::from_str_exact(str).unwrap()
+    Ok(rust_decimal::Decimal::from_str_exact(str)?)
 }
 
 fn to_proto_decimal(x: rust_decimal::Decimal) -> helium_proto::Decimal {
