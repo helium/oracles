@@ -216,7 +216,7 @@ async fn invalidate_old_estimates(
     sqlx::query(
         r#"
         UPDATE radio_location_estimates
-        SET invalided_at = now()
+        SET invalidated_at = now()
         WHERE radio_key = $1
             AND received_timestamp < $2;
         "#,
@@ -284,8 +284,8 @@ pub async fn clear_invalided(
     sqlx::query(
         r#"
         DELETE FROM radio_location_estimates
-        WHERE invalided_at IS NOT NULL
-            AND invalided_at < $1
+        WHERE invalidated_at IS NOT NULL
+            AND invalidated_at < $1
         "#,
     )
     .bind(timestamp)
@@ -305,7 +305,7 @@ pub async fn clear_invalided(
 //         FROM radio_location_estimates
 //         WHERE radio_key = $1
 //             AND confidence >= $2
-//             AND invalided_at IS NULL
+//             AND invalidated_at IS NULL
 //         ORDER BY radius DESC, confidence DESC
 //         "#,
 //     )
