@@ -1,6 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::radio_location_estimates::Entity;
 use futures::StreamExt;
+use h3o::{CellIndex, LatLng, Resolution};
 use helium_crypto::PublicKeyBinary;
 use sqlx::{PgPool, Row};
 use std::{collections::HashMap, str::FromStr, sync::Arc};
@@ -26,6 +27,11 @@ impl LocationCacheValue {
             lon,
             timestamp,
         }
+    }
+
+    pub fn to_cell(self, resolution: Resolution) -> anyhow::Result<CellIndex> {
+        let latlng = LatLng::new(self.lat, self.lon)?;
+        Ok(latlng.to_cell(resolution))
     }
 }
 
