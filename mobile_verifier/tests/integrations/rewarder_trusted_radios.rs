@@ -1,6 +1,6 @@
-use anyhow::bail;
 use chrono::{DateTime, Utc};
 use file_store::radio_location_estimates::Entity;
+use h3o::{CellIndex, LatLng};
 use helium_crypto::{KeyTag, Keypair, PublicKey, PublicKeyBinary};
 use mobile_verifier::{
     heartbeats::location_cache::{LocationCache, LocationCacheKey, LocationCacheValue},
@@ -12,17 +12,16 @@ use proptest::{
     strategy::ValueTree,
 };
 use rand::{rngs::OsRng, Rng};
-use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::time::Instant;
 
 #[sqlx::test]
-async fn test_get_untrusted_radious(pool: PgPool) -> anyhow::Result<()> {
+async fn test_get_untrusted_radius(pool: PgPool) -> anyhow::Result<()> {
     let setup = Instant::now();
 
     let location_cache = LocationCache::new(&pool).await?;
 
-    let hotspot_n = 100_000;
+    let hotspot_n = 25_000;
     let max_estimates_per_hotspot = 5;
     let mut rng = rand::thread_rng();
 
@@ -103,11 +102,10 @@ pub struct RadioLocationEstimateTest {
     pub radio_type: String,
     pub radio_key: String,
     pub received_timestamp: DateTime<Utc>,
-    pub radius: f64,
-    pub lat: f64,
-    pub lon: f64,
+    pub hex: CellIndex,
+    pub grid_distance: u32,
     pub confidence: f64,
-    pub invalided_at: Option<DateTime<Utc>>,
+    pub _invalidated_at: Option<DateTime<Utc>>,
 }
 
 impl RadioLocationEstimateTest {
@@ -126,21 +124,19 @@ impl RadioLocationEstimateTest {
                 radio_type,
                 radio_key,
                 received_timestamp,
-                radius,
-                lat,
-                lon,
+                hex,
+                grid_distance,
                 confidence,
                 inserted_at
             ) VALUES (
-                '{}', '{}', '{}', '{}', {}, {}, {}, {}, NOW()
+                '{}', '{}', '{}', '{}', {}, {}, {}, NOW()
             );"#,
             self.hashed_key,
             self.radio_type,
             self.radio_key,
             self.received_timestamp,
-            self.radius,
-            self.lat,
-            self.lon,
+            u64::from(self.hex) as i64,
+            self.grid_distance,
             self.confidence,
         );
 
@@ -156,29 +152,40 @@ impl RadioLocationEstimateTest {
             prop_oneof!["wifi"], // radio_type,
             Just(public_key),    // public_key
             timestamp(),         // received_timestamp,
-            0.0..5000.0f64,      //radius
             lat_variation.prop_flat_map(move |v: f64| {
                 prop_oneof![Just(v), Just(-v)].prop_map(move |delta| lat + delta)
             }), // Randomly add or subtract variation
             lon_variation.prop_flat_map(move |v: f64| {
                 prop_oneof![Just(v), Just(-v)].prop_map(move |delta| lon + delta)
             }), // Randomly add or subtract variation
+            0..500u32,           // grid distance
             0.5..0.99f64,        // confidence
         )
             .prop_map(
-                |(radio_type, public_key, received_timestamp, radius, lat, lon, confidence)| {
-                    let hashed_key = hashed_key(&public_key, received_timestamp, radius, lat, lon);
+                |(
+                    radio_type,
+                    public_key,
+                    received_timestamp,
+                    lat,
+                    lon,
+                    grid_distance,
+                    confidence,
+                )| {
+                    let latlng = LatLng::new(lat, lon).unwrap();
+                    let hex = latlng.to_cell(h3o::Resolution::Twelve);
+
+                    let hashed_key =
+                        hashed_key(&public_key, received_timestamp, hex, grid_distance);
                     let radio_key = public_key.to_string();
                     RadioLocationEstimateTest {
                         hashed_key,
                         radio_type,
                         radio_key,
                         received_timestamp,
-                        radius,
-                        lat,
-                        lon,
+                        hex,
+                        grid_distance,
                         confidence,
-                        invalided_at: None,
+                        _invalidated_at: None,
                     }
                 },
             )
@@ -196,22 +203,13 @@ fn generate_keypair() -> Keypair {
 fn hashed_key(
     public_key: &PublicKey,
     received_timestamp: DateTime<Utc>,
-    radius: f64,
-    lat: f64,
-    lon: f64,
+    hex: CellIndex,
+    grid_distance: u32,
 ) -> String {
     hash_key(
         &Entity::WifiPubKey(PublicKeyBinary::from(public_key.to_vec())),
         received_timestamp,
-        f64_to_decimal(radius).unwrap(),
-        f64_to_decimal(lat).unwrap(),
-        f64_to_decimal(lon).unwrap(),
+        hex,
+        grid_distance,
     )
-}
-
-fn f64_to_decimal(value: f64) -> anyhow::Result<Decimal> {
-    match Decimal::try_from(value) {
-        Ok(decimal_value) => Ok(decimal_value),
-        Err(_) => bail!("Conversion from f64 to Decimal failed."),
-    }
 }

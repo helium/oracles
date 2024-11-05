@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::{heartbeats::HbType, Settings};
 use chrono::{DateTime, Utc};
 use file_store::{
@@ -21,8 +23,9 @@ use helium_proto::services::{
     },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
+use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
-use sqlx::{Pool, Postgres, Transaction};
+use sqlx::{PgPool, Pool, Postgres, Row, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
@@ -294,38 +297,39 @@ pub async fn clear_invalided(
     Ok(())
 }
 
-// async fn get_valid_estimates(
-//     pool: &PgPool,
-//     radio_key: &Entity,
-//     threshold: Decimal,
-// ) -> anyhow::Result<Vec<(CellIndex, u32)>> {
-//     let rows = sqlx::query(
-//         r#"
-//         SELECT hex, grid_distance
-//         FROM radio_location_estimates
-//         WHERE radio_key = $1
-//             AND confidence >= $2
-//             AND invalidated_at IS NULL
-//         ORDER BY radius DESC, confidence DESC
-//         "#,
-//     )
-//     .bind(radio_key.to_string())
-//     .bind(threshold)
-//     .fetch_all(pool)
-//     .await?;
+pub async fn get_valid_estimates(
+    pool: &PgPool,
+    radio_key: &Entity,
+    threshold: Decimal,
+) -> anyhow::Result<Vec<(CellIndex, u32)>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT hex, grid_distance
+        FROM radio_location_estimates
+        WHERE radio_key = $1
+            AND confidence >= $2
+            AND invalidated_at IS NULL
+        ORDER BY grid_distance DESC, confidence DESC
+        "#,
+    )
+    .bind(radio_key.to_string())
+    .bind(threshold)
+    .fetch_all(pool)
+    .await?;
 
-//     let results = rows
-//         .into_iter()
-//         .map(|row| {
-//             let hex = CellIndex::from_str(row.get("hex")).unwrap();
-//             let grid_distance = row.get::<i64, _>("grid_distance") as u32;
+    // The whole query will fail if an invalid hex is in the db
+    let results: anyhow::Result<Vec<_>> = rows
+        .into_iter()
+        .map(|row| {
+            let hex = CellIndex::from_str(row.get("hex"))?;
+            let grid_distance = row.get::<i64, _>("grid_distance") as u32;
 
-//             (hex, grid_distance)
-//         })
-//         .collect();
+            Ok((hex, grid_distance))
+        })
+        .collect();
 
-//     Ok(results)
-// }
+    results
+}
 
 fn entity_to_radio_type(entity: &Entity) -> HbType {
     match entity {
