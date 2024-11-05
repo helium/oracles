@@ -190,9 +190,9 @@ fn compare_report_and_estimate(
     assert_eq!(report.report.estimates[0].confidence, estimate.confidence);
 
     if should_be_valid {
-        assert!(estimate.invalided_at.is_none());
+        assert!(estimate.invalidated_at.is_none());
     } else {
-        assert!(estimate.invalided_at.is_some());
+        assert!(estimate.invalidated_at.is_some());
     }
 }
 
@@ -204,7 +204,7 @@ pub struct RadioLocationEstimateDB {
     pub hex: CellIndex,
     pub grid_distance: u32,
     pub confidence: rust_decimal::Decimal,
-    pub invalided_at: Option<DateTime<Utc>>,
+    pub invalidated_at: Option<DateTime<Utc>>,
 }
 
 pub async fn select_radio_location_estimates(
@@ -212,7 +212,7 @@ pub async fn select_radio_location_estimates(
 ) -> anyhow::Result<Vec<RadioLocationEstimateDB>> {
     let rows = sqlx::query(
         r#"
-        SELECT hashed_key, radio_key, hashed_key, received_timestamp, hex, grid_distance, confidence, invalided_at
+        SELECT hashed_key, radio_key, hashed_key, received_timestamp, hex, grid_distance, confidence, invalidated_at
         FROM radio_location_estimates
         ORDER BY received_timestamp ASC
         "#,
@@ -232,7 +232,7 @@ pub async fn select_radio_location_estimates(
                 hex,
                 grid_distance: row.get::<i64, _>("grid_distance") as u32,
                 confidence: row.get("confidence"),
-                invalided_at: row.try_get("invalided_at").ok(),
+                invalidated_at: row.try_get("invalidated_at").ok(),
             }
         })
         .collect();
