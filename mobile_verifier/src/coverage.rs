@@ -478,6 +478,40 @@ pub async fn clear_coverage_objects(
     Ok(())
 }
 
+pub async fn clear_orphan_coverage_objects(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<(), sqlx::Error> {
+    // Delete all hex coverage objects that are no invalidated and older than a month but save the latest one just in case
+    sqlx::query(
+        r#"
+        WITH orphan_coverage_objects AS (
+            SELECT
+                uuid
+            FROM (
+                SELECT
+                    uuid,
+                    radio_key,
+                    inserted_at,
+                    ROW_NUMBER() OVER (PARTITION BY radio_key ORDER BY inserted_at DESC) AS row_num
+                FROM
+                    coverage_objects
+                WHERE
+                    invalidated_at IS NULL
+                    AND inserted_at < date_trunc('month', CURRENT_DATE) - interval '1 month'
+            ) AS ranked_rows
+            WHERE row_num > 1
+        )
+        DELETE FROM coverage_objects
+        USING orphan_coverage_objects
+        WHERE coverage_objects.uuid = orphan_coverage_objects.uuid;
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    Ok(())
+}
+
 type CoverageClaimTimeKey = ((String, HbType), Option<Uuid>);
 
 pub struct CoverageClaimTimeCache {
