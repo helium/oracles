@@ -302,7 +302,7 @@ pub async fn get_valid_estimates(
     radio_key: &Entity,
     threshold: Decimal,
 ) -> anyhow::Result<Vec<(CellIndex, u32)>> {
-    let rows = sqlx::query(
+    let results = sqlx::query(
         r#"
         SELECT hex, grid_distance
         FROM radio_location_estimates
@@ -314,21 +314,20 @@ pub async fn get_valid_estimates(
     )
     .bind(radio_key.to_string())
     .bind(threshold)
-    .fetch_all(pool)
-    .await?;
+    .fetch(pool)
+    .try_fold(Vec::new(), |mut acc, row| async move {
+        // The whole query will fail if an invalid hex is in the db
+        let hex = CellIndex::from_str(row.get("hex")).map_err(|err| sqlx::Error::ColumnDecode {
+            index: "grid_distance".to_string(),
+            source: Box::new(err),
+        })?;
+        let grid_distance = row.get::<i64, _>("grid_distance") as u32;
 
-    // The whole query will fail if an invalid hex is in the db
-    let results: anyhow::Result<Vec<_>> = rows
-        .into_iter()
-        .map(|row| {
-            let hex = CellIndex::from_str(row.get("hex"))?;
-            let grid_distance = row.get::<i64, _>("grid_distance") as u32;
+        acc.push((hex, grid_distance));
+        Ok(acc)
+    });
 
-            Ok((hex, grid_distance))
-        })
-        .collect();
-
-    results
+    Ok(results.await?)
 }
 
 fn entity_to_radio_type(entity: &Entity) -> HbType {
