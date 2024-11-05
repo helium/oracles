@@ -11,4 +11,4 @@ CREATE TABLE IF NOT EXISTS radio_location_estimates (
     PRIMARY KEY (hashed_key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_radio_key_confidence_invalided_at_radius ON radio_location_estimates (radio_key, confidence, invalidated_at, grid_distance DESC);
+CREATE INDEX IF NOT EXISTS idx_radio_key_confidence_invalidated_at_radius ON radio_location_estimates (radio_key, confidence, invalidated_at, grid_distance DESC);
