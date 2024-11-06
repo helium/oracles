@@ -315,19 +315,17 @@ pub async fn get_valid_estimates(
     .bind(radio_key.to_string())
     .bind(threshold)
     .fetch(pool)
-    .try_fold(Vec::new(), |mut acc, row| async move {
-        // The whole query will fail if an invalid hex is in the db
+    .and_then(|row| async move {
         let hex = CellIndex::from_str(row.get("hex")).map_err(|err| sqlx::Error::ColumnDecode {
             index: "grid_distance".to_string(),
             source: Box::new(err),
         })?;
         let grid_distance = row.get::<i64, _>("grid_distance") as u32;
 
-        acc.push((hex, grid_distance));
-        Ok(acc)
+        Ok((hex, grid_distance))
     });
 
-    Ok(results.await?)
+    Ok(results.try_collect().await?)
 }
 
 fn entity_to_radio_type(entity: &Entity) -> HbType {
