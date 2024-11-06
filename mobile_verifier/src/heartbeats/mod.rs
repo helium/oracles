@@ -4,7 +4,7 @@ pub mod wifi;
 
 use crate::{
     cell_type::{CellType, CellTypeLabel},
-    coverage::{CoverageClaimTimeCache, CoverageObjectCache, CoverageObjectMeta},
+    coverage::{self, CoverageClaimTimeCache, CoverageObjectCache, CoverageObjectMeta},
     geofence::GeofenceValidator,
     seniority::{Seniority, SeniorityUpdate},
     GatewayResolution, GatewayResolver,
@@ -650,21 +650,13 @@ impl ValidatedHeartbeat {
     }
 
     pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE coverage_objects
-            SET invalidated_at = $1
-            WHERE inserted_at < $2
-                AND invalidated_at IS NULL
-                AND radio_key = $3
-                AND uuid != $4
-            "#,
+        coverage::set_invalidated_at(
+            exec,
+            self.heartbeat.timestamp,
+            self.coverage_meta.as_ref().map(|x| x.inserted_at),
+            self.heartbeat.key(),
+            self.heartbeat.coverage_object,
         )
-        .bind(self.heartbeat.timestamp)
-        .bind(self.coverage_meta.as_ref().map(|x| x.inserted_at)) // Guaranteed not to be NULL
-        .bind(self.heartbeat.key())
-        .bind(self.heartbeat.coverage_object)
-        .execute(&mut *exec)
         .await?;
         // Save the heartbeat
         match self.heartbeat.hb_type {
