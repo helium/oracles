@@ -16,15 +16,9 @@ use helium_proto::services::poc_mobile::{
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
     HexUsageCountsIngestReportV1, HexUsageCountsReqV1, HexUsageCountsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
-<<<<<<< HEAD
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
-    RadioThresholdReportRespV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
-=======
-    InvalidatedRadioThresholdReportRespV1, PromotionRewardIngestReportV1, PromotionRewardReqV1,
-    PromotionRewardRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
     RadioThresholdReportRespV1, RadioUsageCountsIngestReportV1, RadioUsageCountsReqV1,
     RadioUsageCountsResV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
->>>>>>> 492d7e05 (support hex and hotspot usage reports at filestore and ingestor)
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1,

@@ -20,6 +20,8 @@ pub struct HexUsageCountsReq {
     pub service_provider_subscriber_avg_count: u64,
     pub disco_mapping_avg_count: u64,
     pub offload_avg_count: u64,
+    pub epoch_start_timestamp: DateTime<Utc>,
+    pub epoch_end_timestamp: DateTime<Utc>,
     pub timestamp: DateTime<Utc>,
     pub carrier_mapping_key: PublicKeyBinary,
 }
@@ -31,6 +33,10 @@ pub struct RadioUsageCountsReq {
     pub service_provider_subscriber_avg_count: u64,
     pub disco_mapping_avg_count: u64,
     pub offload_avg_count: u64,
+    pub service_provider_transfer_bytes: u64,
+    pub offload_transfer_bytes: u64,
+    pub epoch_start_timestamp: DateTime<Utc>,
+    pub epoch_end_timestamp: DateTime<Utc>,
     pub timestamp: DateTime<Utc>,
     pub carrier_mapping_key: PublicKeyBinary,
 }
@@ -45,25 +51,25 @@ impl MsgDecode for RadioUsageCountsReq {
 
 impl MsgTimestamp<Result<DateTime<Utc>>> for HexUsageCountsReqV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
-        self.timestamp.to_timestamp()
+        self.timestamp.to_timestamp_millis()
     }
 }
 
 impl MsgTimestamp<u64> for HexUsageCountsReq {
     fn timestamp(&self) -> u64 {
-        self.timestamp.encode_timestamp()
+        self.timestamp.encode_timestamp_millis()
     }
 }
 
 impl MsgTimestamp<Result<DateTime<Utc>>> for RadioUsageCountsReqV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
-        self.timestamp.to_timestamp()
+        self.timestamp.to_timestamp_millis()
     }
 }
 
 impl MsgTimestamp<u64> for RadioUsageCountsReq {
     fn timestamp(&self) -> u64 {
-        self.timestamp.encode_timestamp()
+        self.timestamp.encode_timestamp_millis()
     }
 }
 
@@ -71,6 +77,8 @@ impl TryFrom<HexUsageCountsReqV1> for HexUsageCountsReq {
     type Error = Error;
     fn try_from(v: HexUsageCountsReqV1) -> Result<Self> {
         let timestamp = v.timestamp()?;
+        let epoch_start_timestamp = v.epoch_start_timestamp.to_timestamp_millis()?;
+        let epoch_end_timestamp = v.epoch_end_timestamp.to_timestamp_millis()?;
         let hex = CellIndex::try_from(v.hex).map_err(|_| {
             DecodeError::FileStreamTryDecode(format!("invalid CellIndex {}", v.hex))
         })?;
@@ -79,6 +87,8 @@ impl TryFrom<HexUsageCountsReqV1> for HexUsageCountsReq {
             service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
             disco_mapping_avg_count: v.disco_mapping_avg_count,
             offload_avg_count: v.offload_avg_count,
+            epoch_start_timestamp,
+            epoch_end_timestamp,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
         })
@@ -88,11 +98,16 @@ impl TryFrom<HexUsageCountsReqV1> for HexUsageCountsReq {
 impl From<HexUsageCountsReq> for HexUsageCountsReqV1 {
     fn from(v: HexUsageCountsReq) -> Self {
         let timestamp = v.timestamp();
+        let epoch_start_timestamp = v.epoch_start_timestamp.encode_timestamp_millis();
+        let epoch_end_timestamp = v.epoch_end_timestamp.encode_timestamp_millis();
+
         HexUsageCountsReqV1 {
             hex: v.hex.into(),
             service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
             disco_mapping_avg_count: v.disco_mapping_avg_count,
             offload_avg_count: v.offload_avg_count,
+            epoch_start_timestamp,
+            epoch_end_timestamp,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
             signature: vec![],
@@ -104,12 +119,18 @@ impl TryFrom<RadioUsageCountsReqV1> for RadioUsageCountsReq {
     type Error = Error;
     fn try_from(v: RadioUsageCountsReqV1) -> Result<Self> {
         let timestamp = v.timestamp()?;
+        let epoch_start_timestamp = v.epoch_start_timestamp.to_timestamp_millis()?;
+        let epoch_end_timestamp = v.epoch_end_timestamp.to_timestamp_millis()?;
         Ok(Self {
             hotspot_pubkey: v.hotspot_pubkey.into(),
             cbsd_id: v.cbsd_id,
             service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
             disco_mapping_avg_count: v.disco_mapping_avg_count,
             offload_avg_count: v.offload_avg_count,
+            service_provider_transfer_bytes: v.service_provider_transfer_bytes,
+            offload_transfer_bytes: v.offload_transfer_bytes,
+            epoch_start_timestamp,
+            epoch_end_timestamp,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
         })
@@ -119,12 +140,19 @@ impl TryFrom<RadioUsageCountsReqV1> for RadioUsageCountsReq {
 impl From<RadioUsageCountsReq> for RadioUsageCountsReqV1 {
     fn from(v: RadioUsageCountsReq) -> Self {
         let timestamp = v.timestamp();
+        let epoch_start_timestamp = v.epoch_start_timestamp.encode_timestamp_millis();
+        let epoch_end_timestamp = v.epoch_end_timestamp.encode_timestamp_millis();
+
         RadioUsageCountsReqV1 {
             hotspot_pubkey: v.hotspot_pubkey.into(),
             cbsd_id: v.cbsd_id,
             service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
             disco_mapping_avg_count: v.disco_mapping_avg_count,
             offload_avg_count: v.offload_avg_count,
+            service_provider_transfer_bytes: v.service_provider_transfer_bytes,
+            offload_transfer_bytes: v.offload_transfer_bytes,
+            epoch_start_timestamp,
+            epoch_end_timestamp,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
             signature: vec![],

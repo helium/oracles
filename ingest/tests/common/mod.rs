@@ -249,6 +249,8 @@ impl TestClient {
             service_provider_subscriber_avg_count,
             disco_mapping_avg_count,
             offload_avg_count,
+            epoch_start_timestamp: 0,
+            epoch_end_timestamp: 0,
             timestamp: 0,
             carrier_mapping_key: self.key_pair.public_key().to_vec(),
             signature: vec![],
@@ -266,6 +268,7 @@ impl TestClient {
         Ok(res.into_inner())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn submit_radio_usage_req(
         &mut self,
         hotspot_pubkey: PublicKeyBinary,
@@ -273,6 +276,8 @@ impl TestClient {
         service_provider_subscriber_avg_count: u64,
         disco_mapping_avg_count: u64,
         offload_avg_count: u64,
+        service_provider_transfer_bytes: u64,
+        offload_transfer_bytes: u64,
     ) -> anyhow::Result<RadioUsageCountsResV1> {
         let mut req = RadioUsageCountsReqV1 {
             hotspot_pubkey: hotspot_pubkey.into(),
@@ -280,6 +285,10 @@ impl TestClient {
             service_provider_subscriber_avg_count,
             disco_mapping_avg_count,
             offload_avg_count,
+            service_provider_transfer_bytes,
+            offload_transfer_bytes,
+            epoch_start_timestamp: 0,
+            epoch_end_timestamp: 0,
             timestamp: 0,
             carrier_mapping_key: self.key_pair.public_key().to_vec(),
             signature: vec![],

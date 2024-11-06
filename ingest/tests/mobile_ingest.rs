@@ -91,17 +91,21 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
 
     let hotspot_pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
     let cbsd_id = "cbsd_id".to_string();
-    const SERVICE_PROVIDER_SUBSCRIBER_AVG_COUNT: u64 = 10;
-    const DISCO_MAPPING_AVG_COUNT: u64 = 11;
-    const OFFLOAD_AVG_COUNT: u64 = 12;
+    const SERVICE_PROVIDER_SUBSCRIBER_COUNT: u64 = 10;
+    const DISCO_MAPPING_COUNT: u64 = 11;
+    const OFFLOAD_COUNT: u64 = 12;
+    const SERVICE_PROVIDER_TRANSFER_BYTES: u64 = 13;
+    const OFFLOAD_TRANSFER_BYTES: u64 = 14;
 
     let res = client
         .submit_radio_usage_req(
             hotspot_pubkey.clone(),
             cbsd_id.clone(),
-            SERVICE_PROVIDER_SUBSCRIBER_AVG_COUNT,
-            DISCO_MAPPING_AVG_COUNT,
-            OFFLOAD_AVG_COUNT,
+            SERVICE_PROVIDER_SUBSCRIBER_COUNT,
+            DISCO_MAPPING_COUNT,
+            OFFLOAD_COUNT,
+            SERVICE_PROVIDER_TRANSFER_BYTES,
+            OFFLOAD_TRANSFER_BYTES,
         )
         .await;
 
@@ -119,11 +123,16 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
                     assert_eq!(hotspot_pubkey.as_ref(), event.hotspot_pubkey);
                     assert_eq!(cbsd_id, event.cbsd_id);
                     assert_eq!(
-                        SERVICE_PROVIDER_SUBSCRIBER_AVG_COUNT,
+                        SERVICE_PROVIDER_SUBSCRIBER_COUNT,
                         event.service_provider_subscriber_avg_count
                     );
-                    assert_eq!(DISCO_MAPPING_AVG_COUNT, event.disco_mapping_avg_count);
-                    assert_eq!(OFFLOAD_AVG_COUNT, event.offload_avg_count);
+                    assert_eq!(DISCO_MAPPING_COUNT, event.disco_mapping_avg_count);
+                    assert_eq!(OFFLOAD_COUNT, event.offload_avg_count);
+                    assert_eq!(
+                        SERVICE_PROVIDER_TRANSFER_BYTES,
+                        event.service_provider_transfer_bytes
+                    );
+                    assert_eq!(OFFLOAD_TRANSFER_BYTES, event.offload_transfer_bytes);
                 }
             }
         }
