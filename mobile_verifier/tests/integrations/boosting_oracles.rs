@@ -1,3 +1,4 @@
+use crate::common::{self, GatewayClientAllOwnersValid};
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
@@ -13,7 +14,6 @@ use helium_proto::services::poc_mobile::{
 };
 use hex_assignments::{Assignment, HexBoostData};
 use mobile_config::boosted_hex_info::BoostedHexes;
-
 use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
@@ -30,8 +30,6 @@ use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::{collections::HashMap, pin::pin};
 use uuid::Uuid;
-
-use crate::common::{self, GatewayClientAllOwnersValid};
 
 #[derive(Clone)]
 struct MockGeofence;
@@ -213,8 +211,8 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
 
 #[sqlx::test]
 async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Result<()> {
-    let start: DateTime<Utc> = "2022-01-01 00:00:00.000000000 UTC".parse()?;
-    let end: DateTime<Utc> = "2022-01-02 00:00:00.000000000 UTC".parse()?;
+    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
+    let start: DateTime<Utc> = end - Duration::days(1);
 
     struct TestHex {
         loc: String,
@@ -307,7 +305,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         pub_key: PublicKeyBinary::from(vec![1]),
         uuid,
         key_type: file_store::coverage::KeyType::CbsdId(cbsd_id.clone()),
-        coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
+        coverage_claim_time: start,
         indoor: true,
         signature: Vec::new(),
         coverage: hexes
@@ -334,7 +332,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     let _ = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
     let heartbeat_owner = owner.clone();
-    let heartbeats = heartbeats(12, start, &heartbeat_owner, &cbsd_id, 0.0, 0.0, uuid);
+    let heartbeats = heartbeats(13, start, &heartbeat_owner, &cbsd_id, 0.0, 0.0, uuid);
 
     let coverage_objects = CoverageObjectCache::new(&pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();

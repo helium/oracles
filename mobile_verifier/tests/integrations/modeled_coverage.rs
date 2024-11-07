@@ -431,8 +431,8 @@ async fn process_input(
 
 #[sqlx::test]
 async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
-    let start: DateTime<Utc> = "2022-01-01 00:00:00.000000000 UTC".parse()?;
-    let end: DateTime<Utc> = "2022-01-02 00:00:00.000000000 UTC".parse()?;
+    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
+    let start: DateTime<Utc> = end - Duration::days(1);
 
     let uuid = Uuid::new_v4();
     let cbsd_id = "P27-SCE4255W120200039521XGB0102".to_string();
@@ -462,7 +462,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         &(start..end),
         vec![coverage_object].into_iter(),
-        heartbeats(12, start, &owner, &cbsd_id, 0.0, 0.0, uuid),
+        heartbeats(13, start, &owner, &cbsd_id, 0.0, 0.0, uuid),
     )
     .await?;
 
@@ -498,8 +498,8 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
-    let start: DateTime<Utc> = "2022-02-01 00:00:00.000000000 UTC".parse()?;
-    let end: DateTime<Utc> = "2022-02-02 00:00:00.000000000 UTC".parse()?;
+    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
+    let start: DateTime<Utc> = end - Duration::days(1);
 
     let uuid_1 = Uuid::new_v4();
     let uuid_2 = Uuid::new_v4();
@@ -553,8 +553,8 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     let owner_1: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
     let owner_2: PublicKeyBinary = "11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR".parse()?;
 
-    let heartbeats_1 = heartbeats(12, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
-    let heartbeats_2 = heartbeats(12, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
+    let heartbeats_1 = heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
+    let heartbeats_2 = heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
 
     process_input(
         &pool,
@@ -605,8 +605,8 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
-    let start: DateTime<Utc> = "2022-02-01 00:00:00.000000000 UTC".parse()?;
-    let end: DateTime<Utc> = "2022-02-02 00:00:00.000000000 UTC".parse()?;
+    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
+    let start: DateTime<Utc> = end - Duration::days(1);
 
     let uuid_1 = Uuid::new_v4();
     let uuid_2 = Uuid::new_v4();
@@ -763,12 +763,12 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     let owner_5: PublicKeyBinary = "11Bn2erjB83zdCBrE248pTVBpTXSuN8Lur4v4mWFnf5Rpd8XK7n".parse()?;
     let owner_6: PublicKeyBinary = "11d5KySrfiMgaDoZ7B5CDm3meE1gQhUJ5EHuJvzwiWjdSUGhBsZ".parse()?;
 
-    let heartbeats_1 = heartbeats(12, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
-    let heartbeats_2 = heartbeats(12, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
-    let heartbeats_3 = heartbeats(12, start, &owner_3, &cbsd_id_3, 0.0, 0.0, uuid_3);
-    let heartbeats_4 = heartbeats(12, start, &owner_4, &cbsd_id_4, 0.0, 0.0, uuid_4);
-    let heartbeats_5 = heartbeats(12, start, &owner_5, &cbsd_id_5, 0.0, 0.0, uuid_5);
-    let heartbeats_6 = heartbeats(12, start, &owner_6, &cbsd_id_6, 0.0, 0.0, uuid_6);
+    let heartbeats_1 = heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
+    let heartbeats_2 = heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
+    let heartbeats_3 = heartbeats(13, start, &owner_3, &cbsd_id_3, 0.0, 0.0, uuid_3);
+    let heartbeats_4 = heartbeats(13, start, &owner_4, &cbsd_id_4, 0.0, 0.0, uuid_4);
+    let heartbeats_5 = heartbeats(13, start, &owner_5, &cbsd_id_5, 0.0, 0.0, uuid_5);
+    let heartbeats_6 = heartbeats(13, start, &owner_6, &cbsd_id_6, 0.0, 0.0, uuid_6);
 
     process_input(
         &pool,
@@ -910,8 +910,8 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
-    let start: DateTime<Utc> = "2022-01-01 00:00:00.000000000 UTC".parse()?;
-    let end: DateTime<Utc> = "2022-01-02 00:00:00.000000000 UTC".parse()?;
+    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
+    let start: DateTime<Utc> = end - Duration::days(1);
 
     let uuid = Uuid::new_v4();
     let cbsd_id = "P27-SCE4255W120200039521XGB0102".to_string();
@@ -944,7 +944,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         &(start..end),
         vec![coverage_object].into_iter(),
-        heartbeats(12, start, &owner, &cbsd_id, 0.0, 0.0, uuid),
+        heartbeats(13, start, &owner, &cbsd_id, 0.0, 0.0, uuid),
     )
     .await?;
 
@@ -980,8 +980,8 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
-    let start: DateTime<Utc> = "2022-02-01 00:00:00.000000000 UTC".parse()?;
-    let end: DateTime<Utc> = "2022-02-02 00:00:00.000000000 UTC".parse()?;
+    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
+    let start: DateTime<Utc> = end - Duration::days(1);
 
     let uuid_1 = Uuid::new_v4();
     let uuid_2 = Uuid::new_v4();
@@ -1034,8 +1034,8 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
     let owner_1: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
     let owner_2: PublicKeyBinary = "11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR".parse()?;
 
-    let heartbeats_1 = heartbeats(12, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
-    let heartbeats_2 = heartbeats(12, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
+    let heartbeats_1 = heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
+    let heartbeats_2 = heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
 
     process_input(
         &pool,
@@ -1086,8 +1086,8 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
-    let start: DateTime<Utc> = "2022-02-01 00:00:00.000000000 UTC".parse()?;
-    let end: DateTime<Utc> = "2022-02-02 00:00:00.000000000 UTC".parse()?;
+    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
+    let start: DateTime<Utc> = end - Duration::days(1);
 
     // This is the same as scenario three, but with an acceptable speedtest
     // the sixth radio is not awarded
@@ -1247,12 +1247,12 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
     let owner_5: PublicKeyBinary = "11Bn2erjB83zdCBrE248pTVBpTXSuN8Lur4v4mWFnf5Rpd8XK7n".parse()?;
     let owner_6: PublicKeyBinary = "11d5KySrfiMgaDoZ7B5CDm3meE1gQhUJ5EHuJvzwiWjdSUGhBsZ".parse()?;
 
-    let heartbeats_1 = heartbeats(12, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
-    let heartbeats_2 = heartbeats(12, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
-    let heartbeats_3 = heartbeats(12, start, &owner_3, &cbsd_id_3, 0.0, 0.0, uuid_3);
-    let heartbeats_4 = heartbeats(12, start, &owner_4, &cbsd_id_4, 0.0, 0.0, uuid_4);
-    let heartbeats_5 = heartbeats(12, start, &owner_5, &cbsd_id_5, 0.0, 0.0, uuid_5);
-    let heartbeats_6 = heartbeats(12, start, &owner_6, &cbsd_id_6, 0.0, 0.0, uuid_6);
+    let heartbeats_1 = heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
+    let heartbeats_2 = heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
+    let heartbeats_3 = heartbeats(13, start, &owner_3, &cbsd_id_3, 0.0, 0.0, uuid_3);
+    let heartbeats_4 = heartbeats(13, start, &owner_4, &cbsd_id_4, 0.0, 0.0, uuid_4);
+    let heartbeats_5 = heartbeats(13, start, &owner_5, &cbsd_id_5, 0.0, 0.0, uuid_5);
+    let heartbeats_6 = heartbeats(13, start, &owner_6, &cbsd_id_6, 0.0, 0.0, uuid_6);
 
     process_input(
         &pool,
