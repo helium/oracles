@@ -1,6 +1,6 @@
 use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
@@ -19,6 +19,7 @@ pub trait CarrierServiceVerifier {
 
     async fn list_incentive_promotions(
         &self,
+        epoch_start: &DateTime<Utc>,
     ) -> Result<Vec<ServiceProviderPromotions>, Self::Error>;
 }
 #[derive(Clone)]
@@ -69,9 +70,10 @@ impl CarrierServiceVerifier for CarrierServiceClient {
 
     async fn list_incentive_promotions(
         &self,
+        epoch_start: &DateTime<Utc>,
     ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
         let mut request = mobile_config::CarrierIncentivePromotionListReqV1 {
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: epoch_start.encode_timestamp(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };

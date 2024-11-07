@@ -277,7 +277,8 @@ where
         let dc_sessions =
             service_provider::get_dc_sessions(&self.pool, &self.carrier_client, reward_period)
                 .await?;
-        let sp_promotions = service_provider::get_promotions(&self.carrier_client).await?;
+        let sp_promotions =
+            service_provider::get_promotions(&self.carrier_client, &reward_period.start).await?;
         reward_service_providers(
             dc_sessions,
             sp_promotions.clone(),

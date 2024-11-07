@@ -136,6 +136,7 @@ pub mod tests {
 
             async fn list_incentive_promotions(
                 &self,
+                _epoch_start: &DateTime<Utc>,
             ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
                 Ok(vec![])
             }
