@@ -71,10 +71,10 @@ async fn submit_hex_usage_report() -> anyhow::Result<()> {
                     assert_eq!(HEX, event.hex);
                     assert_eq!(
                         SERVICE_PROVIDER_SUBSCRIBER_AVG_COUNT,
-                        event.service_provider_subscriber_avg_count
+                        event.service_provider_subscriber_count
                     );
-                    assert_eq!(DISCO_MAPPING_AVG_COUNT, event.disco_mapping_avg_count);
-                    assert_eq!(OFFLOAD_AVG_COUNT, event.offload_avg_count);
+                    assert_eq!(DISCO_MAPPING_AVG_COUNT, event.disco_mapping_count);
+                    assert_eq!(OFFLOAD_AVG_COUNT, event.offload_count);
                 }
             }
         }
@@ -124,10 +124,10 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
                     assert_eq!(cbsd_id, event.cbsd_id);
                     assert_eq!(
                         SERVICE_PROVIDER_SUBSCRIBER_COUNT,
-                        event.service_provider_subscriber_avg_count
+                        event.service_provider_subscriber_count
                     );
-                    assert_eq!(DISCO_MAPPING_COUNT, event.disco_mapping_avg_count);
-                    assert_eq!(OFFLOAD_COUNT, event.offload_avg_count);
+                    assert_eq!(DISCO_MAPPING_COUNT, event.disco_mapping_count);
+                    assert_eq!(OFFLOAD_COUNT, event.offload_count);
                     assert_eq!(
                         SERVICE_PROVIDER_TRANSFER_BYTES,
                         event.service_provider_transfer_bytes

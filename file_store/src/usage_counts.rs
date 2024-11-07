@@ -17,9 +17,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct HexUsageCountsReq {
     pub hex: CellIndex,
-    pub service_provider_subscriber_avg_count: u64,
-    pub disco_mapping_avg_count: u64,
-    pub offload_avg_count: u64,
+    pub service_provider_subscriber_count: u64,
+    pub disco_mapping_count: u64,
+    pub offload_count: u64,
     pub epoch_start_timestamp: DateTime<Utc>,
     pub epoch_end_timestamp: DateTime<Utc>,
     pub timestamp: DateTime<Utc>,
@@ -30,9 +30,9 @@ pub struct HexUsageCountsReq {
 pub struct RadioUsageCountsReq {
     pub hotspot_pubkey: PublicKeyBinary,
     pub cbsd_id: String,
-    pub service_provider_subscriber_avg_count: u64,
-    pub disco_mapping_avg_count: u64,
-    pub offload_avg_count: u64,
+    pub service_provider_subscriber_count: u64,
+    pub disco_mapping_count: u64,
+    pub offload_count: u64,
     pub service_provider_transfer_bytes: u64,
     pub offload_transfer_bytes: u64,
     pub epoch_start_timestamp: DateTime<Utc>,
@@ -84,9 +84,9 @@ impl TryFrom<HexUsageCountsReqV1> for HexUsageCountsReq {
         })?;
         Ok(Self {
             hex,
-            service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
-            disco_mapping_avg_count: v.disco_mapping_avg_count,
-            offload_avg_count: v.offload_avg_count,
+            service_provider_subscriber_count: v.service_provider_subscriber_count,
+            disco_mapping_count: v.disco_mapping_count,
+            offload_count: v.offload_count,
             epoch_start_timestamp,
             epoch_end_timestamp,
             timestamp,
@@ -103,9 +103,9 @@ impl From<HexUsageCountsReq> for HexUsageCountsReqV1 {
 
         HexUsageCountsReqV1 {
             hex: v.hex.into(),
-            service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
-            disco_mapping_avg_count: v.disco_mapping_avg_count,
-            offload_avg_count: v.offload_avg_count,
+            service_provider_subscriber_count: v.service_provider_subscriber_count,
+            disco_mapping_count: v.disco_mapping_count,
+            offload_count: v.offload_count,
             epoch_start_timestamp,
             epoch_end_timestamp,
             timestamp,
@@ -124,9 +124,9 @@ impl TryFrom<RadioUsageCountsReqV1> for RadioUsageCountsReq {
         Ok(Self {
             hotspot_pubkey: v.hotspot_pubkey.into(),
             cbsd_id: v.cbsd_id,
-            service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
-            disco_mapping_avg_count: v.disco_mapping_avg_count,
-            offload_avg_count: v.offload_avg_count,
+            service_provider_subscriber_count: v.service_provider_subscriber_count,
+            disco_mapping_count: v.disco_mapping_count,
+            offload_count: v.offload_count,
             service_provider_transfer_bytes: v.service_provider_transfer_bytes,
             offload_transfer_bytes: v.offload_transfer_bytes,
             epoch_start_timestamp,
@@ -146,9 +146,9 @@ impl From<RadioUsageCountsReq> for RadioUsageCountsReqV1 {
         RadioUsageCountsReqV1 {
             hotspot_pubkey: v.hotspot_pubkey.into(),
             cbsd_id: v.cbsd_id,
-            service_provider_subscriber_avg_count: v.service_provider_subscriber_avg_count,
-            disco_mapping_avg_count: v.disco_mapping_avg_count,
-            offload_avg_count: v.offload_avg_count,
+            service_provider_subscriber_count: v.service_provider_subscriber_count,
+            disco_mapping_count: v.disco_mapping_count,
+            offload_count: v.offload_count,
             service_provider_transfer_bytes: v.service_provider_transfer_bytes,
             offload_transfer_bytes: v.offload_transfer_bytes,
             epoch_start_timestamp,
