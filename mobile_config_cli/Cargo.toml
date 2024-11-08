@@ -11,7 +11,7 @@ angry-purple-tiger = {version = "1", features = ["helium_crypto"]}
 anyhow = {workspace = true}
 base64 = {workspace = true}
 clap = {workspace = true, features = ["derive", "env"]}
-dialoguer = "0.10"
+dialoguer = "0.11"
 futures = {workspace = true}
 helium-crypto = {workspace = true}
 helium-proto = {workspace = true}
