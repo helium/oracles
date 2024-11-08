@@ -1788,7 +1788,6 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-crypto",
  "helium-proto",
  "http 0.2.11",
  "http-serde",
