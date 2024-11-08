@@ -4,7 +4,8 @@ use crate::{
     org_service::UpdateAuthorizer,
 };
 use futures::stream::StreamExt;
-use helium_crypto::{PublicKey, PublicKeyBinary};
+use helium_crypto::PublicKeyBinary;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::Serialize;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::{error::Error as SqlxError, postgres::PgRow, types::Uuid, FromRow, Row};
@@ -22,56 +23,73 @@ pub mod proto {
 #[derive(Clone, Debug, Serialize)]
 pub struct Org {
     pub oui: u64,
-    pub owner: PublicKeyBinary,
-    pub payer: PublicKeyBinary,
+    pub owner: Pubkey,
+    pub escrow_key: String,
     pub locked: bool,
-    pub delegate_keys: Option<Vec<PublicKeyBinary>>,
+    pub delegate_keys: Option<Vec<Pubkey>>,
     pub constraints: Option<Vec<DevAddrConstraint>>,
 }
 
 impl FromRow<'_, PgRow> for Org {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
-        let owner = PublicKeyBinary::from(
-            Pubkey::from_str(&row.get::<String, _>("authority"))
-                .map_err(|e| SqlxError::Decode(Box::new(e)))?
-                .to_bytes()
-                .as_slice(),
-        );
+        let oui_decimal: Decimal = row.try_get("oui")?;
+        let oui: u64 = oui_decimal.to_u64().ok_or_else(|| {
+            SqlxError::Decode(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Failed to convert NUMERIC to u64",
+            )))
+        })?;
 
-        let payer = PublicKeyBinary::from_str(&row.get::<String, _>("escrow_key"))
-            .unwrap_or_else(|_| PublicKeyBinary::from(vec![0u8; 33].as_slice()));
+        let owner_str: String = row.get("authority");
+        let owner = Pubkey::from_str(&owner_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
 
-        /* let escrow_key = PublicKeyBinary::from_str(&row.get::<String, _>("escrow_key"))
-        .map_err(|e| SqlxError::Decode(Box::new(e)))?; */
-
+        let escrow_key = row.get::<String, _>("escrow_key");
         let locked = row.get::<Option<bool>, _>("locked").unwrap_or(false);
+
         let raw_delegate_keys: Option<Vec<String>> = row.try_get("delegate_keys")?;
-        let delegate_keys: Option<Vec<PublicKeyBinary>> = raw_delegate_keys.map(|keys| {
+        let delegate_keys: Option<Vec<Pubkey>> = raw_delegate_keys.map(|keys| {
             keys.into_iter()
-                .filter_map(|key| {
-                    Pubkey::from_str(&key)
-                        .ok()
-                        .map(|pubkey| PublicKeyBinary::from(pubkey.to_bytes().as_slice()))
-                })
+                .filter_map(|key| Pubkey::from_str(&key).ok())
                 .collect()
         });
 
-        let constraints: Option<Vec<DevAddrConstraint>> = row
-            .try_get::<Option<Vec<(i64, i64)>>, _>("constraints")?
-            .map(|constraints| {
-                constraints
-                    .into_iter()
-                    .map(|(start, end)| DevAddrConstraint {
-                        start_addr: start.try_into().unwrap(),
-                        end_addr: end.try_into().unwrap(),
+        let raw_constraints: Option<Vec<(Decimal, Decimal)>> = row.try_get("constraints")?;
+        let constraints: Option<Vec<DevAddrConstraint>> = if let Some(constraints_data) =
+            raw_constraints
+        {
+            let constraints_result: Result<Vec<DevAddrConstraint>, SqlxError> = constraints_data
+                .into_iter()
+                .map(|(start_decimal, end_decimal)| {
+                    let start_u64 = start_decimal.to_u64().ok_or_else(|| {
+                        SqlxError::Decode(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "Failed to convert NUMERIC 'start_addr' to u64",
+                        )))
+                    })?;
+
+                    let end_u64 = end_decimal.to_u64().ok_or_else(|| {
+                        SqlxError::Decode(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "Failed to convert NUMERIC 'end_addr' to u64",
+                        )))
+                    })?;
+
+                    Ok(DevAddrConstraint {
+                        start_addr: start_u64.into(),
+                        end_addr: end_u64.into(),
                     })
-                    .collect()
-            });
+                })
+                .collect();
+
+            Some(constraints_result?)
+        } else {
+            None
+        };
 
         Ok(Self {
-            oui: row.get::<i64, &str>("oui") as u64,
+            oui,
             owner,
-            payer,
+            escrow_key,
             locked,
             delegate_keys,
             constraints,
@@ -79,22 +97,18 @@ impl FromRow<'_, PgRow> for Org {
     }
 }
 
-pub type DelegateCache = HashSet<PublicKeyBinary>;
+pub type DelegateCache = HashSet<Pubkey>;
 
 pub async fn delegate_keys_cache(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<(watch::Sender<DelegateCache>, watch::Receiver<DelegateCache>), sqlx::Error> {
-    let key_set: HashSet<PublicKeyBinary> = sqlx::query_scalar(
+    let key_set: HashSet<Pubkey> = sqlx::query_scalar(
         "SELECT delegate FROM solana_organization_delegate_keys WHERE delegate IS NOT NULL",
     )
     .fetch_all(db)
     .await?
     .into_iter()
-    .filter_map(|delegate: String| {
-        Pubkey::from_str(&delegate)
-            .ok()
-            .map(|pubkey| PublicKeyBinary::from(pubkey.to_bytes().as_slice()))
-    })
+    .filter_map(|delegate: String| Pubkey::from_str(&delegate).ok())
     .collect();
 
     Ok(watch::channel(key_set))
@@ -102,78 +116,22 @@ pub async fn delegate_keys_cache(
 
 pub async fn create_org(
     owner: PublicKeyBinary,
-    payer: PublicKeyBinary,
-    delegate_keys: Vec<PublicKeyBinary>,
+    escrow_key: String,
+    delegate_keys: Vec<Pubkey>,
     net_id: NetIdField,
     devaddr_ranges: &[DevAddrConstraint],
-    db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres>,
+    _db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres>,
 ) -> Result<Org, OrgStoreError> {
-    let mut txn = db.begin().await?;
+    println!(
+        "owner: {:?}, escrow_key: {:?}, delegate_keys: {:?}, net_id: {:?}, devaddr_ranges: {:?}",
+        owner, escrow_key, delegate_keys, net_id, devaddr_ranges
+    );
 
-    let oui = sqlx::query(
-        r#"
-        insert into organizations (owner_pubkey, payer_pubkey)
-        values ($1, $2)
-        returning oui
-        "#,
-    )
-    .bind(&owner)
-    .bind(&payer)
-    .fetch_one(&mut txn)
-    .await
-    .map_err(|_| {
-        OrgStoreError::SaveOrg(format!("owner: {owner}, payer: {payer}, net_id: {net_id}"))
-    })?
-    .get::<i64, &str>("oui");
+    // TODO (bry): implement
 
-    if !delegate_keys.is_empty() {
-        let delegate_keys = delegate_keys
-            .into_iter()
-            .map(|key| (key, oui))
-            .collect::<Vec<(PublicKeyBinary, i64)>>();
-        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
-            " insert into organization_delegate_keys (delegate_pubkey, oui) ",
-        );
-        query_builder.push_values(delegate_keys, |mut builder, (key, oui)| {
-            builder.push_bind(key).push_bind(oui);
-        });
-        query_builder
-            .build()
-            .execute(&mut txn)
-            .await
-            .map_err(|_| {
-                OrgStoreError::SaveDelegates(format!(
-                    "owner: {owner}, payer: {payer}, net_id: {net_id}"
-                ))
-            })
-            .map(|_| ())?
-    };
-
-    if is_helium_netid(&net_id) {
-        insert_helium_constraints(oui as u64, net_id, devaddr_ranges, &mut txn).await
-    } else {
-        let constraint = devaddr_ranges
-            .first()
-            .ok_or(OrgStoreError::SaveConstraints(
-                "no devaddr constraints supplied".to_string(),
-            ))?;
-        if check_roamer_constraint_count(net_id, &mut txn).await? == 0 {
-            insert_roamer_constraint(oui as u64, net_id, constraint, &mut txn).await
-        } else {
-            return Err(OrgStoreError::SaveConstraints(format!(
-                "constraint already in use {constraint:?}"
-            )));
-        }
-    }
-    .map_err(|err| OrgStoreError::SaveConstraints(format!("{devaddr_ranges:?}: {err:?}")))?;
-
-    let org = get(oui as u64, &mut txn)
-        .await?
-        .ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
-
-    txn.commit().await?;
-
-    Ok(org)
+    Err(OrgStoreError::InvalidUpdate(
+        "create_org function not yet implemented".to_string(),
+    ))
 }
 
 pub async fn update_org(
@@ -188,6 +146,7 @@ pub async fn update_org(
     let current_org = get(oui, &mut txn)
         .await?
         .ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
+
     let net_id = get_org_netid(oui, &mut txn).await?;
     let is_helium_org = is_helium_netid(&net_id);
 
@@ -198,11 +157,7 @@ pub async fn update_org(
                 update_owner(oui, &pubkeybin, &mut txn).await?;
                 tracing::info!(oui, pubkey = %pubkeybin, "owner pubkey updated");
             }
-            Some(proto::Update::Payer(ref pubkeybin)) if authorizer == UpdateAuthorizer::Admin => {
-                let pubkeybin: PublicKeyBinary = pubkeybin.clone().into();
-                update_payer(oui, &pubkeybin, &mut txn).await?;
-                tracing::info!(oui, pubkey = %pubkeybin, "payer pubkey updated");
-            }
+            // TODO (bry): escrow key update
             Some(proto::Update::Devaddrs(addr_count))
                 if authorizer == UpdateAuthorizer::Admin && is_helium_org =>
             {
@@ -259,12 +214,22 @@ pub async fn update_org(
             match delegate_key_update.action() {
                 proto::ActionV1::Add => {
                     delegate_cache.send_if_modified(|cache| {
-                        cache.insert(delegate_key_update.delegate_key.clone().into())
+                        let key_bytes: [u8; 32] = delegate_key_update
+                            .delegate_key
+                            .clone()
+                            .try_into()
+                            .expect("Invalid key length");
+                        cache.insert(Pubkey::new_from_array(key_bytes))
                     });
                 }
                 proto::ActionV1::Remove => {
                     delegate_cache.send_if_modified(|cache| {
-                        cache.remove(&delegate_key_update.delegate_key.clone().into())
+                        let key_bytes: [u8; 32] = delegate_key_update
+                            .delegate_key
+                            .clone()
+                            .try_into()
+                            .expect("Invalid key length");
+                        cache.remove(&Pubkey::new_from_array(key_bytes))
                     });
                 }
             }
@@ -280,7 +245,7 @@ pub async fn get_org_netid(
 ) -> Result<NetIdField, sqlx::Error> {
     let netid = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT sol_ni.id::bigint
+        SELECT sol_ni.id
         FROM solana_organization_devaddr_constraints sol_odc
         JOIN solana_organizations sol_org ON sol_org.address = sol_odc.organization
         JOIN solana_net_ids sol_ni ON sol_ni.address = sol_odc.net_id
@@ -308,6 +273,7 @@ async fn update_owner(
         .map(|_| ())
 }
 
+// TODO (bry): implement update_escrow_key
 async fn update_payer(
     oui: u64,
     payer_pubkey: &PublicKeyBinary,
@@ -497,14 +463,14 @@ async fn insert_roamer_constraint(
 
 const GET_ORG_SQL: &str = r#"
 SELECT
-    sol_org.oui::bigint,
+    sol_org.oui,
     sol_org.authority,
     sol_org.escrow_key,
     COALESCE((SELECT locked
      FROM organization_locks
      WHERE organization = sol_org.address), false) AS locked,
     ARRAY(
-        SELECT (start_addr::bigint, end_addr::bigint)
+        SELECT (start_addr, end_addr)
         FROM solana_organization_devaddr_constraints
         WHERE organization = sol_org.address
     ) AS constraints,
@@ -517,11 +483,13 @@ FROM solana_organizations sol_org
 "#;
 
 pub async fn list(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<Org>, sqlx::Error> {
-    Ok(sqlx::query_as::<_, Org>(GET_ORG_SQL)
+    let orgs = sqlx::query_as::<_, Org>(GET_ORG_SQL)
         .fetch(db)
         .filter_map(|row| async move { row.ok() })
         .collect::<Vec<Org>>()
-        .await)
+        .await;
+
+    Ok(orgs)
 }
 
 pub async fn get(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<Option<Org>, sqlx::Error> {
@@ -541,7 +509,7 @@ pub async fn get_constraints_by_route(
     let uuid = Uuid::try_parse(route_id)?;
     let constraints = sqlx::query(
         r#"
-        SELECT sol_odc.start_addr::bigint, sol_odc.end_addr::bigint
+        SELECT sol_odc.start_addr, sol_odc.end_addr
         FROM solana_organization_devaddr_constraints sol_odc
         JOIN solana_organizations sol_orgs ON sol_odc.organization = sol_orgs.address
         JOIN routes ON routes.oui = sol_orgs.oui
@@ -552,11 +520,25 @@ pub async fn get_constraints_by_route(
     .fetch_all(db)
     .await?
     .into_iter()
-    .map(|row| DevAddrConstraint {
-        start_addr: row.get::<i64, &str>("start_addr").try_into().unwrap(),
-        end_addr: row.get::<i64, &str>("end_addr").try_into().unwrap(),
+    .map(|row| -> Result<DevAddrConstraint, OrgStoreError> {
+        let start_decimal: Decimal = row.get("start_addr");
+        let start_u64 = start_decimal.to_u64().ok_or_else(|| {
+            OrgStoreError::DecodeNumeric(
+                "Failed to convert NUMERIC 'start_addr' to u64".to_string(),
+            )
+        })?;
+
+        let end_decimal: Decimal = row.get("end_addr");
+        let end_u64 = end_decimal.to_u64().ok_or_else(|| {
+            OrgStoreError::DecodeNumeric("Failed to convert NUMERIC 'end_addr' to u64".to_string())
+        })?;
+
+        Ok(DevAddrConstraint {
+            start_addr: start_u64.into(),
+            end_addr: end_u64.into(),
+        })
     })
-    .collect();
+    .collect::<Result<Vec<DevAddrConstraint>, OrgStoreError>>()?;
 
     Ok(constraints)
 }
@@ -636,31 +618,22 @@ pub enum OrgStoreError {
     RouteIdParse(#[from] sqlx::types::uuid::Error),
     #[error("Invalid update: {0}")]
     InvalidUpdate(String),
+    #[error("unable to decode numeric field: {0}")]
+    DecodeNumeric(String),
 }
 
 pub async fn get_org_pubkeys(
     oui: u64,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<PublicKey>, OrgStoreError> {
+) -> Result<Vec<Pubkey>, OrgStoreError> {
     let org = get(oui, db)
         .await?
         .ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
 
-    let mut pubkeys: Vec<PublicKey> = vec![
-        PublicKey::try_from(org.owner)?,
-        PublicKey::try_from(org.payer)?,
-    ];
+    let mut pubkeys: Vec<Pubkey> = vec![org.owner];
 
-    if let Some(ref mut delegate_pubkeys) = org
-        .delegate_keys
-        .map(|keys| {
-            keys.into_iter()
-                .map(PublicKey::try_from)
-                .collect::<Result<Vec<PublicKey>, helium_crypto::Error>>()
-        })
-        .transpose()?
-    {
-        pubkeys.append(delegate_pubkeys);
+    if let Some(delegate_keys) = org.delegate_keys {
+        pubkeys.extend(delegate_keys);
     }
 
     Ok(pubkeys)
@@ -669,21 +642,12 @@ pub async fn get_org_pubkeys(
 pub async fn get_org_pubkeys_by_route(
     route_id: &str,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<PublicKey>, OrgStoreError> {
+) -> Result<Vec<Pubkey>, OrgStoreError> {
     let uuid = Uuid::try_parse(route_id)?;
-
     let org = sqlx::query_as::<_, Org>(
         r#"
         SELECT
-            sol_org.oui::bigint,
-            sol_org.authority AS owner_pubkey,
-            sol_org.escrow_key AS payer_pubkey,
-            COALESCE(org_lock.locked, false) AS locked,
-            ARRAY(
-                SELECT (start_addr::bigint, end_addr::bigint)
-                FROM solana_organization_devaddr_constraints
-                WHERE organization = sol_org.address
-            ) AS constraints,
+            sol_org.authority AS owner,
             ARRAY(
                 SELECT delegate
                 FROM solana_organization_delegate_keys
@@ -691,7 +655,6 @@ pub async fn get_org_pubkeys_by_route(
             ) AS delegate_keys
         FROM solana_organizations sol_org
         JOIN routes r ON sol_org.oui = r.oui
-        LEFT JOIN organization_locks org_lock ON sol_org.address = org_lock.organization
         WHERE r.id = $1
         "#,
     )
@@ -699,21 +662,9 @@ pub async fn get_org_pubkeys_by_route(
     .fetch_one(db)
     .await?;
 
-    let mut pubkeys: Vec<PublicKey> = vec![
-        PublicKey::try_from(org.owner)?,
-        PublicKey::try_from(org.payer)?,
-    ];
-
-    if let Some(ref mut delegate_keys) = org
-        .delegate_keys
-        .map(|keys| {
-            keys.into_iter()
-                .map(PublicKey::try_from)
-                .collect::<Result<Vec<PublicKey>, helium_crypto::Error>>()
-        })
-        .transpose()?
-    {
-        pubkeys.append(delegate_keys);
+    let mut pubkeys: Vec<Pubkey> = vec![org.owner];
+    if let Some(delegate_keys) = org.delegate_keys {
+        pubkeys.extend(delegate_keys);
     }
 
     Ok(pubkeys)
@@ -723,11 +674,11 @@ impl From<Org> for proto::OrgV1 {
     fn from(org: Org) -> Self {
         Self {
             oui: org.oui,
-            owner: org.owner.into(),
-            payer: org.payer.into(),
+            owner: org.owner.to_bytes().to_vec(),
+            escrow_key: org.escrow_key,
             locked: org.locked,
             delegate_keys: org.delegate_keys.map_or_else(Vec::new, |keys| {
-                keys.iter().map(|key| key.as_ref().into()).collect()
+                keys.iter().map(|key| key.to_bytes().to_vec()).collect()
             }),
         }
     }
