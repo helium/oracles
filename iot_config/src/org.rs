@@ -105,130 +105,6 @@ pub async fn delegate_keys_cache(
     Ok(watch::channel(key_set))
 }
 
-pub async fn create_org(
-    owner: PublicKeyBinary,
-    escrow_key: String,
-    delegate_keys: Vec<Pubkey>,
-    net_id: NetIdField,
-    devaddr_ranges: &[DevAddrConstraint],
-    _db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres>,
-) -> Result<Org, OrgStoreError> {
-    println!(
-        "owner: {:?}, escrow_key: {:?}, delegate_keys: {:?}, net_id: {:?}, devaddr_ranges: {:?}",
-        owner, escrow_key, delegate_keys, net_id, devaddr_ranges
-    );
-
-    // TODO (bry): implement
-
-    Err(OrgStoreError::InvalidUpdate(
-        "create_org function not yet implemented".to_string(),
-    ))
-}
-
-pub async fn update_org(
-    oui: u64,
-    authorizer: UpdateAuthorizer,
-    updates: Vec<proto::UpdateV1>,
-    db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres>,
-    delegate_cache: &watch::Sender<DelegateCache>,
-) -> Result<Org, OrgStoreError> {
-    let mut txn = db.begin().await?;
-
-    let current_org = get(oui, &mut txn)
-        .await?
-        .ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
-
-    let net_id = get_org_netid(oui, &mut txn).await?;
-    let is_helium_org = is_helium_netid(&net_id);
-
-    for update in updates.iter() {
-        match update.update {
-            Some(proto::Update::Owner(ref pubkeybin)) if authorizer == UpdateAuthorizer::Admin => {
-                let pubkeybin: PublicKeyBinary = pubkeybin.clone().into();
-                update_owner(oui, &pubkeybin, &mut txn).await?;
-                tracing::info!(oui, pubkey = %pubkeybin, "owner pubkey updated");
-            }
-            Some(proto::Update::Devaddrs(addr_count))
-                if authorizer == UpdateAuthorizer::Admin && is_helium_org =>
-            {
-                add_devaddr_slab(oui, net_id, addr_count, &mut txn).await?;
-                tracing::info!(oui, addrs = addr_count, "new devaddr slab assigned");
-            }
-            Some(proto::Update::Constraint(ref constraint_update))
-                if authorizer == UpdateAuthorizer::Admin && is_helium_org =>
-            {
-                match (constraint_update.action(), &constraint_update.constraint) {
-                    (proto::ActionV1::Add, Some(ref constraint)) => {
-                        let constraint: DevAddrConstraint = constraint.into();
-                        add_constraint_update(oui, net_id, constraint.clone(), &mut txn).await?;
-                        tracing::info!(oui, %net_id, ?constraint, "devaddr constraint added");
-                    }
-                    (proto::ActionV1::Remove, Some(ref constraint)) => {
-                        let constraint: DevAddrConstraint = constraint.into();
-                        remove_constraint_update(oui, net_id, current_org.constraints.as_ref(), constraint.clone(), &mut txn).await?;
-                        tracing::info!(oui, %net_id, ?constraint, "devaddr constraint removed");
-                    }
-                    _ => return Err(OrgStoreError::InvalidUpdate(format!("invalid action or missing devaddr constraint update: {constraint_update:?}")))
-                }
-            }
-            Some(proto::Update::DelegateKey(ref delegate_key_update)) => {
-                match delegate_key_update.action() {
-                    proto::ActionV1::Add => {
-                        let delegate = delegate_key_update.delegate_key.clone().into();
-                        add_delegate_key(oui, &delegate, &mut txn).await?;
-                        tracing::info!(oui, %delegate, "delegate key authorized");
-                    }
-                    proto::ActionV1::Remove => {
-                        let delegate = delegate_key_update.delegate_key.clone().into();
-                        remove_delegate_key(oui, &delegate, &mut txn).await?;
-                        tracing::info!(oui, %delegate, "delegate key de-authorized");
-                    }
-                }
-            }
-            _ => {
-                return Err(OrgStoreError::InvalidUpdate(format!(
-                    "update: {update:?}, authorizer: {authorizer:?}"
-                )))
-            }
-        };
-    }
-
-    let updated_org = get(oui, &mut txn)
-        .await?
-        .ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
-
-    txn.commit().await?;
-
-    for update in updates.iter() {
-        if let Some(proto::Update::DelegateKey(ref delegate_key_update)) = update.update {
-            match delegate_key_update.action() {
-                proto::ActionV1::Add => {
-                    delegate_cache.send_if_modified(|cache| {
-                        let key_bytes: [u8; 32] = delegate_key_update
-                            .delegate_key
-                            .clone()
-                            .try_into()
-                            .expect("Invalid key length");
-                        cache.insert(Pubkey::new_from_array(key_bytes))
-                    });
-                }
-                proto::ActionV1::Remove => {
-                    delegate_cache.send_if_modified(|cache| {
-                        let key_bytes: [u8; 32] = delegate_key_update
-                            .delegate_key
-                            .clone()
-                            .try_into()
-                            .expect("Invalid key length");
-                        cache.remove(&Pubkey::new_from_array(key_bytes))
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(updated_org)
-}
-
 pub async fn get_org_netid(
     oui: u64,
     db: impl sqlx::PgExecutor<'_>,
@@ -248,45 +124,6 @@ pub async fn get_org_netid(
     .await?;
 
     Ok(netid.into())
-}
-
-async fn update_owner(
-    oui: u64,
-    owner_pubkey: &PublicKeyBinary,
-    db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(" update organizations set owner_pubkey = $1 where oui = $2 ")
-        .bind(owner_pubkey)
-        .bind(oui as i64)
-        .execute(db)
-        .await
-        .map(|_| ())
-}
-
-async fn add_delegate_key(
-    oui: u64,
-    delegate_pubkey: &PublicKeyBinary,
-    db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(" insert into organization_delegate_keys (delegate_pubkey, oui) values ($1, $2) ")
-        .bind(delegate_pubkey)
-        .bind(oui as i64)
-        .execute(db)
-        .await
-        .map(|_| ())
-}
-
-async fn remove_delegate_key(
-    oui: u64,
-    delegate_pubkey: &PublicKeyBinary,
-    db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(" delete from organization_delegate_keys where delegate_pubkey = $1 and oui = $2 ")
-        .bind(delegate_pubkey)
-        .bind(oui as i64)
-        .execute(db)
-        .await
-        .map(|_| ())
 }
 
 async fn add_constraint_update(
@@ -444,7 +281,7 @@ SELECT
     sol_org.escrow_key,
     COALESCE((SELECT locked
      FROM organization_locks
-     WHERE organization = sol_org.address), false) AS locked,
+     WHERE organization = sol_org.address), true) AS locked,
     ARRAY(
         SELECT (start_addr, end_addr)
         FROM solana_organization_devaddr_constraints
@@ -546,7 +383,7 @@ pub async fn get_route_ids_by_route(
 pub async fn is_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
         r#"
-        SELECT COALESCE(org_lock.locked, false)
+        SELECT COALESCE(org_lock.locked, true)
         FROM solana_organizations sol_org
         LEFT JOIN organization_locks org_lock ON sol_org.address = org_lock.organization
         WHERE sol_org.oui = $1
@@ -561,12 +398,12 @@ pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<()
     sqlx::query(
         r#"
         INSERT INTO organization_locks (organization, locked)
-        SELECT address, NOT COALESCE(ol.locked, false)
+        SELECT address, NOT COALESCE(org_lock.locked, true)
         FROM solana_organizations sol_org
         LEFT JOIN organization_locks org_lock ON sol_org.address = org_lock.organization
         WHERE sol_org.oui = $1
         ON CONFLICT (organization) DO UPDATE
-        SET locked = NOT organization_locks.locked
+        SET locked = NOT COALESCE(organization_locks.locked, true)
         "#,
     )
     .bind(Decimal::from(oui))

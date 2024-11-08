@@ -62,11 +62,6 @@ pub fn verify_public_key(bytes: &[u8]) -> Result<PublicKey, Status> {
         .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
 }
 
-pub fn verify_solana_public_key(bytes: &[u8]) -> Result<Pubkey, Status> {
-    Pubkey::try_from(bytes)
-        .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
-}
-
 pub fn convert_to_solana_public_key(pubkey: &PublicKey) -> Result<Pubkey, helium_crypto::Error> {
     Pubkey::try_from(pubkey.clone())
 }

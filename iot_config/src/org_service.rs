@@ -4,7 +4,7 @@ use crate::{
     admin::{AuthCache, KeyType},
     broadcast_update, helium_netids, lora_field, org,
     route::list_routes,
-    telemetry, verify_public_key, verify_solana_public_key, GrpcResult,
+    telemetry, verify_public_key, GrpcResult,
 };
 use anyhow::Result;
 use chrono::Utc;
@@ -18,6 +18,7 @@ use helium_proto::{
     },
     Message,
 };
+use solana_sdk::pubkey::Pubkey;
 use sqlx::{Pool, Postgres};
 use tokio::sync::{broadcast, watch};
 use tonic::{Request, Response, Status};
@@ -222,6 +223,56 @@ impl iot_config::Org for OrgService {
         custom_tracing::record_b58("pub_key", &request.owner);
         custom_tracing::record_b58("signer", &request.signer);
 
+        let signer = verify_public_key(&request.signer)?;
+        self._verify_admin_request_signature(&signer, &request)?;
+
+        /* // dont need this becuase the transaction will fail on solana if the keys are invalid
+        let mut verify_keys: Vec<&[u8]> = vec![request.owner.as_ref(), request.payer.as_ref()];
+        let mut verify_delegates: Vec<&[u8]> = request
+            .delegate_keys
+            .iter()
+            .map(|key| key.as_slice())
+            .collect();
+        verify_keys.append(&mut verify_delegates);
+        _ = verify_keys
+            .iter()
+            .map(|key| {
+                verify_solana_public_key(key).map_err(|err| {
+                    tracing::error!(reason = ?err, "failed pubkey validation");
+                    Status::invalid_argument(format!("failed pubkey validation: {err:?}"))
+                })
+            })
+            .collect::<Result<Vec<Pubkey>, Status>>()?; */
+
+        tracing::info!(?request, "create helium org");
+
+        let net_id = request.net_id();
+        let helium_netid_field = helium_netids::HeliumNetId::from(net_id).id();
+
+        /* // dont need this
+        let requested_addrs = if request.devaddrs >= 8 && request.devaddrs % 2 == 0 {
+            request.devaddrs
+        } else {
+            return Err(Status::invalid_argument(format!(
+                "{} devaddrs requested; minimum 8, even number required",
+                request.devaddrs
+            )));
+        }; */
+
+        /* // how do we do this checkout_devaddr_constraints in solana?
+        let mut txn = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| Status::internal("error saving org record"))?;
+        let devaddr_constraints = helium_netids::checkout_devaddr_constraints(&mut txn, requested_addrs, net_id.into())
+            .await
+            .map_err(|err| {
+                tracing::error!(?net_id, count = %requested_addrs, reason = ?err, "failed to retrieve available helium devaddrs");
+                Status::failed_precondition("helium addresses unavailable")
+            })?;
+        tracing::info!(constraints = ?devaddr_constraints, "devaddr constraints issued"); */
+
         let mut resp = OrgResV1 {
             org: None,                   // Update this with the actual updated org
             net_id: 0,                   // Update this with the correct net_id
@@ -233,6 +284,12 @@ impl iot_config::Org for OrgService {
         resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         // TODO (bry): implement
+        // we want to return an array of unsigned serialized txns for the cli to sign and send to solana
+        // create org instruction
+        // create devaddr constraints instructions
+        // create delegate instructions
+        // pack instructions into a transactions
+        // return array of unsigned serialized transactions
 
         Ok(Response::new(resp))
     }
