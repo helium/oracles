@@ -122,7 +122,9 @@ tower-http = { version = "0", features = ["trace"] }
 derive_builder = "0"
 
 [patch.crates-io]
-sqlx = { git = "https://github.com/helium/sqlx.git", rev = "92a2268f02e0cac6fccb34d3e926347071dbb88d" }
+# v0.7.0-alpha.3
+# https://github.com/launchbadge/sqlx/commit/42dd78fe931df651eac411316ed3eab87c2f79b2
+sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df651eac411316ed3eab87c2f79b2" }
 
 # When attempting to test proto changes without needing to push a branch you can
 # patch the github url to point to your local proto repo.
