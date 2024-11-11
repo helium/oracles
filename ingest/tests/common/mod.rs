@@ -3,8 +3,8 @@ use backon::{ExponentialBuilder, Retryable};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
-    HexUsageCountsIngestReportV1, HexUsageCountsReqV1, HexUsageCountsResV1,
-    RadioUsageCountsIngestReportV1, RadioUsageCountsReqV1, RadioUsageCountsResV1,
+    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
+    RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
 };
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -73,8 +73,8 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let (coverage_obj_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (sp_boosted_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (subscriber_mapping_tx, subscriber_mapping_rx) = tokio::sync::mpsc::channel(10);
-    let (hex_usage_count_tx, hex_usage_count_rx) = tokio::sync::mpsc::channel(10);
-    let (radio_usage_count_tx, radio_usage_count_rx) = tokio::sync::mpsc::channel(10);
+    let (hex_usage_stat_tx, hex_usage_stat_rx) = tokio::sync::mpsc::channel(10);
+    let (radio_usage_stat_tx, radio_usage_stat_rx) = tokio::sync::mpsc::channel(10);
 
     let auth_client = MockAuthorizationClient::new();
 
@@ -90,8 +90,8 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             FileSinkClient::new(coverage_obj_tx, "noop"),
             FileSinkClient::new(sp_boosted_tx, "noop"),
             FileSinkClient::new(subscriber_mapping_tx, "test_file_sink"),
-            FileSinkClient::new(hex_usage_count_tx, "hex_usage_test_file_sink"),
-            FileSinkClient::new(radio_usage_count_tx, "radio_usage_test_file_sink"),
+            FileSinkClient::new(hex_usage_stat_tx, "hex_usage_test_file_sink"),
+            FileSinkClient::new(radio_usage_stat_tx, "radio_usage_test_file_sink"),
             Network::MainNet,
             socket_addr,
             api_token,
@@ -106,8 +106,8 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
         key_pair,
         token.to_string(),
         subscriber_mapping_rx,
-        hex_usage_count_rx,
-        radio_usage_count_rx,
+        hex_usage_stat_rx,
+        radio_usage_stat_rx,
     )
     .await;
 
@@ -120,10 +120,10 @@ pub struct TestClient {
     authorization: MetadataValue<Ascii>,
     subscriber_mapping_file_sink_rx:
         Receiver<file_store::file_sink::Message<SubscriberVerifiedMappingEventIngestReportV1>>,
-    hex_usage_counts_file_sink_rx:
-        Receiver<file_store::file_sink::Message<HexUsageCountsIngestReportV1>>,
-    radio_usage_counts_file_sink_rx:
-        Receiver<file_store::file_sink::Message<RadioUsageCountsIngestReportV1>>,
+    hex_usage_stats_file_sink_rx:
+        Receiver<file_store::file_sink::Message<HexUsageStatsIngestReportV1>>,
+    radio_usage_stats_file_sink_rx:
+        Receiver<file_store::file_sink::Message<RadioUsageStatsIngestReportV1>>,
 }
 
 impl TestClient {
@@ -134,11 +134,11 @@ impl TestClient {
         subscriber_mapping_file_sink_rx: Receiver<
             file_store::file_sink::Message<SubscriberVerifiedMappingEventIngestReportV1>,
         >,
-        hex_usage_counts_file_sink_rx: Receiver<
-            file_store::file_sink::Message<HexUsageCountsIngestReportV1>,
+        hex_usage_stats_file_sink_rx: Receiver<
+            file_store::file_sink::Message<HexUsageStatsIngestReportV1>,
         >,
-        radio_usage_counts_file_sink_rx: Receiver<
-            file_store::file_sink::Message<RadioUsageCountsIngestReportV1>,
+        radio_usage_stats_file_sink_rx: Receiver<
+            file_store::file_sink::Message<RadioUsageStatsIngestReportV1>,
         >,
     ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
@@ -151,8 +151,8 @@ impl TestClient {
             key_pair: Arc::new(key_pair),
             authorization: format!("Bearer {}", api_token).try_into().unwrap(),
             subscriber_mapping_file_sink_rx,
-            hex_usage_counts_file_sink_rx,
-            radio_usage_counts_file_sink_rx,
+            hex_usage_stats_file_sink_rx,
+            radio_usage_stats_file_sink_rx,
         }
     }
 
@@ -175,10 +175,10 @@ impl TestClient {
         }
     }
 
-    pub async fn hex_usage_recv(mut self) -> anyhow::Result<HexUsageCountsIngestReportV1> {
+    pub async fn hex_usage_recv(mut self) -> anyhow::Result<HexUsageStatsIngestReportV1> {
         match timeout(
             Duration::from_secs(2),
-            self.hex_usage_counts_file_sink_rx.recv(),
+            self.hex_usage_stats_file_sink_rx.recv(),
         )
         .await
         {
@@ -192,10 +192,10 @@ impl TestClient {
         }
     }
 
-    pub async fn radio_usage_recv(mut self) -> anyhow::Result<RadioUsageCountsIngestReportV1> {
+    pub async fn radio_usage_recv(mut self) -> anyhow::Result<RadioUsageStatsIngestReportV1> {
         match timeout(
             Duration::from_secs(2),
-            self.radio_usage_counts_file_sink_rx.recv(),
+            self.radio_usage_stats_file_sink_rx.recv(),
         )
         .await
         {
@@ -240,51 +240,17 @@ impl TestClient {
     pub async fn submit_hex_usage_req(
         &mut self,
         hex: u64,
-        service_provider_subscriber_count: u64,
-        disco_mapping_count: u64,
-        offload_count: u64,
-    ) -> anyhow::Result<HexUsageCountsResV1> {
-        let mut req = HexUsageCountsReqV1 {
-            hex,
-            service_provider_subscriber_count,
-            disco_mapping_count,
-            offload_count,
-            epoch_start_timestamp: 0,
-            epoch_end_timestamp: 0,
-            timestamp: 0,
-            carrier_mapping_key: self.key_pair.public_key().to_vec(),
-            signature: vec![],
-        };
-
-        req.signature = self.key_pair.sign(&req.encode_to_vec()).expect("sign");
-
-        let mut request = Request::new(req);
-        let metadata = request.metadata_mut();
-
-        metadata.insert("authorization", self.authorization.clone());
-
-        let res = self.client.submit_hex_usage_counts_report(request).await?;
-
-        Ok(res.into_inner())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn submit_radio_usage_req(
-        &mut self,
-        hotspot_pubkey: PublicKeyBinary,
-        cbsd_id: String,
-        service_provider_subscriber_count: u64,
-        disco_mapping_count: u64,
-        offload_count: u64,
+        service_provider_user_count: u64,
+        disco_mapping_user_count: u64,
+        offload_user_count: u64,
         service_provider_transfer_bytes: u64,
         offload_transfer_bytes: u64,
-    ) -> anyhow::Result<RadioUsageCountsResV1> {
-        let mut req = RadioUsageCountsReqV1 {
-            hotspot_pubkey: hotspot_pubkey.into(),
-            cbsd_id,
-            service_provider_subscriber_count,
-            disco_mapping_count,
-            offload_count,
+    ) -> anyhow::Result<HexUsageStatsResV1> {
+        let mut req = HexUsageStatsReqV1 {
+            hex,
+            service_provider_user_count,
+            disco_mapping_user_count,
+            offload_user_count,
             service_provider_transfer_bytes,
             offload_transfer_bytes,
             epoch_start_timestamp: 0,
@@ -301,10 +267,45 @@ impl TestClient {
 
         metadata.insert("authorization", self.authorization.clone());
 
-        let res = self
-            .client
-            .submit_radio_usage_counts_report(request)
-            .await?;
+        let res = self.client.submit_hex_usage_stats_report(request).await?;
+
+        Ok(res.into_inner())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_radio_usage_req(
+        &mut self,
+        hotspot_pubkey: PublicKeyBinary,
+        cbsd_id: String,
+        service_provider_user_count: u64,
+        disco_mapping_user_count: u64,
+        offload_user_count: u64,
+        service_provider_transfer_bytes: u64,
+        offload_transfer_bytes: u64,
+    ) -> anyhow::Result<RadioUsageStatsResV1> {
+        let mut req = RadioUsageStatsReqV1 {
+            hotspot_pubkey: hotspot_pubkey.into(),
+            cbsd_id,
+            service_provider_user_count,
+            disco_mapping_user_count,
+            offload_user_count,
+            service_provider_transfer_bytes,
+            offload_transfer_bytes,
+            epoch_start_timestamp: 0,
+            epoch_end_timestamp: 0,
+            timestamp: 0,
+            carrier_mapping_key: self.key_pair.public_key().to_vec(),
+            signature: vec![],
+        };
+
+        req.signature = self.key_pair.sign(&req.encode_to_vec()).expect("sign");
+
+        let mut request = Request::new(req);
+        let metadata = request.metadata_mut();
+
+        metadata.insert("authorization", self.authorization.clone());
+
+        let res = self.client.submit_radio_usage_stats_report(request).await?;
 
         Ok(res.into_inner())
     }

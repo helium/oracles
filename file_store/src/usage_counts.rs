@@ -9,17 +9,17 @@ use chrono::{DateTime, Utc};
 use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    HexUsageCountsIngestReportV1, HexUsageCountsReqV1, RadioUsageCountsIngestReportV1,
-    RadioUsageCountsReqV1,
+    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, RadioUsageStatsIngestReportV1,
+    RadioUsageStatsReqV1,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
-pub struct HexUsageCountsReq {
+pub struct HexUsageStatsReq {
     pub hex: CellIndex,
-    pub service_provider_subscriber_count: u64,
-    pub disco_mapping_count: u64,
-    pub offload_count: u64,
+    pub service_provider_user_count: u64,
+    pub disco_mapping_user_count: u64,
+    pub offload_user_count: u64,
     pub service_provider_transfer_bytes: u64,
     pub offload_transfer_bytes: u64,
     pub epoch_start_timestamp: DateTime<Utc>,
@@ -29,12 +29,12 @@ pub struct HexUsageCountsReq {
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
-pub struct RadioUsageCountsReq {
+pub struct RadioUsageStatsReq {
     pub hotspot_pubkey: PublicKeyBinary,
     pub cbsd_id: String,
-    pub service_provider_subscriber_count: u64,
-    pub disco_mapping_count: u64,
-    pub offload_count: u64,
+    pub service_provider_user_count: u64,
+    pub disco_mapping_user_count: u64,
+    pub offload_user_count: u64,
     pub service_provider_transfer_bytes: u64,
     pub offload_transfer_bytes: u64,
     pub epoch_start_timestamp: DateTime<Utc>,
@@ -43,41 +43,41 @@ pub struct RadioUsageCountsReq {
     pub carrier_mapping_key: PublicKeyBinary,
 }
 
-impl MsgDecode for HexUsageCountsReq {
-    type Msg = HexUsageCountsReqV1;
+impl MsgDecode for HexUsageStatsReq {
+    type Msg = HexUsageStatsReqV1;
 }
 
-impl MsgDecode for RadioUsageCountsReq {
-    type Msg = RadioUsageCountsReqV1;
+impl MsgDecode for RadioUsageStatsReq {
+    type Msg = RadioUsageStatsReqV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for HexUsageCountsReqV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for HexUsageStatsReqV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.timestamp.to_timestamp_millis()
     }
 }
 
-impl MsgTimestamp<u64> for HexUsageCountsReq {
+impl MsgTimestamp<u64> for HexUsageStatsReq {
     fn timestamp(&self) -> u64 {
         self.timestamp.encode_timestamp_millis()
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for RadioUsageCountsReqV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for RadioUsageStatsReqV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.timestamp.to_timestamp_millis()
     }
 }
 
-impl MsgTimestamp<u64> for RadioUsageCountsReq {
+impl MsgTimestamp<u64> for RadioUsageStatsReq {
     fn timestamp(&self) -> u64 {
         self.timestamp.encode_timestamp_millis()
     }
 }
 
-impl TryFrom<HexUsageCountsReqV1> for HexUsageCountsReq {
+impl TryFrom<HexUsageStatsReqV1> for HexUsageStatsReq {
     type Error = Error;
-    fn try_from(v: HexUsageCountsReqV1) -> Result<Self> {
+    fn try_from(v: HexUsageStatsReqV1) -> Result<Self> {
         let timestamp = v.timestamp()?;
         let epoch_start_timestamp = v.epoch_start_timestamp.to_timestamp_millis()?;
         let epoch_end_timestamp = v.epoch_end_timestamp.to_timestamp_millis()?;
@@ -86,9 +86,9 @@ impl TryFrom<HexUsageCountsReqV1> for HexUsageCountsReq {
         })?;
         Ok(Self {
             hex,
-            service_provider_subscriber_count: v.service_provider_subscriber_count,
-            disco_mapping_count: v.disco_mapping_count,
-            offload_count: v.offload_count,
+            service_provider_user_count: v.service_provider_user_count,
+            disco_mapping_user_count: v.disco_mapping_user_count,
+            offload_user_count: v.offload_user_count,
             service_provider_transfer_bytes: v.service_provider_transfer_bytes,
             offload_transfer_bytes: v.offload_transfer_bytes,
             epoch_start_timestamp,
@@ -99,17 +99,17 @@ impl TryFrom<HexUsageCountsReqV1> for HexUsageCountsReq {
     }
 }
 
-impl From<HexUsageCountsReq> for HexUsageCountsReqV1 {
-    fn from(v: HexUsageCountsReq) -> Self {
+impl From<HexUsageStatsReq> for HexUsageStatsReqV1 {
+    fn from(v: HexUsageStatsReq) -> Self {
         let timestamp = v.timestamp();
         let epoch_start_timestamp = v.epoch_start_timestamp.encode_timestamp_millis();
         let epoch_end_timestamp = v.epoch_end_timestamp.encode_timestamp_millis();
 
-        HexUsageCountsReqV1 {
+        HexUsageStatsReqV1 {
             hex: v.hex.into(),
-            service_provider_subscriber_count: v.service_provider_subscriber_count,
-            disco_mapping_count: v.disco_mapping_count,
-            offload_count: v.offload_count,
+            service_provider_user_count: v.service_provider_user_count,
+            disco_mapping_user_count: v.disco_mapping_user_count,
+            offload_user_count: v.offload_user_count,
             service_provider_transfer_bytes: v.service_provider_transfer_bytes,
             offload_transfer_bytes: v.offload_transfer_bytes,
             epoch_start_timestamp,
@@ -121,18 +121,18 @@ impl From<HexUsageCountsReq> for HexUsageCountsReqV1 {
     }
 }
 
-impl TryFrom<RadioUsageCountsReqV1> for RadioUsageCountsReq {
+impl TryFrom<RadioUsageStatsReqV1> for RadioUsageStatsReq {
     type Error = Error;
-    fn try_from(v: RadioUsageCountsReqV1) -> Result<Self> {
+    fn try_from(v: RadioUsageStatsReqV1) -> Result<Self> {
         let timestamp = v.timestamp()?;
         let epoch_start_timestamp = v.epoch_start_timestamp.to_timestamp_millis()?;
         let epoch_end_timestamp = v.epoch_end_timestamp.to_timestamp_millis()?;
         Ok(Self {
             hotspot_pubkey: v.hotspot_pubkey.into(),
             cbsd_id: v.cbsd_id,
-            service_provider_subscriber_count: v.service_provider_subscriber_count,
-            disco_mapping_count: v.disco_mapping_count,
-            offload_count: v.offload_count,
+            service_provider_user_count: v.service_provider_user_count,
+            disco_mapping_user_count: v.disco_mapping_user_count,
+            offload_user_count: v.offload_user_count,
             service_provider_transfer_bytes: v.service_provider_transfer_bytes,
             offload_transfer_bytes: v.offload_transfer_bytes,
             epoch_start_timestamp,
@@ -143,18 +143,18 @@ impl TryFrom<RadioUsageCountsReqV1> for RadioUsageCountsReq {
     }
 }
 
-impl From<RadioUsageCountsReq> for RadioUsageCountsReqV1 {
-    fn from(v: RadioUsageCountsReq) -> Self {
+impl From<RadioUsageStatsReq> for RadioUsageStatsReqV1 {
+    fn from(v: RadioUsageStatsReq) -> Self {
         let timestamp = v.timestamp();
         let epoch_start_timestamp = v.epoch_start_timestamp.encode_timestamp_millis();
         let epoch_end_timestamp = v.epoch_end_timestamp.encode_timestamp_millis();
 
-        RadioUsageCountsReqV1 {
+        RadioUsageStatsReqV1 {
             hotspot_pubkey: v.hotspot_pubkey.into(),
             cbsd_id: v.cbsd_id,
-            service_provider_subscriber_count: v.service_provider_subscriber_count,
-            disco_mapping_count: v.disco_mapping_count,
-            offload_count: v.offload_count,
+            service_provider_user_count: v.service_provider_user_count,
+            disco_mapping_user_count: v.disco_mapping_user_count,
+            offload_user_count: v.offload_user_count,
             service_provider_transfer_bytes: v.service_provider_transfer_bytes,
             offload_transfer_bytes: v.offload_transfer_bytes,
             epoch_start_timestamp,
@@ -168,25 +168,25 @@ impl From<RadioUsageCountsReq> for RadioUsageCountsReqV1 {
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct HexUsageCountsIngestReport {
-    pub report: HexUsageCountsReq,
+    pub report: HexUsageStatsReq,
     pub received_timestamp: DateTime<Utc>,
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct RadioUsageCountsIngestReport {
-    pub report: RadioUsageCountsReq,
+    pub report: RadioUsageStatsReq,
     pub received_timestamp: DateTime<Utc>,
 }
 
 impl MsgDecode for HexUsageCountsIngestReport {
-    type Msg = HexUsageCountsIngestReportV1;
+    type Msg = HexUsageStatsIngestReportV1;
 }
 
 impl MsgDecode for RadioUsageCountsIngestReport {
-    type Msg = RadioUsageCountsIngestReportV1;
+    type Msg = RadioUsageStatsIngestReportV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for HexUsageCountsIngestReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for HexUsageStatsIngestReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp()
     }
@@ -198,7 +198,7 @@ impl MsgTimestamp<u64> for HexUsageCountsIngestReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for RadioUsageCountsIngestReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for RadioUsageStatsIngestReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp()
     }
@@ -210,24 +210,24 @@ impl MsgTimestamp<u64> for RadioUsageCountsIngestReport {
     }
 }
 
-impl TryFrom<HexUsageCountsIngestReportV1> for HexUsageCountsIngestReport {
+impl TryFrom<HexUsageStatsIngestReportV1> for HexUsageCountsIngestReport {
     type Error = Error;
-    fn try_from(v: HexUsageCountsIngestReportV1) -> Result<Self> {
+    fn try_from(v: HexUsageStatsIngestReportV1) -> Result<Self> {
         Ok(Self {
             report: v
                 .clone()
                 .report
-                .ok_or_else(|| Error::not_found("ingest HexUsageCountsIngestReport report"))?
+                .ok_or_else(|| Error::not_found("ingest HexUsageStatsIngestReport report"))?
                 .try_into()?,
             received_timestamp: v.timestamp()?,
         })
     }
 }
 
-impl From<HexUsageCountsIngestReport> for HexUsageCountsIngestReportV1 {
+impl From<HexUsageCountsIngestReport> for HexUsageStatsIngestReportV1 {
     fn from(v: HexUsageCountsIngestReport) -> Self {
         let received_timestamp = v.received_timestamp;
-        let report: HexUsageCountsReqV1 = v.report.into();
+        let report: HexUsageStatsReqV1 = v.report.into();
         Self {
             report: Some(report),
             received_timestamp: received_timestamp.encode_timestamp(),
@@ -235,9 +235,9 @@ impl From<HexUsageCountsIngestReport> for HexUsageCountsIngestReportV1 {
     }
 }
 
-impl TryFrom<RadioUsageCountsIngestReportV1> for RadioUsageCountsIngestReport {
+impl TryFrom<RadioUsageStatsIngestReportV1> for RadioUsageCountsIngestReport {
     type Error = Error;
-    fn try_from(v: RadioUsageCountsIngestReportV1) -> Result<Self> {
+    fn try_from(v: RadioUsageStatsIngestReportV1) -> Result<Self> {
         Ok(Self {
             report: v
                 .clone()
@@ -249,10 +249,10 @@ impl TryFrom<RadioUsageCountsIngestReportV1> for RadioUsageCountsIngestReport {
     }
 }
 
-impl From<RadioUsageCountsIngestReport> for RadioUsageCountsIngestReportV1 {
+impl From<RadioUsageCountsIngestReport> for RadioUsageStatsIngestReportV1 {
     fn from(v: RadioUsageCountsIngestReport) -> Self {
         let received_timestamp = v.received_timestamp;
-        let report: RadioUsageCountsReqV1 = v.report.into();
+        let report: RadioUsageStatsReqV1 = v.report.into();
         Self {
             report: Some(report),
             received_timestamp: received_timestamp.encode_timestamp(),

@@ -254,13 +254,13 @@ impl_file_sink!(
     "wifi_heartbeat_report"
 );
 impl_file_sink!(
-    poc_mobile::HexUsageCountsIngestReportV1,
-    FileType::HexUsageCountsIngestReport.to_str(),
+    poc_mobile::HexUsageStatsIngestReportV1,
+    FileType::HexUsageStatsIngestReport.to_str(),
     "hex_usage_counts_ingest_report"
 );
 impl_file_sink!(
-    poc_mobile::RadioUsageCountsIngestReportV1,
-    FileType::RadioUsageCountsIngestReport.to_str(),
+    poc_mobile::RadioUsageStatsIngestReportV1,
+    FileType::RadioUsageStatsIngestReport.to_str(),
     "hotspot_usage_counts_ingest_report"
 );
 impl_file_sink!(

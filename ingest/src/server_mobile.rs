@@ -14,11 +14,11 @@ use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
-    HexUsageCountsIngestReportV1, HexUsageCountsReqV1, HexUsageCountsResV1,
+    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
-    RadioThresholdReportRespV1, RadioUsageCountsIngestReportV1, RadioUsageCountsReqV1,
-    RadioUsageCountsResV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
+    RadioUsageStatsResV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1,
@@ -50,8 +50,8 @@ pub struct GrpcServer<AV> {
     sp_boosted_rewards_ban_sink:
         FileSinkClient<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
     subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
-    hex_usage_counts_event_sink: FileSinkClient<HexUsageCountsIngestReportV1>,
-    radio_usage_counts_event_sink: FileSinkClient<RadioUsageCountsIngestReportV1>,
+    hex_usage_stats_event_sink: FileSinkClient<HexUsageStatsIngestReportV1>,
+    radio_usage_stats_event_sink: FileSinkClient<RadioUsageStatsIngestReportV1>,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -98,8 +98,8 @@ where
             ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
         >,
         subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
-        hex_usage_counts_event_sink: FileSinkClient<HexUsageCountsIngestReportV1>,
-        radio_usage_counts_event_sink: FileSinkClient<RadioUsageCountsIngestReportV1>,
+        hex_usage_stats_event_sink: FileSinkClient<HexUsageStatsIngestReportV1>,
+        radio_usage_stats_event_sink: FileSinkClient<RadioUsageStatsIngestReportV1>,
         required_network: Network,
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
@@ -116,8 +116,8 @@ where
             coverage_object_report_sink,
             sp_boosted_rewards_ban_sink,
             subscriber_mapping_event_sink,
-            hex_usage_counts_event_sink,
-            radio_usage_counts_event_sink,
+            hex_usage_stats_event_sink,
+            radio_usage_stats_event_sink,
             required_network,
             address,
             api_token,
@@ -472,10 +472,10 @@ where
         Ok(Response::new(SubscriberVerifiedMappingEventResV1 { id }))
     }
 
-    async fn submit_hex_usage_counts_report(
+    async fn submit_hex_usage_stats_report(
         &self,
-        request: Request<HexUsageCountsReqV1>,
-    ) -> GrpcResult<HexUsageCountsResV1> {
+        request: Request<HexUsageStatsReqV1>,
+    ) -> GrpcResult<HexUsageStatsResV1> {
         let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
@@ -487,21 +487,21 @@ where
             .and_then(|public_key| self.verify_signature(public_key, event.clone()))?;
         self.verify_known_carrier_key(verified_pubkey).await?;
 
-        let report = HexUsageCountsIngestReportV1 {
+        let report = HexUsageStatsIngestReportV1 {
             received_timestamp: timestamp,
             report: Some(event),
         };
 
-        _ = self.hex_usage_counts_event_sink.write(report, []).await;
+        _ = self.hex_usage_stats_event_sink.write(report, []).await;
 
         let id = timestamp.to_string();
-        Ok(Response::new(HexUsageCountsResV1 { id }))
+        Ok(Response::new(HexUsageStatsResV1 { id }))
     }
 
-    async fn submit_radio_usage_counts_report(
+    async fn submit_radio_usage_stats_report(
         &self,
-        request: Request<RadioUsageCountsReqV1>,
-    ) -> GrpcResult<RadioUsageCountsResV1> {
+        request: Request<RadioUsageStatsReqV1>,
+    ) -> GrpcResult<RadioUsageStatsResV1> {
         let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
@@ -513,15 +513,15 @@ where
             .and_then(|public_key| self.verify_signature(public_key, event.clone()))?;
         self.verify_known_carrier_key(verified_pubkey).await?;
 
-        let report = RadioUsageCountsIngestReportV1 {
+        let report = RadioUsageStatsIngestReportV1 {
             received_timestamp: timestamp,
             report: Some(event),
         };
 
-        _ = self.radio_usage_counts_event_sink.write(report, []).await;
+        _ = self.radio_usage_stats_event_sink.write(report, []).await;
 
         let id = timestamp.to_string();
-        Ok(Response::new(RadioUsageCountsResV1 { id }))
+        Ok(Response::new(RadioUsageStatsResV1 { id }))
     }
 }
 
@@ -632,8 +632,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         )
         .await?;
 
-    let (hex_usage_counts_event_sink, hex_usage_counts_event_server) =
-        HexUsageCountsIngestReportV1::file_sink(
+    let (hex_usage_stats_event_sink, hex_usage_stats_event_server) =
+        HexUsageStatsIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
@@ -642,8 +642,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         )
         .await?;
 
-    let (radio_usage_counts_event_sink, radio_usage_counts_event_server) =
-        RadioUsageCountsIngestReportV1::file_sink(
+    let (radio_usage_stats_event_sink, radio_usage_stats_event_server) =
+        RadioUsageStatsIngestReportV1::file_sink(
             store_base_path,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
@@ -671,8 +671,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         coverage_object_report_sink,
         sp_boosted_rewards_ban_sink,
         subscriber_mapping_event_sink,
-        hex_usage_counts_event_sink,
-        radio_usage_counts_event_sink,
+        hex_usage_stats_event_sink,
+        radio_usage_stats_event_sink,
         settings.network,
         settings.listen_addr,
         api_token,
@@ -697,8 +697,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(coverage_object_report_sink_server)
         .add_task(sp_boosted_rewards_ban_sink_server)
         .add_task(subscriber_mapping_event_server)
-        .add_task(hex_usage_counts_event_server)
-        .add_task(radio_usage_counts_event_server)
+        .add_task(hex_usage_stats_event_server)
+        .add_task(radio_usage_stats_event_server)
         .add_task(grpc_server)
         .build()
         .start()
