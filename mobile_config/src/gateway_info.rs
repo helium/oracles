@@ -140,11 +140,14 @@ pub(crate) mod db {
             join key_to_assets kta on infos.asset = kta.asset
         "#;
     const BATCH_SQL_WHERE_SNIPPET: &str = " where kta.entity_key = any($1::bytea[]) ";
-    const DEVICE_TYPES_WHERE_SNIPPET: &str = " where device_type::text = any($1) ";
+    const DEVICE_TYPES_AND_SNIPPET: &str = " and device_type::text = any($2) ";
 
     lazy_static::lazy_static! {
         static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
-        static ref DEVICE_TYPES_METADATA_SQL: String = format!("{GET_METADATA_SQL} {DEVICE_TYPES_WHERE_SNIPPET}");
+        static ref GET_METADATA_SQL_REFRESHED_AT: String = format!("{GET_METADATA_SQL} where infos.refreshed_at > $1");
+
+        static ref DEVICE_TYPES_METADATA_SQL: String = format!("{} {}", *GET_METADATA_SQL_REFRESHED_AT, DEVICE_TYPES_AND_SNIPPET);
+
     }
 
     pub async fn get_info(
@@ -180,14 +183,16 @@ pub(crate) mod db {
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
         device_types: &'a [DeviceType],
-        _min_refreshed_at: i64, // TODO
+        min_refreshed_at: DateTime<Utc>,
     ) -> impl Stream<Item = GatewayInfo> + 'a {
         match device_types.is_empty() {
-            true => sqlx::query_as::<_, GatewayInfo>(GET_METADATA_SQL)
+            true => sqlx::query_as::<_, GatewayInfo>(&GET_METADATA_SQL_REFRESHED_AT)
+                .bind(min_refreshed_at)
                 .fetch(db)
                 .filter_map(|metadata| async move { metadata.ok() })
                 .boxed(),
             false => sqlx::query_as::<_, GatewayInfo>(&DEVICE_TYPES_METADATA_SQL)
+                .bind(min_refreshed_at)
                 .bind(
                     device_types
                         .iter()
