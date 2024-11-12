@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use futures::stream::BoxStream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
@@ -17,6 +18,8 @@ pub struct GatewayInfo {
     pub address: PublicKeyBinary,
     pub metadata: Option<GatewayMetadata>,
     pub device_type: DeviceType,
+    pub refreshed_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 }
 
 impl GatewayInfo {
@@ -38,10 +41,17 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
             None
         };
         let device_type = info.device_type().into();
+
+        // TODO remove unwraps
+        let created_at = DateTime::<Utc>::from_timestamp(info.created_at as i64, 0).unwrap();
+        let refreshed_at = DateTime::<Utc>::from_timestamp(info.refreshed_at as i64, 0).unwrap();
+
         Ok(Self {
             address: info.address.into(),
             metadata,
             device_type,
+            created_at,
+            refreshed_at,
         })
     }
 }
@@ -61,6 +71,8 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
             address: info.address.into(),
             metadata,
             device_type: info.device_type as i32,
+            created_at: info.created_at.timestamp() as u64,
+            refreshed_at: info.created_at.timestamp() as u64,
         })
     }
 }
@@ -115,6 +127,7 @@ impl std::str::FromStr for DeviceType {
 
 pub(crate) mod db {
     use super::{DeviceType, GatewayInfo, GatewayMetadata};
+    use chrono::{DateTime, Utc};
     use futures::stream::{Stream, StreamExt};
     use helium_crypto::PublicKeyBinary;
     use sqlx::{types::Json, PgExecutor, Row};
@@ -200,6 +213,17 @@ pub(crate) mod db {
                     .as_ref(),
             )
             .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
+            let created_at = row.get::<i64, &str>("created_at");
+            // `refreshed_at` can be NULL in the database schema.
+            // If so, fallback to using `created_at` as the default value of `refreshed_at`.
+            let refreshed_at = row
+                .get::<Option<i64>, &str>("refreshed_at")
+                .unwrap_or(created_at);
+
+            // TODO remove unwraps
+            let created_at = DateTime::<Utc>::from_timestamp(created_at, 0).unwrap();
+            let refreshed_at = DateTime::<Utc>::from_timestamp(refreshed_at, 0).unwrap();
+
             Ok(Self {
                 address: PublicKeyBinary::from_str(
                     &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
@@ -207,6 +231,8 @@ pub(crate) mod db {
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
                 metadata,
                 device_type,
+                refreshed_at,
+                created_at,
             })
         }
     }

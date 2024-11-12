@@ -107,6 +107,7 @@ impl GatewayInfoResolver for GatewayClient {
         let mut req = mobile_config::GatewayInfoStreamReqV1 {
             batch_size: self.batch_size,
             device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),
+            min_refreshed_at: 0,
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
