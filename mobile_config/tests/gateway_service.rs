@@ -266,6 +266,7 @@ fn make_gateway_stream_signed_req(
         signer: signer.public_key().to_vec(),
         signature: vec![],
         device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),
+        min_refreshed_at: 0,
     };
 
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
