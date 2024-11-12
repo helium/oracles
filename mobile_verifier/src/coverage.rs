@@ -492,7 +492,7 @@ pub async fn clear_coverage_objects(
         .execute(&mut *tx)
         .await?;
 
-    // Delete all but the latest valid coverage_objects entry per radio_key before a given timestamp
+    // Delete all but the last 10 valid coverage_objects entry per radio_key before a given timestamp
     sqlx::query(
             r#"
             WITH orphan_coverage_objects AS (
@@ -509,7 +509,7 @@ pub async fn clear_coverage_objects(
                     WHERE
                         invalidated_at IS NULL AND inserted_at < $1
                 ) AS ranked_rows
-                WHERE row_num > 1
+                WHERE row_num > 10
             )
             DELETE FROM coverage_objects
             USING orphan_coverage_objects
