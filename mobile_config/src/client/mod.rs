@@ -27,6 +27,8 @@ pub enum ClientError {
     LocationParseError(#[from] std::num::ParseIntError),
     #[error("unknown service provider {0}")]
     UnknownServiceProvider(String),
+    #[error("Invalid GatewayInfo proto response {0}")]
+    InvalidGatewayInfoProto(#[from] crate::gateway_info::GatewayInfoProtoParseError),
 }
 
 macro_rules! call_with_retry {

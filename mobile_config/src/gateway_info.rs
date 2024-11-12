@@ -28,23 +28,40 @@ impl GatewayInfo {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum GatewayInfoProtoParseError {
+    #[error("Invalid location string: {0}")]
+    InvalidLocation(String),
+    #[error("Invalid created_at: {0}")]
+    InvalidCreatedAt(u64),
+    #[error("Invalid refreshed_at: {0}")]
+    InvalidRefreshedAt(u64),
+}
+
 impl TryFrom<GatewayInfoProto> for GatewayInfo {
-    type Error = std::num::ParseIntError;
+    type Error = GatewayInfoProtoParseError;
 
     fn try_from(info: GatewayInfoProto) -> Result<Self, Self::Error> {
         let metadata = if let Some(ref metadata) = info.metadata {
             Some(
                 u64::from_str_radix(&metadata.location, 16)
-                    .map(|location| GatewayMetadata { location })?,
+                    .map(|location| GatewayMetadata { location })
+                    .map_err(|_| {
+                        GatewayInfoProtoParseError::InvalidLocation(metadata.location.clone())
+                    })?,
             )
         } else {
             None
         };
         let device_type = info.device_type().into();
 
-        // TODO remove unwraps
-        let created_at = DateTime::<Utc>::from_timestamp(info.created_at as i64, 0).unwrap();
-        let refreshed_at = DateTime::<Utc>::from_timestamp(info.refreshed_at as i64, 0).unwrap();
+        let created_at = DateTime::<Utc>::from_timestamp(info.created_at as i64, 0).ok_or(
+            GatewayInfoProtoParseError::InvalidCreatedAt(info.created_at),
+        )?;
+
+        let refreshed_at = DateTime::<Utc>::from_timestamp(info.refreshed_at as i64, 0).ok_or(
+            GatewayInfoProtoParseError::InvalidRefreshedAt(info.refreshed_at),
+        )?;
 
         Ok(Self {
             address: info.address.into(),
