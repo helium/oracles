@@ -1,3 +1,4 @@
+use chrono::Utc;
 use futures::stream::StreamExt;
 
 use helium_crypto::{KeyTag, Keypair, PublicKey, PublicKeyBinary, Sign};
@@ -200,14 +201,15 @@ async fn add_mobile_hotspot_infos(pool: &PgPool, asset: &str, location: i64, dev
     sqlx::query(
         r#"
             INSERT INTO
-"mobile_hotspot_infos" ("asset", "location", "device_type")
+"mobile_hotspot_infos" ("asset", "location", "device_type", "refreshed_at")
             VALUES
-($1, $2, $3::jsonb);
+($1, $2, $3::jsonb, $4);
     "#,
     )
     .bind(asset)
     .bind(location)
     .bind(device_type)
+    .bind(Utc::now())
     .execute(pool)
     .await
     .unwrap();
