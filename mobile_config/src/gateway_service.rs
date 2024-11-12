@@ -170,7 +170,11 @@ impl mobile_config::Gateway for GatewayService {
         );
 
         tokio::spawn(async move {
-            let stream = gateway_info::db::all_info_stream(&pool, &device_types);
+            let stream = gateway_info::db::all_info_stream(
+                &pool,
+                &device_types,
+                request.min_refreshed_at as i64,
+            );
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 

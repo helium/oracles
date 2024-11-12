@@ -235,7 +235,9 @@ async fn create_db_tables(pool: &PgPool) {
         CREATE TABLE mobile_hotspot_infos (
         asset character varying(255) NULL,
         location numeric NULL,
-        device_type jsonb NOT NULL
+        device_type jsonb NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT NOW(),
+        refreshed_at timestamptz
     );"#,
     )
     .execute(pool)

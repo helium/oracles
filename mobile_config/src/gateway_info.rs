@@ -134,7 +134,8 @@ pub(crate) mod db {
     use std::str::FromStr;
 
     const GET_METADATA_SQL: &str = r#"
-            select kta.entity_key, infos.location::bigint, infos.device_type
+            select kta.entity_key, infos.location::bigint, infos.device_type,
+                infos.refreshed_at, infos.created_at
             from mobile_hotspot_infos infos
             join key_to_assets kta on infos.asset = kta.asset
         "#;
@@ -179,6 +180,7 @@ pub(crate) mod db {
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
         device_types: &'a [DeviceType],
+        _min_refreshed_at: i64, // TODO
     ) -> impl Stream<Item = GatewayInfo> + 'a {
         match device_types.is_empty() {
             true => sqlx::query_as::<_, GatewayInfo>(GET_METADATA_SQL)
@@ -213,16 +215,12 @@ pub(crate) mod db {
                     .as_ref(),
             )
             .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
-            let created_at = row.get::<i64, &str>("created_at");
+            let created_at = row.get::<DateTime<Utc>, &str>("created_at");
             // `refreshed_at` can be NULL in the database schema.
             // If so, fallback to using `created_at` as the default value of `refreshed_at`.
             let refreshed_at = row
-                .get::<Option<i64>, &str>("refreshed_at")
+                .get::<Option<DateTime<Utc>>, &str>("refreshed_at")
                 .unwrap_or(created_at);
-
-            // TODO remove unwraps
-            let created_at = DateTime::<Utc>::from_timestamp(created_at, 0).unwrap();
-            let refreshed_at = DateTime::<Utc>::from_timestamp(refreshed_at, 0).unwrap();
 
             Ok(Self {
                 address: PublicKeyBinary::from_str(
