@@ -3,7 +3,7 @@ use crate::{
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
-use chrono::{DateTime, Utc};
+use chrono::{TimeZone, Utc};
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
@@ -163,7 +163,9 @@ impl mobile_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
-        let min_refreshed_at = DateTime::<Utc>::from_timestamp(request.min_refreshed_at as i64, 0)
+        let min_refreshed_at = Utc
+            .timestamp_opt(request.min_refreshed_at as i64, 0)
+            .single()
             .ok_or(Status::invalid_argument(
                 "Invalid min_refreshed_at argument",
             ))?;

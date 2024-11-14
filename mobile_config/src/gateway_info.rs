@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use futures::stream::BoxStream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
@@ -31,7 +31,7 @@ impl GatewayInfo {
 #[derive(thiserror::Error, Debug)]
 pub enum GatewayInfoProtoParseError {
     #[error("Invalid location string: {0}")]
-    InvalidLocation(String),
+    InvalidLocation(#[from] std::num::ParseIntError),
     #[error("Invalid created_at: {0}")]
     InvalidCreatedAt(u64),
     #[error("Invalid refreshed_at: {0}")]
@@ -45,23 +45,26 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
         let metadata = if let Some(ref metadata) = info.metadata {
             Some(
                 u64::from_str_radix(&metadata.location, 16)
-                    .map(|location| GatewayMetadata { location })
-                    .map_err(|_| {
-                        GatewayInfoProtoParseError::InvalidLocation(metadata.location.clone())
-                    })?,
+                    .map(|location| GatewayMetadata { location })?,
             )
         } else {
             None
         };
         let device_type = info.device_type().into();
 
-        let created_at = DateTime::<Utc>::from_timestamp(info.created_at as i64, 0).ok_or(
-            GatewayInfoProtoParseError::InvalidCreatedAt(info.created_at),
-        )?;
+        let created_at = Utc
+            .timestamp_opt(info.created_at as i64, 0)
+            .single()
+            .ok_or(GatewayInfoProtoParseError::InvalidCreatedAt(
+                info.created_at,
+            ))?;
 
-        let refreshed_at = DateTime::<Utc>::from_timestamp(info.refreshed_at as i64, 0).ok_or(
-            GatewayInfoProtoParseError::InvalidRefreshedAt(info.refreshed_at),
-        )?;
+        let refreshed_at = Utc
+            .timestamp_opt(info.refreshed_at as i64, 0)
+            .single()
+            .ok_or(GatewayInfoProtoParseError::InvalidRefreshedAt(
+                info.refreshed_at,
+            ))?;
 
         Ok(Self {
             address: info.address.into(),
