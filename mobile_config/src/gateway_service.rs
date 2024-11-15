@@ -1,5 +1,5 @@
 use crate::{
-    gateway_info::{self, DeviceType, GatewayInfo},
+    gateway_info::{self, db::prepare_all_info_stream_query, DeviceType, GatewayInfo},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -176,7 +176,8 @@ impl mobile_config::Gateway for GatewayService {
         );
 
         tokio::spawn(async move {
-            let stream = gateway_info::db::all_info_stream(&pool, &device_types, min_refreshed_at);
+            let sql_query = prepare_all_info_stream_query(&device_types, min_refreshed_at);
+            let stream = gateway_info::db::all_info_stream(&pool, &sql_query);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 

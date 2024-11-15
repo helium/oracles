@@ -160,15 +160,9 @@ pub(crate) mod db {
             join key_to_assets kta on infos.asset = kta.asset
         "#;
     const BATCH_SQL_WHERE_SNIPPET: &str = " where kta.entity_key = any($1::bytea[]) ";
-    const DEVICE_TYPES_AND_SNIPPET: &str = " and device_type::text = any($2) ";
 
     lazy_static::lazy_static! {
         static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
-        static ref GET_METADATA_SQL_REFRESHED_AT: String = format!(r#"{GET_METADATA_SQL}
-            where ( infos.refreshed_at >= $1 OR (infos.refreshed_at IS NULL AND infos.created_at >= $1) ) "#);
-
-        static ref DEVICE_TYPES_METADATA_SQL: String = format!("{} {}", *GET_METADATA_SQL_REFRESHED_AT, DEVICE_TYPES_AND_SNIPPET);
-
     }
 
     pub async fn get_info(
@@ -201,31 +195,56 @@ pub(crate) mod db {
             .boxed())
     }
 
+    use scooby::postgres::*;
+
+    pub fn prepare_all_info_stream_query(
+        device_types: &[DeviceType],
+        min_refreshed_at: DateTime<Utc>,
+    ) -> String {
+        let mut sql = select((
+            "kta.entity_key",
+            "infos.location::bigint",
+            "infos.device_type",
+            "infos.refreshed_at",
+            "infos.created_at",
+        ))
+        .from(
+            "mobile_hotspot_infos"
+                .as_("infos")
+                .join("key_to_assets".as_("kta"))
+                .on("infos.asset = kta.asset"),
+        )
+        .where_(format!(
+            "(infos.refreshed_at >= to_timestamp({0}) AT TIME ZONE 'UTC' OR (infos.refreshed_at IS NULL AND infos.created_at >= to_timestamp({0}) AT TIME ZONE 'UTC'))",
+            min_refreshed_at.timestamp()
+        ));
+
+        let sql = if device_types.is_empty() {
+            sql
+        } else {
+            let device_types = device_types
+                .iter()
+                // The device_types field has a jsonb type but is being used as a string,
+                // which forces us to add quotes.
+                // .map(|v| json!(format!("{}", v)))
+                .map(|v| format!("'\"{}\"'", v))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            sql = sql.where_(format!("device_type::text = any(ARRAY[{0}])", device_types));
+            sql
+        };
+        sql.to_string()
+    }
+
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
-        device_types: &'a [DeviceType],
-        min_refreshed_at: DateTime<Utc>,
+        sql_query: &'a str,
     ) -> impl Stream<Item = GatewayInfo> + 'a {
-        match device_types.is_empty() {
-            true => sqlx::query_as::<_, GatewayInfo>(&GET_METADATA_SQL_REFRESHED_AT)
-                .bind(min_refreshed_at)
-                .fetch(db)
-                .filter_map(|metadata| async move { metadata.ok() })
-                .boxed(),
-            false => sqlx::query_as::<_, GatewayInfo>(&DEVICE_TYPES_METADATA_SQL)
-                .bind(min_refreshed_at)
-                .bind(
-                    device_types
-                        .iter()
-                        // The device_types field has a jsonb type but is being used as a string,
-                        // which forces us to add quotes.
-                        .map(|v| format!("\"{}\"", v))
-                        .collect::<Vec<_>>(),
-                )
-                .fetch(db)
-                .filter_map(|metadata| async move { metadata.ok() })
-                .boxed(),
-        }
+        sqlx::query_as::<_, GatewayInfo>(sql_query)
+            .fetch(db)
+            .filter_map(|metadata| async move { metadata.ok() })
+            .boxed()
     }
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {

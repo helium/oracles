@@ -46,6 +46,7 @@ solana-sdk = { workspace = true }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 humantime-serde = { workspace = true }
 coverage-map = { path = "../coverage_map" }
+scooby = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
