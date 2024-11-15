@@ -150,8 +150,28 @@ pub(crate) mod db {
     use chrono::{DateTime, Utc};
     use futures::stream::{Stream, StreamExt};
     use helium_crypto::PublicKeyBinary;
+    use serde_json::json;
     use sqlx::{types::Json, PgExecutor, Row};
     use std::str::FromStr;
+
+    use sea_query::*;
+
+    #[derive(Iden)]
+    enum MobileHotspotInfos {
+        Table,
+        Asset,
+        Location,
+        DeviceType,
+        RefreshedAt,
+        CreatedAt,
+    }
+
+    #[derive(Iden)]
+    enum KeyToAssets {
+        Table,
+        Asset,
+        EntityKey,
+    }
 
     const GET_METADATA_SQL: &str = r#"
             select kta.entity_key, infos.location::bigint, infos.device_type,
@@ -168,7 +188,6 @@ pub(crate) mod db {
             where ( infos.refreshed_at >= $1 OR (infos.refreshed_at IS NULL AND infos.created_at >= $1) ) "#);
 
         static ref DEVICE_TYPES_METADATA_SQL: String = format!("{} {}", *GET_METADATA_SQL_REFRESHED_AT, DEVICE_TYPES_AND_SNIPPET);
-
     }
 
     pub async fn get_info(
@@ -201,31 +220,60 @@ pub(crate) mod db {
             .boxed())
     }
 
+    use sea_query::{Expr, Iden, PostgresQueryBuilder, Query};
+    use sea_query_binder::{SqlxBinder, SqlxValues};
+
+    // Returns (sql query string, values)
+    pub fn prepare_all_info_stream_query(
+        device_types: &[DeviceType],
+        min_refreshed_at: DateTime<Utc>,
+    ) -> (String, SqlxValues) {
+        let mut binding = Query::select();
+        let query = binding
+            .expr(Expr::col(MobileHotspotInfos::Location).cast_as(Alias::new("bigint")))
+            .column(MobileHotspotInfos::DeviceType)
+            .column(MobileHotspotInfos::RefreshedAt)
+            .column(MobileHotspotInfos::CreatedAt)
+            .column(KeyToAssets::EntityKey)
+            .from(MobileHotspotInfos::Table)
+            .and_where(
+                Expr::col(MobileHotspotInfos::RefreshedAt)
+                    .gte(min_refreshed_at)
+                    .or(Expr::col(MobileHotspotInfos::RefreshedAt)
+                        .is_null()
+                        .and(Expr::col(MobileHotspotInfos::CreatedAt).gte(min_refreshed_at))),
+            )
+            .inner_join(
+                KeyToAssets::Table,
+                Expr::col((KeyToAssets::Table, KeyToAssets::Asset))
+                    .equals((MobileHotspotInfos::Table, MobileHotspotInfos::Asset)),
+            );
+        let query = if device_types.is_empty() {
+            query
+        } else {
+            let device_types = device_types
+                .iter()
+                // The device_types field has a jsonb type but is being used as a string,
+                // which forces us to add quotes.
+                // .map(|v| json!(format!("{}", v)))
+                .map(|v| json!(v.to_string()))
+                .collect::<Vec<_>>();
+            dbg!(&device_types);
+            query.and_where(Expr::col(MobileHotspotInfos::DeviceType).is_in(device_types))
+        };
+
+        query.build_sqlx(PostgresQueryBuilder)
+    }
+
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
-        device_types: &'a [DeviceType],
-        min_refreshed_at: DateTime<Utc>,
+        query: (&'a str, SqlxValues),
     ) -> impl Stream<Item = GatewayInfo> + 'a {
-        match device_types.is_empty() {
-            true => sqlx::query_as::<_, GatewayInfo>(&GET_METADATA_SQL_REFRESHED_AT)
-                .bind(min_refreshed_at)
-                .fetch(db)
-                .filter_map(|metadata| async move { metadata.ok() })
-                .boxed(),
-            false => sqlx::query_as::<_, GatewayInfo>(&DEVICE_TYPES_METADATA_SQL)
-                .bind(min_refreshed_at)
-                .bind(
-                    device_types
-                        .iter()
-                        // The device_types field has a jsonb type but is being used as a string,
-                        // which forces us to add quotes.
-                        .map(|v| format!("\"{}\"", v))
-                        .collect::<Vec<_>>(),
-                )
-                .fetch(db)
-                .filter_map(|metadata| async move { metadata.ok() })
-                .boxed(),
-        }
+        println!("{}", &query.0);
+        sqlx::query_as_with::<_, GatewayInfo, _>(&query.0, query.1)
+            .fetch(db)
+            .filter_map(|metadata| async move { metadata.ok() })
+            .boxed()
     }
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {

@@ -120,6 +120,8 @@ tokio-util = "0"
 uuid = { version = "1", features = ["v4", "serde"] }
 tower-http = { version = "0", features = ["trace"] }
 derive_builder = "0"
+sea-query = { version = "=0.31", default-features = false, features = ["derive", "backend-postgres", "with-chrono", "with-json"] }
+sea-query-binder = { version = "0", default-features = false, features = ["sqlx-postgres", "with-chrono", "with-json"] }
 
 [patch.crates-io]
 # v0.7.0-alpha.3
