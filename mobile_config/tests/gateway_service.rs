@@ -218,6 +218,8 @@ async fn gateway_stream_info_refreshed_at_is_null(pool: PgPool) {
     assert!(stream.next().await.is_none());
 }
 
+// TODO two device_types test
+
 #[sqlx::test]
 async fn gateway_stream_info_data_types(pool: PgPool) {
     let admin_key = make_keypair();

@@ -180,14 +180,9 @@ pub(crate) mod db {
             join key_to_assets kta on infos.asset = kta.asset
         "#;
     const BATCH_SQL_WHERE_SNIPPET: &str = " where kta.entity_key = any($1::bytea[]) ";
-    const DEVICE_TYPES_AND_SNIPPET: &str = " and device_type::text = any($2) ";
 
     lazy_static::lazy_static! {
         static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
-        static ref GET_METADATA_SQL_REFRESHED_AT: String = format!(r#"{GET_METADATA_SQL}
-            where ( infos.refreshed_at >= $1 OR (infos.refreshed_at IS NULL AND infos.created_at >= $1) ) "#);
-
-        static ref DEVICE_TYPES_METADATA_SQL: String = format!("{} {}", *GET_METADATA_SQL_REFRESHED_AT, DEVICE_TYPES_AND_SNIPPET);
     }
 
     pub async fn get_info(
@@ -229,25 +224,32 @@ pub(crate) mod db {
         min_refreshed_at: DateTime<Utc>,
     ) -> (String, SqlxValues) {
         let mut binding = Query::select();
-        let query = binding
-            .expr(Expr::col(MobileHotspotInfos::Location).cast_as(Alias::new("bigint")))
-            .column(MobileHotspotInfos::DeviceType)
-            .column(MobileHotspotInfos::RefreshedAt)
-            .column(MobileHotspotInfos::CreatedAt)
-            .column(KeyToAssets::EntityKey)
-            .from(MobileHotspotInfos::Table)
-            .and_where(
-                Expr::col(MobileHotspotInfos::RefreshedAt)
-                    .gte(min_refreshed_at)
-                    .or(Expr::col(MobileHotspotInfos::RefreshedAt)
+        let query =
+            binding
+                .expr(Expr::col(MobileHotspotInfos::Location).cast_as(Alias::new("bigint")))
+                .column((MobileHotspotInfos::Table, MobileHotspotInfos::DeviceType))
+                .column((MobileHotspotInfos::Table, MobileHotspotInfos::RefreshedAt))
+                .column((MobileHotspotInfos::Table, MobileHotspotInfos::CreatedAt))
+                .column(KeyToAssets::EntityKey)
+                .from(MobileHotspotInfos::Table)
+                .and_where(
+                    Expr::col((MobileHotspotInfos::Table, MobileHotspotInfos::RefreshedAt))
+                        .gte(min_refreshed_at)
+                        .or(Expr::col((
+                            MobileHotspotInfos::Table,
+                            MobileHotspotInfos::RefreshedAt,
+                        ))
                         .is_null()
-                        .and(Expr::col(MobileHotspotInfos::CreatedAt).gte(min_refreshed_at))),
-            )
-            .inner_join(
-                KeyToAssets::Table,
-                Expr::col((KeyToAssets::Table, KeyToAssets::Asset))
-                    .equals((MobileHotspotInfos::Table, MobileHotspotInfos::Asset)),
-            );
+                        .and(
+                            Expr::col((MobileHotspotInfos::Table, MobileHotspotInfos::CreatedAt))
+                                .gte(min_refreshed_at),
+                        )),
+                )
+                .inner_join(
+                    KeyToAssets::Table,
+                    Expr::col((KeyToAssets::Table, KeyToAssets::Asset))
+                        .equals((MobileHotspotInfos::Table, MobileHotspotInfos::Asset)),
+                );
         let query = if device_types.is_empty() {
             query
         } else {
@@ -258,7 +260,6 @@ pub(crate) mod db {
                 // .map(|v| json!(format!("{}", v)))
                 .map(|v| json!(v.to_string()))
                 .collect::<Vec<_>>();
-            dbg!(&device_types);
             query.and_where(Expr::col(MobileHotspotInfos::DeviceType).is_in(device_types))
         };
 
@@ -269,8 +270,7 @@ pub(crate) mod db {
         db: impl PgExecutor<'a> + 'a,
         query: (&'a str, SqlxValues),
     ) -> impl Stream<Item = GatewayInfo> + 'a {
-        println!("{}", &query.0);
-        sqlx::query_as_with::<_, GatewayInfo, _>(&query.0, query.1)
+        sqlx::query_as_with::<_, GatewayInfo, _>(query.0, query.1)
             .fetch(db)
             .filter_map(|metadata| async move { metadata.ok() })
             .boxed()
