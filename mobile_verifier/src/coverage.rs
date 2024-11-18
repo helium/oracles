@@ -363,6 +363,33 @@ impl CoverageObject {
     }
 }
 
+pub async fn set_invalidated_at(
+    exec: &mut Transaction<'_, Postgres>,
+    invalidated_at: DateTime<Utc>,
+    inserted_at: Option<DateTime<Utc>>,
+    radio_key: KeyType<'_>,
+    uuid: Option<Uuid>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE coverage_objects
+        SET invalidated_at = $1
+        WHERE inserted_at < $2
+            AND invalidated_at IS NULL
+            AND radio_key = $3
+            AND uuid != $4
+        "#,
+    )
+    .bind(invalidated_at)
+    .bind(inserted_at)
+    .bind(radio_key)
+    .bind(uuid)
+    .execute(&mut *exec)
+    .await?;
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, FromRow)]
 pub struct HexCoverage {
     pub uuid: Uuid,
@@ -457,24 +484,42 @@ pub async fn clear_coverage_objects(
     tx: &mut Transaction<'_, Postgres>,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    // Delete any hex coverage objects that were invalidated before the given timestamp
-    sqlx::query(
-        r#"
-        DELETE FROM hexes WHERE uuid IN (
-            SELECT uuid
-            FROM coverage_objects
-            WHERE invalidated_at < $1
-        )
-        "#,
-    )
-    .bind(timestamp)
-    .execute(&mut *tx)
-    .await?;
+    // We do not delete hexes here anymore because `38_coverage_objects_cascade_delete.sql` add CONSTRAINT ON DELETE CASCADE
 
+    // Remove all invalidated objects before timestamp
     sqlx::query("DELETE FROM coverage_objects WHERE invalidated_at < $1")
         .bind(timestamp)
         .execute(&mut *tx)
         .await?;
+
+    // Delete all but the last 10 valid coverage_objects entry per radio_key before a given timestamp
+    sqlx::query(
+            r#"
+            WITH orphan_coverage_objects AS (
+                SELECT
+                    uuid
+                FROM (
+                    SELECT
+                        uuid,
+                        radio_key,
+                        inserted_at,
+                        ROW_NUMBER() OVER (PARTITION BY radio_key ORDER BY inserted_at DESC) AS row_num
+                    FROM
+                        coverage_objects
+                    WHERE
+                        invalidated_at IS NULL AND inserted_at < $1
+                ) AS ranked_rows
+                WHERE row_num > 10
+            )
+            DELETE FROM coverage_objects
+            USING orphan_coverage_objects
+            WHERE coverage_objects.uuid = orphan_coverage_objects.uuid;
+            "#,
+        )
+        .bind(timestamp)
+        .execute(&mut *tx)
+        .await?;
+
     Ok(())
 }
 
