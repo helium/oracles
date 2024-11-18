@@ -83,6 +83,7 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
         let metadata = if let Some(metadata) = info.metadata {
             Some(GatewayMetadataProto {
                 location: hextree::Cell::from_raw(metadata.location)?.to_string(),
+                deployment_info: None, // TODO
             })
         } else {
             None
