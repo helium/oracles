@@ -280,7 +280,7 @@ pub fn hash_key(
     hex::encode(hashed_key)
 }
 
-pub async fn clear_invalided(
+pub async fn clear_invalidated(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {

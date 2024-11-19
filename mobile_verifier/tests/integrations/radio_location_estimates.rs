@@ -10,7 +10,7 @@ use file_store::{
 use h3o::{CellIndex, LatLng};
 use helium_crypto::{KeyTag, Keypair, PublicKeyBinary};
 use mobile_verifier::radio_location_estimates::{
-    clear_invalided, hash_key, RadioLocationEstimatesDaemon,
+    clear_invalidated, hash_key, RadioLocationEstimatesDaemon,
 };
 use rand::rngs::OsRng;
 use rust_decimal::prelude::FromPrimitive;
@@ -71,7 +71,7 @@ async fn verifier_test(pool: PgPool) -> anyhow::Result<()> {
 
     // Now clear invalidated estimates there should be only 1 left in DB
     let mut tx = pool.begin().await?;
-    clear_invalided(&mut tx, &Utc::now()).await?;
+    clear_invalidated(&mut tx, &Utc::now()).await?;
     tx.commit().await?;
 
     let leftover_estimates = select_radio_location_estimates(&pool).await?;
