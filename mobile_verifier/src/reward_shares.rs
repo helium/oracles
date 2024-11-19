@@ -2515,7 +2515,7 @@ mod test {
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 490_00_000_000_000_000);
+        assert_eq!(unallocated_sp_reward_amount, 49_000_000_000_000_000);
     }
 
     #[test]
