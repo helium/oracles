@@ -2,15 +2,98 @@ use chrono::{DateTime, TimeZone, Utc};
 use futures::stream::BoxStream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
-    DeviceType as DeviceTypeProto, GatewayInfo as GatewayInfoProto,
-    GatewayMetadata as GatewayMetadataProto,
+    gateway_metadata::DeploymentInfo as DeploymentInfoProto,
+    CbrsDeploymentInfo as CbrsDeploymentInfoProto, DeviceType as DeviceTypeProto,
+    GatewayInfo as GatewayInfoProto, GatewayMetadata as GatewayMetadataProto,
+    RadioDeploymentInfo as RadioDeploymentInfoProto, WifiDeploymentInfo as WifiDeploymentInfoProto,
 };
+use serde::Deserialize;
 
 pub type GatewayInfoStream = BoxStream<'static, GatewayInfo>;
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct WifiDeploymentInfo {
+    /// Antenna ID
+    pub antenna: u32,
+    /// The height of the hotspot above ground level in whole meters
+    pub elevation: u32,
+    pub azimuth: u32,
+    #[serde(rename = "mechanicalDownTilt")]
+    pub mechanical_down_tilt: u32,
+    #[serde(rename = "electricalDownTilt")]
+    pub electrical_down_tilt: u32,
+}
+impl From<WifiDeploymentInfoProto> for WifiDeploymentInfo {
+    fn from(v: WifiDeploymentInfoProto) -> Self {
+        Self {
+            antenna: v.antenna,
+            elevation: v.elevation,
+            azimuth: v.azimuth,
+            mechanical_down_tilt: v.mechanical_down_tilt,
+            electrical_down_tilt: v.electrical_down_tilt,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct CbrsDeploymentInfo {
+    pub radio_deployment_info: Vec<RadioDeploymentInfo>,
+}
+
+impl From<CbrsDeploymentInfoProto> for CbrsDeploymentInfo {
+    fn from(v: CbrsDeploymentInfoProto) -> Self {
+        Self {
+            radio_deployment_info: v
+                .radio_deployment_info
+                .into_iter()
+                .map(|v| v.into())
+                .collect(),
+        }
+    }
+}
+
+impl From<RadioDeploymentInfoProto> for RadioDeploymentInfo {
+    fn from(v: RadioDeploymentInfoProto) -> Self {
+        Self {
+            radio_id: v.radio_id,
+            elevation: v.elevation,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct RadioDeploymentInfo {
+    /// CBSD_ID or radio
+    pub radio_id: String,
+    /// The asserted elevation of the gateway above ground level in whole meters
+    pub elevation: u32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub enum DeploymentInfo {
+    #[serde(rename = "wifiInfoV0")]
+    WifiDeploymentInfo(WifiDeploymentInfo),
+    #[serde(rename = "cbrsInfoV0")]
+    CbrsDeploymentInfo(CbrsDeploymentInfo),
+}
+
+impl From<DeploymentInfoProto> for DeploymentInfo {
+    fn from(v: DeploymentInfoProto) -> Self {
+        match v {
+            DeploymentInfoProto::WifiDeploymentInfo(v) => {
+                DeploymentInfo::WifiDeploymentInfo(v.into())
+            }
+            DeploymentInfoProto::CbrsDeploymentInfo(v) => {
+                DeploymentInfo::CbrsDeploymentInfo(v.into())
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct GatewayMetadata {
     pub location: u64,
+    pub deployment_info: Option<DeploymentInfo>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,37 +125,89 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
     type Error = GatewayInfoProtoParseError;
 
     fn try_from(info: GatewayInfoProto) -> Result<Self, Self::Error> {
-        let metadata = if let Some(ref metadata) = info.metadata {
+        let device_type_ = info.device_type().into();
+
+        let GatewayInfoProto {
+            address,
+            metadata,
+            device_type: _,
+            created_at,
+            refreshed_at,
+        } = info;
+
+        let metadata = if let Some(metadata) = metadata {
             Some(
-                u64::from_str_radix(&metadata.location, 16)
-                    .map(|location| GatewayMetadata { location })?,
+                u64::from_str_radix(&metadata.location, 16).map(|location| GatewayMetadata {
+                    location,
+                    deployment_info: metadata.deployment_info.map(|v| v.into()),
+                })?,
             )
         } else {
             None
         };
-        let device_type = info.device_type().into();
 
         let created_at = Utc
-            .timestamp_opt(info.created_at as i64, 0)
+            .timestamp_opt(created_at as i64, 0)
             .single()
-            .ok_or(GatewayInfoProtoParseError::InvalidCreatedAt(
-                info.created_at,
-            ))?;
+            .ok_or(GatewayInfoProtoParseError::InvalidCreatedAt(created_at))?;
 
-        let refreshed_at = Utc
-            .timestamp_opt(info.refreshed_at as i64, 0)
-            .single()
-            .ok_or(GatewayInfoProtoParseError::InvalidRefreshedAt(
-                info.refreshed_at,
-            ))?;
+        let refreshed_at = Utc.timestamp_opt(refreshed_at as i64, 0).single().ok_or(
+            GatewayInfoProtoParseError::InvalidRefreshedAt(info.refreshed_at),
+        )?;
 
         Ok(Self {
-            address: info.address.into(),
+            address: address.into(),
             metadata,
-            device_type,
+            device_type: device_type_,
             created_at,
             refreshed_at,
         })
+    }
+}
+
+impl From<WifiDeploymentInfo> for WifiDeploymentInfoProto {
+    fn from(v: WifiDeploymentInfo) -> Self {
+        Self {
+            antenna: v.antenna,
+            elevation: v.elevation,
+            azimuth: v.azimuth,
+            mechanical_down_tilt: v.mechanical_down_tilt,
+            electrical_down_tilt: v.electrical_down_tilt,
+        }
+    }
+}
+
+impl From<RadioDeploymentInfo> for RadioDeploymentInfoProto {
+    fn from(v: RadioDeploymentInfo) -> Self {
+        Self {
+            radio_id: v.radio_id,
+            elevation: v.elevation,
+        }
+    }
+}
+
+impl From<CbrsDeploymentInfo> for CbrsDeploymentInfoProto {
+    fn from(v: CbrsDeploymentInfo) -> Self {
+        Self {
+            radio_deployment_info: v
+                .radio_deployment_info
+                .into_iter()
+                .map(|v| v.into())
+                .collect(),
+        }
+    }
+}
+
+impl From<DeploymentInfo> for DeploymentInfoProto {
+    fn from(v: DeploymentInfo) -> Self {
+        match v {
+            DeploymentInfo::WifiDeploymentInfo(v) => {
+                DeploymentInfoProto::WifiDeploymentInfo(v.into())
+            }
+            DeploymentInfo::CbrsDeploymentInfo(v) => {
+                DeploymentInfoProto::CbrsDeploymentInfo(v.into())
+            }
+        }
     }
 }
 
@@ -83,7 +218,7 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
         let metadata = if let Some(metadata) = info.metadata {
             Some(GatewayMetadataProto {
                 location: hextree::Cell::from_raw(metadata.location)?.to_string(),
-                deployment_info: None, // TODO
+                deployment_info: metadata.deployment_info.map(|v| v.into()),
             })
         } else {
             None
@@ -147,7 +282,7 @@ impl std::str::FromStr for DeviceType {
 }
 
 pub(crate) mod db {
-    use super::{DeviceType, GatewayInfo, GatewayMetadata};
+    use super::{DeploymentInfo, DeviceType, GatewayInfo, GatewayMetadata};
     use chrono::{DateTime, Utc};
     use futures::stream::{Stream, StreamExt};
     use helium_crypto::PublicKeyBinary;
@@ -156,7 +291,7 @@ pub(crate) mod db {
 
     const GET_METADATA_SQL: &str = r#"
             select kta.entity_key, infos.location::bigint, infos.device_type,
-                infos.refreshed_at, infos.created_at
+                infos.refreshed_at, infos.created_at, infos.deployment_info
             from mobile_hotspot_infos infos
             join key_to_assets kta on infos.asset = kta.asset
         "#;
@@ -231,11 +366,24 @@ pub(crate) mod db {
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {
         fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
+            let deployment_info =
+                match row.try_get::<Option<Json<DeploymentInfo>>, &str>("deployment_info") {
+                    Ok(di) => di.map(|v| v.0),
+                    // We shouldn't fail if an error occurs in this case.
+                    // This is because the data in this column could be inconsistent,
+                    // and we don't want to break backward compatibility.
+                    Err(_e) => None,
+                };
+
+            // If location field is None, GatewayMetadata also is None, even if deployment_info is present.
+            // Because "location" is mandatory field
             let metadata = row
                 .get::<Option<i64>, &str>("location")
                 .map(|loc| GatewayMetadata {
                     location: loc as u64,
+                    deployment_info,
                 });
+
             let device_type = DeviceType::from_str(
                 row.get::<Json<String>, &str>("device_type")
                     .to_string()

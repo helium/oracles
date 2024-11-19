@@ -313,6 +313,9 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
         .await;
     let gateways = resp.first().unwrap().gateways.clone();
     assert_eq!(gateways.len(), 3);
+
+    // TODO Check deployment info
+    let _gw = gateways.first().unwrap();
 }
 
 async fn add_db_record(
@@ -339,9 +342,9 @@ async fn add_mobile_hotspot_infos(
     sqlx::query(
         r#"
             INSERT INTO
-"mobile_hotspot_infos" ("asset", "location", "device_type", "created_at", "refreshed_at")
+"mobile_hotspot_infos" ("asset", "location", "device_type", "created_at", "refreshed_at", "deployment_info")
             VALUES
-($1, $2, $3::jsonb, $4, $5);
+($1, $2, $3::jsonb, $4, $5, $6::jsonb);
     "#,
     )
     .bind(asset)
@@ -349,6 +352,7 @@ async fn add_mobile_hotspot_infos(
     .bind(device_type)
     .bind(created_at)
     .bind(refreshed_at)
+    .bind(r#"{"wifiInfoV0": {"antenna": 18, "azimuth": 160, "elevation": 5, "electricalDownTilt": 1, "mechanicalDownTilt": 2}}"#)
     .execute(pool)
     .await
     .unwrap();
@@ -378,7 +382,8 @@ async fn create_db_tables(pool: &PgPool) {
         location numeric NULL,
         device_type jsonb NOT NULL,
         created_at timestamptz NOT NULL DEFAULT NOW(),
-        refreshed_at timestamptz
+        refreshed_at timestamptz,
+        deployment_info jsonb
     );"#,
     )
     .execute(pool)
