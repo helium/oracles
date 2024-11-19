@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
     traits::TimestampEncode,
@@ -23,6 +23,8 @@ use mobile_config::{
     },
 };
 
+use mobile_config::client::sub_dao_client::SubDaoEpochRewardInfoResolver;
+use mobile_config::sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo;
 use mobile_verifier::{
     boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver,
 };
@@ -33,10 +35,18 @@ use std::{collections::HashMap, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 use tonic::async_trait;
 
+pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
+pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct MockHexBoostingClient {
     boosted_hexes: Vec<BoostedHexInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MockSubDaoRewardsClient {
+    info: Option<ResolvedSubDaoEpochRewardInfo>,
 }
 
 impl MockHexBoostingClient {
@@ -61,6 +71,18 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
     }
 }
 
+#[async_trait::async_trait]
+impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
+    type Error = ClientError;
+
+    async fn resolve_info(
+        &self,
+        _sub_dao: &PublicKeyBinary,
+        _epoch: u64,
+    ) -> Result<Option<ResolvedSubDaoEpochRewardInfo>, Self::Error> {
+        Ok(self.info.clone())
+    }
+}
 pub struct MockFileSinkReceiver<T> {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>,
 }
@@ -367,5 +389,20 @@ impl GatewayResolver for GatewayClientAllOwnersValid {
         _address: &PublicKeyBinary,
     ) -> Result<GatewayResolution, Self::Error> {
         Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
+    }
+}
+
+pub fn default_rewards_info(
+    total_emissions: u64,
+    epoch_duration: Duration,
+) -> ResolvedSubDaoEpochRewardInfo {
+    let now = Utc::now();
+    ResolvedSubDaoEpochRewardInfo {
+        epoch: 1,
+        epoch_address: PublicKeyBinary::from_str(EPOCH_ADDRESS).unwrap(),
+        sub_dao_address: PublicKeyBinary::from_str(SUB_DAO_ADDRESS).unwrap(),
+        epoch_period: (now - epoch_duration)..now,
+        epoch_emissions: Decimal::from(total_emissions),
+        rewards_issued_at: now,
     }
 }

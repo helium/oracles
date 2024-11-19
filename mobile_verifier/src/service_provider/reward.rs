@@ -1,12 +1,8 @@
-use std::ops::Range;
-
-use chrono::{DateTime, Utc};
-
+use crate::reward_shares::dc_to_hnt_bones;
 use file_store::traits::TimestampEncode;
+use mobile_config::sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
-
-use crate::reward_shares::dc_to_mobile_bones;
 
 use super::{dc_sessions::ServiceProviderDCSessions, promotions::ServiceProviderPromotions};
 
@@ -24,7 +20,7 @@ mod proto {
 pub struct ServiceProviderRewardInfos {
     coll: Vec<RewardInfo>,
     total_sp_allocation: Decimal,
-    reward_epoch: Range<DateTime<Utc>>,
+    reward_info: ResolvedSubDaoEpochRewardInfo,
 }
 
 // Represents a single Service Providers information for rewarding,
@@ -57,15 +53,15 @@ impl ServiceProviderRewardInfos {
         dc_sessions: ServiceProviderDCSessions,
         promotions: ServiceProviderPromotions,
         total_sp_allocation: Decimal, // Bones
-        mobile_bone_price: Decimal,   // Price in Bones
-        reward_epoch: Range<DateTime<Utc>>,
+        hnt_bone_price: Decimal,      // Price in Bones
+        reward_info: ResolvedSubDaoEpochRewardInfo,
     ) -> Self {
         let all_transfer = dc_sessions.all_transfer(); // DC
 
         let mut me = Self {
             coll: vec![],
             total_sp_allocation,
-            reward_epoch,
+            reward_info,
         };
 
         // After this point, we enter percentage land. This number is the basis
@@ -76,7 +72,7 @@ impl ServiceProviderRewardInfos {
         // When rewards are output, the percentages are taken from the allocated
         // Bones for service providers. Which has the effect of scaling the rewards.
         let used_allocation =
-            total_sp_allocation.max(dc_to_mobile_bones(all_transfer, mobile_bone_price));
+            total_sp_allocation.max(dc_to_hnt_bones(all_transfer, hnt_bone_price));
 
         for (service_provider, dc_transfer) in dc_sessions.iter() {
             let promo_fund_perc = promotions.get_fund_percent(service_provider);
@@ -84,7 +80,7 @@ impl ServiceProviderRewardInfos {
 
             me.coll.push(RewardInfo::new(
                 service_provider,
-                dc_to_mobile_bones(dc_transfer, mobile_bone_price),
+                dc_to_hnt_bones(dc_transfer, hnt_bone_price),
                 promo_fund_perc,
                 used_allocation,
                 promos,
@@ -101,7 +97,7 @@ impl ServiceProviderRewardInfos {
     pub fn iter_rewards(&self) -> Vec<(u64, proto::MobileRewardShare)> {
         self.coll
             .iter()
-            .flat_map(|sp| sp.iter_rewards(self.total_sp_allocation, &self.reward_epoch))
+            .flat_map(|sp| sp.iter_rewards(self.total_sp_allocation, &self.reward_info))
             .filter(|(amount, _r)| *amount > 0)
             .collect::<Vec<_>>()
     }
@@ -140,25 +136,26 @@ impl RewardInfo {
     pub fn iter_rewards(
         &self,
         total_allocation: Decimal,
-        reward_period: &Range<DateTime<Utc>>,
+        reward_info: &ResolvedSubDaoEpochRewardInfo,
     ) -> Vec<(u64, proto::MobileRewardShare)> {
-        let mut rewards = self.promo_rewards(total_allocation, reward_period);
-        rewards.push(self.carrier_reward(total_allocation, reward_period));
+        let mut rewards = self.promo_rewards(total_allocation, reward_info);
+        rewards.push(self.carrier_reward(total_allocation, reward_info));
         rewards
     }
 
     pub fn carrier_reward(
         &self,
         total_allocation: Decimal,
-        reward_period: &Range<DateTime<Utc>>,
+        reward_info: &ResolvedSubDaoEpochRewardInfo,
     ) -> (u64, proto::MobileRewardShare) {
         let amount = (total_allocation * self.realized_data_perc).to_u64_floored(); // Rewarded BONES
 
         (
             amount,
             proto::MobileRewardShare {
-                start_period: reward_period.start.encode_timestamp(),
-                end_period: reward_period.end.encode_timestamp(),
+                start_period: reward_info.epoch_period.start.encode_timestamp(),
+                end_period: reward_info.epoch_period.end.encode_timestamp(),
+                epoch: reward_info.epoch,
                 reward: Some(proto::Reward::ServiceProviderReward(
                     proto::ServiceProviderReward {
                         service_provider_id: self.sp_id,
@@ -172,7 +169,7 @@ impl RewardInfo {
     pub fn promo_rewards(
         &self,
         total_allocation: Decimal,
-        reward_period: &Range<DateTime<Utc>>,
+        reward_info: &ResolvedSubDaoEpochRewardInfo,
     ) -> Vec<(u64, proto::MobileRewardShare)> {
         if self.promotions.is_empty() {
             return vec![];
@@ -202,8 +199,9 @@ impl RewardInfo {
             rewards.push((
                 total_amount,
                 proto::MobileRewardShare {
-                    start_period: reward_period.start.encode_timestamp(),
-                    end_period: reward_period.end.encode_timestamp(),
+                    start_period: reward_info.epoch_period.start.encode_timestamp(),
+                    end_period: reward_info.epoch_period.end.encode_timestamp(),
+                    epoch: reward_info.epoch,
                     reward: Some(proto::Reward::PromotionReward(proto::PromotionReward {
                         service_provider_amount,
                         matched_amount,
@@ -272,26 +270,23 @@ impl DecimalRoundingExt for Decimal {
 
 #[cfg(test)]
 mod tests {
-    use chrono::Duration;
+    use chrono::{Duration, Utc};
     use helium_proto::services::poc_mobile::{MobileRewardShare, PromotionReward};
 
     use crate::service_provider;
 
     use super::*;
 
-    fn epoch() -> Range<DateTime<Utc>> {
-        let now = Utc::now();
-        now - Duration::hours(24)..now
-    }
-
     #[test]
     fn no_promotions() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
             ServiceProviderPromotions::default(),
             dec!(100),
             dec!(0.00001),
-            epoch(),
+            reward_info,
         );
 
         let mut iter = sp_infos.iter_rewards().into_iter();
@@ -307,6 +302,7 @@ mod tests {
 
     #[test]
     fn unallocated_reward_scaling_1() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
             ServiceProviderPromotions::from(vec![
@@ -315,7 +311,7 @@ mod tests {
             ]),
             dec!(100),
             dec!(0.00001),
-            epoch(),
+            reward_info,
         );
 
         let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
@@ -331,6 +327,7 @@ mod tests {
 
     #[test]
     fn unallocated_reward_scaling_2() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
             ServiceProviderPromotions::from(vec![
@@ -355,7 +352,7 @@ mod tests {
             ]),
             dec!(100),
             dec!(0.00001),
-            epoch(),
+            reward_info,
         );
 
         let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
@@ -371,6 +368,7 @@ mod tests {
 
     #[test]
     fn unallocated_reward_scaling_3() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(10)), (1, dec!(1000))]),
             ServiceProviderPromotions::from(vec![
@@ -379,7 +377,7 @@ mod tests {
             ]),
             dec!(2000),
             dec!(0.00001),
-            epoch(),
+            reward_info,
         );
 
         let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
@@ -395,12 +393,13 @@ mod tests {
 
     #[test]
     fn no_rewards_if_none_allocated() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(100))]),
             ServiceProviderPromotions::from(vec![make_test_promotion(0, "promo-0", 5000, 1)]),
             dec!(0),
             dec!(0.0001),
-            epoch(),
+            reward_info,
         );
 
         assert!(sp_infos.iter_rewards().is_empty());
@@ -408,6 +407,7 @@ mod tests {
 
     #[test]
     fn no_matched_rewards_if_no_unallocated() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
         let total_rewards = dec!(1000);
 
         let sp_infos = ServiceProviderRewardInfos::new(
@@ -415,7 +415,7 @@ mod tests {
             ServiceProviderPromotions::from(vec![make_test_promotion(0, "promo-0", 5000, 1)]),
             total_rewards,
             dec!(0.00001),
-            epoch(),
+            reward_info,
         );
 
         let promo_rewards = sp_infos.iter_rewards().only_promotion_rewards();
@@ -428,6 +428,7 @@ mod tests {
 
     #[test]
     fn single_sp_unallocated_less_than_matched_distributed_by_shares() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
         // 100 unallocated
         let total_rewards = dec!(1100);
         let sp_session = dec!(1000);
@@ -452,7 +453,7 @@ mod tests {
             }]),
             total_rewards,
             dec!(0.00001),
-            epoch(),
+            reward_info,
         );
 
         let promo_rewards = sp_infos.iter_rewards().only_promotion_rewards();
@@ -467,6 +468,7 @@ mod tests {
 
     #[test]
     fn single_sp_unallocated_more_than_matched_promotion() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
         // 1,000 unallocated
         let total_rewards = dec!(11_000);
         let sp_session = dec!(1000);
@@ -491,7 +493,7 @@ mod tests {
             }]),
             total_rewards,
             dec!(0.00001),
-            epoch(),
+            reward_info,
         );
 
         let promo_rewards = sp_infos.iter_rewards().only_promotion_rewards();
@@ -506,6 +508,7 @@ mod tests {
 
     #[test]
     fn unallocated_matching_does_not_exceed_promotion() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
         // 100 unallocated
         let total_rewards = dec!(1100);
         let sp_session = dec!(1000);
@@ -530,7 +533,7 @@ mod tests {
             }]),
             total_rewards,
             dec!(0.00001),
-            epoch(),
+            reward_info,
         );
 
         let promo_rewards = sp_infos.iter_rewards().only_promotion_rewards();
@@ -545,6 +548,7 @@ mod tests {
 
     #[test]
     fn no_matched_promotions_full_bucket_allocation() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
         // The service providers DC session represents _more_ than the
         // available amount of sp_rewards for an epoch.
         // No matching on promotions should occur.
@@ -564,7 +568,7 @@ mod tests {
             }]),
             total_rewards,
             dec!(629) / dec!(1_000_000) / dec!(1_000_000),
-            epoch(),
+            reward_info,
         );
 
         let (promo_1, sp_1) = sp_infos.single_sp_rewards(0);
@@ -582,6 +586,7 @@ mod tests {
 
     #[test]
     fn no_matched_promotions_multiple_sp_full_bucket_allocation() {
+        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
         // The Service Providers DC sessions far surpass the
         // available amount of sp_rewards for an epoch.
         // No matching on promotions should occur.
@@ -612,7 +617,7 @@ mod tests {
             ]),
             total_rewards,
             dec!(629) / dec!(1_000_000) / dec!(1_000_000),
-            epoch(),
+            reward_info,
         );
 
         let sp_base_reward = dec!(4_109_589_041_095.50);
@@ -648,6 +653,7 @@ mod tests {
         assert_eq!(unallocated, 2);
     }
 
+    use crate::service_provider::default_rewards_info;
     use proptest::prelude::*;
 
     prop_compose! {
@@ -694,12 +700,13 @@ mod tests {
             total_allocation in any::<u64>().prop_map(Decimal::from)
         ) {
 
+            let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
             let sp_infos = ServiceProviderRewardInfos::new(
                 ServiceProviderDCSessions::from([(0, dc_session)]),
                 ServiceProviderPromotions::from(promotions),
                 total_allocation,
                 dec!(0.00001),
-                epoch()
+                reward_info,
             );
 
             let total_perc= sp_infos.total_percent();
@@ -719,15 +726,15 @@ mod tests {
             promotions in prop::collection::vec(arb_sp_promotion(), 0..10),
             mobile_bone_price in 1..5000
         ) {
-            let epoch = epoch();
-            let total_allocation = service_provider::get_scheduled_tokens(&epoch);
+            let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+            let total_allocation = service_provider::get_scheduled_tokens(reward_info.epoch_emissions);
 
             let sp_infos = ServiceProviderRewardInfos::new(
                 ServiceProviderDCSessions::from(dc_sessions),
                 ServiceProviderPromotions::from(promotions),
                 total_allocation,
                 Decimal::from(mobile_bone_price) / dec!(1_000_000) / dec!(1_000_000),
-                epoch
+                reward_info,
             );
 
             // NOTE: This can be a sanity check when debugging. There are cases
@@ -803,7 +810,7 @@ mod tests {
             for info in self.coll.iter() {
                 if info.sp_id == sp_id {
                     return info
-                        .iter_rewards(self.total_sp_allocation, &self.reward_epoch)
+                        .iter_rewards(self.total_sp_allocation, &self.reward_info)
                         .into_iter()
                         .map(|(_, x)| x)
                         .collect();

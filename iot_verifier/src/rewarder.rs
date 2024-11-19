@@ -84,16 +84,16 @@ impl Rewarder {
                 self.reward_offset,
             );
 
-            let sleep_duration = if scheduler.should_reward(now) {
+            let sleep_duration = if scheduler.should_trigger(now) {
                 let iot_price = self
                     .price_tracker
                     .price(&helium_proto::BlockchainTokenTypeV1::Iot)
                     .await?;
                 tracing::info!(
                     "Rewarding for period: {:?} with iot_price: {iot_price}",
-                    scheduler.reward_period
+                    scheduler.schedule_period
                 );
-                if self.data_current_check(&scheduler.reward_period).await? {
+                if self.data_current_check(&scheduler.schedule_period).await? {
                     self.reward(&scheduler, Decimal::from(iot_price)).await?;
                     scheduler.sleep_duration(Utc::now())?
                 } else {
@@ -123,7 +123,7 @@ impl Rewarder {
         scheduler: &Scheduler,
         iot_price: Decimal,
     ) -> anyhow::Result<()> {
-        let reward_period = &scheduler.reward_period;
+        let reward_period = &scheduler.schedule_period;
 
         // process rewards for poc and dc
         let poc_dc_shares =
@@ -139,17 +139,17 @@ impl Rewarder {
         // purge db
         let mut transaction = self.pool.begin().await?;
         // Clear gateway shares table period to end of reward period
-        GatewayShares::clear_rewarded_shares(&mut transaction, scheduler.reward_period.start)
+        GatewayShares::clear_rewarded_shares(&mut transaction, scheduler.schedule_period.start)
             .await?;
         save_rewarded_timestamp(
             "last_rewarded_end_time",
-            &scheduler.reward_period.end,
+            &scheduler.schedule_period.end,
             &mut transaction,
         )
         .await?;
         save_rewarded_timestamp(
             "next_rewarded_end_time",
-            &scheduler.next_reward_period().end,
+            &scheduler.next_trigger_period().end,
             &mut transaction,
         )
         .await?;
@@ -170,17 +170,18 @@ impl Rewarder {
         self.reward_manifests_sink
             .write(
                 RewardManifest {
-                    start_timestamp: scheduler.reward_period.start.encode_timestamp(),
-                    end_timestamp: scheduler.reward_period.end.encode_timestamp(),
+                    start_timestamp: scheduler.schedule_period.start.encode_timestamp(),
+                    end_timestamp: scheduler.schedule_period.end.encode_timestamp(),
                     written_files,
                     reward_data: Some(IotRewardData(reward_data)),
+                    epoch: 0, // TODO: replace placeholder value
                 },
                 [],
             )
             .await?
             .await??;
         self.reward_manifests_sink.commit().await?;
-        telemetry::last_rewarded_end_time(scheduler.reward_period.end);
+        telemetry::last_rewarded_end_time(scheduler.schedule_period.end);
         Ok(())
     }
 
