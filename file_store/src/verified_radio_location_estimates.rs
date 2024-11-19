@@ -4,24 +4,27 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
-use helium_proto::services::poc_mobile::{
-    RadioLocationEstimatesIngestReportV1, RadioLocationEstimatesVerificationStatus,
-    VerifiedRadioLocationEstimatesReportV1,
-};
 use serde::{Deserialize, Serialize};
+
+pub mod proto {
+    pub use helium_proto::services::poc_mobile::{
+        RadioLocationEstimatesIngestReportV1, RadioLocationEstimatesVerificationStatus,
+        VerifiedRadioLocationEstimatesReportV1,
+    };
+}
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct VerifiedRadioLocationEstimatesReport {
     pub report: RadioLocationEstimatesIngestReport,
-    pub status: RadioLocationEstimatesVerificationStatus,
+    pub status: proto::RadioLocationEstimatesVerificationStatus,
     pub timestamp: DateTime<Utc>,
 }
 
 impl MsgDecode for VerifiedRadioLocationEstimatesReport {
-    type Msg = VerifiedRadioLocationEstimatesReportV1;
+    type Msg = proto::VerifiedRadioLocationEstimatesReportV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedRadioLocationEstimatesReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for proto::VerifiedRadioLocationEstimatesReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.timestamp.to_timestamp()
     }
@@ -33,10 +36,10 @@ impl MsgTimestamp<u64> for VerifiedRadioLocationEstimatesReport {
     }
 }
 
-impl From<VerifiedRadioLocationEstimatesReport> for VerifiedRadioLocationEstimatesReportV1 {
+impl From<VerifiedRadioLocationEstimatesReport> for proto::VerifiedRadioLocationEstimatesReportV1 {
     fn from(v: VerifiedRadioLocationEstimatesReport) -> Self {
         let timestamp = v.timestamp();
-        let report: RadioLocationEstimatesIngestReportV1 = v.report.into();
+        let report: proto::RadioLocationEstimatesIngestReportV1 = v.report.into();
         Self {
             report: Some(report),
             status: v.status as i32,
@@ -45,9 +48,11 @@ impl From<VerifiedRadioLocationEstimatesReport> for VerifiedRadioLocationEstimat
     }
 }
 
-impl TryFrom<VerifiedRadioLocationEstimatesReportV1> for VerifiedRadioLocationEstimatesReport {
+impl TryFrom<proto::VerifiedRadioLocationEstimatesReportV1>
+    for VerifiedRadioLocationEstimatesReport
+{
     type Error = Error;
-    fn try_from(v: VerifiedRadioLocationEstimatesReportV1) -> Result<Self> {
+    fn try_from(v: proto::VerifiedRadioLocationEstimatesReportV1) -> Result<Self> {
         Ok(Self {
             report: v
                 .clone()

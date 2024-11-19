@@ -4,10 +4,13 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
-use helium_proto::services::poc_mobile::{
-    RadioLocationEstimatesIngestReportV1, RadioLocationEstimatesReqV1,
-};
 use serde::{Deserialize, Serialize};
+
+pub mod proto {
+    pub use helium_proto::services::poc_mobile::{
+        RadioLocationEstimatesIngestReportV1, RadioLocationEstimatesReqV1,
+    };
+}
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct RadioLocationEstimatesIngestReport {
@@ -16,10 +19,10 @@ pub struct RadioLocationEstimatesIngestReport {
 }
 
 impl MsgDecode for RadioLocationEstimatesIngestReport {
-    type Msg = RadioLocationEstimatesIngestReportV1;
+    type Msg = proto::RadioLocationEstimatesIngestReportV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for RadioLocationEstimatesIngestReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for proto::RadioLocationEstimatesIngestReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp()
     }
@@ -31,10 +34,10 @@ impl MsgTimestamp<u64> for RadioLocationEstimatesIngestReport {
     }
 }
 
-impl From<RadioLocationEstimatesIngestReport> for RadioLocationEstimatesIngestReportV1 {
+impl From<RadioLocationEstimatesIngestReport> for proto::RadioLocationEstimatesIngestReportV1 {
     fn from(v: RadioLocationEstimatesIngestReport) -> Self {
         let received_timestamp = v.timestamp();
-        let report: RadioLocationEstimatesReqV1 = v.report.into();
+        let report: proto::RadioLocationEstimatesReqV1 = v.report.into();
         Self {
             received_timestamp,
             report: Some(report),
@@ -42,9 +45,9 @@ impl From<RadioLocationEstimatesIngestReport> for RadioLocationEstimatesIngestRe
     }
 }
 
-impl TryFrom<RadioLocationEstimatesIngestReportV1> for RadioLocationEstimatesIngestReport {
+impl TryFrom<proto::RadioLocationEstimatesIngestReportV1> for RadioLocationEstimatesIngestReport {
     type Error = Error;
-    fn try_from(v: RadioLocationEstimatesIngestReportV1) -> Result<Self> {
+    fn try_from(v: proto::RadioLocationEstimatesIngestReportV1) -> Result<Self> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
