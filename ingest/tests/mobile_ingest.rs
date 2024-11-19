@@ -1,11 +1,15 @@
 use h3o::LatLng;
 use helium_crypto::{KeyTag, Keypair, PublicKey};
-use helium_proto::services::poc_mobile::{
-    radio_location_estimates_req_v1::Entity, RadioLocationCorrelationV1, RadioLocationEstimateV1,
-    RadioLocationEstimatesReqV1,
-};
 use rand::rngs::OsRng;
 use rust_decimal::prelude::*;
+
+pub mod proto {
+
+    pub use helium_proto::services::poc_mobile::{
+        radio_location_estimates_req_v1::Entity, RadioLocationEstimateV1,
+        RadioLocationEstimatesReqV1,
+    };
+}
 
 mod common;
 
@@ -52,14 +56,10 @@ async fn submit_radio_location_estimates() -> anyhow::Result<()> {
     let hex = LatLng::new(41.41208, -122.19288)
         .unwrap()
         .to_cell(h3o::Resolution::Twelve);
-    let estimates = vec![RadioLocationEstimateV1 {
+    let estimates = vec![proto::RadioLocationEstimateV1 {
         hex: u64::from(hex),
         grid_distance: 2,
         confidence: to_proto_decimal(0.75),
-        radio_location_correlations: vec![RadioLocationCorrelationV1 {
-            id: "event_1".to_string(),
-            timestamp: 0,
-        }],
     }];
 
     let res = client
@@ -97,9 +97,9 @@ fn to_proto_decimal(x: f64) -> Option<helium_proto::Decimal> {
     })
 }
 
-fn wifi_public_key(req: RadioLocationEstimatesReqV1) -> anyhow::Result<PublicKey> {
-    let entity: Entity = req.entity.unwrap();
-    let Entity::WifiPubKey(public_key_bytes) = entity.clone() else {
+fn wifi_public_key(req: proto::RadioLocationEstimatesReqV1) -> anyhow::Result<PublicKey> {
+    let entity: proto::Entity = req.entity.unwrap();
+    let proto::Entity::WifiPubKey(public_key_bytes) = entity.clone() else {
         anyhow::bail!("not WifiPubKey")
     };
     let public_key = PublicKey::from_bytes(&public_key_bytes)?;

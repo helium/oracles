@@ -3,9 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
-    radio_location_estimates::{
-        Entity, RadioLocationCorrelation, RadioLocationEstimate, RadioLocationEstimatesReq,
-    },
+    radio_location_estimates::{Entity, RadioLocationEstimate, RadioLocationEstimatesReq},
     radio_location_estimates_ingest_report::RadioLocationEstimatesIngestReport,
     FileInfo,
 };
@@ -118,10 +116,6 @@ fn file_info_stream() -> (
                         .to_cell(h3o::Resolution::Twelve),
                     grid_distance: 2,
                     confidence: rust_decimal::Decimal::from_f32(0.1).unwrap(),
-                    radio_location_correlations: vec![RadioLocationCorrelation {
-                        id: "event_1".to_string(),
-                        timestamp: Utc::now() - Duration::hours(1),
-                    }],
                 }],
                 timestamp: Utc::now() - Duration::hours(1),
                 carrier_key: carrier_public_key_binary.clone(),
@@ -137,10 +131,6 @@ fn file_info_stream() -> (
                         .to_cell(h3o::Resolution::Twelve),
                     grid_distance: 2,
                     confidence: rust_decimal::Decimal::from_f32(0.2).unwrap(),
-                    radio_location_correlations: vec![RadioLocationCorrelation {
-                        id: "event_1".to_string(),
-                        timestamp: Utc::now(),
-                    }],
                 }],
                 timestamp: Utc::now(),
                 carrier_key: carrier_public_key_binary.clone(),
