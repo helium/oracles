@@ -31,7 +31,7 @@ impl Cmd {
 
         let reward_epoch = self.reward_epoch;
 
-        let sub_dao_pubkey = PublicKeyBinary::from_str(&MOBILE_SUB_DAO_ONCHAIN_ADDRESS)?;
+        let sub_dao_pubkey = PublicKeyBinary::from_str(MOBILE_SUB_DAO_ONCHAIN_ADDRESS)?;
         let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.config_client)?;
         let reward_info = sub_dao_rewards_client
             .resolve_info(&sub_dao_pubkey, reward_epoch)
@@ -56,7 +56,8 @@ impl Cmd {
             SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, &pool)
                 .await?;
 
-        let unique_connections = unique_connections::db::get(&pool, &epoch).await?;
+        let unique_connections =
+            unique_connections::db::get(&pool, &reward_info.epoch_period).await?;
 
         let reward_shares = CoverageShares::new(
             &pool,
