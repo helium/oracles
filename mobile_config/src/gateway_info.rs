@@ -3,9 +3,10 @@ use futures::stream::BoxStream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
     gateway_metadata::DeploymentInfo as DeploymentInfoProto,
-    CbrsDeploymentInfo as CbrsDeploymentInfoProto, DeviceType as DeviceTypeProto,
+    CbrsDeploymentInfo as CbrsDeploymentInfoProto,
+    CbrsRadioDeploymentInfo as CbrsRadioDeploymentInfoProto, DeviceType as DeviceTypeProto,
     GatewayInfo as GatewayInfoProto, GatewayMetadata as GatewayMetadataProto,
-    RadioDeploymentInfo as RadioDeploymentInfoProto, WifiDeploymentInfo as WifiDeploymentInfoProto,
+    WifiDeploymentInfo as WifiDeploymentInfoProto,
 };
 use serde::Deserialize;
 
@@ -37,14 +38,14 @@ impl From<WifiDeploymentInfoProto> for WifiDeploymentInfo {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct CbrsDeploymentInfo {
-    pub radio_deployment_info: Vec<RadioDeploymentInfo>,
+    pub cbrs_radios_deployment_info: Vec<RadioDeploymentInfo>,
 }
 
 impl From<CbrsDeploymentInfoProto> for CbrsDeploymentInfo {
     fn from(v: CbrsDeploymentInfoProto) -> Self {
         Self {
-            radio_deployment_info: v
-                .radio_deployment_info
+            cbrs_radios_deployment_info: v
+                .cbrs_radios_deployment_info
                 .into_iter()
                 .map(|v| v.into())
                 .collect(),
@@ -52,8 +53,8 @@ impl From<CbrsDeploymentInfoProto> for CbrsDeploymentInfo {
     }
 }
 
-impl From<RadioDeploymentInfoProto> for RadioDeploymentInfo {
-    fn from(v: RadioDeploymentInfoProto) -> Self {
+impl From<CbrsRadioDeploymentInfoProto> for RadioDeploymentInfo {
+    fn from(v: CbrsRadioDeploymentInfoProto) -> Self {
         Self {
             radio_id: v.radio_id,
             elevation: v.elevation,
@@ -177,7 +178,7 @@ impl From<WifiDeploymentInfo> for WifiDeploymentInfoProto {
     }
 }
 
-impl From<RadioDeploymentInfo> for RadioDeploymentInfoProto {
+impl From<RadioDeploymentInfo> for CbrsRadioDeploymentInfoProto {
     fn from(v: RadioDeploymentInfo) -> Self {
         Self {
             radio_id: v.radio_id,
@@ -189,8 +190,8 @@ impl From<RadioDeploymentInfo> for RadioDeploymentInfoProto {
 impl From<CbrsDeploymentInfo> for CbrsDeploymentInfoProto {
     fn from(v: CbrsDeploymentInfo) -> Self {
         Self {
-            radio_deployment_info: v
-                .radio_deployment_info
+            cbrs_radios_deployment_info: v
+                .cbrs_radios_deployment_info
                 .into_iter()
                 .map(|v| v.into())
                 .collect(),
