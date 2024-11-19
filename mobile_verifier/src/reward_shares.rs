@@ -161,9 +161,11 @@ impl TransferRewards {
                                 hotspot_key: hotspot_key.into(),
                                 dc_transfer_reward,
                                 rewardable_bytes: reward.bytes_rewarded,
-                                price: (self.hnt_bone_price * dec!(1_0000_0000) * dec!(1_0000_0000))
-                                    .to_u64()
-                                    .unwrap_or_default(),
+                                price: (self.hnt_bone_price
+                                    * dec!(1_0000_0000)
+                                    * dec!(1_0000_0000))
+                                .to_u64()
+                                .unwrap_or_default(),
                             },
                         )),
                     },
@@ -2345,7 +2347,7 @@ mod test {
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 490_00_000_000_000_000);
+        assert_eq!(unallocated_sp_reward_amount, 49_000_000_000_000_000);
     }
 
     #[test]

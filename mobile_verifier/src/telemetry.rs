@@ -1,7 +1,7 @@
-use crate::{rewarder,};
+use crate::rewarder;
 use chrono::{DateTime, Utc};
-use sqlx::{Pool, Postgres};
 use mobile_config::EpochPeriod;
+use sqlx::{Pool, Postgres};
 
 const LAST_REWARDED_END_TIME: &str = "last_rewarded_end_time";
 const DATA_TRANSFER_REWARDS_SCALE: &str = "data_transfer_rewards_scale";

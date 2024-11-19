@@ -2,9 +2,11 @@ use super::{call_with_retry, ClientError, Settings};
 use crate::sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
-use helium_proto::services::mobile_config::SubDaoEpochRewardInfoReqV1;
 use helium_proto::{
-    services::{mobile_config, Channel},
+    services::{
+        mobile_config::{self, SubDaoEpochRewardInfoReqV1},
+        Channel,
+    },
     Message,
 };
 use std::{error::Error, sync::Arc, time::Duration};

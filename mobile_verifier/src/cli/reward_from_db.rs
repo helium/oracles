@@ -1,6 +1,13 @@
-use crate::{heartbeats::HeartbeatReward, reward_shares::{
-    get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
-}, rewarder::boosted_hex_eligibility::BoostedHexEligibility, sp_boosted_rewards_bans::BannedRadios, speedtests_average::SpeedtestAverages, Settings, MOBILE_SUB_DAO_ONCHAIN_ADDRESS};
+use crate::{
+    heartbeats::HeartbeatReward,
+    reward_shares::{
+        get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
+    },
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
+    sp_boosted_rewards_bans::BannedRadios,
+    speedtests_average::SpeedtestAverages,
+    Settings, MOBILE_SUB_DAO_ONCHAIN_ADDRESS,
+};
 use anyhow::Result;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use helium_proto::services::poc_mobile as proto;
@@ -24,7 +31,7 @@ impl Cmd {
 
         let reward_epoch = self.reward_epoch;
 
-        let sub_dao_pubkey = PublicKeyBinary::from_str(&MOBILE_SUB_DAO_ONCHAIN_ADDRESS)?;
+        let sub_dao_pubkey = PublicKeyBinary::from_str(MOBILE_SUB_DAO_ONCHAIN_ADDRESS)?;
         let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.config_client)?;
         let reward_info = sub_dao_rewards_client
             .resolve_info(&sub_dao_pubkey, reward_epoch)
@@ -46,7 +53,8 @@ impl Cmd {
 
         let heartbeats = HeartbeatReward::validated(&pool, &reward_info.epoch_period);
         let speedtest_averages =
-            SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, &pool).await?;
+            SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, &pool)
+                .await?;
 
         let reward_shares = CoverageShares::new(
             &pool,
