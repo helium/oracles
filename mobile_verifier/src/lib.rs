@@ -24,6 +24,8 @@ pub use settings::Settings;
 use async_trait::async_trait;
 use std::error::Error;
 
+pub const MOBILE_SUB_DAO_ONCHAIN_ADDRESS: &str = "39Lw1RH6zt8AJvKn3BTxmUDofzduCM2J3kSaGDZ8L7Sk";
+
 pub enum GatewayResolution {
     GatewayNotFound,
     GatewayNotAsserted,

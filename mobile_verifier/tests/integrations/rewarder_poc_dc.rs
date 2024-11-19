@@ -1,6 +1,8 @@
 use std::ops::Range;
 
-use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext};
+use crate::common::{
+    self, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext,
+};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
@@ -44,14 +46,14 @@ const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    seed_heartbeats(epoch.start, &mut txn).await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_data_sessions(epoch.start, &mut txn).await?;
+    seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -66,7 +68,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
+            &reward_info,
             dec!(0.0001)
         ),
         receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, false)
@@ -121,14 +123,13 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
         let total = poc_sum + dc_sum;
 
-        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
         assert_eq!(expected_sum, total);
 
         // confirm the rewarded percentage amount matches expectations
-        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-        let percent = (Decimal::from(total) / daily_total)
+        let percent = (Decimal::from(total) / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(percent, dec!(0.6));
     } else {
