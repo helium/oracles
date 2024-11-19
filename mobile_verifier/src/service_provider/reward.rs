@@ -271,11 +271,31 @@ impl DecimalRoundingExt for Decimal {
 #[cfg(test)]
 mod tests {
     use chrono::{Duration, Utc};
+    use helium_crypto::PublicKeyBinary;
     use helium_proto::services::poc_mobile::{MobileRewardShare, PromotionReward};
+    use std::str::FromStr;
 
     use crate::service_provider;
 
     use super::*;
+
+    pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
+    pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+
+    pub fn default_rewards_info(
+        total_emissions: u64,
+        epoch_duration: Duration,
+    ) -> ResolvedSubDaoEpochRewardInfo {
+        let now = Utc::now();
+        ResolvedSubDaoEpochRewardInfo {
+            epoch: 1,
+            epoch_address: PublicKeyBinary::from_str(EPOCH_ADDRESS).unwrap(),
+            sub_dao_address: PublicKeyBinary::from_str(SUB_DAO_ADDRESS).unwrap(),
+            epoch_period: (now - epoch_duration)..now,
+            epoch_emissions: Decimal::from(total_emissions),
+            rewards_issued_at: now,
+        }
+    }
 
     #[test]
     fn no_promotions() {
@@ -653,7 +673,6 @@ mod tests {
         assert_eq!(unallocated, 2);
     }
 
-    use crate::service_provider::default_rewards_info;
     use proptest::prelude::*;
 
     prop_compose! {
