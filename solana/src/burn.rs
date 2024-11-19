@@ -3,7 +3,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use helium_crypto::PublicKeyBinary;
-use helium_lib::{client, dc, token};
+use helium_lib::{client, dc, token, TransactionOpts};
 use serde::Deserialize;
 use solana_sdk::{
     commitment_config::CommitmentConfig, signature::Signature, transaction::Transaction,
@@ -54,6 +54,7 @@ pub struct SolanaRpc {
     provider: client::SolanaRpcClient,
     keypair: Keypair,
     payers_to_monitor: Vec<PublicKeyBinary>,
+    transaction_opts: TransactionOpts,
 }
 
 impl SolanaRpc {
@@ -80,6 +81,7 @@ impl SolanaRpc {
             provider,
             keypair,
             payers_to_monitor: settings.payers_to_monitor()?,
+            transaction_opts: TransactionOpts::default(),
         }))
     }
 }
@@ -125,7 +127,15 @@ impl SolanaNetwork for SolanaRpc {
         amount: u64,
     ) -> Result<Self::Transaction, Self::Error> {
         let payer = Pubkey::try_from(payer.as_ref())?;
-        let tx = dc::burn_delegated(self, self.sub_dao, &self.keypair, amount, payer).await?;
+        let tx = dc::burn_delegated(
+            self,
+            self.sub_dao,
+            &self.keypair,
+            amount,
+            payer,
+            &self.transaction_opts,
+        )
+        .await?;
 
         Ok(tx)
     }
