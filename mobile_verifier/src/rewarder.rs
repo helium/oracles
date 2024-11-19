@@ -66,7 +66,6 @@ pub struct Rewarder<A, B> {
     reward_manifests: FileSinkClient<RewardManifest>,
     price_tracker: PriceTracker,
     speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
-    #[allow(dead_code)]
     location_cache: LocationCache,
 }
 
