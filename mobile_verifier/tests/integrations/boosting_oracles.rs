@@ -17,7 +17,7 @@ use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::{last_location::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
+    heartbeats::{location_cache::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
@@ -336,7 +336,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
 
     let coverage_objects = CoverageObjectCache::new(&pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
-    let location_cache = LocationCache::new(&pool);
+    let location_cache = LocationCache::new(&pool).await?;
 
     let epoch = start..end;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(

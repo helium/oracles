@@ -1,7 +1,8 @@
 pub mod cbrs;
-pub mod last_location;
+pub mod location_cache;
 pub mod wifi;
 
+use self::location_cache::{LocationCache, LocationCacheKey, LocationCacheValue};
 use crate::{
     cell_type::{CellType, CellTypeLabel},
     coverage::{self, CoverageClaimTimeCache, CoverageObjectCache, CoverageObjectMeta},
@@ -25,8 +26,6 @@ use rust_decimal_macros::dec;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
 use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
-
-use self::last_location::{LastLocation, LocationCache};
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
 const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
@@ -375,7 +374,7 @@ impl ValidatedHeartbeat {
         mut heartbeat: Heartbeat,
         gateway_info_resolver: &impl GatewayResolver,
         coverage_object_cache: &CoverageObjectCache,
-        last_location_cache: &LocationCache,
+        location_cache: &LocationCache,
         max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
         geofence: &impl GeofenceValidator,
@@ -483,7 +482,6 @@ impl ValidatedHeartbeat {
                 proto::HeartbeatValidity::UnsupportedLocation,
             ));
         }
-
         match gateway_info_resolver
             .resolve_gateway(&heartbeat.hotspot_key)
             .await?
@@ -504,28 +502,52 @@ impl ValidatedHeartbeat {
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::GatewayNotFound,
             )),
-            GatewayResolution::GatewayNotAsserted if heartbeat.hb_type == HbType::Wifi => {
-                Ok(Self::new(
+            GatewayResolution::GatewayNotAsserted => match heartbeat.hb_type {
+                HbType::Wifi => Ok(Self::new(
                     heartbeat,
                     cell_type,
                     dec!(0),
                     None,
                     Some(coverage_object.meta),
                     proto::HeartbeatValidity::GatewayNotAsserted,
-                ))
-            }
+                )),
+                HbType::Cbrs => {
+                    if let Some(cbsd_id) = heartbeat.cbsd_id.clone() {
+                        location_cache
+                            .insert(
+                                LocationCacheKey::CbrsId(cbsd_id),
+                                LocationCacheValue::new(
+                                    heartbeat.lat,
+                                    heartbeat.lon,
+                                    heartbeat.timestamp,
+                                ),
+                            )
+                            .await?;
+                    };
+                    Ok(Self::new(
+                        heartbeat,
+                        cell_type,
+                        dec!(1.0),
+                        None,
+                        Some(coverage_object.meta),
+                        proto::HeartbeatValidity::Valid,
+                    ))
+                }
+            },
             GatewayResolution::AssertedLocation(location) if heartbeat.hb_type == HbType::Wifi => {
                 let asserted_latlng: LatLng = CellIndex::try_from(location)?.into();
                 let is_valid = match heartbeat.location_validation_timestamp {
                     None => {
-                        if let Some(last_location) = last_location_cache
-                            .fetch_last_location(&heartbeat.hotspot_key)
+                        if let Some(last_location) = location_cache
+                            .get_recent(
+                                LocationCacheKey::WifiPubKey(heartbeat.hotspot_key.clone()),
+                                Duration::hours(12),
+                            )
                             .await?
                         {
                             heartbeat.lat = last_location.lat;
                             heartbeat.lon = last_location.lon;
-                            heartbeat.location_validation_timestamp =
-                                Some(last_location.location_validation_timestamp);
+                            heartbeat.location_validation_timestamp = Some(last_location.timestamp);
                             // Can't panic, previous lat and lon must be valid.
                             hb_latlng = heartbeat.centered_latlng().unwrap();
                             true
@@ -534,14 +556,13 @@ impl ValidatedHeartbeat {
                         }
                     }
                     Some(location_validation_timestamp) => {
-                        last_location_cache
-                            .set_last_location(
-                                &heartbeat.hotspot_key,
-                                LastLocation::new(
-                                    location_validation_timestamp,
-                                    heartbeat.timestamp,
+                        location_cache
+                            .insert(
+                                LocationCacheKey::WifiPubKey(heartbeat.hotspot_key.clone()),
+                                LocationCacheValue::new(
                                     heartbeat.lat,
                                     heartbeat.lon,
+                                    location_validation_timestamp,
                                 ),
                             )
                             .await?;
@@ -669,8 +690,8 @@ impl ValidatedHeartbeat {
         let truncated_timestamp = self.truncated_timestamp()?;
         sqlx::query(
             r#"
-            INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, lat, lon)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
             latest_timestamp = EXCLUDED.latest_timestamp,
             coverage_object = EXCLUDED.coverage_object
@@ -683,6 +704,8 @@ impl ValidatedHeartbeat {
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
         .bind(self.location_trust_score_multiplier)
+        .bind(self.heartbeat.lat)
+        .bind(self.heartbeat.lon)
         .execute(&mut *exec)
         .await?;
         Ok(())

@@ -1,8 +1,9 @@
-use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
+use super::{
+    location_cache::LocationCache, process_validated_heartbeats, Heartbeat, ValidatedHeartbeat,
+};
 use crate::{
     coverage::{CoverageClaimTimeCache, CoverageObjectCache},
     geofence::GeofenceValidator,
-    heartbeats::LocationCache,
     GatewayResolver, Settings,
 };
 
@@ -16,7 +17,6 @@ use file_store::{
 };
 use futures::{stream::StreamExt, TryFutureExt};
 use helium_proto::services::poc_mobile as proto;
-use retainer::Cache;
 use sqlx::{Pool, Postgres};
 use std::{
     sync::Arc,
@@ -33,6 +33,7 @@ pub struct CbrsHeartbeatDaemon<GIR, GFV> {
     heartbeat_sink: FileSinkClient<proto::Heartbeat>,
     seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
     geofence: GFV,
+    location_cache: LocationCache,
 }
 
 impl<GIR, GFV> CbrsHeartbeatDaemon<GIR, GFV>
@@ -49,6 +50,7 @@ where
         valid_heartbeats: FileSinkClient<proto::Heartbeat>,
         seniority_updates: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
+        location_cache: LocationCache,
     ) -> anyhow::Result<impl ManagedTask> {
         // CBRS Heartbeats
         let (cbrs_heartbeats, cbrs_heartbeats_server) =
@@ -69,6 +71,7 @@ where
             valid_heartbeats,
             seniority_updates,
             geofence,
+            location_cache,
         );
 
         Ok(TaskManager::builder()
@@ -86,6 +89,7 @@ where
         heartbeat_sink: FileSinkClient<proto::Heartbeat>,
         seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
+        location_cache: LocationCache,
     ) -> Self {
         Self {
             pool,
@@ -95,12 +99,13 @@ where
             heartbeat_sink,
             seniority_sink,
             geofence,
+            location_cache,
         }
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("Starting CBRS HeartbeatDaemon");
-        let heartbeat_cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
+        let heartbeat_cache = Arc::new(retainer::Cache::<(String, DateTime<Utc>), ()>::new());
 
         let heartbeat_cache_clone = heartbeat_cache.clone();
         tokio::spawn(async move {
@@ -111,8 +116,6 @@ where
 
         let coverage_claim_time_cache = CoverageClaimTimeCache::new();
         let coverage_object_cache = CoverageObjectCache::new(&self.pool);
-        // Unused:
-        let location_cache = LocationCache::new(&self.pool);
 
         loop {
             tokio::select! {
@@ -128,7 +131,6 @@ where
                         &heartbeat_cache,
                         &coverage_claim_time_cache,
                         &coverage_object_cache,
-                        &location_cache,
                     ).await?;
                     metrics::histogram!("cbrs_heartbeat_processing_time")
                         .record(start.elapsed());
@@ -142,10 +144,9 @@ where
     async fn process_file(
         &self,
         file: FileInfoStream<CbrsHeartbeatIngestReport>,
-        heartbeat_cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
+        heartbeat_cache: &Arc<retainer::Cache<(String, DateTime<Utc>), ()>>,
         coverage_claim_time_cache: &CoverageClaimTimeCache,
         coverage_object_cache: &CoverageObjectCache,
-        location_cache: &LocationCache,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing CBRS heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
@@ -166,7 +167,7 @@ where
                 heartbeats,
                 &self.gateway_info_resolver,
                 coverage_object_cache,
-                location_cache,
+                &self.location_cache,
                 self.max_distance_to_coverage,
                 &epoch,
                 &self.geofence,

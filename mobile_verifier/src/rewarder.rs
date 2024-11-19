@@ -1,8 +1,13 @@
+use self::boosted_hex_eligibility::BoostedHexEligibility;
 use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
-    heartbeats::{self, HeartbeatReward},
-    radio_threshold,
+    heartbeats::{
+        self,
+        location_cache::{self, LocationCache},
+        HeartbeatReward,
+    },
+    radio_location_estimates, radio_threshold,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
@@ -21,7 +26,7 @@ use file_store::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
 };
 use futures_util::TryFutureExt;
-
+use h3o::{CellIndex, Resolution};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -43,11 +48,9 @@ use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::{ops::Range, time::Duration};
+use std::{collections::HashSet, ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
-
-use self::boosted_hex_eligibility::BoostedHexEligibility;
 
 pub mod boosted_hex_eligibility;
 
@@ -63,6 +66,7 @@ pub struct Rewarder<A, B> {
     reward_manifests: FileSinkClient<RewardManifest>,
     price_tracker: PriceTracker,
     speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
+    location_cache: LocationCache,
 }
 
 impl<A, B> Rewarder<A, B>
@@ -77,6 +81,7 @@ where
         carrier_service_verifier: A,
         hex_boosting_info_resolver: B,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
+        location_cache: LocationCache,
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
@@ -108,6 +113,7 @@ where
             reward_manifests,
             price_tracker,
             speedtests_avg,
+            location_cache,
         );
 
         Ok(TaskManager::builder()
@@ -129,6 +135,7 @@ where
         reward_manifests: FileSinkClient<RewardManifest>,
         price_tracker: PriceTracker,
         speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
+        location_cache: LocationCache,
     ) -> Self {
         Self {
             pool,
@@ -140,6 +147,7 @@ where
             reward_manifests,
             price_tracker,
             speedtest_averages,
+            location_cache,
         }
     }
 
@@ -265,6 +273,7 @@ where
             &self.hex_service_client,
             &self.mobile_rewards,
             &self.speedtest_averages,
+            &self.location_cache,
             reward_period,
             mobile_bone_price,
         )
@@ -302,6 +311,7 @@ where
         coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
         sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_period.start).await?;
         subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.start).await?;
+        radio_location_estimates::clear_invalidated(&mut transaction, &reward_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
@@ -361,6 +371,7 @@ pub async fn reward_poc_and_dc(
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
+    location_cache: &LocationCache,
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
@@ -398,6 +409,7 @@ pub async fn reward_poc_and_dc(
         speedtest_avg_sink,
         reward_period,
         reward_shares,
+        location_cache,
     )
     .await?;
 
@@ -424,6 +436,7 @@ async fn reward_poc(
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_period: &Range<DateTime<Utc>>,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
+    _location_cache: &LocationCache,
 ) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
     let heartbeats = HeartbeatReward::validated(pool, reward_period);
     let speedtest_averages =
@@ -687,4 +700,49 @@ async fn save_next_rewarded_end_time(
     value: &DateTime<Utc>,
 ) -> db_store::Result<()> {
     meta::store(exec, "next_rewarded_end_time", value.timestamp()).await
+}
+
+fn is_within_radius(
+    location_hex: CellIndex,
+    estimates: Vec<(CellIndex, u32)>,
+) -> anyhow::Result<bool> {
+    for (center_hex, allowed_grid_distance) in estimates {
+        let grid_distance = location_hex.grid_distance(center_hex)? as u32;
+        if grid_distance <= allowed_grid_distance {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+pub async fn get_untrusted_radios(
+    pool: &Pool<Postgres>,
+    location_cache: &LocationCache,
+) -> anyhow::Result<HashSet<file_store::radio_location_estimates::Entity>> {
+    let mut unstrusted: HashSet<file_store::radio_location_estimates::Entity> = HashSet::new();
+
+    let locations = location_cache.get_all().await;
+
+    for (key, value) in locations.iter() {
+        let entity = location_cache::key_to_entity(key.clone());
+        // Estimates are ordered by bigger radius first it should allow us to do less calculation
+        // and find a match faster
+
+        // FIXME: harcoded confidence?
+        let estimates =
+            radio_location_estimates::get_valid_estimates(pool, &entity, dec!(0.75)).await?;
+
+        if estimates.is_empty() {
+            unstrusted.insert(entity);
+        } else {
+            match is_within_radius(value.to_cell(Resolution::Twelve)?, estimates) {
+                Ok(true) => true,
+                Ok(false) => unstrusted.insert(entity),
+                Err(_) => unstrusted.insert(entity),
+            };
+        }
+    }
+
+    Ok(unstrusted)
 }

@@ -41,6 +41,8 @@ pub enum Error {
     //Not recommended for internal use!
     #[error("external error")]
     ExternalError(#[from] Box<dyn std::error::Error + Send + Sync>),
+    #[error("error parsing decimal")]
+    IntoDecimal(#[from] rust_decimal::Error),
 }
 
 #[derive(Error, Debug)]
