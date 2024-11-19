@@ -327,9 +327,8 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
         if let Some(metadata) = &gw.metadata {
             if DeviceType::try_from(gw.device_type).unwrap() != DeviceType::WifiIndoor {
                 assert!(metadata.deployment_info.is_none());
-            }
-
-            if let Some(deployment_info) = &metadata.deployment_info {
+            } else {
+                let deployment_info = metadata.deployment_info.as_ref().unwrap();
                 match deployment_info {
                     DeploymentInfo::WifiDeploymentInfo(v) => {
                         assert_eq!(v.antenna, 18);
