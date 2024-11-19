@@ -20,16 +20,16 @@ pub struct ResolvedSubDaoEpochRewardInfo {
 #[derive(Clone, Debug, FromRow)]
 pub struct RawSubDaoEpochRewardInfo {
     #[sqlx(try_from = "i64")]
-    pub epoch: u64,
-    pub epoch_address: PublicKeyBinary,
-    pub sub_dao_address: PublicKeyBinary,
+    epoch: u64,
+    epoch_address: PublicKeyBinary,
+    sub_dao_address: PublicKeyBinary,
     #[sqlx(try_from = "i64")]
-    pub sub_dao_utility_score: u64,
+    sub_dao_utility_score: u64,
     #[sqlx(try_from = "i64")]
-    pub total_utility_score: u64,
+    total_utility_score: u64,
     #[sqlx(try_from = "i64")]
-    pub total_emissions: u64,
-    pub rewards_issued_at: DateTime<Utc>,
+    total_emissions: u64,
+    rewards_issued_at: DateTime<Utc>,
 }
 
 // server goes from raw to proto, client goes from proto to resolved
