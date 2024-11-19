@@ -1,5 +1,5 @@
-use crate::common::{self, MockFileSinkReceiver};
-use chrono::{Duration as ChronoDuration, Utc};
+use crate::common::{self, default_rewards_info, MockFileSinkReceiver};
+use chrono::Duration;
 use helium_proto::services::poc_mobile::{
     MobileRewardShare, UnallocatedReward, UnallocatedRewardType,
 };
@@ -11,12 +11,12 @@ use sqlx::PgPool;
 #[sqlx::test]
 async fn test_oracle_rewards(_pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
 
     let (_, rewards) = tokio::join!(
         // run rewards for oracles
-        rewarder::reward_oracles(&mobile_rewards_client, &epoch),
+        rewarder::reward_oracles(&mobile_rewards_client, &reward_info),
         receive_expected_rewards(&mut mobile_rewards)
     );
     if let Ok(unallocated_reward) = rewards {
@@ -28,14 +28,14 @@ async fn test_oracle_rewards(_pool: PgPool) -> anyhow::Result<()> {
         assert_eq!(3_287_671_232_876, unallocated_reward.amount);
 
         // confirm the total rewards allocated matches expectations
-        let expected_sum = reward_shares::get_scheduled_tokens_for_oracles(epoch.end - epoch.start)
-            .to_u64()
-            .unwrap();
+        let expected_sum =
+            reward_shares::get_scheduled_tokens_for_oracles(reward_info.epoch_emissions)
+                .to_u64()
+                .unwrap();
         assert_eq!(expected_sum, unallocated_reward.amount);
 
         // confirm the rewarded percentage amount matches expectations
-        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-        let percent = (Decimal::from(unallocated_reward.amount) / daily_total)
+        let percent = (Decimal::from(unallocated_reward.amount) / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(percent, dec!(0.04));
     } else {

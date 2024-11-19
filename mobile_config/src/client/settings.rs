@@ -49,6 +49,11 @@ fn default_cache_ttl_in_secs() -> Duration {
 }
 
 impl Settings {
+    pub fn connect_epoch_client(&self) -> mobile_config::sub_dao_client::SubDaoClient<Channel> {
+        let channel = connect_channel(self);
+        mobile_config::sub_dao_client::SubDaoClient::new(channel)
+    }
+
     pub fn connect_gateway_client(&self) -> mobile_config::GatewayClient<Channel> {
         let channel = connect_channel(self);
         mobile_config::GatewayClient::new(channel)
