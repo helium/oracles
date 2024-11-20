@@ -3,7 +3,8 @@ use futures::stream::StreamExt;
 
 use helium_crypto::{KeyTag, Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::services::mobile_config::{
-    self as proto, DeviceType, GatewayClient, GatewayInfoStreamReqV1, GatewayInfoStreamResV1,
+    self as proto, gateway_metadata::DeploymentInfo, DeviceType, GatewayClient,
+    GatewayInfoStreamReqV1, GatewayInfoStreamResV1,
 };
 use mobile_config::{
     gateway_service::GatewayService,
@@ -126,6 +127,7 @@ async fn gateway_stream_info_refreshed_at(pool: PgPool) {
         asset1_pubkey.clone().into(),
         now,
         Some(now),
+        None,
     )
     .await;
     add_db_record(
@@ -136,6 +138,7 @@ async fn gateway_stream_info_refreshed_at(pool: PgPool) {
         asset2_pubkey.clone().into(),
         now_plus_10,
         Some(now_plus_10),
+        None,
     )
     .await;
 
@@ -199,6 +202,7 @@ async fn gateway_stream_info_refreshed_at_is_null(pool: PgPool) {
         asset1_pubkey.clone().into(),
         now,
         None,
+        None,
     )
     .await;
 
@@ -238,6 +242,7 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
         asset1_pubkey.clone().into(),
         now,
         Some(now),
+        Some(r#"{"wifiInfoV0": {"antenna": 18, "azimuth": 160, "elevation": 5, "electricalDownTilt": 1, "mechanicalDownTilt": 2}}"#)
     )
     .await;
     add_db_record(
@@ -248,6 +253,8 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
         asset2_pubkey.clone().into(),
         now,
         Some(now),
+        // Should be returned None in deployment info
+        Some(r#"{"wifiInfoV0Invalid": {"antenna": 18}}"#),
     )
     .await;
     add_db_record(
@@ -258,6 +265,7 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
         asset3_pubkey.clone().into(),
         now,
         Some(now),
+        None,
     )
     .await;
 
@@ -312,9 +320,31 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
         .collect::<Vec<GatewayInfoStreamResV1>>()
         .await;
     let gateways = resp.first().unwrap().gateways.clone();
+
+    // Check deployment info
     assert_eq!(gateways.len(), 3);
+    for gw in gateways {
+        if let Some(metadata) = &gw.metadata {
+            if DeviceType::try_from(gw.device_type).unwrap() != DeviceType::WifiIndoor {
+                assert!(metadata.deployment_info.is_none());
+            } else {
+                let deployment_info = metadata.deployment_info.as_ref().unwrap();
+                match deployment_info {
+                    DeploymentInfo::WifiDeploymentInfo(v) => {
+                        assert_eq!(v.antenna, 18);
+                        assert_eq!(v.azimuth, 160);
+                        assert_eq!(v.elevation, 5);
+                        assert_eq!(v.electrical_down_tilt, 1);
+                        assert_eq!(v.mechanical_down_tilt, 2);
+                    }
+                    DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
+                };
+            }
+        }
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn add_db_record(
     pool: &PgPool,
     asset: &str,
@@ -323,8 +353,18 @@ async fn add_db_record(
     key: PublicKeyBinary,
     created_at: DateTime<Utc>,
     refreshed_at: Option<DateTime<Utc>>,
+    deployment_info: Option<&str>,
 ) {
-    add_mobile_hotspot_infos(pool, asset, location, device_type, created_at, refreshed_at).await;
+    add_mobile_hotspot_infos(
+        pool,
+        asset,
+        location,
+        device_type,
+        created_at,
+        refreshed_at,
+        deployment_info,
+    )
+    .await;
     add_asset_key(pool, asset, key).await;
 }
 
@@ -335,13 +375,14 @@ async fn add_mobile_hotspot_infos(
     device_type: &str,
     created_at: DateTime<Utc>,
     refreshed_at: Option<DateTime<Utc>>,
+    deployment_info: Option<&str>,
 ) {
     sqlx::query(
         r#"
             INSERT INTO
-"mobile_hotspot_infos" ("asset", "location", "device_type", "created_at", "refreshed_at")
+"mobile_hotspot_infos" ("asset", "location", "device_type", "created_at", "refreshed_at", "deployment_info")
             VALUES
-($1, $2, $3::jsonb, $4, $5);
+($1, $2, $3::jsonb, $4, $5, $6::jsonb);
     "#,
     )
     .bind(asset)
@@ -349,6 +390,7 @@ async fn add_mobile_hotspot_infos(
     .bind(device_type)
     .bind(created_at)
     .bind(refreshed_at)
+    .bind(deployment_info)
     .execute(pool)
     .await
     .unwrap();
@@ -378,7 +420,8 @@ async fn create_db_tables(pool: &PgPool) {
         location numeric NULL,
         device_type jsonb NOT NULL,
         created_at timestamptz NOT NULL DEFAULT NOW(),
-        refreshed_at timestamptz
+        refreshed_at timestamptz,
+        deployment_info jsonb
     );"#,
     )
     .execute(pool)
