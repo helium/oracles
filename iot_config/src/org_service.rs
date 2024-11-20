@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     admin::{AuthCache, KeyType},
-    broadcast_update, helium_netids, lora_field, org,
+    broadcast_update, org,
     route::list_routes,
     telemetry, verify_public_key, GrpcResult,
 };
@@ -12,13 +12,11 @@ use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
-        self, route_stream_res_v1, ActionV1, DevaddrConstraintV1, OrgCreateHeliumReqV1,
-        OrgCreateRoamerReqV1, OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1, OrgEnableResV1,
-        OrgGetReqV1, OrgListReqV1, OrgListResV1, OrgResV1, OrgUpdateReqV1, OrgV1, RouteStreamResV1,
+        self, route_stream_res_v1, ActionV1, OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1,
+        OrgEnableResV1, OrgGetReqV1, OrgListReqV1, OrgListResV1, OrgResV1, OrgV1, RouteStreamResV1,
     },
     Message,
 };
-use solana_sdk::pubkey::Pubkey;
 use sqlx::{Pool, Postgres};
 use tokio::sync::{broadcast, watch};
 use tonic::{Request, Response, Status};
@@ -76,39 +74,6 @@ impl OrgService {
             .verify_signature(signer, request)
             .map_err(|_| Status::permission_denied("invalid request signature"))?;
         Ok(())
-    }
-
-    async fn _verify_update_request_signature(
-        &self,
-        signer: &PublicKey,
-        request: &OrgUpdateReqV1,
-    ) -> Result<UpdateAuthorizer, Status> {
-        if self
-            .auth_cache
-            .verify_signature_with_type(KeyType::Administrator, signer, request)
-            .is_ok()
-        {
-            tracing::debug!(signer = signer.to_string(), "request authorized by admin");
-            return Ok(UpdateAuthorizer::Admin);
-        }
-
-        // TODO (bry): implement
-        /*         let org_owner = org::get(request.oui, &self.pool)
-            .await
-            .transpose()
-            .ok_or_else(|| Status::not_found(format!("oui: {}", request.oui)))?
-            .map(|org| org.owner)
-            .map_err(|_| Status::internal("auth verification error"))?;
-
-        if org_owner == signer.clone().into() &&request.verify(signer).is_ok() {
-            tracing::debug!(
-                signer = signer.to_string(),
-                "request authorized by delegate"
-            );
-            return ok(updateauthorizer::org);
-        } */
-
-        Err(Status::permission_denied("unauthorized request signature"))
     }
 
     fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
@@ -190,7 +155,7 @@ impl iot_config::Org for OrgService {
             .await
             .map_err(|err| {
                 tracing::error!(oui = org.oui, reason = ?err, "get org net id failed");
-                Status::not_found("invalid org; no valid devaddr constraints")
+                Status::not_found("invalid org; no net id found")
             })?;
 
         let devaddr_constraints = org
@@ -214,125 +179,6 @@ impl iot_config::Org for OrgService {
 
         resp.signature = self.sign_response(&resp.encode_to_vec())?;
         println!("Response: {:?}", resp);
-        Ok(Response::new(resp))
-    }
-
-    async fn create_helium(&self, request: Request<OrgCreateHeliumReqV1>) -> GrpcResult<OrgResV1> {
-        let request = request.into_inner();
-        telemetry::count_request("org", "create-helium");
-        custom_tracing::record_b58("pub_key", &request.owner);
-        custom_tracing::record_b58("signer", &request.signer);
-
-        let signer = verify_public_key(&request.signer)?;
-        self._verify_admin_request_signature(&signer, &request)?;
-
-        /* // dont need this becuase the transaction will fail on solana if the keys are invalid
-        let mut verify_keys: Vec<&[u8]> = vec![request.owner.as_ref(), request.payer.as_ref()];
-        let mut verify_delegates: Vec<&[u8]> = request
-            .delegate_keys
-            .iter()
-            .map(|key| key.as_slice())
-            .collect();
-        verify_keys.append(&mut verify_delegates);
-        _ = verify_keys
-            .iter()
-            .map(|key| {
-                verify_solana_public_key(key).map_err(|err| {
-                    tracing::error!(reason = ?err, "failed pubkey validation");
-                    Status::invalid_argument(format!("failed pubkey validation: {err:?}"))
-                })
-            })
-            .collect::<Result<Vec<Pubkey>, Status>>()?; */
-
-        tracing::info!(?request, "create helium org");
-
-        let net_id = request.net_id();
-        let helium_netid_field = helium_netids::HeliumNetId::from(net_id).id();
-
-        /* // dont need this
-        let requested_addrs = if request.devaddrs >= 8 && request.devaddrs % 2 == 0 {
-            request.devaddrs
-        } else {
-            return Err(Status::invalid_argument(format!(
-                "{} devaddrs requested; minimum 8, even number required",
-                request.devaddrs
-            )));
-        }; */
-
-        /* // how do we do this checkout_devaddr_constraints in solana?
-        let mut txn = self
-            .pool
-            .begin()
-            .await
-            .map_err(|_| Status::internal("error saving org record"))?;
-        let devaddr_constraints = helium_netids::checkout_devaddr_constraints(&mut txn, requested_addrs, net_id.into())
-            .await
-            .map_err(|err| {
-                tracing::error!(?net_id, count = %requested_addrs, reason = ?err, "failed to retrieve available helium devaddrs");
-                Status::failed_precondition("helium addresses unavailable")
-            })?;
-        tracing::info!(constraints = ?devaddr_constraints, "devaddr constraints issued"); */
-
-        let mut resp = OrgResV1 {
-            org: None,                   // Update this with the actual updated org
-            net_id: 0,                   // Update this with the correct net_id
-            devaddr_constraints: vec![], // Update this if needed
-            timestamp: Utc::now().encode_timestamp(),
-            signer: self.signing_key.public_key().into(),
-            signature: vec![],
-        };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
-
-        // TODO (bry): implement
-        // we want to return an array of unsigned serialized txns for the cli to sign and send to solana
-        // create org instruction
-        // create devaddr constraints instructions
-        // create delegate instructions
-        // pack instructions into a transactions
-        // return array of unsigned serialized transactions
-
-        Ok(Response::new(resp))
-    }
-
-    async fn create_roamer(&self, request: Request<OrgCreateRoamerReqV1>) -> GrpcResult<OrgResV1> {
-        let request = request.into_inner();
-        telemetry::count_request("org", "create-roamer");
-        custom_tracing::record_b58("pub_key", &request.owner);
-        custom_tracing::record_b58("signer", &request.signer);
-
-        let mut resp = OrgResV1 {
-            org: None,                   // Update this with the actual updated org
-            net_id: 0,                   // Update this with the correct net_id
-            devaddr_constraints: vec![], // Update this if needed
-            timestamp: Utc::now().encode_timestamp(),
-            signer: self.signing_key.public_key().into(),
-            signature: vec![],
-        };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
-
-        // TODO (bry): implement
-
-        Ok(Response::new(resp))
-    }
-
-    async fn update(&self, request: Request<OrgUpdateReqV1>) -> GrpcResult<OrgResV1> {
-        let request = request.into_inner();
-        telemetry::count_request("org", "update");
-        custom_tracing::record("oui", request.oui);
-        custom_tracing::record_b58("signer", &request.signer);
-
-        let mut resp = OrgResV1 {
-            org: None,                   // Update this with the actual updated org
-            net_id: 0,                   // Update this with the correct net_id
-            devaddr_constraints: vec![], // Update this if needed
-            timestamp: Utc::now().encode_timestamp(),
-            signer: self.signing_key.public_key().into(),
-            signature: vec![],
-        };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
-
-        // TODO (bry): implement
-
         Ok(Response::new(resp))
     }
 

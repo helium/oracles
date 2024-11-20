@@ -1,10 +1,5 @@
-use crate::{
-    helium_netids::{self, is_helium_netid, AddressStore, HeliumNetId},
-    lora_field::{DevAddrConstraint, DevAddrField, NetIdField},
-    org_service::UpdateAuthorizer,
-};
+use crate::lora_field::{DevAddrConstraint, NetIdField};
 use futures::stream::StreamExt;
-use helium_crypto::PublicKeyBinary;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::Serialize;
 use solana_sdk::pubkey::Pubkey;
@@ -14,10 +9,7 @@ use std::str::FromStr;
 use tokio::sync::watch;
 
 pub mod proto {
-    pub use helium_proto::services::iot_config::{
-        org_update_req_v1::update_v1::Update, org_update_req_v1::UpdateV1, ActionV1, OrgResV1,
-        OrgV1,
-    };
+    pub use helium_proto::services::iot_config::{ActionV1, OrgResV1, OrgV1};
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -25,6 +17,7 @@ pub struct Org {
     pub oui: u64,
     pub owner: Pubkey,
     pub escrow_key: String,
+    pub approved: bool,
     pub locked: bool,
     pub delegate_keys: Option<Vec<Pubkey>>,
     pub constraints: Option<Vec<DevAddrConstraint>>,
@@ -32,6 +25,7 @@ pub struct Org {
 
 impl FromRow<'_, PgRow> for Org {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        let approved = row.get::<bool, _>("approved");
         let oui = row.try_get::<i64, &str>("oui")? as u64;
         let owner_str: String = row.get("authority");
         let owner = Pubkey::from_str(&owner_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
@@ -81,6 +75,7 @@ impl FromRow<'_, PgRow> for Org {
             oui,
             owner,
             escrow_key,
+            approved,
             locked,
             delegate_keys,
             constraints,
@@ -112,9 +107,8 @@ pub async fn get_org_netid(
     let netid = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT sol_ni.id::bigint
-        FROM solana_organization_devaddr_constraints sol_odc
-        JOIN solana_organizations sol_org ON sol_org.address = sol_odc.organization
-        JOIN solana_net_ids sol_ni ON sol_ni.address = sol_odc.net_id
+        FROM solana_organizations sol_org
+        JOIN solana_net_ids sol_ni ON sol_ni.address = sol_org.net_id
         WHERE sol_org.oui = $1
         LIMIT 1
         "#,
@@ -126,159 +120,12 @@ pub async fn get_org_netid(
     Ok(netid.into())
 }
 
-async fn add_constraint_update(
-    oui: u64,
-    net_id: NetIdField,
-    added_constraint: DevAddrConstraint,
-    db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-) -> Result<(), OrgStoreError> {
-    let helium_net_id: HeliumNetId = net_id
-        .try_into()
-        .map_err(|err: &'static str| OrgStoreError::InvalidUpdate(err.to_string()))?;
-    helium_netids::checkout_specified_devaddr_constraint(db, helium_net_id, &added_constraint)
-        .await
-        .map_err(|err| OrgStoreError::InvalidUpdate(format!("{err:?}")))?;
-    insert_helium_constraints(oui, net_id, &[added_constraint], db).await?;
-    Ok(())
-}
-
-async fn remove_constraint_update(
-    oui: u64,
-    net_id: NetIdField,
-    org_constraints: Option<&Vec<DevAddrConstraint>>,
-    removed_constraint: DevAddrConstraint,
-    db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-) -> Result<(), OrgStoreError> {
-    let helium_net_id: HeliumNetId = net_id
-        .try_into()
-        .map_err(|err: &'static str| OrgStoreError::InvalidUpdate(err.to_string()))?;
-    if let Some(org_constraints) = org_constraints {
-        if org_constraints.contains(&removed_constraint) && org_constraints.len() > 1 {
-            let remove_range = (u32::from(removed_constraint.start_addr)
-                ..=u32::from(removed_constraint.end_addr))
-                .collect::<Vec<u32>>();
-            db.release_addrs(helium_net_id, &remove_range).await?;
-            remove_helium_constraints(oui, &[removed_constraint], db).await?;
-            Ok(())
-        } else if org_constraints.len() == 1 {
-            return Err(OrgStoreError::InvalidUpdate(
-                "org must have at least one constraint range".to_string(),
-            ));
-        } else {
-            return Err(OrgStoreError::InvalidUpdate(
-                "cannot remove constraint leased by other org".to_string(),
-            ));
-        }
-    } else {
-        Err(OrgStoreError::InvalidUpdate(
-            "no org constraints defined".to_string(),
-        ))
-    }
-}
-
-async fn add_devaddr_slab(
-    oui: u64,
-    net_id: NetIdField,
-    addr_count: u64,
-    txn: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-) -> Result<(), OrgStoreError> {
-    let helium_net_id: HeliumNetId = net_id
-        .try_into()
-        .map_err(|err: &'static str| OrgStoreError::InvalidUpdate(err.to_string()))?;
-    let constraints = helium_netids::checkout_devaddr_constraints(txn, addr_count, helium_net_id)
-        .await
-        .map_err(|err| OrgStoreError::SaveConstraints(format!("{err:?}")))?;
-    insert_helium_constraints(oui, net_id, &constraints, txn).await?;
-    Ok(())
-}
-
-async fn insert_helium_constraints(
-    oui: u64,
-    net_id: NetIdField,
-    devaddr_ranges: &[DevAddrConstraint],
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), sqlx::Error> {
-    let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
-        r#"
-        insert into organization_devaddr_constraints (oui, net_id, start_addr, end_addr)
-        "#,
-    );
-    query_builder.push_values(devaddr_ranges, |mut builder, range| {
-        builder
-            .push_bind(oui as i64)
-            .push_bind(i32::from(net_id))
-            .push_bind(i32::from(range.start_addr))
-            .push_bind(i32::from(range.end_addr));
-    });
-
-    query_builder.build().execute(db).await.map(|_| ())
-}
-
-async fn remove_helium_constraints(
-    oui: u64,
-    devaddr_ranges: &[DevAddrConstraint],
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), sqlx::Error> {
-    let constraints = devaddr_ranges
-        .iter()
-        .map(|constraint| (oui, constraint.start_addr, constraint.end_addr))
-        .collect::<Vec<(u64, DevAddrField, DevAddrField)>>();
-    let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
-        "delete from organization_devaddr_constraints where (oui, start_addr, end_addr) in ",
-    );
-    query_builder.push_tuples(constraints, |mut builder, (oui, start_addr, end_addr)| {
-        builder
-            .push_bind(oui as i64)
-            .push_bind(i32::from(start_addr))
-            .push_bind(i32::from(end_addr));
-    });
-
-    query_builder.build().execute(db).await.map(|_| ())
-}
-
-async fn check_roamer_constraint_count(
-    net_id: NetIdField,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar(
-        r#"
-        SELECT COUNT(sol_odc.net_id)
-        FROM solana_organization_devaddr_constraints sol_odc
-        JOIN solana_net_ids sol_ni ON sol_odc.net_id = sol_ni.address
-        WHERE sol_ni.id = $1::numeric
-        "#,
-    )
-    .bind(net_id.to_string())
-    .fetch_one(db)
-    .await
-}
-
-async fn insert_roamer_constraint(
-    oui: u64,
-    net_id: NetIdField,
-    devaddr_range: &DevAddrConstraint,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        insert into organization_devaddr_constraints (oui, net_id, start_addr, end_addr)
-        values ($1, $2, $3, $4)
-        "#,
-    )
-    .bind(oui as i64)
-    .bind(i32::from(net_id))
-    .bind(i32::from(devaddr_range.start_addr))
-    .bind(i32::from(devaddr_range.end_addr))
-    .execute(db)
-    .await
-    .map(|_| ())
-}
-
 const GET_ORG_SQL: &str = r#"
 SELECT
     sol_org.oui::bigint,
     sol_org.authority,
     sol_org.escrow_key,
+    sol_org.approved,
     COALESCE((SELECT locked
      FROM organization_locks
      WHERE organization = sol_org.address), true) AS locked,
@@ -489,6 +336,7 @@ impl From<Org> for proto::OrgV1 {
             oui: org.oui,
             owner: org.owner.to_bytes().to_vec(),
             escrow_key: org.escrow_key,
+            approved: org.approved,
             locked: org.locked,
             delegate_keys: org.delegate_keys.map_or_else(Vec::new, |keys| {
                 keys.iter().map(|key| key.to_bytes().to_vec()).collect()

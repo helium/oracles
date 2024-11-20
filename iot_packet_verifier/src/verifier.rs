@@ -173,10 +173,9 @@ impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 }
 
 // TODO: Move these to a separate module
-
 pub struct Org {
     pub oui: u64,
-    pub escrow_Key: string,
+    pub escrow_key: String,
     pub payer: PublicKeyBinary,
     pub locked: bool,
 }
@@ -213,7 +212,12 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
             loop {
                 tracing::info!("Checking if any orgs need to be re-enabled");
 
-                for Org { locked, payer, oui } in self
+                for Org {
+                    locked,
+                    escrow_key,
+                    payer,
+                    oui,
+                } in self
                     .list_orgs()
                     .await
                     .map_err(MonitorError::ConfigClientError)?
