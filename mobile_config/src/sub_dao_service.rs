@@ -5,7 +5,7 @@ use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
-    services::mobile_config::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},
+    services::sub_dao::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},
     Message,
 };
 use sqlx::{Pool, Postgres};
@@ -54,21 +54,21 @@ impl SuDaoService {
 }
 
 #[tonic::async_trait]
-impl mobile_config::sub_dao_server::SubDao for SuDaoService {
+impl sub_dao::sub_dao_server::SubDao for SuDaoService {
     async fn info(
         &self,
         request: Request<SubDaoEpochRewardInfoReqV1>,
     ) -> GrpcResult<SubDaoEpochRewardInfoResV1> {
         let request = request.into_inner();
         telemetry::count_request("sub_dao_reward_info", "info");
-        custom_tracing::record_b58("sub_dao", &request.sub_dao);
+        custom_tracing::record_b58("sub_dao", &request.sub_dao_pubkey);
         custom_tracing::record("epoch", request.epoch);
         custom_tracing::record_b58("signer", &request.signer);
 
         self.verify_request_signature_for_info(&request)?;
 
         let epoch = request.epoch;
-        let sub_dao: PublicKeyBinary = request.sub_dao.into();
+        let sub_dao: PublicKeyBinary = request.sub_dao_pubkey.into();
         tracing::debug!(sub_dao = %sub_dao, epoch = epoch, "fetching sub_dao epoch reward info");
 
         sub_dao_epoch_reward_info::db::get_info(&self.metadata_pool, epoch, sub_dao)

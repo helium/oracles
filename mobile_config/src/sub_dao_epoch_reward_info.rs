@@ -2,7 +2,7 @@ use crate::EpochPeriod;
 use chrono::{DateTime, Utc};
 use file_store::traits::{TimestampDecode, TimestampEncode};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::mobile_config::SubDaoEpochRewardInfo as SubDaoEpochRewardInfoProto;
+use helium_proto::services::sub_dao::SubDaoEpochRewardInfo as SubDaoEpochRewardInfoProto;
 use rust_decimal::prelude::*;
 use sqlx::FromRow;
 use std::ops::Range;
@@ -10,8 +10,8 @@ use std::ops::Range;
 #[derive(Clone, Debug)]
 pub struct ResolvedSubDaoEpochRewardInfo {
     pub epoch: u64,
-    pub epoch_address: PublicKeyBinary,
-    pub sub_dao_address: PublicKeyBinary,
+    pub epoch_pubkey: PublicKeyBinary,
+    pub sub_dao_pubkey: PublicKeyBinary,
     pub epoch_period: Range<DateTime<Utc>>,
     pub epoch_emissions: Decimal,
     pub rewards_issued_at: DateTime<Utc>,
@@ -21,49 +21,41 @@ pub struct ResolvedSubDaoEpochRewardInfo {
 pub struct RawSubDaoEpochRewardInfo {
     #[sqlx(try_from = "i64")]
     epoch: u64,
-    epoch_address: PublicKeyBinary,
-    sub_dao_address: PublicKeyBinary,
+    epoch_pubkey: PublicKeyBinary,
+    sub_dao_pubkey: PublicKeyBinary,
     #[sqlx(try_from = "i64")]
-    sub_dao_utility_score: u64,
+    rewards_issued: u64,
     #[sqlx(try_from = "i64")]
-    total_utility_score: u64,
-    #[sqlx(try_from = "i64")]
-    total_emissions: u64,
+    delegation_rewards_issued: u64,
     rewards_issued_at: DateTime<Utc>,
 }
 
-// server goes from raw to proto, client goes from proto to resolved
 impl TryFrom<RawSubDaoEpochRewardInfo> for SubDaoEpochRewardInfoProto {
     type Error = anyhow::Error;
 
     fn try_from(info: RawSubDaoEpochRewardInfo) -> Result<Self, Self::Error> {
         Ok(Self {
             epoch: info.epoch,
-            address: info.epoch_address.into(),
-            sub_dao: info.sub_dao_address.into(),
-            sub_dao_utility_score: info.sub_dao_utility_score,
-            total_utility_score: info.total_utility_score,
-            total_emissions: info.total_emissions,
+            epoch_pubkey: info.epoch_pubkey.into(),
+            sub_dao_pubkey: info.sub_dao_pubkey.into(),
+            rewards_issued: info.rewards_issued,
+            delegation_rewards_issued: info.delegation_rewards_issued,
             rewards_issued_at: info.rewards_issued_at.encode_timestamp(),
         })
     }
 }
 
-// server returns the proto struct to client, client resolves to the resolved struct
 impl TryFrom<SubDaoEpochRewardInfoProto> for ResolvedSubDaoEpochRewardInfo {
     type Error = anyhow::Error;
 
     fn try_from(info: SubDaoEpochRewardInfoProto) -> Result<Self, Self::Error> {
         let epoch_period: EpochPeriod = info.epoch.try_into()?;
-        // todo: confirm rounding requirements here
-        let epoch_rewards = Decimal::from(
-            info.total_emissions * (info.sub_dao_utility_score / info.total_utility_score),
-        );
+        let epoch_rewards = Decimal::from(info.rewards_issued + info.delegation_rewards_issued);
 
         Ok(Self {
             epoch: info.epoch,
-            epoch_address: info.address.into(),
-            sub_dao_address: info.sub_dao.into(),
+            epoch_pubkey: info.epoch_pubkey.into(),
+            sub_dao_pubkey: info.sub_dao_pubkey.into(),
             epoch_period: epoch_period.period,
             epoch_emissions: epoch_rewards,
             rewards_issued_at: info.rewards_issued_at.to_timestamp()?,
@@ -79,16 +71,14 @@ pub(crate) mod db {
 
     const GET_EPOCH_REWARD_INFO_SQL: &str = r#"
             SELECT
-                t_subdao.address AS epoch_address,
-                t_subdao.sub_dao AS sub_dao_address,
-                t_subdao.epoch,
-                t_subdao.utility_score,
-                t_dao.total_utility_score,
-                t_dao.total_rewards,
-                t_subdao.rewards_issued_at
-            FROM sub_dao_epoch_infos t_subdao
-            JOIN dao_epoch_infos t_dao ON t_subdao.epoch = t_dao.epoch
-            WHERE t_subdao.epoch = $1 AND t_subdao.sub_dao = $2
+                address AS epoch_pubkey,
+                sub_dao AS sub_dao_pubkey,
+                epoch,
+                rewards_issued,
+                delegation_rewards_issued,
+                rewards_issued_at
+            FROM sub_dao_epoch_infos
+            WHERE epoch = $1 AND sub_dao = $2
         "#;
 
     pub async fn get_info(

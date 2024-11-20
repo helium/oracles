@@ -46,7 +46,6 @@ use mobile_config::{
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
-use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -260,10 +259,7 @@ where
             .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
             .await?;
 
-        // Hnt prices are supplied in 10^8, so we must convert them to Decimal
-        let hnt_bone_price = Decimal::from(hnt_price)
-                / dec!(1_0000_0000)  // Per Hnt token
-                / dec!(1_0000_0000); // Per Bone
+        let hnt_bone_price = PriceConverter::pricer_format_to_hnt_bones(hnt_price);
 
         // process rewards for poc and data transfer
         let poc_dc_shares = reward_poc_and_dc(

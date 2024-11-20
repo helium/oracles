@@ -4,7 +4,7 @@ use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::{
-        mobile_config::{self, SubDaoEpochRewardInfoReqV1},
+        sub_dao::{self, SubDaoEpochRewardInfoReqV1},
         Channel,
     },
     Message,
@@ -13,7 +13,7 @@ use std::{error::Error, sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct SubDaoClient {
-    pub client: mobile_config::sub_dao_client::SubDaoClient<Channel>,
+    pub client: sub_dao::sub_dao_client::SubDaoClient<Channel>,
     signing_key: Arc<Keypair>,
     config_pubkey: PublicKey,
 }
@@ -49,7 +49,7 @@ impl SubDaoEpochRewardInfoResolver for SubDaoClient {
         epoch: u64,
     ) -> Result<Option<ResolvedSubDaoEpochRewardInfo>, Self::Error> {
         let mut request = SubDaoEpochRewardInfoReqV1 {
-            sub_dao: sub_dao.clone().into(),
+            sub_dao_pubkey: sub_dao.clone().into(),
             epoch,
             signer: self.signing_key.public_key().into(),
             signature: vec![],
