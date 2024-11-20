@@ -38,7 +38,7 @@ impl From<WifiDeploymentInfoProto> for WifiDeploymentInfo {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct CbrsDeploymentInfo {
-    pub cbrs_radios_deployment_info: Vec<RadioDeploymentInfo>,
+    pub cbrs_radios_deployment_info: Vec<CbrsRadioDeploymentInfo>,
 }
 
 impl From<CbrsDeploymentInfoProto> for CbrsDeploymentInfo {
@@ -53,7 +53,7 @@ impl From<CbrsDeploymentInfoProto> for CbrsDeploymentInfo {
     }
 }
 
-impl From<CbrsRadioDeploymentInfoProto> for RadioDeploymentInfo {
+impl From<CbrsRadioDeploymentInfoProto> for CbrsRadioDeploymentInfo {
     fn from(v: CbrsRadioDeploymentInfoProto) -> Self {
         Self {
             radio_id: v.radio_id,
@@ -63,7 +63,7 @@ impl From<CbrsRadioDeploymentInfoProto> for RadioDeploymentInfo {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct RadioDeploymentInfo {
+pub struct CbrsRadioDeploymentInfo {
     /// CBSD_ID
     pub radio_id: String,
     /// The asserted elevation of the gateway above ground level in whole meters
@@ -178,8 +178,8 @@ impl From<WifiDeploymentInfo> for WifiDeploymentInfoProto {
     }
 }
 
-impl From<RadioDeploymentInfo> for CbrsRadioDeploymentInfoProto {
-    fn from(v: RadioDeploymentInfo) -> Self {
+impl From<CbrsRadioDeploymentInfo> for CbrsRadioDeploymentInfoProto {
+    fn from(v: CbrsRadioDeploymentInfo) -> Self {
         Self {
             radio_id: v.radio_id,
             elevation: v.elevation,
