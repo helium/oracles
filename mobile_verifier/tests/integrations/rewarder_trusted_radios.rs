@@ -3,7 +3,10 @@ use file_store::radio_location_estimates::Entity;
 use h3o::{CellIndex, LatLng};
 use helium_crypto::{KeyTag, Keypair, PublicKey, PublicKeyBinary};
 use mobile_verifier::{
-    heartbeats::location_cache::{LocationCache, LocationCacheKey, LocationCacheValue},
+    heartbeats::{
+        location_cache::{LocationCache, LocationCacheKey, LocationCacheValue},
+        HbType,
+    },
     radio_location_estimates::hash_key,
 };
 use proptest::{
@@ -13,12 +16,9 @@ use proptest::{
 };
 use rand::{rngs::OsRng, Rng};
 use sqlx::PgPool;
-use std::time::Instant;
 
 #[sqlx::test]
 async fn test_get_untrusted_radius(pool: PgPool) -> anyhow::Result<()> {
-    let setup = Instant::now();
-
     let location_cache = LocationCache::new(&pool).await?;
 
     let hotspot_n = 25_000;
@@ -44,18 +44,10 @@ async fn test_get_untrusted_radius(pool: PgPool) -> anyhow::Result<()> {
             estimate.insert(&pool).await?
         }
     }
-    println!("Setup duration is: {:?}", setup.elapsed());
 
-    let fn_run = Instant::now();
-    let result = mobile_verifier::rewarder::get_untrusted_radios(&pool, &location_cache).await?;
+    // Exercising DB queries
+    mobile_verifier::rewarder::get_untrusted_radios(&pool, &location_cache).await?;
 
-    println!(
-        "Time elapsed in mobile_verifier::rewarder::get_untrusted_radious() is: {:?}",
-        fn_run.elapsed()
-    );
-    println!("Result size is {:?}", result.len());
-
-    assert!(false);
     Ok(())
 }
 
@@ -99,7 +91,7 @@ impl LocationCacheValueTest {
 #[derive(Debug, Clone)]
 pub struct RadioLocationEstimateTest {
     pub hashed_key: String,
-    pub radio_type: String,
+    pub radio_type: HbType,
     pub radio_key: String,
     pub received_timestamp: DateTime<Utc>,
     pub hex: CellIndex,
@@ -117,7 +109,7 @@ impl RadioLocationEstimateTest {
     }
 
     pub async fn insert(&self, pool: &PgPool) -> anyhow::Result<()> {
-        let query = format!(
+        sqlx::query(
             r#"
             INSERT INTO radio_location_estimates (
                 hashed_key,
@@ -128,19 +120,21 @@ impl RadioLocationEstimateTest {
                 grid_distance,
                 confidence,
                 inserted_at
-            ) VALUES (
-                '{}', '{}', '{}', '{}', {}, {}, {}, NOW()
-            );"#,
-            self.hashed_key,
-            self.radio_type,
-            self.radio_key,
-            self.received_timestamp,
-            u64::from(self.hex) as i64,
-            self.grid_distance,
-            self.confidence,
-        );
+            ) 
+            VALUES 
+                ($1, $2, $3, $4, $5, $6, $7, NOW())
+            "#,
+        )
+        .bind(&self.hashed_key)
+        .bind(self.radio_type)
+        .bind(&self.radio_key)
+        .bind(self.received_timestamp)
+        .bind(u64::from(self.hex) as i64)
+        .bind(self.grid_distance as i64)
+        .bind(self.confidence)
+        .execute(pool)
+        .await?;
 
-        sqlx::query(&query).execute(pool).await?;
         Ok(())
     }
 
@@ -149,17 +143,17 @@ impl RadioLocationEstimateTest {
         let lon_variation = 0.0001..=0.01; // Range for longitude variation
 
         (
-            prop_oneof!["wifi"], // radio_type,
-            Just(public_key),    // public_key
-            timestamp(),         // received_timestamp,
+            prop_oneof![Just(HbType::Wifi), Just(HbType::Cbrs)], // radio_type,
+            Just(public_key),                                    // public_key
+            timestamp(),                                         // received_timestamp,
             lat_variation.prop_flat_map(move |v: f64| {
                 prop_oneof![Just(v), Just(-v)].prop_map(move |delta| lat + delta)
             }), // Randomly add or subtract variation
             lon_variation.prop_flat_map(move |v: f64| {
                 prop_oneof![Just(v), Just(-v)].prop_map(move |delta| lon + delta)
             }), // Randomly add or subtract variation
-            0..500u32,           // grid distance
-            0.5..0.99f64,        // confidence
+            0..500u32,                                           // grid distance
+            0.5..0.99f64,                                        // confidence
         )
             .prop_map(
                 |(

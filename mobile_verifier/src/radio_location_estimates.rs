@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use crate::{heartbeats::HbType, Settings};
 use chrono::{DateTime, Utc};
 use file_store::{
@@ -316,9 +314,11 @@ pub async fn get_valid_estimates(
     .bind(threshold)
     .fetch(pool)
     .and_then(|row| async move {
-        let hex = CellIndex::from_str(row.get("hex")).map_err(|err| sqlx::Error::ColumnDecode {
-            index: "grid_distance".to_string(),
-            source: Box::new(err),
+        let hex = CellIndex::try_from(row.get::<i64, _>("hex") as u64).map_err(|err| {
+            sqlx::Error::ColumnDecode {
+                index: "hex".to_string(),
+                source: Box::new(err),
+            }
         })?;
         let grid_distance = row.get::<i64, _>("grid_distance") as u32;
 
