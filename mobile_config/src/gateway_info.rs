@@ -64,7 +64,7 @@ impl From<CbrsRadioDeploymentInfoProto> for RadioDeploymentInfo {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct RadioDeploymentInfo {
-    /// CBSD_ID or radio
+    /// CBSD_ID
     pub radio_id: String,
     /// The asserted elevation of the gateway above ground level in whole meters
     pub elevation: u32,
