@@ -49,7 +49,7 @@ impl SubDaoEpochRewardInfoResolver for SubDaoClient {
         epoch: u64,
     ) -> Result<Option<ResolvedSubDaoEpochRewardInfo>, Self::Error> {
         let mut request = SubDaoEpochRewardInfoReqV1 {
-            sub_dao: sub_dao.clone().into(),
+            sub_dao_pubkey: sub_dao.clone().into(),
             epoch,
             signer: self.signing_key.public_key().into(),
             signature: vec![],
