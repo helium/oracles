@@ -22,6 +22,9 @@ pub mod unique_connections;
 pub use settings::Settings;
 
 use async_trait::async_trait;
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::error::Error;
 
 pub const MOBILE_SUB_DAO_ONCHAIN_ADDRESS: &str = "39Lw1RH6zt8AJvKn3BTxmUDofzduCM2J3kSaGDZ8L7Sk";
@@ -97,5 +100,20 @@ impl IsAuthorized for mobile_config::client::AuthorizationClient {
     ) -> Result<bool, Self::Error> {
         use mobile_config::client::authorization_client::AuthorizationVerifier;
         self.verify_authorized_key(address, role).await
+    }
+}
+
+pub struct PriceConverter;
+
+impl PriceConverter {
+    pub fn hnt_bones_to_pricer_format(hnt_bone_price: Decimal) -> u64 {
+        (hnt_bone_price * dec!(1_0000_0000) * dec!(1_0000_0000))
+            .to_u64()
+            .unwrap_or_default()
+    }
+
+    // Hnt prices are supplied from pricer in 10^8
+    pub fn pricer_format_to_hnt_bones(hnt_price: u64) -> Decimal {
+        Decimal::from(hnt_price) / dec!(1_0000_0000) / dec!(1_0000_0000)
     }
 }
