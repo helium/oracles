@@ -1,4 +1,4 @@
-use helium_proto::services::{mobile_config, Channel, Endpoint};
+use helium_proto::services::{mobile_config, sub_dao, Channel, Endpoint};
 use humantime_serde::re::humantime;
 use serde::Deserialize;
 use std::{str::FromStr, sync::Arc, time::Duration};
@@ -49,9 +49,9 @@ fn default_cache_ttl_in_secs() -> Duration {
 }
 
 impl Settings {
-    pub fn connect_epoch_client(&self) -> mobile_config::sub_dao_client::SubDaoClient<Channel> {
+    pub fn connect_epoch_client(&self) -> sub_dao::sub_dao_client::SubDaoClient<Channel> {
         let channel = connect_channel(self);
-        mobile_config::sub_dao_client::SubDaoClient::new(channel)
+        sub_dao::sub_dao_client::SubDaoClient::new(channel)
     }
 
     pub fn connect_gateway_client(&self) -> mobile_config::GatewayClient<Channel> {

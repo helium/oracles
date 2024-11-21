@@ -1615,7 +1615,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#6c6d612ab6e77e03dacf338eb40319163dc7ae6a"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#7c512285aa229d4101ec8793f86ff24d8406e7fc"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3821,7 +3821,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#bac002ac419dd8f75af81cd30afc67871ac2c93a"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#7c512285aa229d4101ec8793f86ff24d8406e7fc"
 dependencies = [
  "bytes",
  "prost",
@@ -3837,7 +3837,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#c5c67f5631b69ef696961995045c0a41f9a5b936"
+source = "git+https://github.com/helium/proto?branch=master#99908bcedc340d1569f2001565b6f0fee4444fd8"
 dependencies = [
  "bytes",
  "prost",
@@ -6081,7 +6081,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.5.0",
+ "heck 0.4.0",
  "itertools",
  "log",
  "multimap",
