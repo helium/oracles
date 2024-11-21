@@ -30,20 +30,6 @@ lazy_static! {
     static ref DC_USD_PRICE: Decimal =  dec!(0.00001);
 }
 
-// pub fn get_scheduled_poc_tokens(
-//     duration: Duration,
-//     dc_transfer_remainder: Decimal,
-// ) -> (Decimal, Decimal) {
-//     (
-//         get_tokens_by_duration(*REWARDS_PER_DAY * *BEACON_REWARDS_PER_DAY_PERCENT, duration)
-//             + (dc_transfer_remainder * *BEACON_DC_REMAINER_PERCENT),
-//         get_tokens_by_duration(
-//             *REWARDS_PER_DAY * *WITNESS_REWARDS_PER_DAY_PERCENT,
-//             duration,
-//         ) + (dc_transfer_remainder * *WITNESS_DC_REMAINER_PERCENT),
-//     )
-// }
-
 pub fn get_scheduled_poc_tokens(
     epoch_emissions: Decimal,
     dc_transfer_remainder: Decimal,
@@ -464,10 +450,10 @@ mod test {
         }
     }
 
-    /// returns the equiv dc value for a specified iot bones amount
-    pub fn hnt_bones_to_dc(iot_amount: Decimal, hnt_bones_price: Decimal) -> Decimal {
+    /// returns the equiv dc value for a specified hnt bones amount
+    pub fn hnt_bones_to_dc(hnt_amount: Decimal, hnt_bones_price: Decimal) -> Decimal {
         // use the price per bones to get the value of our bones in DC
-        let value = iot_amount * hnt_bones_price;
+        let value = hnt_amount * hnt_bones_price;
         (value / (*DC_USD_PRICE)).round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
     }
 

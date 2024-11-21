@@ -16,9 +16,10 @@ use helium_proto::{
     IotRewardData as ManifestIotRewardData, RewardManifest,
 };
 use humantime_serde::re::humantime;
-use iot_config::client::sub_dao_client::SubDaoEpochRewardInfoResolver;
-use iot_config::client::ClientError;
-use iot_config::sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo;
+use iot_config::{
+    client::{sub_dao_client::SubDaoEpochRewardInfoResolver, ClientError},
+    sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo,
+};
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::prelude::*;
