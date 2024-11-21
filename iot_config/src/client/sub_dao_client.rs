@@ -10,6 +10,7 @@ use helium_proto::{
     Message,
 };
 use std::{error::Error, sync::Arc, time::Duration};
+use tonic::transport::Endpoint;
 
 #[derive(Clone)]
 pub struct SubDaoClient {
@@ -20,8 +21,12 @@ pub struct SubDaoClient {
 
 impl SubDaoClient {
     pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
+        let channel = Endpoint::from(settings.url.clone())
+            .connect_timeout(Duration::from_secs(settings.connect_timeout))
+            .timeout(Duration::from_secs(settings.rpc_timeout))
+            .connect_lazy();
         Ok(Self {
-            client: settings.connect_epoch_client(),
+            client: sub_dao::sub_dao_client::SubDaoClient::new(channel),
             signing_key: settings.signing_keypair()?,
             config_pubkey: settings.config_pubkey()?,
         })

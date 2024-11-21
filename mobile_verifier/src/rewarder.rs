@@ -257,6 +257,12 @@ where
     }
 
     pub async fn reward(&self, next_reward_epoch: u64) -> anyhow::Result<()> {
+        tracing::info!(
+            "Resolving reward info for epoch: {}, subdao: {}",
+            next_reward_epoch,
+            self.sub_dao
+        );
+
         let reward_info = self
             .sub_dao_epoch_reward_client
             .resolve_info(&self.sub_dao.to_string(), next_reward_epoch)
@@ -274,11 +280,12 @@ where
         let price_info = PriceInfo::new(pricer_hnt_price, Token::Hnt.decimals());
 
         tracing::info!(
-            "Rewarding for epoch {} period: {} to {} with bone price: {}",
+            "Rewarding for epoch {} period: {} to {} with hnt bone price: {} and reward pool: {}",
             reward_info.epoch_day,
             reward_info.epoch_period.start,
             reward_info.epoch_period.end,
-            price_info.price_per_bone
+            price_info.price_per_bone,
+            reward_info.epoch_emissions,
         );
 
         // process rewards for poc and data transfer
