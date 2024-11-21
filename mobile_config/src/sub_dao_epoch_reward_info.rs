@@ -30,7 +30,6 @@ pub struct RawSubDaoEpochRewardInfo {
     rewards_issued_at: DateTime<Utc>,
 }
 
-// server goes from raw to proto, client goes from proto to resolved
 impl TryFrom<RawSubDaoEpochRewardInfo> for SubDaoEpochRewardInfoProto {
     type Error = anyhow::Error;
 
@@ -46,7 +45,6 @@ impl TryFrom<RawSubDaoEpochRewardInfo> for SubDaoEpochRewardInfoProto {
     }
 }
 
-// server returns the proto struct to client, client resolves to the resolved struct
 impl TryFrom<SubDaoEpochRewardInfoProto> for ResolvedSubDaoEpochRewardInfo {
     type Error = anyhow::Error;
 

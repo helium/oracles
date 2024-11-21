@@ -303,6 +303,7 @@ pub async fn reward_operational(
                 start_period: reward_period.start.encode_timestamp(),
                 end_period: reward_period.end.encode_timestamp(),
                 reward: Some(ProtoReward::OperationalReward(op_fund_reward)),
+                epoch: 0, // placeholder, todo: remove
             },
             [],
         )
@@ -366,6 +367,7 @@ async fn write_unallocated_reward(
                 reward_type: unallocated_type as i32,
                 amount: unallocated_amount,
             })),
+            epoch: 0, // placeholder, todo: remove
         };
         rewards_sink.write(unallocated_reward, []).await?.await??;
     };
