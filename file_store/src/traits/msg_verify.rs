@@ -12,7 +12,6 @@ use helium_proto::{
         InvalidatedRadioThresholdReportReqV1, RadioThresholdReportReqV1, SpeedtestReqV1,
         SubscriberLocationReqV1, WifiHeartbeatReqV1,
     },
-    services::sub_dao::{SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},
     Message,
 };
 
