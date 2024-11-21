@@ -1,6 +1,6 @@
 use crate::{
     reward_share::{self, GatewayShares},
-    telemetry, IOT_SUB_DAO_ONCHAIN_ADDRESS,
+    telemetry, PriceConverter, IOT_SUB_DAO_ONCHAIN_ADDRESS,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
@@ -145,11 +145,7 @@ where
             .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
             .await?;
 
-        // Hnt prices are supplied from pricer @ 10^8
-        // we want our price in bones so we divide by 10^8 twice
-        let hnt_bone_price = Decimal::from(hnt_price)
-                / dec!(1_0000_0000)  // To price per HNT token
-                / dec!(1_0000_0000); // To HNT bones
+        let hnt_bone_price = PriceConverter::pricer_format_to_hnt_bones(hnt_price);
 
         tracing::info!(
             "Rewarding for epoch {} period: {} to {} with hnt bone price: {}",
@@ -203,6 +199,7 @@ where
                     written_files,
                     reward_data: Some(IotRewardData(reward_data)),
                     epoch: reward_info.epoch,
+                    price: hnt_price,
                 },
                 [],
             )

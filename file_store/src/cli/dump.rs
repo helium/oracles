@@ -1,3 +1,4 @@
+use crate::reward_manifest::RewardManifest;
 use crate::{
     cli::print_json,
     coverage::CoverageObject,
@@ -34,7 +35,7 @@ use helium_proto::{
         router::PacketRouterPacketReportV1,
     },
     BlockchainTxn, BoostedHexUpdateV1 as BoostedHexUpdateProto, Message, PriceReportV1,
-    RewardManifest, SubnetworkRewards,
+    RewardManifest as RewardManifestProto, SubnetworkRewards,
 };
 use serde_json::json;
 use std::io;
@@ -282,12 +283,9 @@ impl Cmd {
                     }))?;
                 }
                 FileType::RewardManifest => {
-                    let manifest = RewardManifest::decode(msg)?;
-                    print_json(&json!({
-                        "written_files": manifest.written_files,
-                        "start_timestamp": manifest.start_timestamp,
-                        "end_timestamp": manifest.end_timestamp,
-                    }))?;
+                    let manifest = RewardManifestProto::decode(msg)?;
+                    let report = RewardManifest::try_from(manifest)?;
+                    print_json(&report)?;
                 }
                 FileType::SignedPocReceiptTxn => {
                     // This just outputs a binary of the txns instead of the typical decode.

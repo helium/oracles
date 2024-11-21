@@ -2,8 +2,9 @@ use crate::{error::DecodeError, traits::MsgDecode, Error};
 use chrono::{DateTime, TimeZone, Utc};
 use helium_proto as proto;
 use rust_decimal::Decimal;
+use serde::Serialize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct RewardManifest {
     pub written_files: Vec<String>,
     pub start_timestamp: DateTime<Utc>,
@@ -11,7 +12,7 @@ pub struct RewardManifest {
     pub reward_data: Option<RewardData>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum RewardData {
     MobileRewardData {
         poc_bones_per_reward_share: Decimal,
