@@ -21,3 +21,5 @@ pub mod telemetry;
 pub mod tx_scaler;
 pub mod witness_updater;
 pub use settings::Settings;
+
+pub const IOT_SUB_DAO_ONCHAIN_ADDRESS: &str = "Gm9xDCJawDEKDrrQW6haw94gABaYzQwCq4ZQU8h8bd22";

@@ -10,6 +10,7 @@ use std::{sync::Arc, time::Duration};
 
 pub mod org_client;
 mod settings;
+pub mod sub_dao_client;
 
 pub use org_client::OrgClient;
 pub use settings::Settings;
@@ -24,6 +25,8 @@ pub enum ClientError {
     Verification(#[from] file_store::Error),
     #[error("error resolving region params: {0}")]
     UndefinedRegionParams(String),
+    #[error("error {0}")]
+    AnyhowError(#[from] anyhow::Error),
 }
 
 #[async_trait::async_trait]
