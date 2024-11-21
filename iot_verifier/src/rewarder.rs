@@ -276,7 +276,7 @@ pub async fn reward_poc_and_dc(
         total_beacon_rewards + total_witness_rewards + total_dc_rewards;
 
     let mut allocated_gateway_rewards = 0_u64;
-    for (gateway_reward_amount, reward_share) in gateway_shares.into_iot_reward_shares(
+    for (gateway_reward_amount, reward_share) in gateway_shares.into_reward_shares(
         reward_info,
         beacon_rewards_per_share,
         witness_rewards_per_share,

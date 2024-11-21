@@ -21,7 +21,7 @@ pub mod telemetry;
 pub mod tx_scaler;
 pub mod witness_updater;
 
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 pub use settings::Settings;
 

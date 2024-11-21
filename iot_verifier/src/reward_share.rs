@@ -227,7 +227,7 @@ impl GatewayShares {
             .map(|_| ())
     }
 
-    pub fn into_iot_reward_shares(
+    pub fn into_reward_shares(
         self,
         reward_info: &ResolvedSubDaoEpochRewardInfo,
         beacon_rewards_per_share: Decimal,
@@ -605,7 +605,7 @@ mod test {
 
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let mut allocated_gateway_rewards = 0_u64;
-        for (reward_amount, reward) in gw_shares.into_iot_reward_shares(
+        for (reward_amount, reward) in gw_shares.into_reward_shares(
             &reward_info,
             beacon_rewards_per_share,
             witness_rewards_per_share,
@@ -658,7 +658,7 @@ mod test {
         assert_eq!(data_transfer_diff, 1);
 
         // assert the expected data transfer rewards amounts per gateway
-        // using the dc_to_iot_bones helper function
+        // using the dc_to_hnt_bones helper function
         let gw1_expected_dc_rewards = dc_to_hnt_bones(gw1_dc_spend, hnt_bone_price)
             .to_u64()
             .unwrap();
@@ -822,7 +822,7 @@ mod test {
 
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let mut allocated_gateway_rewards = 0_u64;
-        for (reward_amount, reward) in gw_shares.into_iot_reward_shares(
+        for (reward_amount, reward) in gw_shares.into_reward_shares(
             &reward_info,
             beacon_rewards_per_share,
             witness_rewards_per_share,
@@ -1010,7 +1010,7 @@ mod test {
 
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let mut allocated_gateway_rewards = 0_u64;
-        for (reward_amount, reward) in gw_shares.into_iot_reward_shares(
+        for (reward_amount, reward) in gw_shares.into_reward_shares(
             &reward_info,
             beacon_rewards_per_share,
             witness_rewards_per_share,
@@ -1120,13 +1120,11 @@ mod test {
         let dc_amount = dec!(1000000);
         // convert the dc amount to hnt and assert
         let dc_hnt_amt = dc_to_hnt_bones(dc_amount, hnt_bone_price);
-        println!("dc_hnt_amt: {dc_hnt_amt}");
         assert_eq!(dc_hnt_amt, dec!(2785515.320334261838441));
 
         // convert the returned iot amount back to dc and assert
         // it matches our original dc amount
         let hnt_dc_amt = hnt_bones_to_dc(dc_hnt_amt, hnt_bone_price);
-        println!("iot_dc_amt: {hnt_dc_amt}");
         assert_eq!(hnt_dc_amt, dc_amount);
     }
 }
