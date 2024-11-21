@@ -5,7 +5,7 @@ use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
-    services::mobile_config::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},
+    services::sub_dao::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},
     Message,
 };
 use sqlx::{Pool, Postgres};
@@ -54,7 +54,7 @@ impl SuDaoService {
 }
 
 #[tonic::async_trait]
-impl mobile_config::sub_dao_server::SubDao for SuDaoService {
+impl sub_dao::sub_dao_server::SubDao for SuDaoService {
     async fn info(
         &self,
         request: Request<SubDaoEpochRewardInfoReqV1>,

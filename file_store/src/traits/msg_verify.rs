@@ -4,6 +4,7 @@ use helium_proto::services::{
     iot_config, mobile_config,
     poc_lora::{LoraBeaconReportReqV1, LoraStreamSessionInitV1, LoraWitnessReportReqV1},
     poc_mobile::{self, ServiceProviderBoostedRewardsBannedRadioReqV1},
+    sub_dao,
 };
 use helium_proto::{
     services::poc_mobile::{
@@ -98,8 +99,8 @@ impl_msg_verify!(mobile_config::GatewayInfoStreamResV2, signature);
 impl_msg_verify!(mobile_config::BoostedHexInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexModifiedInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexInfoStreamResV1, signature);
-impl_msg_verify!(mobile_config::SubDaoEpochRewardInfoReqV1, signature);
-impl_msg_verify!(mobile_config::SubDaoEpochRewardInfoResV1, signature);
+impl_msg_verify!(sub_dao::SubDaoEpochRewardInfoReqV1, signature);
+impl_msg_verify!(sub_dao::SubDaoEpochRewardInfoResV1, signature);
 impl_msg_verify!(poc_mobile::SubscriberVerifiedMappingEventReqV1, signature);
 impl_msg_verify!(poc_mobile::HexUsageStatsReqV1, signature);
 impl_msg_verify!(poc_mobile::RadioUsageStatsReqV1, signature);
