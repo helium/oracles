@@ -4,6 +4,7 @@ use crate::{
     sp_boosted_rewards_bans::BannedRadios, speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
     subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
+    PriceConverter,
 };
 use chrono::{DateTime, Utc};
 use coverage_point_calculator::{OracleBoostingStatus, SPBoostedRewardEligibility};
@@ -143,6 +144,8 @@ impl TransferRewards {
         } = self;
         let start_period = reward_info.epoch_period.start.encode_timestamp();
         let end_period = reward_info.epoch_period.end.encode_timestamp();
+        let price = PriceConverter::hnt_bones_to_pricer_format(self.hnt_bone_price);
+
         rewards
             .into_iter()
             .map(move |(hotspot_key, reward)| {
@@ -161,11 +164,7 @@ impl TransferRewards {
                                 hotspot_key: hotspot_key.into(),
                                 dc_transfer_reward,
                                 rewardable_bytes: reward.bytes_rewarded,
-                                price: (self.hnt_bone_price
-                                    * dec!(1_0000_0000)
-                                    * dec!(1_0000_0000))
-                                .to_u64()
-                                .unwrap_or_default(),
+                                price,
                             },
                         )),
                     },
@@ -818,6 +817,34 @@ mod test {
             epoch_emissions: Decimal::from(total_emissions),
             rewards_issued_at: now,
         }
+    }
+
+    #[test]
+    fn test_poc_scheduled_tokens() {
+        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
+        let v = get_scheduled_tokens_for_poc(rewards_info.epoch_emissions);
+        assert_eq!(dec!(60_000_000_000_000), v);
+    }
+
+    #[test]
+    fn test_mappers_scheduled_tokens() {
+        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
+        let v = get_scheduled_tokens_for_mappers(rewards_info.epoch_emissions);
+        assert_eq!(dec!(20_000_000_000_000), v);
+    }
+
+    #[test]
+    fn test_service_provider_scheduled_tokens() {
+        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
+        let v = get_scheduled_tokens_for_service_providers(rewards_info.epoch_emissions);
+        assert_eq!(dec!(10_000_000_000_000), v);
+    }
+
+    #[test]
+    fn test_oracles_scheduled_tokens() {
+        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
+        let v = get_scheduled_tokens_for_oracles(rewards_info.epoch_emissions);
+        assert_eq!(dec!(4_000_000_000_000), v);
     }
 
     #[tokio::test]
