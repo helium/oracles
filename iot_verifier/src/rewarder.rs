@@ -175,6 +175,7 @@ impl Rewarder {
                     written_files,
                     reward_data: Some(IotRewardData(reward_data)),
                     epoch: 0, // TODO: replace placeholder value
+                    price: 0, // TODO: replace placeholder value
                 },
                 [],
             )
