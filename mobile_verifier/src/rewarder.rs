@@ -339,6 +339,7 @@ where
                     written_files,
                     reward_data: Some(MobileRewardData(reward_data)),
                     epoch: reward_info.epoch,
+                    price: hnt_price,
                 },
                 [],
             )
