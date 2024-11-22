@@ -34,6 +34,8 @@ impl GatewayInfoResolver for MockGatewayInfoResolver {
             address: address.clone(),
             metadata: None,
             device_type: DeviceType::Cbrs,
+            created_at: None,
+            refreshed_at: None,
         }))
     }
 

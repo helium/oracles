@@ -3,7 +3,7 @@ use crate::{
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
@@ -13,7 +13,7 @@ use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{
         self, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1,
-        GatewayInfoStreamResV1,
+        GatewayInfoStreamReqV2, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
     },
     Message,
 };
@@ -144,6 +144,7 @@ impl mobile_config::Gateway for GatewayService {
         Ok(Response::new(GrpcStreamResult::new(rx)))
     }
 
+    // Deprecated
     type info_streamStream = GrpcStreamResult<GatewayInfoStreamResV1>;
     async fn info_stream(
         &self,
@@ -163,13 +164,6 @@ impl mobile_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
-        // let min_refreshed_at = Utc
-        //     .timestamp_opt(request.min_refreshed_at as i64, 0)
-        //     .single()
-        //     .ok_or(Status::invalid_argument(
-        //         "Invalid min_refreshed_at argument",
-        //     ))?;
-
         tracing::debug!(
             "fetching all gateways' info. Device types: {:?} ",
             device_types
@@ -179,6 +173,46 @@ impl mobile_config::Gateway for GatewayService {
             let stream =
                 gateway_info::db::all_info_stream(&pool, &device_types, DateTime::UNIX_EPOCH);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
+
+    type info_stream_v2Stream = GrpcStreamResult<GatewayInfoStreamResV2>;
+    async fn info_stream_v2(
+        &self,
+        request: Request<GatewayInfoStreamReqV2>,
+    ) -> GrpcResult<Self::info_stream_v2Stream> {
+        // todo!()
+        let request = request.into_inner();
+        telemetry::count_request("gateway", "info-stream");
+        custom_tracing::record_b58("signer", &request.signer);
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        let pool = self.metadata_pool.clone();
+        let signing_key = self.signing_key.clone();
+        let batch_size = request.batch_size;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
+        let min_refreshed_at = Utc
+            .timestamp_opt(request.min_refreshed_at as i64, 0)
+            .single()
+            .ok_or(Status::invalid_argument(
+                "Invalid min_refreshed_at argument",
+            ))?;
+
+        tracing::debug!(
+            "fetching all gateways' info. Device types: {:?} ",
+            device_types
+        );
+
+        tokio::spawn(async move {
+            let stream = gateway_info::db::all_info_stream(&pool, &device_types, min_refreshed_at);
+            stream_multi_gateways_info_v2(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
@@ -214,6 +248,57 @@ async fn stream_multi_gateways_info(
         .try_filter_map(|(res, keypair)| async move {
             let result = match keypair.sign(&res.encode_to_vec()) {
                 Ok(signature) => Some(GatewayInfoStreamResV1 {
+                    gateways: res.gateways,
+                    timestamp: res.timestamp,
+                    signer: res.signer,
+                    signature,
+                }),
+                Err(_) => None,
+            };
+            Ok(result)
+        })
+        .map_err(|err| Status::internal(format!("info batch failed with reason: {err:?}")))
+        .try_for_each(|res| {
+            tx.send(Ok(res))
+                .map_err(|err| Status::internal(format!("info batch send failed {err:?}")))
+        })
+        .or_else(|err| {
+            tx.send(Err(Status::internal(format!(
+                "info batch failed with reason: {err:?}"
+            ))))
+        })
+        .await?)
+}
+
+async fn stream_multi_gateways_info_v2(
+    stream: impl Stream<Item = GatewayInfo>,
+    tx: tokio::sync::mpsc::Sender<Result<GatewayInfoStreamResV2, Status>>,
+    signing_key: Arc<Keypair>,
+    batch_size: u32,
+) -> anyhow::Result<()> {
+    let timestamp = Utc::now().encode_timestamp();
+    let signer: Vec<u8> = signing_key.public_key().into();
+    Ok(stream
+        .map(Ok::<GatewayInfo, sqlx::Error>)
+        .try_filter_map(|info| async move {
+            let result: Option<mobile_config::GatewayInfoV2> = info.try_into().ok();
+            Ok(result)
+        })
+        .try_chunks(batch_size as usize)
+        .map_ok(move |batch| {
+            (
+                GatewayInfoStreamResV2 {
+                    gateways: batch,
+                    timestamp,
+                    signer: signer.clone(),
+                    signature: vec![],
+                },
+                signing_key.clone(),
+            )
+        })
+        .try_filter_map(|(res, keypair)| async move {
+            let result = match keypair.sign(&res.encode_to_vec()) {
+                Ok(signature) => Some(GatewayInfoStreamResV2 {
                     gateways: res.gateways,
                     timestamp: res.timestamp,
                     signer: res.signer,

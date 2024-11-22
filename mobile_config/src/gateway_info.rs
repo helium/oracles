@@ -1,13 +1,12 @@
-// use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use futures::stream::BoxStream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
-    // gateway_metadata::DeploymentInfo as DeploymentInfoProto,
+    gateway_metadata_v2::DeploymentInfo as DeploymentInfoProto,
     CbrsDeploymentInfo as CbrsDeploymentInfoProto,
-    CbrsRadioDeploymentInfo as CbrsRadioDeploymentInfoProto,
-    DeviceType as DeviceTypeProto,
-    GatewayInfo as GatewayInfoProto,
-    GatewayMetadata as GatewayMetadataProto,
+    CbrsRadioDeploymentInfo as CbrsRadioDeploymentInfoProto, DeviceType as DeviceTypeProto,
+    GatewayInfo as GatewayInfoProto, GatewayInfoV2 as GatewayInfoProtoV2,
+    GatewayMetadata as GatewayMetadataProto, GatewayMetadataV2 as GatewayMetadataProtoV2,
     WifiDeploymentInfo as WifiDeploymentInfoProto,
 };
 use serde::Deserialize;
@@ -80,23 +79,23 @@ pub enum DeploymentInfo {
     CbrsDeploymentInfo(CbrsDeploymentInfo),
 }
 
-// impl From<DeploymentInfoProto> for DeploymentInfo {
-//     fn from(v: DeploymentInfoProto) -> Self {
-//         match v {
-//             DeploymentInfoProto::WifiDeploymentInfo(v) => {
-//                 DeploymentInfo::WifiDeploymentInfo(v.into())
-//             }
-//             DeploymentInfoProto::CbrsDeploymentInfo(v) => {
-//                 DeploymentInfo::CbrsDeploymentInfo(v.into())
-//             }
-//         }
-//     }
-// }
+impl From<DeploymentInfoProto> for DeploymentInfo {
+    fn from(v: DeploymentInfoProto) -> Self {
+        match v {
+            DeploymentInfoProto::WifiDeploymentInfo(v) => {
+                DeploymentInfo::WifiDeploymentInfo(v.into())
+            }
+            DeploymentInfoProto::CbrsDeploymentInfo(v) => {
+                DeploymentInfo::CbrsDeploymentInfo(v.into())
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct GatewayMetadata {
     pub location: u64,
-    // pub deployment_info: Option<DeploymentInfo>,
+    pub deployment_info: Option<DeploymentInfo>,
 }
 
 #[derive(Clone, Debug)]
@@ -104,8 +103,9 @@ pub struct GatewayInfo {
     pub address: PublicKeyBinary,
     pub metadata: Option<GatewayMetadata>,
     pub device_type: DeviceType,
-    // pub refreshed_at: DateTime<Utc>,
-    // pub created_at: DateTime<Utc>,
+    // None for V1
+    pub refreshed_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl GatewayInfo {
@@ -124,6 +124,50 @@ pub enum GatewayInfoProtoParseError {
     InvalidRefreshedAt(u64),
 }
 
+impl TryFrom<GatewayInfoProtoV2> for GatewayInfo {
+    type Error = GatewayInfoProtoParseError;
+
+    fn try_from(info: GatewayInfoProtoV2) -> Result<Self, Self::Error> {
+        let device_type_ = info.device_type().into();
+
+        let GatewayInfoProtoV2 {
+            address,
+            metadata,
+            device_type: _,
+            created_at,
+            refreshed_at,
+        } = info;
+
+        let metadata = if let Some(metadata) = metadata {
+            Some(
+                u64::from_str_radix(&metadata.location, 16).map(|location| GatewayMetadata {
+                    location,
+                    deployment_info: metadata.deployment_info.map(|v| v.into()),
+                })?,
+            )
+        } else {
+            None
+        };
+
+        let created_at = Utc
+            .timestamp_opt(created_at as i64, 0)
+            .single()
+            .ok_or(GatewayInfoProtoParseError::InvalidCreatedAt(created_at))?;
+
+        let refreshed_at = Utc.timestamp_opt(refreshed_at as i64, 0).single().ok_or(
+            GatewayInfoProtoParseError::InvalidRefreshedAt(info.refreshed_at),
+        )?;
+
+        Ok(Self {
+            address: address.into(),
+            metadata,
+            device_type: device_type_,
+            created_at: Some(created_at),
+            refreshed_at: Some(refreshed_at),
+        })
+    }
+}
+
 impl TryFrom<GatewayInfoProto> for GatewayInfo {
     type Error = GatewayInfoProtoParseError;
 
@@ -134,36 +178,25 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
             address,
             metadata,
             device_type: _,
-            // created_at,
-            // refreshed_at,
         } = info;
 
         let metadata = if let Some(metadata) = metadata {
             Some(
                 u64::from_str_radix(&metadata.location, 16).map(|location| GatewayMetadata {
                     location,
-                    // deployment_info: metadata.deployment_info.map(|v| v.into()),
+                    deployment_info: None,
                 })?,
             )
         } else {
             None
         };
 
-        // let created_at = Utc
-        //     .timestamp_opt(created_at as i64, 0)
-        //     .single()
-        //     .ok_or(GatewayInfoProtoParseError::InvalidCreatedAt(created_at))?;
-        //
-        // let refreshed_at = Utc.timestamp_opt(refreshed_at as i64, 0).single().ok_or(
-        //     GatewayInfoProtoParseError::InvalidRefreshedAt(info.refreshed_at),
-        // )?;
-
         Ok(Self {
             address: address.into(),
             metadata,
             device_type: device_type_,
-            // created_at,
-            // refreshed_at,
+            created_at: None,
+            refreshed_at: None,
         })
     }
 }
@@ -201,18 +234,18 @@ impl From<CbrsDeploymentInfo> for CbrsDeploymentInfoProto {
     }
 }
 
-// impl From<DeploymentInfo> for DeploymentInfoProto {
-//     fn from(v: DeploymentInfo) -> Self {
-//         match v {
-//             DeploymentInfo::WifiDeploymentInfo(v) => {
-//                 DeploymentInfoProto::WifiDeploymentInfo(v.into())
-//             }
-//             DeploymentInfo::CbrsDeploymentInfo(v) => {
-//                 DeploymentInfoProto::CbrsDeploymentInfo(v.into())
-//             }
-//         }
-//     }
-// }
+impl From<DeploymentInfo> for DeploymentInfoProto {
+    fn from(v: DeploymentInfo) -> Self {
+        match v {
+            DeploymentInfo::WifiDeploymentInfo(v) => {
+                DeploymentInfoProto::WifiDeploymentInfo(v.into())
+            }
+            DeploymentInfo::CbrsDeploymentInfo(v) => {
+                DeploymentInfoProto::CbrsDeploymentInfo(v.into())
+            }
+        }
+    }
+}
 
 impl TryFrom<GatewayInfo> for GatewayInfoProto {
     type Error = hextree::Error;
@@ -229,6 +262,29 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
             address: info.address.into(),
             metadata,
             device_type: info.device_type as i32,
+        })
+    }
+}
+
+impl TryFrom<GatewayInfo> for GatewayInfoProtoV2 {
+    type Error = hextree::Error;
+
+    fn try_from(info: GatewayInfo) -> Result<Self, Self::Error> {
+        let metadata = if let Some(ref metadata) = info.metadata {
+            Some(GatewayMetadataProtoV2 {
+                location: hextree::Cell::from_raw(metadata.location)?.to_string(),
+                // TODO refactor
+                deployment_info: Some(info.metadata.unwrap().deployment_info.unwrap().into()),
+            })
+        } else {
+            None
+        };
+        Ok(Self {
+            address: info.address.into(),
+            metadata,
+            device_type: info.device_type as i32,
+            created_at: info.created_at.unwrap().timestamp() as u64, // TODO
+            refreshed_at: info.created_at.unwrap().timestamp() as u64, // TODO
         })
     }
 }
@@ -283,6 +339,7 @@ impl std::str::FromStr for DeviceType {
 
 pub(crate) mod db {
     use super::{DeviceType, GatewayInfo, GatewayMetadata};
+    use crate::gateway_info::DeploymentInfo;
     use chrono::{DateTime, Utc};
     use futures::stream::{Stream, StreamExt};
     use helium_crypto::PublicKeyBinary;
@@ -366,14 +423,14 @@ pub(crate) mod db {
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {
         fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-            // let deployment_info =
-            //     match row.try_get::<Option<Json<DeploymentInfo>>, &str>("deployment_info") {
-            //         Ok(di) => di.map(|v| v.0),
-            //         // We shouldn't fail if an error occurs in this case.
-            //         // This is because the data in this column could be inconsistent,
-            //         // and we don't want to break backward compatibility.
-            //         Err(_e) => None,
-            //     };
+            let deployment_info =
+                match row.try_get::<Option<Json<DeploymentInfo>>, &str>("deployment_info") {
+                    Ok(di) => di.map(|v| v.0),
+                    // We shouldn't fail if an error occurs in this case.
+                    // This is because the data in this column could be inconsistent,
+                    // and we don't want to break backward compatibility.
+                    Err(_e) => None,
+                };
 
             // If location field is None, GatewayMetadata also is None, even if deployment_info is present.
             // Because "location" is mandatory field
@@ -381,7 +438,7 @@ pub(crate) mod db {
                 .get::<Option<i64>, &str>("location")
                 .map(|loc| GatewayMetadata {
                     location: loc as u64,
-                    // deployment_info,
+                    deployment_info,
                 });
 
             let device_type = DeviceType::from_str(
@@ -390,12 +447,12 @@ pub(crate) mod db {
                     .as_ref(),
             )
             .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
-            // let created_at = row.get::<DateTime<Utc>, &str>("created_at");
-            // // `refreshed_at` can be NULL in the database schema.
-            // // If so, fallback to using `created_at` as the default value of `refreshed_at`.
-            // let refreshed_at = row
-            //     .get::<Option<DateTime<Utc>>, &str>("refreshed_at")
-            //     .unwrap_or(created_at);
+            let created_at = row.get::<DateTime<Utc>, &str>("created_at");
+            // `refreshed_at` can be NULL in the database schema.
+            // If so, fallback to using `created_at` as the default value of `refreshed_at`.
+            let refreshed_at = row
+                .get::<Option<DateTime<Utc>>, &str>("refreshed_at")
+                .unwrap_or(created_at);
 
             Ok(Self {
                 address: PublicKeyBinary::from_str(
@@ -404,8 +461,8 @@ pub(crate) mod db {
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
                 metadata,
                 device_type,
-                // refreshed_at,
-                // created_at,
+                refreshed_at: Some(refreshed_at),
+                created_at: Some(created_at),
             })
         }
     }
