@@ -3,7 +3,7 @@ use crate::{
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
@@ -163,12 +163,12 @@ impl mobile_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
-        let min_refreshed_at = Utc
-            .timestamp_opt(request.min_refreshed_at as i64, 0)
-            .single()
-            .ok_or(Status::invalid_argument(
-                "Invalid min_refreshed_at argument",
-            ))?;
+        // let min_refreshed_at = Utc
+        //     .timestamp_opt(request.min_refreshed_at as i64, 0)
+        //     .single()
+        //     .ok_or(Status::invalid_argument(
+        //         "Invalid min_refreshed_at argument",
+        //     ))?;
 
         tracing::debug!(
             "fetching all gateways' info. Device types: {:?} ",
@@ -176,7 +176,8 @@ impl mobile_config::Gateway for GatewayService {
         );
 
         tokio::spawn(async move {
-            let stream = gateway_info::db::all_info_stream(&pool, &device_types, min_refreshed_at);
+            let stream =
+                gateway_info::db::all_info_stream(&pool, &device_types, DateTime::UNIX_EPOCH);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
