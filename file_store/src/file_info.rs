@@ -106,6 +106,11 @@ impl FileInfo {
     }
 }
 
+pub const HEX_USAGE_STATS_INGEST_REPORT: &str = "hex_usage_stats_ingest_report";
+pub const RADIO_USAGE_STATS_INGEST_REPORT: &str = "radio_usage_stats_ingest_report";
+pub const HEX_USAGE_STATS_REQ: &str = "hex_usage_stats_req";
+pub const RADIO_USAGE_STATS_REQ: &str = "radio_usage_stats_req";
+
 pub const INVALIDATED_RADIO_THRESHOLD_REQ: &str = "invalidated_radio_threshold_req";
 pub const INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT: &str =
     "invalidated_radio_threshold_ingest_report";
@@ -228,6 +233,10 @@ pub enum FileType {
     PromotionRewardIngestReport,
     VerifiedPromotionReward,
     ServiceProviderPromotionFund,
+    HexUsageStatsIngestReport,
+    RadioUsageStatsIngestReport,
+    HexUsageStatsReq,
+    RadioUsageStatsReq,
 }
 
 impl fmt::Display for FileType {
@@ -303,6 +312,10 @@ impl fmt::Display for FileType {
             Self::PromotionRewardIngestReport => PROMOTION_REWARD_INGEST_REPORT,
             Self::VerifiedPromotionReward => VERIFIED_PROMOTION_REWARD,
             Self::ServiceProviderPromotionFund => SERVICE_PROVIDER_PROMOTION_FUND,
+            Self::HexUsageStatsIngestReport => HEX_USAGE_STATS_INGEST_REPORT,
+            Self::RadioUsageStatsIngestReport => RADIO_USAGE_STATS_INGEST_REPORT,
+            Self::HexUsageStatsReq => HEX_USAGE_STATS_REQ,
+            Self::RadioUsageStatsReq => RADIO_USAGE_STATS_REQ,
         };
         f.write_str(s)
     }
@@ -381,6 +394,10 @@ impl FileType {
             Self::PromotionRewardIngestReport => PROMOTION_REWARD_INGEST_REPORT,
             Self::VerifiedPromotionReward => VERIFIED_PROMOTION_REWARD,
             Self::ServiceProviderPromotionFund => SERVICE_PROVIDER_PROMOTION_FUND,
+            Self::HexUsageStatsIngestReport => HEX_USAGE_STATS_INGEST_REPORT,
+            Self::RadioUsageStatsIngestReport => RADIO_USAGE_STATS_INGEST_REPORT,
+            Self::HexUsageStatsReq => HEX_USAGE_STATS_REQ,
+            Self::RadioUsageStatsReq => RADIO_USAGE_STATS_REQ,
         }
     }
 }
@@ -458,6 +475,10 @@ impl FromStr for FileType {
             PROMOTION_REWARD_INGEST_REPORT => Self::PromotionRewardIngestReport,
             VERIFIED_PROMOTION_REWARD => Self::VerifiedPromotionReward,
             SERVICE_PROVIDER_PROMOTION_FUND => Self::ServiceProviderPromotionFund,
+            HEX_USAGE_STATS_INGEST_REPORT => Self::HexUsageStatsIngestReport,
+            RADIO_USAGE_STATS_INGEST_REPORT => Self::RadioUsageStatsIngestReport,
+            HEX_USAGE_STATS_REQ => Self::HexUsageStatsReq,
+            RADIO_USAGE_STATS_REQ => Self::RadioUsageStatsReq,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
