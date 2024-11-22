@@ -9,14 +9,14 @@ use crate::{
     unique_connections, Settings, MOBILE_SUB_DAO_ONCHAIN_ADDRESS,
 };
 use anyhow::Result;
-use helium_crypto::{PublicKey, PublicKeyBinary};
+use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{sub_dao_client::SubDaoEpochRewardInfoResolver, SubDaoClient},
 };
 use serde_json::json;
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 
 /// Reward an epoch from the entries in the database
 #[derive(Debug, clap::Args)]
@@ -31,10 +31,9 @@ impl Cmd {
 
         let reward_epoch = self.reward_epoch;
 
-        let sub_dao_pubkey = PublicKeyBinary::from_str(MOBILE_SUB_DAO_ONCHAIN_ADDRESS)?;
         let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.config_client)?;
         let reward_info = sub_dao_rewards_client
-            .resolve_info(&sub_dao_pubkey, reward_epoch)
+            .resolve_info(MOBILE_SUB_DAO_ONCHAIN_ADDRESS, reward_epoch)
             .await?
             .ok_or(anyhow::anyhow!(
                 "No reward info found for epoch {}",

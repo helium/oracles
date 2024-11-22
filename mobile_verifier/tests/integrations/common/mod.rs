@@ -77,7 +77,7 @@ impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
 
     async fn resolve_info(
         &self,
-        _sub_dao: &PublicKeyBinary,
+        _sub_dao: &str,
         _epoch: u64,
     ) -> Result<Option<ResolvedSubDaoEpochRewardInfo>, Self::Error> {
         Ok(self.info.clone())
@@ -399,8 +399,8 @@ pub fn default_rewards_info(
     let now = Utc::now();
     ResolvedSubDaoEpochRewardInfo {
         epoch: 1,
-        epoch_pubkey: PublicKeyBinary::from_str(EPOCH_ADDRESS).unwrap(),
-        sub_dao_pubkey: PublicKeyBinary::from_str(SUB_DAO_ADDRESS).unwrap(),
+        epoch_address: EPOCH_ADDRESS.into(),
+        sub_dao_address: SUB_DAO_ADDRESS.into(),
         epoch_period: (now - epoch_duration)..now,
         epoch_emissions: Decimal::from(total_emissions),
         rewards_issued_at: now,
