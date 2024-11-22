@@ -19,6 +19,7 @@ use humantime_serde::re::humantime;
 use iot_config::{
     client::{sub_dao_client::SubDaoEpochRewardInfoResolver, ClientError},
     sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo,
+    EpochPeriod,
 };
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
@@ -89,30 +90,21 @@ where
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("Starting rewarder");
 
-        let reward_period_length = self.reward_period_hours;
-
         loop {
             let next_reward_epoch = next_reward_epoch(&self.pool).await?;
-            let reward_info = self
-                .sub_dao_epoch_reward_client
-                .resolve_info(&self.sub_dao_pubkey, next_reward_epoch)
-                .await?
-                .ok_or(anyhow::anyhow!(
-                    "No reward info found for epoch {}",
-                    next_reward_epoch
-                ))?;
+            let next_reward_epoch_period = EpochPeriod::try_from(next_reward_epoch)?;
 
             let scheduler = Scheduler::new(
-                reward_period_length,
-                reward_info.epoch_period.start,
-                reward_info.epoch_period.end,
+                self.reward_period_hours,
+                next_reward_epoch_period.period.start,
+                next_reward_epoch_period.period.end,
                 self.reward_offset,
             );
 
             let now = Utc::now();
             let sleep_duration = if scheduler.should_trigger(now) {
                 if self.data_current_check(&scheduler.schedule_period).await? {
-                    self.reward(reward_info).await?;
+                    self.reward(next_reward_epoch).await?;
                     scheduler.sleep_duration(Utc::now())?
                 } else {
                     tracing::info!(
@@ -132,14 +124,21 @@ where
                 _ = sleep(sleep_duration) => (),
             }
         }
-        tracing::info!("stopping rewarder");
+
+        tracing::info!("Stopping rewarder");
         Ok(())
     }
 
-    pub async fn reward(
-        &mut self,
-        reward_info: ResolvedSubDaoEpochRewardInfo,
-    ) -> anyhow::Result<()> {
+    pub async fn reward(&mut self, next_reward_epoch: u64) -> anyhow::Result<()> {
+        let reward_info = self
+            .sub_dao_epoch_reward_client
+            .resolve_info(&self.sub_dao_pubkey, next_reward_epoch)
+            .await?
+            .ok_or(anyhow::anyhow!(
+                "No reward info found for epoch {}",
+                next_reward_epoch
+            ))?;
+
         let hnt_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
