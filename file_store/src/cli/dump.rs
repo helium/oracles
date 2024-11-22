@@ -22,15 +22,16 @@ use helium_proto::{
     services::{
         packet_verifier::ValidDataTransferSession as ValidDataTransferSessionProto,
         poc_lora::{
+            iot_reward_share::Reward as IotReward, IotRewardShare as IotRewardShareProto,
             LoraBeaconIngestReportV1, LoraInvalidWitnessReportV1, LoraPocV1,
             LoraWitnessIngestReportV1,
         },
         poc_mobile::{
-            mobile_reward_share::Reward, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
-            CoverageObjectV1, Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare,
-            OracleBoostingReportV1, RadioRewardShare, SpeedtestAvg, SpeedtestIngestReportV1,
-            SpeedtestReqV1, VerifiedInvalidatedRadioThresholdIngestReportV1,
-            VerifiedRadioThresholdIngestReportV1,
+            mobile_reward_share::Reward as MobileReward, CellHeartbeatIngestReportV1,
+            CellHeartbeatReqV1, CoverageObjectV1, Heartbeat, InvalidDataTransferIngestReportV1,
+            MobileRewardShare, OracleBoostingReportV1, RadioRewardShare, SpeedtestAvg,
+            SpeedtestIngestReportV1, SpeedtestReqV1,
+            VerifiedInvalidatedRadioThresholdIngestReportV1, VerifiedRadioThresholdIngestReportV1,
         },
         router::PacketRouterPacketReportV1,
     },
@@ -242,29 +243,51 @@ impl Cmd {
                         "validity": heartbeat.validity,
                     }))?;
                 }
+                FileType::IotRewardShare => {
+                    let reward = IotRewardShareProto::decode(msg)?;
+                    match reward.reward {
+                        Some(IotReward::GatewayReward(reward)) => print_json(&json!({
+                            "type": "gateway_reward",
+                            "hotspot_key": PublicKey::try_from(reward.hotspot_key)?,
+                            "dc_transfer_amount": reward.dc_transfer_amount,
+                            "beacon_amount": reward.beacon_amount,
+                            "witness_amount": reward.witness_amount,
+                        }))?,
+                        Some(IotReward::OperationalReward(reward)) => print_json(&json!({
+                            "type": "operational_reward",
+                            "amount": reward.amount,
+                        }))?,
+                        Some(IotReward::UnallocatedReward(reward)) => print_json(&json!({
+                            "type": "unallocated_reward",
+                            "unallocated_reward_type": reward.reward_type,
+                            "amount": reward.amount,
+                        }))?,
+                        _ => (),
+                    }
+                }
                 FileType::MobileRewardShare => {
                     let reward = MobileRewardShare::decode(msg)?;
                     match reward.reward {
-                        Some(Reward::GatewayReward(reward)) => print_json(&json!({
+                        Some(MobileReward::GatewayReward(reward)) => print_json(&json!({
                             "hotspot_key": PublicKey::try_from(reward.hotspot_key)?,
                             "dc_transfer_reward": reward.dc_transfer_reward,
                         }))?,
-                        Some(Reward::RadioReward(reward)) => print_json(&json!({
+                        Some(MobileReward::RadioReward(reward)) => print_json(&json!({
                             "hotspot_key":  PublicKey::try_from(reward.hotspot_key)?,
                             "cbsd_id": reward.cbsd_id,
                             "poc_reward": reward.poc_reward,
                             "boosted_hexes": reward.boosted_hexes,
                         }))?,
-                        Some(Reward::SubscriberReward(reward)) => print_json(&json!({
+                        Some(MobileReward::SubscriberReward(reward)) => print_json(&json!({
                             "subscriber_id": reward.subscriber_id,
                             "discovery_location_amount": reward.discovery_location_amount,
                             "verification_mapping_amount": reward.verification_mapping_amount,
                         }))?,
-                        Some(Reward::ServiceProviderReward(reward)) => print_json(&json!({
+                        Some(MobileReward::ServiceProviderReward(reward)) => print_json(&json!({
                             "service_provider": reward.service_provider_id,
                             "amount": reward.amount,
                         }))?,
-                        Some(Reward::UnallocatedReward(reward)) => print_json(&json!({
+                        Some(MobileReward::UnallocatedReward(reward)) => print_json(&json!({
                             "unallocated_reward_type": reward.reward_type,
                             "amount": reward.amount,
                         }))?,

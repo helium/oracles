@@ -10,6 +10,8 @@ pub struct RewardManifest {
     pub start_timestamp: DateTime<Utc>,
     pub end_timestamp: DateTime<Utc>,
     pub reward_data: Option<RewardData>,
+    pub epoch: u64,
+    pub price: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -47,6 +49,8 @@ impl TryFrom<proto::RewardManifest> for RewardManifest {
                 .ok_or(Error::Decode(DecodeError::InvalidTimestamp(
                     value.end_timestamp,
                 )))?,
+            epoch: value.epoch,
+            price: value.price,
             reward_data: match value.reward_data {
                 Some(proto::reward_manifest::RewardData::MobileRewardData(reward_data)) => {
                     Some(RewardData::MobileRewardData {
