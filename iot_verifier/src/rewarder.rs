@@ -6,7 +6,6 @@ use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
 use futures::future::LocalBoxFuture;
-use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     reward_manifest::RewardData::IotRewardData,
     services::poc_lora::{
@@ -33,7 +32,7 @@ use tokio::time::sleep;
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: Duration = Duration::from_secs(5 * 60);
 
 pub struct Rewarder<A> {
-    sub_dao_pubkey: PublicKeyBinary,
+    sub_dao_address: String,
     pub pool: Pool<Postgres>,
     pub rewards_sink: file_sink::FileSinkClient<proto::IotRewardShare>,
     pub reward_manifests_sink: file_sink::FileSinkClient<RewardManifest>,
@@ -74,9 +73,8 @@ where
         price_tracker: PriceTracker,
         sub_dao_epoch_reward_client: A,
     ) -> anyhow::Result<Self> {
-        let sub_dao_pubkey = PublicKeyBinary::from_str(IOT_SUB_DAO_ONCHAIN_ADDRESS)?;
         Ok(Self {
-            sub_dao_pubkey,
+            sub_dao_address: IOT_SUB_DAO_ONCHAIN_ADDRESS.to_string(),
             pool,
             rewards_sink,
             reward_manifests_sink,
@@ -107,15 +105,16 @@ where
                     self.reward(next_reward_epoch).await?;
                     scheduler.sleep_duration(Utc::now())?
                 } else {
-                    tracing::info!(
-                        "rewards will be retried in {}",
-                        humantime::format_duration(REWARDS_NOT_CURRENT_DELAY_PERIOD)
-                    );
                     REWARDS_NOT_CURRENT_DELAY_PERIOD
                 }
             } else {
                 scheduler.sleep_duration(Utc::now())?
             };
+
+            tracing::info!(
+                "rewards will be retried in {}",
+                humantime::format_duration(REWARDS_NOT_CURRENT_DELAY_PERIOD)
+            );
 
             let shutdown = shutdown.clone();
             tokio::select! {
@@ -132,7 +131,7 @@ where
     pub async fn reward(&mut self, next_reward_epoch: u64) -> anyhow::Result<()> {
         let reward_info = self
             .sub_dao_epoch_reward_client
-            .resolve_info(&self.sub_dao_pubkey, next_reward_epoch)
+            .resolve_info(&self.sub_dao_address, next_reward_epoch)
             .await?
             .ok_or(anyhow::anyhow!(
                 "No reward info found for epoch {}",
