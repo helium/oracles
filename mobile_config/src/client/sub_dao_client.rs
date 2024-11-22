@@ -1,7 +1,7 @@
 use super::{call_with_retry, ClientError, Settings};
 use crate::sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo;
 use file_store::traits::MsgVerify;
-use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
+use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::{
         sub_dao::{self, SubDaoEpochRewardInfoReqV1},
@@ -34,7 +34,7 @@ pub trait SubDaoEpochRewardInfoResolver: Clone + Send + Sync + 'static {
 
     async fn resolve_info(
         &self,
-        sub_dao: &PublicKeyBinary,
+        sub_dao: &str,
         epoch: u64,
     ) -> Result<Option<ResolvedSubDaoEpochRewardInfo>, Self::Error>;
 }
@@ -45,11 +45,11 @@ impl SubDaoEpochRewardInfoResolver for SubDaoClient {
 
     async fn resolve_info(
         &self,
-        sub_dao: &PublicKeyBinary,
+        sub_dao: &str,
         epoch: u64,
     ) -> Result<Option<ResolvedSubDaoEpochRewardInfo>, Self::Error> {
         let mut request = SubDaoEpochRewardInfoReqV1 {
-            sub_dao_pubkey: sub_dao.clone().into(),
+            sub_dao_address: sub_dao.into(),
             epoch,
             signer: self.signing_key.public_key().into(),
             signature: vec![],
