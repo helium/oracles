@@ -12,13 +12,13 @@ use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-pub struct SuDaoService {
+pub struct SubDaoService {
     key_cache: KeyCache,
     metadata_pool: Pool<Postgres>,
     signing_key: Arc<Keypair>,
 }
 
-impl SuDaoService {
+impl SubDaoService {
     pub fn new(key_cache: KeyCache, metadata_pool: Pool<Postgres>, signing_key: Keypair) -> Self {
         Self {
             key_cache,
@@ -54,7 +54,7 @@ impl SuDaoService {
 }
 
 #[tonic::async_trait]
-impl sub_dao::sub_dao_server::SubDao for SuDaoService {
+impl sub_dao::sub_dao_server::SubDao for SubDaoService {
     async fn info(
         &self,
         request: Request<SubDaoEpochRewardInfoReqV1>,
