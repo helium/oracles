@@ -15,6 +15,7 @@ pub mod proto {
 #[derive(Clone, Debug, Serialize)]
 pub struct Org {
     pub oui: u64,
+    pub address: Pubkey,
     pub owner: Pubkey,
     pub escrow_key: String,
     pub approved: bool,
@@ -25,6 +26,8 @@ pub struct Org {
 
 impl FromRow<'_, PgRow> for Org {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        let address_str: String = row.get("address");
+        let address = Pubkey::from_str(&address_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
         let approved = row.get::<bool, _>("approved");
         let oui = row.try_get::<i64, &str>("oui")? as u64;
         let owner_str: String = row.get("authority");
@@ -73,6 +76,7 @@ impl FromRow<'_, PgRow> for Org {
 
         Ok(Self {
             oui,
+            address,
             owner,
             escrow_key,
             approved,
@@ -123,21 +127,22 @@ pub async fn get_org_netid(
 const GET_ORG_SQL: &str = r#"
 SELECT
     sol_org.oui::bigint,
+    sol_org.address,
     sol_org.authority,
     sol_org.escrow_key,
     sol_org.approved,
     COALESCE((SELECT locked
-     FROM organization_locks
-     WHERE organization = sol_org.address), true) AS locked,
+      FROM organization_locks
+      WHERE organization = sol_org.address), true) AS locked,
     ARRAY(
-        SELECT (start_addr, end_addr)
-        FROM solana_organization_devaddr_constraints
-        WHERE organization = sol_org.address
+      SELECT (start_addr, end_addr)
+      FROM solana_organization_devaddr_constraints
+      WHERE organization = sol_org.address
     ) AS constraints,
     ARRAY(
-        SELECT delegate
-        FROM solana_organization_delegate_keys
-        WHERE organization = sol_org.address
+      SELECT delegate
+      FROM solana_organization_delegate_keys
+      WHERE organization = sol_org.address
     ) AS delegate_keys
 FROM solana_organizations sol_org
 "#;
@@ -334,6 +339,7 @@ impl From<Org> for proto::OrgV1 {
     fn from(org: Org) -> Self {
         Self {
             oui: org.oui,
+            address: org.address.to_bytes().to_vec(),
             owner: org.owner.to_bytes().to_vec(),
             escrow_key: org.escrow_key,
             approved: org.approved,

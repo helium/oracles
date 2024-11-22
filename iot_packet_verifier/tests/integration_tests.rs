@@ -30,7 +30,7 @@ use std::{
 use tokio::sync::Mutex;
 
 struct MockConfig {
-    payer: PublicKeyBinary,
+    escrow_key: String,
     enabled: bool,
 }
 
@@ -40,11 +40,11 @@ struct MockConfigServer {
 }
 
 impl MockConfigServer {
-    async fn insert(&self, oui: u64, payer: PublicKeyBinary) {
+    async fn insert(&self, oui: u64, escrow_key: String) {
         self.payers.lock().await.insert(
             oui,
             MockConfig {
-                payer,
+                escrow_key,
                 enabled: true,
             },
         );
@@ -55,12 +55,15 @@ impl MockConfigServer {
 impl ConfigServer for MockConfigServer {
     type Error = ();
 
-    async fn fetch_org(
-        &self,
-        oui: u64,
-        _cache: &mut HashMap<u64, PublicKeyBinary>,
-    ) -> Result<PublicKeyBinary, ()> {
-        Ok(self.payers.lock().await.get(&oui).unwrap().payer.clone())
+    async fn fetch_org(&self, oui: u64, _cache: &mut HashMap<u64, String>) -> Result<String, ()> {
+        Ok(self
+            .payers
+            .lock()
+            .await
+            .get(&oui)
+            .unwrap()
+            .escrow_key
+            .clone())
     }
 
     async fn disable_org(&self, oui: u64) -> Result<(), ()> {
@@ -81,7 +84,7 @@ impl ConfigServer for MockConfigServer {
             .iter()
             .map(|(oui, config)| Org {
                 oui: *oui,
-                payer: config.payer.clone(),
+                escrow_key: config.escrow_key.clone(),
                 locked: !config.enabled,
             })
             .collect())
@@ -164,17 +167,17 @@ fn invalid_packet(payload_size: u32, payload_hash: Vec<u8>) -> InvalidPacket {
 }
 
 #[derive(Clone)]
-struct InstantlyBurnedBalance(Arc<Mutex<HashMap<PublicKeyBinary, u64>>>);
+struct InstantlyBurnedBalance(Arc<Mutex<HashMap<String, u64>>>);
 
 #[async_trait]
 impl AddPendingBurn for InstantlyBurnedBalance {
     async fn add_burned_amount(
         &mut self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
     ) -> Result<(), sqlx::Error> {
         let mut map = self.0.lock().await;
-        let balance = map.get_mut(payer).unwrap();
+        let balance = map.get_mut(escrow_key).unwrap();
         *balance -= amount;
         Ok(())
     }
@@ -182,16 +185,17 @@ impl AddPendingBurn for InstantlyBurnedBalance {
 
 #[tokio::test]
 async fn test_config_unlocking() {
+    let escrow_key = format!("OUI_{}", 0);
     // Set up orgs:
     let orgs = MockConfigServer::default();
-    orgs.insert(0_u64, PublicKeyBinary::from(vec![0])).await;
+    orgs.insert(0_u64, escrow_key.clone()).await;
     // Set up balances:
     let mut solana_network = HashMap::new();
-    solana_network.insert(PublicKeyBinary::from(vec![0]), 3);
+    solana_network.insert(escrow_key.clone(), 3);
     let solana_network = Arc::new(Mutex::new(solana_network));
     // Set up cache:
     let mut cache = HashMap::new();
-    cache.insert(PublicKeyBinary::from(vec![0]), 3);
+    cache.insert(escrow_key.clone(), 3);
     let cache = Arc::new(Mutex::new(cache));
     let balances = InstantlyBurnedBalance(cache.clone());
     // Set up verifier:
@@ -219,11 +223,7 @@ async fn test_config_unlocking() {
     assert!(!orgs.payers.lock().await.get(&0).unwrap().enabled);
 
     // Update the solana network:
-    *solana_network
-        .lock()
-        .await
-        .get_mut(&PublicKeyBinary::from(vec![0]))
-        .unwrap() = 50;
+    *solana_network.lock().await.get_mut(&escrow_key).unwrap() = 50;
 
     let (trigger, listener) = triggered::trigger();
 
@@ -248,14 +248,7 @@ async fn test_config_unlocking() {
 
     // We should be re-enabled
     assert!(orgs.payers.lock().await.get(&0).unwrap().enabled);
-    assert_eq!(
-        *cache
-            .lock()
-            .await
-            .get(&PublicKeyBinary::from(vec![0]))
-            .unwrap(),
-        50
-    );
+    assert_eq!(*cache.lock().await.get(&escrow_key).unwrap(), 50);
 
     trigger.trigger();
 
@@ -276,14 +269,7 @@ async fn test_config_unlocking() {
 
     // Still enabled:
     assert!(orgs.payers.lock().await.get(&0).unwrap().enabled);
-    assert_eq!(
-        *cache
-            .lock()
-            .await
-            .get(&PublicKeyBinary::from(vec![0]))
-            .unwrap(),
-        46
-    );
+    assert_eq!(*cache.lock().await.get(&escrow_key).unwrap(), 46);
 }
 
 #[tokio::test]
@@ -295,15 +281,15 @@ async fn test_verifier_free_packets() {
         packet_report(0, 2, 1, vec![6], true),
     ];
 
-    let org_pubkey = PublicKeyBinary::from(vec![0]);
+    let org_escrow_key = format!("OUI_{}", 0);
 
     // Set up orgs:
     let orgs = MockConfigServer::default();
-    orgs.insert(0_u64, org_pubkey.clone()).await;
+    orgs.insert(0_u64, org_escrow_key.clone()).await;
 
     // Set up balances:
     let mut balances = HashMap::new();
-    balances.insert(org_pubkey.clone(), 5);
+    balances.insert(org_escrow_key.clone(), 5);
     let balances = InstantlyBurnedBalance(Arc::new(Mutex::new(balances)));
 
     // Set up output:
@@ -345,7 +331,7 @@ async fn test_verifier_free_packets() {
     assert_eq!(
         verifier
             .debiter
-            .payer_balance(&org_pubkey)
+            .payer_balance(&org_escrow_key)
             .await
             .expect("unchanged balance"),
         5
@@ -371,14 +357,14 @@ async fn test_verifier() {
     ];
     // Set up orgs:
     let orgs = MockConfigServer::default();
-    orgs.insert(0_u64, PublicKeyBinary::from(vec![0])).await;
-    orgs.insert(1_u64, PublicKeyBinary::from(vec![1])).await;
-    orgs.insert(2_u64, PublicKeyBinary::from(vec![2])).await;
+    orgs.insert(0_u64, format!("OUI_{}", 0)).await;
+    orgs.insert(1_u64, format!("OUI_{}", 1)).await;
+    orgs.insert(2_u64, format!("OUI_{}", 2)).await;
     // Set up balances:
     let mut balances = HashMap::new();
-    balances.insert(PublicKeyBinary::from(vec![0]), 3);
-    balances.insert(PublicKeyBinary::from(vec![1]), 5);
-    balances.insert(PublicKeyBinary::from(vec![2]), 2);
+    balances.insert(format!("OUI_{}", 0), 3);
+    balances.insert(format!("OUI_{}", 1), 5);
+    balances.insert(format!("OUI_{}", 2), 2);
     let balances = InstantlyBurnedBalance(Arc::new(Mutex::new(balances)));
     // Set up output:
     let mut valid_packets = Vec::new();
@@ -428,11 +414,10 @@ async fn test_verifier() {
 
 #[tokio::test]
 async fn test_end_to_end() {
-    let payer = PublicKeyBinary::from(vec![0]);
+    let escrow_key = format!("OUI_{}", 0);
 
     // Pending tables:
-    let pending_burns: Arc<Mutex<HashMap<PublicKeyBinary, u64>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let pending_burns: Arc<Mutex<HashMap<String, u64>>> = Arc::new(Mutex::new(HashMap::new()));
     let pending_tables = MockPendingTables {
         pending_txns: Default::default(),
         pending_burns: pending_burns.clone(),
@@ -440,7 +425,7 @@ async fn test_end_to_end() {
 
     // Solana network:
     let mut solana_network = HashMap::new();
-    solana_network.insert(payer.clone(), 3_u64); // Start with 3 data credits
+    solana_network.insert(escrow_key.clone(), 3_u64); // Start with 3 data credits
     let solana_network = Arc::new(Mutex::new(solana_network));
 
     // Balance cache:
@@ -458,7 +443,7 @@ async fn test_end_to_end() {
 
     // Orgs:
     let orgs = MockConfigServer::default();
-    orgs.insert(0_u64, payer.clone()).await;
+    orgs.insert(0_u64, escrow_key.clone()).await;
 
     // Packet output:
     let mut valid_packets = Vec::new();
@@ -518,13 +503,13 @@ async fn test_end_to_end() {
     let balance = {
         let balances = verifier.debiter.balances();
         let balances = balances.lock().await;
-        *balances.get(&payer).unwrap()
+        *balances.get(&escrow_key).unwrap()
     };
     assert_eq!(balance.balance, 3);
     assert_eq!(balance.burned, 3);
 
     // Check that 3 DC are pending to be burned:
-    let pending_burn = *pending_burns.lock().await.get(&payer).unwrap();
+    let pending_burn = *pending_burns.lock().await.get(&escrow_key).unwrap();
     assert_eq!(pending_burn, 3);
 
     // Initiate the burn:
@@ -534,17 +519,17 @@ async fn test_end_to_end() {
     let balance = {
         let balances = verifier.debiter.balances();
         let balances = balances.lock().await;
-        *balances.get(&payer).unwrap()
+        *balances.get(&escrow_key).unwrap()
     };
     assert_eq!(balance.balance, 0);
     assert_eq!(balance.burned, 0);
 
     // Pending burns should be empty as well:
-    let pending_burn = *pending_burns.lock().await.get(&payer).unwrap();
+    let pending_burn = *pending_burns.lock().await.get(&escrow_key).unwrap();
     assert_eq!(pending_burn, 0);
 
     // Additionally, the balance on the solana network should be zero:
-    let solana_balance = *solana_network.lock().await.get(&payer).unwrap();
+    let solana_balance = *solana_network.lock().await.get(&escrow_key).unwrap();
     assert_eq!(solana_balance, 0);
 
     // Attempting to validate one packet should fail now:
@@ -579,11 +564,11 @@ async fn test_end_to_end() {
 #[derive(Clone)]
 struct MockSolanaNetwork {
     confirmed: Arc<Mutex<HashSet<Signature>>>,
-    ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+    ledger: Arc<Mutex<HashMap<String, u64>>>,
 }
 
 impl MockSolanaNetwork {
-    fn new(ledger: HashMap<PublicKeyBinary, u64>) -> Self {
+    fn new(ledger: HashMap<String, u64>) -> Self {
         Self {
             confirmed: Arc::new(Default::default()),
             ledger: Arc::new(Mutex::new(ledger)),
@@ -596,16 +581,16 @@ impl SolanaNetwork for MockSolanaNetwork {
     type Error = std::convert::Infallible;
     type Transaction = MockTransaction;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
-        self.ledger.payer_balance(payer).await
+    async fn payer_balance(&self, escrow_key: &String) -> Result<u64, Self::Error> {
+        self.ledger.payer_balance(escrow_key).await
     }
 
     async fn make_burn_transaction(
         &self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
     ) -> Result<MockTransaction, Self::Error> {
-        self.ledger.make_burn_transaction(payer, amount).await
+        self.ledger.make_burn_transaction(escrow_key, amount).await
     }
 
     async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), Self::Error> {
@@ -623,17 +608,15 @@ impl SolanaNetwork for MockSolanaNetwork {
 async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     const CONFIRMED_BURN_AMOUNT: u64 = 7;
     const UNCONFIRMED_BURN_AMOUNT: u64 = 11;
-    let payer: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-        .parse()
-        .unwrap();
+    let escrow_key = format!("112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6");
     let mut ledger = HashMap::new();
     ledger.insert(
-        payer.clone(),
+        escrow_key.clone(),
         CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
     );
     let mut cache = HashMap::new();
     cache.insert(
-        payer.clone(),
+        escrow_key.clone(),
         PayerAccount {
             balance: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
             burned: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
@@ -645,7 +628,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     {
         let mut transaction = pool.begin().await.unwrap();
         (&mut transaction)
-            .add_burned_amount(&payer, CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT)
+            .add_burned_amount(&escrow_key, CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
         transaction.commit().await.unwrap();
@@ -654,10 +637,10 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // First transaction is confirmed
     {
         let txn = mock_network
-            .make_burn_transaction(&payer, CONFIRMED_BURN_AMOUNT)
+            .make_burn_transaction(&escrow_key, CONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
-        pool.add_pending_transaction(&payer, CONFIRMED_BURN_AMOUNT, txn.get_signature())
+        pool.add_pending_transaction(&escrow_key, CONFIRMED_BURN_AMOUNT, txn.get_signature())
             .await
             .unwrap();
         mock_network.submit_transaction(&txn).await.unwrap();
@@ -666,10 +649,10 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Second is unconfirmed
     {
         let txn = mock_network
-            .make_burn_transaction(&payer, UNCONFIRMED_BURN_AMOUNT)
+            .make_burn_transaction(&escrow_key, UNCONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
-        pool.add_pending_transaction(&payer, UNCONFIRMED_BURN_AMOUNT, txn.get_signature())
+        pool.add_pending_transaction(&escrow_key, UNCONFIRMED_BURN_AMOUNT, txn.get_signature())
             .await
             .unwrap();
     }

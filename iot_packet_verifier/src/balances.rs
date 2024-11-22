@@ -2,7 +2,6 @@ use crate::{
     pending::{Burn, PendingTables},
     verifier::Debiter,
 };
-use helium_crypto::PublicKeyBinary;
 use solana::burn::SolanaNetwork;
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -17,7 +16,7 @@ pub struct BalanceCache<S> {
     solana: S,
 }
 
-pub type BalanceStore = Arc<Mutex<HashMap<PublicKeyBinary, PayerAccount>>>;
+pub type BalanceStore = Arc<Mutex<HashMap<String, PayerAccount>>>;
 
 impl<S> BalanceCache<S>
 where
@@ -29,14 +28,14 @@ where
         let mut balances = HashMap::new();
 
         for Burn {
-            payer,
+            escrow_key,
             amount: burn_amount,
         } in pending_tables.fetch_all_pending_burns().await?
         {
             // Look up the current balance of the payer
-            let balance = solana.payer_balance(&payer).await?;
+            let balance = solana.payer_balance(&escrow_key).await?;
             balances.insert(
-                payer,
+                escrow_key,
                 PayerAccount {
                     burned: burn_amount,
                     balance,
@@ -68,30 +67,31 @@ where
     /// option if there was enough and none otherwise.
     async fn debit_if_sufficient(
         &self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
         trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, S::Error> {
         let mut payer_accounts = self.payer_accounts.lock().await;
 
         // Fetch the balance if we haven't seen the payer before
-        if let Entry::Vacant(payer_account) = payer_accounts.entry(payer.clone()) {
-            let payer_account =
-                payer_account.insert(PayerAccount::new(self.solana.payer_balance(payer).await?));
+        if let Entry::Vacant(payer_account) = payer_accounts.entry(escrow_key.clone()) {
+            let payer_account = payer_account.insert(PayerAccount::new(
+                self.solana.payer_balance(escrow_key).await?,
+            ));
             return Ok((payer_account.balance >= amount).then(|| {
                 payer_account.burned += amount;
                 payer_account.balance - amount
             }));
         }
 
-        let payer_account = payer_accounts.get_mut(payer).unwrap();
+        let payer_account = payer_accounts.get_mut(escrow_key).unwrap();
         match payer_account
             .balance
             .checked_sub(amount + payer_account.burned)
         {
             Some(remaining_balance) => {
                 if remaining_balance < trigger_balance_check_threshold {
-                    payer_account.balance = self.solana.payer_balance(payer).await?;
+                    payer_account.balance = self.solana.payer_balance(escrow_key).await?;
                 }
                 payer_account.burned += amount;
                 Ok(Some(payer_account.balance - payer_account.burned))

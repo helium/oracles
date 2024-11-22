@@ -462,11 +462,12 @@ pub async fn update_devaddr_ranges(
 pub async fn list_routes(oui: u64, db: impl sqlx::PgExecutor<'_>) -> anyhow::Result<Vec<Route>> {
     Ok(sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, ol.locked
             from routes r
-            join organizations o on r.oui = o.oui
+            join solana_organizations o on r.oui = o.oui
+            join organization_locks ol on o.address = ol.organization
             where o.oui = $1 and r.deleted = false
-            group by r.id, o.locked
+            group by r.id, ol.locked
         "#,
     )
     .bind(oui as i64)
@@ -527,11 +528,12 @@ pub fn route_stream<'a>(
 ) -> impl Stream<Item = (Route, bool)> + 'a {
     sqlx::query(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked, r.deleted
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, ol.locked, r.deleted
             from routes r
-            join organizations o on r.oui = o.oui
+            join solana_organizations o on r.oui = o.oui
+            join organization_locks ol on o.address = ol.organization
             where r.updated_at >= $1
-            group by r.id, o.locked
+            group by r.id, ol.locked
         "#,
     )
     .bind(since)
@@ -615,11 +617,12 @@ pub async fn get_route(id: &str, db: impl sqlx::PgExecutor<'_>) -> anyhow::Resul
     let uuid = Uuid::try_parse(id)?;
     let route = sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, ol.locked
             from routes r
-            join organizations o on r.oui = o.oui
+            join solana_organizations o on r.oui = o.oui
+            join organization_locks ol on o.address = ol.organization
             where r.id = $1 and r.deleted = false
-            group by r.id, o.locked
+            group by r.id, ol.locked
         "#,
     )
     .bind(uuid)
