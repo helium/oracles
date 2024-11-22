@@ -830,8 +830,8 @@ mod test {
         let now = Utc::now();
         ResolvedSubDaoEpochRewardInfo {
             epoch: 1,
-            epoch_pubkey: PublicKeyBinary::from_str(EPOCH_ADDRESS).unwrap(),
-            sub_dao_pubkey: PublicKeyBinary::from_str(SUB_DAO_ADDRESS).unwrap(),
+            epoch_address: EPOCH_ADDRESS.into(),
+            sub_dao_address: SUB_DAO_ADDRESS.into(),
             epoch_period: (now - epoch_duration)..now,
             epoch_emissions: Decimal::from(total_emissions),
             rewards_issued_at: now,
