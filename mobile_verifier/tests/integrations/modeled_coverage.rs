@@ -21,6 +21,7 @@ use mobile_verifier::{
     heartbeats::{
         last_location::LocationCache, Heartbeat, HeartbeatReward, KeyType, ValidatedHeartbeat,
     },
+    radio_threshold::unique_connections::UniqueConnectionCounts,
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
@@ -484,6 +485,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -587,6 +589,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -876,6 +879,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         &boosted_hexes,
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -966,6 +970,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -1068,6 +1073,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -1318,6 +1324,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;

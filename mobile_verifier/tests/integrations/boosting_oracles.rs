@@ -18,6 +18,7 @@ use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
     heartbeats::{last_location::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
+    radio_threshold::unique_connections::UniqueConnectionCounts,
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
@@ -386,6 +387,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &epoch,
     )
     .await

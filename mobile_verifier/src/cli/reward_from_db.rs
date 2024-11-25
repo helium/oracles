@@ -1,5 +1,6 @@
 use crate::{
     heartbeats::HeartbeatReward,
+    radio_threshold::unique_connections::UniqueConnectionCounts,
     reward_shares::{
         get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
     },
@@ -50,6 +51,7 @@ impl Cmd {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await?;
