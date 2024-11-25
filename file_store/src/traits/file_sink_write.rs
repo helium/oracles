@@ -264,6 +264,11 @@ impl_file_sink!(
     "hotspot_usage_counts_ingest_report"
 );
 impl_file_sink!(
+    poc_mobile::UniqueConnectionsIngestReportV1,
+    FileType::UniqueConnectionReport.to_str(),
+    "unique_connections_report"
+);
+impl_file_sink!(
     proto::BoostedHexUpdateV1,
     FileType::BoostedHexUpdate.to_str(),
     "boosted_hex_update"
