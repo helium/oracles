@@ -8,14 +8,17 @@ use file_store::{
 };
 use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
-use helium_crypto::{Network, PublicKey};
+use helium_crypto::{Network, PublicKey, PublicKeyBinary};
+use helium_proto::services::mobile_config::NetworkKeyRole;
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
+    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
-    RadioThresholdReportRespV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
+    RadioUsageStatsResV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1,
@@ -23,6 +26,7 @@ use helium_proto::services::poc_mobile::{
     SubscriberVerifiedMappingEventResV1, WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1,
     WifiHeartbeatRespV1,
 };
+use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use std::{net::SocketAddr, path::Path};
 use task_manager::{ManagedTask, TaskManager};
 use tonic::{
@@ -33,7 +37,7 @@ use tonic::{
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 pub type VerifyResult<T> = std::result::Result<T, Status>;
 
-pub struct GrpcServer {
+pub struct GrpcServer<AV> {
     heartbeat_report_sink: FileSinkClient<CellHeartbeatIngestReportV1>,
     wifi_heartbeat_report_sink: FileSinkClient<WifiHeartbeatIngestReportV1>,
     speedtest_report_sink: FileSinkClient<SpeedtestIngestReportV1>,
@@ -46,12 +50,18 @@ pub struct GrpcServer {
     sp_boosted_rewards_ban_sink:
         FileSinkClient<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
     subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
+    hex_usage_stats_event_sink: FileSinkClient<HexUsageStatsIngestReportV1>,
+    radio_usage_stats_event_sink: FileSinkClient<RadioUsageStatsIngestReportV1>,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
+    authorization_verifier: AV,
 }
 
-impl ManagedTask for GrpcServer {
+impl<AV> ManagedTask for GrpcServer<AV>
+where
+    AV: AuthorizationVerifier + Send + Sync + 'static,
+{
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -68,7 +78,10 @@ fn make_span(_request: &http::request::Request<helium_proto::services::Body>) ->
     )
 }
 
-impl GrpcServer {
+impl<AV> GrpcServer<AV>
+where
+    AV: AuthorizationVerifier + Send + Sync + 'static,
+{
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         heartbeat_report_sink: FileSinkClient<CellHeartbeatIngestReportV1>,
@@ -85,9 +98,12 @@ impl GrpcServer {
             ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
         >,
         subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
+        hex_usage_stats_event_sink: FileSinkClient<HexUsageStatsIngestReportV1>,
+        radio_usage_stats_event_sink: FileSinkClient<RadioUsageStatsIngestReportV1>,
         required_network: Network,
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
+        authorization_verifier: AV,
     ) -> Self {
         GrpcServer {
             heartbeat_report_sink,
@@ -100,9 +116,12 @@ impl GrpcServer {
             coverage_object_report_sink,
             sp_boosted_rewards_ban_sink,
             subscriber_mapping_event_sink,
+            hex_usage_stats_event_sink,
+            radio_usage_stats_event_sink,
             required_network,
             address,
             api_token,
+            authorization_verifier,
         }
     }
 
@@ -146,10 +165,25 @@ impl GrpcServer {
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
         Ok((public_key, event))
     }
+
+    async fn verify_known_carrier_key(&self, public_key: PublicKey) -> VerifyResult<()> {
+        let public_key_bin = PublicKeyBinary::from(public_key.clone());
+        self.authorization_verifier
+            .verify_authorized_key(&public_key_bin, NetworkKeyRole::MobileCarrier)
+            .await
+            .map_err(|_| {
+                tracing::error!(%public_key_bin, "unknown carrier key");
+                Status::invalid_argument("unknown carrier key")
+            })?;
+        Ok(())
+    }
 }
 
 #[tonic::async_trait]
-impl poc_mobile::PocMobile for GrpcServer {
+impl<AV> poc_mobile::PocMobile for GrpcServer<AV>
+where
+    AV: AuthorizationVerifier + Send + Sync + 'static,
+{
     async fn submit_speedtest(
         &self,
         request: Request<SpeedtestReqV1>,
@@ -286,6 +320,30 @@ impl poc_mobile::PocMobile for GrpcServer {
         }))
     }
 
+    async fn submit_coverage_object(
+        &self,
+        request: Request<CoverageObjectReqV1>,
+    ) -> GrpcResult<CoverageObjectRespV1> {
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+
+        custom_tracing::record_b58("pub_key", &event.pub_key);
+
+        let report = self
+            .verify_public_key(event.pub_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| CoverageObjectIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(event),
+            })?;
+
+        _ = self.coverage_object_report_sink.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(CoverageObjectRespV1 { id }))
+    }
+
     async fn submit_threshold_report(
         &self,
         request: Request<RadioThresholdReportReqV1>,
@@ -361,30 +419,6 @@ impl poc_mobile::PocMobile for GrpcServer {
         }))
     }
 
-    async fn submit_coverage_object(
-        &self,
-        request: Request<CoverageObjectReqV1>,
-    ) -> GrpcResult<CoverageObjectRespV1> {
-        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
-        let event = request.into_inner();
-
-        custom_tracing::record_b58("pub_key", &event.pub_key);
-
-        let report = self
-            .verify_public_key(event.pub_key.as_ref())
-            .and_then(|public_key| self.verify_network(public_key))
-            .and_then(|public_key| self.verify_signature(public_key, event))
-            .map(|(_, event)| CoverageObjectIngestReportV1 {
-                received_timestamp: timestamp,
-                report: Some(event),
-            })?;
-
-        _ = self.coverage_object_report_sink.write(report, []).await;
-
-        let id = timestamp.to_string();
-        Ok(Response::new(CoverageObjectRespV1 { id }))
-    }
-
     async fn submit_sp_boosted_rewards_banned_radio(
         &self,
         request: Request<ServiceProviderBoostedRewardsBannedRadioReqV1>,
@@ -436,6 +470,58 @@ impl poc_mobile::PocMobile for GrpcServer {
 
         let id = timestamp.to_string();
         Ok(Response::new(SubscriberVerifiedMappingEventResV1 { id }))
+    }
+
+    async fn submit_hex_usage_stats_report(
+        &self,
+        request: Request<HexUsageStatsReqV1>,
+    ) -> GrpcResult<HexUsageStatsResV1> {
+        let timestamp = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+
+        custom_tracing::record("hex", event.hex);
+
+        let (verified_pubkey, event) = self
+            .verify_public_key(event.carrier_mapping_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event.clone()))?;
+        self.verify_known_carrier_key(verified_pubkey).await?;
+
+        let report = HexUsageStatsIngestReportV1 {
+            received_timestamp: timestamp,
+            report: Some(event),
+        };
+
+        _ = self.hex_usage_stats_event_sink.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(HexUsageStatsResV1 { id }))
+    }
+
+    async fn submit_radio_usage_stats_report(
+        &self,
+        request: Request<RadioUsageStatsReqV1>,
+    ) -> GrpcResult<RadioUsageStatsResV1> {
+        let timestamp = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+
+        custom_tracing::record_b58("pub_key", &event.hotspot_pubkey);
+
+        let (verified_pubkey, event) = self
+            .verify_public_key(event.carrier_mapping_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event.clone()))?;
+        self.verify_known_carrier_key(verified_pubkey).await?;
+
+        let report = RadioUsageStatsIngestReportV1 {
+            received_timestamp: timestamp,
+            report: Some(event),
+        };
+
+        _ = self.radio_usage_stats_event_sink.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(RadioUsageStatsResV1 { id }))
     }
 }
 
@@ -546,6 +632,26 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         )
         .await?;
 
+    let (hex_usage_stats_event_sink, hex_usage_stats_event_server) =
+        HexUsageStatsIngestReportV1::file_sink(
+            store_base_path,
+            file_upload.clone(),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
+
+    let (radio_usage_stats_event_sink, radio_usage_stats_event_server) =
+        RadioUsageStatsIngestReportV1::file_sink(
+            store_base_path,
+            file_upload.clone(),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
+
     let Some(api_token) = settings
         .token
         .as_ref()
@@ -565,9 +671,12 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         coverage_object_report_sink,
         sp_boosted_rewards_ban_sink,
         subscriber_mapping_event_sink,
+        hex_usage_stats_event_sink,
+        radio_usage_stats_event_sink,
         settings.network,
         settings.listen_addr,
         api_token,
+        AuthorizationClient::from_settings(&settings.config_client)?,
     );
 
     tracing::info!(
@@ -588,6 +697,8 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(coverage_object_report_sink_server)
         .add_task(sp_boosted_rewards_ban_sink_server)
         .add_task(subscriber_mapping_event_server)
+        .add_task(hex_usage_stats_event_server)
+        .add_task(radio_usage_stats_event_server)
         .add_task(grpc_server)
         .build()
         .start()

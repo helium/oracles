@@ -4312,6 +4312,7 @@ dependencies = [
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
+ "mobile-config",
  "poc-metrics",
  "prost",
  "rand 0.8.5",
