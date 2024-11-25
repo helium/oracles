@@ -450,6 +450,8 @@ async fn reward_poc(
     )
     .await?;
 
+    let unique_connections = radio_threshold::unique_connections::get(pool, reward_period).await?;
+
     let coverage_shares = CoverageShares::new(
         pool,
         heartbeats,
@@ -457,6 +459,7 @@ async fn reward_poc(
         &boosted_hexes,
         &boosted_hex_eligibility,
         &poc_banned_radios,
+        &unique_connections,
         reward_period,
     )
     .await?;

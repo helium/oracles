@@ -1,5 +1,6 @@
 use crate::{
     coverage::CoveredHexStream, data_session::HotspotMap, heartbeats::HeartbeatReward,
+    radio_threshold::unique_connections::UniqueConnectionCounts,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility, seniority::Seniority,
     sp_boosted_rewards_bans::BannedRadios, speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
@@ -389,6 +390,7 @@ struct RadioInfo {
     sp_boosted_reward_eligibility: SPBoostedRewardEligibility,
     speedtests: Vec<coverage_point_calculator::Speedtest>,
     oracle_boosting_status: OracleBoostingStatus,
+    unique_connections: u64,
 }
 
 #[derive(Debug)]
@@ -405,6 +407,7 @@ impl CoverageShares {
         boosted_hexes: &BoostedHexes,
         boosted_hex_eligibility: &BoostedHexEligibility,
         banned_radios: &BannedRadios,
+        unique_connections: &UniqueConnectionCounts,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<Self> {
         let mut radio_infos: HashMap<RadioId, RadioInfo> = HashMap::new();
@@ -480,6 +483,7 @@ impl CoverageShares {
             } else {
                 OracleBoostingStatus::Eligible
             };
+            let unique_connections = unique_connections.get(&pubkey).cloned().unwrap_or_default();
 
             let sp_boosted_reward_eligibility =
                 boosted_hex_eligibility.eligibility(pubkey, cbsd_id);
@@ -503,6 +507,7 @@ impl CoverageShares {
                     sp_boosted_reward_eligibility,
                     speedtests,
                     oracle_boosting_status,
+                    unique_connections,
                 },
             );
         }
@@ -1187,6 +1192,7 @@ mod test {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await
@@ -1590,6 +1596,7 @@ mod test {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await
@@ -1771,6 +1778,7 @@ mod test {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await
@@ -1905,6 +1913,7 @@ mod test {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await
@@ -2040,6 +2049,7 @@ mod test {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await
@@ -2155,6 +2165,7 @@ mod test {
                     },
                 ],
                 oracle_boosting_status: OracleBoostingStatus::Eligible,
+                unique_connections: 0,
             },
         );
         radio_infos.insert(
@@ -2176,6 +2187,7 @@ mod test {
                 sp_boosted_reward_eligibility: SPBoostedRewardEligibility::Eligible,
                 speedtests: vec![],
                 oracle_boosting_status: OracleBoostingStatus::Eligible,
+                unique_connections: 0,
             },
         );
 
