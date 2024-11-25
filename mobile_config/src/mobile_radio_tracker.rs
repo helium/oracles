@@ -139,8 +139,9 @@ impl MobileRadioTracker {
                 biased;
                 _ = &mut shutdown => break,
                 _ = interval.tick() => {
-                    //TODO probably shouldn't crash api when this fails
-                    track_changes(&self.pool, &self.metadata).await?;
+                    if let Err(err) = track_changes(&self.pool, &self.metadata).await {
+                        tracing::error!(?err, "error in tracking changes to mobile radios");
+                    }
                 }
             }
         }
@@ -150,6 +151,7 @@ impl MobileRadioTracker {
 }
 
 async fn track_changes(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow::Result<()> {
+    tracing::info!("looking for changes to radios");
     let tracked_radios = get_tracked_radios(pool).await?;
 
     let updates: Vec<TrackedMobileRadio> = get_all_mobile_radios(metadata)
@@ -164,7 +166,10 @@ async fn track_changes(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyh
         .collect()
         .await;
 
+    tracing::info!("updating in db: {}", updates.len());
+
     update_tracked_radios(pool, updates).await?;
+    tracing::info!("done");
 
     Ok(())
 }
@@ -191,19 +196,19 @@ async fn get_tracked_radios(
     .await
 }
 
-fn get_all_mobile_radios<'a>(metadata: &'a Pool<Postgres>) -> impl Stream<Item = MobileRadio> + 'a {
+fn get_all_mobile_radios(metadata: &Pool<Postgres>) -> impl Stream<Item = MobileRadio> + '_ {
     sqlx::query_as::<_, MobileRadio>(
         r#"
         SELECT
         	kta.entity_key,
-        	kta.refreshed_at,
+        	mhi.refreshed_at,
         	mhi.location::bigint,
-        	mhi.is_full_hotspot,
+        	mhi.is_full_hotspot::int,
         	mhi.num_location_asserts,
-        	mhi.is_active,
+        	mhi.is_active::int,
         	mhi.dc_onboarding_fee_paid::bigint,
-        	mhi.device_type,
-        	mhi.deployment_info
+        	mhi.device_type::text,
+        	mhi.deployment_info::text
         FROM key_to_assets kta
         INNER JOIN mobile_hotspot_infos mhi ON
         	kta.asset = mhi.asset
@@ -212,7 +217,12 @@ fn get_all_mobile_radios<'a>(metadata: &'a Pool<Postgres>) -> impl Stream<Item =
     "#,
     )
     .fetch(metadata)
-    .filter_map(|result| async move { result.ok() })
+    .filter_map(|result| async move {
+        if let Err(err) = &result {
+            tracing::error!(?err, "error when reading gateway metadata");
+        }
+        result.ok()
+    })
     .boxed()
 }
 
