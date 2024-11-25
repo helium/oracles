@@ -3,7 +3,8 @@ use futures::stream::StreamExt;
 
 use helium_crypto::{KeyTag, Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::services::mobile_config::{
-    self as proto, DeviceType, GatewayClient, GatewayInfoStreamReqV1, GatewayInfoStreamResV1,
+    self as proto, gateway_metadata_v2::DeploymentInfo, DeviceType, GatewayClient,
+    GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamResV2,
 };
 use mobile_config::{
     gateway_service::GatewayService,
@@ -108,7 +109,7 @@ async fn spawn_gateway_service(
 }
 
 #[sqlx::test]
-async fn gateway_stream_info_refreshed_at(pool: PgPool) {
+async fn gateway_stream_info_v1(pool: PgPool) {
     let admin_key = make_keypair();
     let asset1_pubkey = make_keypair().public_key().clone();
     let asset1_hex_idx = 631711281837647359_i64;
@@ -144,24 +145,14 @@ async fn gateway_stream_info_refreshed_at(pool: PgPool) {
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
-    // Regression test
-    let req = make_gateway_stream_signed_req(&admin_key, &[]);
+    // Select all devices
+    let req = make_gateway_stream_signed_req_v1(&admin_key, &[]);
     let mut stream = client.info_stream(req).await.unwrap().into_inner();
     let resp = stream.next().await.unwrap().unwrap();
     assert_eq!(resp.gateways.len(), 2);
 
-    // No device types but filter by refreshed_at
-    // let req = make_gateway_stream_signed_req(&admin_key, &[], now_plus_10.timestamp() as u64);
-    // let mut stream = client.info_stream(req).await.unwrap().into_inner();
-    // let resp = stream.next().await.unwrap().unwrap();
-    // assert_eq!(resp.gateways.len(), 1);
-    // assert_eq!(
-    //     resp.gateways.first().unwrap().device_type,
-    //     Into::<i32>::into(DeviceType::WifiDataOnly)
-    // );
-
-    // No refreshed_at but filter by device_type
-    let req = make_gateway_stream_signed_req(&admin_key, &[DeviceType::WifiIndoor]);
+    // Filter by device type
+    let req = make_gateway_stream_signed_req_v1(&admin_key, &[DeviceType::WifiIndoor]);
     let mut stream = client.info_stream(req).await.unwrap().into_inner();
     let resp = stream.next().await.unwrap().unwrap();
     assert_eq!(resp.gateways.len(), 1);
@@ -169,60 +160,100 @@ async fn gateway_stream_info_refreshed_at(pool: PgPool) {
         resp.gateways.first().unwrap().device_type,
         Into::<i32>::into(DeviceType::WifiIndoor)
     );
-
-    // Filter by device_type and refreshed_at
-    // let req = make_gateway_stream_signed_req(
-    //     &admin_key,
-    //     &[DeviceType::WifiIndoor],
-    //     now.timestamp() as u64,
-    // );
-    // let mut stream = client.info_stream(req).await.unwrap().into_inner();
-    // let resp = stream.next().await.unwrap().unwrap();
-    // assert_eq!(resp.gateways.len(), 1);
-    // assert_eq!(
-    //     resp.gateways.first().unwrap().device_type,
-    //     Into::<i32>::into(DeviceType::WifiIndoor)
-    // );
 }
 
-// #[sqlx::test]
-// async fn gateway_stream_info_refreshed_at_is_null(pool: PgPool) {
-//     let admin_key = make_keypair();
-//     let asset1_pubkey = make_keypair().public_key().clone();
-//     let asset1_hex_idx = 631711281837647359_i64;
-//     let now = Utc::now();
-//
-//     create_db_tables(&pool).await;
-//     add_db_record(
-//         &pool,
-//         "asset1",
-//         asset1_hex_idx,
-//         "\"wifiIndoor\"",
-//         asset1_pubkey.clone().into(),
-//         now,
-//         None,
-//         None,
-//     )
-//     .await;
-//
-//     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
-//     let mut client = GatewayClient::connect(addr).await.unwrap();
-//
-//     let req = make_gateway_stream_signed_req(&admin_key, &[], now.timestamp() as u64);
-//     let mut stream = client.info_stream(req).await.unwrap().into_inner();
-//
-//     // Make sure the gateway was returned
-//     let resp = stream.next().await.unwrap().unwrap();
-//     assert_eq!(resp.gateways.len(), 1);
-//
-//     let req = make_gateway_stream_signed_req(&admin_key, &[], (now.timestamp() + 1) as u64);
-//     let mut stream = client.info_stream(req).await.unwrap().into_inner();
-//     // Response is empty
-//     assert!(stream.next().await.is_none());
-// }
+#[sqlx::test]
+async fn gateway_stream_info_v2(pool: PgPool) {
+    let admin_key = make_keypair();
+    let asset1_pubkey = make_keypair().public_key().clone();
+    let asset1_hex_idx = 631711281837647359_i64;
+    let asset2_hex_idx = 631711286145955327_i64;
+    let asset2_pubkey = make_keypair().public_key().clone();
+    let now = Utc::now();
+    let now_plus_10 = now + chrono::Duration::seconds(10);
+
+    create_db_tables(&pool).await;
+    add_db_record(
+        &pool,
+        "asset1",
+        asset1_hex_idx,
+        "\"wifiIndoor\"",
+        asset1_pubkey.clone().into(),
+        now,
+        Some(now),
+        None,
+    )
+    .await;
+    add_db_record(
+        &pool,
+        "asset2",
+        asset2_hex_idx,
+        "\"wifiDataOnly\"",
+        asset2_pubkey.clone().into(),
+        now_plus_10,
+        Some(now_plus_10),
+        None,
+    )
+    .await;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await.unwrap();
+
+    // Select all devices
+    let req = make_gateway_stream_signed_req_v2(&admin_key, &[], 0);
+    let mut stream = client.info_stream_v2(req).await.unwrap().into_inner();
+    let resp = stream.next().await.unwrap().unwrap();
+    assert_eq!(resp.gateways.len(), 2);
+
+    // Filter by device type
+    let req = make_gateway_stream_signed_req_v2(&admin_key, &[DeviceType::WifiIndoor], 0);
+    let mut stream = client.info_stream_v2(req).await.unwrap().into_inner();
+    let resp = stream.next().await.unwrap().unwrap();
+    assert_eq!(resp.gateways.len(), 1);
+    assert_eq!(
+        resp.gateways.first().unwrap().device_type,
+        Into::<i32>::into(DeviceType::WifiIndoor)
+    );
+}
 
 #[sqlx::test]
-async fn gateway_stream_info_data_types(pool: PgPool) {
+async fn gateway_stream_info_v2_refreshed_at_is_null(pool: PgPool) {
+    let admin_key = make_keypair();
+    let asset1_pubkey = make_keypair().public_key().clone();
+    let asset1_hex_idx = 631711281837647359_i64;
+    let now = Utc::now();
+
+    create_db_tables(&pool).await;
+    add_db_record(
+        &pool,
+        "asset1",
+        asset1_hex_idx,
+        "\"wifiIndoor\"",
+        asset1_pubkey.clone().into(),
+        now,
+        None,
+        None,
+    )
+    .await;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await.unwrap();
+
+    let req = make_gateway_stream_signed_req_v2(&admin_key, &[], now.timestamp() as u64);
+    let mut stream = client.info_stream_v2(req).await.unwrap().into_inner();
+
+    // Make sure the gateway was returned
+    let resp = stream.next().await.unwrap().unwrap();
+    assert_eq!(resp.gateways.len(), 1);
+
+    let req = make_gateway_stream_signed_req_v2(&admin_key, &[], (now.timestamp() + 1) as u64);
+    let mut stream = client.info_stream_v2(req).await.unwrap().into_inner();
+    // Response is empty
+    assert!(stream.next().await.is_none());
+}
+
+#[sqlx::test]
+async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     let admin_key = make_keypair();
     let asset1_pubkey = make_keypair().public_key().clone();
     let asset1_hex_idx = 631711281837647359_i64;
@@ -273,8 +304,8 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
     // Check wifi indoor
-    let req = make_gateway_stream_signed_req(&admin_key, &[DeviceType::WifiIndoor]);
-    let mut stream = client.info_stream(req).await.unwrap().into_inner();
+    let req = make_gateway_stream_signed_req_v2(&admin_key, &[DeviceType::WifiIndoor], 0);
+    let mut stream = client.info_stream_v2(req).await.unwrap().into_inner();
     let res = stream.next().await.unwrap().unwrap();
     let gw_info = res.gateways.first().unwrap();
     let pub_key = PublicKey::from_bytes(gw_info.address.clone()).unwrap();
@@ -290,12 +321,12 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
     assert!(stream.next().await.is_none());
 
     // Check wifi data only
-    let req = make_gateway_stream_signed_req(&admin_key, &[DeviceType::WifiDataOnly]);
-    let stream = client.info_stream(req).await.unwrap().into_inner();
+    let req = make_gateway_stream_signed_req_v2(&admin_key, &[DeviceType::WifiDataOnly], 0);
+    let stream = client.info_stream_v2(req).await.unwrap().into_inner();
 
     let resp = stream
         .filter_map(|result| async { result.ok() })
-        .collect::<Vec<GatewayInfoStreamResV1>>()
+        .collect::<Vec<GatewayInfoStreamResV2>>()
         .await;
     let gateways = resp.first().unwrap().gateways.clone();
     assert_eq!(gateways.len(), 2);
@@ -311,36 +342,36 @@ async fn gateway_stream_info_data_types(pool: PgPool) {
     );
 
     // Check all
-    // let req = make_gateway_stream_signed_req(&admin_key, &[]);
-    // let stream = client.info_stream(req).await.unwrap().into_inner();
+    let req = make_gateway_stream_signed_req_v2(&admin_key, &[], 0);
+    let stream = client.info_stream_v2(req).await.unwrap().into_inner();
 
-    // let resp = stream
-    //     .filter_map(|result| async { result.ok() })
-    //     .collect::<Vec<GatewayInfoStreamResV1>>()
-    //     .await;
-    // let gateways = resp.first().unwrap().gateways.clone();
+    let resp = stream
+        .filter_map(|result| async { result.ok() })
+        .collect::<Vec<GatewayInfoStreamResV2>>()
+        .await;
+    let gateways = resp.first().unwrap().gateways.clone();
 
     // Check deployment info
-    // assert_eq!(gateways.len(), 3);
-    // for gw in gateways {
-    //     if let Some(metadata) = &gw.metadata {
-    //         if DeviceType::try_from(gw.device_type).unwrap() != DeviceType::WifiIndoor {
-    //             assert!(metadata.deployment_info.is_none());
-    //         } else {
-    //             let deployment_info = metadata.deployment_info.as_ref().unwrap();
-    //             match deployment_info {
-    //                 DeploymentInfo::WifiDeploymentInfo(v) => {
-    //                     assert_eq!(v.antenna, 18);
-    //                     assert_eq!(v.azimuth, 160);
-    //                     assert_eq!(v.elevation, 5);
-    //                     assert_eq!(v.electrical_down_tilt, 1);
-    //                     assert_eq!(v.mechanical_down_tilt, 2);
-    //                 }
-    //                 DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
-    //             };
-    //         }
-    //     }
-    // }
+    assert_eq!(gateways.len(), 3);
+    for gw in gateways {
+        if let Some(metadata) = &gw.metadata {
+            if DeviceType::try_from(gw.device_type).unwrap() != DeviceType::WifiIndoor {
+                assert!(metadata.deployment_info.is_none());
+            } else {
+                let deployment_info = metadata.deployment_info.as_ref().unwrap();
+                match deployment_info {
+                    DeploymentInfo::WifiDeploymentInfo(v) => {
+                        assert_eq!(v.antenna, 18);
+                        assert_eq!(v.azimuth, 160);
+                        assert_eq!(v.elevation, 5);
+                        assert_eq!(v.electrical_down_tilt, 1);
+                        assert_eq!(v.mechanical_down_tilt, 2);
+                    }
+                    DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
+                };
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -438,11 +469,29 @@ async fn create_db_tables(pool: &PgPool) {
     .await
     .unwrap();
 }
+
 fn make_keypair() -> Keypair {
     Keypair::generate(KeyTag::default(), &mut rand::rngs::OsRng)
 }
 
-fn make_gateway_stream_signed_req(
+fn make_gateway_stream_signed_req_v2(
+    signer: &Keypair,
+    device_types: &[DeviceType],
+    min_refreshed_at: u64,
+) -> proto::GatewayInfoStreamReqV2 {
+    let mut req = GatewayInfoStreamReqV2 {
+        batch_size: 10000,
+        signer: signer.public_key().to_vec(),
+        signature: vec![],
+        device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),
+        min_refreshed_at,
+    };
+
+    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+    req
+}
+
+fn make_gateway_stream_signed_req_v1(
     signer: &Keypair,
     device_types: &[DeviceType],
 ) -> proto::GatewayInfoStreamReqV1 {
