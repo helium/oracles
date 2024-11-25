@@ -100,6 +100,7 @@ impl GatewayInfoResolver for GatewayClient {
 
     /// Returns all gateways if device_types is empty
     /// Otherwise, only selected device_types
+    /// TODO make v2
     async fn stream_gateways_info(
         &mut self,
         device_types: &[DeviceType],

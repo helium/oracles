@@ -266,15 +266,25 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum GatewayInfoToProtoError {
+    #[error("Invalid location: {0}")]
+    InvalidLocation(#[from] hextree::Error),
+    #[error("created_at is None")]
+    CreatedAtIsNone,
+    #[error("refreshed_at is None")]
+    RefreshedAtIsNone,
+}
+
 impl TryFrom<GatewayInfo> for GatewayInfoProtoV2 {
-    type Error = hextree::Error;
+    type Error = GatewayInfoToProtoError;
 
     fn try_from(info: GatewayInfo) -> Result<Self, Self::Error> {
-        let metadata = if let Some(ref metadata) = info.metadata {
+        let metadata = if let Some(metadata) = info.metadata {
+            let deployment_info = metadata.deployment_info.map(|v| v.into());
             Some(GatewayMetadataProtoV2 {
                 location: hextree::Cell::from_raw(metadata.location)?.to_string(),
-                // TODO refactor
-                deployment_info: Some(info.metadata.unwrap().deployment_info.unwrap().into()),
+                deployment_info,
             })
         } else {
             None
@@ -283,8 +293,14 @@ impl TryFrom<GatewayInfo> for GatewayInfoProtoV2 {
             address: info.address.into(),
             metadata,
             device_type: info.device_type as i32,
-            created_at: info.created_at.unwrap().timestamp() as u64, // TODO
-            refreshed_at: info.created_at.unwrap().timestamp() as u64, // TODO
+            created_at: info
+                .created_at
+                .ok_or(GatewayInfoToProtoError::CreatedAtIsNone)?
+                .timestamp() as u64,
+            refreshed_at: info
+                .refreshed_at
+                .ok_or(GatewayInfoToProtoError::RefreshedAtIsNone)?
+                .timestamp() as u64,
         })
     }
 }
