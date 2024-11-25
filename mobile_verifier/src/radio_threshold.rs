@@ -12,6 +12,9 @@ use file_store::{
         RadioThresholdIngestReport, RadioThresholdReportReq, VerifiedRadioThresholdIngestReport,
     },
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
+    unique_connections::{
+        UniqueConnectionReq, UniqueConnectionsIngestReport, VerifiedUniqueConnectionsIngestReport,
+    },
     FileStore, FileType,
 };
 use futures::{StreamExt, TryStreamExt};
@@ -22,6 +25,7 @@ use helium_proto::services::{
     poc_mobile::{
         InvalidatedRadioThresholdReportVerificationStatus, RadioThresholdReportVerificationStatus,
         VerifiedInvalidatedRadioThresholdIngestReportV1, VerifiedRadioThresholdIngestReportV1,
+        VerifiedUniqueConnectionsIngestReportStatus, VerifiedUniqueConnectionsIngestReportV1,
     },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
@@ -36,8 +40,10 @@ pub struct RadioThresholdIngestor<AV> {
     pool: PgPool,
     reports_receiver: Receiver<FileInfoStream<RadioThresholdIngestReport>>,
     invalid_reports_receiver: Receiver<FileInfoStream<InvalidatedRadioThresholdIngestReport>>,
+    unique_connections_receiver: Receiver<FileInfoStream<UniqueConnectionsIngestReport>>,
     verified_report_sink: FileSinkClient<VerifiedRadioThresholdIngestReportV1>,
     verified_invalid_report_sink: FileSinkClient<VerifiedInvalidatedRadioThresholdIngestReportV1>,
+    verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
     authorization_verifier: AV,
 }
 
@@ -89,6 +95,16 @@ where
             )
             .await?;
 
+        let (verified_unique_connections, verified_unique_conections_server) =
+            VerifiedUniqueConnectionsIngestReportV1::file_sink(
+                settings.store_base_path(),
+                file_upload.clone(),
+                FileSinkCommitStrategy::Manual,
+                FileSinkRollTime::Default,
+                env!("CARGO_PKG_NAME"),
+            )
+            .await?;
+
         let (radio_threshold_ingest, radio_threshold_ingest_server) =
             file_source::continuous_source::<RadioThresholdIngestReport, _>()
                 .state(pool.clone())
@@ -108,21 +124,35 @@ where
                 .create()
                 .await?;
 
+        // unique connections
+        let (unique_connections_ingest, unique_connections_server) =
+            file_source::Continuous::msg_source::<UniqueConnectionsIngestReport, _>()
+                .state(pool.clone())
+                .store(file_store.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after))
+                .prefix(FileType::UniqueConnectionsReport.to_string())
+                .create()
+                .await?;
+
         let radio_threshold_ingestor = RadioThresholdIngestor::new(
             pool.clone(),
             radio_threshold_ingest,
             invalidated_radio_threshold_ingest,
+            unique_connections_ingest,
             verified_radio_threshold,
             verified_invalidated_radio_threshold,
+            verified_unique_connections,
             authorization_verifier,
         );
 
         Ok(TaskManager::builder()
             .add_task(verified_radio_threshold_server)
             .add_task(verified_invalidated_radio_threshold_server)
+            .add_task(verified_unique_conections_server)
             .add_task(radio_threshold_ingest_server)
             .add_task(invalidated_radio_threshold_ingest_server)
             .add_task(radio_threshold_ingestor)
+            .add_task(unique_connections_server)
             .build())
     }
 
@@ -130,18 +160,22 @@ where
         pool: sqlx::Pool<Postgres>,
         reports_receiver: Receiver<FileInfoStream<RadioThresholdIngestReport>>,
         invalid_reports_receiver: Receiver<FileInfoStream<InvalidatedRadioThresholdIngestReport>>,
+        unique_connections_receiver: Receiver<FileInfoStream<UniqueConnectionsIngestReport>>,
         verified_report_sink: FileSinkClient<VerifiedRadioThresholdIngestReportV1>,
         verified_invalid_report_sink: FileSinkClient<
             VerifiedInvalidatedRadioThresholdIngestReportV1,
         >,
+        verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
         authorization_verifier: AV,
     ) -> Self {
         Self {
             pool,
             reports_receiver,
             invalid_reports_receiver,
+            unique_connections_receiver,
             verified_report_sink,
             verified_invalid_report_sink,
+            verified_unique_connections_sink,
             authorization_verifier,
         }
     }
@@ -157,6 +191,9 @@ where
                 }
                 Some(file) = self.invalid_reports_receiver.recv() => {
                     self.process_invalid_file(file).await?;
+                }
+                Some(file) = self.unique_connections_receiver.recv() => {
+                    self.process_unique_connections_file(file).await?;
                 }
             }
         }
@@ -251,6 +288,44 @@ where
         Ok(())
     }
 
+    async fn process_unique_connections_file(
+        &self,
+        file_info_stream: FileInfoStream<UniqueConnectionsIngestReport>,
+    ) -> anyhow::Result<()> {
+        let mut txn = self.pool.begin().await?;
+
+        let mut stream = file_info_stream.into_stream(&mut txn).await?;
+        while let Some(unique_connections_report) = stream.next().await {
+            let verified_report_status = self
+                .verify_unique_connection_report(&unique_connections_report.report)
+                .await;
+
+            if matches!(
+                verified_report_status,
+                VerifiedUniqueConnectionsIngestReportStatus::Valid
+            ) {
+                save_unique_count_report(&mut txn, &unique_connections_report).await?;
+            }
+
+            let verified_report_proto = VerifiedUniqueConnectionsIngestReport {
+                timestamp: Utc::now(),
+                report: unique_connections_report,
+                status: verified_report_status,
+            };
+
+            self.verified_unique_connections_sink
+                .write(
+                    verified_report_proto.into(),
+                    &[("report_status", verified_report_status.as_str_name())],
+                )
+                .await?;
+        }
+
+        txn.commit().await?;
+        self.verified_unique_connections_sink.commit().await?;
+        Ok(())
+    }
+
     async fn verify_report(
         &self,
         report: &RadioThresholdReportReq,
@@ -277,6 +352,16 @@ where
             return InvalidatedRadioThresholdReportVerificationStatus::InvalidatedThresholdReportStatusInvalidCarrierKey;
         };
         InvalidatedRadioThresholdReportVerificationStatus::InvalidatedThresholdReportStatusValid
+    }
+
+    async fn verify_unique_connection_report(
+        &self,
+        report: &UniqueConnectionReq,
+    ) -> VerifiedUniqueConnectionsIngestReportStatus {
+        if !self.verify_known_carrier_key(&report.carrier_key).await {
+            return VerifiedUniqueConnectionsIngestReportStatus::InvalidCarrierKey;
+        }
+        VerifiedUniqueConnectionsIngestReportStatus::Valid
     }
 
     async fn do_report_verifications(
@@ -344,8 +429,32 @@ pub async fn save(
     .bind(ingest_report.report.subscriber_threshold as i32)
     .bind(ingest_report.report.threshold_timestamp)
     .bind(ingest_report.received_timestamp)
-    .execute(&mut *db)
+    .execute(db)
     .await?;
+    Ok(())
+}
+
+pub async fn save_unique_count_report(
+    txn: &mut Transaction<'_, Postgres>,
+    report: &UniqueConnectionsIngestReport,
+) -> Result<(), sqlx::Error> {
+    // TODO: on conflict?
+    sqlx::query(
+        r#"
+            INSERT INTO unique_connections 
+                (hotspot_pubkey, unique_connections, start_timestamp, end_timestamp, recv_timestamp)
+            VALUES
+                ($1, $2, $3, $4, $5)
+        "#,
+    )
+    .bind(report.report.pubkey.to_string())
+    .bind(report.report.unique_connections as i64)
+    .bind(report.report.start_timestamp)
+    .bind(report.report.end_timestamp)
+    .bind(report.received_timestamp)
+    .execute(txn)
+    .await?;
+
     Ok(())
 }
 

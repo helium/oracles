@@ -265,8 +265,13 @@ impl_file_sink!(
 );
 impl_file_sink!(
     poc_mobile::UniqueConnectionsIngestReportV1,
-    FileType::UniqueConnectionReport.to_str(),
+    FileType::UniqueConnectionsReport.to_str(),
     "unique_connections_report"
+);
+impl_file_sink!(
+    poc_mobile::VerifiedUniqueConnectionsIngestReportV1,
+    FileType::VerifiedUniqueConnectionsReport.to_str(),
+    "verified_unique_connections_report"
 );
 impl_file_sink!(
     proto::BoostedHexUpdateV1,
