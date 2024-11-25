@@ -173,7 +173,8 @@ pub const VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT: &str =
 pub const PROMOTION_REWARD_INGEST_REPORT: &str = "promotion_reward_ingest_report";
 pub const VERIFIED_PROMOTION_REWARD: &str = "verified_promotion_reward";
 pub const SERVICE_PROVIDER_PROMOTION_FUND: &str = "service_provider_promotion_fund";
-pub const UNIQUE_CONNECTIONS_REPORT: &str = "unique_connection_report";
+pub const UNIQUE_CONNECTIONS_REPORT: &str = "unique_connections_report";
+pub const VERIFIED_UNIQUE_CONNECTIONS_REPORT: &str = "verified_unique_connections_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -238,7 +239,8 @@ pub enum FileType {
     RadioUsageStatsIngestReport,
     HexUsageStatsReq,
     RadioUsageStatsReq,
-    UniqueConnectionReport,
+    UniqueConnectionsReport,
+    VerifiedUniqueConnectionsReport,
 }
 
 impl fmt::Display for FileType {
@@ -324,7 +326,8 @@ impl FileType {
             Self::RadioUsageStatsIngestReport => RADIO_USAGE_STATS_INGEST_REPORT,
             Self::HexUsageStatsReq => HEX_USAGE_STATS_REQ,
             Self::RadioUsageStatsReq => RADIO_USAGE_STATS_REQ,
-            Self::UniqueConnectionReport => UNIQUE_CONNECTIONS_REPORT,
+            Self::UniqueConnectionsReport => UNIQUE_CONNECTIONS_REPORT,
+            Self::VerifiedUniqueConnectionsReport => VERIFIED_UNIQUE_CONNECTIONS_REPORT,
         }
     }
 }
@@ -406,6 +409,8 @@ impl FromStr for FileType {
             RADIO_USAGE_STATS_INGEST_REPORT => Self::RadioUsageStatsIngestReport,
             HEX_USAGE_STATS_REQ => Self::HexUsageStatsReq,
             RADIO_USAGE_STATS_REQ => Self::RadioUsageStatsReq,
+            UNIQUE_CONNECTIONS_REPORT => Self::UniqueConnectionsReport,
+            VERIFIED_UNIQUE_CONNECTIONS_REPORT => Self::VerifiedUniqueConnectionsReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
