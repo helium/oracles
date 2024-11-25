@@ -10,6 +10,7 @@ license.workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
+blake3 = { workspace = true }
 bs58 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -20,6 +21,8 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
 helium-proto = { workspace = true }
+humantime = { workspace = true }
+humantime-serde = { workspace = true }
 hextree = { workspace = true }
 http = { workspace = true }
 http-serde = { workspace = true }
