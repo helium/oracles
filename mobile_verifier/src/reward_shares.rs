@@ -403,6 +403,7 @@ pub struct CoverageShares {
 }
 
 impl CoverageShares {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
@@ -483,7 +484,7 @@ impl CoverageShares {
 
             let oracle_boosting_status = if banned_radios.contains(&pubkey, cbsd_id.as_deref()) {
                 OracleBoostingStatus::Banned
-            } else if unique_connections::is_qualified(&unique_connections, &pubkey, &radio_type) {
+            } else if unique_connections::is_qualified(unique_connections, &pubkey, &radio_type) {
                 OracleBoostingStatus::Qualified
             } else {
                 OracleBoostingStatus::Eligible
