@@ -500,17 +500,17 @@ pub mod unique_connections {
 
     pub type UniqueConnectionCounts = HashMap<PublicKeyBinary, u64>;
 
-    #[derive(Debug, FromRow)]
-    pub struct UniqueConnections {
-        hotspot_pubkey: PublicKeyBinary,
-        #[sqlx(try_from = "i64")]
-        unique_connections: u64,
-    }
-
     pub async fn get(
         db: &PgPool,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<UniqueConnectionCounts> {
+        #[derive(FromRow)]
+        struct UniqueConnections {
+            hotspot_pubkey: PublicKeyBinary,
+            #[sqlx(try_from = "i64")]
+            unique_connections: u64,
+        }
+
         let rows = sqlx::query_as::<_, UniqueConnections>(
             r#"
             SELECT hotspot_pubkey, unique_connections
