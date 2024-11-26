@@ -515,8 +515,8 @@ pub mod unique_connections {
             r#"
             SELECT hotspot_pubkey, unique_connections
             FROM unique_connections
-            WHERE recv_timestamp >= $1 AND recv_timestamp <= $2
-            ORDER BY recv_timestamp DESC
+            WHERE received_timestamp >= $1 AND received_timestamp <= $2
+            ORDER BY received_timestamp DESC
             "#,
         )
         .bind(reward_period.start)
@@ -537,7 +537,7 @@ pub mod unique_connections {
         sqlx::query(
             r#"
             INSERT INTO unique_connections 
-            (hotspot_pubkey, unique_connections, start_timestamp, end_timestamp, recv_timestamp)
+            (hotspot_pubkey, unique_connections, start_timestamp, end_timestamp, received_timestamp)
             VALUES
             ($1, $2, $3, $4, $5)
             "#,
