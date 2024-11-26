@@ -2,7 +2,7 @@ use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
-    radio_threshold::{self, unique_connections},
+    radio_threshold,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
@@ -10,7 +10,8 @@ use crate::{
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_location, subscriber_verified_mapping_event, telemetry, Settings,
+    subscriber_location, subscriber_verified_mapping_event, telemetry, unique_connections,
+    Settings,
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -302,7 +303,7 @@ where
         coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
         sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_period.start).await?;
         subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.start).await?;
-        unique_connections::clear(&mut transaction, &reward_period.start).await?;
+        unique_connections::db::clear(&mut transaction, &reward_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
@@ -451,7 +452,7 @@ async fn reward_poc(
     )
     .await?;
 
-    let unique_connections = radio_threshold::unique_connections::get(pool, reward_period).await?;
+    let unique_connections = unique_connections::db::get(pool, reward_period).await?;
 
     let coverage_shares = CoverageShares::new(
         pool,

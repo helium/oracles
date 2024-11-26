@@ -1,10 +1,10 @@
 use crate::{
     coverage::CoveredHexStream, data_session::HotspotMap, heartbeats::HeartbeatReward,
-    radio_threshold::unique_connections::UniqueConnectionCounts,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility, seniority::Seniority,
     sp_boosted_rewards_bans::BannedRadios, speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
     subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
+    unique_connections::UniqueConnectionCounts,
 };
 use chrono::{DateTime, Duration, Utc};
 use coverage_point_calculator::{OracleBoostingStatus, SPBoostedRewardEligibility};
