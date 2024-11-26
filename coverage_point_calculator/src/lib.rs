@@ -12,6 +12,8 @@
 //! - [CoveredHex::assignment_multiplier]
 //!   - [HIP-103][oracle-boosting]
 //!     - provider boosted hexes increase oracle boosting to 1x
+//!   - [HIP-134][carrier-offload]
+//!     - serving >25 unique connection increase oracle boosting to 1x
 //!
 //! - [CoveredHex::rank]
 //!   - [HIP-105][hex-limits]
@@ -66,6 +68,7 @@
 //! [location-gaming]:         https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md
 //! [provider-banning]:        https://github.com/helium/HIP/blob/main/0125-temporary-anti-gaming-measures-for-boosted-hexes.md
 //! [anti-gaming]:             https://github.com/helium/HIP/blob/main/0131-bridging-gap-between-verification-mappers-and-anti-gaming-measures.md
+//! [carrier-offload]:         https://github.com/helium/HIP/blob/main/0134-reward-mobile-carrier-offload-hotspots.md
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
@@ -245,6 +248,7 @@ impl CoveragePoints {
 pub enum OracleBoostingStatus {
     Eligible,
     Banned,
+    Qualified,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
