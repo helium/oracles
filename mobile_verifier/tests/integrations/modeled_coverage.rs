@@ -21,13 +21,13 @@ use mobile_verifier::{
     heartbeats::{
         last_location::LocationCache, Heartbeat, HeartbeatReward, KeyType, ValidatedHeartbeat,
     },
-    radio_threshold::unique_connections::UniqueConnectionCounts,
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
     sp_boosted_rewards_bans::BannedRadios,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
+    unique_connections::UniqueConnectionCounts,
     IsAuthorized,
 };
 use rust_decimal_macros::dec;

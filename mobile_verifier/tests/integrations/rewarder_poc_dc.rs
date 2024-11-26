@@ -17,8 +17,7 @@ use mobile_verifier::{
     coverage::CoverageObject,
     data_session,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
-    radio_threshold::unique_connections,
-    reward_shares, rewarder, speedtests,
+    reward_shares, rewarder, speedtests, unique_connections,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -426,7 +425,7 @@ async fn seed_unique_connections(
     epoch: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
     for (pubkey, unique_connections) in things {
-        unique_connections::save(
+        unique_connections::db::save(
             txn,
             &UniqueConnectionsIngestReport {
                 received_timestamp: epoch.start + chrono::Duration::hours(1),

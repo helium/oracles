@@ -1,12 +1,12 @@
 use crate::{
     heartbeats::HeartbeatReward,
-    radio_threshold::unique_connections::UniqueConnectionCounts,
     reward_shares::{
         get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
     },
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
+    unique_connections::UniqueConnectionCounts,
     Settings,
 };
 use anyhow::Result;
