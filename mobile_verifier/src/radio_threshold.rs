@@ -552,4 +552,20 @@ pub mod unique_connections {
 
         Ok(())
     }
+
+    pub async fn clear(
+        txn: &mut Transaction<'_, Postgres>,
+        timestamp: &DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            DELETE FROM unique_connections
+            WHERE received_timestamp < $1
+            "#,
+        )
+        .bind(timestamp)
+        .execute(txn)
+        .await?;
+        Ok(())
+    }
 }
