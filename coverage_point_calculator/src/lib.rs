@@ -44,13 +44,14 @@
 //!   - If a Radio is not [BoostedHexStatus::Eligible], boost values are removed before calculations.
 //!   - If a Hex is boosted by a Provider, the Oracle Assignment multiplier is automatically 1x.
 //!
-//! - [ServiceProviderBoostedRewardEligibility]
+//! - [SPBoostedRewardEligibility]
 //!   - Radio must pass at least 1mb of data from 3 unique phones [HIP-84][provider-boosting]
 //!   - Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
 //! - [OracleBoostingStatus]
 //!   - Eligible: Radio is eligible for normal oracle boosting multipliers
 //!   - Banned: Radio is banned according to hip-131 rules and all assignment_multipliers are 0.0
+//!   - Qualified: Radio serves >25 unique connections, automatic oracle boosting multiplier of 1x
 //!
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
 //! [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
@@ -136,7 +137,7 @@ pub struct CoveragePoints {
     pub speedtest_multiplier: Decimal,
     /// Input Radio Type
     pub radio_type: RadioType,
-    /// Input ServiceProviderBoostedRewardEligibility
+    /// Input SPBoostedRewardEligibility
     pub service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     /// Derived Eligibility for Boosted Hex Rewards
     pub boosted_hex_eligibility: SpBoostedHexStatus,
