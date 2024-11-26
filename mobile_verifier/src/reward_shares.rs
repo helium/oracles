@@ -1,10 +1,14 @@
 use crate::{
-    coverage::CoveredHexStream, data_session::HotspotMap, heartbeats::HeartbeatReward,
-    rewarder::boosted_hex_eligibility::BoostedHexEligibility, seniority::Seniority,
-    sp_boosted_rewards_bans::BannedRadios, speedtests_average::SpeedtestAverages,
+    coverage::CoveredHexStream,
+    data_session::HotspotMap,
+    heartbeats::HeartbeatReward,
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
+    seniority::Seniority,
+    sp_boosted_rewards_bans::BannedRadios,
+    speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
     subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
-    unique_connections::UniqueConnectionCounts,
+    unique_connections::{self, UniqueConnectionCounts},
 };
 use chrono::{DateTime, Duration, Utc};
 use coverage_point_calculator::{OracleBoostingStatus, SPBoostedRewardEligibility};
@@ -477,11 +481,9 @@ impl CoverageShares {
                 })
                 .collect();
 
-            let unique_connections = unique_connections.get(&pubkey).cloned().unwrap_or_default();
             let oracle_boosting_status = if banned_radios.contains(&pubkey, cbsd_id.as_deref()) {
                 OracleBoostingStatus::Banned
-            } else if radio_type.is_wifi() && unique_connections > 25 {
-                // TODO: move threshold to settings
+            } else if unique_connections::is_qualified(&unique_connections, &pubkey, &radio_type) {
                 OracleBoostingStatus::Qualified
             } else {
                 OracleBoostingStatus::Eligible
