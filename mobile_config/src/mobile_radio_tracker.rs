@@ -7,7 +7,7 @@ use task_manager::ManagedTask;
 
 type EntityKey = Vec<u8>;
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 struct MobileRadio {
     entity_key: EntityKey,
     refreshed_at: DateTime<Utc>,
@@ -131,7 +131,7 @@ impl MobileRadioTracker {
     }
 
     async fn run(self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("starting MobileRadioTracker");
+        tracing::info!("starting");
         let mut interval = tokio::time::interval(self.interval);
 
         loop {
@@ -146,6 +146,8 @@ impl MobileRadioTracker {
             }
         }
 
+        tracing::info!("stopping");
+
         Ok(())
     }
 }
@@ -153,25 +155,32 @@ impl MobileRadioTracker {
 async fn track_changes(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow::Result<()> {
     tracing::info!("looking for changes to radios");
     let tracked_radios = get_tracked_radios(pool).await?;
+    let all_mobile_radios = get_all_mobile_radios(metadata);
 
-    let updates: Vec<TrackedMobileRadio> = get_all_mobile_radios(metadata)
-        .scan(tracked_radios, |tracked, radio| {
-            let tracked_radio_opt = tracked.remove(&radio.entity_key);
-            async move { Some((radio, tracked_radio_opt)) }
-        })
-        .map(|(radio, tracked_radio_opt)| match tracked_radio_opt {
-            Some(tracked_radio) => tracked_radio.update_from_radio(&radio),
-            None => TrackedMobileRadio::new(&radio),
-        })
-        .collect()
-        .await;
-
+    let updates = identify_changes(all_mobile_radios, tracked_radios).await;
     tracing::info!("updating in db: {}", updates.len());
 
     update_tracked_radios(pool, updates).await?;
     tracing::info!("done");
 
     Ok(())
+}
+
+async fn identify_changes(
+    all_mobile_radios: impl Stream<Item = MobileRadio>,
+    tracked_radios: HashMap<EntityKey, TrackedMobileRadio>,
+) -> Vec<TrackedMobileRadio> {
+    all_mobile_radios
+        .scan(tracked_radios, |tracked, radio| {
+            let tracked_radio_opt = tracked.remove(&radio.entity_key);
+            async { Some((radio, tracked_radio_opt)) }
+        })
+        .map(|(radio, tracked_radio_opt)| match tracked_radio_opt {
+            Some(tracked_radio) => tracked_radio.update_from_radio(&radio),
+            None => TrackedMobileRadio::new(&radio),
+        })
+        .collect()
+        .await
 }
 
 async fn get_tracked_radios(
@@ -219,7 +228,7 @@ fn get_all_mobile_radios(metadata: &Pool<Postgres>) -> impl Stream<Item = Mobile
     .fetch(metadata)
     .filter_map(|result| async move {
         if let Err(err) = &result {
-            tracing::error!(?err, "error when reading gateway metadata");
+            tracing::error!(?err, "error when reading radio metadata");
         }
         result.ok()
     })
@@ -260,4 +269,69 @@ async fn update_tracked_radios(
     txn.commit().await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+
+    use futures::stream;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn records_tracking_for_new_radio() {
+        let radio = mobile_radio(vec![1, 2, 3]);
+
+        let result = identify_changes(stream::iter(vec![radio.clone()]), HashMap::new()).await;
+
+        assert_eq!(result[0].entity_key, radio.entity_key);
+        assert_eq!(result[0].hash, radio.hash());
+        assert_eq!(result[0].last_changed_at, radio.refreshed_at);
+    }
+
+    #[tokio::test]
+    async fn will_not_update_if_nothing_changes() {
+        let mut radio = mobile_radio(vec![1, 2, 3]);
+        let tracked_radio = TrackedMobileRadio::new(&radio);
+        let original_refreshed_at = radio.refreshed_at;
+        radio.refreshed_at = Utc::now();
+
+        let mut tracked_radios = HashMap::new();
+        tracked_radios.insert(tracked_radio.entity_key.clone(), tracked_radio);
+
+        let result = identify_changes(stream::iter(vec![radio.clone()]), tracked_radios).await;
+
+        assert_eq!(1, result.len());
+        assert_eq!(original_refreshed_at, result[0].last_changed_at);
+    }
+
+    #[tokio::test]
+    async fn will_update_last_changed_at_when_data_changes() {
+        let mut radio = mobile_radio(vec![1, 2, 3]);
+        let tracked_radio = TrackedMobileRadio::new(&radio);
+        radio.refreshed_at = Utc::now();
+        radio.location = None;
+
+        let mut tracked_radios = HashMap::new();
+        tracked_radios.insert(tracked_radio.entity_key.clone(), tracked_radio);
+
+        let result = identify_changes(stream::iter(vec![radio.clone()]), tracked_radios).await;
+
+        assert_eq!(radio.refreshed_at, result[0].last_changed_at);
+        assert_eq!(radio.hash(), result[0].hash);
+    }
+
+    fn mobile_radio(entity_key: EntityKey) -> MobileRadio {
+        MobileRadio {
+            entity_key,
+            refreshed_at: Utc::now() - chrono::Duration::hours(1),
+            location: Some(1),
+            is_full_hotspot: Some(1),
+            num_location_asserts: Some(1),
+            is_active: Some(1),
+            dc_onboarding_fee_paid: Some(10),
+            device_type: "wifi".to_string(),
+            deployment_info: Some("deployment_info".to_string()),
+        }
+    }
 }
