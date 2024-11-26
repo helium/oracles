@@ -390,7 +390,6 @@ struct RadioInfo {
     sp_boosted_reward_eligibility: SPBoostedRewardEligibility,
     speedtests: Vec<coverage_point_calculator::Speedtest>,
     oracle_boosting_status: OracleBoostingStatus,
-    unique_connections: u64,
 }
 
 #[derive(Debug)]
@@ -478,12 +477,15 @@ impl CoverageShares {
                 })
                 .collect();
 
+            let unique_connections = unique_connections.get(&pubkey).cloned().unwrap_or_default();
             let oracle_boosting_status = if banned_radios.contains(&pubkey, cbsd_id.as_deref()) {
                 OracleBoostingStatus::Banned
+            } else if radio_type.is_wifi() && unique_connections > 25 {
+                // TODO: move threshold to settings
+                OracleBoostingStatus::Qualified
             } else {
                 OracleBoostingStatus::Eligible
             };
-            let unique_connections = unique_connections.get(&pubkey).cloned().unwrap_or_default();
 
             let sp_boosted_reward_eligibility =
                 boosted_hex_eligibility.eligibility(pubkey, cbsd_id);
@@ -507,7 +509,6 @@ impl CoverageShares {
                     sp_boosted_reward_eligibility,
                     speedtests,
                     oracle_boosting_status,
-                    unique_connections,
                 },
             );
         }
@@ -800,6 +801,14 @@ mod test {
             footfall: Assignment::A,
             urbanized: Assignment::A,
             landtype: Assignment::A,
+        }
+    }
+
+    fn bad_hex_assignments_mock() -> HexAssignments {
+        HexAssignments {
+            footfall: Assignment::C,
+            urbanized: Assignment::C,
+            landtype: Assignment::C,
         }
     }
 
@@ -1114,6 +1123,24 @@ mod test {
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
             assignments: hex_assignments_mock(),
+        }]
+    }
+
+    fn bad_hex_coverage<'a>(key: impl Into<KeyType<'a>>, hex: u64) -> Vec<HexCoverage> {
+        let key = key.into();
+        let radio_key = key.to_owned();
+        let hex = hex.try_into().expect("valid h3 cell");
+
+        vec![HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex,
+            indoor: true,
+            radio_key,
+            signal_level: crate::coverage::SignalLevel::Low,
+            signal_power: 0,
+            coverage_claim_time: DateTime::<Utc>::MIN_UTC,
+            inserted_at: DateTime::<Utc>::MIN_UTC,
+            assignments: bad_hex_assignments_mock(),
         }]
     }
 
@@ -2085,6 +2112,132 @@ mod test {
         assert_eq!(owner2_reward, 410_958_904_109);
     }
 
+    #[tokio::test]
+    async fn qualified_wifi_exempt_from_oracle_boosting_bad() {
+        // init owners
+        let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner1 parse");
+        let owner2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed owner2 parse");
+        // init hotspots
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed gw2 parse");
+        // link gws to owners
+        let mut owners = HashMap::new();
+        owners.insert(gw1.clone(), owner1.clone());
+        owners.insert(gw2.clone(), owner2.clone());
+
+        let now = Utc::now();
+        let timestamp = now - Duration::minutes(20);
+
+        let g1_cov_obj = Uuid::new_v4();
+        let g2_cov_obj = Uuid::new_v4();
+
+        // setup heartbeats
+        let heartbeat_rewards = vec![
+            // add qualified wifi indoor HB
+            HeartbeatReward {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiOutdoor,
+                coverage_object: g1_cov_obj,
+                distances_to_asserted: Some(vec![0]),
+                trust_score_multipliers: vec![dec!(1.0)],
+            },
+            // add unqualified wifi indoor HB
+            HeartbeatReward {
+                cbsd_id: None,
+                hotspot_key: gw2.clone(),
+                cell_type: CellType::NovaGenericWifiOutdoor,
+                coverage_object: g2_cov_obj,
+                distances_to_asserted: None,
+                trust_score_multipliers: vec![dec!(1.0)],
+            },
+        ]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
+
+        // setup speedtests
+        let last_speedtest = timestamp - Duration::hours(12);
+        let gw1_speedtests = vec![
+            acceptable_speedtest(gw1.clone(), last_speedtest),
+            acceptable_speedtest(gw1.clone(), timestamp),
+        ];
+        let gw2_speedtests = vec![
+            acceptable_speedtest(gw2.clone(), last_speedtest),
+            acceptable_speedtest(gw2.clone(), timestamp),
+        ];
+
+        let gw1_average = SpeedtestAverage::from(gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(gw2_speedtests);
+        let mut averages = HashMap::new();
+        averages.insert(gw1.clone(), gw1_average);
+        averages.insert(gw2.clone(), gw2_average);
+
+        let speedtest_avgs = SpeedtestAverages { averages };
+        let mut hex_coverage: HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> = Default::default();
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw1.clone()), g1_cov_obj),
+            bad_hex_coverage(&gw1, 0x8a1fb46622dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw2.clone()), g2_cov_obj),
+            bad_hex_coverage(&gw2, 0x8a1fb46642dffff),
+        );
+
+        // calculate the rewards for the group
+        let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
+        let duration = Duration::hours(1);
+        let epoch = (now - duration)..now;
+
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
+        let unique_connection_counts = HashMap::from([(gw1.clone(), 42)]);
+        for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in CoverageShares::new(
+            &hex_coverage,
+            stream::iter(heartbeat_rewards),
+            &speedtest_avgs,
+            &BoostedHexes::default(),
+            &BoostedHexEligibility::default(),
+            &BannedRadios::default(),
+            &unique_connection_counts,
+            &epoch,
+        )
+        .await
+        .unwrap()
+        .into_rewards(reward_shares, &epoch)
+        .unwrap()
+        .1
+        {
+            let radio_reward = match mobile_reward_v2.reward {
+                Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
+                _ => unreachable!(),
+            };
+            let owner = owners
+                .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
+                .expect("Could not find owner")
+                .clone();
+
+            let base = radio_reward.base_poc_reward;
+            let boosted = radio_reward.boosted_poc_reward;
+            *owner_rewards.entry(owner).or_default() += base + boosted;
+        }
+
+        // qualified wifi
+        let owner1_reward = owner_rewards.get(&owner1);
+        assert!(owner1_reward.is_some());
+
+        // unqualified wifi
+        let owner2_reward = owner_rewards.get(&owner2);
+        assert!(owner2_reward.is_none());
+    }
+
     /// Test to ensure that rewards that are zeroed are not written out.
     #[tokio::test]
     async fn ensure_zeroed_rewards_are_not_written() {
@@ -2165,7 +2318,6 @@ mod test {
                     },
                 ],
                 oracle_boosting_status: OracleBoostingStatus::Eligible,
-                unique_connections: 0,
             },
         );
         radio_infos.insert(
@@ -2187,7 +2339,6 @@ mod test {
                 sp_boosted_reward_eligibility: SPBoostedRewardEligibility::Eligible,
                 speedtests: vec![],
                 oracle_boosting_status: OracleBoostingStatus::Eligible,
-                unique_connections: 0,
             },
         );
 
