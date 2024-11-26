@@ -102,13 +102,10 @@ impl MockFileSinkReceiver<SpeedtestAvg> {
 impl MockFileSinkReceiver<MobileRewardShare> {
     pub async fn receive_radio_reward_v1(&mut self) -> RadioReward {
         match self.receive("receive_radio_reward_v1").await {
-            Some(mobile_reward) => {
-                println!("mobile_reward: {:?}", mobile_reward);
-                match mobile_reward.reward {
-                    Some(MobileReward::RadioReward(r)) => r,
-                    _ => panic!("failed to get radio reward"),
-                }
-            }
+            Some(mobile_reward) => match mobile_reward.reward {
+                Some(MobileReward::RadioReward(r)) => r,
+                err => panic!("failed to get radio reward: {err:?}"),
+            },
             None => panic!("failed to receive radio reward"),
         }
     }
@@ -127,7 +124,7 @@ impl MockFileSinkReceiver<MobileRewardShare> {
                     );
                     reward
                 }
-                _ => panic!("failed to get radio reward"),
+                err => panic!("failed to get radio reward: {err:?}"),
             },
             None => panic!("failed to receive radio reward"),
         }
@@ -251,6 +248,15 @@ pub fn mock_hex_boost_data_default() -> HexBoostData<Assignment, Assignment, Ass
         .urbanization(Assignment::A)
         .footfall(Assignment::A)
         .landtype(Assignment::A)
+        .build()
+        .unwrap()
+}
+
+pub fn mock_hex_boost_data_bad() -> HexBoostData<Assignment, Assignment, Assignment> {
+    HexBoostData::builder()
+        .urbanization(Assignment::C)
+        .footfall(Assignment::C)
+        .landtype(Assignment::C)
         .build()
         .unwrap()
 }
