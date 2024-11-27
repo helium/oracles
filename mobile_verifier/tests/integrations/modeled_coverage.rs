@@ -15,7 +15,7 @@ use helium_proto::services::{
 use hextree::Cell;
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexes},
-    client::{authorization_client::MichaelAuthorizationVerifier, ClientError},
+    client::{authorization_client::AuthorizationVerifier, ClientError},
 };
 
 use mobile_verifier::{
@@ -255,7 +255,7 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
 struct AllPubKeysAuthed;
 
 #[async_trait::async_trait]
-impl MichaelAuthorizationVerifier for AllPubKeysAuthed {
+impl AuthorizationVerifier for AllPubKeysAuthed {
     async fn verify_authorized_key(
         &self,
         _pub_key: &PublicKeyBinary,

@@ -24,7 +24,7 @@ use helium_proto::services::{
         VerifiedInvalidatedRadioThresholdIngestReportV1, VerifiedRadioThresholdIngestReportV1,
     },
 };
-use mobile_config::client::authorization_client::MichaelAuthorizationVerifier;
+use mobile_config::client::authorization_client::AuthorizationVerifier;
 use sqlx::{FromRow, PgPool, Pool, Postgres, Row, Transaction};
 use std::{collections::HashSet, ops::Range, sync::Arc};
 use task_manager::{ManagedTask, TaskManager};
@@ -38,7 +38,7 @@ pub struct RadioThresholdIngestor {
     invalid_reports_receiver: Receiver<FileInfoStream<InvalidatedRadioThresholdIngestReport>>,
     verified_report_sink: FileSinkClient<VerifiedRadioThresholdIngestReportV1>,
     verified_invalid_report_sink: FileSinkClient<VerifiedInvalidatedRadioThresholdIngestReportV1>,
-    authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+    authorization_verifier: Arc<dyn AuthorizationVerifier>,
 }
 
 impl ManagedTask for RadioThresholdIngestor {
@@ -61,7 +61,7 @@ impl RadioThresholdIngestor {
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
-        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+        authorization_verifier: Arc<dyn AuthorizationVerifier>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_radio_threshold, verified_radio_threshold_server) =
             VerifiedRadioThresholdIngestReportV1::file_sink(
@@ -128,7 +128,7 @@ impl RadioThresholdIngestor {
         verified_invalid_report_sink: FileSinkClient<
             VerifiedInvalidatedRadioThresholdIngestReportV1,
         >,
-        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+        authorization_verifier: Arc<dyn AuthorizationVerifier>,
     ) -> Self {
         Self {
             pool,

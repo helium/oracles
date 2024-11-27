@@ -24,7 +24,7 @@ use helium_proto::services::{
 };
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
-use mobile_config::client::authorization_client::MichaelAuthorizationVerifier;
+use mobile_config::client::authorization_client::AuthorizationVerifier;
 use retainer::{entry::CacheReadGuard, Cache};
 
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
@@ -71,7 +71,7 @@ impl From<SignalLevel> for coverage_map::SignalLevel {
 
 pub struct CoverageDaemon {
     pool: Pool<Postgres>,
-    auth_client: Arc<dyn MichaelAuthorizationVerifier>,
+    auth_client: Arc<dyn AuthorizationVerifier>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
     new_coverage_object_notifier: NewCoverageObjectNotifier,
@@ -83,7 +83,7 @@ impl CoverageDaemon {
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
-        auth_client: Arc<dyn MichaelAuthorizationVerifier>,
+        auth_client: Arc<dyn AuthorizationVerifier>,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> anyhow::Result<impl ManagedTask> {
         let (valid_coverage_objs, valid_coverage_objs_server) = proto::CoverageObjectV1::file_sink(
@@ -122,7 +122,7 @@ impl CoverageDaemon {
 
     pub fn new(
         pool: PgPool,
-        auth_client: Arc<dyn MichaelAuthorizationVerifier>,
+        auth_client: Arc<dyn AuthorizationVerifier>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
@@ -235,7 +235,7 @@ impl CoverageObject {
     /// Validate a coverage object
     pub async fn validate(
         coverage_object: file_store::coverage::CoverageObject,
-        auth_client: Arc<dyn MichaelAuthorizationVerifier>,
+        auth_client: Arc<dyn AuthorizationVerifier>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             validity: if auth_client
@@ -251,7 +251,7 @@ impl CoverageObject {
     }
 
     pub fn validate_coverage_objects<'a>(
-        auth_client: Arc<dyn MichaelAuthorizationVerifier>,
+        auth_client: Arc<dyn AuthorizationVerifier>,
         coverage_objects: impl Stream<Item = CoverageObjectIngestReport> + 'a,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         coverage_objects.then(move |coverage_object_report| {

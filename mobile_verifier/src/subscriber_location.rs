@@ -19,7 +19,7 @@ use helium_proto::services::poc_mobile::{
     SubscriberReportVerificationStatus, VerifiedSubscriberLocationIngestReportV1,
 };
 use mobile_config::client::{
-    authorization_client::MichaelAuthorizationVerifier, entity_client::EntityVerifier,
+    authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
 };
 use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::{ops::Range, sync::Arc, time::Instant};
@@ -34,7 +34,7 @@ pub type SubscriberValidatedLocations = Vec<Vec<u8>>;
 
 pub struct SubscriberLocationIngestor {
     pub pool: PgPool,
-    authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+    authorization_verifier: Arc<dyn AuthorizationVerifier>,
     entity_verifier: Arc<dyn EntityVerifier>,
     reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
     verified_report_sink: FileSinkClient<VerifiedSubscriberLocationIngestReportV1>,
@@ -46,7 +46,7 @@ impl SubscriberLocationIngestor {
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
-        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+        authorization_verifier: Arc<dyn AuthorizationVerifier>,
         entity_verifier: Arc<dyn EntityVerifier>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_subscriber_location, verified_subscriber_location_server) =
@@ -85,7 +85,7 @@ impl SubscriberLocationIngestor {
 
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+        authorization_verifier: Arc<dyn AuthorizationVerifier>,
         entity_verifier: Arc<dyn EntityVerifier>,
         reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
         verified_report_sink: FileSinkClient<VerifiedSubscriberLocationIngestReportV1>,

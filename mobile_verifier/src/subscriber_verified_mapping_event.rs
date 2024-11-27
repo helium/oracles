@@ -21,7 +21,7 @@ use helium_proto::services::{
     },
 };
 use mobile_config::client::{
-    authorization_client::MichaelAuthorizationVerifier, entity_client::EntityVerifier,
+    authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
 };
 use sqlx::{Pool, Postgres, Transaction};
 use std::{ops::Range, sync::Arc};
@@ -30,7 +30,7 @@ use tokio::sync::mpsc::Receiver;
 
 pub struct SubscriberVerifiedMappingEventDaemon {
     pool: Pool<Postgres>,
-    authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+    authorization_verifier: Arc<dyn AuthorizationVerifier>,
     entity_verifier: Arc<dyn EntityVerifier>,
     reports_receiver: Receiver<FileInfoStream<SubscriberVerifiedMappingEventIngestReport>>,
     verified_report_sink: FileSinkClient<VerifiedSubscriberVerifiedMappingEventIngestReportV1>,
@@ -39,7 +39,7 @@ pub struct SubscriberVerifiedMappingEventDaemon {
 impl SubscriberVerifiedMappingEventDaemon {
     pub fn new(
         pool: Pool<Postgres>,
-        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+        authorization_verifier: Arc<dyn AuthorizationVerifier>,
         entity_verifier: Arc<dyn EntityVerifier>,
         reports_receiver: Receiver<FileInfoStream<SubscriberVerifiedMappingEventIngestReport>>,
         verified_report_sink: FileSinkClient<VerifiedSubscriberVerifiedMappingEventIngestReportV1>,
@@ -56,7 +56,7 @@ impl SubscriberVerifiedMappingEventDaemon {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
-        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+        authorization_verifier: Arc<dyn AuthorizationVerifier>,
         entity_verifier: Arc<dyn EntityVerifier>,
         file_store: FileStore,
         file_upload: FileUpload,

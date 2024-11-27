@@ -20,7 +20,7 @@ use helium_proto::services::{
         VerifiedUniqueConnectionsIngestReportStatus, VerifiedUniqueConnectionsIngestReportV1,
     },
 };
-use mobile_config::client::authorization_client::MichaelAuthorizationVerifier;
+use mobile_config::client::authorization_client::AuthorizationVerifier;
 use sqlx::PgPool;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
@@ -33,7 +33,7 @@ pub struct UniqueConnectionsIngestor {
     pool: PgPool,
     unique_connections_receiver: Receiver<FileInfoStream<UniqueConnectionsIngestReport>>,
     verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
-    authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+    authorization_verifier: Arc<dyn AuthorizationVerifier>,
 }
 
 impl ManagedTask for UniqueConnectionsIngestor {
@@ -56,7 +56,7 @@ impl UniqueConnectionsIngestor {
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
-        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+        authorization_verifier: Arc<dyn AuthorizationVerifier>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_unique_connections, verified_unique_conections_server) =
             VerifiedUniqueConnectionsIngestReportV1::file_sink(
@@ -95,7 +95,7 @@ impl UniqueConnectionsIngestor {
         pool: PgPool,
         unique_connections_receiver: Receiver<FileInfoStream<UniqueConnectionsIngestReport>>,
         verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
-        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+        authorization_verifier: Arc<dyn AuthorizationVerifier>,
     ) -> Self {
         Self {
             pool,

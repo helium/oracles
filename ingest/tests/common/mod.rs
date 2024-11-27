@@ -17,6 +17,7 @@ use helium_proto::services::{
 };
 use ingest::server_mobile::GrpcServer;
 use mobile_config::client::authorization_client::AuthorizationVerifier;
+use mobile_config::client::ClientError;
 use prost::Message;
 use rand::rngs::OsRng;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -29,23 +30,21 @@ use tonic::{
 };
 use triggered::Trigger;
 
-pub struct MockAuthorizationClient {}
+pub struct MockAuthorizationClient;
 
 impl MockAuthorizationClient {
-    pub fn new() -> Self {
-        MockAuthorizationClient {}
+    pub fn new() -> Arc<Self> {
+        Arc::new(MockAuthorizationClient)
     }
 }
 
 #[async_trait]
 impl AuthorizationVerifier for MockAuthorizationClient {
-    type Error = anyhow::Error;
-
     async fn verify_authorized_key(
         &self,
         _pubkey: &PublicKeyBinary,
         _role: NetworkKeyRole,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool, ClientError> {
         Ok(true)
     }
 }

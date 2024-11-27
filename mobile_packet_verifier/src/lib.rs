@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use mobile_config::client::{
@@ -12,8 +14,8 @@ pub mod pending_burns;
 pub mod settings;
 
 pub struct MobileConfigClients {
-    gateway_client: client::GatewayClient,
-    auth_client: client::AuthorizationClient,
+    gateway_client: Arc<client::GatewayClient>,
+    auth_client: Arc<client::AuthorizationClient>,
 }
 
 impl MobileConfigClients {

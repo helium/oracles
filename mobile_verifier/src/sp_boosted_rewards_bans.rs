@@ -25,7 +25,7 @@ use helium_proto::services::{
         VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     },
 };
-use mobile_config::client::authorization_client::MichaelAuthorizationVerifier;
+use mobile_config::client::authorization_client::AuthorizationVerifier;
 use sqlx::{PgPool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
@@ -121,7 +121,7 @@ impl BannedRadios {
 
 pub struct ServiceProviderBoostedRewardsBanIngestor {
     pool: PgPool,
-    authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+    authorization_verifier: Arc<dyn AuthorizationVerifier>,
     receiver: Receiver<FileInfoStream<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>>,
     verified_sink: FileSinkClient<VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
     seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
@@ -146,7 +146,7 @@ impl ServiceProviderBoostedRewardsBanIngestor {
         pool: PgPool,
         file_upload: FileUpload,
         file_store: FileStore,
-        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
+        authorization_verifier: Arc<dyn AuthorizationVerifier>,
         settings: &Settings,
         seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -439,7 +439,7 @@ mod tests {
     struct AllVerified;
 
     #[async_trait::async_trait]
-    impl MichaelAuthorizationVerifier for AllVerified {
+    impl AuthorizationVerifier for AllVerified {
         async fn verify_authorized_key(
             &self,
             _pubkey: &PublicKeyBinary,
@@ -457,7 +457,7 @@ mod tests {
     }
 
     impl TestSetup {
-        fn create(pool: PgPool, verifier: Arc<dyn MichaelAuthorizationVerifier>) -> Self {
+        fn create(pool: PgPool, verifier: Arc<dyn AuthorizationVerifier>) -> Self {
             let (_fip_sender, fip_receiver) = mpsc::channel(1);
             let (verified_sender, verified_receiver) = mpsc::channel(5);
             let (seniority_sender, seniority_receiver) = mpsc::channel(5);

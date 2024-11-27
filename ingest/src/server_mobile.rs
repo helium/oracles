@@ -30,7 +30,7 @@ use helium_proto::services::{
     poc_mobile::{UniqueConnectionsReqV1, UniqueConnectionsRespV1},
 };
 use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
-use std::{net::SocketAddr, path::Path};
+use std::{net::SocketAddr, path::Path, sync::Arc};
 use task_manager::{ManagedTask, TaskManager};
 use tonic::{
     metadata::{Ascii, MetadataValue},
@@ -40,7 +40,7 @@ use tonic::{
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 pub type VerifyResult<T> = std::result::Result<T, Status>;
 
-pub struct GrpcServer<AV> {
+pub struct GrpcServer {
     heartbeat_report_sink: FileSinkClient<CellHeartbeatIngestReportV1>,
     wifi_heartbeat_report_sink: FileSinkClient<WifiHeartbeatIngestReportV1>,
     speedtest_report_sink: FileSinkClient<SpeedtestIngestReportV1>,
@@ -59,13 +59,10 @@ pub struct GrpcServer<AV> {
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
-    authorization_verifier: AV,
+    authorization_verifier: Arc<dyn AuthorizationVerifier>,
 }
 
-impl<AV> ManagedTask for GrpcServer<AV>
-where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
-{
+impl ManagedTask for GrpcServer {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -82,10 +79,7 @@ fn make_span(_request: &http::request::Request<helium_proto::services::Body>) ->
     )
 }
 
-impl<AV> GrpcServer<AV>
-where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
-{
+impl GrpcServer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         heartbeat_report_sink: FileSinkClient<CellHeartbeatIngestReportV1>,
@@ -108,7 +102,7 @@ where
         required_network: Network,
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
-        authorization_verifier: AV,
+        authorization_verifier: Arc<dyn AuthorizationVerifier>,
     ) -> Self {
         GrpcServer {
             heartbeat_report_sink,
@@ -186,10 +180,7 @@ where
 }
 
 #[tonic::async_trait]
-impl<AV> poc_mobile::PocMobile for GrpcServer<AV>
-where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
-{
+impl poc_mobile::PocMobile for GrpcServer {
     async fn submit_speedtest(
         &self,
         request: Request<SpeedtestReqV1>,
