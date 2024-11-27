@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::string::ToString;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
@@ -33,23 +33,27 @@ pub struct MockCarrierServiceClient {
 }
 
 impl MockCarrierServiceClient {
-    fn new(valid_sps: ValidSpMap) -> Self {
-        Self {
+    fn new(valid_sps: ValidSpMap) -> Arc<Self> {
+        Arc::new(Self {
             valid_sps,
             promotions: vec![],
-        }
+        })
     }
 
-    fn with_promotions(self, promotions: Vec<ServiceProviderPromotions>) -> Self {
-        Self { promotions, ..self }
+    fn with_promotions(
+        valid_sps: ValidSpMap,
+        promotions: Vec<ServiceProviderPromotions>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            promotions,
+            valid_sps,
+        })
     }
 }
 
 #[async_trait]
 impl CarrierServiceVerifier for MockCarrierServiceClient {
-    type Error = ClientError;
-
-    async fn payer_key_to_service_provider<'a>(
+    async fn payer_key_to_service_provider(
         &self,
         pubkey: &str,
     ) -> Result<ServiceProvider, ClientError> {
@@ -63,7 +67,7 @@ impl CarrierServiceVerifier for MockCarrierServiceClient {
     async fn list_incentive_promotions(
         &self,
         _epoch_start: &DateTime<Utc>,
-    ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
+    ) -> Result<Vec<ServiceProviderPromotions>, ClientError> {
         Ok(self.promotions.clone())
     }
 }
@@ -83,7 +87,8 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     seed_hotspot_data(epoch.end, &mut txn).await?;
     txn.commit().await?;
 
-    let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await?;
+    let dc_sessions =
+        service_provider::get_dc_sessions(&pool, carrier_client.clone(), &epoch).await?;
     let sp_promotions = carrier_client
         .list_incentive_promotions(&epoch.start)
         .await?;
@@ -147,7 +152,7 @@ async fn test_service_provider_rewards_halt_on_invalid_sp(pool: PgPool) -> anyho
     seed_hotspot_data_invalid_sp(epoch.end, &mut txn).await?;
     txn.commit().await.expect("db txn failed");
 
-    let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await;
+    let dc_sessions = service_provider::get_dc_sessions(&pool, carrier_client, &epoch).await;
     assert_eq!(
         dc_sessions.unwrap_err().to_string(),
         format!("unknown service provider {PAYER_2}")
@@ -164,8 +169,9 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
 
     let valid_sps = HashMap::from_iter([(PAYER_1.to_string(), SP_1.to_string())]);
     // promotions allocated 15.00%
-    let carrier_client =
-        MockCarrierServiceClient::new(valid_sps).with_promotions(vec![ServiceProviderPromotions {
+    let carrier_client = MockCarrierServiceClient::with_promotions(
+        valid_sps,
+        vec![ServiceProviderPromotions {
             service_provider: 0,
             incentive_escrow_fund_bps: 1500,
             promotions: vec![
@@ -185,7 +191,8 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
                     ..Default::default()
                 },
             ],
-        }]);
+        }],
+    );
 
     let now = Utc::now();
     let epoch = (now - ChronoDuration::hours(24))..now;
@@ -196,7 +203,8 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
 
     txn.commit().await?;
 
-    let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await?;
+    let dc_sessions =
+        service_provider::get_dc_sessions(&pool, carrier_client.clone(), &epoch).await?;
     let sp_promotions = carrier_client
         .list_incentive_promotions(&epoch.start)
         .await?;

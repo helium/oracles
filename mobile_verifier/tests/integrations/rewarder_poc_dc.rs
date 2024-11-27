@@ -63,7 +63,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
-            &hex_boosting_client,
+            hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -162,7 +162,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (_, _rewards) = tokio::join!(
         rewarder::reward_poc_and_dc(
             &pool,
-            &hex_boosting_client,
+            hex_boosting_client.clone(),
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -186,7 +186,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
-            &hex_boosting_client,
+            hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,

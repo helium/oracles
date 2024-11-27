@@ -56,7 +56,7 @@ impl Cmd {
         let box_carrier_client = Arc::new(CarrierServiceClient::from_settings(
             &settings.config_client,
         )?);
-        let hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
+        let box_hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
 
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
             store_base_path,
@@ -226,7 +226,7 @@ impl Cmd {
                     settings,
                     file_upload,
                     box_carrier_client,
-                    hex_boosting_client,
+                    box_hex_boosting_client,
                     speedtests_avg,
                 )
                 .await?,

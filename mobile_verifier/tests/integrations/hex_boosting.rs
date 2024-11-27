@@ -141,7 +141,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
-            &hex_boosting_client,
+            hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -325,7 +325,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
-            &hex_boosting_client,
+            hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -487,7 +487,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
-            &hex_boosting_client,
+            hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -662,7 +662,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
-            &hex_boosting_client,
+            hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -794,7 +794,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
-            &hex_boosting_client,
+            hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -974,7 +974,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
-            &hex_boosting_client,
+            hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -1179,7 +1179,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
-            &hex_boosting_client,
+            hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,

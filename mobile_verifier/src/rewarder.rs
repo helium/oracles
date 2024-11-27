@@ -36,7 +36,7 @@ use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{
         carrier_service_client::CarrierServiceVerifier,
-        hex_boosting_client::HexBoostingInfoResolver, ClientError,
+        hex_boosting_client::HexBoostingInfoResolver,
     },
 };
 use price::PriceTracker;
@@ -54,10 +54,10 @@ pub mod boosted_hex_eligibility;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
-pub struct Rewarder<B> {
+pub struct Rewarder {
     pool: Pool<Postgres>,
     carrier_client: Arc<dyn CarrierServiceVerifier>,
-    hex_service_client: B,
+    hex_service_client: Arc<dyn HexBoostingInfoResolver>,
     reward_period_duration: Duration,
     reward_offset: Duration,
     pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
@@ -66,16 +66,13 @@ pub struct Rewarder<B> {
     speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
 }
 
-impl<B> Rewarder<B>
-where
-    B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
-{
+impl Rewarder {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
         carrier_service_verifier: Arc<dyn CarrierServiceVerifier>,
-        hex_boosting_info_resolver: B,
+        hex_boosting_info_resolver: Arc<dyn HexBoostingInfoResolver>,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
@@ -122,7 +119,7 @@ where
     pub fn new(
         pool: Pool<Postgres>,
         carrier_client: Arc<dyn CarrierServiceVerifier>,
-        hex_service_client: B,
+        hex_service_client: Arc<dyn HexBoostingInfoResolver>,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
@@ -262,7 +259,7 @@ where
         // process rewards for poc and data transfer
         let poc_dc_shares = reward_poc_and_dc(
             &self.pool,
-            &self.hex_service_client,
+            self.hex_service_client.clone(),
             &self.mobile_rewards,
             &self.speedtest_averages,
             reward_period,
@@ -343,10 +340,7 @@ where
     }
 }
 
-impl<B> ManagedTask for Rewarder<B>
-where
-    B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
-{
+impl ManagedTask for Rewarder {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -362,7 +356,7 @@ where
 
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
-    hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
+    hex_service_client: Arc<dyn HexBoostingInfoResolver>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_period: &Range<DateTime<Utc>>,
@@ -423,7 +417,7 @@ pub async fn reward_poc_and_dc(
 
 async fn reward_poc(
     pool: &Pool<Postgres>,
-    hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
+    hex_service_client: Arc<dyn HexBoostingInfoResolver>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_period: &Range<DateTime<Utc>>,

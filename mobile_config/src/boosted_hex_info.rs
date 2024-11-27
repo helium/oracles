@@ -1,4 +1,4 @@
-use crate::client::{hex_boosting_client::HexBoostingInfoResolver, ClientError};
+use crate::client::hex_boosting_client::HexBoostingInfoResolver;
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampDecode;
 use futures::stream::{BoxStream, StreamExt};
@@ -6,7 +6,7 @@ use helium_proto::services::poc_mobile::BoostedHex as BoostedHexProto;
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
 use hextree::Cell;
 use solana_sdk::pubkey::Pubkey;
-use std::{collections::HashMap, convert::TryFrom, num::NonZeroU32};
+use std::{collections::HashMap, convert::TryFrom, num::NonZeroU32, sync::Arc};
 
 pub type BoostedHexInfoStream = BoxStream<'static, BoostedHexInfo>;
 
@@ -138,7 +138,7 @@ impl BoostedHexes {
     }
 
     pub async fn get_all(
-        hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
+        hex_service_client: Arc<dyn HexBoostingInfoResolver>,
     ) -> anyhow::Result<Self> {
         let mut map = HashMap::new();
         let mut stream = hex_service_client
@@ -156,7 +156,7 @@ impl BoostedHexes {
     }
 
     pub async fn get_modified(
-        hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
+        hex_service_client: Arc<dyn HexBoostingInfoResolver>,
         timestamp: DateTime<Utc>,
     ) -> anyhow::Result<Self> {
         let mut map = HashMap::new();

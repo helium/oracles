@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
@@ -18,21 +20,19 @@ pub struct MockHexBoostingClient {
 }
 
 impl MockHexBoostingClient {
-    pub fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
-        Self { boosted_hexes }
+    pub fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Arc<Self> {
+        Arc::new(Self { boosted_hexes })
     }
 }
 
 #[async_trait]
 impl HexBoostingInfoResolver for MockHexBoostingClient {
-    type Error = ClientError;
-
-    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
+    async fn stream_boosted_hexes_info(&self) -> Result<BoostedHexInfoStream, ClientError> {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())
     }
 
     async fn stream_modified_boosted_hexes_info(
-        &mut self,
+        &self,
         _timestamp: DateTime<Utc>,
     ) -> Result<BoostedHexInfoStream, ClientError> {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())

@@ -29,7 +29,7 @@ use mobile_verifier::{
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 use tonic::async_trait;
 
@@ -40,21 +40,19 @@ pub struct MockHexBoostingClient {
 }
 
 impl MockHexBoostingClient {
-    pub fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
-        Self { boosted_hexes }
+    pub fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Arc<Self> {
+        Arc::new(Self { boosted_hexes })
     }
 }
 
 #[async_trait::async_trait]
 impl HexBoostingInfoResolver for MockHexBoostingClient {
-    type Error = ClientError;
-
-    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
+    async fn stream_boosted_hexes_info(&self) -> Result<BoostedHexInfoStream, ClientError> {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())
     }
 
     async fn stream_modified_boosted_hexes_info(
-        &mut self,
+        &self,
         _timestamp: DateTime<Utc>,
     ) -> Result<BoostedHexInfoStream, ClientError> {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())

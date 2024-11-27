@@ -11,25 +11,22 @@ use helium_proto::{
 };
 use mobile_config::{
     boosted_hex_info::{BoostedHex, BoostedHexes},
-    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
+    client::hex_boosting_client::HexBoostingInfoResolver,
 };
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
-pub struct Activator<A> {
+pub struct Activator {
     pool: Pool<Postgres>,
     verifier_store: FileStore,
     receiver: Receiver<FileInfoStream<RewardManifest>>,
-    hex_boosting_client: A,
+    hex_boosting_client: Arc<dyn HexBoostingInfoResolver>,
 }
 
-impl<A> ManagedTask for Activator<A>
-where
-    A: HexBoostingInfoResolver<Error = ClientError>,
-{
+impl ManagedTask for Activator {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -43,14 +40,11 @@ where
     }
 }
 
-impl<A> Activator<A>
-where
-    A: HexBoostingInfoResolver<Error = ClientError>,
-{
+impl Activator {
     pub async fn new(
         pool: Pool<Postgres>,
         receiver: Receiver<FileInfoStream<RewardManifest>>,
-        hex_boosting_client: A,
+        hex_boosting_client: Arc<dyn HexBoostingInfoResolver>,
         verifier_store: FileStore,
     ) -> Result<Self> {
         Ok(Self {
@@ -96,7 +90,7 @@ where
         manifest: RewardManifest,
     ) -> Result<()> {
         // get latest boosted hexes info from mobile config
-        let boosted_hexes = BoostedHexes::get_all(&self.hex_boosting_client).await?;
+        let boosted_hexes = BoostedHexes::get_all(self.hex_boosting_client.clone()).await?;
 
         // get the rewards file from the manifest
         let manifest_time = manifest.end_timestamp;
