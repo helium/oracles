@@ -39,7 +39,7 @@ pub struct AuthorizationClient {
 }
 
 impl AuthorizationClient {
-    pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
+    pub fn from_settings(settings: &Settings) -> Result<Arc<Self>, Box<helium_crypto::Error>> {
         let cache = Arc::new(Cache::new());
         let cloned_cache = cache.clone();
         tokio::spawn(async move {
@@ -48,13 +48,13 @@ impl AuthorizationClient {
                 .await
         });
 
-        Ok(Self {
+        Ok(Arc::new(Self {
             client: settings.connect_authorization_client(),
             signing_key: settings.signing_keypair()?,
             config_pubkey: settings.config_pubkey()?,
             cache_ttl: settings.cache_ttl,
             cache,
-        })
+        }))
     }
 }
 

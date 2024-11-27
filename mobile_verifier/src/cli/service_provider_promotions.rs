@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{service_provider, Settings};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -18,9 +16,7 @@ impl Cmd {
             None => Utc::now(),
         };
 
-        let carrier_client = Arc::new(CarrierServiceClient::from_settings(
-            &settings.config_client,
-        )?);
+        let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
         let promos = service_provider::get_promotions(carrier_client, &epoch_start).await?;
 
         println!("Promotions as of {epoch_start}");

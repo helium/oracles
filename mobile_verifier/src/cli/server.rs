@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use crate::{
     boosting_oracles::DataSetDownloaderDaemon,
@@ -49,13 +49,10 @@ impl Cmd {
         let report_ingest = FileStore::from_settings(&settings.ingest).await?;
 
         // mobile config clients
-        let box_gateway_client = Arc::new(GatewayClient::from_settings(&settings.config_client)?);
-        let box_auth_client =
-            Arc::new(AuthorizationClient::from_settings(&settings.config_client)?.clone());
-        let box_entity_client = Arc::new(EntityClient::from_settings(&settings.config_client)?);
-        let box_carrier_client = Arc::new(CarrierServiceClient::from_settings(
-            &settings.config_client,
-        )?);
+        let box_gateway_client = GatewayClient::from_settings(&settings.config_client)?;
+        let box_auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
+        let box_entity_client = EntityClient::from_settings(&settings.config_client)?;
+        let box_carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
         let box_hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
 
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
