@@ -57,7 +57,9 @@ impl Cmd {
             Arc::new(AuthorizationClient::from_settings(&settings.config_client)?.clone());
         let box_entity_client: Arc<dyn EntityVerifier> =
             Arc::new(EntityClient::from_settings(&settings.config_client)?);
-        let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
+        let box_carrier_client = Arc::new(CarrierServiceClient::from_settings(
+            &settings.config_client,
+        )?);
         let hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
 
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
@@ -227,7 +229,7 @@ impl Cmd {
                     pool,
                     settings,
                     file_upload,
-                    carrier_client,
+                    box_carrier_client,
                     hex_boosting_client,
                     speedtests_avg,
                 )

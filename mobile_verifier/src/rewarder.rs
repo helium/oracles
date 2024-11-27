@@ -44,7 +44,7 @@ use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::{ops::Range, time::Duration};
+use std::{ops::Range, sync::Arc, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
 
@@ -54,9 +54,9 @@ pub mod boosted_hex_eligibility;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
-pub struct Rewarder<A, B> {
+pub struct Rewarder<B> {
     pool: Pool<Postgres>,
-    carrier_client: A,
+    carrier_client: Arc<dyn CarrierServiceVerifier>,
     hex_service_client: B,
     reward_period_duration: Duration,
     reward_offset: Duration,
@@ -66,16 +66,15 @@ pub struct Rewarder<A, B> {
     speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
 }
 
-impl<A, B> Rewarder<A, B>
+impl<B> Rewarder<B>
 where
-    A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
     B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
 {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        carrier_service_verifier: A,
+        carrier_service_verifier: Arc<dyn CarrierServiceVerifier>,
         hex_boosting_info_resolver: B,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -122,7 +121,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
-        carrier_client: A,
+        carrier_client: Arc<dyn CarrierServiceVerifier>,
         hex_service_client: B,
         reward_period_duration: Duration,
         reward_offset: Duration,
@@ -275,11 +274,15 @@ where
         reward_mappers(&self.pool, &self.mobile_rewards, reward_period).await?;
 
         // process rewards for service providers
-        let dc_sessions =
-            service_provider::get_dc_sessions(&self.pool, &self.carrier_client, reward_period)
-                .await?;
+        let dc_sessions = service_provider::get_dc_sessions(
+            &self.pool,
+            self.carrier_client.clone(),
+            reward_period,
+        )
+        .await?;
         let sp_promotions =
-            service_provider::get_promotions(&self.carrier_client, &reward_period.start).await?;
+            service_provider::get_promotions(self.carrier_client.clone(), &reward_period.start)
+                .await?;
         reward_service_providers(
             dc_sessions,
             sp_promotions.clone(),
@@ -340,9 +343,8 @@ where
     }
 }
 
-impl<A, B> ManagedTask for Rewarder<A, B>
+impl<B> ManagedTask for Rewarder<B>
 where
-    A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
     B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
 {
     fn start_task(

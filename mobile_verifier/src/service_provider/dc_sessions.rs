@@ -1,7 +1,7 @@
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use chrono::{DateTime, Utc};
-use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
+use mobile_config::client::carrier_service_client::CarrierServiceVerifier;
 use rust_decimal::{Decimal, RoundingStrategy};
 use sqlx::PgPool;
 
@@ -14,7 +14,7 @@ use super::ServiceProviderId;
 
 pub async fn get_dc_sessions(
     pool: &PgPool,
-    carrier_client: &impl CarrierServiceVerifier<Error = ClientError>,
+    carrier_client: Arc<dyn CarrierServiceVerifier>,
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<ServiceProviderDCSessions> {
     let payer_dc_sessions =
@@ -107,6 +107,7 @@ pub mod tests {
 
     use chrono::Duration;
     use helium_proto::{ServiceProvider, ServiceProviderPromotions};
+    use mobile_config::client::ClientError;
 
     use crate::data_session::HotspotDataSession;
 
@@ -125,9 +126,7 @@ pub mod tests {
 
         #[async_trait::async_trait]
         impl CarrierServiceVerifier for MockClient {
-            type Error = ClientError;
-
-            async fn payer_key_to_service_provider<'a>(
+            async fn payer_key_to_service_provider(
                 &self,
                 _pubkey: &str,
             ) -> Result<ServiceProvider, ClientError> {
@@ -137,7 +136,7 @@ pub mod tests {
             async fn list_incentive_promotions(
                 &self,
                 _epoch_start: &DateTime<Utc>,
-            ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
+            ) -> Result<Vec<ServiceProviderPromotions>, ClientError> {
                 Ok(vec![])
             }
         }
@@ -168,7 +167,7 @@ pub mod tests {
         let epoch = now - Duration::hours(24)..now;
 
         // dc sessions should represent single payer, and all dc is combined
-        let map = get_dc_sessions(&pool, &MockClient, &epoch).await?;
+        let map = get_dc_sessions(&pool, Arc::new(MockClient), &epoch).await?;
         assert_eq!(map.len(), 1);
         assert_eq!(map.all_transfer(), Decimal::from(4_000));
 

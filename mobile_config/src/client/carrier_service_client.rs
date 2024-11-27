@@ -9,18 +9,18 @@ use helium_proto::{
 };
 use retainer::Cache;
 use std::{str::FromStr, sync::Arc, time::Duration};
+
 #[async_trait]
-pub trait CarrierServiceVerifier {
-    type Error;
-    async fn payer_key_to_service_provider<'a>(
+pub trait CarrierServiceVerifier: Send + Sync {
+    async fn payer_key_to_service_provider(
         &self,
         payer: &str,
-    ) -> Result<ServiceProvider, Self::Error>;
+    ) -> Result<ServiceProvider, ClientError>;
 
     async fn list_incentive_promotions(
         &self,
         epoch_start: &DateTime<Utc>,
-    ) -> Result<Vec<ServiceProviderPromotions>, Self::Error>;
+    ) -> Result<Vec<ServiceProviderPromotions>, ClientError>;
 }
 #[derive(Clone)]
 pub struct CarrierServiceClient {
@@ -33,9 +33,7 @@ pub struct CarrierServiceClient {
 
 #[async_trait]
 impl CarrierServiceVerifier for CarrierServiceClient {
-    type Error = ClientError;
-
-    async fn payer_key_to_service_provider<'a>(
+    async fn payer_key_to_service_provider(
         &self,
         payer: &str,
     ) -> Result<ServiceProvider, ClientError> {
@@ -71,7 +69,7 @@ impl CarrierServiceVerifier for CarrierServiceClient {
     async fn list_incentive_promotions(
         &self,
         epoch_start: &DateTime<Utc>,
-    ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
+    ) -> Result<Vec<ServiceProviderPromotions>, ClientError> {
         let mut request = mobile_config::CarrierIncentivePromotionListReqV1 {
             timestamp: epoch_start.encode_timestamp(),
             signer: self.signing_key.public_key().into(),
