@@ -14,7 +14,7 @@ use crate::{
     subscriber_verified_mapping_event::SubscriberVerifiedMappingEventDaemon,
     telemetry,
     unique_connections::ingestor::UniqueConnectionsIngestor,
-    Settings,
+    GatewayResolver, Settings,
 };
 use anyhow::Result;
 use file_store::{
@@ -51,7 +51,8 @@ impl Cmd {
         let report_ingest = FileStore::from_settings(&settings.ingest).await?;
 
         // mobile config clients
-        let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
+        let box_gateway_client: Arc<dyn GatewayResolver> =
+            Arc::new(GatewayClient::from_settings(&settings.config_client)?);
         let box_auth_client: Arc<dyn MichaelAuthorizationVerifier> =
             Arc::new(AuthorizationClient::from_settings(&settings.config_client)?.clone());
         let box_entity_client: Arc<dyn EntityVerifier> =
@@ -117,7 +118,7 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     report_ingest.clone(),
-                    gateway_client.clone(),
+                    box_gateway_client.clone(),
                     valid_heartbeats.clone(),
                     seniority_updates.clone(),
                     usa_geofence,
@@ -129,7 +130,7 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     report_ingest.clone(),
-                    gateway_client.clone(),
+                    box_gateway_client.clone(),
                     valid_heartbeats,
                     seniority_updates.clone(),
                     usa_and_mexico_geofence,
@@ -143,7 +144,7 @@ impl Cmd {
                     file_upload.clone(),
                     report_ingest.clone(),
                     speedtests_avg.clone(),
-                    gateway_client.clone(),
+                    box_gateway_client.clone(),
                 )
                 .await?,
             )

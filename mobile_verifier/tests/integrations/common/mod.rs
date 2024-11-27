@@ -356,12 +356,10 @@ pub struct GatewayClientAllOwnersValid;
 
 #[async_trait]
 impl GatewayResolver for GatewayClientAllOwnersValid {
-    type Error = std::convert::Infallible;
-
     async fn resolve_gateway(
         &self,
         _address: &PublicKeyBinary,
-    ) -> Result<GatewayResolution, Self::Error> {
+    ) -> Result<GatewayResolution, ClientError> {
         Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
     }
 }

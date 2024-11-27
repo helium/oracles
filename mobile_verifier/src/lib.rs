@@ -19,10 +19,10 @@ pub mod subscriber_verified_mapping_event;
 pub mod telemetry;
 pub mod unique_connections;
 
+use mobile_config::client::ClientError;
 pub use settings::Settings;
 
 use async_trait::async_trait;
-use std::error::Error;
 
 pub enum GatewayResolution {
     GatewayNotFound,
@@ -38,23 +38,19 @@ impl GatewayResolution {
 }
 
 #[async_trait::async_trait]
-pub trait GatewayResolver: Clone + Send + Sync + 'static {
-    type Error: Error + Send + Sync + 'static;
-
+pub trait GatewayResolver: Send + Sync {
     async fn resolve_gateway(
         &self,
         address: &helium_crypto::PublicKeyBinary,
-    ) -> Result<GatewayResolution, Self::Error>;
+    ) -> Result<GatewayResolution, ClientError>;
 }
 
 #[async_trait]
 impl GatewayResolver for mobile_config::GatewayClient {
-    type Error = mobile_config::client::ClientError;
-
     async fn resolve_gateway(
         &self,
         address: &helium_crypto::PublicKeyBinary,
-    ) -> Result<GatewayResolution, Self::Error> {
+    ) -> Result<GatewayResolution, ClientError> {
         use mobile_config::client::gateway_client::GatewayInfoResolver;
         use mobile_config::gateway_info::{DeviceType, GatewayInfo};
 

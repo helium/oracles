@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 use chrono::{DateTime, Duration, Utc};
 use file_store::coverage::RadioHexSignalLevel;
@@ -46,7 +46,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
         heartbeat(&hotspot, &coverage_object)
             .location_validation_timestamp(Utc::now())
             .build(),
-        &GatewayClientAllOwnersValid,
+        Arc::new(GatewayClientAllOwnersValid),
         &coverage_objects,
         &location_cache,
         u32::MAX,
@@ -64,7 +64,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
         heartbeat(&hotspot, &coverage_object)
             .latlng((0.0, 0.0))
             .build(),
-        &GatewayClientAllOwnersValid,
+        Arc::new(GatewayClientAllOwnersValid),
         &coverage_objects,
         &location_cache,
         u32::MAX,
@@ -108,7 +108,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
         heartbeat(&hotspot, &coverage_object)
             .location_validation_timestamp(Utc::now())
             .build(),
-        &GatewayClientAllOwnersValid,
+        Arc::new(GatewayClientAllOwnersValid),
         &coverage_objects,
         &location_cache,
         u32::MAX,
@@ -131,7 +131,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
         heartbeat(&hotspot, &coverage_object)
             .latlng((0.0, 0.0))
             .build(),
-        &GatewayClientAllOwnersValid,
+        Arc::new(GatewayClientAllOwnersValid),
         &coverage_objects,
         &location_cache,
         u32::MAX,
@@ -178,7 +178,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
             .location_validation_timestamp(Utc::now())
             .timestamp(Utc::now() - Duration::hours(12) - Duration::seconds(1))
             .build(),
-        &GatewayClientAllOwnersValid,
+        Arc::new(GatewayClientAllOwnersValid),
         &coverage_objects,
         &location_cache,
         u32::MAX,
@@ -196,7 +196,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
         heartbeat(&hotspot, &coverage_object)
             .latlng((0.0, 0.0))
             .build(),
-        &GatewayClientAllOwnersValid,
+        Arc::new(GatewayClientAllOwnersValid),
         &coverage_objects,
         &location_cache,
         u32::MAX,

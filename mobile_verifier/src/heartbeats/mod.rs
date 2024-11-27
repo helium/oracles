@@ -23,7 +23,7 @@ use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
-use std::{ops::Range, pin::pin, time};
+use std::{ops::Range, pin::pin, sync::Arc, time};
 use uuid::Uuid;
 
 use self::last_location::{LastLocation, LocationCache};
@@ -373,7 +373,7 @@ impl ValidatedHeartbeat {
     #[allow(clippy::too_many_arguments)]
     pub async fn validate(
         mut heartbeat: Heartbeat,
-        gateway_info_resolver: &impl GatewayResolver,
+        gateway_info_resolver: Arc<dyn GatewayResolver>,
         coverage_object_cache: &CoverageObjectCache,
         last_location_cache: &LocationCache,
         max_distance_to_coverage: u32,
@@ -594,24 +594,27 @@ impl ValidatedHeartbeat {
     #[allow(clippy::too_many_arguments)]
     pub fn validate_heartbeats<'a>(
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
-        gateway_info_resolver: &'a impl GatewayResolver,
+        gateway_info_resolver: Arc<dyn GatewayResolver>,
         coverage_object_cache: &'a CoverageObjectCache,
         last_location_cache: &'a LocationCache,
         max_distance_to_coverage: u32,
         epoch: &'a Range<DateTime<Utc>>,
         geofence: &'a impl GeofenceValidator,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
-        heartbeats.then(move |heartbeat| async move {
-            Self::validate(
-                heartbeat,
-                gateway_info_resolver,
-                coverage_object_cache,
-                last_location_cache,
-                max_distance_to_coverage,
-                epoch,
-                geofence,
-            )
-            .await
+        heartbeats.then(move |heartbeat| {
+            let gateway_info_resolver = gateway_info_resolver.clone();
+            async move {
+                Self::validate(
+                    heartbeat,
+                    gateway_info_resolver,
+                    coverage_object_cache,
+                    last_location_cache,
+                    max_distance_to_coverage,
+                    epoch,
+                    geofence,
+                )
+                .await
+            }
         })
     }
 

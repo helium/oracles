@@ -400,7 +400,7 @@ async fn process_input(
     let mut transaction = pool.begin().await?;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
         stream::iter(heartbeats.map(Heartbeat::from)),
-        &GatewayClientAllOwnersValid,
+        Arc::new(GatewayClientAllOwnersValid),
         &coverage_objects,
         &location_cache,
         2000,
@@ -1403,7 +1403,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     let validate = |latlng: LatLng| {
         ValidatedHeartbeat::validate(
             mk_heartbeat(latlng).into(),
-            &GatewayClientAllOwnersValid,
+            Arc::new(GatewayClientAllOwnersValid),
             &coverage_object_cache,
             &location_cache,
             max_covered_distance,

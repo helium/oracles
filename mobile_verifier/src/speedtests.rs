@@ -1,6 +1,6 @@
 use crate::{
     speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE},
-    Settings,
+    GatewayResolution, GatewayResolver, Settings,
 };
 use chrono::{DateTime, Utc};
 use file_store::{
@@ -21,10 +21,10 @@ use helium_proto::services::poc_mobile::{
     SpeedtestAvg as SpeedtestAvgProto, SpeedtestIngestReportV1,
     SpeedtestVerificationResult as SpeedtestResult, VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
-use mobile_config::client::gateway_client::GatewayInfoResolver;
 use sqlx::{postgres::PgRow, FromRow, Pool, Postgres, Row, Transaction};
 use std::{
     collections::HashMap,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use task_manager::{ManagedTask, TaskManager};
@@ -54,25 +54,22 @@ impl FromRow<'_, PgRow> for Speedtest {
     }
 }
 
-pub struct SpeedtestDaemon<GIR> {
+pub struct SpeedtestDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
-    gateway_info_resolver: GIR,
+    gateway_info_resolver: Arc<dyn GatewayResolver>,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
     speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
     verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
 }
 
-impl<GIR> SpeedtestDaemon<GIR>
-where
-    GIR: GatewayInfoResolver,
-{
+impl SpeedtestDaemon {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
         speedtests_avg: FileSinkClient<SpeedtestAvgProto>,
-        gateway_resolver: GIR,
+        gateway_resolver: Arc<dyn GatewayResolver>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (speedtests_validity, speedtests_validity_server) = VerifiedSpeedtestProto::file_sink(
             settings.store_base_path(),
@@ -109,7 +106,7 @@ where
 
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        gateway_info_resolver: GIR,
+        gateway_info_resolver: Arc<dyn GatewayResolver>,
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
         speedtest_avg_file_sink: FileSinkClient<SpeedtestAvgProto>,
         verified_speedtest_file_sink: FileSinkClient<VerifiedSpeedtestProto>,
@@ -179,16 +176,10 @@ where
     ) -> anyhow::Result<SpeedtestResult> {
         let pubkey = speedtest.report.pubkey.clone();
 
-        match self
-            .gateway_info_resolver
-            .resolve_gateway_info(&pubkey)
-            .await?
-        {
-            Some(gw_info) if gw_info.is_data_only() => {
-                Ok(SpeedtestResult::SpeedtestInvalidDeviceType)
-            }
-            Some(_) => Ok(SpeedtestResult::SpeedtestValid),
-            None => Ok(SpeedtestResult::SpeedtestGatewayNotFound),
+        match self.gateway_info_resolver.resolve_gateway(&pubkey).await? {
+            GatewayResolution::DataOnly => Ok(SpeedtestResult::SpeedtestInvalidDeviceType),
+            GatewayResolution::GatewayNotFound => Ok(SpeedtestResult::SpeedtestGatewayNotFound),
+            _ => Ok(SpeedtestResult::SpeedtestValid),
         }
     }
 
@@ -211,10 +202,7 @@ where
     }
 }
 
-impl<GIR> ManagedTask for SpeedtestDaemon<GIR>
-where
-    GIR: GatewayInfoResolver,
-{
+impl ManagedTask for SpeedtestDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,

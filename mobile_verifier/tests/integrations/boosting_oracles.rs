@@ -29,7 +29,7 @@ use mobile_verifier::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-use std::{collections::HashMap, pin::pin};
+use std::{collections::HashMap, pin::pin, sync::Arc};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -342,7 +342,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
     let epoch = start..end;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
         stream::iter(heartbeats.map(Heartbeat::from)),
-        &GatewayClientAllOwnersValid,
+        Arc::new(GatewayClientAllOwnersValid),
         &coverage_objects,
         &location_cache,
         2000,

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::common;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::{
@@ -6,27 +8,17 @@ use file_store::{
     FileInfo,
 };
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::{
-    mobile_config::DeviceType as MobileDeviceType, poc_mobile::SpeedtestAvgValidity,
-};
-use mobile_config::{
-    client::gateway_client::GatewayInfoResolver,
-    gateway_info::{DeviceType, GatewayInfo, GatewayInfoStream},
-};
-use mobile_verifier::speedtests::SpeedtestDaemon;
+use helium_proto::services::poc_mobile::SpeedtestAvgValidity;
+use mobile_config::client::ClientError;
+use mobile_verifier::{speedtests::SpeedtestDaemon, GatewayResolution, GatewayResolver};
 use sqlx::{Pool, Postgres};
-
-#[derive(thiserror::Error, Debug)]
-enum MockError {}
 
 #[derive(Clone)]
 struct MockGatewayInfoResolver {}
 
 #[async_trait::async_trait]
-impl GatewayInfoResolver for MockGatewayInfoResolver {
-    type Error = MockError;
-
-    async fn resolve_gateway_info(
+impl GatewayResolver for MockGatewayInfoResolver {
+    async fn resolve_gateway(
         &self,
         address: &PublicKeyBinary,
     ) -> Result<Option<GatewayInfo>, Self::Error> {
@@ -52,7 +44,7 @@ async fn speedtests_average_should_only_include_last_48_hours(
     pool: Pool<Postgres>,
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
-    let gateway_info_resolver = MockGatewayInfoResolver {};
+    let gateway_info_resolver = Arc::new(MockGatewayInfoResolver {});
     let (speedtest_avg_client, mut speedtest_avg_receiver) = common::create_file_sink();
     let (verified_client, _verified_receiver) = common::create_file_sink();
 

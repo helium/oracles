@@ -25,9 +25,9 @@ use std::{
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-pub struct CbrsHeartbeatDaemon<GIR, GFV> {
+pub struct CbrsHeartbeatDaemon<GFV> {
     pool: sqlx::Pool<sqlx::Postgres>,
-    gateway_info_resolver: GIR,
+    gateway_info_resolver: Arc<dyn GatewayResolver>,
     heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
     max_distance_to_coverage: u32,
     heartbeat_sink: FileSinkClient<proto::Heartbeat>,
@@ -35,9 +35,8 @@ pub struct CbrsHeartbeatDaemon<GIR, GFV> {
     geofence: GFV,
 }
 
-impl<GIR, GFV> CbrsHeartbeatDaemon<GIR, GFV>
+impl<GFV> CbrsHeartbeatDaemon<GFV>
 where
-    GIR: GatewayResolver,
     GFV: GeofenceValidator,
 {
     #[allow(clippy::too_many_arguments)]
@@ -45,7 +44,7 @@ where
         pool: Pool<Postgres>,
         settings: &Settings,
         file_store: FileStore,
-        gateway_resolver: GIR,
+        gateway_resolver: Arc<dyn GatewayResolver>,
         valid_heartbeats: FileSinkClient<proto::Heartbeat>,
         seniority_updates: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
@@ -80,7 +79,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        gateway_info_resolver: GIR,
+        gateway_info_resolver: Arc<dyn GatewayResolver>,
         heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
         max_distance_to_coverage: u32,
         heartbeat_sink: FileSinkClient<proto::Heartbeat>,
@@ -164,7 +163,7 @@ where
         process_validated_heartbeats(
             ValidatedHeartbeat::validate_heartbeats(
                 heartbeats,
-                &self.gateway_info_resolver,
+                self.gateway_info_resolver.clone(),
                 coverage_object_cache,
                 location_cache,
                 self.max_distance_to_coverage,
@@ -185,9 +184,8 @@ where
     }
 }
 
-impl<GIR, GFV> ManagedTask for CbrsHeartbeatDaemon<GIR, GFV>
+impl<GFV> ManagedTask for CbrsHeartbeatDaemon<GFV>
 where
-    GIR: GatewayResolver,
     GFV: GeofenceValidator,
 {
     fn start_task(
