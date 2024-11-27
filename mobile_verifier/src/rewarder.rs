@@ -60,7 +60,7 @@ pub struct Rewarder {
     hex_service_client: Arc<dyn HexBoostingInfoResolver>,
     reward_period_duration: Duration,
     reward_offset: Duration,
-    pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_manifests: FileSinkClient<RewardManifest>,
     price_tracker: PriceTracker,
     speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
