@@ -14,7 +14,7 @@ use crate::{
     subscriber_verified_mapping_event::SubscriberVerifiedMappingEventDaemon,
     telemetry,
     unique_connections::ingestor::UniqueConnectionsIngestor,
-    GatewayResolver, Settings,
+    Settings,
 };
 use anyhow::Result;
 use file_store::{
@@ -24,10 +24,8 @@ use file_store::{
 };
 use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate, SpeedtestAvg};
 use mobile_config::client::{
-    authorization_client::MichaelAuthorizationVerifier,
-    entity_client::{EntityClient, EntityVerifier},
-    hex_boosting_client::HexBoostingClient,
-    AuthorizationClient, CarrierServiceClient, GatewayClient,
+    entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
+    CarrierServiceClient, GatewayClient,
 };
 use task_manager::TaskManager;
 
@@ -51,12 +49,10 @@ impl Cmd {
         let report_ingest = FileStore::from_settings(&settings.ingest).await?;
 
         // mobile config clients
-        let box_gateway_client: Arc<dyn GatewayResolver> =
-            Arc::new(GatewayClient::from_settings(&settings.config_client)?);
-        let box_auth_client: Arc<dyn MichaelAuthorizationVerifier> =
+        let box_gateway_client = Arc::new(GatewayClient::from_settings(&settings.config_client)?);
+        let box_auth_client =
             Arc::new(AuthorizationClient::from_settings(&settings.config_client)?.clone());
-        let box_entity_client: Arc<dyn EntityVerifier> =
-            Arc::new(EntityClient::from_settings(&settings.config_client)?);
+        let box_entity_client = Arc::new(EntityClient::from_settings(&settings.config_client)?);
         let box_carrier_client = Arc::new(CarrierServiceClient::from_settings(
             &settings.config_client,
         )?);
