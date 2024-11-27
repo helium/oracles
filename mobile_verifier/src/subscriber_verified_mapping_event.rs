@@ -28,22 +28,19 @@ use std::{ops::Range, sync::Arc};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-pub struct SubscriberVerifiedMappingEventDaemon<EV> {
+pub struct SubscriberVerifiedMappingEventDaemon {
     pool: Pool<Postgres>,
     authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
-    entity_verifier: EV,
+    entity_verifier: Arc<dyn EntityVerifier>,
     reports_receiver: Receiver<FileInfoStream<SubscriberVerifiedMappingEventIngestReport>>,
     verified_report_sink: FileSinkClient<VerifiedSubscriberVerifiedMappingEventIngestReportV1>,
 }
 
-impl<EV> SubscriberVerifiedMappingEventDaemon<EV>
-where
-    EV: EntityVerifier + Send + Sync + 'static,
-{
+impl SubscriberVerifiedMappingEventDaemon {
     pub fn new(
         pool: Pool<Postgres>,
         authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
-        entity_verifier: EV,
+        entity_verifier: Arc<dyn EntityVerifier>,
         reports_receiver: Receiver<FileInfoStream<SubscriberVerifiedMappingEventIngestReport>>,
         verified_report_sink: FileSinkClient<VerifiedSubscriberVerifiedMappingEventIngestReportV1>,
     ) -> Self {
@@ -60,7 +57,7 @@ where
         pool: Pool<Postgres>,
         settings: &Settings,
         authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
-        entity_verifier: EV,
+        entity_verifier: Arc<dyn EntityVerifier>,
         file_store: FileStore,
         file_upload: FileUpload,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -202,10 +199,7 @@ where
     }
 }
 
-impl<EV> ManagedTask for SubscriberVerifiedMappingEventDaemon<EV>
-where
-    EV: EntityVerifier + Send + Sync + 'static,
-{
+impl ManagedTask for SubscriberVerifiedMappingEventDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,

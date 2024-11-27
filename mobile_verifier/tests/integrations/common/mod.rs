@@ -346,8 +346,6 @@ impl MockEntityClient {
 
 #[async_trait]
 impl EntityVerifier for MockEntityClient {
-    type Error = ClientError;
-
     async fn verify_rewardable_entity(&self, _entity_id: &[u8]) -> Result<bool, ClientError> {
         Ok(true)
     }

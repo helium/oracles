@@ -28,7 +28,7 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
         let deamon = SubscriberVerifiedMappingEventDaemon::new(
             task_pool,
             Arc::new(MockAuthorizationClient::new()),
-            MockEntityClient::new(),
+            Arc::new(MockEntityClient::new()),
             reports_rx,
             FileSinkClient::new(sink_tx, "metric"),
         );

@@ -32,25 +32,22 @@ const SUBSCRIBER_REWARD_PERIOD_IN_DAYS: i64 = 1;
 
 pub type SubscriberValidatedLocations = Vec<Vec<u8>>;
 
-pub struct SubscriberLocationIngestor<EV> {
+pub struct SubscriberLocationIngestor {
     pub pool: PgPool,
     authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
-    entity_verifier: EV,
+    entity_verifier: Arc<dyn EntityVerifier>,
     reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
     verified_report_sink: FileSinkClient<VerifiedSubscriberLocationIngestReportV1>,
 }
 
-impl<EV> SubscriberLocationIngestor<EV>
-where
-    EV: EntityVerifier + Send + Sync + 'static,
-{
+impl SubscriberLocationIngestor {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
         authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
-        entity_verifier: EV,
+        entity_verifier: Arc<dyn EntityVerifier>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_subscriber_location, verified_subscriber_location_server) =
             VerifiedSubscriberLocationIngestReportV1::file_sink(
@@ -89,7 +86,7 @@ where
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
-        entity_verifier: EV,
+        entity_verifier: Arc<dyn EntityVerifier>,
         reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
         verified_report_sink: FileSinkClient<VerifiedSubscriberLocationIngestReportV1>,
     ) -> Self {
@@ -194,10 +191,7 @@ where
     }
 }
 
-impl<EV> ManagedTask for SubscriberLocationIngestor<EV>
-where
-    EV: EntityVerifier + Send + Sync + 'static,
-{
+impl ManagedTask for SubscriberLocationIngestor {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
