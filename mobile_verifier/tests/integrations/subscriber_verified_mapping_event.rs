@@ -12,7 +12,7 @@ use mobile_verifier::subscriber_verified_mapping_event::{
 };
 use rand::rngs::OsRng;
 use sqlx::{PgPool, Pool, Postgres, Row};
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashMap, ops::Range, sync::Arc};
 use tokio::time::timeout;
 
 use crate::common::{MockAuthorizationClient, MockEntityClient};
@@ -27,7 +27,7 @@ async fn main_test(pool: PgPool) -> anyhow::Result<()> {
     tokio::spawn(async move {
         let deamon = SubscriberVerifiedMappingEventDaemon::new(
             task_pool,
-            MockAuthorizationClient::new(),
+            Arc::new(MockAuthorizationClient::new()),
             MockEntityClient::new(),
             reports_rx,
             FileSinkClient::new(sink_tx, "metric"),

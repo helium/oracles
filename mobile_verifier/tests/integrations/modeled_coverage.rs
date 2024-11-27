@@ -13,7 +13,10 @@ use helium_proto::services::{
     poc_mobile::{CoverageObjectValidity, LocationSource, SignalLevel},
 };
 use hextree::Cell;
-use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
+use mobile_config::{
+    boosted_hex_info::{BoostedHexInfo, BoostedHexes},
+    client::{authorization_client::MichaelAuthorizationVerifier, ClientError},
+};
 
 use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
@@ -28,12 +31,11 @@ use mobile_verifier::{
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     unique_connections::UniqueConnectionCounts,
-    IsAuthorized,
 };
 use rust_decimal_macros::dec;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
-use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr};
+use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr, sync::Arc};
 use uuid::Uuid;
 
 use crate::common::{self, GatewayClientAllOwnersValid};
@@ -253,14 +255,12 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
 struct AllPubKeysAuthed;
 
 #[async_trait::async_trait]
-impl IsAuthorized for AllPubKeysAuthed {
-    type Error = std::convert::Infallible;
-
-    async fn is_authorized(
+impl MichaelAuthorizationVerifier for AllPubKeysAuthed {
+    async fn verify_authorized_key(
         &self,
         _pub_key: &PublicKeyBinary,
         _role: NetworkKeyRole,
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<bool, ClientError> {
         Ok(true)
     }
 }
@@ -383,7 +383,7 @@ async fn process_input(
 
     let mut transaction = pool.begin().await?;
     let mut coverage_objs = pin!(CoverageObject::validate_coverage_objects(
-        &AllPubKeysAuthed,
+        Arc::new(AllPubKeysAuthed),
         stream::iter(coverage_objs)
     ));
     while let Some(coverage_obj) = coverage_objs.next().await.transpose()? {
@@ -1375,7 +1375,8 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         trust_score: 1000,
     };
 
-    let coverage_object = CoverageObject::validate(coverage_object, &AllPubKeysAuthed).await?;
+    let coverage_object =
+        CoverageObject::validate(coverage_object, Arc::new(AllPubKeysAuthed)).await?;
 
     let mut transaction = pool.begin().await?;
     coverage_object.save(&mut transaction).await?;

@@ -72,28 +72,3 @@ impl GatewayResolver for mobile_config::GatewayClient {
         }
     }
 }
-
-#[async_trait]
-pub trait IsAuthorized {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    async fn is_authorized(
-        &self,
-        address: &helium_crypto::PublicKeyBinary,
-        role: helium_proto::services::mobile_config::NetworkKeyRole,
-    ) -> Result<bool, Self::Error>;
-}
-
-#[async_trait]
-impl IsAuthorized for mobile_config::client::AuthorizationClient {
-    type Error = mobile_config::client::ClientError;
-
-    async fn is_authorized(
-        &self,
-        address: &helium_crypto::PublicKeyBinary,
-        role: helium_proto::services::mobile_config::NetworkKeyRole,
-    ) -> Result<bool, Self::Error> {
-        use mobile_config::client::authorization_client::AuthorizationVerifier;
-        self.verify_authorized_key(address, role).await
-    }
-}

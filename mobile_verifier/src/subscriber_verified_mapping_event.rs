@@ -21,29 +21,28 @@ use helium_proto::services::{
     },
 };
 use mobile_config::client::{
-    authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
+    authorization_client::MichaelAuthorizationVerifier, entity_client::EntityVerifier,
 };
 use sqlx::{Pool, Postgres, Transaction};
-use std::ops::Range;
+use std::{ops::Range, sync::Arc};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-pub struct SubscriberVerifiedMappingEventDaemon<AV, EV> {
+pub struct SubscriberVerifiedMappingEventDaemon<EV> {
     pool: Pool<Postgres>,
-    authorization_verifier: AV,
+    authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
     entity_verifier: EV,
     reports_receiver: Receiver<FileInfoStream<SubscriberVerifiedMappingEventIngestReport>>,
     verified_report_sink: FileSinkClient<VerifiedSubscriberVerifiedMappingEventIngestReportV1>,
 }
 
-impl<AV, EV> SubscriberVerifiedMappingEventDaemon<AV, EV>
+impl<EV> SubscriberVerifiedMappingEventDaemon<EV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
     EV: EntityVerifier + Send + Sync + 'static,
 {
     pub fn new(
         pool: Pool<Postgres>,
-        authorization_verifier: AV,
+        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
         entity_verifier: EV,
         reports_receiver: Receiver<FileInfoStream<SubscriberVerifiedMappingEventIngestReport>>,
         verified_report_sink: FileSinkClient<VerifiedSubscriberVerifiedMappingEventIngestReportV1>,
@@ -60,7 +59,7 @@ where
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
-        authorization_verifier: AV,
+        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
         entity_verifier: EV,
         file_store: FileStore,
         file_upload: FileUpload,
@@ -203,9 +202,8 @@ where
     }
 }
 
-impl<AV, EV> ManagedTask for SubscriberVerifiedMappingEventDaemon<AV, EV>
+impl<EV> ManagedTask for SubscriberVerifiedMappingEventDaemon<EV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
     EV: EntityVerifier + Send + Sync + 'static,
 {
     fn start_task(

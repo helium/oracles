@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::{
@@ -25,7 +25,7 @@ use helium_proto::services::{
         VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     },
 };
-use mobile_config::client::authorization_client::AuthorizationVerifier;
+use mobile_config::client::authorization_client::MichaelAuthorizationVerifier;
 use sqlx::{PgPool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
@@ -119,19 +119,15 @@ impl BannedRadios {
     }
 }
 
-pub struct ServiceProviderBoostedRewardsBanIngestor<AV> {
+pub struct ServiceProviderBoostedRewardsBanIngestor {
     pool: PgPool,
-    authorization_verifier: AV,
+    authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
     receiver: Receiver<FileInfoStream<ServiceProviderBoostedRewardsBannedRadioIngestReportV1>>,
     verified_sink: FileSinkClient<VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1>,
     seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
 }
 
-impl<AV> ManagedTask for ServiceProviderBoostedRewardsBanIngestor<AV>
-where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
-    AV::Error: std::error::Error + Send + Sync + 'static,
-{
+impl ManagedTask for ServiceProviderBoostedRewardsBanIngestor {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -145,16 +141,12 @@ where
     }
 }
 
-impl<AV> ServiceProviderBoostedRewardsBanIngestor<AV>
-where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
-    AV::Error: std::error::Error + Send + Sync + 'static,
-{
+impl ServiceProviderBoostedRewardsBanIngestor {
     pub async fn create_managed_task(
         pool: PgPool,
         file_upload: FileUpload,
         file_store: FileStore,
-        authorization_verifier: AV,
+        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
         settings: &Settings,
         seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -436,6 +428,7 @@ mod tests {
     use helium_proto::services::poc_mobile::{
         SeniorityUpdate as SeniorityUpdateProto, ServiceProviderBoostedRewardsBannedRadioReqV1,
     };
+    use mobile_config::client::ClientError;
     use rand::rngs::OsRng;
     use tokio::sync::mpsc;
 
@@ -443,32 +436,28 @@ mod tests {
 
     use super::*;
 
-    #[derive(thiserror::Error, Debug)]
-    enum TestError {}
     struct AllVerified;
 
     #[async_trait::async_trait]
-    impl AuthorizationVerifier for AllVerified {
-        type Error = TestError;
-
+    impl MichaelAuthorizationVerifier for AllVerified {
         async fn verify_authorized_key(
             &self,
             _pubkey: &PublicKeyBinary,
             _role: helium_proto::services::mobile_config::NetworkKeyRole,
-        ) -> Result<bool, Self::Error> {
+        ) -> Result<bool, ClientError> {
             Ok(true)
         }
     }
 
-    struct TestSetup<AV> {
-        ingestor: ServiceProviderBoostedRewardsBanIngestor<AV>,
+    struct TestSetup {
+        ingestor: ServiceProviderBoostedRewardsBanIngestor,
         _verified_receiver:
             Receiver<Message<VerifiedServiceProviderBoostedRewardsBannedRadioIngestReportV1>>,
         _seniority_receiver: Receiver<Message<SeniorityUpdateProto>>,
     }
 
-    impl<AV> TestSetup<AV> {
-        fn create(pool: PgPool, verifier: AV) -> Self {
+    impl TestSetup {
+        fn create(pool: PgPool, verifier: Arc<dyn MichaelAuthorizationVerifier>) -> Self {
             let (_fip_sender, fip_receiver) = mpsc::channel(1);
             let (verified_sender, verified_receiver) = mpsc::channel(5);
             let (seniority_sender, seniority_receiver) = mpsc::channel(5);
@@ -534,7 +523,7 @@ mod tests {
 
     #[sqlx::test]
     async fn wifi_radio_can_get_banned_and_unbanned(pool: PgPool) -> anyhow::Result<()> {
-        let setup = TestSetup::create(pool.clone(), AllVerified);
+        let setup = TestSetup::create(pool.clone(), Arc::new(AllVerified));
         let keypair = generate_keypair();
         let cbsd_id = "cbsd-id-1".to_string();
 
@@ -591,7 +580,7 @@ mod tests {
 
     #[sqlx::test]
     async fn cbrs_radio_can_get_banned_and_unbanned(pool: PgPool) -> anyhow::Result<()> {
-        let setup = TestSetup::create(pool.clone(), AllVerified);
+        let setup = TestSetup::create(pool.clone(), Arc::new(AllVerified));
         let keypair = generate_keypair();
 
         let report = wifi_ban_report(
@@ -645,7 +634,7 @@ mod tests {
 
     #[sqlx::test]
     async fn getting_banned_reset_seniority(pool: PgPool) -> anyhow::Result<()> {
-        let setup = TestSetup::create(pool.clone(), AllVerified);
+        let setup = TestSetup::create(pool.clone(), Arc::new(AllVerified));
         let keypair = generate_keypair();
         let pubkey = PublicKeyBinary::from(keypair.public_key().to_owned());
 

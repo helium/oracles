@@ -18,7 +18,7 @@ use hex_assignments::{Assignment, HexAssignment, HexBoostData};
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
     client::{
-        authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
+        authorization_client::MichaelAuthorizationVerifier, entity_client::EntityVerifier,
         hex_boosting_client::HexBoostingInfoResolver, ClientError,
     },
 };
@@ -325,9 +325,7 @@ impl MockAuthorizationClient {
 }
 
 #[async_trait]
-impl AuthorizationVerifier for MockAuthorizationClient {
-    type Error = ClientError;
-
+impl MichaelAuthorizationVerifier for MockAuthorizationClient {
     async fn verify_authorized_key(
         &self,
         _pubkey: &PublicKeyBinary,

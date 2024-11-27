@@ -19,10 +19,10 @@ use helium_proto::services::poc_mobile::{
     SubscriberReportVerificationStatus, VerifiedSubscriberLocationIngestReportV1,
 };
 use mobile_config::client::{
-    authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
+    authorization_client::MichaelAuthorizationVerifier, entity_client::EntityVerifier,
 };
 use sqlx::{PgPool, Pool, Postgres, Transaction};
-use std::{ops::Range, time::Instant};
+use std::{ops::Range, sync::Arc, time::Instant};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
@@ -32,17 +32,16 @@ const SUBSCRIBER_REWARD_PERIOD_IN_DAYS: i64 = 1;
 
 pub type SubscriberValidatedLocations = Vec<Vec<u8>>;
 
-pub struct SubscriberLocationIngestor<AV, EV> {
+pub struct SubscriberLocationIngestor<EV> {
     pub pool: PgPool,
-    authorization_verifier: AV,
+    authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
     entity_verifier: EV,
     reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
     verified_report_sink: FileSinkClient<VerifiedSubscriberLocationIngestReportV1>,
 }
 
-impl<AV, EV> SubscriberLocationIngestor<AV, EV>
+impl<EV> SubscriberLocationIngestor<EV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
     EV: EntityVerifier + Send + Sync + 'static,
 {
     pub async fn create_managed_task(
@@ -50,7 +49,7 @@ where
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
-        authorization_verifier: AV,
+        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
         entity_verifier: EV,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_subscriber_location, verified_subscriber_location_server) =
@@ -89,7 +88,7 @@ where
 
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        authorization_verifier: AV,
+        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
         entity_verifier: EV,
         reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
         verified_report_sink: FileSinkClient<VerifiedSubscriberLocationIngestReportV1>,
@@ -195,9 +194,8 @@ where
     }
 }
 
-impl<AV, EV> ManagedTask for SubscriberLocationIngestor<AV, EV>
+impl<EV> ManagedTask for SubscriberLocationIngestor<EV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
     EV: EntityVerifier + Send + Sync + 'static,
 {
     fn start_task(

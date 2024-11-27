@@ -1,7 +1,7 @@
 use crate::{
     heartbeats::{HbType, KeyType, OwnedKeyType},
     seniority::Seniority,
-    IsAuthorized, Settings,
+    Settings,
 };
 use chrono::{DateTime, Utc};
 use file_store::{
@@ -24,7 +24,7 @@ use helium_proto::services::{
 };
 use hex_assignments::assignment::HexAssignments;
 use hextree::Cell;
-use mobile_config::client::AuthorizationClient;
+use mobile_config::client::authorization_client::MichaelAuthorizationVerifier;
 use retainer::{entry::CacheReadGuard, Cache};
 
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
@@ -71,7 +71,7 @@ impl From<SignalLevel> for coverage_map::SignalLevel {
 
 pub struct CoverageDaemon {
     pool: Pool<Postgres>,
-    auth_client: AuthorizationClient,
+    auth_client: Arc<dyn MichaelAuthorizationVerifier>,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
     new_coverage_object_notifier: NewCoverageObjectNotifier,
@@ -83,7 +83,7 @@ impl CoverageDaemon {
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
-        auth_client: AuthorizationClient,
+        auth_client: Arc<dyn MichaelAuthorizationVerifier>,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> anyhow::Result<impl ManagedTask> {
         let (valid_coverage_objs, valid_coverage_objs_server) = proto::CoverageObjectV1::file_sink(
@@ -122,7 +122,7 @@ impl CoverageDaemon {
 
     pub fn new(
         pool: PgPool,
-        auth_client: AuthorizationClient,
+        auth_client: Arc<dyn MichaelAuthorizationVerifier>,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
         coverage_obj_sink: FileSinkClient<proto::CoverageObjectV1>,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
@@ -165,7 +165,7 @@ impl CoverageDaemon {
         let reports = file.into_stream(&mut transaction).await?;
 
         let mut validated_coverage_objects = pin!(CoverageObject::validate_coverage_objects(
-            &self.auth_client,
+            self.auth_client.clone(),
             reports
         ));
 
@@ -235,11 +235,11 @@ impl CoverageObject {
     /// Validate a coverage object
     pub async fn validate(
         coverage_object: file_store::coverage::CoverageObject,
-        auth_client: &impl IsAuthorized,
+        auth_client: Arc<dyn MichaelAuthorizationVerifier>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             validity: if auth_client
-                .is_authorized(&coverage_object.pub_key, NetworkKeyRole::MobilePcs)
+                .verify_authorized_key(&coverage_object.pub_key, NetworkKeyRole::MobilePcs)
                 .await?
             {
                 CoverageObjectValidity::Valid
@@ -251,11 +251,12 @@ impl CoverageObject {
     }
 
     pub fn validate_coverage_objects<'a>(
-        auth_client: &'a impl IsAuthorized,
+        auth_client: Arc<dyn MichaelAuthorizationVerifier>,
         coverage_objects: impl Stream<Item = CoverageObjectIngestReport> + 'a,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
-        coverage_objects.then(move |coverage_object_report| async move {
-            Self::validate(coverage_object_report.report, auth_client).await
+        coverage_objects.then(move |coverage_object_report| {
+            let auth_client = auth_client.clone();
+            async move { Self::validate(coverage_object_report.report, auth_client).await }
         })
     }
 

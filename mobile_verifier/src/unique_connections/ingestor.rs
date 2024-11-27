@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use chrono::Utc;
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
@@ -18,7 +20,7 @@ use helium_proto::services::{
         VerifiedUniqueConnectionsIngestReportStatus, VerifiedUniqueConnectionsIngestReportV1,
     },
 };
-use mobile_config::client::authorization_client::AuthorizationVerifier;
+use mobile_config::client::authorization_client::MichaelAuthorizationVerifier;
 use sqlx::PgPool;
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
@@ -27,17 +29,14 @@ use crate::Settings;
 
 use super::db;
 
-pub struct UniqueConnectionsIngestor<AV> {
+pub struct UniqueConnectionsIngestor {
     pool: PgPool,
     unique_connections_receiver: Receiver<FileInfoStream<UniqueConnectionsIngestReport>>,
     verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
-    authorization_verifier: AV,
+    authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
 }
 
-impl<AV> ManagedTask for UniqueConnectionsIngestor<AV>
-where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
-{
+impl ManagedTask for UniqueConnectionsIngestor {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -51,16 +50,13 @@ where
     }
 }
 
-impl<AV> UniqueConnectionsIngestor<AV>
-where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
-{
+impl UniqueConnectionsIngestor {
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
         file_upload: FileUpload,
         file_store: FileStore,
-        authorization_verifier: AV,
+        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_unique_connections, verified_unique_conections_server) =
             VerifiedUniqueConnectionsIngestReportV1::file_sink(
@@ -99,7 +95,7 @@ where
         pool: PgPool,
         unique_connections_receiver: Receiver<FileInfoStream<UniqueConnectionsIngestReport>>,
         verified_unique_connections_sink: FileSinkClient<VerifiedUniqueConnectionsIngestReportV1>,
-        authorization_verifier: AV,
+        authorization_verifier: Arc<dyn MichaelAuthorizationVerifier>,
     ) -> Self {
         Self {
             pool,

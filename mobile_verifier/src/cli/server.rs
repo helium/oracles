@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     boosting_oracles::DataSetDownloaderDaemon,
@@ -24,8 +24,9 @@ use file_store::{
 };
 use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate, SpeedtestAvg};
 use mobile_config::client::{
-    entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
-    CarrierServiceClient, GatewayClient,
+    authorization_client::MichaelAuthorizationVerifier, entity_client::EntityClient,
+    hex_boosting_client::HexBoostingClient, AuthorizationClient, CarrierServiceClient,
+    GatewayClient,
 };
 use task_manager::TaskManager;
 
@@ -50,7 +51,8 @@ impl Cmd {
 
         // mobile config clients
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
-        let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
+        let box_auth_client: Arc<dyn MichaelAuthorizationVerifier> =
+            Arc::new(AuthorizationClient::from_settings(&settings.config_client)?.clone());
         let entity_client = EntityClient::from_settings(&settings.config_client)?;
         let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
         let hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
@@ -147,7 +149,7 @@ impl Cmd {
                 SubscriberVerifiedMappingEventDaemon::create_managed_task(
                     pool.clone(),
                     settings,
-                    auth_client.clone(),
+                    box_auth_client.clone(),
                     entity_client.clone(),
                     report_ingest.clone(),
                     file_upload.clone(),
@@ -160,7 +162,7 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     report_ingest.clone(),
-                    auth_client.clone(),
+                    box_auth_client.clone(),
                     new_coverage_obj_notifier,
                 )
                 .await?,
@@ -180,7 +182,7 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     report_ingest.clone(),
-                    auth_client.clone(),
+                    box_auth_client.clone(),
                     entity_client.clone(),
                 )
                 .await?,
@@ -191,7 +193,7 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     report_ingest.clone(),
-                    auth_client.clone(),
+                    box_auth_client.clone(),
                 )
                 .await?,
             )
@@ -201,7 +203,7 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     report_ingest.clone(),
-                    auth_client.clone(),
+                    box_auth_client.clone(),
                 )
                 .await?,
             )
@@ -211,7 +213,7 @@ impl Cmd {
                     pool.clone(),
                     file_upload.clone(),
                     report_ingest,
-                    auth_client,
+                    box_auth_client,
                     settings,
                     seniority_updates,
                 )
