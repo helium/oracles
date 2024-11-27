@@ -378,7 +378,7 @@ impl ValidatedHeartbeat {
         last_location_cache: &LocationCache,
         max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
-        geofence: &impl GeofenceValidator,
+        geofence: Arc<dyn GeofenceValidator>,
     ) -> anyhow::Result<Self> {
         let Some(coverage_object) = heartbeat.coverage_object else {
             return Ok(Self::new(
@@ -599,10 +599,11 @@ impl ValidatedHeartbeat {
         last_location_cache: &'a LocationCache,
         max_distance_to_coverage: u32,
         epoch: &'a Range<DateTime<Utc>>,
-        geofence: &'a impl GeofenceValidator,
+        geofence: Arc<dyn GeofenceValidator>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| {
             let gateway_info_resolver = gateway_info_resolver.clone();
+            let geofence = geofence.clone();
             async move {
                 Self::validate(
                     heartbeat,

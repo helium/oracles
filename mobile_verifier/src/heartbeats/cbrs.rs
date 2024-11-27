@@ -25,20 +25,17 @@ use std::{
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-pub struct CbrsHeartbeatDaemon<GFV> {
+pub struct CbrsHeartbeatDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_info_resolver: Arc<dyn GatewayResolver>,
     heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
     max_distance_to_coverage: u32,
     heartbeat_sink: FileSinkClient<proto::Heartbeat>,
     seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
-    geofence: GFV,
+    geofence: Arc<dyn GeofenceValidator>,
 }
 
-impl<GFV> CbrsHeartbeatDaemon<GFV>
-where
-    GFV: GeofenceValidator,
-{
+impl CbrsHeartbeatDaemon {
     #[allow(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
@@ -47,7 +44,7 @@ where
         gateway_resolver: Arc<dyn GatewayResolver>,
         valid_heartbeats: FileSinkClient<proto::Heartbeat>,
         seniority_updates: FileSinkClient<proto::SeniorityUpdate>,
-        geofence: GFV,
+        geofence: Arc<dyn GeofenceValidator>,
     ) -> anyhow::Result<impl ManagedTask> {
         // CBRS Heartbeats
         let (cbrs_heartbeats, cbrs_heartbeats_server) =
@@ -84,7 +81,7 @@ where
         max_distance_to_coverage: u32,
         heartbeat_sink: FileSinkClient<proto::Heartbeat>,
         seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
-        geofence: GFV,
+        geofence: Arc<dyn GeofenceValidator>,
     ) -> Self {
         Self {
             pool,
@@ -168,7 +165,7 @@ where
                 location_cache,
                 self.max_distance_to_coverage,
                 &epoch,
-                &self.geofence,
+                self.geofence.clone(),
             ),
             heartbeat_cache,
             coverage_claim_time_cache,
@@ -184,10 +181,7 @@ where
     }
 }
 
-impl<GFV> ManagedTask for CbrsHeartbeatDaemon<GFV>
-where
-    GFV: GeofenceValidator,
-{
+impl ManagedTask for CbrsHeartbeatDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,

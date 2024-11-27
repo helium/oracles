@@ -347,7 +347,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         &location_cache,
         2000,
         &epoch,
-        &MockGeofence,
+        Arc::new(MockGeofence),
     ));
     let mut transaction = pool.begin().await?;
     while let Some(heartbeat) = heartbeats.next().await.transpose()? {

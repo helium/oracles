@@ -5,7 +5,7 @@ use std::{fs, io::Read, path, sync::Arc};
 
 use crate::heartbeats::Heartbeat;
 
-pub trait GeofenceValidator: Clone + Send + Sync + 'static {
+pub trait GeofenceValidator: Send + Sync {
     fn in_valid_region(&self, t: &Heartbeat) -> bool;
 }
 
@@ -26,9 +26,9 @@ impl Geofence {
     pub fn from_paths(
         paths: Vec<std::path::PathBuf>,
         resolution: Resolution,
-    ) -> anyhow::Result<Self> {
+    ) -> anyhow::Result<Arc<Self>> {
         let hextree = valid_mapping_regions(paths)?;
-        Ok(Self::new(hextree, resolution))
+        Ok(Arc::new(Self::new(hextree, resolution)))
     }
 }
 

@@ -405,7 +405,7 @@ async fn process_input(
         &location_cache,
         2000,
         epoch,
-        &MockGeofence,
+        Arc::new(MockGeofence),
     ));
     while let Some(heartbeat) = heartbeats.next().await.transpose()? {
         let coverage_claim_time = coverage_claim_time_cache
@@ -1408,7 +1408,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
             &location_cache,
             max_covered_distance,
             &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
-            &MockGeofence,
+            Arc::new(MockGeofence),
         )
     };
 

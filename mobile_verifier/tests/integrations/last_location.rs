@@ -51,7 +51,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
         &location_cache,
         u32::MAX,
         &(epoch_start..epoch_end),
-        &MockGeofence,
+        Arc::new(MockGeofence),
     )
     .await?;
 
@@ -69,7 +69,7 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
         &location_cache,
         u32::MAX,
         &(epoch_start..epoch_end),
-        &MockGeofence,
+        Arc::new(MockGeofence),
     )
     .await?;
 
@@ -113,7 +113,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
         &location_cache,
         u32::MAX,
         &(epoch_start..epoch_end),
-        &MockGeofence,
+        Arc::new(MockGeofence),
     )
     .await?;
 
@@ -136,7 +136,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
         &location_cache,
         u32::MAX,
         &(epoch_start..epoch_end),
-        &MockGeofence,
+        Arc::new(MockGeofence),
     )
     .await?;
 
@@ -183,7 +183,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
         &location_cache,
         u32::MAX,
         &(epoch_start..epoch_end),
-        &MockGeofence,
+        Arc::new(MockGeofence),
     )
     .await?;
 
@@ -201,7 +201,7 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
         &location_cache,
         u32::MAX,
         &(epoch_start..epoch_end),
-        &MockGeofence,
+        Arc::new(MockGeofence),
     )
     .await?;
 
