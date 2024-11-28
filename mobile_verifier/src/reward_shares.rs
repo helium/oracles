@@ -2587,4 +2587,24 @@ mod test {
         .unwrap_or(0);
         assert_eq!(unallocated_sp_reward_amount, 0);
     }
+
+    #[test]
+    fn test_price_conversion() {
+        let hnt_dollar_price = dec!(1.0);
+        let hnt_dollar_bone_price = dec!(0.00000001);
+        let hnt_price_from_pricer = 100000000_u64;
+
+        assert_eq!(
+            hnt_dollar_bone_price,
+            PriceConverter::pricer_format_to_hnt_bones(hnt_price_from_pricer)
+        );
+        assert_eq!(
+            hnt_price_from_pricer,
+            PriceConverter::hnt_bones_to_pricer_format(hnt_dollar_bone_price)
+        );
+        assert_eq!(
+            hnt_dollar_price,
+            PriceConverter::pricer_format_to_hnt(hnt_price_from_pricer)
+        );
+    }
 }

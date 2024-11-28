@@ -116,4 +116,8 @@ impl PriceConverter {
     pub fn pricer_format_to_hnt_bones(hnt_price: u64) -> Decimal {
         Decimal::from(hnt_price) / dec!(1_0000_0000) / dec!(1_0000_0000)
     }
+
+    pub fn pricer_format_to_hnt(hnt_price: u64) -> Decimal {
+        Decimal::from(hnt_price) / dec!(1_0000_0000)
+    }
 }
