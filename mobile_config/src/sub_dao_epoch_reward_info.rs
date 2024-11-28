@@ -66,8 +66,8 @@ pub(crate) mod db {
 
     const GET_EPOCH_REWARD_INFO_SQL: &str = r#"
             SELECT
-                address AS epoch_pubkey,
-                sub_dao AS sub_dao_pubkey,
+                address AS epoch_address,
+                sub_dao AS sub_dao_address,
                 epoch::BIGINT,
                 delegation_rewards_issued::BIGINT AS rewards_issued,
                 delegation_rewards_issued::BIGINT,
@@ -83,12 +83,14 @@ pub(crate) mod db {
     ) -> anyhow::Result<Option<RawSubDaoEpochRewardInfo>> {
         let mut query: sqlx::QueryBuilder<sqlx::Postgres> =
             sqlx::QueryBuilder::new(GET_EPOCH_REWARD_INFO_SQL);
-        Ok(query
+        let res = query
             .build_query_as::<RawSubDaoEpochRewardInfo>()
             .bind(epoch as i64)
             .bind(sub_dao_address)
             .fetch_optional(db)
-            .await?)
+            .await?;
+        tracing::info!("get_info: {:?}", res);
+        Ok(res)
     }
 
     impl FromRow<'_, PgRow> for RawSubDaoEpochRewardInfo {
