@@ -139,12 +139,12 @@ where
                 next_reward_epoch
             ))?;
 
-        let hnt_price = self
+        let pricer_hnt_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
             .await?;
 
-        let hnt_price = HntPrice::new(hnt_price, Token::Hnt.decimals());
+        let hnt_price = HntPrice::new(pricer_hnt_price, Token::Hnt.decimals());
 
         tracing::info!(
             "Rewarding for epoch {} period: {} to {} with hnt bone price: {}",
@@ -164,7 +164,6 @@ where
         .await?;
 
         // process rewards for the operational fund
-
         reward_operational(&self.rewards_sink, &reward_info).await?;
 
         // process rewards for the oracle
