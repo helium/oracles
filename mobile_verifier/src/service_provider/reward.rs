@@ -155,7 +155,6 @@ impl RewardInfo {
             proto::MobileRewardShare {
                 start_period: reward_info.epoch_period.start.encode_timestamp(),
                 end_period: reward_info.epoch_period.end.encode_timestamp(),
-                epoch: reward_info.epoch,
                 reward: Some(proto::Reward::ServiceProviderReward(
                     proto::ServiceProviderReward {
                         service_provider_id: self.sp_id,
@@ -201,7 +200,6 @@ impl RewardInfo {
                 proto::MobileRewardShare {
                     start_period: reward_info.epoch_period.start.encode_timestamp(),
                     end_period: reward_info.epoch_period.end.encode_timestamp(),
-                    epoch: reward_info.epoch,
                     reward: Some(proto::Reward::PromotionReward(proto::PromotionReward {
                         service_provider_amount,
                         matched_amount,
