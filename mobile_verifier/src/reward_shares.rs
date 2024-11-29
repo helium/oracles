@@ -163,7 +163,6 @@ impl TransferRewards {
                     proto::MobileRewardShare {
                         start_period,
                         end_period,
-                        epoch: reward_info.epoch,
                         reward: Some(proto::mobile_reward_share::Reward::GatewayReward(
                             proto::GatewayReward {
                                 hotspot_key: hotspot_key.into(),
@@ -285,7 +284,6 @@ impl MapperShares {
                     proto::MobileRewardShare {
                         start_period: reward_info.epoch_period.start.encode_timestamp(),
                         end_period: reward_info.epoch_period.end.encode_timestamp(),
-                        epoch: reward_info.epoch,
                         reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
                     },
                 )
@@ -371,7 +369,6 @@ pub fn coverage_point_to_mobile_reward_share(
     let base = proto::MobileRewardShare {
         start_period: reward_info.epoch_period.start.encode_timestamp(),
         end_period: reward_info.epoch_period.end.encode_timestamp(),
-        epoch: reward_info.epoch,
         reward: None,
     };
 
