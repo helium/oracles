@@ -102,7 +102,7 @@ impl Daemon {
             region_updater,
         )?;
 
-        let subdao_svc = SubDaoService::new(settings, auth_cache.clone(), metadata_pool)?;
+        let subdao_svc = SubDaoService::new(settings, auth_cache, metadata_pool)?;
 
         let listen_addr = settings.listen;
         let pubkey = settings

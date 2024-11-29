@@ -148,7 +148,7 @@ impl Server {
             settings.reward_period,
             settings.reward_period_offset,
             price_tracker,
-            sub_dao_rewards_client.clone(),
+            sub_dao_rewards_client,
         )?;
 
         // *
