@@ -7,7 +7,7 @@ use helium_proto::services::poc_lora::{
 use iot_verifier::{
     poc_report::ReportType,
     reward_share::{self, GatewayDCShare, GatewayPocShare},
-    rewarder,
+    rewarder, HntPrice,
 };
 use prost::Message;
 use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
@@ -26,6 +26,8 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let reward_info = default_rewards_info(89_041_095_890_411, Duration::hours(24));
 
+    let hnt_price = HntPrice::new(1, 8);
+
     // seed all the things
     let mut txn = pool.clone().begin().await?;
     seed_pocs(reward_info.epoch_period.start, &mut txn).await?;
@@ -34,12 +36,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     // run rewards for poc and dc
     let (_, rewards) = tokio::join!(
-        rewarder::reward_poc_and_dc(
-            &pool,
-            &iot_rewards_client,
-            &reward_info,
-            dec!(0.0000000000000001)
-        ),
+        rewarder::reward_poc_and_dc(&pool, &iot_rewards_client, &reward_info, hnt_price),
         receive_expected_rewards(&mut iot_rewards)
     );
     if let Ok((gateway_rewards, unallocated_poc_reward)) = rewards {

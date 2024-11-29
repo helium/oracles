@@ -1,4 +1,4 @@
-use crate::poc_report::ReportType as PocReportType;
+use crate::{poc_report::ReportType as PocReportType, HntPrice};
 use chrono::{DateTime, Utc};
 use file_store::{iot_packet::IotValidPacket, iot_valid_poc::IotPoc, traits::TimestampEncode};
 use futures::stream::TryStreamExt;
@@ -274,7 +274,7 @@ impl GatewayShares {
     pub async fn calculate_rewards_per_share(
         &self,
         reward_info: &ResolvedSubDaoEpochRewardInfo,
-        hnt_bone_price: Decimal,
+        hnt_price: HntPrice,
     ) -> anyhow::Result<(Decimal, Decimal, Decimal)> {
         // the total number of shares for beacons, witnesses and data transfer
         // dc shares here is the sum of all spent data transfer DC this epoch
@@ -288,7 +288,8 @@ impl GatewayShares {
         // up to a max cap of total_dc_transfer_rewards
         // if the dc transfer rewards is less than total_dc_transfer_rewards
         // then the remainer will be added to the POC rewards allocation
-        let total_dc_transfer_rewards_used = dc_to_hnt_bones(total_dc_shares, hnt_bone_price);
+        let total_dc_transfer_rewards_used =
+            dc_to_hnt_bones(total_dc_shares, hnt_price.price_per_hnt_bone);
         let (dc_transfer_rewards_unused, total_dc_transfer_rewards_capped) =
             normalize_dc_transfer_rewards(
                 total_dc_transfer_rewards_used,
@@ -428,7 +429,7 @@ async fn aggregate_dc_shares(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{reward_share, PriceConverter};
+    use crate::{reward_share, HntPrice};
     use chrono::Duration;
 
     pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
@@ -519,7 +520,7 @@ mod test {
     // total epoch dc rewards amount
     // this results in a significant redistribution of dc rewards to POC
     async fn test_reward_share_calculation_fixed_dc_spend_with_transfer_distribution() {
-        let hnt_bone_price = dec!(0.000000000359);
+        let hnt_price = HntPrice::new(3590000, 8);
 
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -558,7 +559,8 @@ mod test {
         let total_dc_spend =
             gw1_dc_spend + gw2_dc_spend + gw3_dc_spend + gw4_dc_spend + gw5_dc_spend + gw6_dc_spend;
         println!("total dc spend: {total_dc_spend}");
-        let total_used_data_transfer_tokens = dc_to_hnt_bones(total_dc_spend, hnt_bone_price);
+        let total_used_data_transfer_tokens =
+            dc_to_hnt_bones(total_dc_spend, hnt_price.price_per_hnt_bone);
         println!("total data transfer rewards for dc spent: {total_used_data_transfer_tokens}");
         let total_unused_data_transfer_tokens =
             total_data_transfer_tokens_for_period - total_used_data_transfer_tokens;
@@ -593,7 +595,7 @@ mod test {
         let gw_shares = GatewayShares::new(shares).unwrap();
         let (beacon_rewards_per_share, witness_rewards_per_share, dc_transfer_rewards_per_share) =
             gw_shares
-                .calculate_rewards_per_share(&reward_info, hnt_bone_price)
+                .calculate_rewards_per_share(&reward_info, hnt_price.clone())
                 .await
                 .unwrap();
 
@@ -659,23 +661,23 @@ mod test {
 
         // assert the expected data transfer rewards amounts per gateway
         // using the dc_to_hnt_bones helper function
-        let gw1_expected_dc_rewards = dc_to_hnt_bones(gw1_dc_spend, hnt_bone_price)
+        let gw1_expected_dc_rewards = dc_to_hnt_bones(gw1_dc_spend, hnt_price.price_per_hnt_bone)
             .to_u64()
             .unwrap();
         assert_eq!(gw1_expected_dc_rewards.to_u64().unwrap(), 13_983_286);
-        let gw2_expected_dc_rewards = dc_to_hnt_bones(gw2_dc_spend, hnt_bone_price)
+        let gw2_expected_dc_rewards = dc_to_hnt_bones(gw2_dc_spend, hnt_price.price_per_hnt_bone)
             .to_u64()
             .unwrap();
         assert_eq!(gw2_expected_dc_rewards.to_u64().unwrap(), 139_275_766);
-        let gw3_expected_dc_rewards = dc_to_hnt_bones(gw3_dc_spend, hnt_bone_price)
+        let gw3_expected_dc_rewards = dc_to_hnt_bones(gw3_dc_spend, hnt_price.price_per_hnt_bone)
             .to_u64()
             .unwrap();
         assert_eq!(gw3_expected_dc_rewards.to_u64().unwrap(), 139_275_766);
-        let gw5_expected_dc_rewards = dc_to_hnt_bones(gw5_dc_spend, hnt_bone_price)
+        let gw5_expected_dc_rewards = dc_to_hnt_bones(gw5_dc_spend, hnt_price.price_per_hnt_bone)
             .to_u64()
             .unwrap();
         assert_eq!(gw5_expected_dc_rewards.to_u64().unwrap(), 0);
-        let gw6_expected_dc_rewards = dc_to_hnt_bones(gw6_dc_spend, hnt_bone_price)
+        let gw6_expected_dc_rewards = dc_to_hnt_bones(gw6_dc_spend, hnt_price.price_per_hnt_bone)
             .to_u64()
             .unwrap();
         assert_eq!(gw6_expected_dc_rewards.to_u64().unwrap(), 1_392_757_660);
@@ -732,7 +734,8 @@ mod test {
     #[tokio::test]
     // test reward distribution where there is zero transfer of dc rewards to poc
     async fn test_reward_share_calculation_without_data_transfer_distribution() {
-        let hnt_bone_price = dec!(0.000000000359);
+        let hnt_price = HntPrice::new(3590000, 8);
+
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
@@ -762,8 +765,10 @@ mod test {
         // distribute this amount of dc across the gateways
         // this results in zero unallocated dc rewards being
         // available to distributed to POC
-        let total_dc_to_spend =
-            hnt_bones_to_dc(total_data_transfer_tokens_for_period, hnt_bone_price);
+        let total_dc_to_spend = hnt_bones_to_dc(
+            total_data_transfer_tokens_for_period,
+            hnt_price.price_per_hnt_bone,
+        );
         println!("total dc value of scheduled data transfer tokens: {total_dc_to_spend}");
 
         // generate the rewards map
@@ -810,7 +815,7 @@ mod test {
         let gw_shares = GatewayShares::new(shares).unwrap();
         let (beacon_rewards_per_share, witness_rewards_per_share, dc_transfer_rewards_per_share) =
             gw_shares
-                .calculate_rewards_per_share(&reward_info, hnt_bone_price)
+                .calculate_rewards_per_share(&reward_info, hnt_price)
                 .await
                 .unwrap();
 
@@ -928,7 +933,8 @@ mod test {
     #[tokio::test]
     // test reward distribution where there is transfer of dc rewards to poc
     async fn test_reward_share_calculation_with_data_transfer_distribution() {
-        let hnt_bone_price = dec!(0.000000000359);
+        let hnt_price = HntPrice::new(3590000, 8);
+
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
@@ -956,8 +962,10 @@ mod test {
         // get the expected total amount of dc we need to spend
         // spread *some* of this across the gateways and then confirm
         // the unallocated rewards go to poc
-        let total_dc_to_spend =
-            hnt_bones_to_dc(total_data_transfer_tokens_for_period, hnt_bone_price);
+        let total_dc_to_spend = hnt_bones_to_dc(
+            total_data_transfer_tokens_for_period,
+            hnt_price.price_per_hnt_bone,
+        );
         println!("total_dc_to_spend: {total_dc_to_spend}");
 
         // generate the rewards map
@@ -998,7 +1006,7 @@ mod test {
         let gw_shares = GatewayShares::new(shares).unwrap();
         let (beacon_rewards_per_share, witness_rewards_per_share, dc_transfer_rewards_per_share) =
             gw_shares
-                .calculate_rewards_per_share(&reward_info, hnt_bone_price)
+                .calculate_rewards_per_share(&reward_info, hnt_price)
                 .await
                 .unwrap();
 
@@ -1133,18 +1141,11 @@ mod test {
         let hnt_dollar_price = dec!(1.0);
         let hnt_dollar_bone_price = dec!(0.00000001);
         let hnt_price_from_pricer = 100000000_u64;
+        let pricer_decimals = 8;
+        let hnt_price = HntPrice::new(hnt_price_from_pricer, pricer_decimals);
 
-        assert_eq!(
-            hnt_dollar_bone_price,
-            PriceConverter::pricer_format_to_hnt_bones(hnt_price_from_pricer)
-        );
-        assert_eq!(
-            hnt_price_from_pricer,
-            PriceConverter::hnt_bones_to_pricer_format(hnt_dollar_bone_price)
-        );
-        assert_eq!(
-            hnt_dollar_price,
-            PriceConverter::pricer_format_to_hnt(hnt_price_from_pricer)
-        );
+        assert_eq!(hnt_dollar_bone_price, hnt_price.price_per_hnt_bone);
+        assert_eq!(hnt_price_from_pricer, hnt_price.hnt_price_in_bones);
+        assert_eq!(hnt_dollar_price, hnt_price.hnt_price);
     }
 }

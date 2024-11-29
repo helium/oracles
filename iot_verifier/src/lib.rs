@@ -21,26 +21,29 @@ pub mod telemetry;
 pub mod tx_scaler;
 pub mod witness_updater;
 
-use rust_decimal::{prelude::ToPrimitive, Decimal};
-use rust_decimal_macros::dec;
+use rust_decimal::Decimal;
 pub use settings::Settings;
 
 pub const IOT_SUB_DAO_ONCHAIN_ADDRESS: &str = "Gm9xDCJawDEKDrrQW6haw94gABaYzQwCq4ZQU8h8bd22";
 
-pub struct PriceConverter;
+#[derive(Clone, Debug)]
+pub struct HntPrice {
+    pub hnt_price_in_bones: u64,
+    pub hnt_price: Decimal,
+    pub price_per_hnt_bone: Decimal,
+    pub decimals: u8,
+}
 
-impl PriceConverter {
-    pub fn hnt_bones_to_pricer_format(hnt_bone_price: Decimal) -> u64 {
-        (hnt_bone_price * dec!(1_0000_0000) * dec!(1_0000_0000))
-            .to_u64()
-            .unwrap_or_default()
-    }
-
-    pub fn pricer_format_to_hnt_bones(hnt_price: u64) -> Decimal {
-        Decimal::from(hnt_price) / dec!(1_0000_0000) / dec!(1_0000_0000)
-    }
-
-    pub fn pricer_format_to_hnt(hnt_price: u64) -> Decimal {
-        Decimal::from(hnt_price) / dec!(1_0000_0000)
+impl HntPrice {
+    pub fn new(hnt_price_in_bones: u64, decimals: u8) -> Self {
+        let hnt_price =
+            Decimal::from(hnt_price_in_bones) / Decimal::from(10_u64.pow(decimals as u32));
+        let price_per_hnt_bone = hnt_price / Decimal::from(10_u64.pow(decimals as u32));
+        Self {
+            hnt_price_in_bones,
+            hnt_price,
+            price_per_hnt_bone,
+            decimals,
+        }
     }
 }

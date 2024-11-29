@@ -1,11 +1,12 @@
 use crate::{
     reward_share::{self, GatewayShares},
-    telemetry, PriceConverter, IOT_SUB_DAO_ONCHAIN_ADDRESS,
+    telemetry, HntPrice, IOT_SUB_DAO_ONCHAIN_ADDRESS,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
 use futures::future::LocalBoxFuture;
+use helium_lib::token::Token;
 use helium_proto::{
     reward_manifest::RewardData::IotRewardData,
     services::poc_lora::{
@@ -143,19 +144,24 @@ where
             .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
             .await?;
 
-        let hnt_bone_price = PriceConverter::pricer_format_to_hnt_bones(hnt_price);
+        let hnt_price = HntPrice::new(hnt_price, Token::Hnt.decimals());
 
         tracing::info!(
             "Rewarding for epoch {} period: {} to {} with hnt bone price: {}",
             reward_info.epoch,
             reward_info.epoch_period.start,
             reward_info.epoch_period.end,
-            hnt_bone_price
+            hnt_price.price_per_hnt_bone
         );
 
         // process rewards for poc and dc
-        let poc_dc_shares =
-            reward_poc_and_dc(&self.pool, &self.rewards_sink, &reward_info, hnt_bone_price).await?;
+        let poc_dc_shares = reward_poc_and_dc(
+            &self.pool,
+            &self.rewards_sink,
+            &reward_info,
+            hnt_price.clone(),
+        )
+        .await?;
 
         // process rewards for the operational fund
 
@@ -197,7 +203,7 @@ where
                     written_files,
                     reward_data: Some(IotRewardData(reward_data)),
                     epoch: reward_info.epoch,
-                    price: hnt_price,
+                    price: hnt_price.hnt_price_in_bones,
                 },
                 [],
             )
@@ -256,14 +262,14 @@ pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     rewards_sink: &file_sink::FileSinkClient<proto::IotRewardShare>,
     reward_info: &ResolvedSubDaoEpochRewardInfo,
-    hnt_bone_price: Decimal,
+    hnt_price: HntPrice,
 ) -> anyhow::Result<RewardPocDcDataPoints> {
     let reward_shares =
         reward_share::aggregate_reward_shares(pool, &reward_info.epoch_period).await?;
     let gateway_shares = GatewayShares::new(reward_shares)?;
     let (beacon_rewards_per_share, witness_rewards_per_share, dc_transfer_rewards_per_share) =
         gateway_shares
-            .calculate_rewards_per_share(reward_info, hnt_bone_price)
+            .calculate_rewards_per_share(reward_info, hnt_price)
             .await?;
 
     // get the total poc and dc rewards for the period
