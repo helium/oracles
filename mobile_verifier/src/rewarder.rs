@@ -673,7 +673,6 @@ async fn write_unallocated_reward(
         let unallocated_reward = proto::MobileRewardShare {
             start_period: reward_info.epoch_period.start.encode_timestamp(),
             end_period: reward_info.epoch_period.end.encode_timestamp(),
-            epoch: reward_info.epoch,
             reward: Some(ProtoReward::UnallocatedReward(UnallocatedReward {
                 reward_type: unallocated_type as i32,
                 amount: unallocated_amount,
