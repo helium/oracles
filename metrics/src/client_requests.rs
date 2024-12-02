@@ -51,24 +51,26 @@ where
     ApiTimingLayer::new(histogram_name).with_filter(filter::filter_fn(|m| m.name() == SPAN_NAME))
 }
 
-pub trait ClientMetricTiming<A, B>: Sized + Instrument + FutureExt {
+type InstrumentedInspectable<Fut, Func> = Instrumented<Inspect<Fut, Func>>;
+
+pub trait ClientMetricTiming<T, E>: Sized + Instrument + FutureExt {
     fn with_timing(
         self,
         name: &'static str,
-    ) -> Instrumented<Inspect<Self, impl FnOnce(&Result<A, B>)>>
+    ) -> InstrumentedInspectable<Self, impl FnOnce(&Result<T, E>)>
     where
-        Self: Future<Output = Result<A, B>> + Sized;
+        Self: Future<Output = Result<T, E>> + Sized;
 }
 
 // Impl ClientMetricTiming for all futures that return a Result
-impl<F, A, B> ClientMetricTiming<A, B> for F
+impl<F, T, E> ClientMetricTiming<T, E> for F
 where
-    F: Future<Output = Result<A, B>> + Sized,
+    F: Future<Output = Result<T, E>> + Sized,
 {
     fn with_timing(
         self,
         name: &'static str,
-    ) -> Instrumented<Inspect<Self, impl FnOnce(&Result<A, B>)>> {
+    ) -> InstrumentedInspectable<Self, impl FnOnce(&Result<T, E>)> {
         // NOTE(mj): `tracing::info_span!(SPAN_NAME, {NAME_FIELD} = name, {RESULT_FIELD} = tracing::field::Empty);`
         //
         // Results in the error "format must be a string literal". Maybe one day
