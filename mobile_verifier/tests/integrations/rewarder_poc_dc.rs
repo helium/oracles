@@ -61,7 +61,10 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
+    // todo: rebalance the tests to use a normalised hnt price
     let hnt_price = HntPrice::new(10000000000000000, 8);
+    assert_eq!(hnt_price.hnt_price, dec!(100000000));
+    assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
