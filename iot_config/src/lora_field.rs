@@ -297,7 +297,7 @@ impl<'de, const WIDTH: usize> Deserialize<'de> for LoraField<WIDTH> {
     {
         struct LoraFieldVisitor<const IN_WIDTH: usize>;
 
-        impl<'de, const IN_WIDTH: usize> serde::de::Visitor<'de> for LoraFieldVisitor<IN_WIDTH> {
+        impl<const IN_WIDTH: usize> serde::de::Visitor<'_> for LoraFieldVisitor<IN_WIDTH> {
             type Value = LoraField<IN_WIDTH>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

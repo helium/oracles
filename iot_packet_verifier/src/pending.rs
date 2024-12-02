@@ -165,7 +165,7 @@ impl PendingTables for PgPool {
 }
 
 #[async_trait]
-impl<'a> AddPendingBurn for &'_ mut Transaction<'a, Postgres> {
+impl AddPendingBurn for &'_ mut Transaction<'_, Postgres> {
     async fn add_burned_amount(
         &mut self,
         payer: &PublicKeyBinary,
