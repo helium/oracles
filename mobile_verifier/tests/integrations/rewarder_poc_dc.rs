@@ -17,7 +17,7 @@ use mobile_verifier::{
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder,
     sp_boosted_rewards_bans::{self, BannedRadioReport},
-    speedtests, unique_connections,
+    speedtests, unique_connections, HntPrice,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -61,6 +61,8 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
+    let hnt_price = HntPrice::new(10000000000000000, 8);
+
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -69,7 +71,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             &mobile_rewards_client,
             &speedtest_avg_client,
             &reward_info,
-            dec!(0.0001)
+            hnt_price
         ),
         receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, false)
     );

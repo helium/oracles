@@ -22,9 +22,7 @@ pub mod unique_connections;
 pub use settings::Settings;
 
 use async_trait::async_trait;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use std::error::Error;
 
 pub const MOBILE_SUB_DAO_ONCHAIN_ADDRESS: &str = "39Lw1RH6zt8AJvKn3BTxmUDofzduCM2J3kSaGDZ8L7Sk";
@@ -103,21 +101,24 @@ impl IsAuthorized for mobile_config::client::AuthorizationClient {
     }
 }
 
-pub struct PriceConverter;
+#[derive(Clone, Debug)]
+pub struct HntPrice {
+    pub hnt_price_in_bones: u64,
+    pub hnt_price: Decimal,
+    pub price_per_hnt_bone: Decimal,
+    pub decimals: u8,
+}
 
-impl PriceConverter {
-    pub fn hnt_bones_to_pricer_format(hnt_bone_price: Decimal) -> u64 {
-        (hnt_bone_price * dec!(1_0000_0000) * dec!(1_0000_0000))
-            .to_u64()
-            .unwrap_or_default()
-    }
-
-    // Hnt prices are supplied from pricer in 10^8
-    pub fn pricer_format_to_hnt_bones(hnt_price: u64) -> Decimal {
-        Decimal::from(hnt_price) / dec!(1_0000_0000) / dec!(1_0000_0000)
-    }
-
-    pub fn pricer_format_to_hnt(hnt_price: u64) -> Decimal {
-        Decimal::from(hnt_price) / dec!(1_0000_0000)
+impl HntPrice {
+    pub fn new(hnt_price_in_bones: u64, decimals: u8) -> Self {
+        let hnt_price =
+            Decimal::from(hnt_price_in_bones) / Decimal::from(10_u64.pow(decimals as u32));
+        let price_per_hnt_bone = hnt_price / Decimal::from(10_u64.pow(decimals as u32));
+        Self {
+            hnt_price_in_bones,
+            hnt_price,
+            price_per_hnt_bone,
+            decimals,
+        }
     }
 }
