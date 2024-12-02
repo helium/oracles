@@ -482,13 +482,14 @@ impl CoverageShares {
                 })
                 .collect();
 
-            let oracle_boosting_status = if banned_radios.contains(&pubkey, cbsd_id.as_deref()) {
-                OracleBoostingStatus::Banned
-            } else if unique_connections::is_qualified(unique_connections, &pubkey, &radio_type) {
-                OracleBoostingStatus::Qualified
-            } else {
-                OracleBoostingStatus::Eligible
-            };
+            let oracle_boosting_status =
+                if unique_connections::is_qualified(unique_connections, &pubkey, &radio_type) {
+                    OracleBoostingStatus::Qualified
+                } else if banned_radios.contains(&pubkey, cbsd_id.as_deref()) {
+                    OracleBoostingStatus::Banned
+                } else {
+                    OracleBoostingStatus::Eligible
+                };
 
             let sp_boosted_reward_eligibility =
                 boosted_hex_eligibility.eligibility(pubkey, cbsd_id);
