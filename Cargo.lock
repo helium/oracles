@@ -5171,6 +5171,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
+ "helium-lib",
  "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "hex-assignments",
  "hextree",

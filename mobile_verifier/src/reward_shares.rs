@@ -9,7 +9,7 @@ use crate::{
     subscriber_location::SubscriberValidatedLocations,
     subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
     unique_connections::{self, UniqueConnectionCounts},
-    PriceConverter,
+    HntPrice,
 };
 use chrono::{DateTime, Duration, Utc};
 use coverage_point_calculator::{
@@ -66,7 +66,7 @@ pub struct TransferRewards {
     reward_scale: Decimal,
     rewards: HashMap<PublicKeyBinary, TransferReward>,
     reward_sum: Decimal,
-    hnt_bone_price: Decimal,
+    hnt_price: HntPrice,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -102,7 +102,7 @@ impl TransferRewards {
     }
 
     pub async fn from_transfer_sessions(
-        hnt_bone_price: Decimal,
+        hnt_price: HntPrice,
         transfer_sessions: HotspotMap,
         reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
     ) -> Self {
@@ -111,8 +111,10 @@ impl TransferRewards {
             .into_iter()
             // Calculate rewards per hotspot
             .map(|(pub_key, rewardable)| {
-                let bones =
-                    dc_to_hnt_bones(Decimal::from(rewardable.rewardable_dc), hnt_bone_price);
+                let bones = dc_to_hnt_bones(
+                    Decimal::from(rewardable.rewardable_dc),
+                    hnt_price.price_per_hnt_bone,
+                );
                 reward_sum += bones;
                 (
                     pub_key,
@@ -137,7 +139,7 @@ impl TransferRewards {
             reward_scale,
             rewards,
             reward_sum: reward_sum * reward_scale,
-            hnt_bone_price,
+            hnt_price,
         }
     }
 
@@ -152,7 +154,7 @@ impl TransferRewards {
         } = self;
         let start_period = reward_info.epoch_period.start.encode_timestamp();
         let end_period = reward_info.epoch_period.end.encode_timestamp();
-        let price = PriceConverter::hnt_bones_to_pricer_format(self.hnt_bone_price);
+        let price = self.hnt_price.hnt_price_in_bones;
 
         rewards
             .into_iter()
@@ -1009,8 +1011,11 @@ mod test {
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new(rewards_info.epoch_emissions);
 
+        // todo: rebalance the tests to use a normalised hnt price
+        let hnt_price = HntPrice::new(10000000000000000, 8);
+
         let data_transfer_rewards =
-            TransferRewards::from_transfer_sessions(dec!(1.0), data_transfer_map, &reward_shares)
+            TransferRewards::from_transfer_sessions(hnt_price, data_transfer_map, &reward_shares)
                 .await;
 
         assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00002));
@@ -1057,11 +1062,14 @@ mod test {
         // set our rewards info
         let rewards_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
 
+        // todo: rebalance the tests to use a normalised hnt price
+        let hnt_price = HntPrice::new(10000000000000000, 8);
+
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new(rewards_info.epoch_emissions);
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
-            dec!(1.0),
+            hnt_price,
             aggregated_data_transfer_sessions,
             &reward_shares,
         )
@@ -2622,20 +2630,14 @@ mod test {
     #[test]
     fn test_price_conversion() {
         let hnt_dollar_price = dec!(1.0);
-        let hnt_dollar_bone_price = dec!(0.00000001);
         let hnt_price_from_pricer = 100000000_u64;
+        let hnt_dollar_bone_price = dec!(0.00000001);
 
-        assert_eq!(
-            hnt_dollar_bone_price,
-            PriceConverter::pricer_format_to_hnt_bones(hnt_price_from_pricer)
-        );
-        assert_eq!(
-            hnt_price_from_pricer,
-            PriceConverter::hnt_bones_to_pricer_format(hnt_dollar_bone_price)
-        );
-        assert_eq!(
-            hnt_dollar_price,
-            PriceConverter::pricer_format_to_hnt(hnt_price_from_pricer)
-        );
+        let pricer_decimals = 8;
+        let hnt_price = HntPrice::new(hnt_price_from_pricer, pricer_decimals);
+
+        assert_eq!(hnt_dollar_bone_price, hnt_price.price_per_hnt_bone);
+        assert_eq!(hnt_price_from_pricer, hnt_price.hnt_price_in_bones);
+        assert_eq!(hnt_dollar_price, hnt_price.hnt_price);
     }
 }
