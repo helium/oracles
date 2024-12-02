@@ -10,7 +10,7 @@ use crate::{
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_location, subscriber_verified_mapping_event, telemetry, PriceConverter, Settings,
+    subscriber_location, subscriber_verified_mapping_event, telemetry, HntPrice, Settings,
     MOBILE_SUB_DAO_ONCHAIN_ADDRESS,
 };
 use anyhow::bail;
@@ -24,6 +24,7 @@ use file_store::{
 use futures_util::TryFutureExt;
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
+use helium_lib::token::Token;
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -264,19 +265,19 @@ where
                 next_reward_epoch
             ))?;
 
-        let hnt_price = self
+        let pricer_hnt_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
             .await?;
 
-        let hnt_bone_price = PriceConverter::pricer_format_to_hnt_bones(hnt_price);
+        let hnt_price = HntPrice::new(pricer_hnt_price, Token::Hnt.decimals());
 
         tracing::info!(
             "Rewarding for epoch {} period: {} to {} with hnt bone price: {}",
             reward_info.epoch,
             reward_info.epoch_period.start,
             reward_info.epoch_period.end,
-            hnt_bone_price
+            hnt_price.price_per_hnt_bone
         );
 
         // process rewards for poc and data transfer
@@ -286,7 +287,7 @@ where
             &self.mobile_rewards,
             &self.speedtest_averages,
             &reward_info,
-            hnt_bone_price,
+            hnt_price.clone(),
         )
         .await?;
 
@@ -308,7 +309,7 @@ where
             sp_promotions.clone(),
             &self.mobile_rewards,
             &reward_info,
-            hnt_bone_price,
+            hnt_price.price_per_hnt_bone,
         )
         .await?;
 
@@ -356,7 +357,7 @@ where
                     written_files,
                     reward_data: Some(MobileRewardData(reward_data)),
                     epoch: reward_info.epoch,
-                    price: hnt_price,
+                    price: hnt_price.hnt_price_in_bones,
                 },
                 [],
             )
@@ -394,13 +395,13 @@ pub async fn reward_poc_and_dc(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_info: &ResolvedSubDaoEpochRewardInfo,
-    hnt_bone_price: Decimal,
+    hnt_price: HntPrice,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
     let mut reward_shares =
         DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
 
     let transfer_rewards = TransferRewards::from_transfer_sessions(
-        hnt_bone_price,
+        hnt_price,
         data_session::aggregate_hotspot_data_sessions_to_dc(pool, &reward_info.epoch_period)
             .await?,
         &reward_shares,
@@ -641,7 +642,7 @@ pub async fn reward_service_providers(
     sp_promotions: ServiceProviderPromotions,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_info: &ResolvedSubDaoEpochRewardInfo,
-    mobile_bone_price: Decimal,
+    hnt_bone_price: Decimal,
 ) -> anyhow::Result<()> {
     use service_provider::ServiceProviderRewardInfos;
 
@@ -651,7 +652,7 @@ pub async fn reward_service_providers(
         dc_sessions,
         sp_promotions,
         total_sp_rewards,
-        mobile_bone_price,
+        hnt_bone_price,
         reward_info.clone(),
     );
 
