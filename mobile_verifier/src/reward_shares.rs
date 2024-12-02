@@ -979,6 +979,8 @@ mod test {
 
         // todo: rebalance the tests to use a normalised hnt price
         let hnt_price = HntPrice::new(10000000000000000, 8);
+        assert_eq!(hnt_price.hnt_price, dec!(100000000));
+        assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
 
         let data_transfer_rewards =
             TransferRewards::from_transfer_sessions(hnt_price, data_transfer_map, &reward_shares)
@@ -1030,6 +1032,8 @@ mod test {
 
         // todo: rebalance the tests to use a normalised hnt price
         let hnt_price = HntPrice::new(10000000000000000, 8);
+        assert_eq!(hnt_price.hnt_price, dec!(100000000));
+        assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
 
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new(rewards_info.epoch_emissions);
