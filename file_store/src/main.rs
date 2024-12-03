@@ -1,5 +1,4 @@
 use clap::Parser;
-use file_store::cli::{import_iot_rewards, import_mobile_rewards};
 use file_store::{
     cli::{bucket, dump, dump_mobile_rewards, info},
     Result, Settings,
@@ -31,8 +30,6 @@ pub enum Cmd {
     Dump(dump::Cmd),
     Bucket(Box<bucket::Cmd>),
     DumpMobileRewards(dump_mobile_rewards::Cmd),
-    ImportMobileRewards(import_mobile_rewards::Cmd),
-    ImportIotRewards(import_iot_rewards::Cmd),
 }
 
 impl Cmd {
@@ -42,8 +39,6 @@ impl Cmd {
             Cmd::Dump(cmd) => cmd.run(&settings).await,
             Cmd::Bucket(cmd) => cmd.run(&settings).await,
             Cmd::DumpMobileRewards(cmd) => cmd.run(&settings).await,
-            Cmd::ImportMobileRewards(cmd) => cmd.run(&settings).await,
-            Cmd::ImportIotRewards(cmd) => cmd.run(&settings).await,
         }
     }
 }
