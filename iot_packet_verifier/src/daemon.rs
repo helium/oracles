@@ -112,7 +112,7 @@ impl Cmd {
                 bail!("Missing solana section in settings");
             };
             // Set up the solana RpcClient:
-            Some(SolanaRpc::new(solana_settings).await?)
+            Some(SolanaRpc::new(solana_settings, solana::SubDao::Iot).await?)
         } else {
             None
         };
