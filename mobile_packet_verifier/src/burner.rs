@@ -59,7 +59,7 @@ where
             match self.solana.submit_transaction(&txn).await {
                 Err(err) => {
                     let span = tracing::info_span!(
-                        "transaction_confirmation",
+                        "txn_confirmation",
                         signature = %txn.get_signature(),
                         %payer,
                         total_dcs,
@@ -72,8 +72,6 @@ where
                         )
                         .instrument(span),
                     );
-
-                    continue;
                 }
                 Ok(()) => {
                     handle_transaction_success(
@@ -108,7 +106,7 @@ where
 
         async move {
             tracing::warn!(?err, "starting txn confirmation check");
-            // We don't know if the transaction actually made it, maybe it did
+            // We don't know if the txn actually made it, maybe it did
 
             let signature = txn.get_signature();
             for check_idx in 0..retry_attempts {
@@ -131,17 +129,17 @@ where
                         return;
                     }
                     Ok(false) => {
-                        // we did bad, maybe check again?
-                        tracing::info!(check_idx, "transaction not confirmed, yet...");
+                        tracing::info!(check_idx, "txn not confirmed, yet...");
                         continue;
                     }
                     Err(err) => {
-                        // could not check, maybe check again?
-                        tracing::error!(?err, check_idx, "failed to confirm transaction");
+                        tracing::error!(?err, check_idx, "failed to confirm txn");
                         continue;
                     }
                 }
             }
+
+            tracing::warn!("failed to confirm txn");
 
             // We have failed to burn data credits:
             metrics::counter!(
