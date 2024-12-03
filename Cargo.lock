@@ -4359,6 +4359,7 @@ dependencies = [
  "libflate",
  "metrics",
  "metrics-exporter-prometheus",
+ "once_cell",
  "poc-metrics",
  "prost",
  "rand 0.8.5",

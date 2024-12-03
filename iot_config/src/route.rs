@@ -132,13 +132,13 @@ pub async fn create_route(
         .await?;
 
     let route_id = row.get::<Uuid, &str>("id").to_string();
-
     let new_route = get_route(&route_id, &mut transaction).await?;
 
     transaction.commit().await?;
 
     let timestamp = Utc::now().encode_timestamp();
     let signer = signing_key.public_key().into();
+
     let mut update = proto::RouteStreamResV1 {
         action: proto::ActionV1::Add.into(),
         data: Some(proto::route_stream_res_v1::Data::Route(
@@ -148,6 +148,7 @@ pub async fn create_route(
         signer,
         signature: vec![],
     };
+
     _ = futures::future::ready(signing_key.sign(&update.encode_to_vec()))
         .map_err(|err| {
             tracing::error!(error = ?err, "error signing route create");
@@ -462,27 +463,42 @@ pub async fn update_devaddr_ranges(
 pub async fn list_routes(oui: u64, db: impl sqlx::PgExecutor<'_>) -> anyhow::Result<Vec<Route>> {
     Ok(sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, ol.locked
-            from routes r
-            join solana_organizations o on r.oui = o.oui
-            join organization_locks ol on o.address = ol.organization
-            where o.oui = $1 and r.deleted = false
-            group by r.id, ol.locked
+        SELECT
+            r.id,
+            r.oui,
+            r.net_id,
+            r.max_copies,
+            r.server_host,
+            r.server_port,
+            r.server_protocol_opts,
+            r.active,
+            r.ignore_empty_skf,
+            COALESCE(ol.locked, true) AS locked
+        FROM routes r
+        JOIN solana_organizations o ON r.oui = o.oui
+        LEFT JOIN organization_locks ol ON ol.organization = o.address
+        WHERE o.oui = $1 AND r.deleted = false
         "#,
     )
     .bind(oui as i64)
     .fetch(db)
     .map_err(RouteStorageError::from)
-    .and_then(|route| async move { Ok(Route {
+    .and_then(|route| async move {
+        Ok(Route {
             id: route.id.to_string(),
             net_id: route.net_id.into(),
             oui: route.oui as u64,
-            server: RouteServer::new(route.server_host, route.server_port as u32, serde_json::from_value(route.server_protocol_opts)?),
+            server: RouteServer::new(
+                route.server_host,
+                route.server_port as u32,
+                serde_json::from_value(route.server_protocol_opts)?,
+            ),
             max_copies: route.max_copies as u32,
             active: route.active,
             locked: route.locked,
             ignore_empty_skf: route.ignore_empty_skf,
-        })})
+        })
+    })
     .filter_map(|route| async move { route.ok() })
     .collect::<Vec<Route>>()
     .await)
@@ -528,28 +544,47 @@ pub fn route_stream<'a>(
 ) -> impl Stream<Item = (Route, bool)> + 'a {
     sqlx::query(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, ol.locked, r.deleted
-            from routes r
-            join solana_organizations o on r.oui = o.oui
-            join organization_locks ol on o.address = ol.organization
-            where r.updated_at >= $1
-            group by r.id, ol.locked
+        SELECT
+            r.id,
+            r.oui,
+            r.net_id,
+            r.max_copies,
+            r.server_host,
+            r.server_port,
+            r.server_protocol_opts,
+            r.active,
+            r.ignore_empty_skf,
+            COALESCE(ol.locked, true) AS locked,
+            r.deleted
+        FROM routes r
+        JOIN solana_organizations o ON r.oui = o.oui
+        LEFT JOIN organization_locks ol ON ol.organization = o.address
+        WHERE r.updated_at >= $1
         "#,
     )
     .bind(since)
     .fetch(db)
     .and_then(|row| async move { StorageRoute::from_row(&row).map(|sr| (sr, row.get("deleted"))) })
     .map_err(RouteStorageError::from)
-    .and_then(|(route, deleted)| async move { Ok((Route {
-            id: route.id.to_string(),
-            net_id: route.net_id.into(),
-            oui: route.oui as u64,
-            server: RouteServer::new(route.server_host, route.server_port as u32, serde_json::from_value(route.server_protocol_opts)?),
-            max_copies: route.max_copies as u32,
-            active: route.active,
-            locked: route.locked,
-            ignore_empty_skf: route.ignore_empty_skf,
-        }, deleted))})
+    .and_then(|(route, deleted)| async move {
+        Ok((
+            Route {
+                id: route.id.to_string(),
+                net_id: route.net_id.into(),
+                oui: route.oui as u64,
+                server: RouteServer::new(
+                    route.server_host,
+                    route.server_port as u32,
+                    serde_json::from_value(route.server_protocol_opts)?,
+                ),
+                max_copies: route.max_copies as u32,
+                active: route.active,
+                locked: route.locked,
+                ignore_empty_skf: route.ignore_empty_skf,
+            },
+            deleted,
+        ))
+    })
     .filter_map(|result| async move { result.ok() })
     .boxed()
 }
@@ -617,12 +652,21 @@ pub async fn get_route(id: &str, db: impl sqlx::PgExecutor<'_>) -> anyhow::Resul
     let uuid = Uuid::try_parse(id)?;
     let route = sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, ol.locked
-            from routes r
-            join solana_organizations o on r.oui = o.oui
-            join organization_locks ol on o.address = ol.organization
-            where r.id = $1 and r.deleted = false
-            group by r.id, ol.locked
+        SELECT
+            r.id,
+            r.oui,
+            r.net_id,
+            r.max_copies,
+            r.server_host,
+            r.server_port,
+            r.server_protocol_opts,
+            r.active,
+            r.ignore_empty_skf,
+            COALESCE(ol.locked, true) AS locked
+        FROM routes r
+        JOIN solana_organizations o ON r.oui = o.oui
+        LEFT JOIN organization_locks ol ON ol.organization = o.address
+        WHERE r.id = $1 AND r.deleted = false
         "#,
     )
     .bind(uuid)

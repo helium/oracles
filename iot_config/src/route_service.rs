@@ -1,6 +1,6 @@
 use crate::{
     admin::{AuthCache, KeyType},
-    convert_to_solana_public_key,
+    convert_to_helium_public_key, convert_to_solana_public_key,
     lora_field::{DevAddrConstraint, DevAddrRange, EuiPair, Skf},
     org::{self, OrgStoreError},
     route::{self, Route, RouteStorageError},
@@ -525,9 +525,12 @@ impl iot_config::Route for RouteService {
         incoming_stream
             .map_ok(|update| match validator.validate_update(&update) {
                 Ok(()) => Ok(update),
-                Err(reason) => Err(Status::invalid_argument(format!(
-                    "invalid update request: {reason:?}"
-                ))),
+                Err(reason) => {
+                    println!("Validation failed: {:?}", reason);
+                    Err(Status::invalid_argument(format!(
+                        "invalid update request: {reason:?}"
+                    )))
+                }
             })
             .try_chunks(UPDATE_BATCH_LIMIT)
             .map_err(|err| Status::internal(format!("eui pair updates failed to batch: {err:?}")))
@@ -565,6 +568,7 @@ impl iot_config::Route for RouteService {
                     .into_iter()
                     .map(|(_, remove)| remove.into())
                     .collect();
+
                 route::update_euis(
                     &adds_update,
                     &removes_update,
@@ -983,8 +987,7 @@ impl DevAddrEuiValidator {
     {
         validate_owned_route(request, &self.route_ids)
             .and_then(|update| validate_range_bounds(update, self.constraints.as_ref()))
-            // TODO (bry): fix this validate signature logic
-            // .and_then(|update| validate_signature(update, &mut self.signing_keys))
+            .and_then(|update| validate_signature(update, &mut self.signing_keys))
             .map_err(|err| Status::invalid_argument(format!("{err:?}")))?;
         Ok(())
     }
@@ -1077,13 +1080,17 @@ where
 
 fn validate_signature<'a, R>(
     request: &'a R,
-    signing_keys: &mut [PublicKey],
+    signing_keys: &mut [Pubkey],
 ) -> Result<&'a R, DevAddrEuiValidationError>
 where
     R: MsgVerify + ValidateRouteComponent<'a> + std::fmt::Debug,
 {
     for (idx, pubkey) in signing_keys.iter().enumerate() {
-        if request.verify(pubkey).is_ok() {
+        let helium_signer = convert_to_helium_public_key(pubkey).map_err(|err| {
+            DevAddrEuiValidationError::InvalidUpdate(format!("invalid public key: {err:?}"))
+        })?;
+
+        if request.verify(&helium_signer).is_ok() {
             signing_keys.swap(idx, 0);
             return Ok(request);
         }

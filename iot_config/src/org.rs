@@ -131,9 +131,7 @@ SELECT
     sol_org.authority,
     sol_org.escrow_key,
     sol_org.approved,
-    COALESCE((SELECT locked
-      FROM organization_locks
-      WHERE organization = sol_org.address), true) AS locked,
+    COALESCE(ol.locked, true) AS locked,
     ARRAY(
       SELECT (start_addr, end_addr)
       FROM solana_organization_devaddr_constraints
@@ -145,6 +143,7 @@ SELECT
       WHERE organization = sol_org.address
     ) AS delegate_keys
 FROM solana_organizations sol_org
+LEFT JOIN organization_locks ol ON sol_org.address = ol.organization
 "#;
 
 pub async fn list(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<Org>, sqlx::Error> {
@@ -255,7 +254,7 @@ pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<()
         LEFT JOIN organization_locks org_lock ON sol_org.address = org_lock.organization
         WHERE sol_org.oui = $1
         ON CONFLICT (organization) DO UPDATE
-        SET locked = NOT COALESCE(organization_locks.locked, true)
+        SET locked = NOT COALESCE(EXCLUDED.locked, true)
         "#,
     )
     .bind(Decimal::from(oui))
@@ -312,14 +311,25 @@ pub async fn get_org_pubkeys_by_route(
     let org = sqlx::query_as::<_, Org>(
         r#"
         SELECT
-            sol_org.authority AS owner,
+            sol_org.oui::bigint,
+            sol_org.address,
+            sol_org.authority,
+            sol_org.escrow_key,
+            sol_org.approved,
+            COALESCE(ol.locked, true) AS locked,
             ARRAY(
-                SELECT delegate
-                FROM solana_organization_delegate_keys
-                WHERE organization = sol_org.address
+              SELECT (start_addr, end_addr)
+              FROM solana_organization_devaddr_constraints
+              WHERE organization = sol_org.address
+            ) AS constraints,
+            ARRAY(
+              SELECT delegate
+              FROM solana_organization_delegate_keys
+              WHERE organization = sol_org.address
             ) AS delegate_keys
         FROM solana_organizations sol_org
-        JOIN routes r ON sol_org.oui = r.oui
+        LEFT JOIN organization_locks ol ON sol_org.address = ol.organization
+        JOIN routes r on sol_org.oui = r.oui
         WHERE r.id = $1
         "#,
     )

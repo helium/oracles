@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use helium_crypto::PublicKeyBinary;
 use solana::burn::SolanaNetwork;
 use solana_sdk::signature::Signature;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Postgres, Row, Transaction};
