@@ -34,6 +34,17 @@ pub struct Settings {
     pub purger_interval: Duration,
     #[serde(with = "humantime_serde", default = "default_purger_max_age")]
     pub purger_max_age: Duration,
+    /// When a burn transaction is not a success, how many times should
+    /// we try to confirm the transaction before considering it a failure?
+    #[serde(default = "default_txn_confirmation_retry_attempts")]
+    pub txn_confirmation_retry_attempts: usize,
+    /// When a burn transaction is not a success, how long should we
+    /// wait between trying to confirm if the transaction made it to Solana?
+    #[serde(
+        with = "humantime_serde",
+        default = "default_txn_confirmation_check_interval"
+    )]
+    pub txn_confirmation_check_interval: Duration,
 }
 
 fn default_purger_interval() -> Duration {
@@ -42,6 +53,14 @@ fn default_purger_interval() -> Duration {
 
 fn default_purger_max_age() -> Duration {
     humantime::parse_duration("24 hours").unwrap()
+}
+
+fn default_txn_confirmation_check_interval() -> Duration {
+    humantime::parse_duration("1 min").unwrap()
+}
+
+fn default_txn_confirmation_retry_attempts() -> usize {
+    5
 }
 
 fn default_start_after() -> DateTime<Utc> {

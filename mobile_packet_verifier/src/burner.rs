@@ -1,21 +1,33 @@
+use std::{future::Future, time::Duration};
+
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::burn::SolanaNetwork;
+use solana::{burn::SolanaNetwork, GetSignature};
 use sqlx::{Pool, Postgres};
+use tracing::Instrument;
 
 use crate::pending_burns;
 
 pub struct Burner<S> {
     valid_sessions: FileSinkClient<ValidDataTransferSession>,
     solana: S,
+    retry_attempts: usize,
+    failed_check_interval: Duration,
 }
 
 impl<S> Burner<S> {
-    pub fn new(valid_sessions: FileSinkClient<ValidDataTransferSession>, solana: S) -> Self {
+    pub fn new(
+        valid_sessions: FileSinkClient<ValidDataTransferSession>,
+        solana: S,
+        retry_attempts: usize,
+        failed_check_interval: Duration,
+    ) -> Self {
         Self {
             valid_sessions,
             solana,
+            retry_attempts,
+            failed_check_interval,
         }
     }
 }
