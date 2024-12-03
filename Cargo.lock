@@ -3821,7 +3821,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#17d048a7444ccde5e1c24001aa07956abd218cb3"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#fffce9d335b1e5d74ffd5da27ddba6e60b6d9d7c"
 dependencies = [
  "bytes",
  "prost",
@@ -3837,7 +3837,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#16d6838b88a35ac88797d0c7eb14a932b214a856"
+source = "git+https://github.com/helium/proto?branch=master#c5c67f5631b69ef696961995045c0a41f9a5b936"
 dependencies = [
  "bytes",
  "prost",
