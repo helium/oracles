@@ -4,68 +4,6 @@ use solana_sdk::pubkey::Pubkey;
 use sqlx::{Pool, Postgres};
 use std::net::SocketAddr;
 
-pub async fn init_solana_tables(pool: &Pool<Postgres>) -> anyhow::Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS solana_organizations (
-            address TEXT PRIMARY KEY,
-            net_id TEXT NOT NULL,
-            authority TEXT NOT NULL,
-            oui BIGINT NOT NULL,
-            escrow_key TEXT NOT NULL,
-            approved BOOLEAN NOT NULL
-        );
-        "#,
-    )
-    .execute(pool)
-    .await
-    .expect("create solana_organizations table");
-
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS solana_organization_devaddr_constraints (
-            address TEXT PRIMARY KEY,
-            net_id TEXT NOT NULL,
-            organization TEXT NOT NULL,
-            start_addr NUMERIC NOT NULL,
-            end_addr NUMERIC NOT NULL
-        );
-        "#,
-    )
-    .execute(pool)
-    .await
-    .expect("create solana_organization_devaddr_constraints table");
-
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS solana_organization_delegate_keys (
-            address TEXT PRIMARY KEY,
-            organization TEXT NOT NULL,
-            delegate TEXT NOT NULL
-        );
-        "#,
-    )
-    .execute(pool)
-    .await
-    .expect("create solana_organization_delegate_keys table");
-
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS solana_net_ids (
-            address TEXT PRIMARY KEY,
-            id INTEGER NOT NULL,
-            authority TEXT NOT NULL,
-            current_addr_offset NUMERIC NOT NULL
-        );
-        "#,
-    )
-    .execute(pool)
-    .await
-    .expect("create solana_net_ids table");
-
-    Ok(())
-}
-
 pub async fn create_solana_org(
     pool: &Pool<Postgres>,
     authority: &String,

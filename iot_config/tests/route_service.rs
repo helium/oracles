@@ -19,7 +19,6 @@ use iot_config::{
 use prost::Message;
 use rand::rngs::OsRng;
 use sqlx::{Pool, Postgres};
-use std::sync::Once;
 use tokio::task::JoinHandle;
 use tonic::{
     transport::{self, Channel},
@@ -27,14 +26,6 @@ use tonic::{
 };
 
 mod fixtures;
-
-static INIT: Once = Once::new();
-async fn ensure_solana_tables(pool: &Pool<Postgres>) {
-    INIT.call_once(|| {});
-    fixtures::init_solana_tables(pool)
-        .await
-        .expect("Failed to initialize Solana tables");
-}
 
 #[sqlx::test]
 async fn packet_router_can_access_route_list(pool: Pool<Postgres>) {
@@ -509,7 +500,6 @@ async fn start_server(
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
 ) -> JoinHandle<anyhow::Result<()>> {
-    ensure_solana_tables(&pool).await;
     let (delegate_key_updater, _delegate_key_cache) = org::delegate_keys_cache(&pool)
         .await
         .expect("delete keys cache");

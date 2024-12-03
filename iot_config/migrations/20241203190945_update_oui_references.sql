@@ -1,0 +1,1 @@
+ALTER TABLE routes DROP CONSTRAINT IF EXISTS routes_oui_fkey;

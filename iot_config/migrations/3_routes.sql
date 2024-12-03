@@ -1,6 +1,6 @@
 create table routes (
     id uuid primary key not null default uuid_generate_v1mc(),
-    oui bigint not null, references organizations(oui) on delete cascade,
+    oui bigint not null references organizations(oui) on delete cascade,
     net_id int not null,
     max_copies int not null,
     server_host text not null,
