@@ -392,6 +392,7 @@ mod test {
     use super::*;
     use std::collections::HashSet;
 
+    #[derive(Clone)]
     struct MockConfirmed(HashSet<Signature>);
 
     #[async_trait]

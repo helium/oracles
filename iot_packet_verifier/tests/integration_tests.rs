@@ -576,15 +576,16 @@ async fn test_end_to_end() {
     );
 }
 
+#[derive(Clone)]
 struct MockSolanaNetwork {
-    confirmed: Mutex<HashSet<Signature>>,
+    confirmed: Arc<Mutex<HashSet<Signature>>>,
     ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
 }
 
 impl MockSolanaNetwork {
     fn new(ledger: HashMap<PublicKeyBinary, u64>) -> Self {
         Self {
-            confirmed: Default::default(),
+            confirmed: Arc::new(Default::default()),
             ledger: Arc::new(Mutex::new(ledger)),
         }
     }
