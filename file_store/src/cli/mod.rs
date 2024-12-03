@@ -1,8 +1,6 @@
 pub mod bucket;
 pub mod dump;
 pub mod dump_mobile_rewards;
-pub mod import_iot_rewards;
-pub mod import_mobile_rewards;
 pub mod info;
 
 use crate::Result;
