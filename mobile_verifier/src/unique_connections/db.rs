@@ -21,10 +21,11 @@ pub async fn get(
 
     let rows = sqlx::query_as::<_, UniqueConnections>(
         r#"
-            SELECT hotspot_pubkey, unique_connections
+            SELECT DISTINCT ON(hotspot_pubkey, received_timestamp)
+                hotspot_pubkey, unique_connections
             FROM unique_connections
             WHERE received_timestamp >= $1 AND received_timestamp <= $2
-            ORDER BY received_timestamp DESC
+            ORDER BY hotspot_pubkey, received_timestamp ASC
             "#,
     )
     .bind(reward_period.start)
@@ -41,13 +42,15 @@ pub async fn save(
     txn: &mut Transaction<'_, Postgres>,
     report: &UniqueConnectionsIngestReport,
 ) -> Result<(), sqlx::Error> {
-    // TODO: on conflict?
     sqlx::query(
         r#"
         INSERT INTO unique_connections 
         (hotspot_pubkey, unique_connections, start_timestamp, end_timestamp, received_timestamp)
         VALUES
         ($1, $2, $3, $4, $5)
+        ON CONFLICT 
+            (hotspot_pubkey, received_timestamp)
+            DO NOTHING
         "#,
     )
     .bind(report.report.pubkey.to_string())
