@@ -139,7 +139,7 @@ impl MobileRadioTracker {
     }
 
     async fn run(self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("starting");
+        tracing::info!("starting with interval: {:?}", self.interval);
         let mut interval = tokio::time::interval(self.interval);
 
         loop {
@@ -201,7 +201,7 @@ async fn get_tracked_radios(
             hash,
             last_changed_at,
             last_checked_at,
-            asserted_location,
+            asserted_location::bigint,
             asserted_location_change_at
         FROM mobile_radio_tracker
         "#,
@@ -271,8 +271,8 @@ async fn update_tracked_radios(
                 hash = EXCLUDED.hash,
                 last_changed_at = EXCLUDED.last_changed_at,
                 last_checked_at = EXCLUDED.last_checked_at,
-                asserted_location = EXCLUDED.last_asserted_location,
-                asserted_location_change_at = EXCLUDED.asserted_location_change_at,
+                asserted_location = EXCLUDED.asserted_location,
+                asserted_location_change_at = EXCLUDED.asserted_location_change_at
             "#,
         )
         .build()
