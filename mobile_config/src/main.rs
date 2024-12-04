@@ -10,7 +10,7 @@ use mobile_config::{
     admin_service::AdminService, authorization_service::AuthorizationService,
     carrier_service::CarrierService, entity_service::EntityService,
     gateway_service::GatewayService, hex_boosting_service::HexBoostingService, key_cache::KeyCache,
-    settings::Settings,
+    mobile_radio_tracker::MobileRadioTracker, settings::Settings,
 };
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -108,6 +108,11 @@ impl Daemon {
 
         TaskManager::builder()
             .add_task(grpc_server)
+            .add_task(MobileRadioTracker::new(
+                pool.clone(),
+                metadata_pool.clone(),
+                settings.mobile_radio_tracker_interval,
+            ))
             .build()
             .start()
             .await
