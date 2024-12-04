@@ -1,4 +1,4 @@
-use std::{future::Future, time::Duration};
+use std::time::Duration;
 
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
@@ -76,12 +76,10 @@ where
                         max_attempts = self.failed_retry_attempts
                     );
 
-                    tokio::spawn(
-                        self.transaction_confirmation_check(
-                            pool, err, txn, payer, total_dcs, sessions,
-                        )
-                        .instrument(span),
-                    );
+                    // block on confirmation
+                    self.transaction_confirmation_check(pool, err, txn, payer, total_dcs, sessions)
+                        .instrument(span)
+                        .await;
                 }
             }
         }
@@ -89,7 +87,7 @@ where
         Ok(())
     }
 
-    fn transaction_confirmation_check(
+    async fn transaction_confirmation_check(
         &self,
         pool: &Pool<Postgres>,
         err: S::Error,
@@ -97,58 +95,54 @@ where
         payer: PublicKeyBinary,
         total_dcs: u64,
         sessions: Vec<pending_burns::DataTransferSession>,
-    ) -> impl Future<Output = ()> {
-        let pool = pool.clone();
-        let solana = self.solana.clone();
-        let valid_sessions = self.valid_sessions.clone();
-        let retry_attempts = self.failed_retry_attempts;
-        let check_interval = self.failed_check_interval;
+    ) {
+        tracing::warn!(?err, "starting txn confirmation check");
+        // We don't know if the txn actually made it, maybe it did
 
-        async move {
-            tracing::warn!(?err, "starting txn confirmation check");
-            // We don't know if the txn actually made it, maybe it did
+        let signature = txn.get_signature();
 
-            let signature = txn.get_signature();
-            for check_idx in 0..retry_attempts {
-                tokio::time::sleep(check_interval).await;
-                match solana.confirm_transaction(signature).await {
-                    Ok(true) => {
-                        tracing::debug!("txn confirmed on chain");
-                        let txn_success = handle_transaction_success(
-                            &pool,
-                            payer,
-                            total_dcs,
-                            sessions,
-                            &valid_sessions,
-                        )
-                        .await;
-                        if let Err(err) = txn_success {
-                            tracing::error!(?err, "txn succeeded, something else failed");
-                        }
+        let mut attempt = 0;
+        while attempt <= self.failed_retry_attempts {
+            tokio::time::sleep(self.failed_check_interval).await;
+            match self.solana.confirm_transaction(signature).await {
+                Ok(true) => {
+                    tracing::debug!("txn confirmed on chain");
+                    let txn_success = handle_transaction_success(
+                        pool,
+                        payer,
+                        total_dcs,
+                        sessions,
+                        &self.valid_sessions,
+                    )
+                    .await;
+                    if let Err(err) = txn_success {
+                        tracing::error!(?err, "txn succeeded, something else failed");
+                    }
 
-                        return;
-                    }
-                    Ok(false) => {
-                        tracing::info!(check_idx, "txn not confirmed, yet...");
-                        continue;
-                    }
-                    Err(err) => {
-                        tracing::error!(?err, check_idx, "failed to confirm txn");
-                        continue;
-                    }
+                    return;
+                }
+                Ok(false) => {
+                    tracing::info!(attempt, "txn not confirmed, yet...");
+                    attempt += 1;
+                    continue;
+                }
+                Err(err) => {
+                    // Client errors do not count against retry attempts
+                    tracing::error!(?err, attempt, "failed to confirm txn");
+                    continue;
                 }
             }
-
-            tracing::warn!("failed to confirm txn");
-
-            // We have failed to burn data credits:
-            metrics::counter!(
-                "burned",
-                "payer" => payer.to_string(),
-                "success" => "false"
-            )
-            .increment(total_dcs);
         }
+
+        tracing::warn!("failed to confirm txn");
+
+        // We have failed to burn data credits:
+        metrics::counter!(
+            "burned",
+            "payer" => payer.to_string(),
+            "success" => "false"
+        )
+        .increment(total_dcs);
     }
 }
 
