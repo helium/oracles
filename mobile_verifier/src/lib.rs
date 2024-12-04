@@ -21,7 +21,10 @@ pub mod telemetry;
 pub use settings::Settings;
 
 use async_trait::async_trait;
+use rust_decimal::Decimal;
 use std::error::Error;
+
+pub const MOBILE_SUB_DAO_ONCHAIN_ADDRESS: &str = "39Lw1RH6zt8AJvKn3BTxmUDofzduCM2J3kSaGDZ8L7Sk";
 
 pub enum GatewayResolution {
     GatewayNotFound,
@@ -94,5 +97,27 @@ impl IsAuthorized for mobile_config::client::AuthorizationClient {
     ) -> Result<bool, Self::Error> {
         use mobile_config::client::authorization_client::AuthorizationVerifier;
         self.verify_authorized_key(address, role).await
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HntPrice {
+    pub hnt_price_in_bones: u64,
+    pub hnt_price: Decimal,
+    pub price_per_hnt_bone: Decimal,
+    pub decimals: u8,
+}
+
+impl HntPrice {
+    pub fn new(hnt_price_in_bones: u64, decimals: u8) -> Self {
+        let hnt_price =
+            Decimal::from(hnt_price_in_bones) / Decimal::from(10_u64.pow(decimals as u32));
+        let price_per_hnt_bone = hnt_price / Decimal::from(10_u64.pow(decimals as u32));
+        Self {
+            hnt_price_in_bones,
+            hnt_price,
+            price_per_hnt_bone,
+            decimals,
+        }
     }
 }

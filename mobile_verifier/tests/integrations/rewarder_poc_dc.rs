@@ -1,5 +1,7 @@
-use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext};
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use crate::common::{
+    self, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext,
+};
+use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     speedtest::CellSpeedtest,
@@ -14,7 +16,7 @@ use mobile_verifier::{
     coverage::CoverageObject,
     data_session,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
-    reward_shares, rewarder, speedtests,
+    reward_shares, rewarder, speedtests, HntPrice,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -30,20 +32,25 @@ const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    seed_heartbeats(epoch.start, &mut txn).await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_data_sessions(epoch.start, &mut txn).await?;
+    seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
     let boosted_hexes = vec![];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+
+    // todo: rebalance the tests to use a normalised hnt price
+    let hnt_price = HntPrice::new(10000000000000000, 8);
+    assert_eq!(hnt_price.hnt_price, dec!(100000000));
+    assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -52,8 +59,8 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            hnt_price
         ),
         receive_expected_rewards(&mut mobile_rewards)
     );
@@ -107,14 +114,13 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
         let total = poc_sum + dc_sum;
 
-        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
         assert_eq!(expected_sum, total);
 
         // confirm the rewarded percentage amount matches expectations
-        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-        let percent = (Decimal::from(total) / daily_total)
+        let percent = (Decimal::from(total) / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(percent, dec!(0.6));
     } else {

@@ -7,7 +7,7 @@ use sqlx::PgPool;
 
 use crate::{
     data_session,
-    reward_shares::{dc_to_mobile_bones, DEFAULT_PREC},
+    reward_shares::{dc_to_hnt_bones, DEFAULT_PREC},
 };
 
 use super::ServiceProviderId;
@@ -58,7 +58,7 @@ impl ServiceProviderDCSessions {
         // the total amount of DC spent across all service providers
         let total_sp_dc = self.all_transfer();
         // the total amount of service provider rewards in bones based on the spent DC
-        let total_sp_rewards_used = dc_to_mobile_bones(total_sp_dc, mobile_bone_price);
+        let total_sp_rewards_used = dc_to_hnt_bones(total_sp_dc, mobile_bone_price);
         // cap the service provider rewards if used > pool total
         let capped_sp_rewards_used =
             Self::maybe_cap_service_provider_rewards(total_sp_rewards_used, total_sp_rewards);

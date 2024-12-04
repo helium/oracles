@@ -3,9 +3,9 @@ use std::{ops::Range, time::Duration};
 
 #[derive(Debug)]
 pub struct Scheduler {
-    pub reward_period_length: Duration,
-    pub reward_period: Range<DateTime<Utc>>,
-    pub reward_offset: Duration,
+    pub period_duration: Duration,
+    pub schedule_period: Range<DateTime<Utc>>,
+    pub period_offset: Duration,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -14,38 +14,38 @@ pub struct OutOfRangeError;
 
 impl Scheduler {
     pub fn new(
-        reward_period_length: Duration,
-        last_rewarded_end_time: DateTime<Utc>,
-        next_rewarded_end_time: DateTime<Utc>,
-        reward_offset: Duration,
+        period_duration: Duration,
+        schedule_start_time: DateTime<Utc>,
+        schedule_end_time: DateTime<Utc>,
+        period_offset: Duration,
     ) -> Self {
         Self {
-            reward_period_length,
-            reward_period: last_rewarded_end_time..next_rewarded_end_time,
-            reward_offset,
+            period_duration,
+            schedule_period: schedule_start_time..schedule_end_time,
+            period_offset,
         }
     }
 
-    pub fn should_reward(&self, now: DateTime<Utc>) -> bool {
-        now >= self.reward_period.end + self.reward_offset
+    pub fn should_trigger(&self, now: DateTime<Utc>) -> bool {
+        now >= self.schedule_period.end + self.period_offset
     }
 
-    pub fn next_reward_period(&self) -> Range<DateTime<Utc>> {
-        self.reward_period.end..(self.reward_period.end + self.reward_period_length)
+    pub fn next_trigger_period(&self) -> Range<DateTime<Utc>> {
+        self.schedule_period.end..(self.schedule_period.end + self.period_duration)
     }
 
     pub fn sleep_duration(
         &self,
         now: DateTime<Utc>,
     ) -> Result<std::time::Duration, OutOfRangeError> {
-        let next_reward_period = self.next_reward_period();
+        let next_period = self.next_trigger_period();
 
-        let duration = if self.reward_period.end + self.reward_offset > now {
-            self.reward_period.end + self.reward_offset - now
-        } else if next_reward_period.end + self.reward_offset <= now {
+        let duration = if self.schedule_period.end + self.period_offset > now {
+            self.schedule_period.end + self.period_offset - now
+        } else if next_period.end + self.period_offset <= now {
             chrono::Duration::zero()
         } else {
-            (next_reward_period.end + self.reward_offset) - now
+            (next_period.end + self.period_offset) - now
         };
 
         duration.to_std().map_err(|_| OutOfRangeError)
@@ -62,7 +62,7 @@ mod tests {
         Utc.with_ymd_and_hms(y, m, d, h, min, s).unwrap()
     }
 
-    fn reward_period_length() -> Duration {
+    fn period_length() -> Duration {
         chrono::Duration::hours(24).to_std().unwrap()
     }
 
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn boot_mid_period_with_no_reward() {
         let scheduler = Scheduler::new(
-            reward_period_length(),
+            period_length(),
             dt(2022, 12, 1, 0, 0, 0),
             dt(2022, 12, 2, 0, 0, 0),
             chrono::Duration::minutes(30).to_std().unwrap(),
@@ -83,7 +83,7 @@ mod tests {
 
         let now = dt(2022, 12, 1, 1, 0, 0);
 
-        assert!(!scheduler.should_reward(now));
+        assert!(!scheduler.should_trigger(now));
         assert_eq!(
             standard_duration(1410).unwrap(),
             scheduler
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn reward_after_period() {
         let scheduler = Scheduler::new(
-            reward_period_length(),
+            period_length(),
             dt(2022, 12, 1, 0, 0, 0),
             dt(2022, 12, 2, 0, 0, 0),
             chrono::Duration::minutes(30).to_std().unwrap(),
@@ -105,9 +105,9 @@ mod tests {
 
         assert_eq!(
             dt(2022, 12, 1, 0, 0, 0)..dt(2022, 12, 2, 0, 0, 0),
-            scheduler.reward_period
+            scheduler.schedule_period
         );
-        assert!(scheduler.should_reward(now));
+        assert!(scheduler.should_trigger(now));
         assert_eq!(
             standard_duration(1440).unwrap(),
             scheduler
@@ -117,9 +117,9 @@ mod tests {
     }
 
     #[test]
-    fn check_after_reward_period_but_before_offset() {
+    fn check_after_trigger_period_but_before_offset() {
         let scheduler = Scheduler::new(
-            reward_period_length(),
+            period_length(),
             dt(2022, 12, 1, 0, 0, 0),
             dt(2022, 12, 2, 0, 0, 0),
             chrono::Duration::minutes(30).to_std().unwrap(),
@@ -129,9 +129,9 @@ mod tests {
 
         assert_eq!(
             dt(2022, 12, 1, 0, 0, 0)..dt(2022, 12, 2, 0, 0, 0),
-            scheduler.reward_period
+            scheduler.schedule_period
         );
-        assert!(!scheduler.should_reward(now));
+        assert!(!scheduler.should_trigger(now));
         assert_eq!(
             standard_duration(15).unwrap(),
             scheduler

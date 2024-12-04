@@ -1,10 +1,7 @@
-use std::ops::Range;
-
-use chrono::{DateTime, Utc};
-
 pub use dc_sessions::{get_dc_sessions, ServiceProviderDCSessions};
 pub use promotions::{get_promotions, ServiceProviderPromotions};
 pub use reward::ServiceProviderRewardInfos;
+use rust_decimal::Decimal;
 
 mod dc_sessions;
 mod promotions;
@@ -15,7 +12,6 @@ mod reward;
 // mobile-verifier when a new carrier is added..
 pub type ServiceProviderId = i32;
 
-pub fn get_scheduled_tokens(reward_period: &Range<DateTime<Utc>>) -> rust_decimal::Decimal {
-    let duration = reward_period.end - reward_period.start;
-    crate::reward_shares::get_scheduled_tokens_for_service_providers(duration)
+pub fn get_scheduled_tokens(total_emission_pool: Decimal) -> Decimal {
+    crate::reward_shares::get_scheduled_tokens_for_service_providers(total_emission_pool)
 }

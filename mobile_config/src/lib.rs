@@ -1,6 +1,9 @@
+use anyhow::anyhow;
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use helium_crypto::PublicKey;
 use helium_proto::services::mobile_config::AdminKeyRole as ProtoKeyRole;
 use serde::Serialize;
+use std::ops::Range;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
 
@@ -13,10 +16,12 @@ pub mod entity_service;
 pub mod gateway_info;
 pub mod gateway_service;
 pub mod hex_boosting_service;
+pub mod sub_dao_epoch_reward_info;
 
 pub mod key_cache;
 pub mod mobile_radio_tracker;
 pub mod settings;
+pub mod sub_dao_service;
 pub mod telemetry;
 
 pub use client::{GatewayClient, Settings as ClientSettings};
@@ -92,5 +97,25 @@ impl std::fmt::Display for KeyRole {
             Self::Pcs => "pcs",
         };
         f.write_str(s)
+    }
+}
+
+pub struct EpochPeriod {
+    pub period: Range<DateTime<Utc>>,
+}
+
+impl TryFrom<u64> for EpochPeriod {
+    type Error = anyhow::Error;
+
+    fn try_from(next_reward_epoch: u64) -> anyhow::Result<Self> {
+        let start_time = Utc
+            .timestamp_opt(0, 0)
+            .single()
+            .ok_or_else(|| anyhow!("Failed to get Unix epoch start time"))?
+            + Duration::days(next_reward_epoch as i64);
+        let end_time = start_time + Duration::days(1);
+        Ok(EpochPeriod {
+            period: start_time..end_time,
+        })
     }
 }

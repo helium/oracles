@@ -1,4 +1,6 @@
-use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext};
+use crate::common::{
+    self, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext,
+};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
@@ -19,7 +21,7 @@ use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
-    radio_threshold, reward_shares, rewarder, speedtests,
+    radio_threshold, reward_shares, rewarder, speedtests, HntPrice,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -53,17 +55,17 @@ async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
 async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
-    let epoch_duration = epoch.end - epoch.start;
+
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+
     let boost_period_length = Duration::days(30);
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
     // seed HBs where we have a coverage reports for a singluar hex location per radio
-    seed_heartbeats_v1(epoch.start, &mut txn).await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_heartbeats_v1(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_radio_thresholds(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -74,7 +76,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
         NonZeroU32::new(15).unwrap(),
         NonZeroU32::new(35).unwrap(),
     ];
-    let start_ts_1 = epoch.start - boost_period_length;
+    let start_ts_1 = reward_info.epoch_period.start - boost_period_length;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where reward start time is in the third & last period length
@@ -83,7 +85,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
         NonZeroU32::new(10).unwrap(),
         NonZeroU32::new(20).unwrap(),
     ];
-    let start_ts_2 = epoch.start - (boost_period_length * 2);
+    let start_ts_2 = reward_info.epoch_period.start - (boost_period_length * 2);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
 
     // setup boosted hex where no start or end time is set
@@ -133,9 +135,15 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
-    let total_poc_emissions = reward_shares::get_scheduled_tokens_for_poc(epoch_duration)
-        .to_u64()
-        .unwrap();
+    let total_poc_emissions =
+        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
+            .to_u64()
+            .unwrap();
+
+    // todo: rebalance the tests to use a normalised hnt price
+    let hnt_price = HntPrice::new(10000000000000000, 8);
+    assert_eq!(hnt_price.hnt_price, dec!(100000000));
+    assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -144,8 +152,8 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            hnt_price
         ),
         receive_expected_rewards_maybe_unallocated(
             &mut mobile_rewards,
@@ -180,7 +188,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     );
 
     // Calculating expected rewards
-    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(epoch_duration);
+    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
 
     // With regular poc now 50% of total emissions, that will be split
     // between the 3 radios equally. 900 comes from IndoorWifi 400 *
@@ -227,8 +235,8 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(total_poc_emissions, total);
 
     // confirm the rewarded percentage amount matches expectations
-    let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-    let percent = (Decimal::from(total) / daily_total)
+
+    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     assert_eq!(percent, dec!(0.6));
 
@@ -321,6 +329,13 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+
+    // todo: rebalance the tests to use a normalised hnt price
+    let hnt_price = HntPrice::new(10000000000000000, 8);
+    assert_eq!(hnt_price.hnt_price, dec!(100000000));
+    assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
+
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -328,8 +343,8 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            hnt_price
         ),
         receive_expected_rewards(&mut mobile_rewards)
     );
@@ -365,14 +380,13 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
         let unallocated_sum: u64 = unallocated_reward.amount;
         let total = poc_sum + unallocated_sum;
 
-        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
         assert_eq!(expected_sum, total);
 
         // confirm the rewarded percentage amount matches expectations
-        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-        let percent = (Decimal::from(total) / daily_total)
+        let percent = (Decimal::from(total) / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(percent, dec!(0.6));
     } else {
@@ -386,17 +400,16 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
-    let epoch_duration = epoch.end - epoch.start;
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+
     let boost_period_length = Duration::days(30);
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
     // seed HBs where we have multiple coverage reports for one radio and one report for the others
-    seed_heartbeats_v2(epoch.start, &mut txn).await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_heartbeats_v2(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_radio_thresholds(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -407,7 +420,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         NonZeroU32::new(15).unwrap(),
         NonZeroU32::new(35).unwrap(),
     ];
-    let start_ts_1 = epoch.start - boost_period_length;
+    let start_ts_1 = reward_info.epoch_period.start - boost_period_length;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where reward start time is in the third & last period length
@@ -417,7 +430,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         NonZeroU32::new(20).unwrap(),
     ];
 
-    let start_ts_2 = epoch.start - (boost_period_length * 2);
+    let start_ts_2 = reward_info.epoch_period.start - (boost_period_length * 2);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
 
     // setup boosted hex where reward start time is in the first period length
@@ -428,7 +441,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         NonZeroU32::new(20).unwrap(),
     ];
 
-    let start_ts_3 = epoch.start;
+    let start_ts_3 = reward_info.epoch_period.start;
     let end_ts_3 = start_ts_3 + (boost_period_length * multipliers3.len() as i32);
 
     let boosted_hexes = vec![
@@ -478,11 +491,18 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         },
     ];
 
-    let total_poc_emissions = reward_shares::get_scheduled_tokens_for_poc(epoch_duration)
-        .to_u64()
-        .unwrap();
+    let total_poc_emissions =
+        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
+            .to_u64()
+            .unwrap();
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+
+    // todo: rebalance the tests to use a normalised hnt price
+    let hnt_price = HntPrice::new(10000000000000000, 8);
+    assert_eq!(hnt_price.hnt_price, dec!(100000000));
+    assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
+
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -490,8 +510,8 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            hnt_price
         ),
         receive_expected_rewards_maybe_unallocated(
             &mut mobile_rewards,
@@ -530,7 +550,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     // - 2 covered hexes boosted at 10x
     // - 1 covered hex boosted at 20x
     // - 1 covered hex no boost
-    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(epoch_duration);
+    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
 
     // With regular poc now 50% of total emissions, that will be split
     // between the 3 radios equally.
@@ -589,8 +609,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     assert_eq!(total_poc_emissions, total);
 
     // confirm the rewarded percentage amount matches expectations
-    let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-    let percent = (Decimal::from(total) / daily_total)
+    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     assert_eq!(percent, dec!(0.6));
 
@@ -602,15 +621,14 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
     let boost_period_length = Duration::days(30);
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    seed_heartbeats_v1(epoch.start, &mut txn).await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_heartbeats_v1(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_radio_thresholds(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -620,8 +638,8 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
         NonZeroU32::new(10).unwrap(),
         NonZeroU32::new(15).unwrap(),
     ];
-    let start_ts_1 =
-        epoch.start - (boost_period_length * multipliers1.len() as i32 + ChronoDuration::days(1));
+    let start_ts_1 = reward_info.epoch_period.start
+        - (boost_period_length * multipliers1.len() as i32 + ChronoDuration::days(1));
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where reward start time is same as the boost period ends
@@ -630,7 +648,8 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
         NonZeroU32::new(12).unwrap(),
         NonZeroU32::new(17).unwrap(),
     ];
-    let start_ts_2 = epoch.start - (boost_period_length * multipliers2.len() as i32);
+    let start_ts_2 =
+        reward_info.epoch_period.start - (boost_period_length * multipliers2.len() as i32);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
 
     let boosted_hexes = vec![
@@ -658,6 +677,11 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
+    // todo: rebalance the tests to use a normalised hnt price
+    let hnt_price = HntPrice::new(10000000000000000, 8);
+    assert_eq!(hnt_price.hnt_price, dec!(100000000));
+    assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
+
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -665,8 +689,8 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            hnt_price
         ),
         receive_expected_rewards(&mut mobile_rewards)
     );
@@ -703,14 +727,13 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
         let unallocated_sum: u64 = unallocated_reward.amount;
         let total = poc_sum + unallocated_sum;
 
-        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
         assert_eq!(expected_sum, total);
 
         // confirm the rewarded percentage amount matches expectations
-        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-        let percent = (Decimal::from(total) / daily_total)
+        let percent = (Decimal::from(total) / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(percent, dec!(0.6));
     } else {
@@ -723,15 +746,14 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
 async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
-    let epoch_duration = epoch.end - epoch.start;
+
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
     let boost_period_length = Duration::days(30);
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
     seed_heartbeats_with_location_trust(
-        epoch.start,
+        reward_info.epoch_period.start,
         &mut txn,
         HotspotLocationTrust {
             meters: 10,
@@ -747,14 +769,14 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         },
     )
     .await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_radio_thresholds(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is in the second period length
     let multipliers1 = vec![NonZeroU32::new(2).unwrap()];
-    let start_ts_1 = epoch.start;
+    let start_ts_1 = reward_info.epoch_period.start;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where no start or end time is set
@@ -786,9 +808,15 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let total_poc_emissions = reward_shares::get_scheduled_tokens_for_poc(epoch_duration)
-        .to_u64()
-        .unwrap();
+    let total_poc_emissions =
+        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
+            .to_u64()
+            .unwrap();
+
+    // todo: rebalance the tests to use a normalised hnt price
+    let hnt_price = HntPrice::new(10000000000000000, 8);
+    assert_eq!(hnt_price.hnt_price, dec!(100000000));
+    assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -797,8 +825,8 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            hnt_price
         ),
         receive_expected_rewards_maybe_unallocated(
             &mut mobile_rewards,
@@ -833,7 +861,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     );
 
     // Calculating expected rewards
-    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(epoch_duration);
+    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
 
     // Here's how we get the regular shares per coverage points
     // | base coverage point | speedtest | location | total |
@@ -880,14 +908,13 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
     let total = poc_sum + unallocated_reward.amount;
 
-    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
         .to_u64()
         .unwrap();
     assert_eq!(expected_sum, total);
 
     // confirm the rewarded percentage amount matches expectations
-    let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-    let percent = (Decimal::from(total) / daily_total)
+    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     assert_eq!(percent, dec!(0.6));
 
@@ -900,15 +927,14 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
 ) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
-    let epoch_duration = epoch.end - epoch.start;
+
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
     let boost_period_length = Duration::days(30);
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
     seed_heartbeats_with_location_trust(
-        epoch.start,
+        reward_info.epoch_period.start,
         &mut txn,
         // hotspot 1 can receive boosting
         HotspotLocationTrust {
@@ -927,14 +953,14 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
         },
     )
     .await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_radio_thresholds(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
     // setup boosted hex where reward start time is in the second period length
     let multipliers1 = vec![NonZeroU32::new(2).unwrap()];
-    let start_ts_1 = epoch.start;
+    let start_ts_1 = reward_info.epoch_period.start;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where no start or end time is set
@@ -966,9 +992,15 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let total_poc_emissions = reward_shares::get_scheduled_tokens_for_poc(epoch_duration)
-        .to_u64()
-        .unwrap();
+    let total_poc_emissions =
+        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
+            .to_u64()
+            .unwrap();
+
+    // todo: rebalance the tests to use a normalised hnt price
+    let hnt_price = HntPrice::new(10000000000000000, 8);
+    assert_eq!(hnt_price.hnt_price, dec!(100000000));
+    assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -977,8 +1009,8 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            hnt_price
         ),
         receive_expected_rewards_maybe_unallocated(
             &mut mobile_rewards,
@@ -1013,7 +1045,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     );
 
     // Calculating expected rewards
-    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(epoch_duration);
+    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
 
     // Here's how we get the regular shares per coverage points
     // | base coverage point | speedtest | location | total |
@@ -1060,14 +1092,13 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
         hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
     let total = poc_sum + unallocated_reward.amount;
 
-    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
         .to_u64()
         .unwrap();
     assert_eq!(expected_sum, total);
 
     // confirm the rewarded percentage amount matches expectations
-    let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-    let percent = (Decimal::from(total) / daily_total)
+    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     assert_eq!(percent, dec!(0.6));
 
@@ -1079,18 +1110,17 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
-    let epoch_duration = epoch.end - epoch.start;
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+
     let boost_period_length = Duration::days(30);
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
     // seed HBs where we have multiple coverage reports for one radio and one report for the others
     // include a cbrs radio alongside 2 wifi radios
-    seed_heartbeats_v4(epoch.start, &mut txn).await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_heartbeats_v4(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_radio_thresholds(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -1101,7 +1131,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         NonZeroU32::new(15).unwrap(),
         NonZeroU32::new(35).unwrap(),
     ];
-    let start_ts_1 = epoch.start - boost_period_length;
+    let start_ts_1 = reward_info.epoch_period.start - boost_period_length;
     let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
 
     // setup boosted hex where reward start time is in the third & last period length
@@ -1110,7 +1140,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         NonZeroU32::new(10).unwrap(),
         NonZeroU32::new(20).unwrap(),
     ];
-    let start_ts_2 = epoch.start - (boost_period_length * 2);
+    let start_ts_2 = reward_info.epoch_period.start - (boost_period_length * 2);
     let end_ts_2 = start_ts_2 + (boost_period_length * multipliers2.len() as i32);
 
     // setup boosted hex where reward start time is in the first period length
@@ -1120,7 +1150,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         NonZeroU32::new(10).unwrap(),
         NonZeroU32::new(20).unwrap(),
     ];
-    let start_ts_3 = epoch.start;
+    let start_ts_3 = reward_info.epoch_period.start;
     let end_ts_3 = start_ts_3 + (boost_period_length * multipliers3.len() as i32);
 
     let boosted_hexes = vec![
@@ -1171,9 +1201,15 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let total_poc_emissions = reward_shares::get_scheduled_tokens_for_poc(epoch_duration)
-        .to_u64()
-        .unwrap();
+    let total_poc_emissions =
+        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
+            .to_u64()
+            .unwrap();
+
+    // todo: rebalance the tests to use a normalised hnt price
+    let hnt_price = HntPrice::new(10000000000000000, 8);
+    assert_eq!(hnt_price.hnt_price, dec!(100000000));
+    assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -1182,8 +1218,8 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            hnt_price
         ),
         receive_expected_rewards_maybe_unallocated(
             &mut mobile_rewards,
@@ -1217,7 +1253,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     );
 
     // Calculating expected rewards
-    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(epoch_duration);
+    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
 
     // Here's how we get the regular shares per coverage points
     // | base coverage point | speedtest | location | total |
@@ -1273,14 +1309,13 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
     let total = poc_sum + unallocated_reward.amount;
 
-    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
         .to_u64()
         .unwrap();
     assert_eq!(expected_sum, total);
 
     // confirm the rewarded percentage amount matches expectations
-    let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-    let percent = (Decimal::from(total) / daily_total)
+    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     assert_eq!(percent, dec!(0.6));
 
@@ -1888,10 +1923,9 @@ async fn save_seniority_object(
     Ok(())
 }
 
-fn get_poc_allocation_buckets(epoch_duration: Duration) -> (Decimal, Decimal) {
+fn get_poc_allocation_buckets(total_emissions: Decimal) -> (Decimal, Decimal) {
     // To not deal with percentages of percentages, let's start with the
     // total emissions and work from there.
-    let total_emissions = reward_shares::get_total_scheduled_tokens(epoch_duration);
     let data_transfer = total_emissions * dec!(0.4);
     let regular_poc = total_emissions * dec!(0.1);
     let boosted_poc = total_emissions * dec!(0.1);
