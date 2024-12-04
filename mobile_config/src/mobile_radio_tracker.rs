@@ -77,6 +77,8 @@ struct TrackedMobileRadio {
     hash: String,
     last_changed_at: DateTime<Utc>,
     last_checked_at: DateTime<Utc>,
+    asserted_location: Option<i64>,
+    asserted_location_change_at: Option<DateTime<Utc>>,
 }
 
 impl TrackedMobileRadio {
@@ -86,17 +88,23 @@ impl TrackedMobileRadio {
             hash: radio.hash(),
             last_changed_at: radio.refreshed_at,
             last_checked_at: Utc::now(),
+            asserted_location: radio.location,
+            asserted_location_change_at: None,
         }
     }
 
     fn update_from_radio(mut self, radio: &MobileRadio) -> Self {
         let new_hash = radio.hash();
+        self.last_checked_at = Utc::now();
         if self.hash != new_hash {
             self.hash = new_hash;
             self.last_changed_at = radio.refreshed_at;
         }
+        if self.asserted_location != radio.location {
+            self.asserted_location = radio.location;
+            self.asserted_location_change_at = Some(self.last_checked_at);
+        }
 
-        self.last_checked_at = Utc::now();
         self
     }
 }
@@ -192,7 +200,9 @@ async fn get_tracked_radios(
             entity_key,
             hash,
             last_changed_at,
-            last_checked_at
+            last_checked_at,
+            asserted_location,
+            asserted_location_change_at
         FROM mobile_radio_tracker
         "#,
     )
@@ -241,24 +251,28 @@ async fn update_tracked_radios(
 ) -> anyhow::Result<()> {
     let mut txn = pool.begin().await?;
 
-    const BATCH_SIZE: usize = (u16::MAX / 4) as usize;
+    const BATCH_SIZE: usize = (u16::MAX / 6) as usize;
 
     for chunk in tracked_radios.chunks(BATCH_SIZE) {
         QueryBuilder::new(
-            "INSERT INTO mobile_radio_tracker(entity_key, hash, last_changed_at, last_checked_at)",
+            "INSERT INTO mobile_radio_tracker(entity_key, hash, last_changed_at, last_checked_at, asserted_location, asserted_location_change_at)",
         )
         .push_values(chunk, |mut b, tracked_radio| {
             b.push_bind(&tracked_radio.entity_key)
                 .push_bind(&tracked_radio.hash)
                 .push_bind(tracked_radio.last_changed_at)
-                .push_bind(tracked_radio.last_checked_at);
+                .push_bind(tracked_radio.last_checked_at)
+                .push_bind(tracked_radio.asserted_location)
+                .push_bind(tracked_radio.asserted_location_change_at);
         })
         .push(
             r#"
             ON CONFLICT (entity_key) DO UPDATE SET
                 hash = EXCLUDED.hash,
                 last_changed_at = EXCLUDED.last_changed_at,
-                last_checked_at = EXCLUDED.last_checked_at
+                last_checked_at = EXCLUDED.last_checked_at,
+                asserted_location = EXCLUDED.last_asserted_location,
+                asserted_location_change_at = EXCLUDED.asserted_location_change_at,
             "#,
         )
         .build()
