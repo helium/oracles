@@ -25,7 +25,6 @@ use helium_proto::{
     },
     Message,
 };
-use solana_sdk::pubkey::Pubkey;
 use sqlx::{Pool, Postgres};
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
@@ -939,7 +938,7 @@ impl iot_config::Route for RouteService {
 struct DevAddrEuiValidator {
     route_ids: Vec<String>,
     constraints: Option<Vec<DevAddrConstraint>>,
-    signing_keys: Vec<Pubkey>,
+    signing_keys: Vec<PublicKey>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -967,17 +966,18 @@ impl DevAddrEuiValidator {
             None
         };
 
-        let mut org_keys = org::get_org_pubkeys_by_route(route_id, db).await?;
-        org_keys.extend(
-            admin_keys
-                .into_iter()
-                .filter_map(|key| convert_to_solana_public_key(&key).ok()),
-        );
+        let org_keys = org::get_org_pubkeys_by_route(route_id, db).await?;
+        let mut signing_keys = org_keys
+            .into_iter()
+            .filter_map(|key| convert_to_helium_public_key(&key).ok())
+            .collect::<Vec<PublicKey>>();
+
+        signing_keys.extend(admin_keys);
 
         Ok(Self {
             route_ids: org::get_route_ids_by_route(route_id, db).await?,
             constraints,
-            signing_keys: org_keys,
+            signing_keys,
         })
     }
 
@@ -1080,17 +1080,13 @@ where
 
 fn validate_signature<'a, R>(
     request: &'a R,
-    signing_keys: &mut [Pubkey],
+    signing_keys: &mut [PublicKey],
 ) -> Result<&'a R, DevAddrEuiValidationError>
 where
     R: MsgVerify + ValidateRouteComponent<'a> + std::fmt::Debug,
 {
     for (idx, pubkey) in signing_keys.iter().enumerate() {
-        let helium_signer = convert_to_helium_public_key(pubkey).map_err(|err| {
-            DevAddrEuiValidationError::InvalidUpdate(format!("invalid public key: {err:?}"))
-        })?;
-
-        if request.verify(&helium_signer).is_ok() {
+        if request.verify(&pubkey).is_ok() {
             signing_keys.swap(idx, 0);
             return Ok(request);
         }
