@@ -76,3 +76,68 @@ pub async fn clear(
     .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use file_store::unique_connections::UniqueConnectionReq;
+    use helium_crypto::{KeyTag, Keypair};
+    use rand::rngs::OsRng;
+
+    use super::*;
+
+    #[sqlx::test]
+    fn only_use_latest_within_window(pool: PgPool) -> anyhow::Result<()> {
+        // In the case connection counts need to be reprocessed,
+        // make sure we grab only the latest count for a radio
+        // when there may be more than one row for a radio in the window.
+
+        let keypair = Keypair::generate(KeyTag::default(), &mut OsRng);
+        let pubkey_bin: PublicKeyBinary = keypair.public_key().to_owned().into();
+
+        let now = Utc::now();
+
+        let base_report = UniqueConnectionsIngestReport {
+            received_timestamp: Utc::now(),
+            report: UniqueConnectionReq {
+                pubkey: pubkey_bin.clone(),
+                start_timestamp: now - chrono::Duration::days(7),
+                end_timestamp: now,
+                unique_connections: 0,
+                timestamp: now,
+                carrier_key: pubkey_bin.clone(),
+                signature: vec![],
+            },
+        };
+
+        // Prepare two reports for the same window.
+        // Both will be saved, but only the connection count in the second should be used.
+        let first = now - chrono::Duration::hours(5);
+        let second = now - chrono::Duration::hours(2);
+        let report_one = UniqueConnectionsIngestReport {
+            received_timestamp: first,
+            report: UniqueConnectionReq {
+                unique_connections: 2,
+                ..base_report.report.clone()
+            },
+        };
+        let report_two = UniqueConnectionsIngestReport {
+            received_timestamp: second,
+            report: UniqueConnectionReq {
+                unique_connections: 1,
+                ..report_one.report.clone()
+            },
+        };
+
+        let mut txn = pool.begin().await?;
+        save(&mut txn, &report_one).await?;
+        save(&mut txn, &report_two).await?;
+        txn.commit().await?;
+
+        let epoch = (now - chrono::Duration::days(1))..now;
+        let uniq_conns = get(&pool, &epoch).await?;
+        let conns = uniq_conns.get(&pubkey_bin).cloned().unwrap();
+        assert_eq!(1, conns);
+
+        Ok(())
+    }
+}
