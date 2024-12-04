@@ -335,6 +335,63 @@ mod tests {
         assert_eq!(radio.hash(), result[0].hash);
     }
 
+    #[tokio::test]
+    async fn last_asserted_location_will_not_updated_if_nothing_changes() {
+        // location None
+        let mut radio = mobile_radio(vec![1, 2, 3]);
+        radio.location = None;
+        let tracked_radio = TrackedMobileRadio::new(&radio);
+        let mut tracked_radios = HashMap::new();
+        tracked_radios.insert(tracked_radio.entity_key.clone(), tracked_radio);
+
+        let result = identify_changes(stream::iter(vec![radio.clone()]), tracked_radios).await;
+
+        assert!(result[0].asserted_location_change_at.is_none());
+        assert!(result[0].asserted_location.is_none());
+
+        // location is 1
+        let mut radio = mobile_radio(vec![1, 2, 3]);
+        radio.location = Some(1);
+        let tracked_radio = TrackedMobileRadio::new(&radio);
+        let mut tracked_radios = HashMap::new();
+        tracked_radios.insert(tracked_radio.entity_key.clone(), tracked_radio);
+
+        let result = identify_changes(stream::iter(vec![radio.clone()]), tracked_radios).await;
+        assert!(result[0].asserted_location_change_at.is_none());
+        assert_eq!(result[0].asserted_location, Some(1));
+    }
+
+    #[tokio::test]
+    async fn will_update_last_asserted_location_change_at_when_location_changes() {
+        let mut radio = mobile_radio(vec![1, 2, 3]);
+        radio.location = None;
+        let tracked_radio = TrackedMobileRadio::new(&radio);
+        radio.location = Some(1);
+
+        let mut tracked_radios = HashMap::new();
+        tracked_radios.insert(tracked_radio.entity_key.clone(), tracked_radio);
+
+        let result = identify_changes(stream::iter(vec![radio.clone()]), tracked_radios).await;
+
+        assert_eq!(
+            result[0].asserted_location_change_at.unwrap(),
+            result[0].last_checked_at
+        );
+        assert_eq!(result[0].asserted_location.unwrap(), 1);
+
+        let tracked_radio = TrackedMobileRadio::new(&radio);
+        radio.location = Some(2);
+        let mut tracked_radios = HashMap::new();
+        tracked_radios.insert(tracked_radio.entity_key.clone(), tracked_radio);
+        let result = identify_changes(stream::iter(vec![radio.clone()]), tracked_radios).await;
+
+        assert_eq!(
+            result[0].asserted_location_change_at.unwrap(),
+            result[0].last_checked_at
+        );
+        assert_eq!(result[0].asserted_location.unwrap(), 2);
+    }
+
     fn mobile_radio(entity_key: EntityKey) -> MobileRadio {
         MobileRadio {
             entity_key,
