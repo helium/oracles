@@ -12,7 +12,7 @@ use crate::pending_burns;
 pub struct Burner<S> {
     valid_sessions: FileSinkClient<ValidDataTransferSession>,
     solana: S,
-    retry_attempts: usize,
+    failed_retry_attempts: usize,
     failed_check_interval: Duration,
 }
 
@@ -20,13 +20,13 @@ impl<S> Burner<S> {
     pub fn new(
         valid_sessions: FileSinkClient<ValidDataTransferSession>,
         solana: S,
-        retry_attempts: usize,
+        failed_retry_attempts: usize,
         failed_check_interval: Duration,
     ) -> Self {
         Self {
             valid_sessions,
             solana,
-            retry_attempts,
+            failed_retry_attempts,
             failed_check_interval,
         }
     }
@@ -73,7 +73,7 @@ where
                         signature = %txn.get_signature(),
                         %payer,
                         total_dcs,
-                        max_attempts = self.retry_attempts
+                        max_attempts = self.failed_retry_attempts
                     );
 
                     tokio::spawn(
@@ -101,7 +101,7 @@ where
         let pool = pool.clone();
         let solana = self.solana.clone();
         let valid_sessions = self.valid_sessions.clone();
-        let retry_attempts = self.retry_attempts;
+        let retry_attempts = self.failed_retry_attempts;
         let check_interval = self.failed_check_interval;
 
         async move {
