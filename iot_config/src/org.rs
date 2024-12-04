@@ -249,12 +249,12 @@ pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<()
     sqlx::query(
         r#"
         INSERT INTO organization_locks (organization, locked)
-        SELECT address, NOT COALESCE(org_lock.locked, true)
+        SELECT address, NOT COALESCE(org_lock.locked, false)
         FROM solana_organizations sol_org
         LEFT JOIN organization_locks org_lock ON sol_org.address = org_lock.organization
         WHERE sol_org.oui = $1
         ON CONFLICT (organization) DO UPDATE
-        SET locked = NOT COALESCE(EXCLUDED.locked, true)
+        SET locked = NOT organization_locks.locked
         "#,
     )
     .bind(Decimal::from(oui))
