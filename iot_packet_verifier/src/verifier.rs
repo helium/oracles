@@ -352,6 +352,7 @@ impl<T: Send> PacketWriter<T> for Vec<T> {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
