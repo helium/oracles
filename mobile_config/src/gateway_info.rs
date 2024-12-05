@@ -2,10 +2,11 @@ use chrono::{DateTime, TimeZone, Utc};
 use futures::stream::BoxStream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
-    gateway_metadata::DeploymentInfo as DeploymentInfoProto,
+    gateway_metadata_v2::DeploymentInfo as DeploymentInfoProto,
     CbrsDeploymentInfo as CbrsDeploymentInfoProto,
     CbrsRadioDeploymentInfo as CbrsRadioDeploymentInfoProto, DeviceType as DeviceTypeProto,
-    GatewayInfo as GatewayInfoProto, GatewayMetadata as GatewayMetadataProto,
+    GatewayInfo as GatewayInfoProto, GatewayInfoV2 as GatewayInfoProtoV2,
+    GatewayMetadata as GatewayMetadataProto, GatewayMetadataV2 as GatewayMetadataProtoV2,
     WifiDeploymentInfo as WifiDeploymentInfoProto,
 };
 use serde::Deserialize;
@@ -102,8 +103,9 @@ pub struct GatewayInfo {
     pub address: PublicKeyBinary,
     pub metadata: Option<GatewayMetadata>,
     pub device_type: DeviceType,
-    pub refreshed_at: DateTime<Utc>,
-    pub created_at: DateTime<Utc>,
+    // None for V1
+    pub refreshed_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl GatewayInfo {
@@ -122,13 +124,13 @@ pub enum GatewayInfoProtoParseError {
     InvalidRefreshedAt(u64),
 }
 
-impl TryFrom<GatewayInfoProto> for GatewayInfo {
+impl TryFrom<GatewayInfoProtoV2> for GatewayInfo {
     type Error = GatewayInfoProtoParseError;
 
-    fn try_from(info: GatewayInfoProto) -> Result<Self, Self::Error> {
+    fn try_from(info: GatewayInfoProtoV2) -> Result<Self, Self::Error> {
         let device_type_ = info.device_type().into();
 
-        let GatewayInfoProto {
+        let GatewayInfoProtoV2 {
             address,
             metadata,
             device_type: _,
@@ -160,8 +162,41 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
             address: address.into(),
             metadata,
             device_type: device_type_,
-            created_at,
-            refreshed_at,
+            created_at: Some(created_at),
+            refreshed_at: Some(refreshed_at),
+        })
+    }
+}
+
+impl TryFrom<GatewayInfoProto> for GatewayInfo {
+    type Error = GatewayInfoProtoParseError;
+
+    fn try_from(info: GatewayInfoProto) -> Result<Self, Self::Error> {
+        let device_type_ = info.device_type().into();
+
+        let GatewayInfoProto {
+            address,
+            metadata,
+            device_type: _,
+        } = info;
+
+        let metadata = if let Some(metadata) = metadata {
+            Some(
+                u64::from_str_radix(&metadata.location, 16).map(|location| GatewayMetadata {
+                    location,
+                    deployment_info: None,
+                })?,
+            )
+        } else {
+            None
+        };
+
+        Ok(Self {
+            address: address.into(),
+            metadata,
+            device_type: device_type_,
+            created_at: None,
+            refreshed_at: None,
         })
     }
 }
@@ -219,7 +254,6 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
         let metadata = if let Some(metadata) = info.metadata {
             Some(GatewayMetadataProto {
                 location: hextree::Cell::from_raw(metadata.location)?.to_string(),
-                deployment_info: metadata.deployment_info.map(|v| v.into()),
             })
         } else {
             None
@@ -228,8 +262,45 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
             address: info.address.into(),
             metadata,
             device_type: info.device_type as i32,
-            created_at: info.created_at.timestamp() as u64,
-            refreshed_at: info.created_at.timestamp() as u64,
+        })
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum GatewayInfoToProtoError {
+    #[error("Invalid location: {0}")]
+    InvalidLocation(#[from] hextree::Error),
+    #[error("created_at is None")]
+    CreatedAtIsNone,
+    #[error("refreshed_at is None")]
+    RefreshedAtIsNone,
+}
+
+impl TryFrom<GatewayInfo> for GatewayInfoProtoV2 {
+    type Error = GatewayInfoToProtoError;
+
+    fn try_from(info: GatewayInfo) -> Result<Self, Self::Error> {
+        let metadata = if let Some(metadata) = info.metadata {
+            let deployment_info = metadata.deployment_info.map(|v| v.into());
+            Some(GatewayMetadataProtoV2 {
+                location: hextree::Cell::from_raw(metadata.location)?.to_string(),
+                deployment_info,
+            })
+        } else {
+            None
+        };
+        Ok(Self {
+            address: info.address.into(),
+            metadata,
+            device_type: info.device_type as i32,
+            created_at: info
+                .created_at
+                .ok_or(GatewayInfoToProtoError::CreatedAtIsNone)?
+                .timestamp() as u64,
+            refreshed_at: info
+                .refreshed_at
+                .ok_or(GatewayInfoToProtoError::RefreshedAtIsNone)?
+                .timestamp() as u64,
         })
     }
 }
@@ -283,7 +354,8 @@ impl std::str::FromStr for DeviceType {
 }
 
 pub(crate) mod db {
-    use super::{DeploymentInfo, DeviceType, GatewayInfo, GatewayMetadata};
+    use super::{DeviceType, GatewayInfo, GatewayMetadata};
+    use crate::gateway_info::DeploymentInfo;
     use chrono::{DateTime, Utc};
     use futures::stream::{Stream, StreamExt};
     use helium_crypto::PublicKeyBinary;
@@ -405,8 +477,8 @@ pub(crate) mod db {
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
                 metadata,
                 device_type,
-                refreshed_at,
-                created_at,
+                refreshed_at: Some(refreshed_at),
+                created_at: Some(created_at),
             })
         }
     }

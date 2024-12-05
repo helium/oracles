@@ -3,7 +3,7 @@ use crate::{
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
@@ -13,7 +13,7 @@ use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{
         self, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1,
-        GatewayInfoStreamResV1,
+        GatewayInfoStreamReqV2, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
     },
     Message,
 };
@@ -144,6 +144,7 @@ impl mobile_config::Gateway for GatewayService {
         Ok(Response::new(GrpcStreamResult::new(rx)))
     }
 
+    // Deprecated
     type info_streamStream = GrpcStreamResult<GatewayInfoStreamResV1>;
     async fn info_stream(
         &self,
@@ -151,6 +152,39 @@ impl mobile_config::Gateway for GatewayService {
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "info-stream");
+        custom_tracing::record_b58("signer", &request.signer);
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        let pool = self.metadata_pool.clone();
+        let signing_key = self.signing_key.clone();
+        let batch_size = request.batch_size;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
+        tracing::debug!(
+            "fetching all gateways' info. Device types: {:?} ",
+            device_types
+        );
+
+        tokio::spawn(async move {
+            let stream =
+                gateway_info::db::all_info_stream(&pool, &device_types, DateTime::UNIX_EPOCH);
+            stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
+
+    type info_stream_v2Stream = GrpcStreamResult<GatewayInfoStreamResV2>;
+    async fn info_stream_v2(
+        &self,
+        request: Request<GatewayInfoStreamReqV2>,
+    ) -> GrpcResult<Self::info_stream_v2Stream> {
+        let request = request.into_inner();
+        telemetry::count_request("gateway", "info-stream-v2");
         custom_tracing::record_b58("signer", &request.signer);
 
         let signer = verify_public_key(&request.signer)?;
@@ -171,7 +205,7 @@ impl mobile_config::Gateway for GatewayService {
             ))?;
 
         tracing::debug!(
-            "fetching all gateways' info. Device types: {:?} ",
+            "fetching all gateways' info (v2). Device types: {:?} ",
             device_types
         );
 
@@ -184,40 +218,77 @@ impl mobile_config::Gateway for GatewayService {
     }
 }
 
-async fn stream_multi_gateways_info(
+trait GatewayInfoStreamRes {
+    type GatewayInfoType;
+    fn new(gateways: Vec<Self::GatewayInfoType>, timestamp: u64, signer: Vec<u8>) -> Self;
+    fn set_signature(&mut self, signature: Vec<u8>);
+}
+
+impl GatewayInfoStreamRes for GatewayInfoStreamResV1 {
+    type GatewayInfoType = mobile_config::GatewayInfo;
+
+    fn new(gateways: Vec<Self::GatewayInfoType>, timestamp: u64, signer: Vec<u8>) -> Self {
+        GatewayInfoStreamResV1 {
+            gateways,
+            timestamp,
+            signer,
+            signature: vec![],
+        }
+    }
+
+    fn set_signature(&mut self, signature: Vec<u8>) {
+        self.signature = signature;
+    }
+}
+
+impl GatewayInfoStreamRes for GatewayInfoStreamResV2 {
+    type GatewayInfoType = mobile_config::GatewayInfoV2;
+
+    fn new(gateways: Vec<Self::GatewayInfoType>, timestamp: u64, signer: Vec<u8>) -> Self {
+        GatewayInfoStreamResV2 {
+            gateways,
+            timestamp,
+            signer,
+            signature: vec![],
+        }
+    }
+
+    fn set_signature(&mut self, signature: Vec<u8>) {
+        self.signature = signature;
+    }
+}
+
+async fn stream_multi_gateways_info<T>(
     stream: impl Stream<Item = GatewayInfo>,
-    tx: tokio::sync::mpsc::Sender<Result<GatewayInfoStreamResV1, Status>>,
+    tx: tokio::sync::mpsc::Sender<Result<T, Status>>,
     signing_key: Arc<Keypair>,
     batch_size: u32,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    T: GatewayInfoStreamRes + Send + Sync + 'static + helium_proto::Message,
+    T::GatewayInfoType: TryFrom<GatewayInfo> + Send + 'static,
+{
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
     Ok(stream
         .map(Ok::<GatewayInfo, sqlx::Error>)
         .try_filter_map(|info| async move {
-            let result: Option<mobile_config::GatewayInfo> = info.try_into().ok();
+            let result: Option<T::GatewayInfoType> = info.try_into().ok();
             Ok(result)
         })
         .try_chunks(batch_size as usize)
         .map_ok(move |batch| {
             (
-                GatewayInfoStreamResV1 {
-                    gateways: batch,
-                    timestamp,
-                    signer: signer.clone(),
-                    signature: vec![],
-                },
+                T::new(batch, timestamp, signer.clone()),
                 signing_key.clone(),
             )
         })
-        .try_filter_map(|(res, keypair)| async move {
-            let result = match keypair.sign(&res.encode_to_vec()) {
-                Ok(signature) => Some(GatewayInfoStreamResV1 {
-                    gateways: res.gateways,
-                    timestamp: res.timestamp,
-                    signer: res.signer,
-                    signature,
-                }),
+        .try_filter_map(|(mut res, keypair)| async move {
+            let result = match keypair.sign(&helium_proto::Message::encode_to_vec(&res)) {
+                Ok(signature) => {
+                    res.set_signature(signature);
+                    Some(res)
+                }
                 Err(_) => None,
             };
             Ok(result)
