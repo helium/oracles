@@ -138,8 +138,7 @@ pub const BYTES_PER_DC: u64 = 24;
 
 pub fn payload_size_to_dc(payload_size: u64) -> u64 {
     let payload_size = payload_size.max(BYTES_PER_DC);
-    // Integer div/ceil from: https://stackoverflow.com/a/2745086
-    (payload_size + BYTES_PER_DC - 1) / BYTES_PER_DC
+    payload_size.div_ceil(BYTES_PER_DC)
 }
 
 #[async_trait]
@@ -389,5 +388,17 @@ impl<T: Send> PacketWriter<T> for &'_ mut Vec<T> {
     async fn write(&mut self, packet: T) -> Result<(), ()> {
         (*self).push(packet);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_payload_size_to_dc() {
+        assert_eq!(1, payload_size_to_dc(1));
+        assert_eq!(1, payload_size_to_dc(24));
+        assert_eq!(2, payload_size_to_dc(25));
     }
 }

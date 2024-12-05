@@ -15,6 +15,7 @@ pub mod gateway_service;
 pub mod hex_boosting_service;
 
 pub mod key_cache;
+pub mod mobile_radio_tracker;
 pub mod settings;
 pub mod telemetry;
 

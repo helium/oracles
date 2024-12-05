@@ -29,7 +29,6 @@ use task_manager::TaskManager;
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
 #[clap(about = "Helium POC IOT Verifier")]
-
 pub struct Cli {
     /// Optional configuration file to use. If present the toml file at the
     /// given path will be loaded. Environment variables can override the

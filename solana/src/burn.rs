@@ -32,7 +32,7 @@ use std::{
 use tokio::sync::Mutex;
 
 #[async_trait]
-pub trait SolanaNetwork: Send + Sync + 'static {
+pub trait SolanaNetwork: Clone + Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     type Transaction: GetSignature + Send + Sync + 'static;
 
@@ -76,8 +76,9 @@ impl Settings {
     }
 }
 
+#[derive(Clone)]
 pub struct SolanaRpc {
-    provider: RpcClient,
+    provider: Arc<RpcClient>,
     program_cache: BurnProgramCache,
     cluster: String,
     keypair: [u8; 64],
@@ -101,7 +102,7 @@ impl SolanaRpc {
         }
         Ok(Arc::new(Self {
             cluster: settings.cluster.clone(),
-            provider,
+            provider: Arc::new(provider),
             program_cache,
             keypair: keypair.to_bytes(),
             payers_to_monitor: settings.payers_to_monitor()?,
@@ -296,7 +297,7 @@ impl SolanaNetwork for SolanaRpc {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PriorityFee {
     last_estimate: Arc<Mutex<LastEstimate>>,
 }
@@ -364,6 +365,7 @@ impl LastEstimate {
 }
 
 /// Cached pubkeys for the burn program
+#[derive(Clone)]
 pub struct BurnProgramCache {
     pub account_payer: Pubkey,
     pub data_credits: Pubkey,

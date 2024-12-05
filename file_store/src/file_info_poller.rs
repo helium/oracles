@@ -5,7 +5,6 @@ use derive_builder::Builder;
 use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
 use futures_util::TryFutureExt;
 use retainer::Cache;
-use sqlx::postgres::PgQueryResult;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -413,6 +412,9 @@ impl FileInfoPollerStore for FileStore {
         self.get_raw(key).await
     }
 }
+
+#[cfg(feature = "sqlx-postgres")]
+use sqlx::postgres::PgQueryResult;
 
 #[cfg(feature = "sqlx-postgres")]
 #[async_trait::async_trait]
