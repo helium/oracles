@@ -35,8 +35,10 @@ pub trait SolanaNetwork: Clone + Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     type Transaction: GetSignature + Send + Sync + 'static;
 
+    #[allow(clippy::ptr_arg)]
     async fn payer_balance(&self, escrow_key: &String) -> Result<u64, Self::Error>;
 
+    #[allow(clippy::ptr_arg)]
     async fn make_burn_transaction(
         &self,
         escrow_key: &String,
