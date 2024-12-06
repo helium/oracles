@@ -142,8 +142,10 @@ pub struct CoveragePoints {
     pub radio_type: RadioType,
     /// Input SPBoostedRewardEligibility
     pub service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
-    /// Derived Eligibility for Boosted Hex Rewards
-    pub boosted_hex_eligibility: SpBoostedHexStatus,
+    /// Derived Eligibility for Service Provider Boosted Hex Rewards
+    pub sp_boosted_hex_eligibility: SpBoostedHexStatus,
+    /// Derived Eligibility for Oracle Boosted Hex Rewards
+    pub oracle_boosted_hex_eligibility: OracleBoostingStatus,
     /// Speedtests used in calculation
     pub speedtests: Vec<Speedtest>,
     /// Location Trust Scores used in calculation
@@ -161,11 +163,11 @@ impl CoveragePoints {
         speedtests: Vec<Speedtest>,
         location_trust_scores: Vec<LocationTrust>,
         ranked_coverage: Vec<coverage_map::RankedCoverage>,
-        oracle_boosting_status: OracleBoostingStatus,
+        oracle_boost_status: OracleBoostingStatus,
     ) -> Result<CoveragePoints> {
         let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
 
-        let boost_eligibility = SpBoostedHexStatus::new(
+        let sp_boost_eligibility = SpBoostedHexStatus::new(
             radio_type,
             location_trust_multiplier,
             &location_trust_scores,
@@ -174,9 +176,9 @@ impl CoveragePoints {
 
         let covered_hexes = hexes::clean_covered_hexes(
             radio_type,
-            boost_eligibility,
+            sp_boost_eligibility,
             ranked_coverage,
-            oracle_boosting_status,
+            oracle_boost_status,
         )?;
 
         let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
@@ -191,7 +193,8 @@ impl CoveragePoints {
             speedtest_avg,
             radio_type,
             service_provider_boosted_reward_eligibility,
-            boosted_hex_eligibility: boost_eligibility,
+            sp_boosted_hex_eligibility: sp_boost_eligibility,
+            oracle_boosted_hex_eligibility: oracle_boost_status,
             speedtests,
             location_trust_scores,
             covered_hexes,
@@ -234,7 +237,7 @@ impl CoveragePoints {
     }
 
     fn boosted_points(&self) -> Decimal {
-        match self.boosted_hex_eligibility {
+        match self.sp_boosted_hex_eligibility {
             SpBoostedHexStatus::Eligible => self.coverage_points.boosted,
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
             SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),

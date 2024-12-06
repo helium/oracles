@@ -360,7 +360,8 @@ pub fn coverage_point_to_mobile_reward_share(
         ),
         speedtests: coverage_points.proto_speedtests(),
         speedtest_multiplier: Some(coverage_points.speedtest_multiplier.proto_decimal()),
-        boosted_hex_status: coverage_points.proto_boosted_hex_status().into(),
+        sp_boosted_hex_status: coverage_points.proto_sp_boosted_hex_status().into(),
+        oracle_boosted_hex_status: coverage_points.proto_oracle_boosted_hex_status().into(),
         covered_hexes: coverage_points.proto_covered_hexes(),
         speedtest_average: Some(coverage_points.proto_speedtest_avg()),
     });
