@@ -55,7 +55,10 @@ where
             }
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
-            let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
+            let txn = self
+                .solana
+                .make_burn_transaction(&payer.to_string(), total_dcs)
+                .await?;
             match self.solana.submit_transaction(&txn).await {
                 Ok(()) => {
                     handle_transaction_success(
