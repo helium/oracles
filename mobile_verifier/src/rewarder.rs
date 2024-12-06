@@ -165,7 +165,7 @@ where
 
         loop {
             let next_reward_epoch = next_reward_epoch(&self.pool).await?;
-            let next_reward_epoch_period = EpochPeriod::try_from(next_reward_epoch)?;
+            let next_reward_epoch_period = EpochPeriod::from(next_reward_epoch);
 
             let scheduler = Scheduler::new(
                 self.reward_period_duration,
@@ -267,7 +267,7 @@ where
 
         tracing::info!(
             "Rewarding for epoch {} period: {} to {} with hnt bone price: {}",
-            reward_info.epoch,
+            reward_info.epoch_day,
             reward_info.epoch_period.start,
             reward_info.epoch_period.end,
             hnt_price.price_per_hnt_bone
@@ -329,7 +329,7 @@ where
         unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
-        save_next_reward_epoch(&mut transaction, reward_info.epoch + 1).await?;
+        save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
 
         transaction.commit().await?;
 
@@ -350,7 +350,7 @@ where
                     end_timestamp: reward_info.epoch_period.end.encode_timestamp(),
                     written_files,
                     reward_data: Some(MobileRewardData(reward_data)),
-                    epoch: reward_info.epoch,
+                    epoch: reward_info.epoch_day,
                     price: hnt_price.hnt_price_in_bones,
                 },
                 [],
@@ -492,7 +492,7 @@ async fn reward_poc(
 
     let (unallocated_poc_amount, calculated_poc_rewards_per_share) =
         if let Some((calculated_poc_rewards_per_share, mobile_reward_shares)) =
-            coverage_shares.into_rewards(reward_shares, reward_info)
+            coverage_shares.into_rewards(reward_shares, &reward_info.epoch_period)
         {
             // handle poc reward outputs
             let mut allocated_poc_rewards = 0_u64;
@@ -579,7 +579,7 @@ pub async fn reward_mappers(
     let mut allocated_mapping_rewards = 0_u64;
 
     for (reward_amount, mapping_share) in
-        mapping_shares.into_subscriber_rewards(reward_info, rewards_per_share)
+        mapping_shares.into_subscriber_rewards(&reward_info.epoch_period, rewards_per_share)
     {
         allocated_mapping_rewards += reward_amount;
         mobile_rewards
