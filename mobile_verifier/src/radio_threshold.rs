@@ -344,7 +344,7 @@ pub async fn save(
     .bind(ingest_report.report.subscriber_threshold as i32)
     .bind(ingest_report.report.threshold_timestamp)
     .bind(ingest_report.received_timestamp)
-    .execute(&mut *db)
+    .execute(db)
     .await?;
     Ok(())
 }

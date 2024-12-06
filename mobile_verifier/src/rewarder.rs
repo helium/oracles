@@ -10,7 +10,8 @@ use crate::{
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_location, subscriber_verified_mapping_event, telemetry, Settings,
+    subscriber_location, subscriber_verified_mapping_event, telemetry, unique_connections,
+    Settings,
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -50,6 +51,7 @@ use tokio::time::sleep;
 use self::boosted_hex_eligibility::BoostedHexEligibility;
 
 pub mod boosted_hex_eligibility;
+mod db;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
@@ -193,39 +195,25 @@ where
         &self,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<bool> {
-        // Check if we have heartbeats and speedtests past the end of the reward period
+        // Check if we have heartbeats and speedtests and unique connections past the end of the reward period
         if reward_period.end >= self.disable_complete_data_checks_until().await? {
-            if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM cbrs_heartbeats WHERE latest_timestamp >= $1",
-            )
-            .bind(reward_period.end)
-            .fetch_one(&self.pool)
-            .await?
-                == 0
-            {
+            if db::no_cbrs_heartbeats(&self.pool, reward_period).await? {
                 tracing::info!("No cbrs heartbeats found past reward period");
                 return Ok(false);
             }
 
-            if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM wifi_heartbeats WHERE latest_timestamp >= $1",
-            )
-            .bind(reward_period.end)
-            .fetch_one(&self.pool)
-            .await?
-                == 0
-            {
+            if db::no_wifi_heartbeats(&self.pool, reward_period).await? {
                 tracing::info!("No wifi heartbeats found past reward period");
                 return Ok(false);
             }
 
-            if sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM speedtests WHERE timestamp >= $1")
-                .bind(reward_period.end)
-                .fetch_one(&self.pool)
-                .await?
-                == 0
-            {
+            if db::no_speedtests(&self.pool, reward_period).await? {
                 tracing::info!("No speedtests found past reward period");
+                return Ok(false);
+            }
+
+            if db::no_unique_connections(&self.pool, reward_period).await? {
+                tracing::info!("No unique connections found past reward period");
                 return Ok(false);
             }
 
@@ -302,6 +290,7 @@ where
         coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
         sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_period.start).await?;
         subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.start).await?;
+        unique_connections::db::clear(&mut transaction, &reward_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
@@ -450,6 +439,8 @@ async fn reward_poc(
     )
     .await?;
 
+    let unique_connections = unique_connections::db::get(pool, reward_period).await?;
+
     let coverage_shares = CoverageShares::new(
         pool,
         heartbeats,
@@ -457,6 +448,7 @@ async fn reward_poc(
         &boosted_hexes,
         &boosted_hex_eligibility,
         &poc_banned_radios,
+        &unique_connections,
         reward_period,
     )
     .await?;

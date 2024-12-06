@@ -1,9 +1,39 @@
+use chrono::Utc;
 use helium_crypto::PublicKeyBinary;
 use std::str::FromStr;
 
 mod common;
 
 const PUBKEY1: &str = "113HRxtzxFbFUjDEJJpyeMRZRtdAW38LAUnB5mshRwi6jt7uFbt";
+
+#[tokio::test]
+async fn submit_unique_connections() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    let timestamp = Utc::now();
+    let end = timestamp - chrono::Duration::days(1);
+    let start = end - chrono::Duration::days(7);
+
+    const UNIQUE_CONNECTIONS: u64 = 42;
+
+    let response = client
+        .submit_unique_connections(pubkey.into(), start, end, UNIQUE_CONNECTIONS)
+        .await?;
+
+    let report = client.unique_connection_recv().await?;
+
+    let Some(inner_report) = report.report else {
+        anyhow::bail!("No report found")
+    };
+
+    assert_eq!(inner_report.timestamp, response.timestamp);
+    assert_eq!(inner_report.unique_connections, UNIQUE_CONNECTIONS);
+
+    trigger.trigger();
+
+    Ok(())
+}
 
 #[tokio::test]
 async fn submit_verified_subscriber_mapping_event() -> anyhow::Result<()> {
