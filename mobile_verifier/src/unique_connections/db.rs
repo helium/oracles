@@ -21,11 +21,11 @@ pub async fn get(
 
     let rows = sqlx::query_as::<_, UniqueConnections>(
         r#"
-            SELECT DISTINCT ON(hotspot_pubkey, received_timestamp)
+            SELECT DISTINCT ON(hotspot_pubkey)
                 hotspot_pubkey, unique_connections
             FROM unique_connections
             WHERE received_timestamp >= $1 AND received_timestamp <= $2
-            ORDER BY hotspot_pubkey, received_timestamp ASC
+            ORDER BY hotspot_pubkey, received_timestamp DESC
             "#,
     )
     .bind(reward_period.start)
@@ -116,6 +116,7 @@ mod tests {
         // Both will be saved, but only the connection count in the second should be used.
         let first = now - chrono::Duration::hours(5);
         let second = now - chrono::Duration::hours(2);
+
         let report_one = UniqueConnectionsIngestReport {
             received_timestamp: first,
             report: UniqueConnectionReq {
