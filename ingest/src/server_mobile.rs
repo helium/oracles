@@ -660,6 +660,10 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         bail!("expected valid api token in settings");
     };
 
+    let Some(config_client) = settings.config_client.as_ref() else {
+        bail!("expected mobile config client settings");
+    };
+
     let grpc_server = GrpcServer::new(
         heartbeat_report_sink,
         wifi_heartbeat_report_sink,
@@ -676,7 +680,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         settings.network,
         settings.listen_addr,
         api_token,
-        AuthorizationClient::from_settings(&settings.config_client)?,
+        AuthorizationClient::from_settings(config_client)?,
     );
 
     tracing::info!(

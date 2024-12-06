@@ -10,6 +10,7 @@ use crate::{
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::{MsgDecode, TimestampDecode},
+    usage_counts::{HexUsageCountsIngestReport, RadioUsageCountsIngestReport},
     wifi_heartbeat::WifiHeartbeatIngestReport,
     FileType, Result, Settings,
 };
@@ -26,8 +27,9 @@ use helium_proto::{
         },
         poc_mobile::{
             mobile_reward_share::Reward, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
-            CoverageObjectV1, Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare,
-            OracleBoostingReportV1, RadioRewardShare, SpeedtestAvg, SpeedtestIngestReportV1,
+            CoverageObjectV1, Heartbeat, HexUsageStatsIngestReportV1,
+            InvalidDataTransferIngestReportV1, MobileRewardShare, OracleBoostingReportV1,
+            RadioRewardShare, RadioUsageStatsIngestReportV1, SpeedtestAvg, SpeedtestIngestReportV1,
             SpeedtestReqV1, VerifiedInvalidatedRadioThresholdIngestReportV1,
             VerifiedRadioThresholdIngestReportV1,
         },
@@ -57,6 +59,16 @@ impl Cmd {
         while let Some(result) = file_stream.next().await {
             let msg = result?;
             match self.file_type {
+                FileType::HexUsageStatsIngestReport => {
+                    let dec_msg = HexUsageStatsIngestReportV1::decode(msg)?;
+                    let report = HexUsageCountsIngestReport::try_from(dec_msg)?;
+                    print_json(&report)?;
+                }
+                FileType::RadioUsageStatsIngestReport => {
+                    let dec_msg = RadioUsageStatsIngestReportV1::decode(msg)?;
+                    let report = RadioUsageCountsIngestReport::try_from(dec_msg)?;
+                    print_json(&report)?;
+                }
                 FileType::VerifiedRadioThresholdIngestReport => {
                     let dec_msg = VerifiedRadioThresholdIngestReportV1::decode(msg)?;
                     let report = VerifiedRadioThresholdIngestReport::try_from(dec_msg)?;
