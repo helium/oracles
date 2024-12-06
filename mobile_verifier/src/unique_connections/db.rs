@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use file_store::unique_connections::UniqueConnectionsIngestReport;
 use futures::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
-use sqlx::{FromRow, PgPool, Postgres, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
 
 use super::UniqueConnectionCounts;
 
@@ -40,26 +40,35 @@ pub async fn get(
 
 pub async fn save(
     txn: &mut Transaction<'_, Postgres>,
-    report: &UniqueConnectionsIngestReport,
+    reports: &[UniqueConnectionsIngestReport],
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO unique_connections 
-        (hotspot_pubkey, unique_connections, start_timestamp, end_timestamp, received_timestamp)
-        VALUES
-        ($1, $2, $3, $4, $5)
-        ON CONFLICT 
-            (hotspot_pubkey, received_timestamp)
-            DO NOTHING
-        "#,
-    )
-    .bind(report.report.pubkey.to_string())
-    .bind(report.report.unique_connections as i64)
-    .bind(report.report.start_timestamp)
-    .bind(report.report.end_timestamp)
-    .bind(report.received_timestamp)
-    .execute(txn)
-    .await?;
+    const BATCH_SIZE: usize = (u16::MAX / 5) as usize;
+
+    for chunk in reports.chunks(BATCH_SIZE) {
+        QueryBuilder::new(
+            r#"
+            INSERT INTO unique_connections
+            (hotspot_pubkey, unique_connections, start_timestamp, end_timestamp, received_timestamp)
+            "#,
+        )
+        .push_values(chunk, |mut b, report| {
+            b.push_bind(report.report.pubkey.to_string())
+                .push_bind(report.report.unique_connections as i64)
+                .push_bind(report.report.start_timestamp)
+                .push_bind(report.report.end_timestamp)
+                .push_bind(report.received_timestamp);
+        })
+        .push(
+            r#"
+            ON CONFLICT
+                (hotspot_pubkey, received_timestamp)
+                DO NOTHING
+            "#,
+        )
+        .build()
+        .execute(&mut *txn)
+        .await?;
+    }
 
     Ok(())
 }
@@ -133,8 +142,7 @@ mod tests {
         };
 
         let mut txn = pool.begin().await?;
-        save(&mut txn, &report_one).await?;
-        save(&mut txn, &report_two).await?;
+        save(&mut txn, &[report_one, report_two]).await?;
         txn.commit().await?;
 
         let epoch = (now - chrono::Duration::days(1))..now;
