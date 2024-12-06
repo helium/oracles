@@ -2,7 +2,11 @@ use anyhow::{Error, Result};
 use clap::Parser;
 use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
-use helium_proto::services::iot_config::{AdminServer, GatewayServer, OrgServer, RouteServer};
+use helium_proto::services::{
+    iot_config::{AdminServer, GatewayServer, OrgServer, RouteServer},
+    sub_dao::SubDaoServer,
+};
+use iot_config::sub_dao_service::SubDaoService;
 use iot_config::{
     admin::AuthCache, admin_service::AdminService, db_cleaner::DbCleaner,
     gateway_service::GatewayService, org, org_service::OrgService, region_map::RegionMapReader,
@@ -72,7 +76,7 @@ impl Daemon {
 
         let gateway_svc = GatewayService::new(
             settings,
-            metadata_pool,
+            metadata_pool.clone(),
             region_map.clone(),
             auth_cache.clone(),
             delegate_key_cache,
@@ -98,6 +102,8 @@ impl Daemon {
             region_updater,
         )?;
 
+        let subdao_svc = SubDaoService::new(settings, auth_cache, metadata_pool)?;
+
         let listen_addr = settings.listen;
         let pubkey = settings
             .signing_keypair()
@@ -111,6 +117,7 @@ impl Daemon {
             route_svc,
             org_svc,
             admin_svc,
+            subdao_svc,
         };
 
         let db_cleaner = DbCleaner::new(pool.clone(), settings.deleted_entry_retention);
@@ -130,6 +137,7 @@ pub struct GrpcServer {
     route_svc: RouteService,
     org_svc: OrgService,
     admin_svc: AdminService,
+    subdao_svc: SubDaoService,
 }
 
 impl ManagedTask for GrpcServer {
@@ -146,6 +154,7 @@ impl ManagedTask for GrpcServer {
                 .add_service(OrgServer::new(self.org_svc))
                 .add_service(RouteServer::new(self.route_svc))
                 .add_service(AdminServer::new(self.admin_svc))
+                .add_service(SubDaoServer::new(self.subdao_svc))
                 .serve(self.listen_addr)
                 .map_err(Error::from);
 

@@ -13,6 +13,8 @@ const GATEWAY_CHAIN_LOOKUP_METRIC: &str =
 const GATEWAY_CHAIN_LOOKUP_DURATION_METRIC: &str =
     concat!(env!("CARGO_PKG_NAME"), "-", "gateway-info-lookup-duration");
 
+const EPOCH_CHAIN_LOOKUP_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "epoch-chain-lookup");
+
 pub fn initialize() {
     metrics::gauge!(STREAM_METRIC).set(0.0);
 }
@@ -61,6 +63,10 @@ pub fn count_eui_updates(adds: usize, removes: usize) {
 pub fn count_devaddr_updates(adds: usize, removes: usize) {
     metrics::counter!(DEVADDR_ADD_COUNT_METRIC).increment(adds as u64);
     metrics::counter!(DEVADDR_REMOVE_COUNT_METRIC).increment(removes as u64);
+}
+
+pub fn count_epoch_chain_lookup(result: &'static str) {
+    metrics::counter!(EPOCH_CHAIN_LOOKUP_METRIC, "result" => result).increment(1);
 }
 
 pub fn route_stream_subscribe() {
