@@ -440,24 +440,22 @@ async fn seed_unique_connections(
     things: &[(PublicKeyBinary, u64)],
     epoch: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
+    let mut reports = vec![];
     for (pubkey, unique_connections) in things {
-        unique_connections::db::save(
-            txn,
-            &UniqueConnectionsIngestReport {
-                received_timestamp: epoch.start + chrono::Duration::hours(1),
-                report: UniqueConnectionReq {
-                    pubkey: pubkey.clone(),
-                    start_timestamp: Utc::now(),
-                    end_timestamp: Utc::now(),
-                    unique_connections: *unique_connections,
-                    timestamp: Utc::now(),
-                    carrier_key: pubkey.clone(),
-                    signature: vec![],
-                },
+        reports.push(UniqueConnectionsIngestReport {
+            received_timestamp: epoch.start + chrono::Duration::hours(1),
+            report: UniqueConnectionReq {
+                pubkey: pubkey.clone(),
+                start_timestamp: Utc::now(),
+                end_timestamp: Utc::now(),
+                unique_connections: *unique_connections,
+                timestamp: Utc::now(),
+                carrier_key: pubkey.clone(),
+                signature: vec![],
             },
-        )
-        .await?;
+        });
     }
+    unique_connections::db::save(txn, &reports).await?;
     Ok(())
 }
 

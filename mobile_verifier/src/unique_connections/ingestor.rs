@@ -129,8 +129,10 @@ where
         file_info_stream: FileInfoStream<UniqueConnectionsIngestReport>,
     ) -> anyhow::Result<()> {
         let mut txn = self.pool.begin().await?;
-
         let mut stream = file_info_stream.into_stream(&mut txn).await?;
+
+        let mut verified = vec![];
+
         while let Some(unique_connections_report) = stream.next().await {
             let verified_report_status = self
                 .verify_unique_connection_report(&unique_connections_report.report)
@@ -140,7 +142,7 @@ where
                 verified_report_status,
                 VerifiedUniqueConnectionsIngestReportStatus::Valid
             ) {
-                db::save(&mut txn, &unique_connections_report).await?;
+                verified.push(unique_connections_report.clone());
             }
 
             let verified_report_proto = VerifiedUniqueConnectionsIngestReport {
@@ -157,8 +159,10 @@ where
                 .await?;
         }
 
+        db::save(&mut txn, &verified).await?;
         txn.commit().await?;
         self.verified_unique_connections_sink.commit().await?;
+
         Ok(())
     }
 
