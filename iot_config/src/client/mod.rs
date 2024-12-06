@@ -25,8 +25,10 @@ pub enum ClientError {
     Verification(#[from] file_store::Error),
     #[error("error resolving region params: {0}")]
     UndefinedRegionParams(String),
-    #[error("error {0}")]
-    AnyhowError(#[from] anyhow::Error),
+    #[error("Invalid SubDaoRewardInfo proto response {0}")]
+    InvalidSubDaoRewardInfoProto(
+        #[from] crate::sub_dao_epoch_reward_info::SubDaoRewardInfoParseError,
+    ),
 }
 
 #[async_trait::async_trait]

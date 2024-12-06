@@ -18,8 +18,7 @@ pub mod sub_dao_epoch_reward_info;
 pub mod sub_dao_service;
 
 pub use admin_service::AdminService;
-use anyhow::anyhow;
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, Utc};
 pub use client::{Client, Settings as ClientSettings};
 pub use gateway_service::GatewayService;
 pub use org_service::OrgService;
@@ -71,18 +70,12 @@ pub struct EpochPeriod {
     pub period: Range<DateTime<Utc>>,
 }
 
-impl TryFrom<u64> for EpochPeriod {
-    type Error = anyhow::Error;
-
-    fn try_from(next_reward_epoch: u64) -> anyhow::Result<Self> {
-        let start_time = Utc
-            .timestamp_opt(0, 0)
-            .single()
-            .ok_or_else(|| anyhow!("Failed to get Unix epoch start time"))?
-            + Duration::days(next_reward_epoch as i64);
+impl From<u64> for EpochPeriod {
+    fn from(next_reward_epoch: u64) -> Self {
+        let start_time = DateTime::<Utc>::UNIX_EPOCH + Duration::days(next_reward_epoch as i64);
         let end_time = start_time + Duration::days(1);
-        Ok(EpochPeriod {
+        EpochPeriod {
             period: start_time..end_time,
-        })
+        }
     }
 }

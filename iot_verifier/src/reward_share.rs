@@ -5,7 +5,6 @@ use futures::stream::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora as proto;
 use helium_proto::services::poc_lora::iot_reward_share::Reward as ProtoReward;
-use iot_config::sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo;
 use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -229,7 +228,7 @@ impl GatewayShares {
 
     pub fn into_reward_shares(
         self,
-        reward_info: &ResolvedSubDaoEpochRewardInfo,
+        reward_period: &Range<DateTime<Utc>>,
         beacon_rewards_per_share: Decimal,
         witness_rewards_per_share: Decimal,
         dc_transfer_rewards_per_share: Decimal,
@@ -262,10 +261,9 @@ impl GatewayShares {
                 (
                     total_gateway_reward,
                     proto::IotRewardShare {
-                        start_period: reward_info.epoch_period.start.encode_timestamp(),
-                        end_period: reward_info.epoch_period.end.encode_timestamp(),
+                        start_period: reward_period.start.encode_timestamp(),
+                        end_period: reward_period.end.encode_timestamp(),
                         reward: Some(ProtoReward::GatewayReward(gateway_reward)),
-                        epoch: reward_info.epoch,
                     },
                 )
             })
@@ -273,7 +271,7 @@ impl GatewayShares {
 
     pub async fn calculate_rewards_per_share(
         &self,
-        reward_info: &ResolvedSubDaoEpochRewardInfo,
+        epoch_emissions: Decimal,
         hnt_price: HntPrice,
     ) -> anyhow::Result<(Decimal, Decimal, Decimal)> {
         // the total number of shares for beacons, witnesses and data transfer
@@ -281,7 +279,7 @@ impl GatewayShares {
         let (total_beacon_shares, total_witness_shares, total_dc_shares) = self.total_shares();
 
         // the max rewards for dc transfer this epoch
-        let total_dc_transfer_rewards = get_scheduled_dc_tokens(reward_info.epoch_emissions);
+        let total_dc_transfer_rewards = get_scheduled_dc_tokens(epoch_emissions);
 
         // convert the total spent data transfer DC to it equiv hnt bone value
         // the rewards distributed to gateways will be equal to this
@@ -299,7 +297,7 @@ impl GatewayShares {
         // the total amounts of hnt rewards this epoch for beacons, witnesses
         // taking into account any remaining dc transfer rewards
         let (total_beacon_rewards, total_witness_rewards) =
-            get_scheduled_poc_tokens(reward_info.epoch_emissions, dc_transfer_rewards_unused);
+            get_scheduled_poc_tokens(epoch_emissions, dc_transfer_rewards_unused);
 
         // work out the rewards per share for beacons, witnesses and dc transfer
         let beacon_rewards_per_share = rewards_per_share(total_beacon_rewards, total_beacon_shares);
@@ -431,6 +429,7 @@ mod test {
     use super::*;
     use crate::{reward_share, HntPrice};
     use chrono::Duration;
+    use iot_config::sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo;
 
     pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
     pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
@@ -464,7 +463,7 @@ mod test {
     ) -> ResolvedSubDaoEpochRewardInfo {
         let now = Utc::now();
         ResolvedSubDaoEpochRewardInfo {
-            epoch: 1,
+            epoch_day: 1,
             epoch_address: EPOCH_ADDRESS.into(),
             sub_dao_address: SUB_DAO_ADDRESS.into(),
             epoch_period: (now - epoch_duration)..now,
@@ -595,7 +594,7 @@ mod test {
         let gw_shares = GatewayShares::new(shares).unwrap();
         let (beacon_rewards_per_share, witness_rewards_per_share, dc_transfer_rewards_per_share) =
             gw_shares
-                .calculate_rewards_per_share(&reward_info, hnt_price.clone())
+                .calculate_rewards_per_share(reward_info.epoch_emissions, hnt_price.clone())
                 .await
                 .unwrap();
 
@@ -608,7 +607,7 @@ mod test {
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let mut allocated_gateway_rewards = 0_u64;
         for (reward_amount, reward) in gw_shares.into_reward_shares(
-            &reward_info,
+            &reward_info.epoch_period,
             beacon_rewards_per_share,
             witness_rewards_per_share,
             dc_transfer_rewards_per_share,
@@ -815,7 +814,7 @@ mod test {
         let gw_shares = GatewayShares::new(shares).unwrap();
         let (beacon_rewards_per_share, witness_rewards_per_share, dc_transfer_rewards_per_share) =
             gw_shares
-                .calculate_rewards_per_share(&reward_info, hnt_price)
+                .calculate_rewards_per_share(reward_info.epoch_emissions, hnt_price)
                 .await
                 .unwrap();
 
@@ -828,7 +827,7 @@ mod test {
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let mut allocated_gateway_rewards = 0_u64;
         for (reward_amount, reward) in gw_shares.into_reward_shares(
-            &reward_info,
+            &reward_info.epoch_period,
             beacon_rewards_per_share,
             witness_rewards_per_share,
             dc_transfer_rewards_per_share,
@@ -1006,7 +1005,7 @@ mod test {
         let gw_shares = GatewayShares::new(shares).unwrap();
         let (beacon_rewards_per_share, witness_rewards_per_share, dc_transfer_rewards_per_share) =
             gw_shares
-                .calculate_rewards_per_share(&reward_info, hnt_price)
+                .calculate_rewards_per_share(reward_info.epoch_emissions, hnt_price)
                 .await
                 .unwrap();
 
@@ -1019,7 +1018,7 @@ mod test {
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let mut allocated_gateway_rewards = 0_u64;
         for (reward_amount, reward) in gw_shares.into_reward_shares(
-            &reward_info,
+            &reward_info.epoch_period,
             beacon_rewards_per_share,
             witness_rewards_per_share,
             dc_transfer_rewards_per_share,

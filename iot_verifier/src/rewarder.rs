@@ -91,7 +91,7 @@ where
 
         loop {
             let next_reward_epoch = next_reward_epoch(&self.pool).await?;
-            let next_reward_epoch_period = EpochPeriod::try_from(next_reward_epoch)?;
+            let next_reward_epoch_period = EpochPeriod::from(next_reward_epoch);
 
             let scheduler = Scheduler::new(
                 self.reward_period_hours,
@@ -148,7 +148,7 @@ where
 
         tracing::info!(
             "Rewarding for epoch {} period: {} to {} with hnt bone price: {}",
-            reward_info.epoch,
+            reward_info.epoch_day,
             reward_info.epoch_period.start,
             reward_info.epoch_period.end,
             hnt_price.price_per_hnt_bone
@@ -178,7 +178,7 @@ where
         GatewayShares::clear_rewarded_shares(&mut transaction, reward_info.epoch_period.start)
             .await?;
 
-        save_next_reward_epoch(&mut transaction, reward_info.epoch + 1).await?;
+        save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
 
         transaction.commit().await?;
 
@@ -201,7 +201,7 @@ where
                     end_timestamp: reward_info.epoch_period.end.encode_timestamp(),
                     written_files,
                     reward_data: Some(IotRewardData(reward_data)),
-                    epoch: reward_info.epoch,
+                    epoch: reward_info.epoch_day,
                     price: hnt_price.hnt_price_in_bones,
                 },
                 [],
@@ -268,7 +268,7 @@ pub async fn reward_poc_and_dc(
     let gateway_shares = GatewayShares::new(reward_shares)?;
     let (beacon_rewards_per_share, witness_rewards_per_share, dc_transfer_rewards_per_share) =
         gateway_shares
-            .calculate_rewards_per_share(reward_info, hnt_price)
+            .calculate_rewards_per_share(reward_info.epoch_emissions, hnt_price)
             .await?;
 
     // get the total poc and dc rewards for the period
@@ -280,7 +280,7 @@ pub async fn reward_poc_and_dc(
 
     let mut allocated_gateway_rewards = 0_u64;
     for (gateway_reward_amount, reward_share) in gateway_shares.into_reward_shares(
-        reward_info,
+        &reward_info.epoch_period,
         beacon_rewards_per_share,
         witness_rewards_per_share,
         dc_transfer_rewards_per_share,
@@ -302,7 +302,7 @@ pub async fn reward_poc_and_dc(
         rewards_sink,
         UnallocatedRewardType::Poc,
         unallocated_poc_reward_amount,
-        reward_info,
+        &reward_info.epoch_period,
     )
     .await?;
     Ok(RewardPocDcDataPoints {
@@ -331,7 +331,6 @@ pub async fn reward_operational(
                 start_period: reward_info.epoch_period.start.encode_timestamp(),
                 end_period: reward_info.epoch_period.end.encode_timestamp(),
                 reward: Some(ProtoReward::OperationalReward(op_fund_reward)),
-                epoch: reward_info.epoch,
             },
             [],
         )
@@ -352,7 +351,7 @@ pub async fn reward_operational(
         rewards_sink,
         UnallocatedRewardType::Operation,
         unallocated_operation_reward_amount,
-        reward_info,
+        &reward_info.epoch_period,
     )
     .await?;
     Ok(())
@@ -375,7 +374,7 @@ pub async fn reward_oracles(
         rewards_sink,
         UnallocatedRewardType::Oracle,
         unallocated_oracle_reward_amount,
-        reward_info,
+        &reward_info.epoch_period,
     )
     .await?;
     Ok(())
@@ -385,17 +384,16 @@ async fn write_unallocated_reward(
     rewards_sink: &file_sink::FileSinkClient<proto::IotRewardShare>,
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
     if unallocated_amount > 0 {
         let unallocated_reward = proto::IotRewardShare {
-            start_period: reward_info.epoch_period.start.encode_timestamp(),
-            end_period: reward_info.epoch_period.end.encode_timestamp(),
+            start_period: reward_period.start.encode_timestamp(),
+            end_period: reward_period.end.encode_timestamp(),
             reward: Some(ProtoReward::UnallocatedReward(UnallocatedReward {
                 reward_type: unallocated_type as i32,
                 amount: unallocated_amount,
             })),
-            epoch: reward_info.epoch,
         };
         rewards_sink.write(unallocated_reward, []).await?.await??;
     };
