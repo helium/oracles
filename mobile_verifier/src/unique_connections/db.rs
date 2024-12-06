@@ -24,7 +24,7 @@ pub async fn get(
             SELECT DISTINCT ON(hotspot_pubkey)
                 hotspot_pubkey, unique_connections
             FROM unique_connections
-            WHERE received_timestamp >= $1 AND received_timestamp <= $2
+            WHERE received_timestamp >= $1 AND received_timestamp < $2
             ORDER BY hotspot_pubkey, received_timestamp DESC
             "#,
     )
