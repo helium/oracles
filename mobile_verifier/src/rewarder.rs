@@ -51,6 +51,7 @@ use tokio::time::sleep;
 use self::boosted_hex_eligibility::BoostedHexEligibility;
 
 pub mod boosted_hex_eligibility;
+mod db;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
@@ -194,39 +195,25 @@ where
         &self,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<bool> {
-        // Check if we have heartbeats and speedtests past the end of the reward period
+        // Check if we have heartbeats and speedtests and unique connections past the end of the reward period
         if reward_period.end >= self.disable_complete_data_checks_until().await? {
-            if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM cbrs_heartbeats WHERE latest_timestamp >= $1",
-            )
-            .bind(reward_period.end)
-            .fetch_one(&self.pool)
-            .await?
-                == 0
-            {
+            if db::no_cbrs_heartbeats(&self.pool, reward_period).await? {
                 tracing::info!("No cbrs heartbeats found past reward period");
                 return Ok(false);
             }
 
-            if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM wifi_heartbeats WHERE latest_timestamp >= $1",
-            )
-            .bind(reward_period.end)
-            .fetch_one(&self.pool)
-            .await?
-                == 0
-            {
+            if db::no_wifi_heartbeats(&self.pool, reward_period).await? {
                 tracing::info!("No wifi heartbeats found past reward period");
                 return Ok(false);
             }
 
-            if sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM speedtests WHERE timestamp >= $1")
-                .bind(reward_period.end)
-                .fetch_one(&self.pool)
-                .await?
-                == 0
-            {
+            if db::no_speedtests(&self.pool, reward_period).await? {
                 tracing::info!("No speedtests found past reward period");
+                return Ok(false);
+            }
+
+            if db::no_unique_connections(&self.pool, reward_period).await? {
+                tracing::info!("No unique connections found past reward period");
                 return Ok(false);
             }
 
