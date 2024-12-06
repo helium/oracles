@@ -75,7 +75,7 @@ impl Cmd {
         let radio_rewards = reward_shares
             .into_rewards(
                 DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions),
-                &reward_info,
+                &reward_info.epoch_period,
             )
             .ok_or(anyhow::anyhow!("no rewardable events"))?
             .1;

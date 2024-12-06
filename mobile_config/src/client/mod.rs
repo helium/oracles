@@ -31,8 +31,10 @@ pub enum ClientError {
     UnknownServiceProvider(String),
     #[error("Invalid GatewayInfo proto response {0}")]
     InvalidGatewayInfoProto(#[from] crate::gateway_info::GatewayInfoProtoParseError),
-    #[error("error {0}")]
-    AnyhowError(#[from] anyhow::Error),
+    #[error("Invalid SubDaoRewardInfo proto response {0}")]
+    InvalidSubDaoRewardInfoProto(
+        #[from] crate::sub_dao_epoch_reward_info::SubDaoRewardInfoParseError,
+    ),
 }
 
 macro_rules! call_with_retry {

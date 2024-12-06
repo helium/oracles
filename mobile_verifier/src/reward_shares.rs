@@ -226,7 +226,7 @@ impl MapperShares {
 
     pub fn into_subscriber_rewards(
         self,
-        reward_info: &'_ ResolvedSubDaoEpochRewardInfo,
+        reward_period: &'_ Range<DateTime<Utc>>,
         reward_per_share: Decimal,
     ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
         let mut subscriber_rewards: HashMap<Vec<u8>, proto::SubscriberReward> = HashMap::new();
@@ -287,8 +287,8 @@ impl MapperShares {
                 (
                     total_reward_amount,
                     proto::MobileRewardShare {
-                        start_period: reward_info.epoch_period.start.encode_timestamp(),
-                        end_period: reward_info.epoch_period.end.encode_timestamp(),
+                        start_period: reward_period.start.encode_timestamp(),
+                        end_period: reward_period.end.encode_timestamp(),
                         reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
                     },
                 )
@@ -305,7 +305,7 @@ pub fn dc_to_hnt_bones(dc_amount: Decimal, hnt_bone_price: Decimal) -> Decimal {
 
 pub fn coverage_point_to_mobile_reward_share(
     coverage_points: coverage_point_calculator::CoveragePoints,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_period: &Range<DateTime<Utc>>,
     radio_id: &RadioId,
     poc_reward: u64,
     rewards_per_share: CalculatedPocRewardShares,
@@ -372,8 +372,8 @@ pub fn coverage_point_to_mobile_reward_share(
     });
 
     let base = proto::MobileRewardShare {
-        start_period: reward_info.epoch_period.start.encode_timestamp(),
-        end_period: reward_info.epoch_period.end.encode_timestamp(),
+        start_period: reward_period.start.encode_timestamp(),
+        end_period: reward_period.end.encode_timestamp(),
         reward: None,
     };
 
@@ -565,7 +565,7 @@ impl CoverageShares {
     pub fn into_rewards(
         self,
         reward_shares: DataTransferAndPocAllocatedRewardBuckets,
-        reward_info: &'_ ResolvedSubDaoEpochRewardInfo,
+        reward_period: &Range<DateTime<Utc>>,
     ) -> Option<(
         CalculatedPocRewardShares,
         impl Iterator<Item = (u64, proto::MobileRewardShare, proto::MobileRewardShare)> + '_,
@@ -603,7 +603,7 @@ impl CoverageShares {
             reward_shares,
             processed_radios.iter().map(|radio| &radio.points),
         ) else {
-            tracing::info!(?reward_info.epoch_period, "could not calculate reward shares");
+            tracing::info!(?reward_period, "could not calculate reward shares");
             return None;
         };
 
@@ -623,7 +623,7 @@ impl CoverageShares {
                     let (mobile_reward_v1, mobile_reward_v2) =
                         coverage_point_to_mobile_reward_share(
                             points,
-                            reward_info,
+                            reward_period,
                             &radio_id,
                             poc_reward,
                             rewards_per_share,
@@ -858,7 +858,7 @@ mod test {
     ) -> ResolvedSubDaoEpochRewardInfo {
         let now = Utc::now();
         ResolvedSubDaoEpochRewardInfo {
-            epoch: 1,
+            epoch_day: 1,
             epoch_address: EPOCH_ADDRESS.into(),
             sub_dao_address: SUB_DAO_ADDRESS.into(),
             epoch_period: (now - epoch_duration)..now,
@@ -935,7 +935,7 @@ mod test {
         // get the summed rewards allocated to subscribers for discovery location
         let mut allocated_mapper_rewards = 0_u64;
         for (reward_amount, subscriber_share) in
-            shares.into_subscriber_rewards(&rewards_info, rewards_per_share)
+            shares.into_subscriber_rewards(&rewards_info.epoch_period, rewards_per_share)
         {
             if let Some(MobileReward::SubscriberReward(r)) = subscriber_share.reward {
                 assert_eq!(
@@ -1291,7 +1291,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &rewards_info)
+        .into_rewards(reward_shares, &rewards_info.epoch_period)
         .unwrap()
         .1
         .next()
@@ -1696,7 +1696,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &rewards_info)
+        .into_rewards(reward_shares, &rewards_info.epoch_period)
         .unwrap()
         .1
         {
@@ -1879,7 +1879,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &rewards_info)
+        .into_rewards(reward_shares, &rewards_info.epoch_period)
         .unwrap()
         .1
         {
@@ -2015,7 +2015,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &rewards_info)
+        .into_rewards(reward_shares, &rewards_info.epoch_period)
         .unwrap()
         .1
         {
@@ -2152,7 +2152,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(reward_shares, &rewards_info)
+        .into_rewards(reward_shares, &rewards_info.epoch_period)
         .unwrap()
         .1
         {
@@ -2424,7 +2424,7 @@ mod test {
         // gw2 does not have enough speedtests for a mulitplier
         let expected_hotspot = gw1;
         for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in coverage_shares
-            .into_rewards(reward_shares, &rewards_info)
+            .into_rewards(reward_shares, &rewards_info.epoch_period)
             .expect("rewards output")
             .1
         {
@@ -2449,7 +2449,7 @@ mod test {
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
         assert!(coverage_shares
-            .into_rewards(reward_shares, &rewards_info)
+            .into_rewards(reward_shares, &rewards_info.epoch_period)
             .is_none());
     }
 
