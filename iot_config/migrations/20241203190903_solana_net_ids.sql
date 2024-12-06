@@ -1,6 +1,6 @@
 -- Migration here solely for testing purposes
 -- An instance of account-postgres-sink
--- Will alter this table depending on on-chain struct
+-- Will alter this table depending on an on-chain struct
 CREATE TABLE IF NOT EXISTS solana_net_ids (
     address TEXT PRIMARY KEY,
     id INTEGER NOT NULL,

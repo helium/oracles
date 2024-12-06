@@ -1,6 +1,6 @@
 -- Migration here solely for testing purposes
 -- An instance of account-postgres-sink
--- Will alter this table depending on on-chain struct
+-- Will alter this table depending on an on-chain struct
 CREATE TABLE IF NOT EXISTS solana_organization_devaddr_constraints (
     address TEXT PRIMARY KEY,
     net_id TEXT NOT NULL,

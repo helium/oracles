@@ -48,7 +48,6 @@ custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 solana = { path = "../solana" }
 solana-sdk = { workspace = true }
 rust_decimal = { workspace = true }
-once_cell = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
