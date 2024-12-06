@@ -7,7 +7,7 @@ use std::ops::Range;
 
 #[derive(Clone, Debug)]
 pub struct ResolvedSubDaoEpochRewardInfo {
-    pub epoch: u64,
+    pub epoch_day: u64,
     pub epoch_address: String,
     pub sub_dao_address: String,
     pub epoch_period: Range<DateTime<Utc>>,
@@ -25,30 +25,34 @@ pub struct RawSubDaoEpochRewardInfo {
     rewards_issued_at: DateTime<Utc>,
 }
 
-impl TryFrom<RawSubDaoEpochRewardInfo> for SubDaoEpochRewardInfoProto {
-    type Error = anyhow::Error;
+#[derive(thiserror::Error, Debug)]
+pub enum SubDaoRewardInfoParseError {
+    #[error("file_store: {0}")]
+    FileStore(#[from] file_store::Error),
+}
 
-    fn try_from(info: RawSubDaoEpochRewardInfo) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<RawSubDaoEpochRewardInfo> for SubDaoEpochRewardInfoProto {
+    fn from(info: RawSubDaoEpochRewardInfo) -> Self {
+        Self {
             epoch: info.epoch,
             epoch_address: info.epoch_address,
             sub_dao_address: info.sub_dao_address,
             rewards_issued: info.rewards_issued,
             delegation_rewards_issued: info.delegation_rewards_issued,
             rewards_issued_at: info.rewards_issued_at.encode_timestamp(),
-        })
+        }
     }
 }
 
 impl TryFrom<SubDaoEpochRewardInfoProto> for ResolvedSubDaoEpochRewardInfo {
-    type Error = anyhow::Error;
+    type Error = SubDaoRewardInfoParseError;
 
     fn try_from(info: SubDaoEpochRewardInfoProto) -> Result<Self, Self::Error> {
-        let epoch_period: EpochPeriod = info.epoch.try_into()?;
+        let epoch_period: EpochPeriod = info.epoch.into();
         let epoch_rewards = Decimal::from(info.rewards_issued + info.delegation_rewards_issued);
 
         Ok(Self {
-            epoch: info.epoch,
+            epoch_day: info.epoch,
             epoch_address: info.epoch_address,
             sub_dao_address: info.sub_dao_address,
             epoch_period: epoch_period.period,

@@ -41,8 +41,6 @@ pub enum Error {
     //Not recommended for internal use!
     #[error("external error")]
     ExternalError(#[from] Box<dyn std::error::Error + Send + Sync>),
-    #[error("general error")]
-    Anyhow(#[from] anyhow::Error),
 }
 
 #[derive(Error, Debug)]
