@@ -80,9 +80,7 @@ impl sub_dao::sub_dao_server::SubDao for SubDaoService {
                     Err(Status::not_found(epoch.to_string()))
                 },
                 |info| {
-                    let info = info.try_into().map_err(|_| {
-                        Status::internal("error serializing sub_dao epoch reward info")
-                    })?;
+                    let info = info.into();
                     let mut res = SubDaoEpochRewardInfoResV1 {
                         info: Some(info),
                         timestamp: Utc::now().encode_timestamp(),

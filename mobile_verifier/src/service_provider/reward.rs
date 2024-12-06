@@ -284,7 +284,7 @@ mod tests {
     ) -> ResolvedSubDaoEpochRewardInfo {
         let now = Utc::now();
         ResolvedSubDaoEpochRewardInfo {
-            epoch: 1,
+            epoch_day: 1,
             epoch_address: EPOCH_ADDRESS.into(),
             sub_dao_address: SUB_DAO_ADDRESS.into(),
             epoch_period: (now - epoch_duration)..now,
