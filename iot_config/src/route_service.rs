@@ -1,5 +1,6 @@
 use crate::{
     admin::{AuthCache, KeyType},
+    convert_to_helium_public_key, convert_to_solana_public_key,
     lora_field::{DevAddrConstraint, DevAddrRange, EuiPair, Skf},
     org::{self, OrgStoreError},
     route::{self, Route, RouteStorageError},
@@ -28,7 +29,6 @@ use sqlx::{Pool, Postgres};
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tonic::{Request, Response, Status};
-
 const UPDATE_BATCH_LIMIT: usize = 5_000;
 const SKF_UPDATE_LIMIT: usize = 100;
 
@@ -90,7 +90,10 @@ impl RouteService {
             _ => Status::internal("auth verification error"),
         })?;
 
-        if org_keys.as_slice().contains(signer) && request.verify(signer).is_ok() {
+        let sol_signer = convert_to_solana_public_key(signer)
+            .map_err(|err| Status::invalid_argument(format!("invalid public key: {err:?}")))?;
+
+        if org_keys.as_slice().contains(&sol_signer) && request.verify(signer).is_ok() {
             tracing::debug!(
                 signer = signer.to_string(),
                 "request authorized by delegate"
@@ -521,9 +524,12 @@ impl iot_config::Route for RouteService {
         incoming_stream
             .map_ok(|update| match validator.validate_update(&update) {
                 Ok(()) => Ok(update),
-                Err(reason) => Err(Status::invalid_argument(format!(
-                    "invalid update request: {reason:?}"
-                ))),
+                Err(reason) => {
+                    println!("Validation failed: {:?}", reason);
+                    Err(Status::invalid_argument(format!(
+                        "invalid update request: {reason:?}"
+                    )))
+                }
             })
             .try_chunks(UPDATE_BATCH_LIMIT)
             .map_err(|err| Status::internal(format!("eui pair updates failed to batch: {err:?}")))
@@ -561,6 +567,7 @@ impl iot_config::Route for RouteService {
                     .into_iter()
                     .map(|(_, remove)| remove.into())
                     .collect();
+
                 route::update_euis(
                     &adds_update,
                     &removes_update,
@@ -949,7 +956,7 @@ enum DevAddrEuiValidationError {
 impl DevAddrEuiValidator {
     async fn new(
         route_id: &str,
-        mut admin_keys: Vec<PublicKey>,
+        admin_keys: Vec<PublicKey>,
         db: impl sqlx::PgExecutor<'_> + Copy,
         check_constraints: bool,
     ) -> Result<Self, OrgStoreError> {
@@ -959,13 +966,18 @@ impl DevAddrEuiValidator {
             None
         };
 
-        let mut org_keys = org::get_org_pubkeys_by_route(route_id, db).await?;
-        org_keys.append(&mut admin_keys);
+        let org_keys = org::get_org_pubkeys_by_route(route_id, db).await?;
+        let mut signing_keys = org_keys
+            .into_iter()
+            .filter_map(|key| convert_to_helium_public_key(&key).ok())
+            .collect::<Vec<PublicKey>>();
+
+        signing_keys.extend(admin_keys);
 
         Ok(Self {
             route_ids: org::get_route_ids_by_route(route_id, db).await?,
             constraints,
-            signing_keys: org_keys,
+            signing_keys,
         })
     }
 
@@ -1074,7 +1086,7 @@ where
     R: MsgVerify + ValidateRouteComponent<'a> + std::fmt::Debug,
 {
     for (idx, pubkey) in signing_keys.iter().enumerate() {
-        if request.verify(pubkey).is_ok() {
+        if request.verify(&pubkey).is_ok() {
             signing_keys.swap(idx, 0);
             return Ok(request);
         }
