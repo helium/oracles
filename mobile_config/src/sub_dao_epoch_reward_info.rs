@@ -1,4 +1,4 @@
-use crate::EpochPeriod;
+use crate::EpochInfo;
 use chrono::{DateTime, Utc};
 use file_store::traits::{TimestampDecode, TimestampEncode};
 use helium_proto::services::sub_dao::SubDaoEpochRewardInfo as SubDaoEpochRewardInfoProto;
@@ -6,10 +6,10 @@ use rust_decimal::prelude::*;
 use std::ops::Range;
 
 #[derive(Clone, Debug)]
-pub struct ResolvedSubDaoEpochRewardInfo {
+pub struct EpochRewardInfo {
     pub epoch_day: u64,
-    pub epoch_address: String,
-    pub sub_dao_address: String,
+    pub epoch_address: Option<String>,
+    pub sub_dao_address: Option<String>,
     pub epoch_period: Range<DateTime<Utc>>,
     pub epoch_emissions: Decimal,
     pub rewards_issued_at: DateTime<Utc>,
@@ -44,17 +44,17 @@ impl From<RawSubDaoEpochRewardInfo> for SubDaoEpochRewardInfoProto {
     }
 }
 
-impl TryFrom<SubDaoEpochRewardInfoProto> for ResolvedSubDaoEpochRewardInfo {
+impl TryFrom<SubDaoEpochRewardInfoProto> for EpochRewardInfo {
     type Error = SubDaoRewardInfoParseError;
 
     fn try_from(info: SubDaoEpochRewardInfoProto) -> Result<Self, Self::Error> {
-        let epoch_period: EpochPeriod = info.epoch.into();
+        let epoch_period: EpochInfo = info.epoch.into();
         let epoch_rewards = Decimal::from(info.rewards_issued + info.delegation_rewards_issued);
 
         Ok(Self {
             epoch_day: info.epoch,
-            epoch_address: info.epoch_address,
-            sub_dao_address: info.sub_dao_address,
+            epoch_address: Some(info.epoch_address),
+            sub_dao_address: Some(info.sub_dao_address),
             epoch_period: epoch_period.period,
             epoch_emissions: epoch_rewards,
             rewards_issued_at: info.rewards_issued_at.to_timestamp()?,

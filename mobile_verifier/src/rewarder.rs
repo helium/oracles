@@ -10,7 +10,7 @@ use crate::{
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_location, subscriber_verified_mapping_event, telemetry, HntPrice, Settings,
+    subscriber_location, subscriber_verified_mapping_event, telemetry, PriceInfo, Settings,
     MOBILE_SUB_DAO_ONCHAIN_ADDRESS,
 };
 use anyhow::bail;
@@ -41,8 +41,8 @@ use mobile_config::{
         hex_boosting_client::HexBoostingInfoResolver,
         sub_dao_client::SubDaoEpochRewardInfoResolver, ClientError,
     },
-    sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo,
-    EpochPeriod,
+    sub_dao_epoch_reward_info::EpochRewardInfo,
+    EpochInfo,
 };
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
@@ -67,6 +67,7 @@ pub struct Rewarder<A, B, C> {
     reward_manifests: FileSinkClient<RewardManifest>,
     price_tracker: PriceTracker,
     speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
+    reward_token_type: Token,
 }
 
 impl<A, B, C> Rewarder<A, B, C>
@@ -75,6 +76,7 @@ where
     B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
     C: SubDaoEpochRewardInfoResolver<Error = ClientError> + Send + Sync + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
@@ -83,6 +85,7 @@ where
         hex_boosting_info_resolver: B,
         sub_dao_epoch_reward_info_resolver: C,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
+        reward_token_type: Token,
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
@@ -115,6 +118,7 @@ where
             reward_manifests,
             price_tracker,
             speedtests_avg,
+            reward_token_type,
         )?;
 
         Ok(TaskManager::builder()
@@ -137,6 +141,7 @@ where
         reward_manifests: FileSinkClient<RewardManifest>,
         price_tracker: PriceTracker,
         speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
+        reward_token_type: Token,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             sub_dao_address: MOBILE_SUB_DAO_ONCHAIN_ADDRESS.into(),
@@ -150,6 +155,7 @@ where
             reward_manifests,
             price_tracker,
             speedtest_averages,
+            reward_token_type,
         })
     }
 
@@ -157,20 +163,19 @@ where
         tracing::info!("Starting rewarder");
 
         loop {
-            let next_reward_epoch = next_reward_epoch(&self.pool).await?;
-            let next_reward_epoch_period = EpochPeriod::from(next_reward_epoch);
+            let epoch_info = self.epoch_info().await?;
 
             let scheduler = Scheduler::new(
                 self.reward_period_duration,
-                next_reward_epoch_period.period.start,
-                next_reward_epoch_period.period.end,
+                epoch_info.period.start,
+                epoch_info.period.end,
                 self.reward_offset,
             );
 
             let now = Utc::now();
             let sleep_duration = if scheduler.should_trigger(now) {
                 if self.is_data_current(&scheduler.schedule_period).await? {
-                    self.reward(next_reward_epoch).await?;
+                    self.reward(scheduler, epoch_info).await?;
                     continue;
                 } else {
                     chrono::Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
@@ -255,29 +260,17 @@ where
         Ok(true)
     }
 
-    pub async fn reward(&self, next_reward_epoch: u64) -> anyhow::Result<()> {
-        let reward_info = self
-            .sub_dao_epoch_reward_client
-            .resolve_info(&self.sub_dao_address, next_reward_epoch)
-            .await?
-            .ok_or(anyhow::anyhow!(
-                "No reward info found for epoch {}",
-                next_reward_epoch
-            ))?;
-
-        let pricer_hnt_price = self
-            .price_tracker
-            .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
-            .await?;
-
-        let hnt_price = HntPrice::new(pricer_hnt_price, Token::Hnt.decimals());
+    pub async fn reward(&self, scheduler: Scheduler, epoch_info: EpochInfo) -> anyhow::Result<()> {
+        let reward_info = self.reward_info(epoch_info).await?;
+        let price_info = self.price_info().await?;
 
         tracing::info!(
-            "Rewarding for epoch {} period: {} to {} with hnt bone price: {}",
+            "Rewarding for epoch {} period: {} to {} with token type: {} & bone price: {}",
             reward_info.epoch_day,
             reward_info.epoch_period.start,
             reward_info.epoch_period.end,
-            hnt_price.price_per_hnt_bone
+            price_info.token,
+            price_info.price_per_bone
         );
 
         // process rewards for poc and data transfer
@@ -287,7 +280,7 @@ where
             &self.mobile_rewards,
             &self.speedtest_averages,
             &reward_info,
-            hnt_price.clone(),
+            price_info.clone(),
         )
         .await?;
 
@@ -309,7 +302,7 @@ where
             sp_promotions.clone(),
             &self.mobile_rewards,
             &reward_info,
-            hnt_price.price_per_hnt_bone,
+            price_info.price_per_bone,
         )
         .await?;
 
@@ -335,8 +328,17 @@ where
             .await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
-        save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
-
+        match self.reward_token_type {
+            Token::Mobile => {
+                let next_reward_period = scheduler.next_trigger_period();
+                save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;
+                save_next_rewarded_end_time(&mut transaction, &next_reward_period.end).await?;
+            }
+            Token::Hnt => {
+                save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
+            }
+            _ => bail!("Unsupported reward type"),
+        }
         transaction.commit().await?;
 
         // now that the db has been purged, safe to write out the manifest
@@ -357,7 +359,7 @@ where
                     written_files,
                     reward_data: Some(MobileRewardData(reward_data)),
                     epoch: reward_info.epoch_day,
-                    price: hnt_price.hnt_price_in_bones,
+                    price: price_info.price_in_bones,
                 },
                 [],
             )
@@ -367,6 +369,76 @@ where
         self.reward_manifests.commit().await?;
         telemetry::last_rewarded_end_time(reward_info.epoch_period.end);
         Ok(())
+    }
+
+    async fn epoch_info(&self) -> anyhow::Result<EpochInfo> {
+        match self.reward_token_type {
+            Token::Mobile => self.get_mobile_epoch_info().await,
+            Token::Hnt => self.get_hnt_epoch_info().await,
+            _ => bail!("Unsupported reward type"),
+        }
+    }
+
+    async fn get_mobile_epoch_info(&self) -> anyhow::Result<EpochInfo> {
+        let last_rewarded_end_time = last_rewarded_end_time(&self.pool).await?;
+        let next_rewarded_end_time = next_rewarded_end_time(&self.pool).await?;
+        let epoch_day = (last_rewarded_end_time.timestamp() / 86400) as u64;
+        Ok(EpochInfo {
+            period: last_rewarded_end_time..next_rewarded_end_time,
+            epoch_day,
+        })
+    }
+
+    async fn get_hnt_epoch_info(&self) -> anyhow::Result<EpochInfo> {
+        let next_reward_epoch = next_reward_epoch(&self.pool).await?;
+        Ok(EpochInfo::from(next_reward_epoch))
+    }
+
+    async fn reward_info(&self, epoch_info: EpochInfo) -> anyhow::Result<EpochRewardInfo> {
+        match self.reward_token_type {
+            Token::Mobile => self.get_mobile_reward_info(epoch_info),
+            Token::Hnt => self.get_hnt_reward_info().await,
+            _ => bail!("Unsupported reward type"),
+        }
+    }
+
+    fn get_mobile_reward_info(&self, epoch_info: EpochInfo) -> anyhow::Result<EpochRewardInfo> {
+        let epoch_emissions = reward_shares::get_total_scheduled_mobile_tokens(
+            epoch_info.period.end - epoch_info.period.start,
+        );
+        Ok(EpochRewardInfo {
+            epoch_day: epoch_info.epoch_day,
+            epoch_address: None,
+            sub_dao_address: None,
+            epoch_period: epoch_info.period.clone(),
+            epoch_emissions,
+            rewards_issued_at: epoch_info.period.end,
+        })
+    }
+
+    async fn get_hnt_reward_info(&self) -> anyhow::Result<EpochRewardInfo> {
+        let next_reward_epoch = next_reward_epoch(&self.pool).await?;
+        self.sub_dao_epoch_reward_client
+            .resolve_info(&self.sub_dao_address, next_reward_epoch)
+            .await?
+            .ok_or(anyhow::anyhow!(
+                "No reward info found for epoch {}",
+                next_reward_epoch
+            ))
+    }
+
+    async fn price_info(&self) -> anyhow::Result<PriceInfo> {
+        let blockchain_token_type = match self.reward_token_type {
+            Token::Mobile => helium_proto::BlockchainTokenTypeV1::Mobile,
+            Token::Hnt => helium_proto::BlockchainTokenTypeV1::Hnt,
+            _ => bail!("Unsupported reward type"),
+        };
+        let pricer_price = self.price_tracker.price(&blockchain_token_type).await?;
+        Ok(PriceInfo::new(
+            pricer_price,
+            self.reward_token_type.decimals(),
+            self.reward_token_type,
+        ))
     }
 }
 
@@ -394,8 +466,8 @@ pub async fn reward_poc_and_dc(
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
-    hnt_price: HntPrice,
+    reward_info: &EpochRewardInfo,
+    hnt_price: PriceInfo,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
     let mut reward_shares =
         DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
@@ -457,7 +529,7 @@ async fn reward_poc(
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_info: &EpochRewardInfo,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
     let heartbeats = HeartbeatReward::validated(pool, &reward_info.epoch_period);
@@ -533,7 +605,7 @@ async fn reward_poc(
 
 pub async fn reward_dc(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_info: &EpochRewardInfo,
     transfer_rewards: TransferRewards,
     reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<Decimal> {
@@ -558,7 +630,7 @@ pub async fn reward_dc(
 pub async fn reward_mappers(
     pool: &Pool<Postgres>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
     // Mapper rewards currently include rewards for discovery mapping only.
     // Verification mapping rewards to be added
@@ -616,7 +688,7 @@ pub async fn reward_mappers(
 
 pub async fn reward_oracles(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
     // atm 100% of oracle rewards are assigned to 'unallocated'
     let total_oracle_rewards =
@@ -641,7 +713,7 @@ pub async fn reward_service_providers(
     dc_sessions: ServiceProviderDCSessions,
     sp_promotions: ServiceProviderPromotions,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_info: &EpochRewardInfo,
     hnt_bone_price: Decimal,
 ) -> anyhow::Result<()> {
     use service_provider::ServiceProviderRewardInfos;
@@ -681,7 +753,7 @@ async fn write_unallocated_reward(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
-    reward_info: &'_ ResolvedSubDaoEpochRewardInfo,
+    reward_info: &'_ EpochRewardInfo,
 ) -> anyhow::Result<()> {
     if unallocated_amount > 0 {
         let unallocated_reward = proto::MobileRewardShare {
@@ -706,4 +778,30 @@ pub async fn next_reward_epoch(db: &Pool<Postgres>) -> db_store::Result<u64> {
 
 async fn save_next_reward_epoch(exec: impl PgExecutor<'_>, value: u64) -> db_store::Result<()> {
     meta::store(exec, "next_reward_epoch", value).await
+}
+
+pub async fn last_rewarded_end_time(db: &Pool<Postgres>) -> db_store::Result<DateTime<Utc>> {
+    Utc.timestamp_opt(meta::fetch(db, "last_rewarded_end_time").await?, 0)
+        .single()
+        .ok_or(db_store::Error::DecodeError)
+}
+
+async fn next_rewarded_end_time(db: &Pool<Postgres>) -> db_store::Result<DateTime<Utc>> {
+    Utc.timestamp_opt(meta::fetch(db, "next_rewarded_end_time").await?, 0)
+        .single()
+        .ok_or(db_store::Error::DecodeError)
+}
+
+async fn save_last_rewarded_end_time(
+    exec: impl PgExecutor<'_>,
+    value: &DateTime<Utc>,
+) -> db_store::Result<()> {
+    meta::store(exec, "last_rewarded_end_time", value.timestamp()).await
+}
+
+async fn save_next_rewarded_end_time(
+    exec: impl PgExecutor<'_>,
+    value: &DateTime<Utc>,
+) -> db_store::Result<()> {
+    meta::store(exec, "next_rewarded_end_time", value.timestamp()).await
 }

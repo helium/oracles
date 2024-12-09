@@ -99,15 +99,17 @@ impl std::fmt::Display for KeyRole {
     }
 }
 
-pub struct EpochPeriod {
+pub struct EpochInfo {
+    pub epoch_day: u64,
     pub period: Range<DateTime<Utc>>,
 }
 
-impl From<u64> for EpochPeriod {
+impl From<u64> for EpochInfo {
     fn from(next_reward_epoch: u64) -> Self {
         let start_time = DateTime::<Utc>::UNIX_EPOCH + Duration::days(next_reward_epoch as i64);
         let end_time = start_time + Duration::days(1);
-        EpochPeriod {
+        EpochInfo {
+            epoch_day: next_reward_epoch,
             period: start_time..end_time,
         }
     }

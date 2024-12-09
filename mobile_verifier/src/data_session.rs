@@ -22,7 +22,7 @@ pub struct DataSessionIngestor {
     pub pool: PgPool,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct HotspotReward {
     pub rewardable_bytes: u64,
     pub rewardable_dc: u64,
