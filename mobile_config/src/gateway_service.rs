@@ -214,7 +214,6 @@ impl mobile_config::Gateway for GatewayService {
         tokio::spawn(async move {
             let stream = gateway_info::db::all_info_stream(&pool, &device_types);
             if request.min_updated_at > 0 {
-                // It needs filtering only updated radios
                 let min_updated_at = Utc
                     .timestamp_opt(request.min_updated_at as i64, 0)
                     .single()
@@ -224,7 +223,7 @@ impl mobile_config::Gateway for GatewayService {
 
                 let updated_redios = get_updated_radios(&mc_pool, min_updated_at).await?;
                 let stream = stream
-                    .filter(|v| future::ready(updated_redios.contains(&v.address.to_string())))
+                    .filter(|v| future::ready(updated_redios.contains(&v.address)))
                     .boxed();
                 stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size)
                     .await

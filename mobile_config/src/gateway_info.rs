@@ -382,7 +382,7 @@ pub(crate) mod db {
     pub async fn get_updated_radios(
         db: impl PgExecutor<'_>,
         min_updated_at: DateTime<Utc>,
-    ) -> anyhow::Result<HashSet<String>> {
+    ) -> anyhow::Result<HashSet<PublicKeyBinary>> {
         let rows: Vec<Vec<u8>> = sqlx::query_scalar(GET_UPDATED_RADIOS)
             .bind(min_updated_at)
             .fetch_all(db)
@@ -392,7 +392,8 @@ pub(crate) mod db {
         for row in rows {
             let entity_key_b: &[u8] = &row;
             let entity_key = bs58::encode(entity_key_b).into_string();
-            radios.insert(entity_key);
+            let pk = PublicKeyBinary::from_str(&entity_key)?;
+            radios.insert(pk);
         }
 
         Ok(radios)

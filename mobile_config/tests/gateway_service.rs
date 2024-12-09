@@ -33,7 +33,6 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_key.public_key().to_owned(), KeyRole::Administrator)]);
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    // TODO
     let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
     let _handle = tokio::spawn(
         transport::Server::builder()
@@ -99,7 +98,6 @@ async fn spawn_gateway_service(
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    // TODO
     let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
     let handle = tokio::spawn(
         transport::Server::builder()
