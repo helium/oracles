@@ -23,10 +23,11 @@ use mobile_config::{
     },
 };
 
+use helium_lib::token::Token;
 use mobile_config::client::sub_dao_client::SubDaoEpochRewardInfoResolver;
 use mobile_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use mobile_verifier::{
-    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver,
+    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -396,10 +397,26 @@ pub fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> E
     let now = Utc::now();
     EpochRewardInfo {
         epoch_day: 1,
-        epoch_address: EPOCH_ADDRESS.into(),
-        sub_dao_address: SUB_DAO_ADDRESS.into(),
+        epoch_address: Some(EPOCH_ADDRESS.into()),
+        sub_dao_address: Some(SUB_DAO_ADDRESS.into()),
         epoch_period: (now - epoch_duration)..now,
         epoch_emissions: Decimal::from(total_emissions),
         rewards_issued_at: now,
     }
+}
+
+pub fn default_hnt_price_info() -> PriceInfo {
+    let token = Token::Hnt;
+    let price_info = PriceInfo::new(1000000000000, token.decimals(), token);
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
+    price_info
+}
+
+pub fn default_mobile_price_info() -> PriceInfo {
+    let token = Token::Mobile;
+    let price_info = PriceInfo::new(100000000, token.decimals(), token);
+    assert_eq!(price_info.price_per_token, dec!(100));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
+    price_info
 }

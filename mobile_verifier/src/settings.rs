@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
+use helium_lib::token::Token;
 use humantime_serde::re::humantime;
 use serde::Deserialize;
 use std::{
@@ -50,6 +51,12 @@ pub struct Settings {
     pub usa_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
     pub usa_fencing_resolution: u8,
+    #[serde(default = "default_reward_token")]
+    pub reward_token: Token,
+}
+
+fn default_reward_token() -> Token {
+    Token::Mobile
 }
 
 fn default_fencing_resolution() -> u8 {

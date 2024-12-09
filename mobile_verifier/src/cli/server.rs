@@ -227,6 +227,7 @@ impl Cmd {
                     hex_boosting_client,
                     sub_dao_rewards_client,
                     speedtests_avg,
+                    settings.reward_token,
                 )
                 .await?,
             )

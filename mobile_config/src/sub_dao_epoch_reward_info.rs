@@ -8,8 +8,8 @@ use std::ops::Range;
 #[derive(Clone, Debug)]
 pub struct EpochRewardInfo {
     pub epoch_day: u64,
-    pub epoch_address: String,
-    pub sub_dao_address: String,
+    pub epoch_address: Option<String>,
+    pub sub_dao_address: Option<String>,
     pub epoch_period: Range<DateTime<Utc>>,
     pub epoch_emissions: Decimal,
     pub rewards_issued_at: DateTime<Utc>,
@@ -53,8 +53,8 @@ impl TryFrom<SubDaoEpochRewardInfoProto> for EpochRewardInfo {
 
         Ok(Self {
             epoch_day: info.epoch,
-            epoch_address: info.epoch_address,
-            sub_dao_address: info.sub_dao_address,
+            epoch_address: Some(info.epoch_address),
+            sub_dao_address: Some(info.sub_dao_address),
             epoch_period: epoch_period.period,
             epoch_emissions: epoch_rewards,
             rewards_issued_at: info.rewards_issued_at.to_timestamp()?,

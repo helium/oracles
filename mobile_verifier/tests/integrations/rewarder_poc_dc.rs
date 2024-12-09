@@ -1,7 +1,8 @@
 use std::ops::Range;
 
 use crate::common::{
-    self, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext,
+    self, default_hnt_price_info, default_mobile_price_info, default_rewards_info,
+    MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
@@ -43,7 +44,16 @@ const HOTSPOT_3: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
 const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 
 #[sqlx::test]
-async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
+async fn test_poc_and_dc_rewards_hnt(pool: PgPool) -> anyhow::Result<()> {
+    test_poc_and_dc_rewards(pool, default_hnt_price_info()).await
+}
+
+#[sqlx::test]
+async fn test_poc_and_dc_rewards_mobile(pool: PgPool) -> anyhow::Result<()> {
+    test_poc_and_dc_rewards(pool, default_mobile_price_info()).await
+}
+
+async fn test_poc_and_dc_rewards(pool: PgPool, price_info: PriceInfo) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
@@ -60,10 +70,6 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let boosted_hexes = vec![];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -147,7 +153,19 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
+async fn test_qualified_wifi_poc_rewards_hnt(pool: PgPool) -> anyhow::Result<()> {
+    test_qualified_wifi_poc_rewards(pool, default_hnt_price_info()).await
+}
+
+#[sqlx::test]
+async fn test_qualified_wifi_poc_rewards_mobile(pool: PgPool) -> anyhow::Result<()> {
+    test_qualified_wifi_poc_rewards(pool, default_mobile_price_info()).await
+}
+
+async fn test_qualified_wifi_poc_rewards(
+    pool: PgPool,
+    price_info: PriceInfo,
+) -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     sqlx::migrate!().run(&pool).await?;
 
@@ -169,10 +187,6 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     // Run rewards with no unique connections, no poc rewards, expect unallocated
     let boosted_hexes = vec![];
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, _rewards) = tokio::join!(
         rewarder::reward_poc_and_dc(

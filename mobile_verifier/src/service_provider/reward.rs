@@ -282,8 +282,8 @@ mod tests {
         let now = Utc::now();
         EpochRewardInfo {
             epoch_day: 1,
-            epoch_address: EPOCH_ADDRESS.into(),
-            sub_dao_address: SUB_DAO_ADDRESS.into(),
+            epoch_address: Some(EPOCH_ADDRESS.into()),
+            sub_dao_address: Some(SUB_DAO_ADDRESS.into()),
             epoch_period: (now - epoch_duration)..now,
             epoch_emissions: Decimal::from(total_emissions),
             rewards_issued_at: now,

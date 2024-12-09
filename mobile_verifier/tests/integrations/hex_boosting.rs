@@ -1,5 +1,6 @@
 use crate::common::{
-    self, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext,
+    self, default_hnt_price_info, default_mobile_price_info, default_rewards_info,
+    MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
@@ -52,7 +53,16 @@ async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
 //
 
 #[sqlx::test]
-async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
+async fn test_poc_with_boosted_hexes_hnt(pool: PgPool) -> anyhow::Result<()> {
+    test_poc_with_boosted_hexes(pool, default_hnt_price_info()).await
+}
+
+#[sqlx::test]
+async fn test_poc_with_boosted_hexes_mobile(pool: PgPool) -> anyhow::Result<()> {
+    test_poc_with_boosted_hexes(pool, default_mobile_price_info()).await
+}
+
+async fn test_poc_with_boosted_hexes(pool: PgPool, price_info: PriceInfo) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
@@ -139,10 +149,6 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
         reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
-
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -243,7 +249,19 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Result<()> {
+async fn test_poc_boosted_hexes_thresholds_not_met_hnt(pool: PgPool) -> anyhow::Result<()> {
+    test_poc_boosted_hexes_thresholds_not_met(pool, default_hnt_price_info()).await
+}
+
+#[sqlx::test]
+async fn test_poc_boosted_hexes_thresholds_not_met_mobile(pool: PgPool) -> anyhow::Result<()> {
+    test_poc_boosted_hexes_thresholds_not_met(pool, default_mobile_price_info()).await
+}
+
+async fn test_poc_boosted_hexes_thresholds_not_met(
+    pool: PgPool,
+    price_info: PriceInfo,
+) -> anyhow::Result<()> {
     // this is the same setup as the previous one, but with the hotspot thresholds not seeded
     // this simulates the case where we have radios in boosted hexes but where the coverage
     // thresholds for the radios have not been met
@@ -330,10 +348,6 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
 
     let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
 
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
-
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
@@ -394,7 +408,19 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
 }
 
 #[sqlx::test]
-async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
+async fn test_poc_with_multi_coverage_boosted_hexes_hnt(pool: PgPool) -> anyhow::Result<()> {
+    test_poc_with_multi_coverage_boosted_hexes(pool, default_hnt_price_info()).await
+}
+
+#[sqlx::test]
+async fn test_poc_with_multi_coverage_boosted_hexes_mobile(pool: PgPool) -> anyhow::Result<()> {
+    test_poc_with_multi_coverage_boosted_hexes(pool, default_hnt_price_info()).await
+}
+
+async fn test_poc_with_multi_coverage_boosted_hexes(
+    pool: PgPool,
+    price_info: PriceInfo,
+) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
@@ -495,10 +521,6 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             .unwrap();
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -614,7 +636,16 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
 }
 
 #[sqlx::test]
-async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
+async fn test_expired_boosted_hex_hnt(pool: PgPool) -> anyhow::Result<()> {
+    test_expired_boosted_hex(pool, default_hnt_price_info()).await
+}
+
+#[sqlx::test]
+async fn test_expired_boosted_hex_mobile(pool: PgPool) -> anyhow::Result<()> {
+    test_expired_boosted_hex(pool, default_mobile_price_info()).await
+}
+
+async fn test_expired_boosted_hex(pool: PgPool, price_info: PriceInfo) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
@@ -673,10 +704,6 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -739,7 +766,19 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
+async fn test_reduced_location_score_with_boosted_hexes_hnt(pool: PgPool) -> anyhow::Result<()> {
+    test_expired_boosted_hex(pool, default_hnt_price_info()).await
+}
+
+#[sqlx::test]
+async fn test_reduced_location_score_with_boosted_hexes_mobile(pool: PgPool) -> anyhow::Result<()> {
+    test_reduced_location_score_with_boosted_hexes(pool, default_mobile_price_info()).await
+}
+
+async fn test_reduced_location_score_with_boosted_hexes(
+    pool: PgPool,
+    price_info: PriceInfo,
+) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
@@ -808,10 +847,6 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
-
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -917,8 +952,26 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
 }
 
 #[sqlx::test]
+async fn test_distance_from_asserted_removes_boosting_but_not_location_trust_hnt(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    test_expired_boosted_hex(pool, default_hnt_price_info()).await
+}
+
+#[sqlx::test]
+async fn test_distance_from_asserted_removes_boosting_but_not_location_trust_mobile(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    test_distance_from_asserted_removes_boosting_but_not_location_trust(
+        pool,
+        default_mobile_price_info(),
+    )
+    .await
+}
+
 async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     pool: PgPool,
+    price_info: PriceInfo,
 ) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
@@ -991,10 +1044,6 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
         reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
-
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -1100,7 +1149,23 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
 }
 
 #[sqlx::test]
-async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
+async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes_hnt(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    test_expired_boosted_hex(pool, default_hnt_price_info()).await
+}
+
+#[sqlx::test]
+async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes_mobile(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool, default_mobile_price_info()).await
+}
+
+async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(
+    pool: PgPool,
+    price_info: PriceInfo,
+) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
@@ -1199,10 +1264,6 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
-
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc

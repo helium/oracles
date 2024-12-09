@@ -22,6 +22,7 @@ pub mod unique_connections;
 pub use settings::Settings;
 
 use async_trait::async_trait;
+use helium_lib::token::Token;
 use rust_decimal::Decimal;
 use std::error::Error;
 
@@ -103,6 +104,7 @@ impl IsAuthorized for mobile_config::client::AuthorizationClient {
 
 #[derive(Clone, Debug)]
 pub struct PriceInfo {
+    pub token: Token,
     pub price_in_bones: u64,
     pub price_per_token: Decimal,
     pub price_per_bone: Decimal,
@@ -110,11 +112,12 @@ pub struct PriceInfo {
 }
 
 impl PriceInfo {
-    pub fn new(price_in_bones: u64, decimals: u8) -> Self {
+    pub fn new(price_in_bones: u64, decimals: u8, token: Token) -> Self {
         let price_per_token =
             Decimal::from(price_in_bones) / Decimal::from(10_u64.pow(decimals as u32));
         let price_per_bone = price_per_token / Decimal::from(10_u64.pow(decimals as u32));
         Self {
+            token,
             price_in_bones,
             price_per_token,
             price_per_bone,
