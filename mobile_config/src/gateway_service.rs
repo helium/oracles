@@ -1,11 +1,12 @@
 use crate::{
-    gateway_info::{self, DeviceType, GatewayInfo},
+    gateway_info::{self, db::get_updated_radios, DeviceType, GatewayInfo},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
+    future,
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
@@ -17,22 +18,30 @@ use helium_proto::{
     },
     Message,
 };
+use solana_sdk::signer::Signer;
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 use tonic::{Request, Response, Status};
 
 pub struct GatewayService {
     key_cache: KeyCache,
+    mobile_config_db_pool: Pool<Postgres>,
     metadata_pool: Pool<Postgres>,
     signing_key: Arc<Keypair>,
 }
 
 impl GatewayService {
-    pub fn new(key_cache: KeyCache, metadata_pool: Pool<Postgres>, signing_key: Keypair) -> Self {
+    pub fn new(
+        key_cache: KeyCache,
+        metadata_pool: Pool<Postgres>,
+        signing_key: Keypair,
+        mobile_config_db_pool: Pool<Postgres>,
+    ) -> Self {
         Self {
             key_cache,
             metadata_pool,
             signing_key: Arc::new(signing_key),
+            mobile_config_db_pool,
         }
     }
 
@@ -170,8 +179,7 @@ impl mobile_config::Gateway for GatewayService {
         );
 
         tokio::spawn(async move {
-            let stream =
-                gateway_info::db::all_info_stream(&pool, &device_types, DateTime::UNIX_EPOCH);
+            let stream = gateway_info::db::all_info_stream(&pool, &device_types);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -191,18 +199,13 @@ impl mobile_config::Gateway for GatewayService {
         self.verify_request_signature(&signer, &request)?;
 
         let pool = self.metadata_pool.clone();
+        let mc_pool = self.mobile_config_db_pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
-        let min_refreshed_at = Utc
-            .timestamp_opt(request.min_refreshed_at as i64, 0)
-            .single()
-            .ok_or(Status::invalid_argument(
-                "Invalid min_refreshed_at argument",
-            ))?;
 
         tracing::debug!(
             "fetching all gateways' info (v2). Device types: {:?} ",
@@ -210,8 +213,25 @@ impl mobile_config::Gateway for GatewayService {
         );
 
         tokio::spawn(async move {
-            let stream = gateway_info::db::all_info_stream(&pool, &device_types, min_refreshed_at);
-            stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
+            let stream = gateway_info::db::all_info_stream(&pool, &device_types);
+            if request.min_updated_at > 0 {
+                // It needs filtering only updated radios
+                let min_updated_at = Utc
+                    .timestamp_opt(request.min_updated_at as i64, 0)
+                    .single()
+                    .ok_or(Status::invalid_argument(
+                        "Invalid min_refreshed_at argument",
+                    ))?;
+
+                let updated_redios = get_updated_radios(&mc_pool, min_updated_at).await?;
+                let s = stream
+                    .filter(|v| future::ready(updated_redios.contains(&v.address.to_string())))
+                    .boxed();
+                stream_multi_gateways_info(s, tx.clone(), signing_key.clone(), batch_size).await
+            } else {
+                stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size)
+                    .await
+            }
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))

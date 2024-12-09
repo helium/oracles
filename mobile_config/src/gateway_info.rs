@@ -358,9 +358,10 @@ pub(crate) mod db {
     use crate::gateway_info::DeploymentInfo;
     use chrono::{DateTime, Utc};
     use futures::stream::{Stream, StreamExt};
+    use futures::TryStreamExt;
     use helium_crypto::PublicKeyBinary;
     use sqlx::{types::Json, PgExecutor, Row};
-    use std::str::FromStr;
+    use std::{collections::HashSet, str::FromStr};
 
     const GET_METADATA_SQL: &str = r#"
             select kta.entity_key, infos.location::bigint, infos.device_type,
@@ -369,15 +370,26 @@ pub(crate) mod db {
             join key_to_assets kta on infos.asset = kta.asset
         "#;
     const BATCH_SQL_WHERE_SNIPPET: &str = " where kta.entity_key = any($1::bytea[]) ";
-    const DEVICE_TYPES_AND_SNIPPET: &str = " and device_type::text = any($2) ";
+    const DEVICE_TYPES_WHERE_SNIPPET: &str = " where device_type::text = any($1) ";
+
+    const GET_UPDATED_RADIOS: &str =
+        "SELECT entity_key FROM mobile_radio_tracker WHERE last_changed_at >= $1";
 
     lazy_static::lazy_static! {
         static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
-        static ref GET_METADATA_SQL_REFRESHED_AT: String = format!(r#"{GET_METADATA_SQL}
-            where ( infos.refreshed_at >= $1 OR (infos.refreshed_at IS NULL AND infos.created_at >= $1) ) "#);
+        static ref DEVICE_TYPES_METADATA_SQL: String = format!("{GET_METADATA_SQL} {DEVICE_TYPES_WHERE_SNIPPET}");
+    }
 
-        static ref DEVICE_TYPES_METADATA_SQL: String = format!("{} {}", *GET_METADATA_SQL_REFRESHED_AT, DEVICE_TYPES_AND_SNIPPET);
-
+    pub async fn get_updated_radios(
+        db: impl PgExecutor<'_>,
+        min_updated_at: DateTime<Utc>,
+    ) -> anyhow::Result<HashSet<String>> {
+        sqlx::query_scalar(GET_UPDATED_RADIOS)
+            .bind(min_updated_at)
+            .fetch(db)
+            .map_err(anyhow::Error::from)
+            .try_collect::<HashSet<String>>() // Collect results into a HashSet
+            .await
     }
 
     pub async fn get_info(
@@ -413,16 +425,13 @@ pub(crate) mod db {
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
         device_types: &'a [DeviceType],
-        min_refreshed_at: DateTime<Utc>,
     ) -> impl Stream<Item = GatewayInfo> + 'a {
         match device_types.is_empty() {
-            true => sqlx::query_as::<_, GatewayInfo>(&GET_METADATA_SQL_REFRESHED_AT)
-                .bind(min_refreshed_at)
+            true => sqlx::query_as::<_, GatewayInfo>(&GET_METADATA_SQL)
                 .fetch(db)
                 .filter_map(|metadata| async move { metadata.ok() })
                 .boxed(),
             false => sqlx::query_as::<_, GatewayInfo>(&DEVICE_TYPES_METADATA_SQL)
-                .bind(min_refreshed_at)
                 .bind(
                     device_types
                         .iter()
