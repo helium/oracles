@@ -3,7 +3,7 @@ use crate::{
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
     future,
@@ -18,9 +18,8 @@ use helium_proto::{
     },
     Message,
 };
-use solana_sdk::signer::Signer;
 use sqlx::{Pool, Postgres};
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub struct GatewayService {
@@ -224,10 +223,11 @@ impl mobile_config::Gateway for GatewayService {
                     ))?;
 
                 let updated_redios = get_updated_radios(&mc_pool, min_updated_at).await?;
-                let s = stream
+                let stream = stream
                     .filter(|v| future::ready(updated_redios.contains(&v.address.to_string())))
                     .boxed();
-                stream_multi_gateways_info(s, tx.clone(), signing_key.clone(), batch_size).await
+                stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size)
+                    .await
             } else {
                 stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size)
                     .await

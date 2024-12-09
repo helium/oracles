@@ -388,7 +388,7 @@ pub(crate) mod db {
             .bind(min_updated_at)
             .fetch(db)
             .map_err(anyhow::Error::from)
-            .try_collect::<HashSet<String>>() // Collect results into a HashSet
+            .try_collect::<HashSet<String>>()
             .await
     }
 
@@ -427,7 +427,7 @@ pub(crate) mod db {
         device_types: &'a [DeviceType],
     ) -> impl Stream<Item = GatewayInfo> + 'a {
         match device_types.is_empty() {
-            true => sqlx::query_as::<_, GatewayInfo>(&GET_METADATA_SQL)
+            true => sqlx::query_as::<_, GatewayInfo>(GET_METADATA_SQL)
                 .fetch(db)
                 .filter_map(|metadata| async move { metadata.ok() })
                 .boxed(),
