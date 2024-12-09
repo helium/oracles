@@ -358,7 +358,6 @@ pub(crate) mod db {
     use crate::gateway_info::DeploymentInfo;
     use chrono::{DateTime, Utc};
     use futures::stream::{Stream, StreamExt};
-    use futures::TryStreamExt;
     use helium_crypto::PublicKeyBinary;
     use sqlx::{types::Json, PgExecutor, Row};
     use std::{collections::HashSet, str::FromStr};
@@ -384,12 +383,19 @@ pub(crate) mod db {
         db: impl PgExecutor<'_>,
         min_updated_at: DateTime<Utc>,
     ) -> anyhow::Result<HashSet<String>> {
-        sqlx::query_scalar(GET_UPDATED_RADIOS)
+        let rows: Vec<Vec<u8>> = sqlx::query_scalar(GET_UPDATED_RADIOS)
             .bind(min_updated_at)
-            .fetch(db)
-            .map_err(anyhow::Error::from)
-            .try_collect::<HashSet<String>>()
-            .await
+            .fetch_all(db)
+            .await?;
+        let mut radios = HashSet::new();
+
+        for row in rows {
+            let entity_key_b: &[u8] = &row;
+            let entity_key = bs58::encode(entity_key_b).into_string();
+            radios.insert(entity_key);
+        }
+
+        Ok(radios)
     }
 
     pub async fn get_info(
