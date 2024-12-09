@@ -1,9 +1,14 @@
 use crate::{
-    coverage::CoveredHexStream, data_session::HotspotMap, heartbeats::HeartbeatReward,
-    rewarder::boosted_hex_eligibility::BoostedHexEligibility, seniority::Seniority,
-    sp_boosted_rewards_bans::BannedRadios, speedtests_average::SpeedtestAverages,
+    coverage::CoveredHexStream,
+    data_session::HotspotMap,
+    heartbeats::HeartbeatReward,
+    rewarder::boosted_hex_eligibility::BoostedHexEligibility,
+    seniority::Seniority,
+    sp_boosted_rewards_bans::BannedRadios,
+    speedtests_average::SpeedtestAverages,
     subscriber_location::SubscriberValidatedLocations,
     subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
+    unique_connections::{self, UniqueConnectionCounts},
 };
 use chrono::{DateTime, Duration, Utc};
 use coverage_point_calculator::{OracleBoostingStatus, SPBoostedRewardEligibility};
@@ -355,7 +360,8 @@ pub fn coverage_point_to_mobile_reward_share(
         ),
         speedtests: coverage_points.proto_speedtests(),
         speedtest_multiplier: Some(coverage_points.speedtest_multiplier.proto_decimal()),
-        boosted_hex_status: coverage_points.proto_boosted_hex_status().into(),
+        sp_boosted_hex_status: coverage_points.proto_sp_boosted_hex_status().into(),
+        oracle_boosted_hex_status: coverage_points.proto_oracle_boosted_hex_status().into(),
         covered_hexes: coverage_points.proto_covered_hexes(),
         speedtest_average: Some(coverage_points.proto_speedtest_avg()),
     });
@@ -398,6 +404,7 @@ pub struct CoverageShares {
 }
 
 impl CoverageShares {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
@@ -405,6 +412,7 @@ impl CoverageShares {
         boosted_hexes: &BoostedHexes,
         boosted_hex_eligibility: &BoostedHexEligibility,
         banned_radios: &BannedRadios,
+        unique_connections: &UniqueConnectionCounts,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<Self> {
         let mut radio_infos: HashMap<RadioId, RadioInfo> = HashMap::new();
@@ -475,11 +483,14 @@ impl CoverageShares {
                 })
                 .collect();
 
-            let oracle_boosting_status = if banned_radios.contains(&pubkey, cbsd_id.as_deref()) {
-                OracleBoostingStatus::Banned
-            } else {
-                OracleBoostingStatus::Eligible
-            };
+            let oracle_boosting_status =
+                if unique_connections::is_qualified(unique_connections, &pubkey, &radio_type) {
+                    OracleBoostingStatus::Qualified
+                } else if banned_radios.contains(&pubkey, cbsd_id.as_deref()) {
+                    OracleBoostingStatus::Banned
+                } else {
+                    OracleBoostingStatus::Eligible
+                };
 
             let sp_boosted_reward_eligibility =
                 boosted_hex_eligibility.eligibility(pubkey, cbsd_id);
@@ -798,6 +809,14 @@ mod test {
         }
     }
 
+    fn bad_hex_assignments_mock() -> HexAssignments {
+        HexAssignments {
+            footfall: Assignment::C,
+            urbanized: Assignment::C,
+            landtype: Assignment::C,
+        }
+    }
+
     #[test]
     fn ensure_correct_conversion_of_bytes_to_bones() {
         assert_eq!(
@@ -1112,6 +1131,24 @@ mod test {
         }]
     }
 
+    fn bad_hex_coverage<'a>(key: impl Into<KeyType<'a>>, hex: u64) -> Vec<HexCoverage> {
+        let key = key.into();
+        let radio_key = key.to_owned();
+        let hex = hex.try_into().expect("valid h3 cell");
+
+        vec![HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex,
+            indoor: true,
+            radio_key,
+            signal_level: crate::coverage::SignalLevel::Low,
+            signal_power: 0,
+            coverage_claim_time: DateTime::<Utc>::MIN_UTC,
+            inserted_at: DateTime::<Utc>::MIN_UTC,
+            assignments: bad_hex_assignments_mock(),
+        }]
+    }
+
     #[tokio::test]
     async fn check_speedtest_avg_in_radio_reward_v2() {
         let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
@@ -1187,6 +1224,7 @@ mod test {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await
@@ -1590,6 +1628,7 @@ mod test {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await
@@ -1771,6 +1810,7 @@ mod test {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await
@@ -1905,6 +1945,7 @@ mod test {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await
@@ -2040,6 +2081,7 @@ mod test {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await
@@ -2073,6 +2115,132 @@ mod test {
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
         assert_eq!(owner2_reward, 410_958_904_109);
+    }
+
+    #[tokio::test]
+    async fn qualified_wifi_exempt_from_oracle_boosting_bad() {
+        // init owners
+        let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner1 parse");
+        let owner2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed owner2 parse");
+        // init hotspots
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed gw2 parse");
+        // link gws to owners
+        let mut owners = HashMap::new();
+        owners.insert(gw1.clone(), owner1.clone());
+        owners.insert(gw2.clone(), owner2.clone());
+
+        let now = Utc::now();
+        let timestamp = now - Duration::minutes(20);
+
+        let g1_cov_obj = Uuid::new_v4();
+        let g2_cov_obj = Uuid::new_v4();
+
+        // setup heartbeats
+        let heartbeat_rewards = vec![
+            // add qualified wifi indoor HB
+            HeartbeatReward {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiOutdoor,
+                coverage_object: g1_cov_obj,
+                distances_to_asserted: Some(vec![0]),
+                trust_score_multipliers: vec![dec!(1.0)],
+            },
+            // add unqualified wifi indoor HB
+            HeartbeatReward {
+                cbsd_id: None,
+                hotspot_key: gw2.clone(),
+                cell_type: CellType::NovaGenericWifiOutdoor,
+                coverage_object: g2_cov_obj,
+                distances_to_asserted: None,
+                trust_score_multipliers: vec![dec!(1.0)],
+            },
+        ]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
+
+        // setup speedtests
+        let last_speedtest = timestamp - Duration::hours(12);
+        let gw1_speedtests = vec![
+            acceptable_speedtest(gw1.clone(), last_speedtest),
+            acceptable_speedtest(gw1.clone(), timestamp),
+        ];
+        let gw2_speedtests = vec![
+            acceptable_speedtest(gw2.clone(), last_speedtest),
+            acceptable_speedtest(gw2.clone(), timestamp),
+        ];
+
+        let gw1_average = SpeedtestAverage::from(gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(gw2_speedtests);
+        let mut averages = HashMap::new();
+        averages.insert(gw1.clone(), gw1_average);
+        averages.insert(gw2.clone(), gw2_average);
+
+        let speedtest_avgs = SpeedtestAverages { averages };
+        let mut hex_coverage: HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> = Default::default();
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw1.clone()), g1_cov_obj),
+            bad_hex_coverage(&gw1, 0x8a1fb46622dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw2.clone()), g2_cov_obj),
+            bad_hex_coverage(&gw2, 0x8a1fb46642dffff),
+        );
+
+        // calculate the rewards for the group
+        let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
+        let duration = Duration::hours(1);
+        let epoch = (now - duration)..now;
+
+        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
+        let unique_connection_counts = HashMap::from([(gw1.clone(), 42)]);
+        for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in CoverageShares::new(
+            &hex_coverage,
+            stream::iter(heartbeat_rewards),
+            &speedtest_avgs,
+            &BoostedHexes::default(),
+            &BoostedHexEligibility::default(),
+            &BannedRadios::default(),
+            &unique_connection_counts,
+            &epoch,
+        )
+        .await
+        .unwrap()
+        .into_rewards(reward_shares, &epoch)
+        .unwrap()
+        .1
+        {
+            let radio_reward = match mobile_reward_v2.reward {
+                Some(MobileReward::RadioRewardV2(radio_reward)) => radio_reward,
+                _ => unreachable!(),
+            };
+            let owner = owners
+                .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
+                .expect("Could not find owner")
+                .clone();
+
+            let base = radio_reward.base_poc_reward;
+            let boosted = radio_reward.boosted_poc_reward;
+            *owner_rewards.entry(owner).or_default() += base + boosted;
+        }
+
+        // qualified wifi
+        let owner1_reward = owner_rewards.get(&owner1);
+        assert!(owner1_reward.is_some());
+
+        // unqualified wifi
+        let owner2_reward = owner_rewards.get(&owner2);
+        assert!(owner2_reward.is_none());
     }
 
     /// Test to ensure that rewards that are zeroed are not written out.

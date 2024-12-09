@@ -26,6 +26,7 @@ pub mod speedtest;
 pub mod subscriber_verified_mapping_event;
 pub mod subscriber_verified_mapping_event_ingest_report;
 pub mod traits;
+pub mod unique_connections;
 pub mod usage_counts;
 pub mod verified_subscriber_verified_mapping_event_ingest_report;
 pub mod wifi_heartbeat;
