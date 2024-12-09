@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 clap = {version = "4.5.9", features = ["derive"]}
+futures = { workspace = true }
 helium-crypto = {version = "0.8.1", features=["sqlx-postgres", "multisig"]}
 helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
   "services",

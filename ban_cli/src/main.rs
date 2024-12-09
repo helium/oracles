@@ -1,8 +1,9 @@
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::{collections::HashSet, path::PathBuf, str::FromStr};
 
 use ban_cli::{tracker::TrackGood, DbArgs, RadioType};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use clap::Parser;
+use futures::TryStreamExt;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::services::{
     poc_mobile::{
@@ -57,6 +58,21 @@ impl From<RadioKey> for service_provider_boosted_rewards_banned_radio_req_v1::Ke
             }
             RadioKey::Cbrs(cbsd_id) => {
                 service_provider_boosted_rewards_banned_radio_req_v1::KeyType::CbsdId(cbsd_id)
+            }
+        }
+    }
+}
+
+impl From<&RadioKey> for service_provider_boosted_rewards_banned_radio_req_v1::KeyType {
+    fn from(value: &RadioKey) -> Self {
+        match value {
+            RadioKey::Wifi(pk) => {
+                service_provider_boosted_rewards_banned_radio_req_v1::KeyType::HotspotKey(pk.into())
+            }
+            RadioKey::Cbrs(cbsd_id) => {
+                service_provider_boosted_rewards_banned_radio_req_v1::KeyType::CbsdId(
+                    cbsd_id.clone(),
+                )
             }
         }
     }
@@ -143,7 +159,12 @@ async fn main() -> anyhow::Result<()> {
             match response.to_lowercase().as_str() {
                 "yes" | "y" => {
                     let mut mobile_ingestor = args.ingestor.to_mobile_ingestor()?;
-                    unban_radios(&mut mobile_ingestor, csv_keys, args.ban_type.into()).await?;
+                    unban_radios(
+                        &mut mobile_ingestor,
+                        csv_keys.iter().collect(),
+                        args.ban_type.into(),
+                    )
+                    .await?;
                 }
                 _ => {
                     println!("Bailing");
@@ -159,7 +180,12 @@ async fn main() -> anyhow::Result<()> {
             match response.to_lowercase().as_str() {
                 "yes" | "y" => {
                     let mut mobile_ingestor = args.ingestor.to_mobile_ingestor()?;
-                    ban_radios(&mut mobile_ingestor, csv_keys, args.ban_type.into()).await?;
+                    ban_radios(
+                        &mut mobile_ingestor,
+                        csv_keys.iter().collect(),
+                        args.ban_type.into(),
+                    )
+                    .await?;
                 }
                 _ => {
                     println!("Bailing");
@@ -175,7 +201,6 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn ban_file(args: FileArgs) -> anyhow::Result<()> {
-    //let args = Args::parse();
     let radio_type = args.radio_type;
 
     let pool = PgPoolOptions::new()
@@ -186,47 +211,28 @@ async fn ban_file(args: FileArgs) -> anyhow::Result<()> {
     let csv_keys = read_csv_keys(args.csv, radio_type)?;
     let banned_radios = get_banned_radios(&pool, radio_type, args.ban_type).await?;
 
-    let keys_to_ban: Vec<RadioKey> = csv_keys
-        .clone()
-        .into_iter()
-        .filter(|rk| match banned_radios.get(rk) {
-            Some(until) => until.to_owned() < Utc::now() + Duration::days(10),
-            None => true,
-        })
-        .collect();
+    let mut need_banned: Vec<_> = csv_keys.difference(&banned_radios).collect();
+    let mut already_banned: Vec<_> = csv_keys.intersection(&banned_radios).collect();
+    let need_unbanned: Vec<_> = banned_radios.difference(&csv_keys).collect();
 
-    if keys_to_ban.len() == 0 {
-        println!("no radios to ban");
-    } else {
-        println!("Keys to ban: {}", keys_to_ban.len());
-        print!("Ban radios?: ");
-        let response: String = text_io::read!("{}");
+    println!("Already Banned: {}", already_banned.len());
+    println!("New Banned: {}", need_banned.len());
+    println!("Unbanned: {}", need_unbanned.len());
 
-        if response == "yes" || response == "y" {
-            println!("\nsending radios to ban to mobile ingestor");
-            let mut mobile_ingestor = args.ingestor.to_mobile_ingestor()?;
-            ban_radios(&mut mobile_ingestor, keys_to_ban, args.ban_type.into()).await?;
-            println!("\n all radios to ban sent to ingestor");
+    print!("Continue? [y/n]");
+    let response: String = text_io::read!("{}");
+    if response == "yes" || response == "y" {
+        let mut mobile_ingestor = args.ingestor.to_mobile_ingestor()?;
+        need_banned.append(&mut already_banned);
+
+        if need_banned.len() > 0 {
+            println!("Banning...");
+            ban_radios(&mut mobile_ingestor, need_banned, args.ban_type.into()).await?;
         }
-    }
 
-    let keys_to_unban: Vec<RadioKey> = banned_radios
-        .into_keys()
-        .filter(|rk| !csv_keys.contains(rk))
-        .collect();
-
-    if keys_to_unban.len() == 0 {
-        println!("no radios to unban");
-    } else {
-        println!("Keys to unban: {} ", keys_to_unban.len());
-        print!("Unban radios?: ");
-        let response: String = text_io::read!("{}");
-
-        if response == "yes" || response == "y" {
-            println!("\nsending radios to unban to mobile ingestor");
-            let mut mobile_ingestor = args.ingestor.to_mobile_ingestor()?;
-            unban_radios(&mut mobile_ingestor, keys_to_unban, args.ban_type.into()).await?;
-            println!("\n all radios to unban sent to ingestor");
+        if need_unbanned.len() > 0 {
+            println!("Unbanning...");
+            unban_radios(&mut mobile_ingestor, need_unbanned, args.ban_type.into()).await?;
         }
     }
 
@@ -235,7 +241,7 @@ async fn ban_file(args: FileArgs) -> anyhow::Result<()> {
 
 async fn ban_radios(
     mobile_ingestor: &mut MobileIngestor,
-    radios: Vec<RadioKey>,
+    radios: Vec<&RadioKey>,
     ban_type: service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType,
 ) -> anyhow::Result<()> {
     for radio_key in radios {
@@ -266,7 +272,7 @@ async fn ban_radios(
 
 async fn unban_radios(
     mobile_ingestor: &mut MobileIngestor,
-    radios: Vec<RadioKey>,
+    radios: Vec<&RadioKey>,
     ban_type: service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType,
 ) -> anyhow::Result<()> {
     for radio_key in radios {
@@ -308,10 +314,10 @@ async fn get_banned_radios(
     pool: &Pool<Postgres>,
     radio_type: RadioType,
     ban_type: BanType,
-) -> anyhow::Result<HashMap<RadioKey, DateTime<Utc>>> {
-    let result = sqlx::query(
+) -> anyhow::Result<HashSet<RadioKey>> {
+    sqlx::query(
         r#"
-            SELECT radio_key, until
+            SELECT distinct radio_key
             FROM sp_boosted_rewards_bans
             WHERE radio_type = $1
                 AND ban_type = $2
@@ -322,20 +328,19 @@ async fn get_banned_radios(
     .bind(radio_type)
     .bind(ban_type.as_str())
     .bind(Utc::now())
-    .fetch_all(pool)
-    .await?;
-
-    result.into_iter().try_fold(HashMap::new(), |mut acc, row| {
+    .fetch(pool)
+    .map_err(anyhow::Error::from)
+    .and_then(|row| async move {
         let key = row.get::<String, &str>("radio_key");
-        let until = row.get::<DateTime<Utc>, &str>("until");
-        acc.insert(into_radiokey(radio_type, key)?, until);
-        Ok(acc)
+        into_radiokey(radio_type, key)
     })
+    .try_collect()
+    .await
 }
 
-fn read_csv_keys(path: PathBuf, radio_type: RadioType) -> anyhow::Result<Vec<RadioKey>> {
+fn read_csv_keys(path: PathBuf, radio_type: RadioType) -> anyhow::Result<HashSet<RadioKey>> {
     let mut reader = csv::Reader::from_path(path)?;
-    let mut csv_radio_keys = Vec::new();
+    let mut csv_radio_keys = HashSet::new();
 
     for result in reader.records() {
         let record = result?;
@@ -345,27 +350,8 @@ fn read_csv_keys(path: PathBuf, radio_type: RadioType) -> anyhow::Result<Vec<Rad
             .ok_or_else(|| anyhow::anyhow!("no key in csv"))
             .and_then(|s| into_radiokey(radio_type, s))?;
 
-        csv_radio_keys.push(radio_key);
+        csv_radio_keys.insert(radio_key);
     }
 
     Ok(csv_radio_keys)
 }
-
-// async fn is_already_banned(pool: &Pool<Postgres>, public_key: &PublicKey) -> anyhow::Result<bool> {
-//     sqlx::query_scalar::<_, i64>(
-//         r#"
-//             SELECT count(*)
-//             FROM sp_boosted_rewards_bans
-//             WHERE radio_type = 'wifi'
-//                 AND radio_key = $1
-//                 AND invalidated_at IS NULL
-//                 AND until > $2
-//         "#,
-//     )
-//     .bind(public_key.to_string())
-//     .bind(Utc::now() + Duration::days(7))
-//     .fetch_one(pool)
-//     .await
-//     .map(|count| count > 0)
-//     .map_err(anyhow::Error::from)
-// }
