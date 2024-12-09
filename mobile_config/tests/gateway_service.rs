@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
 
 use helium_crypto::{KeyTag, Keypair, PublicKey, PublicKeyBinary, Sign};
@@ -33,7 +33,7 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_key.public_key().to_owned(), KeyRole::Administrator)]);
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let gws = GatewayService::new(key_cache, pool.clone(), server_key);
+    let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
     let _handle = tokio::spawn(
         transport::Server::builder()
             .add_service(proto::GatewayServer::new(gws))
@@ -98,7 +98,7 @@ async fn spawn_gateway_service(
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let gws = GatewayService::new(key_cache, pool, server_key);
+    let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
     let handle = tokio::spawn(
         transport::Server::builder()
             .add_service(proto::GatewayServer::new(gws))
@@ -217,11 +217,14 @@ async fn gateway_stream_info_v2(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn gateway_stream_info_v2_refreshed_at_is_null(pool: PgPool) {
+async fn gateway_stream_info_v2_updated_at(pool: PgPool) {
     let admin_key = make_keypair();
     let asset1_pubkey = make_keypair().public_key().clone();
     let asset1_hex_idx = 631711281837647359_i64;
-    let now = Utc::now();
+    let asset2_hex_idx = 631711286145955327_i64;
+    let asset2_pubkey = make_keypair().public_key().clone();
+    let created_at = Utc::now() - Duration::hours(5);
+    let updated_at = Utc::now() - Duration::hours(3);
 
     create_db_tables(&pool).await;
     add_db_record(
@@ -230,25 +233,46 @@ async fn gateway_stream_info_v2_refreshed_at_is_null(pool: PgPool) {
         asset1_hex_idx,
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
-        now,
+        created_at,
+        Some(updated_at),
+        None,
+    )
+    .await;
+    add_mobile_tracker_record(&pool, asset1_pubkey.clone().into(), updated_at).await;
+
+    // Shouldn't be returned
+    add_db_record(
+        &pool,
+        "asset2",
+        asset2_hex_idx,
+        "\"wifiDataOnly\"",
+        asset2_pubkey.clone().into(),
+        created_at,
         None,
         None,
     )
     .await;
+    add_mobile_tracker_record(&pool, asset2_pubkey.clone().into(), created_at).await;
 
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
-    let req = make_gateway_stream_signed_req_v2(&admin_key, &[], now.timestamp() as u64);
+    let req = make_gateway_stream_signed_req_v2(&admin_key, &[], updated_at.timestamp() as u64);
     let mut stream = client.info_stream_v2(req).await.unwrap().into_inner();
-
-    // Make sure the gateway was returned
     let resp = stream.next().await.unwrap().unwrap();
     assert_eq!(resp.gateways.len(), 1);
 
-    let req = make_gateway_stream_signed_req_v2(&admin_key, &[], (now.timestamp() + 1) as u64);
-    let mut stream = client.info_stream_v2(req).await.unwrap().into_inner();
-    // Response is empty
+    let gw_info = resp.gateways.first().unwrap();
+    let pub_key = PublicKey::from_bytes(gw_info.address.clone()).unwrap();
+    assert_eq!(pub_key, asset1_pubkey.clone());
+    assert_eq!(
+        DeviceType::try_from(gw_info.device_type).unwrap(),
+        DeviceType::WifiIndoor
+    );
+    assert_eq!(
+        i64::from_str_radix(&gw_info.metadata.clone().unwrap().location, 16).unwrap(),
+        asset1_hex_idx
+    );
     assert!(stream.next().await.is_none());
 }
 
@@ -374,6 +398,30 @@ async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     }
 }
 
+async fn add_mobile_tracker_record(
+    pool: &PgPool,
+    key: PublicKeyBinary,
+    last_changed_at: DateTime<Utc>,
+) {
+    let b58 = bs58::decode(key.to_string()).into_vec().unwrap();
+
+    sqlx::query(
+        r#"
+            INSERT INTO
+"mobile_radio_tracker" ("entity_key", "hash", "last_changed_at", "last_checked_at")
+            VALUES
+($1, $2, $3, $4);
+    "#,
+    )
+    .bind(b58)
+    .bind("hash")
+    .bind(last_changed_at)
+    .bind(last_changed_at + Duration::hours(1))
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn add_db_record(
     pool: &PgPool,
@@ -477,14 +525,14 @@ fn make_keypair() -> Keypair {
 fn make_gateway_stream_signed_req_v2(
     signer: &Keypair,
     device_types: &[DeviceType],
-    min_refreshed_at: u64,
+    min_updated_at: u64,
 ) -> proto::GatewayInfoStreamReqV2 {
     let mut req = GatewayInfoStreamReqV2 {
         batch_size: 10000,
         signer: signer.public_key().to_vec(),
         signature: vec![],
         device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),
-        min_refreshed_at,
+        min_updated_at,
     };
 
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
