@@ -3,7 +3,7 @@ use crate::{
     settings::{self, Settings},
     BytesMutStream, Error, FileInfo, FileInfoStream, Result,
 };
-use aws_config::{meta::region::RegionProviderChain, timeout::TimeoutConfig};
+use aws_config::{meta::region::RegionProviderChain, retry::RetryConfig, timeout::TimeoutConfig};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
@@ -64,6 +64,7 @@ impl FileStore {
         endpoint: Option<String>,
         region: Option<String>,
         timeout_config: Option<TimeoutConfig>,
+        retry_config: Option<RetryConfig>,
     ) -> Result<Self> {
         let endpoint: Option<Endpoint> = match &endpoint {
             Some(endpoint) => Uri::from_str(endpoint)
@@ -82,6 +83,10 @@ impl FileStore {
 
         if let Some(timeout) = timeout_config {
             config = config.timeout_config(timeout);
+        }
+
+        if let Some(retry) = retry_config {
+            config = config.retry_config(retry);
         }
 
         let config = config.load().await;
