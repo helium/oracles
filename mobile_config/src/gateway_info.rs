@@ -104,7 +104,6 @@ pub struct GatewayInfo {
     pub metadata: Option<GatewayMetadata>,
     pub device_type: DeviceType,
     // None for V1
-    pub refreshed_at: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -135,7 +134,6 @@ impl TryFrom<GatewayInfoProtoV2> for GatewayInfo {
             metadata,
             device_type: _,
             created_at,
-            refreshed_at,
         } = info;
 
         let metadata = if let Some(metadata) = metadata {
@@ -154,16 +152,11 @@ impl TryFrom<GatewayInfoProtoV2> for GatewayInfo {
             .single()
             .ok_or(GatewayInfoProtoParseError::InvalidCreatedAt(created_at))?;
 
-        let refreshed_at = Utc.timestamp_opt(refreshed_at as i64, 0).single().ok_or(
-            GatewayInfoProtoParseError::InvalidRefreshedAt(info.refreshed_at),
-        )?;
-
         Ok(Self {
             address: address.into(),
             metadata,
             device_type: device_type_,
             created_at: Some(created_at),
-            refreshed_at: Some(refreshed_at),
         })
     }
 }
@@ -196,7 +189,6 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
             metadata,
             device_type: device_type_,
             created_at: None,
-            refreshed_at: None,
         })
     }
 }
@@ -296,10 +288,6 @@ impl TryFrom<GatewayInfo> for GatewayInfoProtoV2 {
             created_at: info
                 .created_at
                 .ok_or(GatewayInfoToProtoError::CreatedAtIsNone)?
-                .timestamp() as u64,
-            refreshed_at: info
-                .refreshed_at
-                .ok_or(GatewayInfoToProtoError::RefreshedAtIsNone)?
                 .timestamp() as u64,
         })
     }
@@ -480,11 +468,6 @@ pub(crate) mod db {
             )
             .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
             let created_at = row.get::<DateTime<Utc>, &str>("created_at");
-            // `refreshed_at` can be NULL in the database schema.
-            // If so, fallback to using `created_at` as the default value of `refreshed_at`.
-            let refreshed_at = row
-                .get::<Option<DateTime<Utc>>, &str>("refreshed_at")
-                .unwrap_or(created_at);
 
             Ok(Self {
                 address: PublicKeyBinary::from_str(
@@ -493,7 +476,6 @@ pub(crate) mod db {
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
                 metadata,
                 device_type,
-                refreshed_at: Some(refreshed_at),
                 created_at: Some(created_at),
             })
         }
