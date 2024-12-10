@@ -1,9 +1,8 @@
 create table organization_locks (
-    organization varchar(255) primary key not null,
-    locked bool default false,
-
-    inserted_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
+    organization TEXT PRIMARY KEY NOT NULL,
+    locked BOOL DEFAULT false,
+    inserted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 select trigger_updated_at('organization_locks');
@@ -14,10 +13,10 @@ BEGIN
         SELECT FROM information_schema.tables
         WHERE table_name = 'solana_organizations'
     ) THEN
-        insert into organization_locks (organization, locked)
-            select sol_org.address, org.locked
-            from solana_organizations sol_org
-            left join organizations org on sol_org.oui = org.oui;
+        INSERT INTO organization_locks (organization, locked)
+            SELECT sol_org.address, org.locked
+            FROM solana_organizations sol_org
+            LEFT JOIN organizations org ON sol_org.oui = org.oui;
     END IF;
 END;
 $$;

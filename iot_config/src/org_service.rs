@@ -52,20 +52,6 @@ impl OrgService {
         })
     }
 
-    fn _verify_admin_request_signature<R>(
-        &self,
-        signer: &PublicKey,
-        request: &R,
-    ) -> Result<(), Status>
-    where
-        R: MsgVerify,
-    {
-        self.auth_cache
-            .verify_signature_with_type(KeyType::Administrator, signer, request)
-            .map_err(|_| Status::permission_denied("invalid admin signature"))?;
-        Ok(())
-    }
-
     fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
     where
         R: MsgVerify,

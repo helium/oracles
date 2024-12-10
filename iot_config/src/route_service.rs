@@ -525,7 +525,7 @@ impl iot_config::Route for RouteService {
             .map_ok(|update| match validator.validate_update(&update) {
                 Ok(()) => Ok(update),
                 Err(reason) => {
-                    println!("Validation failed: {:?}", reason);
+                    tracing::error!("Validation failed: {:?}", reason);
                     Err(Status::invalid_argument(format!(
                         "invalid update request: {reason:?}"
                     )))
