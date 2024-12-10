@@ -226,12 +226,12 @@ async fn ban_file(args: FileArgs) -> anyhow::Result<()> {
         need_banned.append(&mut already_banned);
 
         if need_banned.len() > 0 {
-            println!("Banning...");
+            println!("Banning {} radios ...", need_banned.len());
             ban_radios(&mut mobile_ingestor, need_banned, args.ban_type.into()).await?;
         }
 
         if need_unbanned.len() > 0 {
-            println!("Unbanning...");
+            println!("Unbanning {} radios ...", need_unbanned.len());
             unban_radios(&mut mobile_ingestor, need_unbanned, args.ban_type.into()).await?;
         }
     }
