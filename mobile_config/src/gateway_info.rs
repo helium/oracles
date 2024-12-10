@@ -345,7 +345,10 @@ pub(crate) mod db {
     use super::{DeviceType, GatewayInfo, GatewayMetadata};
     use crate::gateway_info::DeploymentInfo;
     use chrono::{DateTime, Utc};
-    use futures::stream::{Stream, StreamExt};
+    use futures::{
+        stream::{Stream, StreamExt},
+        TryStreamExt,
+    };
     use helium_crypto::PublicKeyBinary;
     use sqlx::{types::Json, PgExecutor, Row};
     use std::{collections::HashSet, str::FromStr};
@@ -371,20 +374,20 @@ pub(crate) mod db {
         db: impl PgExecutor<'_>,
         min_updated_at: DateTime<Utc>,
     ) -> anyhow::Result<HashSet<PublicKeyBinary>> {
-        let rows: Vec<Vec<u8>> = sqlx::query_scalar(GET_UPDATED_RADIOS)
+        sqlx::query(GET_UPDATED_RADIOS)
             .bind(min_updated_at)
-            .fetch_all(db)
-            .await?;
-        let mut radios = HashSet::new();
-
-        for row in rows {
-            let entity_key_b: &[u8] = &row;
-            let entity_key = bs58::encode(entity_key_b).into_string();
-            let pk = PublicKeyBinary::from_str(&entity_key)?;
-            radios.insert(pk);
-        }
-
-        Ok(radios)
+            .fetch(db)
+            .map_err(anyhow::Error::from)
+            .try_fold(
+                HashSet::new(),
+                |mut set: HashSet<PublicKeyBinary>, row| async move {
+                    let entity_key_b = row.get::<&[u8], &str>("entity_key");
+                    let entity_key = bs58::encode(entity_key_b).into_string();
+                    set.insert(PublicKeyBinary::from_str(&entity_key)?);
+                    Ok(set)
+                },
+            )
+            .await
     }
 
     pub async fn get_info(

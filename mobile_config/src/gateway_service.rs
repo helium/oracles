@@ -197,8 +197,8 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        let pool = self.metadata_pool.clone();
-        let mc_pool = self.mobile_config_db_pool.clone();
+        let metadata_db_pool = self.metadata_pool.clone();
+        let mobile_config_db_pool = self.mobile_config_db_pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
 
@@ -212,7 +212,7 @@ impl mobile_config::Gateway for GatewayService {
         );
 
         tokio::spawn(async move {
-            let stream = gateway_info::db::all_info_stream(&pool, &device_types);
+            let stream = gateway_info::db::all_info_stream(&metadata_db_pool, &device_types);
             if request.min_updated_at > 0 {
                 let min_updated_at = Utc
                     .timestamp_opt(request.min_updated_at as i64, 0)
@@ -221,7 +221,8 @@ impl mobile_config::Gateway for GatewayService {
                         "Invalid min_refreshed_at argument",
                     ))?;
 
-                let updated_redios = get_updated_radios(&mc_pool, min_updated_at).await?;
+                let updated_redios =
+                    get_updated_radios(&mobile_config_db_pool, min_updated_at).await?;
                 let stream = stream
                     .filter(|v| future::ready(updated_redios.contains(&v.address)))
                     .boxed();
