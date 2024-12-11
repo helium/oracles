@@ -1,3 +1,5 @@
+use std::vec;
+
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
 
@@ -274,6 +276,144 @@ async fn gateway_stream_info_v2_updated_at(pool: PgPool) {
         asset1_hex_idx
     );
     assert!(stream.next().await.is_none());
+}
+
+#[sqlx::test]
+async fn gateway_info_batch_v2(pool: PgPool) {
+    let admin_key = make_keypair();
+    let asset1_pubkey = make_keypair().public_key().clone();
+    let asset1_hex_idx = 631711281837647359_i64;
+    let asset2_hex_idx = 631711286145955327_i64;
+    let asset2_pubkey = make_keypair().public_key().clone();
+    let created_at = Utc::now() - Duration::hours(5);
+    let updated_at = Utc::now() - Duration::hours(3);
+
+    create_db_tables(&pool).await;
+    add_db_record(
+        &pool,
+        "asset1",
+        asset1_hex_idx,
+        "\"wifiIndoor\"",
+        asset1_pubkey.clone().into(),
+        created_at,
+        Some(updated_at),
+        Some(r#"{"wifiInfoV0": {"antenna": 18, "azimuth": 161, "elevation": 2, "electricalDownTilt": 3, "mechanicalDownTilt": 4}}"#)
+    )
+    .await;
+
+    add_db_record(
+        &pool,
+        "asset2",
+        asset2_hex_idx,
+        "\"wifiDataOnly\"",
+        asset2_pubkey.clone().into(),
+        created_at,
+        None,
+        None,
+    )
+    .await;
+    add_mobile_tracker_record(&pool, asset2_pubkey.clone().into(), created_at).await;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await.unwrap();
+
+    let req = make_signed_info_batch_request(
+        &vec![asset1_pubkey.clone(), asset2_pubkey.clone()],
+        &admin_key,
+    );
+    let stream = client.info_batch_v2(req).await.unwrap().into_inner();
+    let resp = stream
+        .filter_map(|result| async { result.ok() })
+        .collect::<Vec<GatewayInfoStreamResV2>>()
+        .await;
+
+    let gateways = resp.first().unwrap().gateways.clone();
+    let gw1 = gateways
+        .iter()
+        .find(|v| v.address == asset1_pubkey.to_vec())
+        .unwrap();
+
+    let deployment_info = gw1.metadata.clone().unwrap().deployment_info.unwrap();
+
+    match deployment_info {
+        DeploymentInfo::WifiDeploymentInfo(v) => {
+            assert_eq!(v.antenna, 18);
+            assert_eq!(v.azimuth, 161);
+            assert_eq!(v.elevation, 2);
+            assert_eq!(v.electrical_down_tilt, 3);
+            assert_eq!(v.mechanical_down_tilt, 4);
+        }
+        DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
+    };
+
+    let gw2 = gateways
+        .iter()
+        .find(|v| v.address == asset2_pubkey.to_vec())
+        .unwrap();
+    assert!(gw2.metadata.clone().unwrap().deployment_info.is_none());
+}
+
+#[sqlx::test]
+async fn gateway_info_v2(pool: PgPool) {
+    let admin_key = make_keypair();
+    let asset1_pubkey = make_keypair().public_key().clone();
+    let asset1_hex_idx = 631711281837647359_i64;
+    let asset2_pubkey = make_keypair().public_key().clone();
+    let created_at = Utc::now() - Duration::hours(5);
+    let updated_at = Utc::now() - Duration::hours(3);
+
+    create_db_tables(&pool).await;
+    add_db_record(
+        &pool,
+        "asset1",
+        asset1_hex_idx,
+        "\"wifiIndoor\"",
+        asset1_pubkey.clone().into(),
+        created_at,
+        Some(updated_at),
+        Some(r#"{"wifiInfoV0": {"antenna": 18, "azimuth": 161, "elevation": 2, "electricalDownTilt": 3, "mechanicalDownTilt": 4}}"#)
+    )
+    .await;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await.unwrap();
+
+    let req = make_signed_info_request(&asset1_pubkey, &admin_key);
+    let resp = client.info_v2(req).await.unwrap().into_inner();
+
+    let gw_info = resp.info.unwrap();
+    let pub_key = PublicKey::from_bytes(gw_info.address.clone()).unwrap();
+    assert_eq!(pub_key, asset1_pubkey.clone());
+    assert_eq!(
+        DeviceType::try_from(gw_info.device_type).unwrap(),
+        DeviceType::WifiIndoor
+    );
+    assert_eq!(
+        i64::from_str_radix(&gw_info.metadata.clone().unwrap().location, 16).unwrap(),
+        asset1_hex_idx
+    );
+
+    let deployment_info = gw_info.metadata.clone().unwrap().deployment_info.unwrap();
+
+    match deployment_info {
+        DeploymentInfo::WifiDeploymentInfo(v) => {
+            assert_eq!(v.antenna, 18);
+            assert_eq!(v.azimuth, 161);
+            assert_eq!(v.elevation, 2);
+            assert_eq!(v.electrical_down_tilt, 3);
+            assert_eq!(v.mechanical_down_tilt, 4);
+        }
+        DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
+    };
+
+    // Non-existent
+    let req = make_signed_info_request(&asset2_pubkey, &admin_key);
+    let resp_err = client
+        .info_v2(req)
+        .await
+        .expect_err("testing expects error");
+
+    assert_eq!(resp_err.code(), Code::NotFound);
 }
 
 #[sqlx::test]
@@ -557,6 +697,20 @@ fn make_gateway_stream_signed_req_v1(
 fn make_signed_info_request(address: &PublicKey, signer: &Keypair) -> proto::GatewayInfoReqV1 {
     let mut req = proto::GatewayInfoReqV1 {
         address: address.to_vec(),
+        signer: signer.public_key().to_vec(),
+        signature: vec![],
+    };
+    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+    req
+}
+
+fn make_signed_info_batch_request(
+    addresses: &[PublicKey],
+    signer: &Keypair,
+) -> proto::GatewayInfoBatchReqV1 {
+    let mut req = proto::GatewayInfoBatchReqV1 {
+        addresses: addresses.iter().map(|v| v.to_vec()).collect(),
+        batch_size: 42,
         signer: signer.public_key().to_vec(),
         signature: vec![],
     };
