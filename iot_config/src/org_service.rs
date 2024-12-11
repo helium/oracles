@@ -13,7 +13,7 @@ use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
         self, route_stream_res_v1, ActionV1, OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1,
-        OrgEnableResV1, OrgGetReqV1, OrgListReqV1, OrgListResV1, OrgResV1, OrgV1, RouteStreamResV1,
+        OrgEnableResV1, OrgGetReqV2, OrgListReqV2, OrgListResV2, OrgResV2, OrgV2, RouteStreamResV1,
     },
     Message,
 };
@@ -103,17 +103,17 @@ impl OrgService {
 
 #[tonic::async_trait]
 impl iot_config::Org for OrgService {
-    async fn list(&self, _request: Request<OrgListReqV1>) -> GrpcResult<OrgListResV1> {
+    async fn list(&self, _request: Request<OrgListReqV2>) -> GrpcResult<OrgListResV2> {
         telemetry::count_request("org", "list");
 
-        let proto_orgs: Vec<OrgV1> = org::list(&self.pool)
+        let proto_orgs: Vec<OrgV2> = org::list(&self.pool)
             .await
             .map_err(|_| Status::internal("org list failed"))?
             .into_iter()
             .map(|org| org.into())
             .collect();
 
-        let mut resp = OrgListResV1 {
+        let mut resp = OrgListResV2 {
             orgs: proto_orgs,
             timestamp: Utc::now().encode_timestamp(),
             signer: self.signing_key.public_key().into(),
@@ -124,7 +124,7 @@ impl iot_config::Org for OrgService {
         Ok(Response::new(resp))
     }
 
-    async fn get(&self, request: Request<OrgGetReqV1>) -> GrpcResult<OrgResV1> {
+    async fn get(&self, request: Request<OrgGetReqV2>) -> GrpcResult<OrgResV2> {
         let request = request.into_inner();
         telemetry::count_request("org", "get");
         custom_tracing::record("oui", request.oui);
@@ -154,7 +154,7 @@ impl iot_config::Org for OrgService {
                     .collect()
             });
 
-        let mut resp = OrgResV1 {
+        let mut resp = OrgResV2 {
             org: Some(org.into()),
             net_id: net_id.into(),
             devaddr_constraints,

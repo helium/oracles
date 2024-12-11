@@ -536,7 +536,7 @@ fn get_socket_addr() -> anyhow::Result<SocketAddr> {
 
 async fn create_route(
     client: &mut RouteClient<Channel>,
-    org: &proto::OrgV1,
+    org: &proto::OrgV2,
     signing_keypair: &Keypair,
 ) -> proto::RouteV1 {
     let mut request = proto::RouteCreateReqV1 {

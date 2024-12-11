@@ -9,7 +9,7 @@ use std::str::FromStr;
 use tokio::sync::watch;
 
 pub mod proto {
-    pub use helium_proto::services::iot_config::{ActionV1, OrgResV1, OrgV1};
+    pub use helium_proto::services::iot_config::{ActionV1, OrgResV2, OrgV2};
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -345,7 +345,7 @@ pub async fn get_org_pubkeys_by_route(
     Ok(pubkeys)
 }
 
-impl From<Org> for proto::OrgV1 {
+impl From<Org> for proto::OrgV2 {
     fn from(org: Org) -> Self {
         Self {
             oui: org.oui,
