@@ -1,10 +1,12 @@
 use anyhow::bail;
 use backon::{ExponentialBuilder, Retryable};
+use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
     HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
+    UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
 };
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -75,6 +77,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let (subscriber_mapping_tx, subscriber_mapping_rx) = tokio::sync::mpsc::channel(10);
     let (hex_usage_stat_tx, hex_usage_stat_rx) = tokio::sync::mpsc::channel(10);
     let (radio_usage_stat_tx, radio_usage_stat_rx) = tokio::sync::mpsc::channel(10);
+    let (unique_connections_tx, unique_connections_rx) = tokio::sync::mpsc::channel(10);
 
     let auth_client = MockAuthorizationClient::new();
 
@@ -92,6 +95,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             FileSinkClient::new(subscriber_mapping_tx, "test_file_sink"),
             FileSinkClient::new(hex_usage_stat_tx, "hex_usage_test_file_sink"),
             FileSinkClient::new(radio_usage_stat_tx, "radio_usage_test_file_sink"),
+            FileSinkClient::new(unique_connections_tx, "noop"),
             Network::MainNet,
             socket_addr,
             api_token,
@@ -108,6 +112,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
         subscriber_mapping_rx,
         hex_usage_stat_rx,
         radio_usage_stat_rx,
+        unique_connections_rx,
     )
     .await;
 
@@ -124,6 +129,8 @@ pub struct TestClient {
         Receiver<file_store::file_sink::Message<HexUsageStatsIngestReportV1>>,
     radio_usage_stats_file_sink_rx:
         Receiver<file_store::file_sink::Message<RadioUsageStatsIngestReportV1>>,
+    unique_connections_file_sink_rx:
+        Receiver<file_store::file_sink::Message<UniqueConnectionsIngestReportV1>>,
 }
 
 impl TestClient {
@@ -140,6 +147,9 @@ impl TestClient {
         radio_usage_stats_file_sink_rx: Receiver<
             file_store::file_sink::Message<RadioUsageStatsIngestReportV1>,
         >,
+        unique_connections_file_sink_rx: Receiver<
+            file_store::file_sink::Message<UniqueConnectionsIngestReportV1>,
+        >,
     ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
             .retry(&ExponentialBuilder::default())
@@ -153,6 +163,26 @@ impl TestClient {
             subscriber_mapping_file_sink_rx,
             hex_usage_stats_file_sink_rx,
             radio_usage_stats_file_sink_rx,
+            unique_connections_file_sink_rx,
+        }
+    }
+
+    pub async fn unique_connection_recv(
+        mut self,
+    ) -> anyhow::Result<UniqueConnectionsIngestReportV1> {
+        match timeout(
+            Duration::from_secs(2),
+            self.unique_connections_file_sink_rx.recv(),
+        )
+        .await
+        {
+            Ok(Some(msg)) => match msg {
+                file_store::file_sink::Message::Data(_, data) => Ok(data),
+                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
+                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
+            },
+            Ok(None) => bail!("got none"),
+            Err(reason) => bail!("got error {reason}"),
         }
     }
 
@@ -207,6 +237,35 @@ impl TestClient {
             Ok(None) => bail!("got none"),
             Err(reason) => bail!("got error {reason}"),
         }
+    }
+
+    pub async fn submit_unique_connections(
+        &mut self,
+        pubkey: Vec<u8>,
+        start_timestamp: DateTime<Utc>,
+        end_timestamp: DateTime<Utc>,
+        unique_connections: u64,
+    ) -> anyhow::Result<UniqueConnectionsRespV1> {
+        let mut req = UniqueConnectionsReqV1 {
+            pubkey,
+            start_timestamp: start_timestamp.timestamp_millis() as u64,
+            end_timestamp: end_timestamp.timestamp_millis() as u64,
+            unique_connections,
+            timestamp: 0,
+            carrier_key: self.key_pair.public_key().into(),
+            signature: vec![],
+        };
+
+        req.signature = self.key_pair.sign(&req.encode_to_vec()).expect("sign");
+
+        let mut request = Request::new(req);
+        let metadata = request.metadata_mut();
+
+        metadata.insert("authorization", self.authorization.clone());
+
+        let res = self.client.submit_unique_connections(request).await?;
+
+        Ok(res.into_inner())
     }
 
     pub async fn submit_verified_subscriber_mapping_event(
