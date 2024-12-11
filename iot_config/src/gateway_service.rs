@@ -1,5 +1,6 @@
 use crate::{
     admin::AuthCache,
+    convert_to_solana_public_key,
     gateway_info::{self, GatewayInfo},
     org,
     region_map::RegionMapReader,
@@ -76,8 +77,9 @@ impl GatewayService {
     }
 
     fn verify_location_request(&self, request: &GatewayLocationReqV1) -> Result<(), Status> {
-        let signature_bytes = request.signer.clone();
-        let signer_pubkey = verify_public_key(&signature_bytes)?;
+        let signer_pubkey = verify_public_key(&request.signer)?;
+        let solana_signer_pubkey = convert_to_solana_public_key(&signer_pubkey)
+            .map_err(|_| Status::internal("Failed to convert public key"))?;
 
         if self
             .auth_cache
@@ -89,7 +91,7 @@ impl GatewayService {
 
         self.delegate_cache
             .borrow()
-            .contains(&signature_bytes.clone().into())
+            .contains(&solana_signer_pubkey.into())
             .then(|| {
                 request
                     .verify(&signer_pubkey)

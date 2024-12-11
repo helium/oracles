@@ -6,15 +6,15 @@ use async_trait::async_trait;
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
 use helium_proto::services::iot_config::{
-    OrgDisableReqV1, OrgEnableReqV1, OrgGetReqV1, OrgListReqV1, OrgResV1, OrgV1,
+    OrgDisableReqV1, OrgEnableReqV1, OrgGetReqV2, OrgListReqV2, OrgResV2, OrgV2,
 };
 
 #[async_trait]
 pub trait Orgs: Send + Sync + 'static {
     type Error: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static;
 
-    async fn get(&mut self, oui: u64) -> Result<OrgResV1, Self::Error>;
-    async fn list(&mut self) -> Result<Vec<OrgV1>, Self::Error>;
+    async fn get(&mut self, oui: u64) -> Result<OrgResV2, Self::Error>;
+    async fn list(&mut self) -> Result<Vec<OrgV2>, Self::Error>;
     async fn enable(&mut self, oui: u64) -> Result<(), Self::Error>;
     async fn disable(&mut self, oui: u64) -> Result<(), Self::Error>;
 }
@@ -44,19 +44,19 @@ impl OrgClient {
 impl Orgs for OrgClient {
     type Error = ClientError;
 
-    async fn get(&mut self, oui: u64) -> Result<OrgResV1, ClientError> {
+    async fn get(&mut self, oui: u64) -> Result<OrgResV2, ClientError> {
         tracing::debug!(%oui, "retrieving org");
 
-        let req = OrgGetReqV1 { oui };
+        let req = OrgGetReqV2 { oui };
         let res = call_with_retry!(self.client.get(req.clone()))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(res)
     }
 
-    async fn list(&mut self) -> Result<Vec<OrgV1>, ClientError> {
+    async fn list(&mut self) -> Result<Vec<OrgV2>, ClientError> {
         tracing::debug!("retrieving org list");
 
-        let res = call_with_retry!(self.client.list(OrgListReqV1 {}))?.into_inner();
+        let res = call_with_retry!(self.client.list(OrgListReqV2 {}))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(res.orgs)
     }
