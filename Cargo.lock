@@ -1615,17 +1615,17 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections#e4e60255dfb27b825cfd6023ac7d88ddd708c6e9"
+source = "git+https://github.com/helium/proto?branch=master#16d6838b88a35ac88797d0c7eb14a932b214a856"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -1788,7 +1788,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -2630,7 +2630,7 @@ dependencies = [
  "axum 0.7.4",
  "bs58 0.4.0",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "http 0.2.11",
  "notify",
  "serde",
@@ -3212,7 +3212,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "hex-literal",
  "http 0.2.11",
  "lazy_static",
@@ -3794,7 +3794,7 @@ dependencies = [
  "h3o",
  "helium-anchor-gen",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
+ "helium-proto",
  "hex",
  "hex-literal",
  "itertools",
@@ -3821,23 +3821,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#8e3edc2053a16ec98421d83211399338836f91e4"
-dependencies = [
- "bytes",
- "prost",
- "prost-build",
- "serde",
- "serde_json",
- "strum",
- "strum_macros",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "helium-proto"
-version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections#e4e60255dfb27b825cfd6023ac7d88ddd708c6e9"
+source = "git+https://github.com/helium/proto?branch=master#16d6838b88a35ac88797d0c7eb14a932b214a856"
 dependencies = [
  "bytes",
  "prost",
@@ -3891,7 +3875,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -4307,7 +4291,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "http 0.2.11",
  "humantime-serde",
  "metrics",
@@ -4377,7 +4361,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -4419,7 +4403,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -4461,7 +4445,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -5050,7 +5034,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -5091,7 +5075,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5127,7 +5111,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -5171,7 +5155,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "hex-assignments",
  "hextree",
  "http-serde",
@@ -5855,7 +5839,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "http 0.2.11",
  "hyper 0.14.28",
  "jsonrpsee",
@@ -5938,7 +5922,7 @@ dependencies = [
  "futures-util",
  "helium-anchor-gen",
  "helium-lib",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -6079,7 +6063,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.4.0",
+ "heck 0.5.0",
  "itertools",
  "log",
  "multimap",
@@ -6577,7 +6561,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=mj%2Fhip-134-unique-connections)",
+ "helium-proto",
  "humantime-serde",
  "lazy_static",
  "metrics",
@@ -10004,7 +9988,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
  "twox-hash",
  "xorf",
