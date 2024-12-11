@@ -1237,7 +1237,7 @@ mod test {
                 timestamp,
                 upload_speed: bytes_per_s(10),
                 download_speed: bytes_per_s(100),
-                latency: 50,
+                latency: 10,
                 serial: "".to_string(),
             },
         };
@@ -1247,7 +1247,7 @@ mod test {
                 timestamp,
                 upload_speed: bytes_per_s(20),
                 download_speed: bytes_per_s(200),
-                latency: 100,
+                latency: 20,
                 serial: "".to_string(),
             },
         };
@@ -1290,7 +1290,7 @@ mod test {
         let speedtest_avg = radio_reward.speedtest_average.unwrap();
         assert_eq!(speedtest_avg.upload_speed_bps, bytes_per_s(15));
         assert_eq!(speedtest_avg.download_speed_bps, bytes_per_s(150));
-        assert_eq!(speedtest_avg.latency_ms, 75);
+        assert_eq!(speedtest_avg.latency_ms, 15);
     }
 
     /// Test to ensure that different speedtest averages correctly afferct reward shares.
