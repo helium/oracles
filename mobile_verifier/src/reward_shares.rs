@@ -11,7 +11,10 @@ use crate::{
     unique_connections::{self, UniqueConnectionCounts},
 };
 use chrono::{DateTime, Duration, Utc};
-use coverage_point_calculator::{OracleBoostingStatus, SPBoostedRewardEligibility};
+use coverage_point_calculator::{
+    BytesPs, LocationTrust, OracleBoostingStatus, SPBoostedRewardEligibility, Speedtest,
+    SpeedtestTier,
+};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -430,6 +433,28 @@ impl CoverageShares {
                 .fetch_seniority(heartbeat_key, reward_period.end)
                 .await?;
 
+            let trust_scores: Vec<LocationTrust> = heartbeat
+                .iter_distances_and_scores()
+                .map(|(distance, trust_score)| LocationTrust {
+                    meters_to_asserted: distance as u32,
+                    trust_score,
+                })
+                .collect();
+
+            let speedtests = match speedtest_averages.get_average(&pubkey) {
+                Some(avg) => avg.speedtests,
+                None => vec![],
+            };
+            let speedtests: Vec<Speedtest> = speedtests
+                .iter()
+                .map(|test| Speedtest {
+                    upload_speed: BytesPs::new(test.report.upload_speed),
+                    download_speed: BytesPs::new(test.report.download_speed),
+                    latency_millis: test.report.latency,
+                    timestamp: test.report.timestamp,
+                })
+                .collect();
+
             let is_indoor = {
                 let mut is_indoor = false;
 
@@ -449,13 +474,21 @@ impl CoverageShares {
                     });
                 }
 
-                coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
-                    indoor: is_indoor,
-                    hotspot_key: pubkey.clone().into(),
-                    cbsd_id: cbsd_id.clone(),
-                    seniority_timestamp: seniority.seniority_ts,
-                    coverage: covered_hexes,
-                });
+                if eligible_for_coverage_map(
+                    &pubkey,
+                    cbsd_id.clone(),
+                    banned_radios,
+                    &speedtests,
+                    &trust_scores,
+                ) {
+                    coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
+                        indoor: is_indoor,
+                        hotspot_key: pubkey.clone().into(),
+                        cbsd_id: cbsd_id.clone(),
+                        seniority_timestamp: seniority.seniority_ts,
+                        coverage: covered_hexes,
+                    });
+                }
 
                 is_indoor
             };
@@ -468,21 +501,6 @@ impl CoverageShares {
                 (false, Some(_)) => RadioType::OutdoorCbrs,
             };
 
-            use coverage_point_calculator::{BytesPs, Speedtest};
-            let speedtests = match speedtest_averages.get_average(&pubkey) {
-                Some(avg) => avg.speedtests,
-                None => vec![],
-            };
-            let speedtests = speedtests
-                .iter()
-                .map(|test| Speedtest {
-                    upload_speed: BytesPs::new(test.report.upload_speed),
-                    download_speed: BytesPs::new(test.report.download_speed),
-                    latency_millis: test.report.latency,
-                    timestamp: test.report.timestamp,
-                })
-                .collect();
-
             let oracle_boosting_status =
                 if unique_connections::is_qualified(unique_connections, &pubkey, &radio_type) {
                     OracleBoostingStatus::Qualified
@@ -494,15 +512,6 @@ impl CoverageShares {
 
             let sp_boosted_reward_eligibility =
                 boosted_hex_eligibility.eligibility(pubkey, cbsd_id);
-
-            use coverage_point_calculator::LocationTrust;
-            let trust_scores = heartbeat
-                .iter_distances_and_scores()
-                .map(|(distance, trust_score)| LocationTrust {
-                    meters_to_asserted: distance as u32,
-                    trust_score,
-                })
-                .collect();
 
             radio_infos.insert(
                 key,
@@ -768,6 +777,45 @@ pub fn get_scheduled_tokens_for_service_providers(duration: Duration) -> Decimal
 
 pub fn get_scheduled_tokens_for_oracles(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * ORACLES_PERCENT
+}
+
+fn eligible_for_coverage_map(
+    pubkey: &PublicKeyBinary,
+    cbsd_id: Option<String>,
+    banned_radios: &BannedRadios,
+    speedtests: &[Speedtest],
+    trust_scores: &[LocationTrust],
+) -> bool {
+    if banned_radios.contains(pubkey, cbsd_id.as_deref()) {
+        return false;
+    }
+
+    let avg_speedtest = Speedtest::avg(speedtests);
+    if !is_tier_eligible(avg_speedtest.tier()) {
+        return false;
+    }
+
+    let avg_trust_score = average_trust_score(trust_scores);
+    if avg_trust_score <= dec!(0.0) {
+        return false;
+    }
+
+    true
+}
+
+fn is_tier_eligible(tier: SpeedtestTier) -> bool {
+    matches!(
+        tier,
+        SpeedtestTier::Good | SpeedtestTier::Acceptable | SpeedtestTier::Degraded
+    )
+}
+
+fn average_trust_score(trust_scores: &[LocationTrust]) -> Decimal {
+    if trust_scores.is_empty() {
+        return dec!(0);
+    }
+    let total_score: Decimal = trust_scores.iter().map(|lt| lt.trust_score).sum();
+    total_score / Decimal::from(trust_scores.len() as u64)
 }
 
 #[cfg(test)]
