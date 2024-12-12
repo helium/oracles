@@ -1,6 +1,6 @@
 use crate::reward_shares::dc_to_hnt_bones;
 use file_store::traits::TimestampEncode;
-use mobile_config::sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo;
+use mobile_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 
@@ -20,7 +20,7 @@ mod proto {
 pub struct ServiceProviderRewardInfos {
     coll: Vec<RewardInfo>,
     total_sp_allocation: Decimal,
-    reward_info: ResolvedSubDaoEpochRewardInfo,
+    reward_info: EpochRewardInfo,
 }
 
 // Represents a single Service Providers information for rewarding,
@@ -54,7 +54,7 @@ impl ServiceProviderRewardInfos {
         promotions: ServiceProviderPromotions,
         total_sp_allocation: Decimal, // Bones
         hnt_bone_price: Decimal,      // Price in Bones
-        reward_info: ResolvedSubDaoEpochRewardInfo,
+        reward_info: EpochRewardInfo,
     ) -> Self {
         let all_transfer = dc_sessions.all_transfer(); // DC
 
@@ -136,7 +136,7 @@ impl RewardInfo {
     pub fn iter_rewards(
         &self,
         total_allocation: Decimal,
-        reward_info: &ResolvedSubDaoEpochRewardInfo,
+        reward_info: &EpochRewardInfo,
     ) -> Vec<(u64, proto::MobileRewardShare)> {
         let mut rewards = self.promo_rewards(total_allocation, reward_info);
         rewards.push(self.carrier_reward(total_allocation, reward_info));
@@ -146,7 +146,7 @@ impl RewardInfo {
     pub fn carrier_reward(
         &self,
         total_allocation: Decimal,
-        reward_info: &ResolvedSubDaoEpochRewardInfo,
+        reward_info: &EpochRewardInfo,
     ) -> (u64, proto::MobileRewardShare) {
         let amount = (total_allocation * self.realized_data_perc).to_u64_floored(); // Rewarded BONES
 
@@ -168,7 +168,7 @@ impl RewardInfo {
     pub fn promo_rewards(
         &self,
         total_allocation: Decimal,
-        reward_info: &ResolvedSubDaoEpochRewardInfo,
+        reward_info: &EpochRewardInfo,
     ) -> Vec<(u64, proto::MobileRewardShare)> {
         if self.promotions.is_empty() {
             return vec![];
@@ -278,12 +278,9 @@ mod tests {
     pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
     pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 
-    pub fn default_rewards_info(
-        total_emissions: u64,
-        epoch_duration: Duration,
-    ) -> ResolvedSubDaoEpochRewardInfo {
+    pub fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
         let now = Utc::now();
-        ResolvedSubDaoEpochRewardInfo {
+        EpochRewardInfo {
             epoch_day: 1,
             epoch_address: EPOCH_ADDRESS.into(),
             sub_dao_address: SUB_DAO_ADDRESS.into(),

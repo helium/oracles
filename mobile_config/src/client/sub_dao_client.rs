@@ -1,5 +1,5 @@
 use super::{call_with_retry, ClientError, Settings};
-use crate::sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo;
+use crate::sub_dao_epoch_reward_info::EpochRewardInfo;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
@@ -36,7 +36,7 @@ pub trait SubDaoEpochRewardInfoResolver: Clone + Send + Sync + 'static {
         &self,
         sub_dao: &str,
         epoch: u64,
-    ) -> Result<Option<ResolvedSubDaoEpochRewardInfo>, Self::Error>;
+    ) -> Result<Option<EpochRewardInfo>, Self::Error>;
 }
 
 #[async_trait::async_trait]
@@ -47,7 +47,7 @@ impl SubDaoEpochRewardInfoResolver for SubDaoClient {
         &self,
         sub_dao: &str,
         epoch: u64,
-    ) -> Result<Option<ResolvedSubDaoEpochRewardInfo>, Self::Error> {
+    ) -> Result<Option<EpochRewardInfo>, Self::Error> {
         let mut request = SubDaoEpochRewardInfoReqV1 {
             sub_dao_address: sub_dao.into(),
             epoch,
@@ -64,10 +64,7 @@ impl SubDaoEpochRewardInfoResolver for SubDaoClient {
             Ok(info_res) => {
                 let response = info_res.into_inner();
                 response.verify(&self.config_pubkey)?;
-                response
-                    .info
-                    .map(ResolvedSubDaoEpochRewardInfo::try_from)
-                    .transpose()?
+                response.info.map(EpochRewardInfo::try_from).transpose()?
             }
             Err(status) if status.code() == tonic::Code::NotFound => None,
             Err(status) => Err(status)?,

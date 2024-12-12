@@ -24,7 +24,7 @@ use mobile_config::{
 };
 
 use mobile_config::client::sub_dao_client::SubDaoEpochRewardInfoResolver;
-use mobile_config::sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo;
+use mobile_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use mobile_verifier::{
     boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver,
 };
@@ -46,7 +46,7 @@ pub struct MockHexBoostingClient {
 
 #[derive(Debug, Clone)]
 pub struct MockSubDaoRewardsClient {
-    info: Option<ResolvedSubDaoEpochRewardInfo>,
+    info: Option<EpochRewardInfo>,
 }
 
 impl MockHexBoostingClient {
@@ -79,7 +79,7 @@ impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
         &self,
         _sub_dao: &str,
         _epoch: u64,
-    ) -> Result<Option<ResolvedSubDaoEpochRewardInfo>, Self::Error> {
+    ) -> Result<Option<EpochRewardInfo>, Self::Error> {
         Ok(self.info.clone())
     }
 }
@@ -392,12 +392,9 @@ impl GatewayResolver for GatewayClientAllOwnersValid {
     }
 }
 
-pub fn default_rewards_info(
-    total_emissions: u64,
-    epoch_duration: Duration,
-) -> ResolvedSubDaoEpochRewardInfo {
+pub fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
     let now = Utc::now();
-    ResolvedSubDaoEpochRewardInfo {
+    EpochRewardInfo {
         epoch_day: 1,
         epoch_address: EPOCH_ADDRESS.into(),
         sub_dao_address: SUB_DAO_ADDRESS.into(),

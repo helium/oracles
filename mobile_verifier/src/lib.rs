@@ -102,22 +102,22 @@ impl IsAuthorized for mobile_config::client::AuthorizationClient {
 }
 
 #[derive(Clone, Debug)]
-pub struct HntPrice {
-    pub hnt_price_in_bones: u64,
-    pub hnt_price: Decimal,
-    pub price_per_hnt_bone: Decimal,
+pub struct PriceInfo {
+    pub price_in_bones: u64,
+    pub price_per_token: Decimal,
+    pub price_per_bone: Decimal,
     pub decimals: u8,
 }
 
-impl HntPrice {
-    pub fn new(hnt_price_in_bones: u64, decimals: u8) -> Self {
-        let hnt_price =
-            Decimal::from(hnt_price_in_bones) / Decimal::from(10_u64.pow(decimals as u32));
-        let price_per_hnt_bone = hnt_price / Decimal::from(10_u64.pow(decimals as u32));
+impl PriceInfo {
+    pub fn new(price_in_bones: u64, decimals: u8) -> Self {
+        let price_per_token =
+            Decimal::from(price_in_bones) / Decimal::from(10_u64.pow(decimals as u32));
+        let price_per_bone = price_per_token / Decimal::from(10_u64.pow(decimals as u32));
         Self {
-            hnt_price_in_bones,
-            hnt_price,
-            price_per_hnt_bone,
+            price_in_bones,
+            price_per_token,
+            price_per_bone,
             decimals,
         }
     }
