@@ -128,6 +128,9 @@ where
         &self,
         file_info_stream: FileInfoStream<UniqueConnectionsIngestReport>,
     ) -> anyhow::Result<()> {
+        let file_info = file_info_stream.file_info.clone();
+        tracing::info!(?file_info, "processing file");
+
         let mut txn = self.pool.begin().await?;
         let mut stream = file_info_stream.into_stream(&mut txn).await?;
 
@@ -162,6 +165,7 @@ where
         db::save(&mut txn, &verified).await?;
         txn.commit().await?;
         self.verified_unique_connections_sink.commit().await?;
+        tracing::info!(?file_info, "txn and sink committed");
 
         Ok(())
     }
