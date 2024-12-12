@@ -10,6 +10,7 @@ use crate::{
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::{MsgDecode, TimestampDecode},
+    unique_connections::UniqueConnectionReq,
     usage_counts::{HexUsageCountsIngestReport, RadioUsageCountsIngestReport},
     wifi_heartbeat::WifiHeartbeatIngestReport,
     FileType, Result, Settings,
@@ -30,8 +31,9 @@ use helium_proto::{
             CoverageObjectV1, Heartbeat, HexUsageStatsIngestReportV1,
             InvalidDataTransferIngestReportV1, MobileRewardShare, OracleBoostingReportV1,
             RadioRewardShare, RadioUsageStatsIngestReportV1, SpeedtestAvg, SpeedtestIngestReportV1,
-            SpeedtestReqV1, VerifiedInvalidatedRadioThresholdIngestReportV1,
-            VerifiedRadioThresholdIngestReportV1,
+            SpeedtestReqV1, UniqueConnectionsIngestReportV1,
+            VerifiedInvalidatedRadioThresholdIngestReportV1, VerifiedRadioThresholdIngestReportV1,
+            VerifiedUniqueConnectionsIngestReportV1,
         },
         router::PacketRouterPacketReportV1,
     },
@@ -390,6 +392,31 @@ impl Cmd {
                         "uuid": coverage.uuid,
                         "coverage_claim_time": coverage.coverage_claim_time,
                         "coverage": coverage.coverage,
+                    }))?;
+                }
+                FileType::UniqueConnectionsReport => {
+                    let report = UniqueConnectionsIngestReportV1::decode(msg)?;
+                    let req = UniqueConnectionReq::try_from(report.report.unwrap())?;
+                    print_json(&json!({
+                        "pubkey": req.pubkey,
+                        "start_timestamp": req.start_timestamp,
+                        "end_timestamp": req.end_timestamp,
+                        "unique_connections": req.unique_connections,
+                        "timestamp": req.timestamp,
+                        "carrier_key": req.carrier_key,
+                    }))?;
+                }
+                FileType::VerifiedUniqueConnectionsReport => {
+                    let verified_report = VerifiedUniqueConnectionsIngestReportV1::decode(msg)?;
+                    let report = verified_report.report.unwrap();
+                    let req = UniqueConnectionReq::try_from(report.report.unwrap())?;
+                    print_json(&json!({
+                        "pubkey": req.pubkey,
+                        "start_timestamp": req.start_timestamp,
+                        "end_timestamp": req.end_timestamp,
+                        "unique_connections": req.unique_connections,
+                        "timestamp": req.timestamp,
+                        "carrier_key": req.carrier_key,
                     }))?;
                 }
                 missing_filetype => println!("No dump for {missing_filetype}"),
