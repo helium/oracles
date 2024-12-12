@@ -14,7 +14,7 @@ pub mod proto {
     };
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UniqueConnectionsIngestReport {
     pub received_timestamp: DateTime<Utc>,
     pub report: UniqueConnectionReq,
@@ -27,7 +27,7 @@ pub struct VerifiedUniqueConnectionsIngestReport {
     pub status: proto::VerifiedUniqueConnectionsIngestReportStatus,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UniqueConnectionReq {
     pub pubkey: PublicKeyBinary,
     pub start_timestamp: DateTime<Utc>,
@@ -47,7 +47,7 @@ impl TryFrom<proto::UniqueConnectionsIngestReportV1> for UniqueConnectionsIngest
 
     fn try_from(value: proto::UniqueConnectionsIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
-            received_timestamp: value.received_timestamp.to_timestamp()?,
+            received_timestamp: value.received_timestamp.to_timestamp_millis()?,
             report: value
                 .report
                 .ok_or_else(|| Error::not_found("ingest unique connections"))?
@@ -104,5 +104,40 @@ impl From<VerifiedUniqueConnectionsIngestReport>
             report: Some(value.report.into()),
             status: value.status.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn ingest_report_timestamp_millis() {
+        // Ensure timestamp are encode in milliseconds by taking a round trip through proto
+        let now = Utc::now();
+        // Going to millis and back is necessary to remove nanosecond precision from the used Utc::now().
+        let millis = now.timestamp_millis() as u64;
+        let timestamp = millis.to_timestamp_millis().unwrap();
+
+        let pubkey = PublicKeyBinary::from(vec![1]);
+
+        let report = UniqueConnectionsIngestReport {
+            received_timestamp: timestamp,
+            report: UniqueConnectionReq {
+                pubkey: pubkey.clone(),
+                start_timestamp: timestamp,
+                end_timestamp: timestamp,
+                unique_connections: 42,
+                timestamp,
+                carrier_key: pubkey,
+                signature: vec![],
+            },
+        };
+
+        let proto = proto::UniqueConnectionsIngestReportV1::from(report.clone());
+        let report_back = UniqueConnectionsIngestReport::try_from(proto).unwrap();
+
+        assert_eq!(report, report_back);
     }
 }
