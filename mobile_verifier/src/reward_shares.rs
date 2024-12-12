@@ -791,7 +791,7 @@ fn eligible_for_coverage_map(
     }
 
     let avg_speedtest = Speedtest::avg(speedtests);
-    if !is_tier_eligible(avg_speedtest.tier()) {
+    if avg_speedtest.tier() == SpeedtestTier::Fail {
         return false;
     }
 
@@ -801,13 +801,6 @@ fn eligible_for_coverage_map(
     }
 
     true
-}
-
-fn is_tier_eligible(tier: SpeedtestTier) -> bool {
-    matches!(
-        tier,
-        SpeedtestTier::Good | SpeedtestTier::Acceptable | SpeedtestTier::Degraded
-    )
 }
 
 fn average_trust_score(trust_scores: &[LocationTrust]) -> Decimal {
@@ -1237,7 +1230,7 @@ mod test {
                 timestamp,
                 upload_speed: bytes_per_s(10),
                 download_speed: bytes_per_s(100),
-                latency: 10,
+                latency: 50,
                 serial: "".to_string(),
             },
         };
@@ -1247,7 +1240,7 @@ mod test {
                 timestamp,
                 upload_speed: bytes_per_s(20),
                 download_speed: bytes_per_s(200),
-                latency: 20,
+                latency: 100,
                 serial: "".to_string(),
             },
         };
@@ -1290,7 +1283,7 @@ mod test {
         let speedtest_avg = radio_reward.speedtest_average.unwrap();
         assert_eq!(speedtest_avg.upload_speed_bps, bytes_per_s(15));
         assert_eq!(speedtest_avg.download_speed_bps, bytes_per_s(150));
-        assert_eq!(speedtest_avg.latency_ms, 15);
+        assert_eq!(speedtest_avg.latency_ms, 75);
     }
 
     /// Test to ensure that different speedtest averages correctly afferct reward shares.
