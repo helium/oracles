@@ -17,7 +17,7 @@ use mobile_verifier::{
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder,
     sp_boosted_rewards_bans::{self, BannedRadioReport},
-    speedtests, unique_connections, HntPrice,
+    speedtests, unique_connections, PriceInfo,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -62,9 +62,9 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
     // todo: rebalance the tests to use a normalised hnt price
-    let hnt_price = HntPrice::new(10000000000000000, 8);
-    assert_eq!(hnt_price.hnt_price, dec!(100000000));
-    assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
+    let price_info = PriceInfo::new(10000000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(100000000));
+    assert_eq!(price_info.price_per_bone, dec!(1));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -74,7 +74,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             &mobile_rewards_client,
             &speedtest_avg_client,
             &reward_info,
-            hnt_price
+            price_info
         ),
         receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, false)
     );

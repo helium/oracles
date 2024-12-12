@@ -10,13 +10,8 @@ use crate::{
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
-<<<<<<< HEAD
     subscriber_location, subscriber_verified_mapping_event, telemetry, unique_connections,
-    Settings, MOBILE_SUB_DAO_ONCHAIN_ADDRESS,
-=======
-    subscriber_location, subscriber_verified_mapping_event, telemetry, HntPrice, Settings,
-    MOBILE_SUB_DAO_ONCHAIN_ADDRESS,
->>>>>>> 63ed4905 (refactor price handling)
+    Settings, MOBILE_SUB_DAO_ONCHAIN_ADDRESS, PriceInfo
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -46,8 +41,8 @@ use mobile_config::{
         hex_boosting_client::HexBoostingInfoResolver,
         sub_dao_client::SubDaoEpochRewardInfoResolver, ClientError,
     },
-    sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo,
-    EpochPeriod,
+    sub_dao_epoch_reward_info::EpochRewardInfo,
+    EpochInfo,
 };
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
@@ -165,7 +160,7 @@ where
 
         loop {
             let next_reward_epoch = next_reward_epoch(&self.pool).await?;
-            let next_reward_epoch_period = EpochPeriod::from(next_reward_epoch);
+            let next_reward_epoch_period = EpochInfo::from(next_reward_epoch);
 
             let scheduler = Scheduler::new(
                 self.reward_period_duration,
@@ -263,14 +258,14 @@ where
             .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
             .await?;
 
-        let hnt_price = HntPrice::new(pricer_hnt_price, Token::Hnt.decimals());
+        let price_info = PriceInfo::new(pricer_hnt_price, Token::Hnt.decimals());
 
         tracing::info!(
-            "Rewarding for epoch {} period: {} to {} with hnt bone price: {}",
+            "Rewarding for epoch {} period: {} to {} with bone price: {}",
             reward_info.epoch_day,
             reward_info.epoch_period.start,
             reward_info.epoch_period.end,
-            hnt_price.price_per_hnt_bone
+            price_info.price_per_bone
         );
 
         // process rewards for poc and data transfer
@@ -280,7 +275,7 @@ where
             &self.mobile_rewards,
             &self.speedtest_averages,
             &reward_info,
-            hnt_price.clone(),
+            price_info.clone(),
         )
         .await?;
 
@@ -302,7 +297,7 @@ where
             sp_promotions.clone(),
             &self.mobile_rewards,
             &reward_info,
-            hnt_price.price_per_hnt_bone,
+            price_info.price_per_bone,
         )
         .await?;
 
@@ -351,7 +346,7 @@ where
                     written_files,
                     reward_data: Some(MobileRewardData(reward_data)),
                     epoch: reward_info.epoch_day,
-                    price: hnt_price.hnt_price_in_bones,
+                    price: price_info.price_in_bones,
                 },
                 [],
             )
@@ -388,14 +383,14 @@ pub async fn reward_poc_and_dc(
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
-    hnt_price: HntPrice,
+    reward_info: &EpochRewardInfo,
+    price_info: PriceInfo,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
     let mut reward_shares =
         DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
 
     let transfer_rewards = TransferRewards::from_transfer_sessions(
-        hnt_price,
+        price_info,
         data_session::aggregate_hotspot_data_sessions_to_dc(pool, &reward_info.epoch_period)
             .await?,
         &reward_shares,
@@ -451,7 +446,7 @@ async fn reward_poc(
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_info: &EpochRewardInfo,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
     let heartbeats = HeartbeatReward::validated(pool, &reward_info.epoch_period);
@@ -531,7 +526,7 @@ async fn reward_poc(
 
 pub async fn reward_dc(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_info: &EpochRewardInfo,
     transfer_rewards: TransferRewards,
     reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<Decimal> {
@@ -556,7 +551,7 @@ pub async fn reward_dc(
 pub async fn reward_mappers(
     pool: &Pool<Postgres>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
     // Mapper rewards currently include rewards for discovery mapping only.
     // Verification mapping rewards to be added
@@ -614,7 +609,7 @@ pub async fn reward_mappers(
 
 pub async fn reward_oracles(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
     // atm 100% of oracle rewards are assigned to 'unallocated'
     let total_oracle_rewards =
@@ -639,7 +634,7 @@ pub async fn reward_service_providers(
     dc_sessions: ServiceProviderDCSessions,
     sp_promotions: ServiceProviderPromotions,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &ResolvedSubDaoEpochRewardInfo,
+    reward_info: &EpochRewardInfo,
     hnt_bone_price: Decimal,
 ) -> anyhow::Result<()> {
     use service_provider::ServiceProviderRewardInfos;
@@ -679,7 +674,7 @@ async fn write_unallocated_reward(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
-    reward_info: &'_ ResolvedSubDaoEpochRewardInfo,
+    reward_info: &'_ EpochRewardInfo,
 ) -> anyhow::Result<()> {
     if unallocated_amount > 0 {
         let unallocated_reward = proto::MobileRewardShare {
