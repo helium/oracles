@@ -6,6 +6,7 @@ use crate::{
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
+    unique_connections::UniqueConnectionCounts,
     Settings,
 };
 use anyhow::Result;
@@ -50,6 +51,7 @@ impl Cmd {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &UniqueConnectionCounts::default(),
             &epoch,
         )
         .await?;

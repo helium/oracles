@@ -12,6 +12,8 @@
 //! - [CoveredHex::assignment_multiplier]
 //!   - [HIP-103][oracle-boosting]
 //!     - provider boosted hexes increase oracle boosting to 1x
+//!   - [HIP-134][carrier-offload]
+//!     - serving >25 unique connection increase oracle boosting to 1x
 //!
 //! - [CoveredHex::rank]
 //!   - [HIP-105][hex-limits]
@@ -44,13 +46,14 @@
 //!   - If a Radio is not [BoostedHexStatus::Eligible], boost values are removed before calculations.
 //!   - If a Hex is boosted by a Provider, the Oracle Assignment multiplier is automatically 1x.
 //!
-//! - [ServiceProviderBoostedRewardEligibility]
+//! - [SPBoostedRewardEligibility]
 //!   - Radio must pass at least 1mb of data from 3 unique phones [HIP-84][provider-boosting]
 //!   - Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
 //! - [OracleBoostingStatus]
 //!   - Eligible: Radio is eligible for normal oracle boosting multipliers
 //!   - Banned: Radio is banned according to hip-131 rules and all assignment_multipliers are 0.0
+//!   - Qualified: Radio serves >25 unique connections, automatic oracle boosting multiplier of 1x
 //!
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
 //! [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
@@ -65,6 +68,7 @@
 //! [location-gaming]:         https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md
 //! [provider-banning]:        https://github.com/helium/HIP/blob/main/0125-temporary-anti-gaming-measures-for-boosted-hexes.md
 //! [anti-gaming]:             https://github.com/helium/HIP/blob/main/0131-bridging-gap-between-verification-mappers-and-anti-gaming-measures.md
+//! [carrier-offload]:         https://github.com/helium/HIP/blob/main/0134-reward-mobile-carrier-offload-hotspots.md
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
@@ -136,10 +140,12 @@ pub struct CoveragePoints {
     pub speedtest_multiplier: Decimal,
     /// Input Radio Type
     pub radio_type: RadioType,
-    /// Input ServiceProviderBoostedRewardEligibility
+    /// Input SPBoostedRewardEligibility
     pub service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
-    /// Derived Eligibility for Boosted Hex Rewards
-    pub boosted_hex_eligibility: SpBoostedHexStatus,
+    /// Derived Eligibility for Service Provider Boosted Hex Rewards
+    pub sp_boosted_hex_eligibility: SpBoostedHexStatus,
+    /// Derived Eligibility for Oracle Boosted Hex Rewards
+    pub oracle_boosted_hex_eligibility: OracleBoostingStatus,
     /// Speedtests used in calculation
     pub speedtests: Vec<Speedtest>,
     /// Location Trust Scores used in calculation
@@ -157,11 +163,11 @@ impl CoveragePoints {
         speedtests: Vec<Speedtest>,
         location_trust_scores: Vec<LocationTrust>,
         ranked_coverage: Vec<coverage_map::RankedCoverage>,
-        oracle_boosting_status: OracleBoostingStatus,
+        oracle_boost_status: OracleBoostingStatus,
     ) -> Result<CoveragePoints> {
         let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
 
-        let boost_eligibility = SpBoostedHexStatus::new(
+        let sp_boost_eligibility = SpBoostedHexStatus::new(
             radio_type,
             location_trust_multiplier,
             &location_trust_scores,
@@ -170,9 +176,9 @@ impl CoveragePoints {
 
         let covered_hexes = hexes::clean_covered_hexes(
             radio_type,
-            boost_eligibility,
+            sp_boost_eligibility,
             ranked_coverage,
-            oracle_boosting_status,
+            oracle_boost_status,
         )?;
 
         let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
@@ -187,7 +193,8 @@ impl CoveragePoints {
             speedtest_avg,
             radio_type,
             service_provider_boosted_reward_eligibility,
-            boosted_hex_eligibility: boost_eligibility,
+            sp_boosted_hex_eligibility: sp_boost_eligibility,
+            oracle_boosted_hex_eligibility: oracle_boost_status,
             speedtests,
             location_trust_scores,
             covered_hexes,
@@ -230,7 +237,7 @@ impl CoveragePoints {
     }
 
     fn boosted_points(&self) -> Decimal {
-        match self.boosted_hex_eligibility {
+        match self.sp_boosted_hex_eligibility {
             SpBoostedHexStatus::Eligible => self.coverage_points.boosted,
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
             SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
@@ -244,6 +251,7 @@ impl CoveragePoints {
 pub enum OracleBoostingStatus {
     Eligible,
     Banned,
+    Qualified,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
