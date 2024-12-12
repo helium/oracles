@@ -1,6 +1,6 @@
 use crate::rewarder;
 use chrono::{DateTime, Utc};
-use mobile_config::EpochPeriod;
+use mobile_config::EpochInfo;
 use sqlx::{Pool, Postgres};
 
 const LAST_REWARDED_END_TIME: &str = "last_rewarded_end_time";
@@ -8,7 +8,7 @@ const DATA_TRANSFER_REWARDS_SCALE: &str = "data_transfer_rewards_scale";
 
 pub async fn initialize(db: &Pool<Postgres>) -> anyhow::Result<()> {
     let next_reward_epoch = rewarder::next_reward_epoch(db).await?;
-    let epoch_period: EpochPeriod = next_reward_epoch.into();
+    let epoch_period: EpochInfo = next_reward_epoch.into();
     last_rewarded_end_time(epoch_period.period.start);
     Ok(())
 }

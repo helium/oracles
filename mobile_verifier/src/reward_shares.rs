@@ -9,7 +9,7 @@ use crate::{
     subscriber_location::SubscriberValidatedLocations,
     subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
     unique_connections::{self, UniqueConnectionCounts},
-    HntPrice,
+    PriceInfo,
 };
 use chrono::{DateTime, Utc};
 use coverage_point_calculator::{OracleBoostingStatus, SPBoostedRewardEligibility};
@@ -19,9 +19,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
 };
-use mobile_config::{
-    boosted_hex_info::BoostedHexes, sub_dao_epoch_reward_info::ResolvedSubDaoEpochRewardInfo,
-};
+use mobile_config::{boosted_hex_info::BoostedHexes, sub_dao_epoch_reward_info::EpochRewardInfo};
 use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -63,7 +61,7 @@ pub struct TransferRewards {
     reward_scale: Decimal,
     rewards: HashMap<PublicKeyBinary, TransferReward>,
     reward_sum: Decimal,
-    hnt_price: HntPrice,
+    price_info: PriceInfo,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -99,7 +97,7 @@ impl TransferRewards {
     }
 
     pub async fn from_transfer_sessions(
-        hnt_price: HntPrice,
+        price_info: PriceInfo,
         transfer_sessions: HotspotMap,
         reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
     ) -> Self {
@@ -110,7 +108,7 @@ impl TransferRewards {
             .map(|(pub_key, rewardable)| {
                 let bones = dc_to_hnt_bones(
                     Decimal::from(rewardable.rewardable_dc),
-                    hnt_price.price_per_hnt_bone,
+                    price_info.price_per_bone,
                 );
                 reward_sum += bones;
                 (
@@ -136,13 +134,13 @@ impl TransferRewards {
             reward_scale,
             rewards,
             reward_sum: reward_sum * reward_scale,
-            hnt_price,
+            price_info,
         }
     }
 
     pub fn into_rewards(
         self,
-        reward_info: &'_ ResolvedSubDaoEpochRewardInfo,
+        reward_info: &'_ EpochRewardInfo,
     ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
         let Self {
             reward_scale,
@@ -151,7 +149,7 @@ impl TransferRewards {
         } = self;
         let start_period = reward_info.epoch_period.start.encode_timestamp();
         let end_period = reward_info.epoch_period.end.encode_timestamp();
-        let price = self.hnt_price.hnt_price_in_bones;
+        let price = self.price_info.price_in_bones;
 
         rewards
             .into_iter()
@@ -822,12 +820,9 @@ mod test {
         (hnt_value / DC_USD_PRICE).round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
     }
 
-    fn default_rewards_info(
-        total_emissions: u64,
-        epoch_duration: Duration,
-    ) -> ResolvedSubDaoEpochRewardInfo {
+    fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
         let now = Utc::now();
-        ResolvedSubDaoEpochRewardInfo {
+        EpochRewardInfo {
             epoch_day: 1,
             epoch_address: EPOCH_ADDRESS.into(),
             sub_dao_address: SUB_DAO_ADDRESS.into(),
@@ -978,12 +973,12 @@ mod test {
             DataTransferAndPocAllocatedRewardBuckets::new(rewards_info.epoch_emissions);
 
         // todo: rebalance the tests to use a normalised hnt price
-        let hnt_price = HntPrice::new(10000000000000000, 8);
-        assert_eq!(hnt_price.hnt_price, dec!(100000000));
-        assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
+        let price_info = PriceInfo::new(10000000000000000, 8);
+        assert_eq!(price_info.price_per_token, dec!(100000000));
+        assert_eq!(price_info.price_per_bone, dec!(1));
 
         let data_transfer_rewards =
-            TransferRewards::from_transfer_sessions(hnt_price, data_transfer_map, &reward_shares)
+            TransferRewards::from_transfer_sessions(price_info, data_transfer_map, &reward_shares)
                 .await;
 
         assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00002));
@@ -1031,15 +1026,15 @@ mod test {
         let rewards_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
 
         // todo: rebalance the tests to use a normalised hnt price
-        let hnt_price = HntPrice::new(10000000000000000, 8);
-        assert_eq!(hnt_price.hnt_price, dec!(100000000));
-        assert_eq!(hnt_price.price_per_hnt_bone, dec!(1));
+        let price_info = PriceInfo::new(10000000000000000, 8);
+        assert_eq!(price_info.price_per_token, dec!(100000000));
+        assert_eq!(price_info.price_per_bone, dec!(1));
 
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new(rewards_info.epoch_emissions);
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
-            hnt_price,
+            price_info,
             aggregated_data_transfer_sessions,
             &reward_shares,
         )
@@ -2604,10 +2599,10 @@ mod test {
         let hnt_dollar_bone_price = dec!(0.00000001);
 
         let pricer_decimals = 8;
-        let hnt_price = HntPrice::new(hnt_price_from_pricer, pricer_decimals);
+        let hnt_price = PriceInfo::new(hnt_price_from_pricer, pricer_decimals);
 
-        assert_eq!(hnt_dollar_bone_price, hnt_price.price_per_hnt_bone);
-        assert_eq!(hnt_price_from_pricer, hnt_price.hnt_price_in_bones);
-        assert_eq!(hnt_dollar_price, hnt_price.hnt_price);
+        assert_eq!(hnt_dollar_bone_price, hnt_price.price_per_bone);
+        assert_eq!(hnt_price_from_pricer, hnt_price.price_in_bones);
+        assert_eq!(hnt_dollar_price, hnt_price.price_per_token);
     }
 }
