@@ -300,10 +300,10 @@ impl mobile_config::Gateway for GatewayService {
                         "Invalid min_refreshed_at argument",
                     ))?;
 
-                let updated_redios =
+                let updated_radios =
                     get_updated_radios(&mobile_config_db_pool, min_updated_at).await?;
                 let stream = stream
-                    .filter(|v| future::ready(updated_redios.contains(&v.address)))
+                    .filter(|v| future::ready(updated_radios.contains(&v.address)))
                     .boxed();
                 stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size)
                     .await
