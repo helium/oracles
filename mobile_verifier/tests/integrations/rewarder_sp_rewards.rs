@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::string::ToString;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use helium_proto::{
     service_provider_promotions::Promotion,
     services::poc_mobile::{
@@ -289,7 +289,7 @@ async fn seed_hotspot_data(
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 10000,
         num_dcs: 10_000,
-        received_timestamp: ts - ChronoDuration::hours(1),
+        received_timestamp: ts - Duration::hours(1),
     };
 
     let data_session_2 = data_session::HotspotDataSession {
@@ -298,7 +298,7 @@ async fn seed_hotspot_data(
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
         num_dcs: 50_000,
-        received_timestamp: ts - ChronoDuration::hours(2),
+        received_timestamp: ts - Duration::hours(2),
     };
 
     data_session_1.save(txn).await?;
@@ -316,7 +316,7 @@ async fn seed_hotspot_data_invalid_sp(
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 10000,
         num_dcs: 10_000,
-        received_timestamp: ts - ChronoDuration::hours(2),
+        received_timestamp: ts - Duration::hours(2),
     };
 
     let data_session_2 = data_session::HotspotDataSession {
@@ -325,7 +325,7 @@ async fn seed_hotspot_data_invalid_sp(
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
         num_dcs: 50_000,
-        received_timestamp: ts - ChronoDuration::hours(2),
+        received_timestamp: ts - Duration::hours(2),
     };
 
     data_session_1.save(txn).await?;

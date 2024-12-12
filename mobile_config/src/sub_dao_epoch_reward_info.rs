@@ -1,4 +1,4 @@
-use crate::EpochPeriod;
+use crate::EpochInfo;
 use chrono::{DateTime, Utc};
 use file_store::traits::{TimestampDecode, TimestampEncode};
 use helium_proto::services::sub_dao::SubDaoEpochRewardInfo as SubDaoEpochRewardInfoProto;
@@ -6,7 +6,7 @@ use rust_decimal::prelude::*;
 use std::ops::Range;
 
 #[derive(Clone, Debug)]
-pub struct ResolvedSubDaoEpochRewardInfo {
+pub struct EpochRewardInfo {
     pub epoch_day: u64,
     pub epoch_address: String,
     pub sub_dao_address: String,
@@ -20,7 +20,7 @@ pub struct RawSubDaoEpochRewardInfo {
     epoch: u64,
     epoch_address: String,
     sub_dao_address: String,
-    rewards_issued: u64,
+    hnt_rewards_issued: u64,
     delegation_rewards_issued: u64,
     rewards_issued_at: DateTime<Utc>,
 }
@@ -37,19 +37,19 @@ impl From<RawSubDaoEpochRewardInfo> for SubDaoEpochRewardInfoProto {
             epoch: info.epoch,
             epoch_address: info.epoch_address,
             sub_dao_address: info.sub_dao_address,
-            rewards_issued: info.rewards_issued,
+            hnt_rewards_issued: info.hnt_rewards_issued,
             delegation_rewards_issued: info.delegation_rewards_issued,
             rewards_issued_at: info.rewards_issued_at.encode_timestamp(),
         }
     }
 }
 
-impl TryFrom<SubDaoEpochRewardInfoProto> for ResolvedSubDaoEpochRewardInfo {
+impl TryFrom<SubDaoEpochRewardInfoProto> for EpochRewardInfo {
     type Error = SubDaoRewardInfoParseError;
 
     fn try_from(info: SubDaoEpochRewardInfoProto) -> Result<Self, Self::Error> {
-        let epoch_period: EpochPeriod = info.epoch.into();
-        let epoch_rewards = Decimal::from(info.rewards_issued + info.delegation_rewards_issued);
+        let epoch_period: EpochInfo = info.epoch.into();
+        let epoch_rewards = Decimal::from(info.hnt_rewards_issued + info.delegation_rewards_issued);
 
         Ok(Self {
             epoch_day: info.epoch,
@@ -73,7 +73,7 @@ pub(crate) mod db {
                 address AS epoch_address,
                 sub_dao AS sub_dao_address,
                 epoch::BIGINT,
-                delegation_rewards_issued::BIGINT AS rewards_issued,
+                hnt_rewards_issued::BIGINT,
                 delegation_rewards_issued::BIGINT,
                 rewards_issued_at::BIGINT
             FROM sub_dao_epoch_infos
@@ -108,7 +108,7 @@ pub(crate) mod db {
                 epoch: row.get::<i64, &str>("epoch") as u64,
                 epoch_address: row.get::<String, &str>("epoch_address"),
                 sub_dao_address: row.get::<String, &str>("sub_dao_address"),
-                rewards_issued: row.get::<i64, &str>("rewards_issued") as u64,
+                hnt_rewards_issued: row.get::<i64, &str>("hnt_rewards_issued") as u64,
                 delegation_rewards_issued: row.get::<i64, &str>("delegation_rewards_issued") as u64,
                 rewards_issued_at,
             })
