@@ -65,6 +65,8 @@ impl FileStore {
         region: Option<String>,
         timeout_config: Option<TimeoutConfig>,
         retry_config: Option<RetryConfig>,
+        _access_key_id: Option<String>,
+        _secret_access_key: Option<String>,
     ) -> Result<Self> {
         let endpoint: Option<Endpoint> = match &endpoint {
             Some(endpoint) => Uri::from_str(endpoint)
@@ -90,10 +92,10 @@ impl FileStore {
         }
 
         #[cfg(feature = "local")]
-        if settings.access_key_id.is_some() && settings.secret_access_key.is_some() {
+        if _access_key_id.is_some() && _secret_access_key.is_some() {
             let creds = aws_types::credentials::Credentials::from_keys(
-                settings.access_key_id.as_ref().unwrap(),
-                settings.secret_access_key.as_ref().unwrap(),
+                _access_key_id.as_ref().unwrap(),
+                _secret_access_key.as_ref().unwrap(),
                 None,
             );
             config = config.credentials_provider(creds);
