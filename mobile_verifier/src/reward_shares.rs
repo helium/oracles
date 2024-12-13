@@ -455,7 +455,7 @@ impl CoverageShares {
                 })
                 .collect();
 
-            let is_indoor = {
+            let (is_indoor, covered_hexes) = {
                 let mut is_indoor = false;
 
                 let covered_hexes_stream = hex_streams
@@ -473,24 +473,7 @@ impl CoverageShares {
                         assignments: hex_coverage.assignments,
                     });
                 }
-
-                if eligible_for_coverage_map(
-                    &pubkey,
-                    cbsd_id.clone(),
-                    banned_radios,
-                    &speedtests,
-                    &trust_scores,
-                ) {
-                    coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
-                        indoor: is_indoor,
-                        hotspot_key: pubkey.clone().into(),
-                        cbsd_id: cbsd_id.clone(),
-                        seniority_timestamp: seniority.seniority_ts,
-                        coverage: covered_hexes,
-                    });
-                }
-
-                is_indoor
+                (is_indoor, covered_hexes)
             };
 
             use coverage_point_calculator::RadioType;
@@ -509,6 +492,16 @@ impl CoverageShares {
                 } else {
                     OracleBoostingStatus::Eligible
                 };
+
+            if eligible_for_coverage_map(oracle_boosting_status, &speedtests, &trust_scores) {
+                coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
+                    indoor: is_indoor,
+                    hotspot_key: pubkey.clone().into(),
+                    cbsd_id: cbsd_id.clone(),
+                    seniority_timestamp: seniority.seniority_ts,
+                    coverage: covered_hexes,
+                });
+            }
 
             let sp_boosted_reward_eligibility =
                 boosted_hex_eligibility.eligibility(pubkey, cbsd_id);
@@ -780,13 +773,11 @@ pub fn get_scheduled_tokens_for_oracles(duration: Duration) -> Decimal {
 }
 
 fn eligible_for_coverage_map(
-    pubkey: &PublicKeyBinary,
-    cbsd_id: Option<String>,
-    banned_radios: &BannedRadios,
+    oracle_boosting_status: OracleBoostingStatus,
     speedtests: &[Speedtest],
     trust_scores: &[LocationTrust],
 ) -> bool {
-    if banned_radios.contains(pubkey, cbsd_id.as_deref()) {
+    if oracle_boosting_status == OracleBoostingStatus::Banned {
         return false;
     }
 
