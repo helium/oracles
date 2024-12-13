@@ -89,6 +89,16 @@ impl FileStore {
             config = config.retry_config(retry);
         }
 
+        #[cfg(feature = "local")]
+        if settings.access_key_id.is_some() && settings.secret_access_key.is_some() {
+            let creds = aws_types::credentials::Credentials::from_keys(
+                settings.access_key_id.as_ref().unwrap(),
+                settings.secret_access_key.as_ref().unwrap(),
+                None,
+            );
+            config = config.credentials_provider(creds);
+        }
+
         let config = config.load().await;
 
         let client = Client::new(&config);
