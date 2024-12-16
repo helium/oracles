@@ -26,9 +26,7 @@ pub enum ClientError {
     #[error("error resolving region params: {0}")]
     UndefinedRegionParams(String),
     #[error("Invalid SubDaoRewardInfo proto response {0}")]
-    InvalidSubDaoRewardInfoProto(
-        #[from] crate::sub_dao_epoch_reward_info::SubDaoRewardInfoParseError,
-    ),
+    InvalidSubDaoRewardInfoProto(#[from] SubDaoRewardInfoParseError),
 }
 
 #[async_trait::async_trait]
@@ -82,6 +80,7 @@ macro_rules! call_with_retry {
     }};
 }
 
+use crate::sub_dao_epoch_reward_info::SubDaoRewardInfoParseError;
 pub(crate) use call_with_retry;
 
 impl Client {

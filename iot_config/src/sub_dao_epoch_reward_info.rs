@@ -69,8 +69,6 @@ pub(crate) mod db {
     use sqlx::postgres::PgRow;
     use sqlx::{FromRow, PgExecutor, Row};
 
-    //TODO: fix rewards_issued in the query below, currently that column is not present in the table
-    //      using delegation_rewards_issued as a placeholder for now
     const GET_EPOCH_REWARD_INFO_SQL: &str = r#"
             SELECT
                 address AS epoch_address,
