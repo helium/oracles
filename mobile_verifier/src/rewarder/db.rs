@@ -49,8 +49,9 @@ pub async fn no_unique_connections(
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<bool> {
     let count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) from unique_connections WHERE received_timestamp >= $1",
+        "SELECT COUNT(*) from unique_connections WHERE received_timestamp >= $1 and received_timestamp < $2",
     )
+    .bind(reward_period.start)
     .bind(reward_period.end)
     .fetch_one(pool)
     .await?;
@@ -203,7 +204,7 @@ mod tests {
         };
 
         let unique_connection = file_store::UniqueConnectionsIngestReport {
-            received_timestamp: timestamp,
+            received_timestamp: timestamp - chrono::Duration::seconds(1),
             report: file_store::UniqueConnectionReq {
                 pubkey: cbrs_pubkey_bin.clone(),
                 start_timestamp: Utc::now() - chrono::Duration::days(7),
