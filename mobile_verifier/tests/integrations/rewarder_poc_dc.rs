@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::common::{
     self, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext,
 };
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     speedtest::CellSpeedtest,
@@ -150,29 +150,35 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+
     let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    seed_heartbeats(epoch.start, &mut txn).await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_data_sessions(epoch.start, &mut txn).await?;
+    seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments_bad(&pool).await?;
 
     // Run rewards with no unique connections, no poc rewards, expect unallocated
     let boosted_hexes = vec![];
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+
+    let price_info = PriceInfo::new(10000000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(100000000));
+    assert_eq!(price_info.price_per_bone, dec!(1));
+
     let (_, _rewards) = tokio::join!(
         rewarder::reward_poc_and_dc(
             &pool,
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            price_info.clone()
         ),
         // expecting NO poc rewards, expecting unallocated
         receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 0, true)
@@ -180,12 +186,12 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     // seed single unique conections report within epoch
     let mut txn = pool.begin().await?;
-    seed_unique_connections(&mut txn, &[(pubkey.clone(), 42)], &epoch).await?;
+    seed_unique_connections(&mut txn, &[(pubkey.clone(), 42)], &reward_info.epoch_period).await?;
     txn.commit().await?;
 
     // SP ban radio, unique connections should supersede banning
     let mut txn = pool.begin().await?;
-    ban_wifi_radio_for_epoch(&mut txn, pubkey.clone(), &epoch).await?;
+    ban_wifi_radio_for_epoch(&mut txn, pubkey.clone(), &reward_info.epoch_period).await?;
     txn.commit().await?;
 
     let (_, rewards) = tokio::join!(
@@ -195,8 +201,8 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            price_info
         ),
         // expecting single radio with poc rewards, no unallocated
         receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 1, false)
@@ -209,7 +215,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
     let total = poc_sum + dc_sum;
 
-    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
         .to_u64()
         .unwrap();
     assert_eq!(expected_sum, total);

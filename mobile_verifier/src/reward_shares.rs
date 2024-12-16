@@ -2262,8 +2262,10 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
+        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
 
-        let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new_poc_only(&epoch);
+        let reward_shares =
+            DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
         let unique_connection_counts = HashMap::from([(gw1.clone(), 42)]);
         for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in CoverageShares::new(
             &hex_coverage,

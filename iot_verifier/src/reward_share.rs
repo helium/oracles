@@ -286,7 +286,6 @@ impl GatewayShares {
                         start_period: reward_period.start.encode_timestamp(),
                         end_period: reward_period.end.encode_timestamp(),
                         reward: Some(ProtoReward::GatewayReward(gateway_reward)),
-                        epoch: 0, // placeholder, todo: remove
                     },
                 )
             })
