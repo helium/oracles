@@ -132,6 +132,6 @@ sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df65
 # Patching for beacon must point directly to the crate, it will not look in the
 # repo for sibling crates.
 # 
- [patch.'https://github.com/helium/proto']
- helium-proto = { path = "../../proto" }
+# [patch.'https://github.com/helium/proto']
+# helium-proto = { path = "../../proto" }
 # beacon = { path = "../../proto" }
