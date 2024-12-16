@@ -19,7 +19,7 @@ pub struct Cli {
 
 impl Cli {
     pub async fn run(self) -> Result {
-        let settings = Settings::new(&self.config)?;
+        let settings = Settings::new(&self.config);
         self.cmd.run(settings).await
     }
 }
@@ -33,12 +33,12 @@ pub enum Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: Settings) -> Result {
+    pub async fn run(&self, settings: Result<Settings>) -> Result {
         match self {
-            Cmd::Info(cmd) => cmd.run(&settings).await,
-            Cmd::Dump(cmd) => cmd.run(&settings).await,
-            Cmd::Bucket(cmd) => cmd.run(&settings).await,
-            Cmd::DumpMobileRewards(cmd) => cmd.run(&settings).await,
+            Cmd::Info(cmd) => cmd.run(&settings?).await,
+            Cmd::Dump(cmd) => cmd.run().await,
+            Cmd::Bucket(cmd) => cmd.run(&settings?).await,
+            Cmd::DumpMobileRewards(cmd) => cmd.run(&settings?).await,
         }
     }
 }
