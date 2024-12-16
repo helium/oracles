@@ -11,7 +11,7 @@ use crate::{
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, subscriber_verified_mapping_event, telemetry, unique_connections,
-    Settings, MOBILE_SUB_DAO_ONCHAIN_ADDRESS, PriceInfo
+    PriceInfo, Settings, MOBILE_SUB_DAO_ONCHAIN_ADDRESS,
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -474,7 +474,7 @@ async fn reward_poc(
     )
     .await?;
 
-    let unique_connections = unique_connections::db::get(pool, reward_period).await?;
+    let unique_connections = unique_connections::db::get(pool, &reward_info.epoch_period).await?;
 
     let coverage_shares = CoverageShares::new(
         pool,
