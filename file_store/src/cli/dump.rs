@@ -1,4 +1,3 @@
-use crate::reward_manifest::RewardManifest;
 use crate::{
     cli::print_json,
     coverage::CoverageObject,
@@ -9,6 +8,7 @@ use crate::{
     mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
     mobile_session::{DataTransferSessionIngestReport, InvalidDataTransferIngestReport},
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
+    reward_manifest::RewardManifest,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::{MsgDecode, TimestampDecode},
     unique_connections::UniqueConnectionReq,
