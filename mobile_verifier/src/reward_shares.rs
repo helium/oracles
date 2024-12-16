@@ -12,7 +12,7 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use coverage_point_calculator::{
-    BytesPs, LocationTrust, OracleBoostingStatus, SPBoostedRewardEligibility, Speedtest,
+    BytesPs, LocationTrust, OracleBoostingStatus, RadioType, SPBoostedRewardEligibility, Speedtest,
     SpeedtestTier,
 };
 use file_store::traits::TimestampEncode;
@@ -493,7 +493,12 @@ impl CoverageShares {
                     OracleBoostingStatus::Eligible
                 };
 
-            if eligible_for_coverage_map(oracle_boosting_status, &speedtests, &trust_scores) {
+            if eligible_for_coverage_map(
+                oracle_boosting_status,
+                &speedtests,
+                radio_type,
+                &trust_scores,
+            ) {
                 coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
                     indoor: is_indoor,
                     hotspot_key: pubkey.clone().into(),
@@ -775,6 +780,7 @@ pub fn get_scheduled_tokens_for_oracles(duration: Duration) -> Decimal {
 fn eligible_for_coverage_map(
     oracle_boosting_status: OracleBoostingStatus,
     speedtests: &[Speedtest],
+    radio_type: RadioType,
     trust_scores: &[LocationTrust],
 ) -> bool {
     if oracle_boosting_status == OracleBoostingStatus::Banned {
@@ -786,20 +792,12 @@ fn eligible_for_coverage_map(
         return false;
     }
 
-    let avg_trust_score = average_trust_score(trust_scores);
-    if avg_trust_score <= dec!(0.0) {
+    let multiplier = coverage_point_calculator::location::multiplier(radio_type, trust_scores);
+    if multiplier <= dec!(0.0) {
         return false;
     }
 
     true
-}
-
-fn average_trust_score(trust_scores: &[LocationTrust]) -> Decimal {
-    if trust_scores.is_empty() {
-        return dec!(0);
-    }
-    let total_score: Decimal = trust_scores.iter().map(|lt| lt.trust_score).sum();
-    total_score / Decimal::from(trust_scores.len() as u64)
 }
 
 #[cfg(test)]

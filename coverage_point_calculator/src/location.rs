@@ -51,7 +51,7 @@ pub(crate) fn average_distance(radio_type: RadioType, trust_scores: &[LocationTr
     sum / count
 }
 
-pub(crate) fn multiplier(radio_type: RadioType, trust_scores: &[LocationTrust]) -> Decimal {
+pub fn multiplier(radio_type: RadioType, trust_scores: &[LocationTrust]) -> Decimal {
     // CBRS radios are always trusted because they have internal GPS
     if radio_type.is_cbrs() {
         return dec!(1);

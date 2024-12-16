@@ -82,7 +82,7 @@ use rust_decimal_macros::dec;
 use service_provider_boosting::{MAX_AVERAGE_DISTANCE, MIN_WIFI_TRUST_MULTIPLIER};
 
 mod hexes;
-mod location;
+pub mod location;
 mod service_provider_boosting;
 pub mod speedtest;
 
