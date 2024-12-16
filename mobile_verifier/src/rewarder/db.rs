@@ -3,6 +3,11 @@ use std::ops::Range;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
+/// Heartbeats are sent constantly throughout the day.
+///
+/// If there are heartbeats that exists past the end of the rewardable period,
+/// we can know that the heartbeat machinery has been working at least through
+/// the period we're attempting to reward.
 pub async fn no_cbrs_heartbeats(
     pool: &PgPool,
     reward_period: &Range<DateTime<Utc>>,
@@ -17,6 +22,11 @@ pub async fn no_cbrs_heartbeats(
     Ok(count == 0)
 }
 
+/// Heartbeats are sent constantly throughout the day.
+///
+/// If there are heartbeats that exists past the end of the rewardable period,
+/// we can know that the heartbeat machinery has been working at least through
+/// the period we're attempting to reward.
 pub async fn no_wifi_heartbeats(
     pool: &PgPool,
     reward_period: &Range<DateTime<Utc>>,
@@ -31,6 +41,11 @@ pub async fn no_wifi_heartbeats(
     Ok(count == 0)
 }
 
+/// Speedtests are sent constantly throughout the day.
+///
+/// If there are speedtests that exists past the end of the rewardable period,
+/// we can know that the speedtests machinery has been working at least through
+/// the period we're attempting to reward.
 pub async fn no_speedtests(
     pool: &PgPool,
     reward_period: &Range<DateTime<Utc>>,
@@ -44,6 +59,10 @@ pub async fn no_speedtests(
     Ok(count == 0)
 }
 
+/// Unique Connections are submitted once per day,
+///
+/// We want to make sure we have received a report of unique connections for the
+/// period we're attempting to reward.
 pub async fn no_unique_connections(
     pool: &PgPool,
     reward_period: &Range<DateTime<Utc>>,
