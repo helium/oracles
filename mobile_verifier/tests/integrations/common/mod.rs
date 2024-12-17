@@ -5,6 +5,7 @@ use file_store::{
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
+use helium_lib::token::Token;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{
@@ -17,15 +18,13 @@ use helium_proto::services::{
 use hex_assignments::{Assignment, HexAssignment, HexBoostData};
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
+    client::sub_dao_client::SubDaoEpochRewardInfoResolver,
     client::{
         authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
         hex_boosting_client::HexBoostingInfoResolver, ClientError,
     },
+    sub_dao_epoch_reward_info::EpochRewardInfo,
 };
-
-use helium_lib::token::Token;
-use mobile_config::client::sub_dao_client::SubDaoEpochRewardInfoResolver;
-use mobile_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use mobile_verifier::{
     boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
 };
@@ -38,6 +37,8 @@ use tonic::async_trait;
 
 pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
 pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+
+pub const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 82_191_780_821_917;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]

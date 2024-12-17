@@ -93,7 +93,7 @@ pub(crate) mod db {
             .bind(sub_dao_address)
             .fetch_optional(db)
             .await?;
-        tracing::info!("get_info: {:?}", res);
+        tracing::debug!("get_info: {:?}", res);
         Ok(res)
     }
 
