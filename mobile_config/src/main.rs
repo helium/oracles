@@ -75,6 +75,7 @@ impl Daemon {
             key_cache.clone(),
             metadata_pool.clone(),
             settings.signing_keypair()?,
+            pool.clone(),
         );
         let auth_svc = AuthorizationService::new(key_cache.clone(), settings.signing_keypair()?);
         let entity_svc = EntityService::new(
