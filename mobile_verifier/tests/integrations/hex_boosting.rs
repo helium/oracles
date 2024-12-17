@@ -140,10 +140,9 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             .to_u64()
             .unwrap();
 
-    // todo: rebalance the tests to use a normalised hnt price
-    let price_info = PriceInfo::new(10000000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(100000000));
-    assert_eq!(price_info.price_per_bone, dec!(1));
+    let price_info = PriceInfo::new(1000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -331,10 +330,9 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
 
     let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
 
-    // todo: rebalance the tests to use a normalised hnt price
-    let price_info = PriceInfo::new(10000000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(100000000));
-    assert_eq!(price_info.price_per_bone, dec!(1));
+    let price_info = PriceInfo::new(1000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -498,10 +496,9 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
-    // todo: rebalance the tests to use a normalised hnt price
-    let price_info = PriceInfo::new(10000000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(100000000));
-    assert_eq!(price_info.price_per_bone, dec!(1));
+    let price_info = PriceInfo::new(1000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -677,10 +674,9 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
-    // todo: rebalance the tests to use a normalised hnt price
-    let price_info = PriceInfo::new(10000000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(100000000));
-    assert_eq!(price_info.price_per_bone, dec!(1));
+    let price_info = PriceInfo::new(1000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -813,10 +809,9 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             .to_u64()
             .unwrap();
 
-    // todo: rebalance the tests to use a normalised hnt price
-    let price_info = PriceInfo::new(10000000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(100000000));
-    assert_eq!(price_info.price_per_bone, dec!(1));
+    let price_info = PriceInfo::new(1000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -997,10 +992,9 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
             .to_u64()
             .unwrap();
 
-    // todo: rebalance the tests to use a normalised hnt price
-    let price_info = PriceInfo::new(10000000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(100000000));
-    assert_eq!(price_info.price_per_bone, dec!(1));
+    let price_info = PriceInfo::new(1000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -1206,10 +1200,9 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             .to_u64()
             .unwrap();
 
-    // todo: rebalance the tests to use a normalised hnt price
-    let price_info = PriceInfo::new(10000000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(100000000));
-    assert_eq!(price_info.price_per_bone, dec!(1));
+    let price_info = PriceInfo::new(1000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
