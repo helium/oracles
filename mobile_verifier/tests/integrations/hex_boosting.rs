@@ -1,6 +1,6 @@
 use crate::common::{
     self, default_price_info, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient,
-    RadioRewardV2Ext,
+    RadioRewardV2Ext, EMISSIONS_POOL_IN_BONES_24_HOURS,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
@@ -57,7 +57,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let boost_period_length = Duration::days(30);
 
@@ -327,7 +327,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let price_info = default_price_info();
 
@@ -395,7 +395,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let boost_period_length = Duration::days(30);
 
@@ -613,7 +613,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
     let boost_period_length = Duration::days(30);
 
     // seed all the things
@@ -736,7 +736,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
     let boost_period_length = Duration::days(30);
 
     // seed all the things
@@ -914,7 +914,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
     let boost_period_length = Duration::days(30);
 
     // seed all the things
@@ -1093,7 +1093,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let boost_period_length = Duration::days(30);
 

@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use crate::common::{
     self, default_price_info, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient,
-    RadioRewardV2Ext,
+    RadioRewardV2Ext, EMISSIONS_POOL_IN_BONES_24_HOURS,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
@@ -48,7 +48,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
@@ -153,7 +153,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
 

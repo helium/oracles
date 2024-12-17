@@ -14,7 +14,9 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
 
-use crate::common::{self, default_rewards_info, MockFileSinkReceiver};
+use crate::common::{
+    self, default_rewards_info, MockFileSinkReceiver, EMISSIONS_POOL_IN_BONES_24_HOURS,
+};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use mobile_verifier::{data_session, reward_shares, rewarder, service_provider};
 
@@ -75,7 +77,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     let carrier_client = MockCarrierServiceClient::new(valid_sps);
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     // seed db with test specific data
     let mut txn = pool.clone().begin().await?;
@@ -140,7 +142,7 @@ async fn test_service_provider_rewards_halt_on_invalid_sp(pool: PgPool) -> anyho
     valid_sps.insert(PAYER_1.to_string(), SP_1.to_string());
     let carrier_client = MockCarrierServiceClient::new(valid_sps);
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let mut txn = pool.clone().begin().await?;
     seed_hotspot_data_invalid_sp(reward_info.epoch_period.end, &mut txn).await?;
@@ -187,7 +189,7 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
             ],
         }]);
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
 
@@ -254,7 +256,7 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
         - 50_999 // 85% service provider rewards rounded down
         - 8_998 // 15% service provider promotions
         - 8_998 // matched promotion
-        + 2; // unexpected rounding - TODO investigate
+        + 2; // rounding
 
     assert_eq!(unallocated.amount, expected_unallocated);
 
