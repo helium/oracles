@@ -1,7 +1,8 @@
 use std::ops::Range;
 
 use crate::common::{
-    self, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext,
+    self, default_price_info, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient,
+    RadioRewardV2Ext,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
@@ -17,7 +18,7 @@ use mobile_verifier::{
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder,
     sp_boosted_rewards_bans::{self, BannedRadioReport},
-    speedtests, unique_connections, PriceInfo,
+    speedtests, unique_connections,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -61,9 +62,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
+    let price_info = default_price_info();
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -170,9 +169,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let boosted_hexes = vec![];
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
-    let price_info = PriceInfo::new(1000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(10000));
-    assert_eq!(price_info.price_per_bone, dec!(0.0001));
+    let price_info = default_price_info();
 
     let (_, _rewards) = tokio::join!(
         rewarder::reward_poc_and_dc(
