@@ -13,7 +13,7 @@ use crate::{
     unique_connections::UniqueConnectionReq,
     usage_counts::{HexUsageCountsIngestReport, RadioUsageCountsIngestReport},
     wifi_heartbeat::WifiHeartbeatIngestReport,
-    FileType, Result, Settings,
+    FileType, Result,
 };
 use base64::Engine;
 use csv::Writer;
@@ -54,7 +54,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, _settings: &Settings) -> Result {
+    pub async fn run(&self) -> Result {
         let mut file_stream = file_source::source([&self.in_path]);
 
         let mut wtr = Writer::from_writer(io::stdout());
@@ -301,6 +301,7 @@ impl Cmd {
                         "written_files": manifest.written_files,
                         "start_timestamp": manifest.start_timestamp,
                         "end_timestamp": manifest.end_timestamp,
+                        "reward_data": manifest.reward_data.unwrap()
                     }))?;
                 }
                 FileType::SignedPocReceiptTxn => {
