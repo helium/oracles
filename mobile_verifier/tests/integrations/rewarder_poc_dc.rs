@@ -33,7 +33,7 @@ pub mod proto {
         CoverageObjectValidity, GatewayReward, HeartbeatValidity, LocationSource,
         MobileRewardShare, RadioRewardV2, SeniorityUpdateReason,
         ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
-        ServiceProviderBoostedRewardsBannedRadioReqV1, SignalLevel,
+        ServiceProviderBoostedRewardsBannedRadioReqV1, SignalLevel, UnallocatedReward,
     };
 }
 
@@ -61,10 +61,9 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
-    // todo: rebalance the tests to use a normalised hnt price
-    let price_info = PriceInfo::new(10000000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(100000000));
-    assert_eq!(price_info.price_per_bone, dec!(1));
+    let price_info = PriceInfo::new(1000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -76,12 +75,12 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             &reward_info,
             price_info
         ),
-        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, false)
+        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, true)
     );
-    if let Ok((poc_rewards, dc_rewards)) = rewards {
+    if let Ok((poc_rewards, dc_rewards, unallocated_reward)) = rewards {
         // assert poc reward outputs
-        let hotspot_1_reward = 9_784_735_514_514;
-        let hotspot_2_reward = 39_138_942_058_056;
+        let hotspot_1_reward = 9_784_735_514_513;
+        let hotspot_2_reward = 39_138_942_058_055;
         let hotspot_3_reward = 391_389_420_580;
         assert_eq!(hotspot_1_reward, poc_rewards[0].total_poc_reward());
         assert_eq!(
@@ -98,6 +97,10 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             HOTSPOT_2.to_string(),
             PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
         );
+
+        // assert the unallocated reward
+        let unallocated_reward = unallocated_reward.unwrap();
+        assert_eq!(unallocated_reward.amount, 2);
 
         // assert the boosted hexes in the radio rewards
         // boosted hexes will contain the used multiplier for each boosted hex
@@ -126,7 +129,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         // confirm the total rewards allocated matches expectations
         let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
         let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
-        let total = poc_sum + dc_sum;
+        let total = poc_sum + dc_sum + unallocated_reward.amount;
 
         let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
             .to_u64()
@@ -167,9 +170,9 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let boosted_hexes = vec![];
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
-    let price_info = PriceInfo::new(10000000000000000, 8);
-    assert_eq!(price_info.price_per_token, dec!(100000000));
-    assert_eq!(price_info.price_per_bone, dec!(1));
+    let price_info = PriceInfo::new(1000000000000, 8);
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
 
     let (_, _rewards) = tokio::join!(
         rewarder::reward_poc_and_dc(
@@ -207,7 +210,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
         // expecting single radio with poc rewards, no unallocated
         receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 1, false)
     );
-    let Ok((poc_rewards, dc_rewards)) = rewards else {
+    let Ok((poc_rewards, dc_rewards, _unallocated_reward)) = rewards else {
         panic!("rewards failed");
     };
 
@@ -228,7 +231,11 @@ async fn receive_expected_rewards_with_counts(
     expected_dc_reward_count: usize,
     expected_poc_reward_count: usize,
     expect_unallocated: bool,
-) -> anyhow::Result<(Vec<proto::RadioRewardV2>, Vec<proto::GatewayReward>)> {
+) -> anyhow::Result<(
+    Vec<proto::RadioRewardV2>,
+    Vec<proto::GatewayReward>,
+    Option<proto::UnallocatedReward>,
+)> {
     let mut dc_rewards = vec![];
     let mut poc_rewards = vec![];
 
@@ -240,14 +247,16 @@ async fn receive_expected_rewards_with_counts(
         poc_rewards.push(mobile_rewards.receive_radio_reward().await);
     }
 
-    if expect_unallocated {
-        mobile_rewards.receive_unallocated_reward().await;
-    }
+    let unallocated_reward = if expect_unallocated {
+        Some(mobile_rewards.receive_unallocated_reward().await)
+    } else {
+        None
+    };
 
     dc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
     poc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
 
-    Ok((poc_rewards, dc_rewards))
+    Ok((poc_rewards, dc_rewards, unallocated_reward))
 }
 
 async fn seed_heartbeats(
