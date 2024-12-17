@@ -1,4 +1,6 @@
-use crate::common::{self, default_rewards_info, MockFileSinkReceiver};
+use crate::common::{
+    self, default_rewards_info, MockFileSinkReceiver, EMISSIONS_POOL_IN_BONES_24_HOURS,
+};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
     mobile_subscriber::{SubscriberLocationIngestReport, SubscriberLocationReq},
@@ -29,7 +31,7 @@ const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     // seed db
     let mut txn = pool.clone().begin().await?;
@@ -108,7 +110,7 @@ async fn test_subscriber_can_only_earn_verification_mapping_if_earned_disco_mapp
 ) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let mut txn = pool.begin().await?;
     let sub_loc_report = SubscriberLocationIngestReport {
