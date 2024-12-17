@@ -791,7 +791,6 @@ fn eligible_for_coverage_map(
 
 #[cfg(test)]
 mod test {
-
     use super::*;
     use hex_assignments::{assignment::HexAssignments, Assignment};
 
@@ -812,6 +811,7 @@ mod test {
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
     use futures::stream::{self, BoxStream};
+    use helium_lib::token::Token;
     use helium_proto::{
         services::poc_mobile::mobile_reward_share::Reward as MobileReward, ServiceProvider,
     };
@@ -820,8 +820,11 @@ mod test {
     use std::collections::HashMap;
     use uuid::Uuid;
 
-    pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
-    pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+    const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
+    const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+
+    const EMISSIONS_POOL_24_HOURS: u64 = 82_191_780_821_917;
+    const EMISSIONS_POOL_1_HOUR: u64 = 3_424_657_534_247;
 
     fn hex_assignments_mock() -> HexAssignments {
         HexAssignments {
@@ -862,6 +865,11 @@ mod test {
         }
     }
 
+    fn default_price_info() -> PriceInfo {
+        let token = Token::Hnt;
+        PriceInfo::new(10000000000000000, token.decimals())
+    }
+
     #[test]
     fn test_poc_scheduled_tokens() {
         let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
@@ -890,6 +898,20 @@ mod test {
         assert_eq!(dec!(4_000_000_000_000), v);
     }
 
+    #[test]
+    fn test_price_conversion() {
+        let token = Token::Hnt;
+        let hnt_dollar_price = dec!(1.0);
+        let hnt_price_from_pricer = 100000000_u64;
+        let hnt_dollar_bone_price = dec!(0.00000001);
+
+        let hnt_price = PriceInfo::new(hnt_price_from_pricer, token.decimals());
+
+        assert_eq!(hnt_dollar_bone_price, hnt_price.price_per_bone);
+        assert_eq!(hnt_price_from_pricer, hnt_price.price_in_bones);
+        assert_eq!(hnt_dollar_price, hnt_price.price_per_token);
+    }
+
     #[tokio::test]
     async fn subscriber_rewards() {
         const NUM_SUBSCRIBERS: u64 = 10_000;
@@ -910,7 +932,7 @@ mod test {
         }
 
         // set our rewards info
-        let rewards_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_24_HOURS, Duration::hours(24));
 
         // translate location shares into shares
         let shares = MapperShares::new(location_shares, vsme_shares);
@@ -988,7 +1010,7 @@ mod test {
             },
         );
 
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
 
         let total_rewards = get_scheduled_tokens_for_poc(rewards_info.epoch_emissions);
 
@@ -1002,8 +1024,7 @@ mod test {
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new(rewards_info.epoch_emissions);
 
-        // todo: rebalance the tests to use a normalised hnt price
-        let price_info = PriceInfo::new(10000000000000000, 8);
+        let price_info = default_price_info();
         assert_eq!(price_info.price_per_token, dec!(100000000));
         assert_eq!(price_info.price_per_bone, dec!(1));
 
@@ -1053,10 +1074,9 @@ mod test {
                 .unwrap();
 
         // set our rewards info
-        let rewards_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_24_HOURS, Duration::hours(24));
 
-        // todo: rebalance the tests to use a normalised hnt price
-        let price_info = PriceInfo::new(10000000000000000, 8);
+        let price_info = default_price_info();
         assert_eq!(price_info.price_per_token, dec!(100000000));
         assert_eq!(price_info.price_per_bone, dec!(1));
 
@@ -1269,7 +1289,7 @@ mod test {
 
         let speedtest_avgs = SpeedtestAverages { averages };
 
-        let rewards_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_24_HOURS, Duration::hours(24));
 
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
@@ -1671,7 +1691,7 @@ mod test {
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
 
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
 
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
@@ -1857,7 +1877,7 @@ mod test {
         // calculate the rewards for the group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
 
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
 
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
@@ -1994,7 +2014,7 @@ mod test {
         // calculate the rewards for the group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
 
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
 
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
@@ -2131,7 +2151,7 @@ mod test {
         // calculate the rewards for the group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
 
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
 
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
@@ -2262,7 +2282,7 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
 
         let reward_shares =
             DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
@@ -2321,7 +2341,7 @@ mod test {
         let now = Utc::now();
         // We should never see any radio shares from owner2, since all of them are
         // less than or equal to zero.
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
 
         let uuid_1 = Uuid::new_v4();
         let uuid_2 = Uuid::new_v4();
@@ -2436,7 +2456,7 @@ mod test {
 
     #[tokio::test]
     async fn skip_empty_radio_rewards() {
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
         let coverage_shares = CoverageShares {
             coverage_map: coverage_map::CoverageMapBuilder::default()
                 .build(&BoostedHexes::default(), rewards_info.epoch_period.start),
@@ -2456,7 +2476,7 @@ mod test {
 
         let sp1 = ServiceProvider::HeliumMobile;
 
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
 
         let total_sp_rewards = service_provider::get_scheduled_tokens(rewards_info.epoch_emissions);
         let sp_reward_infos = ServiceProviderRewardInfos::new(
@@ -2496,7 +2516,7 @@ mod test {
         let hnt_bone_price = dec!(1.0);
         let sp1 = ServiceProvider::HeliumMobile;
 
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
 
         let total_sp_rewards_in_bones = dec!(1_0000_0000);
         let total_rewards_value_in_dc = hnt_bones_to_dc(total_sp_rewards_in_bones, hnt_bone_price);
@@ -2543,7 +2563,7 @@ mod test {
         let hnt_bone_price = dec!(0.0001) / dec!(1_0000_0000);
         let sp1 = ServiceProvider::HeliumMobile;
 
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(1));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(1));
 
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_0000_0000);
 
@@ -2587,7 +2607,7 @@ mod test {
         let hnt_bone_price = dec!(0.0001) / dec!(1_0000_0000);
         let sp1 = ServiceProvider::HeliumMobile;
 
-        let rewards_info = default_rewards_info(3_424_657_534_247, Duration::hours(24));
+        let rewards_info = default_rewards_info(EMISSIONS_POOL_1_HOUR, Duration::hours(24));
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_0000_0000);
 
         let sp_reward_infos = ServiceProviderRewardInfos::new(
@@ -2622,19 +2642,5 @@ mod test {
         .to_u64()
         .unwrap_or(0);
         assert_eq!(unallocated_sp_reward_amount, 0);
-    }
-
-    #[test]
-    fn test_price_conversion() {
-        let hnt_dollar_price = dec!(1.0);
-        let hnt_price_from_pricer = 100000000_u64;
-        let hnt_dollar_bone_price = dec!(0.00000001);
-
-        let pricer_decimals = 8;
-        let hnt_price = PriceInfo::new(hnt_price_from_pricer, pricer_decimals);
-
-        assert_eq!(hnt_dollar_bone_price, hnt_price.price_per_bone);
-        assert_eq!(hnt_price_from_pricer, hnt_price.price_in_bones);
-        assert_eq!(hnt_dollar_price, hnt_price.price_per_token);
     }
 }

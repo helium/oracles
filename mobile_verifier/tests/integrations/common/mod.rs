@@ -23,10 +23,11 @@ use mobile_config::{
     },
 };
 
+use helium_lib::token::Token;
 use mobile_config::client::sub_dao_client::SubDaoEpochRewardInfoResolver;
 use mobile_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use mobile_verifier::{
-    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver,
+    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -402,4 +403,12 @@ pub fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> E
         epoch_emissions: Decimal::from(total_emissions),
         rewards_issued_at: now,
     }
+}
+
+pub fn default_price_info() -> PriceInfo {
+    let token = Token::Hnt;
+    let price_info = PriceInfo::new(1000000000000, token.decimals());
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
+    price_info
 }
