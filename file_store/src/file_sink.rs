@@ -158,7 +158,7 @@ pub struct FileSinkClient<T> {
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
 const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
-const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(500);
 
 impl<T> FileSinkClient<T> {
     pub fn new(sender: MessageSender<T>, metric: impl Into<String>) -> Self {
