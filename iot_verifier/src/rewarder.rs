@@ -1,11 +1,13 @@
 use crate::{
+    resolve_subdao_pubkey,
     reward_share::{self, GatewayShares},
-    telemetry, PriceInfo, IOT_SUB_DAO_ONCHAIN_ADDRESS,
+    telemetry, PriceInfo,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
 use futures::future::LocalBoxFuture;
+use helium_lib::keypair::Pubkey;
 use helium_lib::token::Token;
 use helium_proto::{
     reward_manifest::RewardData::IotRewardData,
@@ -33,7 +35,7 @@ use tokio::time::sleep;
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: Duration = Duration::from_secs(5 * 60);
 
 pub struct Rewarder<A> {
-    sub_dao_address: String,
+    sub_dao: Pubkey,
     pub pool: Pool<Postgres>,
     pub rewards_sink: file_sink::FileSinkClient<proto::IotRewardShare>,
     pub reward_manifests_sink: file_sink::FileSinkClient<RewardManifest>,
@@ -74,8 +76,11 @@ where
         price_tracker: PriceTracker,
         sub_dao_epoch_reward_client: A,
     ) -> anyhow::Result<Self> {
+        // get the subdao address
+        let sub_dao = resolve_subdao_pubkey();
+        tracing::info!("Iot SubDao pubkey: {}", sub_dao);
         Ok(Self {
-            sub_dao_address: IOT_SUB_DAO_ONCHAIN_ADDRESS.to_string(),
+            sub_dao,
             pool,
             rewards_sink,
             reward_manifests_sink,
@@ -132,7 +137,7 @@ where
     pub async fn reward(&mut self, next_reward_epoch: u64) -> anyhow::Result<()> {
         let reward_info = self
             .sub_dao_epoch_reward_client
-            .resolve_info(&self.sub_dao_address, next_reward_epoch)
+            .resolve_info(&self.sub_dao, next_reward_epoch)
             .await?
             .ok_or(anyhow::anyhow!(
                 "No reward info found for epoch {}",
