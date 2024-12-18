@@ -97,20 +97,20 @@ where
     pub async fn burn(&mut self) -> Result<(), BurnError<S::Error>> {
         // Fetch the next payer and amount that should be burn. If no such burn
         // exists, perform no action.
-        let Some(Burn { payer, amount }) = self.pending_tables.fetch_next_burn().await? else {
+        let Some(Burn { escrow_key, amount }) = self.pending_tables.fetch_next_burn().await? else {
             return Ok(());
         };
 
-        tracing::info!(%amount, %payer, "Burning DC");
+        tracing::info!(%amount, %escrow_key, "Burning DC");
 
         // Create a burn transaction and execute it:
         let txn = self
             .solana
-            .make_burn_transaction(&payer, amount)
+            .make_burn_transaction(&escrow_key, amount)
             .await
             .map_err(BurnError::SolanaError)?;
         self.pending_tables
-            .add_pending_transaction(&payer, amount, txn.get_signature())
+            .add_pending_transaction(&escrow_key, amount, txn.get_signature())
             .await?;
         self.solana
             .submit_transaction(&txn)
@@ -125,18 +125,18 @@ where
             .remove_pending_transaction(txn.get_signature())
             .await?;
         pending_tables_txn
-            .subtract_burned_amount(&payer, amount)
+            .subtract_burned_amount(&escrow_key, amount)
             .await?;
         pending_tables_txn.commit().await?;
 
         let mut balance_lock = self.balances.lock().await;
-        let payer_account = balance_lock.get_mut(&payer).unwrap();
+        let payer_account = balance_lock.get_mut(&escrow_key).unwrap();
         // Reduce the pending burn amount and the payer's balance by the amount
         // we've burned.
         payer_account.burned = payer_account.burned.saturating_sub(amount);
         payer_account.balance = payer_account.balance.saturating_sub(amount);
 
-        metrics::counter!("burned", "payer" => payer.to_string()).increment(amount);
+        metrics::counter!("burned", "payer" => escrow_key.to_string()).increment(amount);
 
         Ok(())
     }
