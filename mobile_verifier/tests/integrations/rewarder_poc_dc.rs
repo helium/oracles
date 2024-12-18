@@ -1,7 +1,10 @@
 use std::ops::Range;
 
-use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext};
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use crate::common::{
+    self, default_price_info, default_rewards_info, MockFileSinkReceiver, MockHexBoostingClient,
+    RadioRewardV2Ext, EMISSIONS_POOL_IN_BONES_24_HOURS,
+};
+use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     speedtest::CellSpeedtest,
@@ -31,7 +34,7 @@ pub mod proto {
         CoverageObjectValidity, GatewayReward, HeartbeatValidity, LocationSource,
         MobileRewardShare, RadioRewardV2, SeniorityUpdateReason,
         ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
-        ServiceProviderBoostedRewardsBannedRadioReqV1, SignalLevel,
+        ServiceProviderBoostedRewardsBannedRadioReqV1, SignalLevel, UnallocatedReward,
     };
 }
 
@@ -44,20 +47,22 @@ const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    seed_heartbeats(epoch.start, &mut txn).await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_data_sessions(epoch.start, &mut txn).await?;
+    seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
     let boosted_hexes = vec![];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+
+    let price_info = default_price_info();
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -66,15 +71,15 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            price_info
         ),
-        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, false)
+        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, true)
     );
-    if let Ok((poc_rewards, dc_rewards)) = rewards {
+    if let Ok((poc_rewards, dc_rewards, unallocated_reward)) = rewards {
         // assert poc reward outputs
-        let hotspot_1_reward = 9_784_735_514_514;
-        let hotspot_2_reward = 39_138_942_058_056;
+        let hotspot_1_reward = 9_784_735_514_513;
+        let hotspot_2_reward = 39_138_942_058_055;
         let hotspot_3_reward = 391_389_420_580;
         assert_eq!(hotspot_1_reward, poc_rewards[0].total_poc_reward());
         assert_eq!(
@@ -91,6 +96,10 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             HOTSPOT_2.to_string(),
             PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
         );
+
+        // assert the unallocated reward
+        let unallocated_reward = unallocated_reward.unwrap();
+        assert_eq!(unallocated_reward.amount, 2);
 
         // assert the boosted hexes in the radio rewards
         // boosted hexes will contain the used multiplier for each boosted hex
@@ -119,16 +128,15 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         // confirm the total rewards allocated matches expectations
         let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
         let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
-        let total = poc_sum + dc_sum;
+        let total = poc_sum + dc_sum + unallocated_reward.amount;
 
-        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
         assert_eq!(expected_sum, total);
 
         // confirm the rewarded percentage amount matches expectations
-        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-        let percent = (Decimal::from(total) / daily_total)
+        let percent = (Decimal::from(total) / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(percent, dec!(0.6));
     } else {
@@ -144,29 +152,33 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+
     let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    seed_heartbeats(epoch.start, &mut txn).await?;
-    seed_speedtests(epoch.end, &mut txn).await?;
-    seed_data_sessions(epoch.start, &mut txn).await?;
+    seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments_bad(&pool).await?;
 
     // Run rewards with no unique connections, no poc rewards, expect unallocated
     let boosted_hexes = vec![];
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+
+    let price_info = default_price_info();
+
     let (_, _rewards) = tokio::join!(
         rewarder::reward_poc_and_dc(
             &pool,
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            price_info.clone()
         ),
         // expecting NO poc rewards, expecting unallocated
         receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 0, true)
@@ -174,12 +186,12 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     // seed single unique conections report within epoch
     let mut txn = pool.begin().await?;
-    seed_unique_connections(&mut txn, &[(pubkey.clone(), 42)], &epoch).await?;
+    seed_unique_connections(&mut txn, &[(pubkey.clone(), 42)], &reward_info.epoch_period).await?;
     txn.commit().await?;
 
     // SP ban radio, unique connections should supersede banning
     let mut txn = pool.begin().await?;
-    ban_wifi_radio_for_epoch(&mut txn, pubkey.clone(), &epoch).await?;
+    ban_wifi_radio_for_epoch(&mut txn, pubkey.clone(), &reward_info.epoch_period).await?;
     txn.commit().await?;
 
     let (_, rewards) = tokio::join!(
@@ -189,13 +201,13 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
             &hex_boosting_client,
             &mobile_rewards_client,
             &speedtest_avg_client,
-            &epoch,
-            dec!(0.0001)
+            &reward_info,
+            price_info
         ),
         // expecting single radio with poc rewards, no unallocated
         receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 1, false)
     );
-    let Ok((poc_rewards, dc_rewards)) = rewards else {
+    let Ok((poc_rewards, dc_rewards, _unallocated_reward)) = rewards else {
         panic!("rewards failed");
     };
 
@@ -203,7 +215,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
     let total = poc_sum + dc_sum;
 
-    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
         .to_u64()
         .unwrap();
     assert_eq!(expected_sum, total);
@@ -216,7 +228,11 @@ async fn receive_expected_rewards_with_counts(
     expected_dc_reward_count: usize,
     expected_poc_reward_count: usize,
     expect_unallocated: bool,
-) -> anyhow::Result<(Vec<proto::RadioRewardV2>, Vec<proto::GatewayReward>)> {
+) -> anyhow::Result<(
+    Vec<proto::RadioRewardV2>,
+    Vec<proto::GatewayReward>,
+    Option<proto::UnallocatedReward>,
+)> {
     let mut dc_rewards = vec![];
     let mut poc_rewards = vec![];
 
@@ -228,14 +244,16 @@ async fn receive_expected_rewards_with_counts(
         poc_rewards.push(mobile_rewards.receive_radio_reward().await);
     }
 
-    if expect_unallocated {
-        mobile_rewards.receive_unallocated_reward().await;
-    }
+    let unallocated_reward = if expect_unallocated {
+        Some(mobile_rewards.receive_unallocated_reward().await)
+    } else {
+        None
+    };
 
     dc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
     poc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
 
-    Ok((poc_rewards, dc_rewards))
+    Ok((poc_rewards, dc_rewards, unallocated_reward))
 }
 
 async fn seed_heartbeats(
