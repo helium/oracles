@@ -1,5 +1,5 @@
 use blake3::hash;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
@@ -24,12 +24,41 @@ use iot_verifier::{
     last_beacon_reciprocity::LastBeaconReciprocity,
     last_witness::LastWitness,
     poc_report::{InsertBindings, IotStatus, Report, ReportType},
+    PriceInfo,
 };
 
+use helium_lib::token::Token;
+use iot_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use prost::Message;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{self, ops::DerefMut, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, sync::Mutex, time::timeout};
+
+pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
+pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+pub const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 89_041_095_890_411;
+
+pub fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
+    let now = Utc::now();
+    EpochRewardInfo {
+        epoch_day: 1,
+        epoch_address: EPOCH_ADDRESS.into(),
+        sub_dao_address: SUB_DAO_ADDRESS.into(),
+        epoch_period: (now - epoch_duration)..now,
+        epoch_emissions: Decimal::from(total_emissions),
+        rewards_issued_at: now,
+    }
+}
+
+pub fn default_price_info() -> PriceInfo {
+    let token = Token::Hnt;
+    let price_info = PriceInfo::new(1, token.decimals());
+    assert_eq!(price_info.price_per_token, dec!(0.00000001));
+    assert_eq!(price_info.price_per_bone, dec!(0.0000000000000001));
+    price_info
+}
 
 pub fn create_file_sink<T: file_store::traits::MsgBytes>(
 ) -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {

@@ -14,12 +14,17 @@ pub mod route_service;
 pub mod settings;
 pub mod telemetry;
 
+pub mod sub_dao_epoch_reward_info;
+pub mod sub_dao_service;
+
 pub use admin_service::AdminService;
+use chrono::{DateTime, Duration, Utc};
 pub use client::{Client, Settings as ClientSettings};
 pub use gateway_service::GatewayService;
 pub use org_service::OrgService;
 pub use route_service::RouteService;
 pub use settings::Settings;
+use std::ops::Range;
 
 use helium_crypto::PublicKey;
 use tokio::sync::broadcast;
@@ -59,4 +64,18 @@ fn enqueue_update(queue_size: usize) -> bool {
 pub fn verify_public_key(bytes: &[u8]) -> Result<PublicKey, Status> {
     PublicKey::try_from(bytes)
         .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
+}
+
+pub struct EpochInfo {
+    pub period: Range<DateTime<Utc>>,
+}
+
+impl From<u64> for EpochInfo {
+    fn from(next_reward_epoch: u64) -> Self {
+        let start_time = DateTime::<Utc>::UNIX_EPOCH + Duration::days(next_reward_epoch as i64);
+        let end_time = start_time + Duration::days(1);
+        EpochInfo {
+            period: start_time..end_time,
+        }
+    }
 }

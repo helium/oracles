@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 
-use chrono::{DateTime, Utc};
-use sqlx::{Pool, Postgres};
-
 use crate::{poc_report::Report, rewarder};
+use chrono::{DateTime, Utc};
+use iot_config::EpochInfo;
+use sqlx::{Pool, Postgres};
 
 const PACKET_COUNTER: &str = concat!(env!("CARGO_PKG_NAME"), "_", "packet");
 const NON_REWARDABLE_PACKET_COUNTER: &str =
@@ -19,9 +19,10 @@ const INVALID_WITNESS_COUNTER: &str =
 const LAST_REWARDED_END_TIME: &str = "last_rewarded_end_time";
 
 pub async fn initialize(db: &Pool<Postgres>) -> anyhow::Result<()> {
-    last_rewarded_end_time(rewarder::fetch_rewarded_timestamp(LAST_REWARDED_END_TIME, db).await?);
+    let next_reward_epoch = rewarder::next_reward_epoch(db).await?;
+    let epoch_period: EpochInfo = next_reward_epoch.into();
+    last_rewarded_end_time(epoch_period.period.start);
     num_beacons(Report::count_all_beacons(db).await?);
-
     Ok(())
 }
 
