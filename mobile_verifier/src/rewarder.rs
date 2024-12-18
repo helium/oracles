@@ -422,6 +422,8 @@ async fn reward_poc(
 
     let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
 
+    let unique_connections = unique_connections::db::get(pool, reward_period).await?;
+
     let boosted_hex_eligibility = BoostedHexEligibility::new(
         radio_threshold::verified_radio_thresholds(pool, reward_period).await?,
         sp_boosted_rewards_bans::db::get_banned_radios(
@@ -430,6 +432,7 @@ async fn reward_poc(
             reward_period.end,
         )
         .await?,
+        unique_connections.clone(),
     );
 
     let poc_banned_radios = sp_boosted_rewards_bans::db::get_banned_radios(
@@ -438,8 +441,6 @@ async fn reward_poc(
         reward_period.end,
     )
     .await?;
-
-    let unique_connections = unique_connections::db::get(pool, reward_period).await?;
 
     let coverage_shares = CoverageShares::new(
         pool,

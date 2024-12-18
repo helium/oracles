@@ -10,7 +10,7 @@ pub type UniqueConnectionCounts = HashMap<PublicKeyBinary, u64>;
 // hip-134:
 // https://github.com/helium/HIP/blob/main/0134-reward-mobile-carrier-offload-hotspots.md
 // A Hotspot serving >25 unique connections, as defined by the Carrier utlizing the hotspots for Carrier Offload, on a seven day rolling average.
-const MINIMUM_UNIQUE_CONNECTIONS: u64 = 25;
+pub const MINIMUM_UNIQUE_CONNECTIONS: u64 = 25;
 
 pub fn is_qualified(
     unique_connections: &UniqueConnectionCounts,
