@@ -11,7 +11,7 @@ use crate::{
     unique_connections::{self, UniqueConnectionCounts},
     PriceInfo,
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use coverage_point_calculator::{
     BytesPs, LocationTrust, OracleBoostingStatus, RadioType, SPBoostedRewardEligibility, Speedtest,
     SpeedtestTier,
