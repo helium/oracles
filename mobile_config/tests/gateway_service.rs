@@ -354,6 +354,62 @@ async fn gateway_info_batch_v2(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn gateway_info_v2_no_mobile_tracker_record(pool: PgPool) {
+    let admin_key = make_keypair();
+    let asset1_pubkey = make_keypair().public_key().clone();
+    let asset1_hex_idx = 631711281837647359_i64;
+    let asset2_pubkey = make_keypair().public_key().clone();
+    let asset2_hex_idx = 631711286145955327_i64;
+
+    let created_at = Utc::now() - Duration::hours(5);
+    let refreshed_at = Utc::now() - Duration::hours(3);
+
+    create_db_tables(&pool).await;
+    add_db_record(
+        &pool,
+        "asset1",
+        asset1_hex_idx,
+        "\"wifiIndoor\"",
+        asset1_pubkey.clone().into(),
+        created_at,
+        Some(refreshed_at),
+        Some(r#"{"wifiInfoV0": {"antenna": 18, "azimuth": 161, "elevation": 2, "electricalDownTilt": 3, "mechanicalDownTilt": 4}}"#)
+    )
+    .await;
+
+    add_db_record(
+        &pool,
+        "asset2",
+        asset2_hex_idx,
+        "\"wifiIndoor\"",
+        asset2_pubkey.clone().into(),
+        created_at,
+        None,
+        Some(r#"{"wifiInfoV0": {"antenna": 18, "azimuth": 161, "elevation": 2, "electricalDownTilt": 3, "mechanicalDownTilt": 4}}"#)
+    )
+    .await;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await.unwrap();
+
+    // asset 1
+    let req = make_signed_info_request(&asset1_pubkey, &admin_key);
+    let resp = client.info_v2(req).await.unwrap().into_inner();
+    let gw_info = resp.info.unwrap();
+    let pub_key = PublicKey::from_bytes(gw_info.address.clone()).unwrap();
+    assert_eq!(pub_key, asset1_pubkey.clone());
+    assert_eq!(gw_info.updated_at, refreshed_at.timestamp() as u64);
+
+    // asset 2
+    let req = make_signed_info_request(&asset2_pubkey, &admin_key);
+    let resp = client.info_v2(req).await.unwrap().into_inner();
+    let gw_info = resp.info.unwrap();
+    let pub_key = PublicKey::from_bytes(gw_info.address.clone()).unwrap();
+    assert_eq!(pub_key, asset2_pubkey.clone());
+    assert_eq!(gw_info.updated_at, created_at.timestamp() as u64);
+}
+
+#[sqlx::test]
 async fn gateway_info_v2(pool: PgPool) {
     let admin_key = make_keypair();
     let asset1_pubkey = make_keypair().public_key().clone();
@@ -374,6 +430,7 @@ async fn gateway_info_v2(pool: PgPool) {
         Some(r#"{"wifiInfoV0": {"antenna": 18, "azimuth": 161, "elevation": 2, "electricalDownTilt": 3, "mechanicalDownTilt": 4}}"#)
     )
     .await;
+    add_mobile_tracker_record(&pool, asset1_pubkey.clone().into(), updated_at).await;
 
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
@@ -388,6 +445,7 @@ async fn gateway_info_v2(pool: PgPool) {
         DeviceType::try_from(gw_info.device_type).unwrap(),
         DeviceType::WifiIndoor
     );
+    assert_eq!(gw_info.updated_at, updated_at.timestamp() as u64);
     assert_eq!(
         i64::from_str_radix(&gw_info.metadata.clone().unwrap().location, 16).unwrap(),
         asset1_hex_idx
