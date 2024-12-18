@@ -514,9 +514,8 @@ pub(crate) mod db {
                 device_type,
                 created_at: Some(created_at),
                 refreshed_at,
-                // TODO rework comment
-                // updated_at is last_changed_at field from mobile_radio_tracker table of
-                // the mobile_config database
+                // The updated_at field should be determined by considering the last_changed_at
+                // value from the mobile_radio_tracker table.
                 updated_at: None,
             })
         }
