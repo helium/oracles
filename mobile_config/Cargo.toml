@@ -22,6 +22,7 @@ file-store = { path = "../file_store" }
 futures = { workspace = true }
 futures-util = { workspace = true }
 helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
+helium-lib = { workspace = true }
 helium-proto = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
