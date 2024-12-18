@@ -88,6 +88,36 @@ mod tests {
     }
 
     #[test]
+    fn wifi_eligible_with_unique_connections_even_if_no_radio_threshold() {
+        let keypair = generate_keypair();
+
+        let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
+        let cbsd_id = "cbsd-id-1".to_string();
+
+        let mut unique_connections = UniqueConnectionCounts::default();
+        unique_connections.insert(pub_key.clone(), MINIMUM_UNIQUE_CONNECTIONS + 1);
+
+        let boosted_hex_eligibility = BoostedHexEligibility::new(
+            VerifiedRadioThresholds::default(),
+            BannedRadios::default(),
+            unique_connections,
+        );
+
+        let eligibility =
+            boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key.clone(), None);
+
+        assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
+
+        let eligibility =
+            boosted_hex_eligibility.eligibility(RadioType::OutdoorCbrs, pub_key, Some(cbsd_id));
+
+        assert_eq!(
+            SPBoostedRewardEligibility::RadioThresholdNotMet,
+            eligibility
+        );
+    }
+
+    #[test]
     fn banned() {
         let keypair = generate_keypair();
 
