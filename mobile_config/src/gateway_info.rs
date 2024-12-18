@@ -103,8 +103,10 @@ pub struct GatewayInfo {
     pub address: PublicKeyBinary,
     pub metadata: Option<GatewayMetadata>,
     pub device_type: DeviceType,
-    // None for V1
+    // None for GatewayInfoProto (V1)
+    pub updated_at: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
+    pub refreshed_at: Option<DateTime<Utc>>,
 }
 
 impl GatewayInfo {
@@ -119,8 +121,8 @@ pub enum GatewayInfoProtoParseError {
     InvalidLocation(#[from] std::num::ParseIntError),
     #[error("Invalid created_at: {0}")]
     InvalidCreatedAt(u64),
-    #[error("Invalid refreshed_at: {0}")]
-    InvalidRefreshedAt(u64),
+    #[error("Invalid updated_at: {0}")]
+    InvalidUpdatedAt(u64),
 }
 
 impl TryFrom<GatewayInfoProtoV2> for GatewayInfo {
@@ -134,6 +136,7 @@ impl TryFrom<GatewayInfoProtoV2> for GatewayInfo {
             metadata,
             device_type: _,
             created_at,
+            updated_at,
         } = info;
 
         let metadata = if let Some(metadata) = metadata {
@@ -152,11 +155,18 @@ impl TryFrom<GatewayInfoProtoV2> for GatewayInfo {
             .single()
             .ok_or(GatewayInfoProtoParseError::InvalidCreatedAt(created_at))?;
 
+        let updated_at = Utc
+            .timestamp_opt(updated_at as i64, 0)
+            .single()
+            .ok_or(GatewayInfoProtoParseError::InvalidUpdatedAt(updated_at))?;
+
         Ok(Self {
             address: address.into(),
             metadata,
             device_type: device_type_,
             created_at: Some(created_at),
+            updated_at: Some(updated_at),
+            refreshed_at: None,
         })
     }
 }
@@ -189,6 +199,8 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
             metadata,
             device_type: device_type_,
             created_at: None,
+            updated_at: None,
+            refreshed_at: None,
         })
     }
 }
@@ -264,8 +276,8 @@ pub enum GatewayInfoToProtoError {
     InvalidLocation(#[from] hextree::Error),
     #[error("created_at is None")]
     CreatedAtIsNone,
-    #[error("refreshed_at is None")]
-    RefreshedAtIsNone,
+    #[error("updated_at is None")]
+    UpdatedAtIsNone,
 }
 
 impl TryFrom<GatewayInfo> for GatewayInfoProtoV2 {
@@ -288,6 +300,10 @@ impl TryFrom<GatewayInfo> for GatewayInfoProtoV2 {
             created_at: info
                 .created_at
                 .ok_or(GatewayInfoToProtoError::CreatedAtIsNone)?
+                .timestamp() as u64,
+            updated_at: info
+                .updated_at
+                .ok_or(GatewayInfoToProtoError::UpdatedAtIsNone)?
                 .timestamp() as u64,
         })
     }
@@ -351,7 +367,7 @@ pub(crate) mod db {
     };
     use helium_crypto::PublicKeyBinary;
     use sqlx::{types::Json, PgExecutor, Row};
-    use std::{collections::HashSet, str::FromStr};
+    use std::{collections::HashMap, str::FromStr};
 
     const GET_METADATA_SQL: &str = r#"
             select kta.entity_key, infos.location::bigint, infos.device_type,
@@ -363,7 +379,10 @@ pub(crate) mod db {
     const DEVICE_TYPES_WHERE_SNIPPET: &str = " where device_type::text = any($1) ";
 
     const GET_UPDATED_RADIOS: &str =
-        "SELECT entity_key FROM mobile_radio_tracker WHERE last_changed_at >= $1";
+        "SELECT entity_key, last_changed_at FROM mobile_radio_tracker WHERE last_changed_at >= $1";
+
+    const GET_UPDATED_AT: &str =
+        "SELECT last_changed_at FROM mobile_radio_tracker WHERE entity_key = $1";
 
     lazy_static::lazy_static! {
         static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
@@ -373,21 +392,34 @@ pub(crate) mod db {
     pub async fn get_updated_radios(
         db: impl PgExecutor<'_>,
         min_updated_at: DateTime<Utc>,
-    ) -> anyhow::Result<HashSet<PublicKeyBinary>> {
+    ) -> anyhow::Result<HashMap<PublicKeyBinary, DateTime<Utc>>> {
         sqlx::query(GET_UPDATED_RADIOS)
             .bind(min_updated_at)
             .fetch(db)
             .map_err(anyhow::Error::from)
             .try_fold(
-                HashSet::new(),
-                |mut set: HashSet<PublicKeyBinary>, row| async move {
+                HashMap::new(),
+                |mut map: HashMap<PublicKeyBinary, DateTime<Utc>>, row| async move {
                     let entity_key_b = row.get::<&[u8], &str>("entity_key");
                     let entity_key = bs58::encode(entity_key_b).into_string();
-                    set.insert(PublicKeyBinary::from_str(&entity_key)?);
-                    Ok(set)
+                    let updated_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
+                    map.insert(PublicKeyBinary::from_str(&entity_key)?, updated_at);
+                    Ok(map)
                 },
             )
             .await
+    }
+
+    pub async fn get_updated_at(
+        db: impl PgExecutor<'_>,
+        address: &PublicKeyBinary,
+    ) -> anyhow::Result<Option<DateTime<Utc>>> {
+        let entity_key = bs58::decode(address.to_string()).into_vec()?;
+        sqlx::query_scalar(GET_UPDATED_AT)
+            .bind(entity_key)
+            .fetch_optional(db)
+            .await
+            .map_err(anyhow::Error::from)
     }
 
     pub async fn get_info(
@@ -471,6 +503,7 @@ pub(crate) mod db {
             )
             .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
             let created_at = row.get::<DateTime<Utc>, &str>("created_at");
+            let refreshed_at = row.get::<Option<DateTime<Utc>>, &str>("refreshed_at");
 
             Ok(Self {
                 address: PublicKeyBinary::from_str(
@@ -480,6 +513,11 @@ pub(crate) mod db {
                 metadata,
                 device_type,
                 created_at: Some(created_at),
+                refreshed_at,
+                // TODO rework comment
+                // updated_at is last_changed_at field from mobile_radio_tracker table of
+                // the mobile_config database
+                updated_at: None,
             })
         }
     }

@@ -35,6 +35,8 @@ impl GatewayInfoResolver for MockGatewayInfoResolver {
             metadata: None,
             device_type: DeviceType::Cbrs,
             created_at: None,
+            refreshed_at: None,
+            updated_at: None,
         }))
     }
 
