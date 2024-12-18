@@ -22,10 +22,9 @@ pub mod unique_connections;
 pub use settings::Settings;
 
 use async_trait::async_trait;
+use helium_lib::keypair::Pubkey;
 use rust_decimal::Decimal;
 use std::error::Error;
-
-pub const MOBILE_SUB_DAO_ONCHAIN_ADDRESS: &str = "39Lw1RH6zt8AJvKn3BTxmUDofzduCM2J3kSaGDZ8L7Sk";
 
 pub enum GatewayResolution {
     GatewayNotFound,
@@ -121,4 +120,8 @@ impl PriceInfo {
             decimals,
         }
     }
+}
+
+pub fn resolve_subdao_pubkey() -> Pubkey {
+    helium_lib::dao::SubDao::Mobile.key()
 }

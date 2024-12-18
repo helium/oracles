@@ -1,12 +1,13 @@
 use crate::{
     heartbeats::HeartbeatReward,
+    resolve_subdao_pubkey,
     reward_shares::{
         get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
     },
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
-    unique_connections, Settings, MOBILE_SUB_DAO_ONCHAIN_ADDRESS,
+    unique_connections, Settings,
 };
 use anyhow::Result;
 use helium_crypto::PublicKey;
@@ -32,8 +33,10 @@ impl Cmd {
         let reward_epoch = self.reward_epoch;
 
         let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.config_client)?;
+        let sub_dao = resolve_subdao_pubkey();
+
         let reward_info = sub_dao_rewards_client
-            .resolve_info(MOBILE_SUB_DAO_ONCHAIN_ADDRESS, reward_epoch)
+            .resolve_info(&sub_dao, reward_epoch)
             .await?
             .ok_or(anyhow::anyhow!(
                 "No reward info found for epoch {}",

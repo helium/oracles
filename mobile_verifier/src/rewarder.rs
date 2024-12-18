@@ -2,7 +2,7 @@ use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
-    radio_threshold,
+    radio_threshold, resolve_subdao_pubkey,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
@@ -11,7 +11,7 @@ use crate::{
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, subscriber_verified_mapping_event, telemetry, unique_connections,
-    PriceInfo, Settings, MOBILE_SUB_DAO_ONCHAIN_ADDRESS,
+    PriceInfo, Settings,
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -24,6 +24,7 @@ use file_store::{
 use futures_util::TryFutureExt;
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
+use helium_lib::keypair::Pubkey;
 use helium_lib::token::Token;
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
@@ -58,7 +59,7 @@ mod db;
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
 pub struct Rewarder<A, B, C> {
-    sub_dao_address: String,
+    sub_dao: Pubkey,
     pool: Pool<Postgres>,
     carrier_client: A,
     hex_service_client: B,
@@ -140,8 +141,12 @@ where
         price_tracker: PriceTracker,
         speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
     ) -> anyhow::Result<Self> {
+        // get the subdao address
+        let sub_dao = resolve_subdao_pubkey();
+        tracing::info!("Mobile SubDao pubkey: {}", sub_dao);
+
         Ok(Self {
-            sub_dao_address: MOBILE_SUB_DAO_ONCHAIN_ADDRESS.into(),
+            sub_dao,
             pool,
             carrier_client,
             hex_service_client,
@@ -246,7 +251,7 @@ where
     pub async fn reward(&self, next_reward_epoch: u64) -> anyhow::Result<()> {
         let reward_info = self
             .sub_dao_epoch_reward_client
-            .resolve_info(&self.sub_dao_address, next_reward_epoch)
+            .resolve_info(&self.sub_dao, next_reward_epoch)
             .await?
             .ok_or(anyhow::anyhow!(
                 "No reward info found for epoch {}",
