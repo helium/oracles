@@ -358,6 +358,7 @@ fn handle_updated_at(
             gateway_info.updated_at = Some(*updated_at);
             return Some(gateway_info);
         }
+        return None;
     }
     // Fallback solution #1. Try to use refreshed_at as updated_at field and check
     // min_updated_at
@@ -366,6 +367,7 @@ fn handle_updated_at(
             gateway_info.updated_at = Some(refreshed_at);
             return Some(gateway_info);
         }
+        return None;
     }
     // Fallback solution #2. Try to use created_at as updated_at field and check
     // min_updated_at
@@ -374,6 +376,7 @@ fn handle_updated_at(
             gateway_info.updated_at = Some(created_at);
             return Some(gateway_info);
         }
+        return None;
     }
     None
 }
