@@ -1,4 +1,7 @@
-use crate::common::{self, default_rewards_info, MockFileSinkReceiver};
+use crate::common::{
+    self, default_price_info, default_rewards_info, MockFileSinkReceiver,
+    EMISSIONS_POOL_IN_BONES_24_HOURS,
+};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{
@@ -7,7 +10,7 @@ use helium_proto::services::poc_lora::{
 use iot_verifier::{
     poc_report::ReportType,
     reward_share::{self, GatewayDCShare, GatewayPocShare},
-    rewarder, PriceInfo,
+    rewarder,
 };
 use prost::Message;
 use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
@@ -24,9 +27,9 @@ const HOTSPOT_4: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (iot_rewards_client, mut iot_rewards) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(89_041_095_890_411, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
-    let price_info = PriceInfo::new(1, 8);
+    let price_info = default_price_info();
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;

@@ -1,4 +1,6 @@
-use crate::common::{self, default_rewards_info, MockFileSinkReceiver};
+use crate::common::{
+    self, default_rewards_info, MockFileSinkReceiver, EMISSIONS_POOL_IN_BONES_24_HOURS,
+};
 use chrono::Duration;
 use helium_proto::services::poc_lora::{IotRewardShare, UnallocatedReward};
 use iot_verifier::{reward_share, rewarder};
@@ -10,7 +12,7 @@ use sqlx::PgPool;
 async fn test_oracles(_pool: PgPool) -> anyhow::Result<()> {
     let (iot_rewards_client, mut iot_rewards) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(89_041_095_890_411, Duration::hours(24));
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let (_, rewards) = tokio::join!(
         rewarder::reward_oracles(&iot_rewards_client, &reward_info),

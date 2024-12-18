@@ -7,8 +7,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
 use futures::future::LocalBoxFuture;
-use helium_lib::keypair::Pubkey;
-use helium_lib::token::Token;
+use helium_lib::{keypair::Pubkey, token::Token};
 use helium_proto::{
     reward_manifest::RewardData::IotRewardData,
     services::poc_lora::{

@@ -429,10 +429,13 @@ mod test {
     use super::*;
     use crate::{reward_share, PriceInfo};
     use chrono::Duration;
+    use helium_lib::token::Token;
     use iot_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 
     pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
     pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+
+    const EMISSIONS_POOL_IN_BONES_10_MINUTES: u64 = 618_340_943_683;
 
     fn reward_shares_in_dec(
         beacon_shares: Decimal,
@@ -452,7 +455,6 @@ mod test {
 
     /// returns the equiv dc value for a specified hnt bones amount
     pub fn hnt_bones_to_dc(hnt_amount: Decimal, hnt_bones_price: Decimal) -> Decimal {
-        // use the price per bones to get the value of our bones in DC
         let value = hnt_amount * hnt_bones_price;
         (value / (*DC_USD_PRICE)).round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
     }
@@ -510,6 +512,20 @@ mod test {
         assert_eq!(dec!(7_000_000_000_000), v);
     }
 
+    #[test]
+    fn test_price_conversion() {
+        let token = Token::Hnt;
+        let hnt_dollar_price = dec!(1.0);
+        let hnt_price_from_pricer = 100000000_u64;
+        let hnt_dollar_bone_price = dec!(0.00000001);
+
+        let hnt_price = PriceInfo::new(hnt_price_from_pricer, token.decimals());
+
+        assert_eq!(hnt_dollar_bone_price, hnt_price.price_per_bone);
+        assert_eq!(hnt_price_from_pricer, hnt_price.price_in_bones);
+        assert_eq!(hnt_dollar_price, hnt_price.price_per_token);
+    }
+
     #[tokio::test]
     // test reward distribution where there is a fixed dc spend per gateway
     // with the total dc spend across all gateways being significantly lower than the
@@ -537,7 +553,8 @@ mod test {
             .parse()
             .expect("failed gw6 parse");
 
-        let reward_info = default_rewards_info(618_340_943_683, Duration::minutes(10));
+        let reward_info =
+            default_rewards_info(EMISSIONS_POOL_IN_BONES_10_MINUTES, Duration::minutes(10));
         let total_data_transfer_tokens_for_period =
             get_scheduled_dc_tokens(reward_info.epoch_emissions);
         println!("total data transfer scheduled tokens: {total_data_transfer_tokens_for_period}");
@@ -751,7 +768,8 @@ mod test {
             .parse()
             .expect("failed gw6 parse");
 
-        let reward_info = default_rewards_info(618_340_943_683, Duration::minutes(10));
+        let reward_info =
+            default_rewards_info(EMISSIONS_POOL_IN_BONES_10_MINUTES, Duration::minutes(10));
         let total_data_transfer_tokens_for_period =
             get_scheduled_dc_tokens(reward_info.epoch_emissions);
         println!("total data transfer scheduled tokens: {total_data_transfer_tokens_for_period}");
@@ -950,7 +968,8 @@ mod test {
             .parse()
             .expect("failed gw6 parse");
 
-        let reward_info = default_rewards_info(618_340_943_683, Duration::minutes(10));
+        let reward_info =
+            default_rewards_info(EMISSIONS_POOL_IN_BONES_10_MINUTES, Duration::minutes(10));
         let total_data_transfer_tokens_for_period =
             get_scheduled_dc_tokens(reward_info.epoch_emissions);
         println!("total_data_transfer_tokens_for_period: {total_data_transfer_tokens_for_period}");
@@ -1130,18 +1149,5 @@ mod test {
         // it matches our original dc amount
         let hnt_dc_amt = hnt_bones_to_dc(dc_hnt_amt, hnt_bone_price);
         assert_eq!(hnt_dc_amt, dc_amount);
-    }
-
-    #[test]
-    fn test_price_conversion() {
-        let hnt_dollar_price = dec!(1.0);
-        let hnt_dollar_bone_price = dec!(0.00000001);
-        let hnt_price_from_pricer = 100000000_u64;
-        let pricer_decimals = 8;
-        let hnt_price = PriceInfo::new(hnt_price_from_pricer, pricer_decimals);
-
-        assert_eq!(hnt_dollar_bone_price, hnt_price.price_per_bone);
-        assert_eq!(hnt_price_from_pricer, hnt_price.price_in_bones);
-        assert_eq!(hnt_dollar_price, hnt_price.price_per_token);
     }
 }
