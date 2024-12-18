@@ -4373,6 +4373,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
+ "helium-lib",
  "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "hextree",
  "http 0.2.11",
