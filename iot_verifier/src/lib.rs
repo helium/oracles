@@ -21,10 +21,9 @@ pub mod telemetry;
 pub mod tx_scaler;
 pub mod witness_updater;
 
+use helium_lib::keypair::Pubkey;
 use rust_decimal::Decimal;
 pub use settings::Settings;
-
-pub const IOT_SUB_DAO_ONCHAIN_ADDRESS: &str = "Gm9xDCJawDEKDrrQW6haw94gABaYzQwCq4ZQU8h8bd22";
 
 #[derive(Clone, Debug)]
 pub struct PriceInfo {
@@ -46,4 +45,8 @@ impl PriceInfo {
             decimals,
         }
     }
+}
+
+pub fn resolve_subdao_pubkey() -> Pubkey {
+    helium_lib::dao::SubDao::Iot.key()
 }
