@@ -75,6 +75,7 @@ impl SubDaoEpochRewardInfoResolver for SubDaoClient {
             Err(status) if status.code() == tonic::Code::NotFound => None,
             Err(status) => Err(status)?,
         };
+        tracing::debug!(?response, "fetched subdao epoch info");
         Ok(response)
     }
 }
