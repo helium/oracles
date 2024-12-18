@@ -103,9 +103,11 @@ pub struct GatewayInfo {
     pub address: PublicKeyBinary,
     pub metadata: Option<GatewayMetadata>,
     pub device_type: DeviceType,
-    // None for GatewayInfoProto (V1)
-    pub updated_at: Option<DateTime<Utc>>,
+    // Optional fields are None for GatewayInfoProto (V1)
     pub created_at: Option<DateTime<Utc>>,
+    // updated_at refers to the last time the data was actually changed.
+    pub updated_at: Option<DateTime<Utc>>,
+    // refreshed_at indicates the last time the chain was consulted, regardless of data changes.
     pub refreshed_at: Option<DateTime<Utc>>,
 }
 
