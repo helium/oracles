@@ -1615,7 +1615,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#57e59d25ca7ae2e7ae84174842aaa50fbdd5ca74"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#572b06ee958160d7055a77d958abc18dc5a1d660"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -1625,7 +1625,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -3821,7 +3821,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#57e59d25ca7ae2e7ae84174842aaa50fbdd5ca74"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#572b06ee958160d7055a77d958abc18dc5a1d660"
 dependencies = [
  "bytes",
  "prost",
@@ -3837,7 +3837,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#16d6838b88a35ac88797d0c7eb14a932b214a856"
+source = "git+https://github.com/helium/proto?branch=master#b4c8c8f47dfff38a2ff1b7fe14e1b2a1beea651c"
 dependencies = [
  "bytes",
  "prost",
@@ -10008,7 +10008,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.9.9",
  "thiserror",
  "twox-hash",
  "xorf",
