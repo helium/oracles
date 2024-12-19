@@ -72,11 +72,11 @@ impl MobileRadio {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-struct TrackedMobileRadio {
-    entity_key: EntityKey,
-    hash: String,
-    last_changed_at: DateTime<Utc>,
-    last_checked_at: DateTime<Utc>,
+pub struct TrackedMobileRadio {
+    pub entity_key: EntityKey,
+    pub hash: String,
+    pub last_changed_at: DateTime<Utc>,
+    pub last_checked_at: DateTime<Utc>,
 }
 
 impl TrackedMobileRadio {
@@ -152,7 +152,7 @@ impl MobileRadioTracker {
     }
 }
 
-async fn track_changes(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow::Result<()> {
+pub async fn track_changes(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow::Result<()> {
     tracing::info!("looking for changes to radios");
     let tracked_radios = get_tracked_radios(pool).await?;
     let all_mobile_radios = get_all_mobile_radios(metadata);
@@ -183,7 +183,7 @@ async fn identify_changes(
         .await
 }
 
-async fn get_tracked_radios(
+pub async fn get_tracked_radios(
     pool: &Pool<Postgres>,
 ) -> anyhow::Result<HashMap<EntityKey, TrackedMobileRadio>> {
     sqlx::query_as::<_, TrackedMobileRadio>(
@@ -208,8 +208,21 @@ async fn get_tracked_radios(
 fn get_all_mobile_radios(metadata: &Pool<Postgres>) -> impl Stream<Item = MobileRadio> + '_ {
     sqlx::query_as::<_, MobileRadio>(
         r#"
+        WITH unique_entity_keys AS (
+            SELECT
+                kta.entity_key as entity_key,
+                kta.asset as asset,
+                MAX(mhi.refreshed_at) AS refreshed_at
+            FROM key_to_assets kta
+            INNER JOIN mobile_hotspot_infos mhi
+                ON kta.asset = mhi.asset
+            WHERE kta.entity_key IS NOT NULL
+              AND mhi.refreshed_at IS NOT NULL
+            GROUP BY kta.entity_key, kta.asset
+        )
+
         SELECT
-        	kta.entity_key,
+        	uek.entity_key,
         	mhi.refreshed_at,
         	mhi.location::bigint,
         	mhi.is_full_hotspot::int,
@@ -218,11 +231,9 @@ fn get_all_mobile_radios(metadata: &Pool<Postgres>) -> impl Stream<Item = Mobile
         	mhi.dc_onboarding_fee_paid::bigint,
         	mhi.device_type::text,
         	mhi.deployment_info::text
-        FROM key_to_assets kta
+        FROM unique_entity_keys uek
         INNER JOIN mobile_hotspot_infos mhi ON
-        	kta.asset = mhi.asset
-        WHERE kta.entity_key IS NOT NULL
-        	AND mhi.refreshed_at IS NOT NULL
+        	uek.asset = mhi.asset and mhi.refreshed_at = uek.refreshed_at
     "#,
     )
     .fetch(metadata)
