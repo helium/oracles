@@ -1,9 +1,9 @@
 use std::vec;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
 
-use helium_crypto::{KeyTag, Keypair, PublicKey, PublicKeyBinary, Sign};
+use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::services::mobile_config::{
     self as proto, gateway_metadata_v2::DeploymentInfo, DeviceType, GatewayClient,
     GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamResV2,
@@ -18,7 +18,7 @@ use sqlx::PgPool;
 use tokio::net::TcpListener;
 use tonic::{transport, Code};
 
-mod common;
+pub mod common;
 use common::*;
 
 #[sqlx::test]

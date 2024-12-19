@@ -3,7 +3,7 @@ use helium_crypto::PublicKeyBinary;
 use mobile_config::mobile_radio_tracker::{get_tracked_radios, track_changes};
 use sqlx::PgPool;
 
-mod common;
+pub mod common;
 use common::*;
 
 #[sqlx::test]
