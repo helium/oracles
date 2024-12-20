@@ -49,6 +49,9 @@ pub enum SolanaRpcError {
     FailedToReadKeypairError(String),
     #[error("crypto error: {0}")]
     Crypto(#[from] helium_crypto::Error),
+    // TODO: Remove when fully integrated with helium-lib
+    #[error("Test Error")]
+    Test(String),
 }
 
 impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
