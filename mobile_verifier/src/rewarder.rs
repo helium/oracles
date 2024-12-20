@@ -251,7 +251,7 @@ where
     pub async fn reward(&self, next_reward_epoch: u64) -> anyhow::Result<()> {
         let reward_info = self
             .sub_dao_epoch_reward_client
-            .resolve_info(&self.sub_dao, next_reward_epoch)
+            .resolve_info(&self.sub_dao.to_string(), next_reward_epoch)
             .await?
             .ok_or(anyhow::anyhow!(
                 "No reward info found for epoch {}",

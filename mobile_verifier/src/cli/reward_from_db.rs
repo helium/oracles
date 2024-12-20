@@ -36,7 +36,7 @@ impl Cmd {
         let sub_dao = resolve_subdao_pubkey();
 
         let reward_info = sub_dao_rewards_client
-            .resolve_info(&sub_dao, reward_epoch)
+            .resolve_info(&sub_dao.to_string(), reward_epoch)
             .await?
             .ok_or(anyhow::anyhow!(
                 "No reward info found for epoch {}",
