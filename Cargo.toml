@@ -134,4 +134,3 @@ sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df65
 #[patch.'https://github.com/helium/proto']
 # helium-proto = { path = "../proto" }
 # beacon = { path = "../proto/beacon" }
-

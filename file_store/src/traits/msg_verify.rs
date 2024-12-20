@@ -49,6 +49,8 @@ impl_msg_verify!(iot_config::OrgDisableResV1, signature);
 impl_msg_verify!(iot_config::OrgEnableResV1, signature);
 impl_msg_verify!(iot_config::OrgResV1, signature);
 impl_msg_verify!(iot_config::OrgListResV1, signature);
+impl_msg_verify!(iot_config::OrgResV2, signature);
+impl_msg_verify!(iot_config::OrgListResV2, signature);
 impl_msg_verify!(iot_config::RouteStreamReqV1, signature);
 impl_msg_verify!(iot_config::RouteListReqV1, signature);
 impl_msg_verify!(iot_config::RouteGetReqV1, signature);
