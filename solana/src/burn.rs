@@ -24,10 +24,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use std::{collections::HashMap, str::FromStr};
-use std::{
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
 #[async_trait]
