@@ -30,7 +30,7 @@ pub struct Verifier<D, C> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum VerificationError<VPE, IPE> {
+pub enum VerificationError {
     #[error("Debit error: {0}")]
     DebitError(#[from] SolanaRpcError),
     #[error("Config server error: {0}")]
@@ -38,9 +38,9 @@ pub enum VerificationError<VPE, IPE> {
     #[error("Burn error: {0}")]
     BurnError(#[from] sqlx::Error),
     #[error("Valid packet writer error: {0}")]
-    ValidPacketWriterError(VPE),
+    ValidPacketWriterError(file_store::Error),
     #[error("Invalid packet writer error: {0}")]
-    InvalidPacketWriterError(IPE),
+    InvalidPacketWriterError(file_store::Error),
 }
 
 impl<D, C> Verifier<D, C>
@@ -56,7 +56,7 @@ where
         reports: R,
         mut valid_packets: VP,
         mut invalid_packets: IP,
-    ) -> Result<(), VerificationError<VP::Error, IP::Error>>
+    ) -> Result<(), VerificationError>
     where
         B: AddPendingBurn,
         R: Stream<Item = PacketRouterPacketReport>,
@@ -353,19 +353,15 @@ where
 
 #[async_trait]
 pub trait PacketWriter<T> {
-    type Error;
-
     // The redundant &mut receivers we see for PacketWriter and Burner are so
     // that we are able to resolve to either a mutable or immutable ref without
     // having to take ownership of the mutable reference.
-    async fn write(&mut self, packet: T) -> Result<(), Self::Error>;
+    async fn write(&mut self, packet: T) -> Result<(), file_store::Error>;
 }
 
 #[async_trait]
 impl<T: MsgBytes + Send + Sync + 'static> PacketWriter<T> for &'_ FileSinkClient<T> {
-    type Error = file_store::Error;
-
-    async fn write(&mut self, packet: T) -> Result<(), Self::Error> {
+    async fn write(&mut self, packet: T) -> Result<(), file_store::Error> {
         (*self).write(packet, []).await?;
         Ok(())
     }
@@ -373,9 +369,7 @@ impl<T: MsgBytes + Send + Sync + 'static> PacketWriter<T> for &'_ FileSinkClient
 
 #[async_trait]
 impl<T: Send> PacketWriter<T> for &'_ mut Vec<T> {
-    type Error = ();
-
-    async fn write(&mut self, packet: T) -> Result<(), ()> {
+    async fn write(&mut self, packet: T) -> Result<(), file_store::Error> {
         (*self).push(packet);
         Ok(())
     }
