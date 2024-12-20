@@ -75,8 +75,7 @@ where
             let payer = self
                 .config_server
                 .fetch_org(report.oui, &mut org_cache)
-                .await
-                .map_err(VerificationError::ConfigError)?;
+                .await?;
 
             if let Some(remaining_balance) = self
                 .debiter
@@ -85,8 +84,7 @@ where
             {
                 pending_burns
                     .add_burned_amount(&payer, debit_amount)
-                    .await
-                    .map_err(VerificationError::BurnError)?;
+                    .await?;
 
                 valid_packets
                     .write(ValidPacket {
@@ -100,10 +98,7 @@ where
                     .map_err(VerificationError::ValidPacketWriterError)?;
 
                 if remaining_balance < minimum_allowed_balance {
-                    self.config_server
-                        .disable_org(report.oui)
-                        .await
-                        .map_err(VerificationError::ConfigError)?;
+                    self.config_server.disable_org(report.oui).await?;
                 }
             } else {
                 invalid_packets
@@ -115,10 +110,8 @@ where
                     })
                     .await
                     .map_err(VerificationError::InvalidPacketWriterError)?;
-                self.config_server
-                    .disable_org(report.oui)
-                    .await
-                    .map_err(VerificationError::ConfigError)?;
+
+                self.config_server.disable_org(report.oui).await?;
             }
         }
 
