@@ -23,7 +23,6 @@ use solana_sdk::{
     signer::Signer,
     transaction::Transaction,
 };
-use std::convert::Infallible;
 use std::{collections::HashMap, str::FromStr};
 use std::{
     sync::Arc,
@@ -33,20 +32,22 @@ use tokio::sync::Mutex;
 
 #[async_trait]
 pub trait SolanaNetwork: Clone + Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
     type Transaction: GetSignature + Send + Sync + 'static;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error>;
+    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError>;
 
     async fn make_burn_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<Self::Transaction, Self::Error>;
+    ) -> Result<Self::Transaction, SolanaRpcError>;
 
-    async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error>;
+    async fn submit_transaction(
+        &self,
+        transaction: &Self::Transaction,
+    ) -> Result<(), SolanaRpcError>;
 
-    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error>;
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError>;
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,10 +115,9 @@ impl SolanaRpc {
 
 #[async_trait]
 impl SolanaNetwork for SolanaRpc {
-    type Error = SolanaRpcError;
     type Transaction = Transaction;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
         let (escrow_account, _) = Pubkey::find_program_address(
             &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
@@ -154,7 +154,7 @@ impl SolanaNetwork for SolanaRpc {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<Self::Transaction, Self::Error> {
+    ) -> Result<Self::Transaction, SolanaRpcError> {
         // Fetch the sub dao epoch info:
         const EPOCH_LENGTH: u64 = 60 * 60 * 24;
         let epoch = SystemTime::now()
@@ -253,7 +253,7 @@ impl SolanaNetwork for SolanaRpc {
         ))
     }
 
-    async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), Self::Error> {
+    async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), SolanaRpcError> {
         let config = solana_client::rpc_config::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
@@ -283,7 +283,7 @@ impl SolanaNetwork for SolanaRpc {
         }
     }
 
-    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
         Ok(matches!(
             self.provider
                 .get_signature_status_with_commitment_and_history(
@@ -431,10 +431,9 @@ impl GetSignature for PossibleTransaction {
 
 #[async_trait]
 impl SolanaNetwork for Option<Arc<SolanaRpc>> {
-    type Error = SolanaRpcError;
     type Transaction = PossibleTransaction;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         if let Some(ref rpc) = self {
             rpc.payer_balance(payer).await
         } else {
@@ -446,7 +445,7 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<Self::Transaction, Self::Error> {
+    ) -> Result<Self::Transaction, SolanaRpcError> {
         if let Some(ref rpc) = self {
             Ok(PossibleTransaction::Transaction(
                 rpc.make_burn_transaction(payer, amount).await?,
@@ -456,7 +455,10 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         }
     }
 
-    async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error> {
+    async fn submit_transaction(
+        &self,
+        transaction: &Self::Transaction,
+    ) -> Result<(), SolanaRpcError> {
         match (self, transaction) {
             (Some(ref rpc), PossibleTransaction::Transaction(ref txn)) => {
                 rpc.submit_transaction(txn).await?
@@ -467,7 +469,7 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         Ok(())
     }
 
-    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
         if let Some(ref rpc) = self {
             rpc.confirm_transaction(txn).await
         } else {
@@ -490,10 +492,9 @@ impl GetSignature for MockTransaction {
 
 #[async_trait]
 impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
-    type Error = Infallible;
     type Transaction = MockTransaction;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         Ok(*self.lock().await.get(payer).unwrap())
     }
 
@@ -501,7 +502,7 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<MockTransaction, Self::Error> {
+    ) -> Result<MockTransaction, SolanaRpcError> {
         Ok(MockTransaction {
             signature: Signature::new_unique(),
             payer: payer.clone(),
@@ -509,12 +510,12 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         })
     }
 
-    async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), Self::Error> {
+    async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), SolanaRpcError> {
         *self.lock().await.get_mut(&txn.payer).unwrap() -= txn.amount;
         Ok(())
     }
 
-    async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, Self::Error> {
+    async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, SolanaRpcError> {
         Ok(true)
     }
 }

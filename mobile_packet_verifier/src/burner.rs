@@ -3,7 +3,7 @@ use std::time::Duration;
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::{burn::SolanaNetwork, GetSignature};
+use solana::{burn::SolanaNetwork, GetSignature, SolanaRpcError};
 use sqlx::{Pool, Postgres};
 use tracing::Instrument;
 
@@ -90,7 +90,7 @@ where
     async fn transaction_confirmation_check(
         &self,
         pool: &Pool<Postgres>,
-        err: S::Error,
+        err: SolanaRpcError,
         txn: S::Transaction,
         payer: PublicKeyBinary,
         total_dcs: u64,

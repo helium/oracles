@@ -5,7 +5,7 @@ use crate::{
     },
 };
 use futures::{future::LocalBoxFuture, TryFutureExt};
-use solana::{burn::SolanaNetwork, GetSignature};
+use solana::{burn::SolanaNetwork, GetSignature, SolanaRpcError};
 use std::time::Duration;
 use task_manager::ManagedTask;
 use tokio::time::{self, MissedTickBehavior};
@@ -69,7 +69,10 @@ where
     P: PendingTables + Send + Sync + 'static,
     S: SolanaNetwork,
 {
-    pub async fn run(mut self, shutdown: triggered::Listener) -> Result<(), BurnError<S::Error>> {
+    pub async fn run(
+        mut self,
+        shutdown: triggered::Listener,
+    ) -> Result<(), BurnError<SolanaRpcError>> {
         tracing::info!("Starting burner");
         let mut burn_timer = time::interval(self.burn_period);
         burn_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -94,7 +97,7 @@ where
         Ok(())
     }
 
-    pub async fn burn(&mut self) -> Result<(), BurnError<S::Error>> {
+    pub async fn burn(&mut self) -> Result<(), BurnError<SolanaRpcError>> {
         // Fetch the next payer and amount that should be burn. If no such burn
         // exists, perform no action.
         let Some(Burn { payer, amount }) = self.pending_tables.fetch_next_burn().await? else {

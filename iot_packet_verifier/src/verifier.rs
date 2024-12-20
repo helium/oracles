@@ -12,7 +12,7 @@ use helium_proto::services::{
     router::packet_router_packet_report_v1::PacketType,
 };
 use iot_config::client::org_client::Orgs;
-use solana::burn::SolanaNetwork;
+use solana::{burn::SolanaNetwork, SolanaRpcError};
 use std::{
     collections::{hash_map::Entry, HashMap},
     convert::Infallible,
@@ -203,7 +203,7 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
         minimum_allowed_balance: u64,
         monitor_period: Duration,
         shutdown: triggered::Listener,
-    ) -> Result<(), MonitorError<S::Error, Self::Error>>
+    ) -> Result<(), MonitorError<SolanaRpcError, Self::Error>>
     where
         S: SolanaNetwork,
         B: BalanceStore,

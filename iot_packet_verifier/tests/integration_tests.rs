@@ -18,7 +18,7 @@ use iot_packet_verifier::{
 };
 use solana::{
     burn::{MockTransaction, SolanaNetwork},
-    GetSignature,
+    GetSignature, SolanaRpcError,
 };
 use solana_sdk::signature::Signature;
 use sqlx::PgPool;
@@ -593,10 +593,9 @@ impl MockSolanaNetwork {
 
 #[async_trait]
 impl SolanaNetwork for MockSolanaNetwork {
-    type Error = std::convert::Infallible;
     type Transaction = MockTransaction;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         self.ledger.payer_balance(payer).await
     }
 
@@ -604,16 +603,16 @@ impl SolanaNetwork for MockSolanaNetwork {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<MockTransaction, Self::Error> {
+    ) -> Result<MockTransaction, SolanaRpcError> {
         self.ledger.make_burn_transaction(payer, amount).await
     }
 
-    async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), Self::Error> {
+    async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), SolanaRpcError> {
         self.confirmed.lock().await.insert(txn.signature);
         self.ledger.submit_transaction(txn).await
     }
 
-    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
         Ok(self.confirmed.lock().await.contains(txn))
     }
 }
