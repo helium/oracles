@@ -45,20 +45,20 @@ pub trait PendingTables {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum ConfirmPendingError<S> {
+pub enum ConfirmPendingError {
     #[error("Sqlx error: {0}")]
     SqlxError(#[from] sqlx::Error),
     #[error("Chrono error: {0}")]
     ChronoError(#[from] chrono::OutOfRangeError),
     #[error("Solana error: {0}")]
-    SolanaError(S),
+    SolanaError(#[from] SolanaRpcError),
 }
 
 pub async fn confirm_pending_txns<S>(
     pending_tables: &impl PendingTables,
     solana: &S,
     balances: &BalanceStore,
-) -> Result<(), ConfirmPendingError<SolanaRpcError>>
+) -> Result<(), ConfirmPendingError>
 where
     S: SolanaNetwork,
 {
