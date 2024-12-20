@@ -20,7 +20,7 @@ pub struct MockTransaction {
 
 pub struct MockSolanaConnection {
     submitted: Mutex<Vec<MockTransaction>>,
-    error: Option<String>,
+    error: Option<tonic::Status>,
 }
 
 impl MockSolanaConnection {
@@ -34,7 +34,7 @@ impl MockSolanaConnection {
     fn with_error(error: String) -> Self {
         Self {
             submitted: Mutex::new(vec![]),
-            error: Some(error),
+            error: Some(tonic::Status::internal(error)),
         }
     }
 }
@@ -58,7 +58,11 @@ impl SolanaNetwork for MockSolanaConnection {
 
         self.error
             .as_ref()
-            .map(|err| Err(SolanaRpcError::Test(err.to_owned())))
+            .map(|err| {
+                Err(SolanaRpcError::HeliumLib(solana::error::Error::Grpc(
+                    err.to_owned(),
+                )))
+            })
             .unwrap_or(Ok(()))
     }
 
