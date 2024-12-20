@@ -76,9 +76,9 @@ where
 
         loop {
             tokio::select! {
-                    biased;
-                    _ = shutdown.clone() => break,
-                    _ = burn_timer.tick() => {
+                biased;
+                _ = shutdown.clone() => break,
+                _ = burn_timer.tick() => {
                     match self.burn().await {
                         Ok(()) => continue,
                         Err(err) => {
