@@ -14,7 +14,7 @@ use iot_packet_verifier::{
     balances::{BalanceCache, PayerAccount},
     burner::Burner,
     pending::{confirm_pending_txns, AddPendingBurn, Burn, MockPendingTables, PendingTables},
-    verifier::{payload_size_to_dc, ConfigServer, Org, Verifier, BYTES_PER_DC},
+    verifier::{payload_size_to_dc, ConfigServer, ConfigServerError, Org, Verifier, BYTES_PER_DC},
 };
 use solana::{
     burn::{MockTransaction, SolanaNetwork},
@@ -53,27 +53,25 @@ impl MockConfigServer {
 
 #[async_trait]
 impl ConfigServer for MockConfigServer {
-    type Error = ();
-
     async fn fetch_org(
         &self,
         oui: u64,
         _cache: &mut HashMap<u64, PublicKeyBinary>,
-    ) -> Result<PublicKeyBinary, ()> {
+    ) -> Result<PublicKeyBinary, ConfigServerError> {
         Ok(self.payers.lock().await.get(&oui).unwrap().payer.clone())
     }
 
-    async fn disable_org(&self, oui: u64) -> Result<(), ()> {
+    async fn disable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         self.payers.lock().await.get_mut(&oui).unwrap().enabled = false;
         Ok(())
     }
 
-    async fn enable_org(&self, oui: u64) -> Result<(), ()> {
+    async fn enable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         self.payers.lock().await.get_mut(&oui).unwrap().enabled = true;
         Ok(())
     }
 
-    async fn list_orgs(&self) -> Result<Vec<Org>, ()> {
+    async fn list_orgs(&self) -> Result<Vec<Org>, ConfigServerError> {
         Ok(self
             .payers
             .lock()

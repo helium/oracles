@@ -30,11 +30,11 @@ pub struct Verifier<D, C> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum VerificationError<CE, VPE, IPE> {
+pub enum VerificationError<VPE, IPE> {
     #[error("Debit error: {0}")]
     DebitError(#[from] SolanaRpcError),
     #[error("Config server error: {0}")]
-    ConfigError(CE),
+    ConfigError(#[from] ConfigServerError),
     #[error("Burn error: {0}")]
     BurnError(#[from] sqlx::Error),
     #[error("Valid packet writer error: {0}")]
@@ -56,7 +56,7 @@ where
         reports: R,
         mut valid_packets: VP,
         mut invalid_packets: IP,
-    ) -> Result<(), VerificationError<C::Error, VP::Error, IP::Error>>
+    ) -> Result<(), VerificationError<VP::Error, IP::Error>>
     where
         B: AddPendingBurn,
         R: Stream<Item = PacketRouterPacketReport>,
@@ -176,19 +176,17 @@ pub struct Org {
 
 #[async_trait]
 pub trait ConfigServer: Sized + Send + Sync + 'static {
-    type Error: Send + Sync + 'static;
-
     async fn fetch_org(
         &self,
         oui: u64,
         cache: &mut HashMap<u64, PublicKeyBinary>,
-    ) -> Result<PublicKeyBinary, Self::Error>;
+    ) -> Result<PublicKeyBinary, ConfigServerError>;
 
-    async fn disable_org(&self, oui: u64) -> Result<(), Self::Error>;
+    async fn disable_org(&self, oui: u64) -> Result<(), ConfigServerError>;
 
-    async fn enable_org(&self, oui: u64) -> Result<(), Self::Error>;
+    async fn enable_org(&self, oui: u64) -> Result<(), ConfigServerError>;
 
-    async fn list_orgs(&self) -> Result<Vec<Org>, Self::Error>;
+    async fn list_orgs(&self) -> Result<Vec<Org>, ConfigServerError>;
 
     async fn monitor_funds<S, B>(
         self,
@@ -197,7 +195,7 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
         minimum_allowed_balance: u64,
         monitor_period: Duration,
         shutdown: triggered::Listener,
-    ) -> Result<(), MonitorError<SolanaRpcError, Self::Error>>
+    ) -> Result<(), MonitorError<SolanaRpcError, ConfigServerError>>
     where
         S: SolanaNetwork,
         B: BalanceStore,
@@ -297,13 +295,11 @@ impl<O> ConfigServer for Arc<Mutex<CachedOrgClient<O>>>
 where
     O: Orgs,
 {
-    type Error = ConfigServerError;
-
     async fn fetch_org(
         &self,
         oui: u64,
         oui_cache: &mut HashMap<u64, PublicKeyBinary>,
-    ) -> Result<PublicKeyBinary, Self::Error> {
+    ) -> Result<PublicKeyBinary, ConfigServerError> {
         if let Entry::Vacant(e) = oui_cache.entry(oui) {
             let pubkey = PublicKeyBinary::from(
                 self.lock()
@@ -320,7 +316,7 @@ where
         Ok(oui_cache.get(&oui).unwrap().clone())
     }
 
-    async fn disable_org(&self, oui: u64) -> Result<(), Self::Error> {
+    async fn disable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         let mut cached_client = self.lock().await;
         if *cached_client.locked_cache.entry(oui).or_insert(true) {
             cached_client.orgs.disable(oui).await?;
@@ -329,7 +325,7 @@ where
         Ok(())
     }
 
-    async fn enable_org(&self, oui: u64) -> Result<(), Self::Error> {
+    async fn enable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         let mut cached_client = self.lock().await;
         if !*cached_client.locked_cache.entry(oui).or_insert(false) {
             cached_client.orgs.enable(oui).await?;
@@ -338,7 +334,7 @@ where
         Ok(())
     }
 
-    async fn list_orgs(&self) -> Result<Vec<Org>, Self::Error> {
+    async fn list_orgs(&self) -> Result<Vec<Org>, ConfigServerError> {
         Ok(self
             .lock()
             .await
