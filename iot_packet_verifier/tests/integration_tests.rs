@@ -202,7 +202,7 @@ async fn test_config_unlocking() {
     verifier
         .verify(
             1,
-            balances.clone(),
+            &mut balances.clone(),
             stream::iter(vec![
                 packet_report(0, 0, 24, vec![1], false),
                 packet_report(0, 1, 48, vec![2], false),
@@ -260,7 +260,7 @@ async fn test_config_unlocking() {
     verifier
         .verify(
             1,
-            balances.clone(),
+            &mut balances.clone(),
             stream::iter(vec![
                 packet_report(0, 0, 24, vec![1], false),
                 packet_report(0, 1, 48, vec![2], false),
@@ -317,7 +317,7 @@ async fn test_verifier_free_packets() {
     verifier
         .verify(
             1,
-            balances.clone(),
+            &mut balances.clone(),
             stream::iter(packets),
             &mut valid_packets,
             &mut invalid_packets,
@@ -391,7 +391,7 @@ async fn test_verifier() {
     verifier
         .verify(
             1,
-            balances.clone(),
+            &mut balances.clone(),
             stream::iter(packets),
             &mut valid_packets,
             &mut invalid_packets,
@@ -472,7 +472,7 @@ async fn test_end_to_end() {
     verifier
         .verify(
             1,
-            pending_burns.clone(),
+            &mut pending_burns.clone(),
             stream::iter(vec![
                 packet_report(0, 0, BYTES_PER_DC as u32, vec![1], false),
                 packet_report(0, 1, BYTES_PER_DC as u32, vec![2], false),
@@ -552,7 +552,7 @@ async fn test_end_to_end() {
     verifier
         .verify(
             1,
-            pending_burns.clone(),
+            &mut pending_burns.clone(),
             stream::iter(vec![packet_report(
                 0,
                 4,
@@ -641,7 +641,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Add both the burn amounts to the pending burns table
     {
         let mut transaction = pool.begin().await.unwrap();
-        (&mut transaction)
+        transaction
             .add_burned_amount(&payer, CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();

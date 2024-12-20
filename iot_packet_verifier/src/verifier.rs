@@ -49,20 +49,14 @@ where
     C: ConfigServer,
 {
     /// Verify a stream of packet reports. Writes out `valid_packets` and `invalid_packets`.
-    pub async fn verify<B, R, VP, IP>(
+    pub async fn verify(
         &mut self,
         minimum_allowed_balance: u64,
-        mut pending_burns: B,
-        reports: R,
-        mut valid_packets: VP,
-        mut invalid_packets: IP,
-    ) -> Result<(), VerificationError>
-    where
-        B: AddPendingBurn,
-        R: Stream<Item = PacketRouterPacketReport>,
-        VP: PacketWriter<ValidPacket>,
-        IP: PacketWriter<InvalidPacket>,
-    {
+        pending_burns: &mut impl AddPendingBurn,
+        reports: impl Stream<Item = PacketRouterPacketReport>,
+        valid_packets: &mut impl PacketWriter<ValidPacket>,
+        invalid_packets: &mut impl PacketWriter<InvalidPacket>,
+    ) -> Result<(), VerificationError> {
         let mut org_cache = HashMap::<u64, PublicKeyBinary>::new();
 
         tokio::pin!(reports);
@@ -360,7 +354,7 @@ pub trait PacketWriter<T> {
 }
 
 #[async_trait]
-impl<T: MsgBytes + Send + Sync + 'static> PacketWriter<T> for &'_ FileSinkClient<T> {
+impl<T: MsgBytes + Send + Sync + 'static> PacketWriter<T> for FileSinkClient<T> {
     async fn write(&mut self, packet: T) -> Result<(), file_store::Error> {
         (*self).write(packet, []).await?;
         Ok(())
@@ -368,7 +362,7 @@ impl<T: MsgBytes + Send + Sync + 'static> PacketWriter<T> for &'_ FileSinkClient
 }
 
 #[async_trait]
-impl<T: Send> PacketWriter<T> for &'_ mut Vec<T> {
+impl<T: Send> PacketWriter<T> for Vec<T> {
     async fn write(&mut self, packet: T) -> Result<(), file_store::Error> {
         (*self).push(packet);
         Ok(())
