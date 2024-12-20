@@ -15,7 +15,6 @@ use iot_config::client::org_client::Orgs;
 use solana::{burn::SolanaNetwork, SolanaRpcError};
 use std::{
     collections::{hash_map::Entry, HashMap},
-    convert::Infallible,
     fmt::Debug,
     sync::Arc,
 };
@@ -31,9 +30,9 @@ pub struct Verifier<D, C> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum VerificationError<DE, CE, VPE, IPE> {
+pub enum VerificationError<CE, VPE, IPE> {
     #[error("Debit error: {0}")]
-    DebitError(DE),
+    DebitError(#[from] SolanaRpcError),
     #[error("Config server error: {0}")]
     ConfigError(CE),
     #[error("Burn error: {0}")]
@@ -57,7 +56,7 @@ where
         reports: R,
         mut valid_packets: VP,
         mut invalid_packets: IP,
-    ) -> Result<(), VerificationError<D::Error, C::Error, VP::Error, IP::Error>>
+    ) -> Result<(), VerificationError<C::Error, VP::Error, IP::Error>>
     where
         B: AddPendingBurn,
         R: Stream<Item = PacketRouterPacketReport>,
@@ -88,8 +87,7 @@ where
             if let Some(remaining_balance) = self
                 .debiter
                 .debit_if_sufficient(&payer, debit_amount, minimum_allowed_balance)
-                .await
-                .map_err(VerificationError::DebitError)?
+                .await?
             {
                 pending_burns
                     .add_burned_amount(&payer, debit_amount)
@@ -143,8 +141,6 @@ pub fn payload_size_to_dc(payload_size: u64) -> u64 {
 
 #[async_trait]
 pub trait Debiter {
-    type Error;
-
     /// Debit the balance from the account. If the debit was successful,
     /// return the remaining amount.
     async fn debit_if_sufficient(
@@ -152,19 +148,17 @@ pub trait Debiter {
         payer: &PublicKeyBinary,
         amount: u64,
         trigger_balance_check_threshold: u64,
-    ) -> Result<Option<u64>, Self::Error>;
+    ) -> Result<Option<u64>, SolanaRpcError>;
 }
 
 #[async_trait]
 impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
-    type Error = Infallible;
-
     async fn debit_if_sufficient(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
         _trigger_balance_check_threshold: u64,
-    ) -> Result<Option<u64>, Infallible> {
+    ) -> Result<Option<u64>, SolanaRpcError> {
         let map = self.lock().await;
         let balance = map.get(payer).unwrap();
         // Don't debit the amount if we're mocking. That is a job for the burner.

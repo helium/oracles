@@ -62,8 +62,6 @@ impl<S> Debiter for BalanceCache<S>
 where
     S: SolanaNetwork,
 {
-    type Error = SolanaRpcError;
-
     /// Debits the balance from the cache, returning the remaining balance as an
     /// option if there was enough and none otherwise.
     async fn debit_if_sufficient(
