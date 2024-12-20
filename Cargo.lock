@@ -356,8 +356,7 @@ dependencies = [
 [[package]]
 name = "anchor-gen"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a3b9def91d1f0c23b99be210afea0990f931a1edae439ea30e0da50baeaea8f"
+source = "git+https://github.com/ChewingGlass/anchor-gen.git?branch=master#e6136a50918660c8bab0101568068419cbd23420"
 dependencies = [
  "anchor-generate-cpi-crate",
  "anchor-generate-cpi-interface",
@@ -366,8 +365,7 @@ dependencies = [
 [[package]]
 name = "anchor-generate-cpi-crate"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03e8733d55b8492bde0d6f219c25769786758ff9e5e90a16e6a348f91284af50"
+source = "git+https://github.com/ChewingGlass/anchor-gen.git?branch=master#e6136a50918660c8bab0101568068419cbd23420"
 dependencies = [
  "anchor-idl",
  "syn 1.0.109",
@@ -376,8 +374,7 @@ dependencies = [
 [[package]]
 name = "anchor-generate-cpi-interface"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7092a50cf959ebf53460162cb07e88d4cc8ea7fa8c45292e80503a3186033daf"
+source = "git+https://github.com/ChewingGlass/anchor-gen.git?branch=master#e6136a50918660c8bab0101568068419cbd23420"
 dependencies = [
  "anchor-idl",
  "darling 0.14.2",
@@ -387,8 +384,7 @@ dependencies = [
 [[package]]
 name = "anchor-idl"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3de2665dc06ee0bd3c7d08f47f136a3d5b1e34b7ac1bc632c86a812add04d68b"
+source = "git+https://github.com/ChewingGlass/anchor-gen.git?branch=master#e6136a50918660c8bab0101568068419cbd23420"
 dependencies = [
  "anchor-syn 0.24.2",
  "darling 0.14.2",
@@ -1615,17 +1611,17 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#b4c8c8f47dfff38a2ff1b7fe14e1b2a1beea651c"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#572b06ee958160d7055a77d958abc18dc5a1d660"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -1788,7 +1784,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -2129,7 +2125,7 @@ dependencies = [
 [[package]]
 name = "circuit-breaker"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -2630,7 +2626,7 @@ dependencies = [
  "axum 0.7.4",
  "bs58 0.4.0",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "http 0.2.11",
  "notify",
  "serde",
@@ -2771,7 +2767,7 @@ dependencies = [
 [[package]]
 name = "data-credits"
 version = "0.2.2"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -3149,7 +3145,7 @@ checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 [[package]]
 name = "fanout"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -3212,7 +3208,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "hex-literal",
  "http 0.2.11",
  "lazy_static",
@@ -3725,7 +3721,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 [[package]]
 name = "helium-anchor-gen"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -3754,7 +3750,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.1.16",
+ "getrandom 0.2.10",
  "k256",
  "lazy_static",
  "multihash",
@@ -3772,7 +3768,7 @@ dependencies = [
 [[package]]
 name = "helium-entity-manager"
 version = "0.2.11"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -3781,7 +3777,7 @@ dependencies = [
 [[package]]
 name = "helium-lib"
 version = "0.0.0"
-source = "git+https://github.com/helium/helium-wallet-rs.git?branch=master#6b8a6bbf343027087a401cd907c9f6c848991aac"
+source = "git+https://github.com/helium/helium-wallet-rs.git?branch=master#21208fcf8dcaaee955fa38798d9fa0da6b8d3f7b"
 dependencies = [
  "anchor-client",
  "anchor-spl",
@@ -3794,9 +3790,8 @@ dependencies = [
  "h3o",
  "helium-anchor-gen",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
  "hex",
- "hex-literal",
  "itertools",
  "jsonrpc_client",
  "lazy_static",
@@ -3812,10 +3807,27 @@ dependencies = [
  "solana-transaction-status",
  "spl-account-compression",
  "spl-associated-token-account 3.0.2",
+ "spl-memo",
  "thiserror",
  "tonic",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "helium-proto"
+version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#572b06ee958160d7055a77d958abc18dc5a1d660"
+dependencies = [
+ "bytes",
+ "prost",
+ "prost-build",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
@@ -3837,7 +3849,7 @@ dependencies = [
 [[package]]
 name = "helium-sub-daos"
 version = "0.1.8"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -3875,7 +3887,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -3891,7 +3903,7 @@ checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
 [[package]]
 name = "hexboosting"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -4291,7 +4303,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "http 0.2.11",
  "humantime-serde",
  "metrics",
@@ -4361,7 +4373,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -4403,7 +4415,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -4445,7 +4457,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -4703,7 +4715,7 @@ dependencies = [
 [[package]]
 name = "lazy-distributor"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -4712,7 +4724,7 @@ dependencies = [
 [[package]]
 name = "lazy-transactions"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -5034,7 +5046,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -5047,6 +5059,8 @@ dependencies = [
  "prost",
  "rand 0.8.5",
  "retainer",
+ "rust_decimal",
+ "rust_decimal_macros",
  "serde",
  "serde_json",
  "solana-sdk",
@@ -5075,7 +5089,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5090,7 +5104,7 @@ dependencies = [
 [[package]]
 name = "mobile-entity-manager"
 version = "0.1.3"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -5111,7 +5125,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -5155,7 +5169,8 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-lib",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "hex-assignments",
  "hextree",
  "http-serde",
@@ -5523,7 +5538,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "681030a937600a36906c185595136d26abfebb4aa9c65701cefcaf8578bb982b"
 dependencies = [
- "proc-macro-crate 1.1.3",
+ "proc-macro-crate 3.1.0",
  "proc-macro2",
  "quote",
  "syn 2.0.58",
@@ -5839,7 +5854,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "http 0.2.11",
  "hyper 0.14.28",
  "jsonrpsee",
@@ -5922,7 +5937,7 @@ dependencies = [
  "futures-util",
  "helium-anchor-gen",
  "helium-lib",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -5946,7 +5961,7 @@ dependencies = [
 [[package]]
 name = "price-oracle"
 version = "0.2.1"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -6063,7 +6078,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.4.0",
+ "heck 0.5.0",
  "itertools",
  "log",
  "multimap",
@@ -6561,7 +6576,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
  "humantime-serde",
  "lazy_static",
  "metrics",
@@ -6595,7 +6610,7 @@ dependencies = [
 [[package]]
 name = "rewards-oracle"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -9272,7 +9287,7 @@ dependencies = [
 [[package]]
 name = "treasury-management"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -9318,7 +9333,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
@@ -9520,7 +9535,7 @@ dependencies = [
 [[package]]
 name = "voter-stake-registry"
 version = "0.3.3"
-source = "git+https://github.com/helium/helium-anchor-gen.git#a7e694d49245ca9830bcfef68cce34f230c91011"
+source = "git+https://github.com/helium/helium-anchor-gen.git#3036b33793cfe54b20ab24761677493510d5bd50"
 dependencies = [
  "anchor-gen",
  "anchor-lang 0.29.0",
@@ -9988,7 +10003,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
  "twox-hash",
  "xorf",
