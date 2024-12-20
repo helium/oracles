@@ -11,7 +11,7 @@ use helium_proto::services::{
     packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
     router::packet_router_packet_report_v1::PacketType,
 };
-use iot_config::client::org_client::Orgs;
+use iot_config::client::{org_client::Orgs, ClientError};
 use solana::{burn::SolanaNetwork, SolanaRpcError};
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -271,9 +271,9 @@ pub enum MonitorError<S, E> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum ConfigServerError<OrgsError> {
+pub enum ConfigServerError {
     #[error("orgs  error: {0}")]
-    OrgError(#[from] OrgsError),
+    OrgError(#[from] ClientError),
     #[error("not found: {0}")]
     NotFound(u64),
 }
@@ -297,7 +297,7 @@ impl<O> ConfigServer for Arc<Mutex<CachedOrgClient<O>>>
 where
     O: Orgs,
 {
-    type Error = ConfigServerError<O::Error>;
+    type Error = ConfigServerError;
 
     async fn fetch_org(
         &self,
