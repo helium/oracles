@@ -8,8 +8,8 @@ use chrono::Utc;
 use futures::{Future, StreamExt, TryFutureExt};
 use helium_crypto::{KeyTag, Keypair, PublicKey, Sign};
 use helium_proto::services::iot_config::{
-    self as proto, config_org_client::OrgClient, config_route_client::RouteClient, RouteGetReqV1,
-    RouteListReqV1, RouteStreamReqV1,
+    self as proto, config_route_client::RouteClient, RouteGetReqV1, RouteListReqV1,
+    RouteStreamReqV1,
 };
 use iot_config::{
     admin::{AuthCache, KeyType},
@@ -24,6 +24,8 @@ use tonic::{
     transport::{self, Channel},
     Streaming,
 };
+
+mod fixtures;
 
 #[sqlx::test]
 async fn packet_router_can_access_route_list(pool: Pool<Postgres>) {
@@ -43,7 +45,7 @@ async fn packet_router_can_access_route_list(pool: Pool<Postgres>) {
     let _handle = start_server(socket_addr, signing_keypair, auth_cache, pool.clone()).await;
     let mut client = connect_client(socket_addr).await;
 
-    let org = create_org(socket_addr, &admin_keypair).await;
+    let org = fixtures::create_org(socket_addr, &pool).await;
     let route = create_route(&mut client, &org.org.unwrap(), &admin_keypair).await;
 
     // List Routes for OUI
@@ -85,7 +87,7 @@ async fn stream_sends_all_data_when_since_is_0(pool: Pool<Postgres>) {
     let _handle = start_server(socket_addr, signing_keypair, auth_cache, pool.clone()).await;
     let mut client = connect_client(socket_addr).await;
 
-    let org = create_org(socket_addr, &admin_keypair).await;
+    let org = fixtures::create_org(socket_addr, &pool).await;
     let route = create_route(&mut client, &org.org.unwrap(), &admin_keypair).await;
 
     create_euis(
@@ -187,7 +189,7 @@ async fn stream_only_sends_data_modified_since(pool: Pool<Postgres>) {
     let _handle = start_server(socket_addr, signing_keypair, auth_cache, pool.clone()).await;
     let mut client = connect_client(socket_addr).await;
 
-    let org_res_v1 = create_org(socket_addr, &admin_keypair).await;
+    let org_res_v1 = fixtures::create_org(socket_addr, &pool).await;
 
     let proto::OrgResV1 { org: Some(org), .. } = org_res_v1 else {
         panic!("invalid OrgResV1")
@@ -293,7 +295,7 @@ async fn stream_updates_with_deactivate_reactivate(pool: Pool<Postgres>) {
 
     let _handle = start_server(socket_addr, signing_keypair, auth_cache, pool.clone()).await;
     let mut client = connect_client(socket_addr).await;
-    let org_res_v1 = create_org(socket_addr, &admin_keypair).await;
+    let org_res_v1 = fixtures::create_org(socket_addr, &pool).await;
 
     let proto::OrgResV1 { org: Some(org), .. } = org_res_v1 else {
         panic!("invalid OrgResV1")
@@ -532,43 +534,9 @@ fn get_socket_addr() -> anyhow::Result<SocketAddr> {
     Ok(listener.local_addr()?)
 }
 
-async fn create_org(socket_addr: SocketAddr, admin_keypair: &Keypair) -> proto::OrgResV1 {
-    let mut client = (|| OrgClient::connect(format!("http://{socket_addr}")))
-        .retry(&ExponentialBuilder::default())
-        .await
-        .expect("org client");
-
-    let mut request = proto::OrgCreateHeliumReqV1 {
-        owner: generate_keypair().public_key().to_vec(),
-        payer: generate_keypair().public_key().to_vec(),
-        devaddrs: 8,
-        timestamp: Utc::now().timestamp() as u64,
-        signature: vec![],
-        delegate_keys: vec![],
-        signer: admin_keypair.public_key().into(),
-        net_id: 6,
-    };
-
-    request.signature = admin_keypair
-        .sign(&request.encode_to_vec())
-        .expect("sign create org");
-
-    let response = client.create_helium(request).await;
-
-    let proto::OrgResV1 { org: Some(org), .. } = response.unwrap().into_inner() else {
-        panic!("org response is incorrect")
-    };
-
-    let Ok(response) = client.get(proto::OrgGetReqV1 { oui: org.oui }).await else {
-        panic!("could not get the org")
-    };
-
-    response.into_inner()
-}
-
 async fn create_route(
     client: &mut RouteClient<Channel>,
-    org: &proto::OrgV1,
+    org: &proto::OrgV2,
     signing_keypair: &Keypair,
 ) -> proto::RouteV1 {
     let mut request = proto::RouteCreateReqV1 {
@@ -640,6 +608,7 @@ async fn create_euis(
         })
         .collect::<Vec<_>>();
 
+    println!("Logging Route {:?}", route);
     let Ok(_) = client.update_euis(futures::stream::iter(requests)).await else {
         panic!("unable to create eui pairs")
     };
