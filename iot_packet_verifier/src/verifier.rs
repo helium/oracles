@@ -189,7 +189,7 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
         minimum_allowed_balance: u64,
         monitor_period: Duration,
         shutdown: triggered::Listener,
-    ) -> Result<(), MonitorError<SolanaRpcError, ConfigServerError>>
+    ) -> Result<(), MonitorError>
     where
         S: SolanaNetwork,
         B: BalanceStore,
@@ -198,22 +198,12 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
             loop {
                 tracing::info!("Checking if any orgs need to be re-enabled");
 
-                for Org { locked, payer, oui } in self
-                    .list_orgs()
-                    .await
-                    .map_err(MonitorError::ConfigClientError)?
-                    .into_iter()
-                {
+                for Org { locked, payer, oui } in self.list_orgs().await?.into_iter() {
                     if locked {
-                        let balance = solana
-                            .payer_balance(&payer)
-                            .await
-                            .map_err(MonitorError::SolanaError)?;
+                        let balance = solana.payer_balance(&payer).await?;
                         if balance >= minimum_allowed_balance {
                             balances.set_balance(&payer, balance).await;
-                            self.enable_org(oui)
-                                .await
-                                .map_err(MonitorError::ConfigClientError)?;
+                            self.enable_org(oui).await?;
                         }
                     }
                 }
@@ -253,13 +243,13 @@ impl BalanceStore for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum MonitorError<S, E> {
+pub enum MonitorError {
     #[error("Join error: {0}")]
     JoinError(#[from] JoinError),
     #[error("Config client error: {0}")]
-    ConfigClientError(E),
+    ConfigClientError(#[from] ConfigServerError),
     #[error("Solana error: {0}")]
-    SolanaError(S),
+    SolanaError(#[from] SolanaRpcError),
 }
 
 #[derive(thiserror::Error, Debug)]
