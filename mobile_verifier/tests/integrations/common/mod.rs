@@ -5,7 +5,6 @@ use file_store::{
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_lib::keypair::Pubkey;
 use helium_lib::token::Token;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -80,7 +79,7 @@ impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
 
     async fn resolve_info(
         &self,
-        _sub_dao: &Pubkey,
+        _sub_dao: &str,
         _epoch: u64,
     ) -> Result<Option<EpochRewardInfo>, Self::Error> {
         Ok(self.info.clone())
