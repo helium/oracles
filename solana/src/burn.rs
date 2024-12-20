@@ -209,8 +209,7 @@ impl SolanaNetwork for SolanaRpc {
                 &priority_fee_accounts,
                 self.min_priority_fee,
             )
-            .await
-            .map_err(|e| SolanaRpcError::RpcClientError(Box::new(e)))?;
+            .await?;
 
         tracing::info!(%priority_fee);
 
@@ -278,7 +277,7 @@ impl SolanaNetwork for SolanaRpc {
                     transaction = %signature,
                     "Data credit burn failed: {err:?}"
                 );
-                Err(SolanaRpcError::RpcClientError(Box::new(err)))
+                Err(err.into())
             }
         }
     }
