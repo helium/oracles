@@ -387,7 +387,6 @@ impl<'a> PendingTablesTransaction<'a> for &'a MockPendingTables {
 
 #[cfg(test)]
 mod test {
-    use solana::SolanaRpcError;
 
     use crate::balances::PayerAccount;
 
