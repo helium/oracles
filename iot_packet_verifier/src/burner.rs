@@ -75,19 +75,18 @@ where
         burn_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
-            #[rustfmt::skip]
             tokio::select! {
-                biased;
-                _ = shutdown.clone() => break,
-                _ = burn_timer.tick() => {
-		    match self.burn().await {
-			Ok(()) => continue,
-			Err(err) => {
-			    tracing::error!("Error while burning data credits: {err}");
-			    confirm_pending_txns(&self.pending_tables, &self.solana, &self.balances).await?;
-			}
-		    }
-		}
+                    biased;
+                    _ = shutdown.clone() => break,
+                    _ = burn_timer.tick() => {
+                    match self.burn().await {
+                        Ok(()) => continue,
+                        Err(err) => {
+                            tracing::error!("Error while burning data credits: {err}");
+                            confirm_pending_txns(&self.pending_tables, &self.solana, &self.balances).await?;
+                        }
+                    }
+                }
             }
         }
         tracing::info!("Stopping burner");
