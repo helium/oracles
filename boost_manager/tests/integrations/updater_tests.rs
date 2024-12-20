@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use boost_manager::{db, updater::Updater, OnChainStatus};
 use chrono::{DateTime, Utc};
 use file_store::hex_boost::BoostedHexActivation;
-use solana::{start_boost::SolanaNetwork, GetSignature};
+use solana::{start_boost::SolanaNetwork, GetSignature, SolanaRpcError};
 use solana_sdk::signature::Signature;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{string::ToString, sync::Mutex, time::Duration};
@@ -23,12 +23,6 @@ pub struct MockSolanaConnection {
     error: Option<String>,
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("not found")]
-    SubmitError(String),
-}
-
 impl MockSolanaConnection {
     fn ok() -> Self {
         Self {
@@ -47,28 +41,28 @@ impl MockSolanaConnection {
 
 #[async_trait]
 impl SolanaNetwork for MockSolanaConnection {
-    type Error = Error;
     type Transaction = MockTransaction;
 
     async fn make_start_boost_transaction(
         &self,
         batch: &[BoostedHexActivation],
-    ) -> Result<Self::Transaction, Self::Error> {
+    ) -> Result<Self::Transaction, SolanaRpcError> {
         Ok(MockTransaction {
             signature: Signature::new_unique(),
             _activations: batch.to_owned(),
         })
     }
 
-    async fn submit_transaction(&self, txn: &Self::Transaction) -> Result<(), Self::Error> {
+    async fn submit_transaction(&self, txn: &Self::Transaction) -> Result<(), SolanaRpcError> {
         self.submitted.lock().unwrap().push(txn.clone());
+
         self.error
             .as_ref()
-            .map(|str| Err(Error::SubmitError(str.clone())))
+            .map(|err| Err(SolanaRpcError::Test(err.to_owned())))
             .unwrap_or(Ok(()))
     }
 
-    async fn confirm_transaction(&self, _id: &str) -> Result<bool, Self::Error> {
+    async fn confirm_transaction(&self, _id: &str) -> Result<bool, SolanaRpcError> {
         Ok(true)
     }
 }

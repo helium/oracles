@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use helium_crypto::PublicKeyBinary;
-use solana::burn::SolanaNetwork;
+use solana::{burn::SolanaNetwork, SolanaRpcError};
 use solana_sdk::signature::Signature;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Postgres, Row, Transaction};
 use std::{collections::HashMap, sync::Arc};
@@ -45,20 +45,20 @@ pub trait PendingTables {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum ConfirmPendingError<S> {
+pub enum ConfirmPendingError {
     #[error("Sqlx error: {0}")]
     SqlxError(#[from] sqlx::Error),
     #[error("Chrono error: {0}")]
     ChronoError(#[from] chrono::OutOfRangeError),
     #[error("Solana error: {0}")]
-    SolanaError(S),
+    SolanaError(#[from] SolanaRpcError),
 }
 
 pub async fn confirm_pending_txns<S>(
     pending_tables: &impl PendingTables,
     solana: &S,
     balances: &BalanceStore,
-) -> Result<(), ConfirmPendingError<S::Error>>
+) -> Result<(), ConfirmPendingError>
 where
     S: SolanaNetwork,
 {
@@ -165,7 +165,7 @@ impl PendingTables for PgPool {
 }
 
 #[async_trait]
-impl AddPendingBurn for &'_ mut Transaction<'_, Postgres> {
+impl AddPendingBurn for Transaction<'_, Postgres> {
     async fn add_burned_amount(
         &mut self,
         payer: &PublicKeyBinary,
@@ -387,6 +387,7 @@ impl<'a> PendingTablesTransaction<'a> for &'a MockPendingTables {
 
 #[cfg(test)]
 mod test {
+
     use crate::balances::PayerAccount;
 
     use super::*;
@@ -397,11 +398,10 @@ mod test {
 
     #[async_trait]
     impl SolanaNetwork for MockConfirmed {
-        type Error = std::convert::Infallible;
         type Transaction = Signature;
 
         #[allow(clippy::diverging_sub_expression)]
-        async fn payer_balance(&self, _payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+        async fn payer_balance(&self, _payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
             unreachable!()
         }
 
@@ -410,7 +410,7 @@ mod test {
             &self,
             _payer: &PublicKeyBinary,
             _amount: u64,
-        ) -> Result<Self::Transaction, Self::Error> {
+        ) -> Result<Self::Transaction, SolanaRpcError> {
             unreachable!()
         }
 
@@ -418,11 +418,11 @@ mod test {
         async fn submit_transaction(
             &self,
             _transaction: &Self::Transaction,
-        ) -> Result<(), Self::Error> {
+        ) -> Result<(), SolanaRpcError> {
             unreachable!()
         }
 
-        async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+        async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
             Ok(self.0.contains(txn))
         }
     }

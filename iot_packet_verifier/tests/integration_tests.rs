@@ -14,11 +14,11 @@ use iot_packet_verifier::{
     balances::{BalanceCache, PayerAccount},
     burner::Burner,
     pending::{confirm_pending_txns, AddPendingBurn, Burn, MockPendingTables, PendingTables},
-    verifier::{payload_size_to_dc, ConfigServer, Org, Verifier, BYTES_PER_DC},
+    verifier::{payload_size_to_dc, ConfigServer, ConfigServerError, Org, Verifier, BYTES_PER_DC},
 };
 use solana::{
     burn::{MockTransaction, SolanaNetwork},
-    GetSignature,
+    GetSignature, SolanaRpcError,
 };
 use solana_sdk::signature::Signature;
 use sqlx::PgPool;
@@ -53,27 +53,25 @@ impl MockConfigServer {
 
 #[async_trait]
 impl ConfigServer for MockConfigServer {
-    type Error = ();
-
     async fn fetch_org(
         &self,
         oui: u64,
         _cache: &mut HashMap<u64, PublicKeyBinary>,
-    ) -> Result<PublicKeyBinary, ()> {
+    ) -> Result<PublicKeyBinary, ConfigServerError> {
         Ok(self.payers.lock().await.get(&oui).unwrap().payer.clone())
     }
 
-    async fn disable_org(&self, oui: u64) -> Result<(), ()> {
+    async fn disable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         self.payers.lock().await.get_mut(&oui).unwrap().enabled = false;
         Ok(())
     }
 
-    async fn enable_org(&self, oui: u64) -> Result<(), ()> {
+    async fn enable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         self.payers.lock().await.get_mut(&oui).unwrap().enabled = true;
         Ok(())
     }
 
-    async fn list_orgs(&self) -> Result<Vec<Org>, ()> {
+    async fn list_orgs(&self) -> Result<Vec<Org>, ConfigServerError> {
         Ok(self
             .payers
             .lock()
@@ -204,7 +202,7 @@ async fn test_config_unlocking() {
     verifier
         .verify(
             1,
-            balances.clone(),
+            &mut balances.clone(),
             stream::iter(vec![
                 packet_report(0, 0, 24, vec![1], false),
                 packet_report(0, 1, 48, vec![2], false),
@@ -262,7 +260,7 @@ async fn test_config_unlocking() {
     verifier
         .verify(
             1,
-            balances.clone(),
+            &mut balances.clone(),
             stream::iter(vec![
                 packet_report(0, 0, 24, vec![1], false),
                 packet_report(0, 1, 48, vec![2], false),
@@ -319,7 +317,7 @@ async fn test_verifier_free_packets() {
     verifier
         .verify(
             1,
-            balances.clone(),
+            &mut balances.clone(),
             stream::iter(packets),
             &mut valid_packets,
             &mut invalid_packets,
@@ -393,7 +391,7 @@ async fn test_verifier() {
     verifier
         .verify(
             1,
-            balances.clone(),
+            &mut balances.clone(),
             stream::iter(packets),
             &mut valid_packets,
             &mut invalid_packets,
@@ -474,7 +472,7 @@ async fn test_end_to_end() {
     verifier
         .verify(
             1,
-            pending_burns.clone(),
+            &mut pending_burns.clone(),
             stream::iter(vec![
                 packet_report(0, 0, BYTES_PER_DC as u32, vec![1], false),
                 packet_report(0, 1, BYTES_PER_DC as u32, vec![2], false),
@@ -554,7 +552,7 @@ async fn test_end_to_end() {
     verifier
         .verify(
             1,
-            pending_burns.clone(),
+            &mut pending_burns.clone(),
             stream::iter(vec![packet_report(
                 0,
                 4,
@@ -593,10 +591,9 @@ impl MockSolanaNetwork {
 
 #[async_trait]
 impl SolanaNetwork for MockSolanaNetwork {
-    type Error = std::convert::Infallible;
     type Transaction = MockTransaction;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         self.ledger.payer_balance(payer).await
     }
 
@@ -604,16 +601,16 @@ impl SolanaNetwork for MockSolanaNetwork {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<MockTransaction, Self::Error> {
+    ) -> Result<MockTransaction, SolanaRpcError> {
         self.ledger.make_burn_transaction(payer, amount).await
     }
 
-    async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), Self::Error> {
+    async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), SolanaRpcError> {
         self.confirmed.lock().await.insert(txn.signature);
         self.ledger.submit_transaction(txn).await
     }
 
-    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
         Ok(self.confirmed.lock().await.contains(txn))
     }
 }
@@ -644,7 +641,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Add both the burn amounts to the pending burns table
     {
         let mut transaction = pool.begin().await.unwrap();
-        (&mut transaction)
+        transaction
             .add_burned_amount(&payer, CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();

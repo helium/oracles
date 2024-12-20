@@ -17,7 +17,7 @@ macro_rules! send_with_retry {
                 Err(err) => {
                     if attempt < 5 {
                         attempt += 1;
-                        tokio::time::sleep(Duration::from_secs(attempt)).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(attempt)).await;
                         continue;
                     } else {
                         break Err(err);
@@ -45,10 +45,13 @@ pub enum SolanaRpcError {
     InvalidKeypair,
     #[error("System time error: {0}")]
     SystemTimeError(#[from] SystemTimeError),
-    #[error("Failed to read keypair file")]
-    FailedToReadKeypairError,
+    #[error("Failed to read keypair file: {0}")]
+    FailedToReadKeypairError(String),
     #[error("crypto error: {0}")]
     Crypto(#[from] helium_crypto::Error),
+    // TODO: Remove when fully integrated with helium-lib
+    #[error("Test Error")]
+    Test(String),
 }
 
 impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
