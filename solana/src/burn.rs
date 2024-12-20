@@ -93,7 +93,9 @@ impl SolanaRpc {
         let dc_mint = settings.dc_mint.parse()?;
         let dnt_mint = settings.dnt_mint.parse()?;
         let Ok(keypair) = read_keypair_file(&settings.burn_keypair) else {
-            return Err(SolanaRpcError::FailedToReadKeypairError);
+            return Err(SolanaRpcError::FailedToReadKeypairError(
+                settings.burn_keypair.to_owned(),
+            ));
         };
         let provider =
             RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());

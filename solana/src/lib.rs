@@ -45,8 +45,8 @@ pub enum SolanaRpcError {
     InvalidKeypair,
     #[error("System time error: {0}")]
     SystemTimeError(#[from] SystemTimeError),
-    #[error("Failed to read keypair file")]
-    FailedToReadKeypairError,
+    #[error("Failed to read keypair file: {0}")]
+    FailedToReadKeypairError(String),
     #[error("crypto error: {0}")]
     Crypto(#[from] helium_crypto::Error),
 }

@@ -50,7 +50,9 @@ pub struct SolanaRpc {
 impl SolanaRpc {
     pub async fn new(settings: &Settings) -> Result<Arc<Self>, SolanaRpcError> {
         let Ok(keypair) = read_keypair_file(&settings.start_authority_keypair) else {
-            return Err(SolanaRpcError::FailedToReadKeypairError);
+            return Err(SolanaRpcError::FailedToReadKeypairError(
+                settings.start_authority_keypair.to_owned(),
+            ));
         };
         let provider =
             RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());
