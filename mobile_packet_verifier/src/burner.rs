@@ -3,9 +3,8 @@ use std::time::Duration;
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::{burn::SolanaNetwork, GetSignature, SolanaRpcError};
-use sqlx::{Pool, Postgres};
-use tracing::Instrument;
+use solana::burn::SolanaNetwork;
+use sqlx::{PgPool, Pool, Postgres};
 
 use crate::pending_burns;
 
@@ -56,119 +55,117 @@ where
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
             let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
-            match self.solana.submit_transaction(&txn).await {
-                Ok(()) => {
-                    handle_transaction_success(
-                        pool,
-                        payer,
-                        total_dcs,
-                        sessions,
-                        &self.valid_sessions,
-                    )
-                    .await?;
-                }
-                Err(err) => {
-                    let span = tracing::info_span!(
-                        "txn_confirmation",
-                        signature = %txn.get_signature(),
-                        %payer,
-                        total_dcs,
-                        max_attempts = self.failed_retry_attempts
-                    );
-
-                    // block on confirmation
-                    self.transaction_confirmation_check(pool, err, txn, payer, total_dcs, sessions)
-                        .instrument(span)
-                        .await;
-                }
-            }
+            let store = BurnerTxnStore::new(
+                pool.clone(),
+                payer,
+                total_dcs,
+                sessions,
+                self.valid_sessions.clone(),
+            );
+            self.solana
+                .submit_transaction(
+                    &txn,
+                    &store,
+                    self.failed_retry_attempts,
+                    self.failed_check_interval,
+                )
+                .await?
         }
 
         Ok(())
     }
+}
 
-    async fn transaction_confirmation_check(
-        &self,
-        pool: &Pool<Postgres>,
-        err: SolanaRpcError,
-        txn: S::Transaction,
+struct BurnerTxnStore {
+    pool: PgPool,
+    payer: PublicKeyBinary,
+    amount: u64,
+    sessions: Vec<pending_burns::DataTransferSession>,
+    valid_sessions: FileSinkClient<ValidDataTransferSession>,
+}
+
+impl BurnerTxnStore {
+    fn new(
+        pool: PgPool,
         payer: PublicKeyBinary,
-        total_dcs: u64,
+        amount: u64,
         sessions: Vec<pending_burns::DataTransferSession>,
-    ) {
-        tracing::warn!(?err, "starting txn confirmation check");
-        // We don't know if the txn actually made it, maybe it did
-
-        let signature = txn.get_signature();
-
-        let mut attempt = 0;
-        while attempt <= self.failed_retry_attempts {
-            tokio::time::sleep(self.failed_check_interval).await;
-            match self.solana.confirm_transaction(signature).await {
-                Ok(true) => {
-                    tracing::debug!("txn confirmed on chain");
-                    let txn_success = handle_transaction_success(
-                        pool,
-                        payer,
-                        total_dcs,
-                        sessions,
-                        &self.valid_sessions,
-                    )
-                    .await;
-                    if let Err(err) = txn_success {
-                        tracing::error!(?err, "txn succeeded, something else failed");
-                    }
-
-                    return;
-                }
-                Ok(false) => {
-                    tracing::info!(attempt, "txn not confirmed, yet...");
-                    attempt += 1;
-                    continue;
-                }
-                Err(err) => {
-                    // Client errors do not count against retry attempts
-                    tracing::error!(?err, attempt, "failed to confirm txn");
-                    continue;
-                }
-            }
+        valid_sessions: FileSinkClient<ValidDataTransferSession>,
+    ) -> Self {
+        Self {
+            pool,
+            payer,
+            amount,
+            sessions,
+            valid_sessions,
         }
-
-        tracing::warn!("failed to confirm txn");
-
-        // We have failed to burn data credits:
-        metrics::counter!(
-            "burned",
-            "payer" => payer.to_string(),
-            "success" => "false"
-        )
-        .increment(total_dcs);
     }
 }
 
-async fn handle_transaction_success(
-    pool: &Pool<Postgres>,
-    payer: PublicKeyBinary,
-    total_dcs: u64,
-    sessions: Vec<pending_burns::DataTransferSession>,
-    valid_sessions: &FileSinkClient<ValidDataTransferSession>,
-) -> Result<(), anyhow::Error> {
-    // We succesfully managed to burn data credits:
-    metrics::counter!(
-        "burned",
-        "payer" => payer.to_string(),
-        "success" => "true"
-    )
-    .increment(total_dcs);
-
-    // Delete from the data transfer session and write out to S3
-    pending_burns::delete_for_payer(pool, &payer, total_dcs).await?;
-
-    for session in sessions {
-        valid_sessions
-            .write(ValidDataTransferSession::from(session), &[])
-            .await?;
+#[async_trait::async_trait]
+impl solana::send_txn::TxnStore for BurnerTxnStore {
+    fn make_span(&self) -> tracing::Span {
+        tracing::info_span!(
+            "burn_txn",
+            payer = %self.payer,
+            amount = self.amount
+        )
     }
 
-    Ok(())
+    async fn on_prepared(
+        &self,
+        _signature: &solana::Signature,
+    ) -> Result<(), solana::send_txn::TxnStoreError> {
+        tracing::info!("txn prepared");
+        Ok(())
+    }
+
+    async fn on_sent(&self, _signature: &solana::Signature) {
+        tracing::info!("txn sent");
+    }
+
+    async fn on_sent_retry(&self, _signature: &solana::Signature, attempt: usize) {
+        tracing::warn!(attempt, "retrying");
+    }
+
+    async fn on_finalized(&self, _signature: &solana::Signature) {
+        tracing::info!("txn finalized");
+        metrics::counter!(
+            "burned",
+            "payer" => self.payer.to_string(),
+            "success" => "true"
+        )
+        .increment(self.amount);
+
+        // Delete from the data transfer session and write out to S3
+        let remove_burn = pending_burns::delete_for_payer(&self.pool, &self.payer, self.amount);
+        if let Err(err) = remove_burn.await {
+            tracing::error!(?err, "failed to deduct finalized burn");
+        }
+
+        for session in self.sessions.iter() {
+            let session = session.to_owned();
+            let write = self
+                .valid_sessions
+                .write(ValidDataTransferSession::from(session), &[]);
+            if let Err(err) = write.await {
+                tracing::error!(?err, "failed to write data session for finalized burn");
+            }
+        }
+    }
+
+    async fn on_error(
+        &self,
+        _signature: &solana::Signature,
+        err: solana::send_txn::TxnSenderError,
+    ) {
+        tracing::warn!(?err, "failed to confirm");
+
+        metrics::counter!(
+            "burned",
+            "payer" => self.payer.to_string(),
+            "success" => "false"
+        )
+        .increment(self.amount);
+    }
 }
