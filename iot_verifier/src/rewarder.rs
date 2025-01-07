@@ -107,8 +107,16 @@ where
             let now = Utc::now();
             let sleep_duration = if scheduler.should_trigger(now) {
                 if self.data_current_check(&scheduler.schedule_period).await? {
-                    self.reward(next_reward_epoch).await?;
-                    scheduler.sleep_duration(Utc::now())?
+                    match self.reward(next_reward_epoch).await {
+                        Ok(()) => {
+                            tracing::info!("Successfully rewarded for epoch {}", next_reward_epoch);
+                            scheduler.sleep_duration(Utc::now())?
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to reward: {}", e);
+                            REWARDS_NOT_CURRENT_DELAY_PERIOD
+                        }
+                    }
                 } else {
                     REWARDS_NOT_CURRENT_DELAY_PERIOD
                 }
