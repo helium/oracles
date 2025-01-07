@@ -8,7 +8,7 @@ use sqlx::{prelude::FromRow, Pool, Postgres, Row, Transaction};
 
 const METRIC_NAME: &str = "pending_dc_burn";
 
-#[derive(FromRow)]
+#[derive(FromRow, Clone)]
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
