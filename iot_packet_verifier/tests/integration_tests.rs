@@ -18,7 +18,7 @@ use iot_packet_verifier::{
 };
 use solana::{
     burn::{MockTransaction, SolanaNetwork},
-    GetSignature, SolanaRpcError,
+    send_txn, GetSignature, SolanaRpcError,
 };
 use solana_sdk::signature::Signature;
 use sqlx::PgPool;
@@ -605,9 +605,17 @@ impl SolanaNetwork for MockSolanaNetwork {
         self.ledger.make_burn_transaction(payer, amount).await
     }
 
-    async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), SolanaRpcError> {
+    async fn submit_transaction(
+        &self,
+        txn: &MockTransaction,
+        store: &impl send_txn::TxnStore,
+        max_attempts: usize,
+        retry_delay: Duration,
+    ) -> Result<(), SolanaRpcError> {
         self.confirmed.lock().await.insert(txn.signature);
-        self.ledger.submit_transaction(txn).await
+        self.ledger
+            .submit_transaction(txn, store, max_attempts, retry_delay)
+            .await
     }
 
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
@@ -657,7 +665,10 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         pool.add_pending_transaction(&payer, CONFIRMED_BURN_AMOUNT, txn.get_signature())
             .await
             .unwrap();
-        mock_network.submit_transaction(&txn).await.unwrap();
+        mock_network
+            .submit_transaction(&txn, &send_txn::NoopStore, 5, Duration::from_millis(0))
+            .await
+            .unwrap();
     }
 
     // Second is unconfirmed

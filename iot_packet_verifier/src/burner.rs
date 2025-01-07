@@ -5,7 +5,8 @@ use crate::{
     },
 };
 use futures::{future::LocalBoxFuture, TryFutureExt};
-use solana::{burn::SolanaNetwork, GetSignature, SolanaRpcError};
+use helium_crypto::PublicKeyBinary;
+use solana::{burn::SolanaNetwork, SolanaRpcError};
 use std::time::Duration;
 use task_manager::ManagedTask;
 use tokio::time::{self, MissedTickBehavior};
@@ -19,7 +20,7 @@ pub struct Burner<P, S> {
 
 impl<P, S> ManagedTask for Burner<P, S>
 where
-    P: PendingTables + Send + Sync + 'static,
+    P: PendingTables,
     S: SolanaNetwork,
 {
     fn start_task(
@@ -102,41 +103,127 @@ where
 
         tracing::info!(%amount, %payer, "Burning DC");
 
-        // Create a burn transaction and execute it:
         let txn = self
             .solana
             .make_burn_transaction(&payer, amount)
             .await
             .map_err(BurnError::SolanaError)?;
-        self.pending_tables
-            .add_pending_transaction(&payer, amount, txn.get_signature())
-            .await?;
+
+        let store = BurnTxnStore::new(
+            self.pending_tables.clone(),
+            self.balances.clone(),
+            payer,
+            amount,
+        );
+
         self.solana
-            .submit_transaction(&txn)
+            .submit_transaction(&txn, &store, 5, Duration::from_millis(500))
+            .map_err(BurnError::SolanaError)
             .await
-            .map_err(BurnError::SolanaError)?;
+    }
+}
 
-        // Removing the pending transaction and subtract the burn amount
-        // now that we have confirmation that the burn transaction is confirmed
-        // on chain:
-        let mut pending_tables_txn = self.pending_tables.begin().await?;
-        pending_tables_txn
-            .remove_pending_transaction(txn.get_signature())
-            .await?;
-        pending_tables_txn
-            .subtract_burned_amount(&payer, amount)
-            .await?;
-        pending_tables_txn.commit().await?;
+pub struct BurnTxnStore<PT> {
+    pool: PT,
+    balances: BalanceStore,
+    payer: PublicKeyBinary,
+    amount: u64,
+}
 
-        let mut balance_lock = self.balances.lock().await;
-        let payer_account = balance_lock.get_mut(&payer).unwrap();
-        // Reduce the pending burn amount and the payer's balance by the amount
-        // we've burned.
-        payer_account.burned = payer_account.burned.saturating_sub(amount);
-        payer_account.balance = payer_account.balance.saturating_sub(amount);
+impl<PT: PendingTables + Clone> BurnTxnStore<PT> {
+    pub fn new(pool: PT, balances: BalanceStore, payer: PublicKeyBinary, amount: u64) -> Self {
+        Self {
+            pool,
+            balances,
+            payer,
+            amount,
+        }
+    }
+}
 
-        metrics::counter!("burned", "payer" => payer.to_string()).increment(amount);
+#[async_trait::async_trait]
+impl<PT: PendingTables> solana::send_txn::TxnStore for BurnTxnStore<PT> {
+    fn make_span(&self) -> tracing::Span {
+        tracing::info_span!(
+            "burn_txn",
+            payer = %self.payer,
+            amount = self.amount
+        )
+    }
 
+    async fn on_prepared(
+        &self,
+        signature: &solana::Signature,
+    ) -> Result<(), solana::send_txn::TxnStoreError> {
+        tracing::info!("txn prepared");
+        self.pool
+            .add_pending_transaction(&self.payer, self.amount, signature)
+            .await
+            .expect("add submitted pending txn");
         Ok(())
+    }
+
+    async fn on_sent(&self, _signature: &solana::Signature) {
+        tracing::info!("txn submitted");
+    }
+
+    async fn on_sent_retry(&self, _signature: &solana::Signature, attempt: usize) {
+        tracing::warn!(attempt, "retrying");
+    }
+
+    async fn on_finalized(&self, signature: &solana::Signature) {
+        tracing::info!("txn finalized");
+        let mut txn = self
+            .pool
+            .begin()
+            .await
+            .expect("begin txn finalized transaction");
+
+        txn.remove_pending_transaction(signature)
+            .await
+            .expect("remove pending");
+
+        txn.subtract_burned_amount(&self.payer, self.amount)
+            .await
+            .expect("subtract burned amount");
+
+        // Subtract balances from map before submitted db txn
+        let mut balance_lock = self.balances.lock().await;
+        let payer_account = balance_lock.get_mut(&self.payer).unwrap();
+        // Reduce the pending burn amount and the payer's balance by the amount we've burned
+        payer_account.burned = payer_account.burned.saturating_sub(self.amount);
+        payer_account.balance = payer_account.balance.saturating_sub(self.amount);
+
+        txn.commit().await.expect("finalized txn commited");
+
+        metrics::counter!(
+            "burned",
+            "payer" => self.payer.to_string(),
+            "success" => "true"
+        )
+        .increment(self.amount);
+    }
+
+    async fn on_error(&self, signature: &solana::Signature, err: solana::send_txn::TxnSenderError) {
+        tracing::warn!(?err, "txn failed");
+
+        let mut txn = self
+            .pool
+            .begin()
+            .await
+            .expect("begin txn failure transaction");
+
+        txn.remove_pending_transaction(signature)
+            .await
+            .expect("remove pending for failure");
+
+        txn.commit().await.expect("failed txn commited");
+
+        metrics::counter!(
+            "burned",
+            "payer" => self.payer.to_string(),
+            "success" => "false"
+        )
+        .increment(self.amount);
     }
 }

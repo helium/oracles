@@ -23,7 +23,7 @@ pub trait AddPendingBurn {
 }
 
 #[async_trait]
-pub trait PendingTables {
+pub trait PendingTables: Send + Sync + Clone + 'static {
     type Transaction<'a>: PendingTablesTransaction<'a> + Send + Sync
     where
         Self: 'a;
@@ -388,6 +388,8 @@ impl<'a> PendingTablesTransaction<'a> for &'a MockPendingTables {
 #[cfg(test)]
 mod test {
 
+    use solana::send_txn;
+
     use crate::balances::PayerAccount;
 
     use super::*;
@@ -418,6 +420,9 @@ mod test {
         async fn submit_transaction(
             &self,
             _transaction: &Self::Transaction,
+            _store: &impl send_txn::TxnStore,
+            _max_attempts: usize,
+            _retry_delay: std::time::Duration,
         ) -> Result<(), SolanaRpcError> {
             unreachable!()
         }
