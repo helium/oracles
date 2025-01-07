@@ -29,6 +29,7 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 prost = { workspace = true }
 chrono = { workspace = true }
+helium-lib = { workspace = true }
 helium-proto = { workspace = true }
 helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
 async-trait = { workspace = true }

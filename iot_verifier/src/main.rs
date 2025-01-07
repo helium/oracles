@@ -16,6 +16,7 @@ use helium_proto::{
     },
     RewardManifest,
 };
+use iot_config::client::sub_dao_client::SubDaoClient;
 use iot_config::client::Client as IotConfigClient;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, gateway_updater::GatewayUpdater, loader,
@@ -81,6 +82,7 @@ impl Server {
         let store_base_path = path::Path::new(&settings.cache);
 
         let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
+        let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.iot_config_client)?;
 
         // create the witness updater to handle serialization of last witness updates to db
         // also exposes a cache of the last witness updates
@@ -139,14 +141,15 @@ impl Server {
         )
         .await?;
 
-        let rewarder = Rewarder {
-            pool: pool.clone(),
+        let rewarder = Rewarder::new(
+            pool.clone(),
             rewards_sink,
             reward_manifests_sink,
-            reward_period_hours: settings.reward_period,
-            reward_offset: settings.reward_period_offset,
+            settings.reward_period,
+            settings.reward_period_offset,
             price_tracker,
-        };
+            sub_dao_rewards_client,
+        )?;
 
         // *
         // setup entropy requirements
