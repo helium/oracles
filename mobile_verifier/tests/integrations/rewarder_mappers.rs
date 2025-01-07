@@ -1,5 +1,7 @@
-use crate::common::{self, MockFileSinkReceiver};
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use crate::common::{
+    self, default_rewards_info, MockFileSinkReceiver, EMISSIONS_POOL_IN_BONES_24_HOURS,
+};
+use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
     mobile_subscriber::{SubscriberLocationIngestReport, SubscriberLocationReq},
     subscriber_verified_mapping_event::SubscriberVerifiedMappingEvent,
@@ -28,16 +30,16 @@ const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 #[sqlx::test]
 async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     // seed db
     let mut txn = pool.clone().begin().await?;
-    seed_mapping_data(epoch.end, &mut txn).await?;
+    seed_mapping_data(reward_info.epoch_period.end, &mut txn).await?;
     txn.commit().await.expect("db txn failed");
 
     let (_, rewards) = tokio::join!(
-        rewarder::reward_mappers(&pool, &mobile_rewards_client, &epoch),
+        rewarder::reward_mappers(&pool, &mobile_rewards_client, &reward_info),
         receive_expected_rewards(&mut mobile_rewards)
     );
 
@@ -82,9 +84,10 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
         assert_eq!(1, unallocated_reward.amount);
 
         // confirm the total rewards allocated matches expectations
-        let expected_sum = reward_shares::get_scheduled_tokens_for_mappers(epoch.end - epoch.start)
-            .to_u64()
-            .unwrap();
+        let expected_sum =
+            reward_shares::get_scheduled_tokens_for_mappers(reward_info.epoch_emissions)
+                .to_u64()
+                .unwrap();
         let subscriber_sum = subscriber_rewards[0].discovery_location_amount
             + subscriber_rewards[1].discovery_location_amount
             + subscriber_rewards[2].discovery_location_amount
@@ -92,8 +95,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
         assert_eq!(expected_sum, subscriber_sum);
 
         // confirm the rewarded percentage amount matches expectations
-        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-        let percent = (Decimal::from(subscriber_sum) / daily_total)
+        let percent = (Decimal::from(subscriber_sum) / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(percent, dec!(0.2));
     } else {
@@ -107,26 +109,26 @@ async fn test_subscriber_can_only_earn_verification_mapping_if_earned_disco_mapp
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let mut txn = pool.begin().await?;
     let sub_loc_report = SubscriberLocationIngestReport {
-        received_timestamp: epoch.end - ChronoDuration::hours(1),
+        received_timestamp: reward_info.epoch_period.end - ChronoDuration::hours(1),
         report: SubscriberLocationReq {
             subscriber_id: SUBSCRIBER_1.to_string().encode_to_vec(),
-            timestamp: epoch.end - ChronoDuration::hours(1),
+            timestamp: reward_info.epoch_period.end - ChronoDuration::hours(1),
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
         },
     };
     subscriber_location::save(&sub_loc_report, &mut txn).await?;
 
     let vme_report = SubscriberVerifiedMappingEventIngestReport {
-        received_timestamp: epoch.end - ChronoDuration::hours(1),
+        received_timestamp: reward_info.epoch_period.end - ChronoDuration::hours(1),
         report: SubscriberVerifiedMappingEvent {
             subscriber_id: SUBSCRIBER_2.to_string().encode_to_vec(),
             total_reward_points: 50,
-            timestamp: epoch.end - ChronoDuration::hours(1),
+            timestamp: reward_info.epoch_period.end - ChronoDuration::hours(1),
             carrier_mapping_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
         },
     };
@@ -135,13 +137,13 @@ async fn test_subscriber_can_only_earn_verification_mapping_if_earned_disco_mapp
     txn.commit().await?;
 
     let (_, rewards) = tokio::join!(
-        rewarder::reward_mappers(&pool, &mobile_rewards_client, &epoch),
+        rewarder::reward_mappers(&pool, &mobile_rewards_client, &reward_info),
         mobile_rewards.receive_subscriber_reward()
     );
 
     mobile_rewards.assert_no_messages();
 
-    let total_pool = reward_shares::get_scheduled_tokens_for_mappers(epoch.end - epoch.start);
+    let total_pool = reward_shares::get_scheduled_tokens_for_mappers(reward_info.epoch_emissions);
     assert_eq!(
         rewards.discovery_location_amount + rewards.verification_mapping_amount,
         total_pool.to_u64().unwrap()

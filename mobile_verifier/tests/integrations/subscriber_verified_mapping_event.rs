@@ -217,7 +217,7 @@ async fn select_events(
 ) -> anyhow::Result<Vec<SubscriberVerifiedMappingEvent>> {
     let rows = sqlx::query(
         r#"
-            SELECT 
+            SELECT
                 subscriber_id,
                 total_reward_points,
                 received_timestamp

@@ -1,5 +1,6 @@
 use crate::{
     heartbeats::HeartbeatReward,
+    resolve_subdao_pubkey,
     reward_shares::{
         get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
     },
@@ -9,41 +10,56 @@ use crate::{
     unique_connections, Settings,
 };
 use anyhow::Result;
-use chrono::NaiveDateTime;
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::boosted_hex_info::BoostedHexes;
+use mobile_config::{
+    boosted_hex_info::BoostedHexes,
+    client::{sub_dao_client::SubDaoEpochRewardInfoResolver, SubDaoClient},
+};
 use serde_json::json;
 use std::collections::HashMap;
 
-/// Reward a period from the entries in the database
+/// Reward an epoch from the entries in the database
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
     #[clap(long)]
-    start: NaiveDateTime,
-    #[clap(long)]
-    end: NaiveDateTime,
+    reward_epoch: u64,
 }
 
 impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
-        let Self { start, end } = self;
+        // TODO: do we want to continue maintaining this cli ?
 
-        let start = start.and_utc();
-        let end = end.and_utc();
+        let reward_epoch = self.reward_epoch;
 
-        tracing::info!("Rewarding shares from the following time range: {start} to {end}");
-        let epoch = start..end;
-        let expected_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
+        let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.config_client)?;
+        let sub_dao = resolve_subdao_pubkey();
+
+        let reward_info = sub_dao_rewards_client
+            .resolve_info(&sub_dao.to_string(), reward_epoch)
+            .await?
+            .ok_or(anyhow::anyhow!(
+                "No reward info found for epoch {}",
+                reward_epoch
+            ))?;
+
+        tracing::info!(
+            "Rewarding shares from the following time range: {} to {}",
+            reward_info.epoch_period.start,
+            reward_info.epoch_period.end
+        );
+        let expected_rewards = get_scheduled_tokens_for_poc(reward_info.epoch_emissions);
 
         let (shutdown_trigger, _shutdown_listener) = triggered::trigger();
         let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
 
-        let heartbeats = HeartbeatReward::validated(&pool, &epoch);
+        let heartbeats = HeartbeatReward::validated(&pool, &reward_info.epoch_period);
         let speedtest_averages =
-            SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
+            SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, &pool)
+                .await?;
 
-        let unique_connections = unique_connections::db::get(&pool, &epoch).await?;
+        let unique_connections =
+            unique_connections::db::get(&pool, &reward_info.epoch_period).await?;
 
         let reward_shares = CoverageShares::new(
             &pool,
@@ -53,7 +69,7 @@ impl Cmd {
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
             &unique_connections,
-            &epoch,
+            &reward_info.epoch_period,
         )
         .await?;
 
@@ -61,8 +77,8 @@ impl Cmd {
         let mut owner_rewards = HashMap::<_, u64>::new();
         let radio_rewards = reward_shares
             .into_rewards(
-                DataTransferAndPocAllocatedRewardBuckets::new(&epoch),
-                &epoch,
+                DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions),
+                &reward_info.epoch_period,
             )
             .ok_or(anyhow::anyhow!("no rewardable events"))?
             .1;
