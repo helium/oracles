@@ -12,7 +12,7 @@ use helium_proto::{
         self as proto, iot_reward_share::Reward as ProtoReward, UnallocatedReward,
         UnallocatedRewardType,
     },
-    IotRewardData as ManifestIotRewardData, RewardManifest,
+    IotRewardData as ManifestIotRewardData, IotRewardToken, RewardManifest,
 };
 use humantime_serde::re::humantime;
 use price::PriceTracker;
@@ -166,6 +166,7 @@ impl Rewarder {
             dc_bones_per_share: Some(helium_proto::Decimal {
                 value: poc_dc_shares.dc_transfer_rewards_per_share.to_string(),
             }),
+            token: IotRewardToken::Hnt as i32,
         };
         self.reward_manifests_sink
             .write(
