@@ -73,7 +73,7 @@ pub(crate) mod db {
                 address AS epoch_address,
                 sub_dao AS sub_dao_address,
                 epoch::BIGINT,
-                hnt_rewards_issued::BIGINT,
+                delegation_rewards_issued::BIGINT as hnt_rewards_issued,
                 delegation_rewards_issued::BIGINT,
                 rewards_issued_at::BIGINT
             FROM sub_dao_epoch_infos
@@ -103,12 +103,17 @@ pub(crate) mod db {
                 as u64)
                 .to_timestamp()
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
-
+            let hnt_rewards_issued = row.get::<i64, &str>("hnt_rewards_issued") as u64;
+            if hnt_rewards_issued == 0 {
+                return Err(sqlx::Error::Decode(Box::new(sqlx::Error::Decode(
+                    Box::from("hnt_rewards_issued is 0"),
+                ))));
+            }
             Ok(Self {
                 epoch: row.get::<i64, &str>("epoch") as u64,
                 epoch_address: row.get::<String, &str>("epoch_address"),
                 sub_dao_address: row.get::<String, &str>("sub_dao_address"),
-                hnt_rewards_issued: row.get::<i64, &str>("hnt_rewards_issued") as u64,
+                hnt_rewards_issued,
                 delegation_rewards_issued: row.get::<i64, &str>("delegation_rewards_issued") as u64,
                 rewards_issued_at,
             })

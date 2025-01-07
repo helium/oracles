@@ -1611,7 +1611,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#d63af39f95c55e589dcf5fe028f9b958e691f6a4"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#463c2ab3c383885dd1cfd4ea56ca26f87e737a5c"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3816,7 +3816,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#d63af39f95c55e589dcf5fe028f9b958e691f6a4"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#463c2ab3c383885dd1cfd4ea56ca26f87e737a5c"
 dependencies = [
  "bytes",
  "prost",
@@ -3832,7 +3832,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#4085e00c6f4d82c3da798ae1bc97324bc9cada2e"
+source = "git+https://github.com/helium/proto?branch=master#f79c34f0a6d9c9e17d5cea8d7692797bdaed09be"
 dependencies = [
  "bytes",
  "prost",

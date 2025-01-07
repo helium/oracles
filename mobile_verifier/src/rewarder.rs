@@ -33,7 +33,7 @@ use helium_proto::{
         service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType,
         MobileRewardShare, UnallocatedReward, UnallocatedRewardType,
     },
-    MobileRewardData as ManifestMobileRewardData, RewardManifest,
+    MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
 };
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
@@ -177,8 +177,16 @@ where
             let now = Utc::now();
             let sleep_duration = if scheduler.should_trigger(now) {
                 if self.is_data_current(&scheduler.schedule_period).await? {
-                    self.reward(next_reward_epoch).await?;
-                    continue;
+                    match self.reward(next_reward_epoch).await {
+                        Ok(_) => {
+                            tracing::info!("Successfully rewarded for epoch {}", next_reward_epoch);
+                            continue;
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to reward: {}", e);
+                            chrono::Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
+                        }
+                    }
                 } else {
                     chrono::Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
                 }
@@ -342,6 +350,7 @@ where
                 value: poc_dc_shares.boost.to_string(),
             }),
             service_provider_promotions: sp_promotions.into_proto(),
+            token: MobileRewardToken::Hnt as i32,
         };
         self.reward_manifests
             .write(
