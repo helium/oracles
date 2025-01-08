@@ -153,17 +153,19 @@ impl<PT: PendingTables> solana::send_txn::TxnStore for BurnTxnStore<PT> {
 
     async fn on_prepared(
         &self,
-        signature: &solana::Signature,
-    ) -> Result<(), solana::send_txn::TxnStoreError> {
+        _name: Option<String>,
+        txn: &solana::TransactionWithBlockhash,
+    ) -> Result<(), solana::send_txn::TxnStorePrepareError> {
         tracing::info!("txn prepared");
 
+        let signature = txn.get_signature();
         let add_pending = self
             .pool
             .add_pending_transaction(&self.payer, self.amount, signature);
 
         let Ok(()) = add_pending.await else {
             tracing::error!("failed to add pending transcation");
-            return Err(solana::send_txn::TxnStoreError::new(
+            return Err(solana::send_txn::TxnStorePrepareError::new(
                 "could not add pending transaction",
             ));
         };
@@ -171,27 +173,32 @@ impl<PT: PendingTables> solana::send_txn::TxnStore for BurnTxnStore<PT> {
         Ok(())
     }
 
-    async fn on_sent(&self, _signature: &solana::Signature) {
+    async fn on_sent(&self, _txn: &solana::TransactionWithBlockhash) {
         tracing::info!("txn submitted");
     }
 
-    async fn on_sent_retry(&self, _signature: &solana::Signature, attempt: usize) {
+    async fn on_sent_retry(&self, _txn: &solana::TransactionWithBlockhash, attempt: usize) {
         tracing::warn!(attempt, "retrying");
     }
 
-    async fn on_finalized(&self, signature: &solana::Signature) {
+    async fn on_finalized(&self, txn: &solana::TransactionWithBlockhash) {
         tracing::info!("txn finalized");
-        let Ok(mut txn) = self.pool.begin().await else {
+
+        let Ok(mut db_txn) = self.pool.begin().await else {
             tracing::error!("failed to start finalized txn transaction");
             return;
         };
 
-        let Ok(()) = txn.remove_pending_transaction(signature).await else {
+        let signature = txn.get_signature();
+        let Ok(()) = db_txn.remove_pending_transaction(signature).await else {
             tracing::error!("failed to remove pending");
             return;
         };
 
-        let Ok(()) = txn.subtract_burned_amount(&self.payer, self.amount).await else {
+        let Ok(()) = db_txn
+            .subtract_burned_amount(&self.payer, self.amount)
+            .await
+        else {
             tracing::error!("failed to subtract burned amount");
             return;
         };
@@ -203,7 +210,7 @@ impl<PT: PendingTables> solana::send_txn::TxnStore for BurnTxnStore<PT> {
         payer_account.burned = payer_account.burned.saturating_sub(self.amount);
         payer_account.balance = payer_account.balance.saturating_sub(self.amount);
 
-        let Ok(()) = txn.commit().await else {
+        let Ok(()) = db_txn.commit().await else {
             tracing::error!("failed to commit finalized transaction");
             return;
         };
@@ -216,20 +223,25 @@ impl<PT: PendingTables> solana::send_txn::TxnStore for BurnTxnStore<PT> {
         .increment(self.amount);
     }
 
-    async fn on_error(&self, signature: &solana::Signature, err: solana::send_txn::TxnSenderError) {
+    async fn on_error(
+        &self,
+        txn: &solana::TransactionWithBlockhash,
+        err: solana::send_txn::TxnSenderError,
+    ) {
         tracing::warn!(?err, "txn failed");
 
-        let Ok(mut txn) = self.pool.begin().await else {
+        let Ok(mut db_txn) = self.pool.begin().await else {
             tracing::error!("failed to start error transaction");
             return;
         };
 
-        let Ok(()) = txn.remove_pending_transaction(signature).await else {
+        let signature = txn.get_signature();
+        let Ok(()) = db_txn.remove_pending_transaction(signature).await else {
             tracing::error!("failed to remove pending transaction on error");
             return;
         };
 
-        let Ok(()) = txn.commit().await else {
+        let Ok(()) = db_txn.commit().await else {
             tracing::error!("failed to commit on error transaction");
             return;
         };

@@ -114,21 +114,22 @@ impl solana::send_txn::TxnStore for BurnerTxnStore {
 
     async fn on_prepared(
         &self,
-        _signature: &solana::Signature,
-    ) -> Result<(), solana::send_txn::TxnStoreError> {
+        _name: Option<String>,
+        _txn: &solana::TransactionWithBlockhash,
+    ) -> Result<(), solana::send_txn::TxnStorePrepareError> {
         tracing::info!("txn prepared");
         Ok(())
     }
 
-    async fn on_sent(&self, _signature: &solana::Signature) {
+    async fn on_sent(&self, _txn: &solana::TransactionWithBlockhash) {
         tracing::info!("txn sent");
     }
 
-    async fn on_sent_retry(&self, _signature: &solana::Signature, attempt: usize) {
+    async fn on_sent_retry(&self, _txn: &solana::TransactionWithBlockhash, attempt: usize) {
         tracing::warn!(attempt, "retrying");
     }
 
-    async fn on_finalized(&self, _signature: &solana::Signature) {
+    async fn on_finalized(&self, _txn: &solana::TransactionWithBlockhash) {
         tracing::info!("txn finalized");
         metrics::counter!(
             "burned",
@@ -156,7 +157,7 @@ impl solana::send_txn::TxnStore for BurnerTxnStore {
 
     async fn on_error(
         &self,
-        _signature: &solana::Signature,
+        _txn: &solana::TransactionWithBlockhash,
         err: solana::send_txn::TxnSenderError,
     ) {
         tracing::warn!(?err, "failed to confirm");
