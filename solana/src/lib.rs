@@ -1,4 +1,3 @@
-use helium_lib::TransactionWithBlockhash;
 use solana_client::client_error::ClientError;
 use solana_sdk::pubkey::ParsePubkeyError;
 use solana_sdk::transaction::Transaction;
@@ -8,7 +7,7 @@ pub use helium_lib::{
     dao::SubDao,
     error,
     keypair::{Keypair, Pubkey},
-    send_txn, Signature,
+    send_txn, Signature, TransactionWithBlockhash,
 };
 
 pub mod burn;
@@ -66,7 +65,7 @@ pub enum SolanaRpcError {
     #[error("helium-lib error: {0}")]
     HeliumLib(#[from] helium_lib::error::Error),
     #[error("helium-lib txn send error: {0}")]
-    HeliumLibTxnSend(#[from] helium_lib::send_txn::LibError),
+    HeliumLibTxnSend(#[from] helium_lib::send_txn::TxnSenderError),
     #[error("Parse Solana Pubkey from slice error: {0}")]
     ParsePubkeyFromSliceError(#[from] std::array::TryFromSliceError),
 }
