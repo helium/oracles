@@ -156,10 +156,18 @@ impl<PT: PendingTables> solana::send_txn::TxnStore for BurnTxnStore<PT> {
         signature: &solana::Signature,
     ) -> Result<(), solana::send_txn::TxnStoreError> {
         tracing::info!("txn prepared");
-        self.pool
-            .add_pending_transaction(&self.payer, self.amount, signature)
-            .await
-            .expect("add submitted pending txn");
+
+        let add_pending = self
+            .pool
+            .add_pending_transaction(&self.payer, self.amount, signature);
+
+        let Ok(()) = add_pending.await else {
+            tracing::error!("failed to add pending transcation");
+            return Err(solana::send_txn::TxnStoreError::new(
+                "could not add pending transaction",
+            ));
+        };
+
         Ok(())
     }
 
@@ -173,19 +181,20 @@ impl<PT: PendingTables> solana::send_txn::TxnStore for BurnTxnStore<PT> {
 
     async fn on_finalized(&self, signature: &solana::Signature) {
         tracing::info!("txn finalized");
-        let mut txn = self
-            .pool
-            .begin()
-            .await
-            .expect("begin txn finalized transaction");
+        let Ok(mut txn) = self.pool.begin().await else {
+            tracing::error!("failed to start finalized txn transaction");
+            return;
+        };
 
-        txn.remove_pending_transaction(signature)
-            .await
-            .expect("remove pending");
+        let Ok(()) = txn.remove_pending_transaction(signature).await else {
+            tracing::error!("failed to remove pending");
+            return;
+        };
 
-        txn.subtract_burned_amount(&self.payer, self.amount)
-            .await
-            .expect("subtract burned amount");
+        let Ok(()) = txn.subtract_burned_amount(&self.payer, self.amount).await else {
+            tracing::error!("failed to subtract burned amount");
+            return;
+        };
 
         // Subtract balances from map before submitted db txn
         let mut balance_lock = self.balances.lock().await;
@@ -194,7 +203,10 @@ impl<PT: PendingTables> solana::send_txn::TxnStore for BurnTxnStore<PT> {
         payer_account.burned = payer_account.burned.saturating_sub(self.amount);
         payer_account.balance = payer_account.balance.saturating_sub(self.amount);
 
-        txn.commit().await.expect("finalized txn commited");
+        let Ok(()) = txn.commit().await else {
+            tracing::error!("failed to commit finalized transaction");
+            return;
+        };
 
         metrics::counter!(
             "burned",
@@ -207,17 +219,20 @@ impl<PT: PendingTables> solana::send_txn::TxnStore for BurnTxnStore<PT> {
     async fn on_error(&self, signature: &solana::Signature, err: solana::send_txn::TxnSenderError) {
         tracing::warn!(?err, "txn failed");
 
-        let mut txn = self
-            .pool
-            .begin()
-            .await
-            .expect("begin txn failure transaction");
+        let Ok(mut txn) = self.pool.begin().await else {
+            tracing::error!("failed to start error transaction");
+            return;
+        };
 
-        txn.remove_pending_transaction(signature)
-            .await
-            .expect("remove pending for failure");
+        let Ok(()) = txn.remove_pending_transaction(signature).await else {
+            tracing::error!("failed to remove pending transaction on error");
+            return;
+        };
 
-        txn.commit().await.expect("failed txn commited");
+        let Ok(()) = txn.commit().await else {
+            tracing::error!("failed to commit on error transaction");
+            return;
+        };
 
         metrics::counter!(
             "burned",
