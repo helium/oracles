@@ -126,6 +126,7 @@ impl Daemon {
         // (Pre)initialize tracked_radios_cache to avoid race condition in GatewayService
         mobile_tracker.track_changes().await?;
 
+        tracing::info!("Starting grpc server");
         TaskManager::builder()
             .add_task(grpc_server)
             .add_task(mobile_tracker)
