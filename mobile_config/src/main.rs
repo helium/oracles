@@ -123,7 +123,7 @@ impl Daemon {
             settings.mobile_radio_tracker_interval,
             Arc::clone(&tracked_radios_cache),
         );
-        // Preinitialize tracked_radios_cache to avoid race condition in GatewayService
+        // (Pre)initialize tracked_radios_cache to avoid race condition in GatewayService
         mobile_tracker.track_changes().await?;
 
         TaskManager::builder()

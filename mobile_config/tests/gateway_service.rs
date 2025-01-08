@@ -1,4 +1,4 @@
-use std::vec;
+use std::{sync::Arc, vec};
 
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
@@ -11,11 +11,12 @@ use helium_proto::services::mobile_config::{
 use mobile_config::{
     gateway_service::GatewayService,
     key_cache::{CacheKeys, KeyCache},
+    mobile_radio_tracker::{MobileRadioTracker, TrackedRadiosMap},
     KeyRole,
 };
 use prost::Message;
 use sqlx::PgPool;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::RwLock};
 use tonic::{transport, Code};
 
 #[sqlx::test]
@@ -35,7 +36,9 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_key.public_key().to_owned(), KeyRole::Administrator)]);
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
+    let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
+        Arc::new(RwLock::new(TrackedRadiosMap::new()));
+    let gws = GatewayService::new(key_cache, pool.clone(), server_key, tracked_radios_cache);
     let _handle = tokio::spawn(
         transport::Server::builder()
             .add_service(proto::GatewayServer::new(gws))
@@ -51,7 +54,7 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     assert_ne!(
         err.code(),
         Code::PermissionDenied,
-        "gateway can request infomation about itself"
+        "gateway can request information about itself"
     );
 
     // Request gateway info as administrator
@@ -99,8 +102,22 @@ async fn spawn_gateway_service(
 
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
+
+    let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
+        Arc::new(RwLock::new(TrackedRadiosMap::new()));
+
+    let mobile_tracker = MobileRadioTracker::new(
+        pool.clone(),
+        pool.clone(),
+        // settings.mobile_radio_tracker_interval,
+        humantime::parse_duration("1 hour").unwrap(),
+        Arc::clone(&tracked_radios_cache),
+    );
+    mobile_tracker.track_changes().await.unwrap();
+
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
+
+    let gws = GatewayService::new(key_cache, pool.clone(), server_key, tracked_radios_cache);
     let handle = tokio::spawn(
         transport::Server::builder()
             .add_service(proto::GatewayServer::new(gws))
