@@ -7,13 +7,19 @@ use helium_proto::services::mobile_config::{
     HexBoostingServer,
 };
 use mobile_config::{
-    admin_service::AdminService, authorization_service::AuthorizationService,
-    carrier_service::CarrierService, entity_service::EntityService,
-    gateway_service::GatewayService, hex_boosting_service::HexBoostingService, key_cache::KeyCache,
-    mobile_radio_tracker::MobileRadioTracker, settings::Settings,
+    admin_service::AdminService,
+    authorization_service::AuthorizationService,
+    carrier_service::CarrierService,
+    entity_service::EntityService,
+    gateway_service::GatewayService,
+    hex_boosting_service::HexBoostingService,
+    key_cache::KeyCache,
+    mobile_radio_tracker::{MobileRadioTracker, TrackedRadiosMap},
+    settings::Settings,
 };
-use std::{net::SocketAddr, path::PathBuf, time::Duration};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
+use tokio::sync::RwLock;
 use tonic::transport;
 
 #[derive(Debug, clap::Parser)]
@@ -71,11 +77,15 @@ impl Daemon {
 
         let admin_svc =
             AdminService::new(settings, key_cache.clone(), key_cache_updater, pool.clone())?;
+
+        let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
+            Arc::new(RwLock::new(TrackedRadiosMap::new()));
+
         let gateway_svc = GatewayService::new(
             key_cache.clone(),
             metadata_pool.clone(),
             settings.signing_keypair()?,
-            pool.clone(),
+            Arc::clone(&tracked_radios_cache),
         );
         let auth_svc = AuthorizationService::new(key_cache.clone(), settings.signing_keypair()?);
         let entity_svc = EntityService::new(
@@ -107,13 +117,18 @@ impl Daemon {
             hex_boosting_svc,
         };
 
+        let mobile_tracker = MobileRadioTracker::new(
+            pool.clone(),
+            metadata_pool.clone(),
+            settings.mobile_radio_tracker_interval,
+            Arc::clone(&tracked_radios_cache),
+        );
+        // Preinitialize tracked_radios_cache to avoid race condition in GatewayService
+        mobile_tracker.track_changes().await?;
+
         TaskManager::builder()
             .add_task(grpc_server)
-            .add_task(MobileRadioTracker::new(
-                pool.clone(),
-                metadata_pool.clone(),
-                settings.mobile_radio_tracker_interval,
-            ))
+            .add_task(mobile_tracker)
             .build()
             .start()
             .await

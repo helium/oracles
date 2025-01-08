@@ -1,10 +1,15 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt, TryFutureExt, TryStreamExt};
+use helium_crypto::PublicKeyBinary;
+use sqlx::Row;
 use sqlx::{Pool, Postgres, QueryBuilder};
+use std::str::FromStr;
 use task_manager::ManagedTask;
+use tokio::sync::RwLock;
 
+pub type TrackedRadiosMap = HashMap<PublicKeyBinary, DateTime<Utc>>;
 type EntityKey = Vec<u8>;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -105,6 +110,7 @@ pub struct MobileRadioTracker {
     pool: Pool<Postgres>,
     metadata: Pool<Postgres>,
     interval: Duration,
+    tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>>,
 }
 
 impl ManagedTask for MobileRadioTracker {
@@ -122,11 +128,17 @@ impl ManagedTask for MobileRadioTracker {
 }
 
 impl MobileRadioTracker {
-    pub fn new(pool: Pool<Postgres>, metadata: Pool<Postgres>, interval: Duration) -> Self {
+    pub fn new(
+        pool: Pool<Postgres>,
+        metadata: Pool<Postgres>,
+        interval: Duration,
+        tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>>,
+    ) -> Self {
         Self {
             pool,
             metadata,
             interval,
+            tracked_radios_cache,
         }
     }
 
@@ -139,7 +151,7 @@ impl MobileRadioTracker {
                 biased;
                 _ = &mut shutdown => break,
                 _ = interval.tick() => {
-                    if let Err(err) = track_changes(&self.pool, &self.metadata).await {
+                    if let Err(err) = self.track_changes().await {
                         tracing::error!(?err, "error in tracking changes to mobile radios");
                     }
                 }
@@ -150,20 +162,28 @@ impl MobileRadioTracker {
 
         Ok(())
     }
-}
 
-async fn track_changes(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow::Result<()> {
-    tracing::info!("looking for changes to radios");
-    let tracked_radios = get_tracked_radios(pool).await?;
-    let all_mobile_radios = get_all_mobile_radios(metadata);
+    pub async fn track_changes(&self) -> anyhow::Result<()> {
+        tracing::info!("looking for changes to radios");
+        let tracked_radios = get_tracked_radios(&self.pool).await?;
+        let all_mobile_radios = get_all_mobile_radios(&self.metadata);
 
-    let updates = identify_changes(all_mobile_radios, tracked_radios).await;
-    tracing::info!("updating in db: {}", updates.len());
+        let updates = identify_changes(all_mobile_radios, tracked_radios).await;
 
-    update_tracked_radios(pool, updates).await?;
-    tracing::info!("done");
+        tracing::info!("updating in db: {}", updates.len());
+        update_tracked_radios(&self.pool, updates).await?;
 
-    Ok(())
+        tracing::info!("updating tracked radios cache");
+        let tracked_radios_map: TrackedRadiosMap =
+            get_updated_radios(&self.pool, DateTime::UNIX_EPOCH).await?;
+        {
+            let mut map = self.tracked_radios_cache.write().await;
+            *map = tracked_radios_map;
+        }
+
+        tracing::info!("done");
+        Ok(())
+    }
 }
 
 async fn identify_changes(
@@ -180,6 +200,30 @@ async fn identify_changes(
             None => TrackedMobileRadio::new(&radio),
         })
         .collect()
+        .await
+}
+
+const GET_UPDATED_RADIOS: &str =
+    "SELECT entity_key, last_changed_at FROM mobile_radio_tracker WHERE last_changed_at >= $1";
+
+pub async fn get_updated_radios(
+    pool: &Pool<Postgres>,
+    min_updated_at: DateTime<Utc>,
+) -> anyhow::Result<HashMap<PublicKeyBinary, DateTime<Utc>>> {
+    sqlx::query(GET_UPDATED_RADIOS)
+        .bind(min_updated_at)
+        .fetch(pool)
+        .map_err(anyhow::Error::from)
+        .try_fold(
+            HashMap::new(),
+            |mut map: HashMap<PublicKeyBinary, DateTime<Utc>>, row| async move {
+                let entity_key_b = row.get::<&[u8], &str>("entity_key");
+                let entity_key = bs58::encode(entity_key_b).into_string();
+                let updated_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
+                map.insert(PublicKeyBinary::from_str(&entity_key)?, updated_at);
+                Ok(map)
+            },
+        )
         .await
 }
 
