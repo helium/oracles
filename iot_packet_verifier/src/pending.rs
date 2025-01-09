@@ -4,14 +4,12 @@ use helium_crypto::PublicKeyBinary;
 use solana::{burn::SolanaNetwork, SolanaRpcError};
 use solana_sdk::signature::Signature;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Postgres, Row, Transaction};
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::Mutex;
 
 use crate::balances::BalanceStore;
 
 /// To avoid excessive burn transaction (which cost us money), we institute a minimum
 /// amount of Data Credits accounted for before we burn from a payer:
-const BURN_THRESHOLD: i64 = 10_000;
+pub const BURN_THRESHOLD: i64 = 10_000;
 
 #[async_trait]
 pub trait AddPendingBurn {
@@ -267,134 +265,19 @@ impl FromRow<'_, PgRow> for PendingTxn {
     }
 }
 
-#[async_trait]
-impl AddPendingBurn for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
-    async fn add_burned_amount(
-        &mut self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-    ) -> Result<(), sqlx::Error> {
-        let mut map = self.lock().await;
-        *map.entry(payer.clone()).or_default() += amount;
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct MockPendingTxn {
-    payer: PublicKeyBinary,
-    amount: u64,
-    time_of_submission: DateTime<Utc>,
-}
-
-#[derive(Default, Clone)]
-pub struct MockPendingTables {
-    pub pending_txns: Arc<Mutex<HashMap<Signature, MockPendingTxn>>>,
-    pub pending_burns: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
-}
-
-#[async_trait]
-impl PendingTables for MockPendingTables {
-    type Transaction<'a> = &'a MockPendingTables;
-
-    async fn fetch_next_burn(&self) -> Result<Option<Burn>, sqlx::Error> {
-        Ok(self
-            .pending_burns
-            .lock()
-            .await
-            .iter()
-            .max_by_key(|(_, amount)| **amount)
-            .map(|(payer, &amount)| Burn {
-                payer: payer.clone(),
-                amount,
-            }))
-    }
-
-    async fn fetch_all_pending_burns(&self) -> Result<Vec<Burn>, sqlx::Error> {
-        Ok(self
-            .pending_burns
-            .lock()
-            .await
-            .clone()
-            .into_iter()
-            .map(|(payer, amount)| Burn { payer, amount })
-            .collect())
-    }
-
-    async fn fetch_all_pending_txns(&self) -> Result<Vec<PendingTxn>, sqlx::Error> {
-        Ok(self
-            .pending_txns
-            .lock()
-            .await
-            .clone()
-            .into_iter()
-            .map(|(signature, mock)| PendingTxn {
-                signature,
-                payer: mock.payer,
-                amount: mock.amount,
-                time_of_submission: mock.time_of_submission,
-            })
-            .collect())
-    }
-
-    async fn add_pending_transaction(
-        &self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-        signature: &Signature,
-    ) -> Result<(), sqlx::Error> {
-        self.pending_txns.lock().await.insert(
-            *signature,
-            MockPendingTxn {
-                payer: payer.clone(),
-                amount,
-                time_of_submission: Utc::now(),
-            },
-        );
-
-        Ok(())
-    }
-
-    async fn begin<'a>(&'a self) -> Result<Self::Transaction<'a>, sqlx::Error> {
-        Ok(self)
-    }
-}
-
-#[async_trait]
-impl<'a> PendingTablesTransaction<'a> for &'a MockPendingTables {
-    async fn remove_pending_transaction(
-        &mut self,
-        signature: &Signature,
-    ) -> Result<(), sqlx::Error> {
-        self.pending_txns.lock().await.remove(signature);
-        Ok(())
-    }
-
-    async fn subtract_burned_amount(
-        &mut self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-    ) -> Result<(), sqlx::Error> {
-        let mut map = self.pending_burns.lock().await;
-        let balance = map.get_mut(payer).unwrap();
-        *balance -= amount;
-        Ok(())
-    }
-
-    async fn commit(self) -> Result<(), sqlx::Error> {
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod test {
 
     use solana::send_txn;
+    use tokio::sync::Mutex;
 
     use crate::balances::PayerAccount;
 
     use super::*;
-    use std::collections::HashSet;
+    use std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    };
 
     #[derive(Clone)]
     struct MockConfirmed(HashSet<Signature>);
@@ -496,5 +379,111 @@ mod test {
                 .unwrap(),
             UNCONFIRMED_BURN_AMOUNT,
         );
+    }
+
+    #[derive(Clone, Debug)]
+    struct MockPendingTxn {
+        payer: PublicKeyBinary,
+        amount: u64,
+        time_of_submission: DateTime<Utc>,
+    }
+
+    #[derive(Default, Clone)]
+    struct MockPendingTables {
+        pub pending_txns: Arc<Mutex<HashMap<Signature, MockPendingTxn>>>,
+        pub pending_burns: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+    }
+
+    #[async_trait]
+    impl PendingTables for MockPendingTables {
+        type Transaction<'a> = &'a MockPendingTables;
+
+        async fn fetch_next_burn(&self) -> Result<Option<Burn>, sqlx::Error> {
+            Ok(self
+                .pending_burns
+                .lock()
+                .await
+                .iter()
+                .max_by_key(|(_, amount)| **amount)
+                .map(|(payer, &amount)| Burn {
+                    payer: payer.clone(),
+                    amount,
+                }))
+        }
+
+        async fn fetch_all_pending_burns(&self) -> Result<Vec<Burn>, sqlx::Error> {
+            Ok(self
+                .pending_burns
+                .lock()
+                .await
+                .clone()
+                .into_iter()
+                .map(|(payer, amount)| Burn { payer, amount })
+                .collect())
+        }
+
+        async fn fetch_all_pending_txns(&self) -> Result<Vec<PendingTxn>, sqlx::Error> {
+            Ok(self
+                .pending_txns
+                .lock()
+                .await
+                .clone()
+                .into_iter()
+                .map(|(signature, mock)| PendingTxn {
+                    signature,
+                    payer: mock.payer,
+                    amount: mock.amount,
+                    time_of_submission: mock.time_of_submission,
+                })
+                .collect())
+        }
+
+        async fn add_pending_transaction(
+            &self,
+            payer: &PublicKeyBinary,
+            amount: u64,
+            signature: &Signature,
+        ) -> Result<(), sqlx::Error> {
+            self.pending_txns.lock().await.insert(
+                *signature,
+                MockPendingTxn {
+                    payer: payer.clone(),
+                    amount,
+                    time_of_submission: Utc::now(),
+                },
+            );
+
+            Ok(())
+        }
+
+        async fn begin<'a>(&'a self) -> Result<Self::Transaction<'a>, sqlx::Error> {
+            Ok(self)
+        }
+    }
+
+    #[async_trait]
+    impl<'a> PendingTablesTransaction<'a> for &'a MockPendingTables {
+        async fn remove_pending_transaction(
+            &mut self,
+            signature: &Signature,
+        ) -> Result<(), sqlx::Error> {
+            self.pending_txns.lock().await.remove(signature);
+            Ok(())
+        }
+
+        async fn subtract_burned_amount(
+            &mut self,
+            payer: &PublicKeyBinary,
+            amount: u64,
+        ) -> Result<(), sqlx::Error> {
+            let mut map = self.pending_burns.lock().await;
+            let balance = map.get_mut(payer).unwrap();
+            *balance -= amount;
+            Ok(())
+        }
+
+        async fn commit(self) -> Result<(), sqlx::Error> {
+            Ok(())
+        }
     }
 }

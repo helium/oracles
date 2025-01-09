@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 
 /// Caches balances fetched from the solana chain and debits made by the
 /// packet verifier.
+#[derive(Clone)]
 pub struct BalanceCache<S> {
     payer_accounts: BalanceStore,
     solana: S,
