@@ -161,23 +161,6 @@ fn invalid_packet(payload_size: u32, payload_hash: Vec<u8>) -> InvalidPacket {
     }
 }
 
-// #[derive(Clone)]
-// struct InstantlyBurnedBalance(Arc<Mutex<HashMap<PublicKeyBinary, u64>>>);
-
-// #[async_trait]
-// impl AddPendingBurn for InstantlyBurnedBalance {
-//     async fn add_burned_amount(
-//         &mut self,
-//         payer: &PublicKeyBinary,
-//         amount: u64,
-//     ) -> Result<(), sqlx::Error> {
-//         let mut map = self.0.lock().await;
-//         let balance = map.get_mut(payer).unwrap();
-//         *balance -= amount;
-//         Ok(())
-//     }
-// }
-
 #[sqlx::test]
 async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
     // Set up orgs:
@@ -678,7 +661,6 @@ impl SolanaNetwork for MockSolanaNetwork {
 }
 
 #[sqlx::test]
-#[ignore]
 async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     const CONFIRMED_BURN_AMOUNT: u64 = 7;
     const UNCONFIRMED_BURN_AMOUNT: u64 = 11;
@@ -711,14 +693,20 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     }
 
     // First transaction is confirmed
+    // Make submission time in past to bypass confirm txn sleep
     {
         let txn = mock_network
             .make_burn_transaction(&payer, CONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
-        pool.add_pending_transaction(&payer, CONFIRMED_BURN_AMOUNT, txn.get_signature())
-            .await
-            .unwrap();
+        pool.do_add_pending_transaction(
+            &payer,
+            CONFIRMED_BURN_AMOUNT,
+            txn.get_signature(),
+            Utc::now() - chrono::Duration::minutes(2),
+        )
+        .await
+        .unwrap();
         mock_network
             .submit_transaction(&txn, &send_txn::NoopStore, 5, Duration::from_millis(0))
             .await
@@ -726,14 +714,20 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     }
 
     // Second is unconfirmed
+    // Make submission time in past to bypass confirm txn sleep
     {
         let txn = mock_network
             .make_burn_transaction(&payer, UNCONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
-        pool.add_pending_transaction(&payer, UNCONFIRMED_BURN_AMOUNT, txn.get_signature())
-            .await
-            .unwrap();
+        pool.do_add_pending_transaction(
+            &payer,
+            UNCONFIRMED_BURN_AMOUNT,
+            txn.get_signature(),
+            Utc::now() - chrono::Duration::minutes(3),
+        )
+        .await
+        .unwrap();
     }
 
     // Confirm pending transactions
