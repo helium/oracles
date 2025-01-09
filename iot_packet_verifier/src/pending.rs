@@ -280,7 +280,7 @@ impl AddPendingBurn for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MockPendingTxn {
     payer: PublicKeyBinary,
     amount: u64,
@@ -351,6 +351,7 @@ impl PendingTables for MockPendingTables {
                 time_of_submission: Utc::now(),
             },
         );
+
         Ok(())
     }
 
