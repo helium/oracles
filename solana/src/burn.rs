@@ -1,7 +1,7 @@
 use crate::{read_keypair_from_file, GetSignature, Keypair, Pubkey, SolanaRpcError, SubDao};
 use async_trait::async_trait;
 use helium_crypto::PublicKeyBinary;
-use helium_lib::send_txn::TxnSender;
+use helium_lib::send_txn::{SolanaClientError, TxnSender, TxnSenderClientExt};
 use helium_lib::{client, dc, send_txn, token, TransactionOpts, TransactionWithBlockhash};
 use serde::Deserialize;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
@@ -277,38 +277,97 @@ impl GetSignature for MockTransaction {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct TestSolanaClientMap {
+    pub payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+    pub txn_sig_to_payer: Arc<Mutex<HashMap<Signature, (PublicKeyBinary, u64)>>>,
+}
+
+impl TestSolanaClientMap {
+    pub fn new(ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>) -> Self {
+        Self {
+            payer_balances: ledger,
+            txn_sig_to_payer: Default::default(),
+        }
+    }
+    pub async fn insert(&mut self, payer: PublicKeyBinary, amount: u64) {
+        self.payer_balances.lock().await.insert(payer, amount);
+    }
+}
+
 #[async_trait]
-impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
-    type Transaction = MockTransaction;
+impl SolanaNetwork for TestSolanaClientMap {
+    type Transaction = TransactionWithBlockhash;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        Ok(*self.lock().await.get(payer).unwrap())
+        Ok(*self.payer_balances.lock().await.get(payer).unwrap())
     }
 
     async fn make_burn_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<MockTransaction, SolanaRpcError> {
-        Ok(MockTransaction {
-            signature: Signature::new_unique(),
-            payer: payer.clone(),
-            amount,
+    ) -> Result<TransactionWithBlockhash, SolanaRpcError> {
+        let mut inner = solana_sdk::transaction::Transaction::default();
+
+        let sig = Signature::new_unique();
+        // add signature -> (payer, amount) so we can subtract
+        self.txn_sig_to_payer
+            .lock()
+            .await
+            .insert(sig.clone(), (payer.clone(), amount));
+        inner.signatures.push(sig);
+
+        Ok(TransactionWithBlockhash {
+            inner,
+            block_height: 1,
         })
     }
 
     async fn submit_transaction(
         &self,
-        txn: &MockTransaction,
-        _store: &impl send_txn::TxnStore,
+        txn: &TransactionWithBlockhash,
+        store: &impl send_txn::TxnStore,
         _max_attempts: usize,
         _retry_delay: Duration,
     ) -> Result<(), SolanaRpcError> {
-        *self.lock().await.get_mut(&txn.payer).unwrap() -= txn.amount;
+        let config = solana_client::rpc_config::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        };
+
+        let _sender = TxnSender::new(self, txn)
+            .finalized(true)
+            .with_store(store)
+            .send(config)
+            .await?;
+
+        if let Some((payer, amount)) = self.txn_sig_to_payer.lock().await.get(txn.get_signature()) {
+            *self.payer_balances.lock().await.get_mut(payer).unwrap() -= amount;
+        }
+
+        //*self.0.lock().await.get_mut(&txn.payer).unwrap() -= txn.amount;
         Ok(())
     }
 
     async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, SolanaRpcError> {
         Ok(true)
+    }
+}
+
+#[async_trait::async_trait]
+impl TxnSenderClientExt for TestSolanaClientMap {
+    async fn send_txn(
+        &self,
+        txn: &TransactionWithBlockhash,
+        _config: solana_client::rpc_config::RpcSendTransactionConfig,
+    ) -> Result<Signature, SolanaClientError> {
+        Ok(*txn.get_signature())
+    }
+    async fn finalize_signature(&self, _signature: &Signature) -> Result<(), SolanaClientError> {
+        Ok(())
+    }
+    async fn get_block_height(&self) -> Result<u64, SolanaClientError> {
+        Ok(1)
     }
 }
