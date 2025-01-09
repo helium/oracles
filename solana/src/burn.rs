@@ -315,7 +315,7 @@ impl SolanaNetwork for TestSolanaClientMap {
         self.txn_sig_to_payer
             .lock()
             .await
-            .insert(sig.clone(), (payer.clone(), amount));
+            .insert(sig, (payer.clone(), amount));
         inner.signatures.push(sig);
 
         Ok(TransactionWithBlockhash {
