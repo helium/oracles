@@ -13,7 +13,7 @@ use helium_proto::{
 use iot_packet_verifier::{
     balances::{BalanceCache, PayerAccount},
     burner::Burner,
-    pending::{confirm_pending_txns, AddPendingBurn, Burn, MockPendingTables, PendingTables},
+    pending::{confirm_pending_txns, AddPendingBurn, Burn, PendingTables, BURN_THRESHOLD},
     verifier::{payload_size_to_dc, ConfigServer, ConfigServerError, Org, Verifier, BYTES_PER_DC},
 };
 use solana::{
@@ -28,12 +28,13 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+#[derive(Debug)]
 struct MockConfig {
     payer: PublicKeyBinary,
     enabled: bool,
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 struct MockConfigServer {
     payers: Arc<Mutex<HashMap<u64, MockConfig>>>,
 }
@@ -160,28 +161,29 @@ fn invalid_packet(payload_size: u32, payload_hash: Vec<u8>) -> InvalidPacket {
     }
 }
 
-#[derive(Clone)]
-struct InstantlyBurnedBalance(Arc<Mutex<HashMap<PublicKeyBinary, u64>>>);
+// #[derive(Clone)]
+// struct InstantlyBurnedBalance(Arc<Mutex<HashMap<PublicKeyBinary, u64>>>);
 
-#[async_trait]
-impl AddPendingBurn for InstantlyBurnedBalance {
-    async fn add_burned_amount(
-        &mut self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-    ) -> Result<(), sqlx::Error> {
-        let mut map = self.0.lock().await;
-        let balance = map.get_mut(payer).unwrap();
-        *balance -= amount;
-        Ok(())
-    }
-}
+// #[async_trait]
+// impl AddPendingBurn for InstantlyBurnedBalance {
+//     async fn add_burned_amount(
+//         &mut self,
+//         payer: &PublicKeyBinary,
+//         amount: u64,
+//     ) -> Result<(), sqlx::Error> {
+//         let mut map = self.0.lock().await;
+//         let balance = map.get_mut(payer).unwrap();
+//         *balance -= amount;
+//         Ok(())
+//     }
+// }
 
-#[tokio::test]
-async fn test_config_unlocking() {
+#[sqlx::test]
+async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
     // Set up orgs:
     let orgs = MockConfigServer::default();
     orgs.insert(0_u64, PublicKeyBinary::from(vec![0])).await;
+
     // Set up balances:
     let mut solana_network = TestSolanaClientMap::default();
     solana_network
@@ -189,21 +191,24 @@ async fn test_config_unlocking() {
         .await;
 
     // Set up cache:
-    let mut cache = HashMap::new();
-    cache.insert(PublicKeyBinary::from(vec![0]), 3);
-    let cache = Arc::new(Mutex::new(cache));
-    let balances = InstantlyBurnedBalance(cache.clone());
+    let mut txn = pool.begin().await?;
+    txn.add_burned_amount(&PublicKeyBinary::from(vec![0]), 3)
+        .await?;
+    txn.commit().await?;
+    let balances = BalanceCache::new(&pool, solana_network.clone()).await?;
+
     // Set up verifier:
     let mut verifier = Verifier {
-        debiter: balances.0.clone(),
+        debiter: balances.clone(),
         config_server: orgs.clone(),
     };
     let mut valid_packets = Vec::new();
     let mut invalid_packets = Vec::new();
+    let mut pending_burn_txn = pool.begin().await?;
     verifier
         .verify(
             1,
-            &mut balances.clone(),
+            &mut pending_burn_txn,
             stream::iter(vec![
                 packet_report(0, 0, 24, vec![1], false),
                 packet_report(0, 1, 48, vec![2], false),
@@ -215,6 +220,9 @@ async fn test_config_unlocking() {
         .await
         .unwrap();
 
+    pending_burn_txn.commit().await?;
+
+    // Orgs start out locked
     assert!(!orgs.payers.lock().await.get(&0).unwrap().enabled);
 
     // Update the solana network:
@@ -230,7 +238,7 @@ async fn test_config_unlocking() {
     // Calling monitor funds should re-enable the org and update the
     // verifier's cache
     let solana = solana_network.clone();
-    let balance_cache = cache.clone();
+    let balance_cache = balances.balances().clone();
     let orgs_clone = orgs.clone();
     tokio::spawn(async move {
         orgs_clone
@@ -249,20 +257,24 @@ async fn test_config_unlocking() {
     // We should be re-enabled
     assert!(orgs.payers.lock().await.get(&0).unwrap().enabled);
     assert_eq!(
-        *cache
+        balances
+            .balances()
             .lock()
             .await
             .get(&PublicKeyBinary::from(vec![0]))
-            .unwrap(),
-        50
+            .unwrap()
+            .balance,
+        50,
+        "balance is back to 50"
     );
 
     trigger.trigger();
 
+    let mut pending_burn_txn = pool.begin().await?;
     verifier
         .verify(
             1,
-            &mut balances.clone(),
+            &mut pending_burn_txn,
             stream::iter(vec![
                 packet_report(0, 0, 24, vec![1], false),
                 packet_report(0, 1, 48, vec![2], false),
@@ -274,86 +286,102 @@ async fn test_config_unlocking() {
         .await
         .unwrap();
 
+    pending_burn_txn.commit().await?;
+
     // Still enabled:
     assert!(orgs.payers.lock().await.get(&0).unwrap().enabled);
+    let payer_account = balances
+        .balances()
+        .lock()
+        .await
+        .get(&PublicKeyBinary::from(vec![0]))
+        .cloned()
+        .unwrap();
     assert_eq!(
-        *cache
-            .lock()
-            .await
-            .get(&PublicKeyBinary::from(vec![0]))
-            .unwrap(),
-        46
+        payer_account.balance, 50,
+        "balance has not been deducted because no solana burn has been sent"
     );
+    assert_eq!(
+        payer_account.burned, 7,
+        "burned is previous sufficient amount plus new sufficient amount"
+    );
+
+    Ok(())
 }
 
-// #[tokio::test]
-// async fn test_verifier_free_packets() {
-//     // Org packets
-//     let packets = vec![
-//         packet_report(0, 0, 24, vec![4], true),
-//         packet_report(0, 1, 48, vec![5], true),
-//         packet_report(0, 2, 1, vec![6], true),
-//     ];
+#[sqlx::test]
+async fn test_verifier_free_packets(pool: PgPool) -> anyhow::Result<()> {
+    // Org packets
+    let packets = vec![
+        packet_report(0, 0, 24, vec![4], true),
+        packet_report(0, 1, 48, vec![5], true),
+        packet_report(0, 2, 1, vec![6], true),
+    ];
 
-//     let org_pubkey = PublicKeyBinary::from(vec![0]);
+    let org_pubkey = PublicKeyBinary::from(vec![0]);
 
-//     // Set up orgs:
-//     let orgs = MockConfigServer::default();
-//     orgs.insert(0_u64, org_pubkey.clone()).await;
+    // Set up orgs:
+    let orgs = MockConfigServer::default();
+    orgs.insert(0_u64, org_pubkey.clone()).await;
 
-//     // Set up balances:
-//     let mut balances = HashMap::new();
-//     balances.insert(org_pubkey.clone(), 5);
-//     let balances = InstantlyBurnedBalance(Arc::new(Mutex::new(balances)));
+    // Set up balances:
+    let mut solana_network = TestSolanaClientMap::default();
+    solana_network.insert(org_pubkey.clone(), 5).await;
+    let balances = BalanceCache::new(&pool, solana_network).await?;
 
-//     // Set up output:
-//     let mut valid_packets = Vec::new();
-//     let mut invalid_packets = Vec::new();
+    // Set up output:
+    let mut valid_packets = Vec::new();
+    let mut invalid_packets = Vec::new();
 
-//     // Set up verifier:
-//     let mut verifier = Verifier {
-//         debiter: balances.0.clone(),
-//         config_server: orgs,
-//     };
-//     // Run the verifier:
-//     verifier
-//         .verify(
-//             1,
-//             &mut balances.clone(),
-//             stream::iter(packets),
-//             &mut valid_packets,
-//             &mut invalid_packets,
-//         )
-//         .await
-//         .unwrap();
+    // Set up verifier:
+    let mut verifier = Verifier {
+        debiter: balances.clone(),
+        config_server: orgs,
+    };
+    // Run the verifier:
+    let mut pending_burn_txn = pool.begin().await?;
+    verifier
+        .verify(
+            1,
+            &mut pending_burn_txn,
+            stream::iter(packets),
+            &mut valid_packets,
+            &mut invalid_packets,
+        )
+        .await
+        .unwrap();
+    pending_burn_txn.commit().await?;
 
-//     // Verify packet reports:
-//     assert_eq!(
-//         valid_packets,
-//         vec![
-//             valid_packet(0, 24, vec![4], false),
-//             valid_packet(1000, 48, vec![5], false),
-//             valid_packet(2000, 1, vec![6], false),
-//         ]
-//     );
+    // Verify packet reports:
+    assert_eq!(
+        valid_packets,
+        vec![
+            valid_packet(0, 24, vec![4], false),
+            valid_packet(1000, 48, vec![5], false),
+            valid_packet(2000, 1, vec![6], false),
+        ]
+    );
 
-//     assert!(invalid_packets.is_empty());
+    assert!(invalid_packets.is_empty());
 
-//     let payers = verifier.config_server.payers.lock().await;
-//     assert!(payers.get(&0).unwrap().enabled);
+    let payers = verifier.config_server.payers.lock().await;
+    assert!(payers.get(&0).unwrap().enabled);
 
-//     assert_eq!(
-//         verifier
-//             .debiter
-//             .payer_balance(&org_pubkey)
-//             .await
-//             .expect("unchanged balance"),
-//         5
-//     );
-// }
+    let payer_balance = balances
+        .balances()
+        .lock()
+        .await
+        .get(&org_pubkey)
+        .cloned()
+        .unwrap();
+    assert_eq!(payer_balance.balance, 5, "balance should not have chnaged");
+    assert_eq!(payer_balance.burned, 0, "nothing should be burned");
 
-#[tokio::test]
-async fn test_verifier() {
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_verifier(pool: PgPool) -> anyhow::Result<()> {
     let packets = vec![
         // Packets for first OUI
         packet_report(0, 0, 24, vec![1], false),
@@ -375,31 +403,43 @@ async fn test_verifier() {
     orgs.insert(1_u64, PublicKeyBinary::from(vec![1])).await;
     orgs.insert(2_u64, PublicKeyBinary::from(vec![2])).await;
     // Set up balances:
-    let mut balances = HashMap::new();
-    balances.insert(PublicKeyBinary::from(vec![0]), 3);
-    balances.insert(PublicKeyBinary::from(vec![1]), 5);
-    balances.insert(PublicKeyBinary::from(vec![2]), 2);
-    let balances = InstantlyBurnedBalance(Arc::new(Mutex::new(balances)));
+    let mut solana_network = TestSolanaClientMap::default();
+
+    // let mut balances = HashMap::new();
+    solana_network
+        .insert(PublicKeyBinary::from(vec![0]), 3)
+        .await;
+    solana_network
+        .insert(PublicKeyBinary::from(vec![1]), 5)
+        .await;
+    solana_network
+        .insert(PublicKeyBinary::from(vec![2]), 2)
+        .await;
+    let balances = BalanceCache::new(&pool, solana_network.clone()).await?;
+
     // Set up output:
     let mut valid_packets = Vec::new();
     let mut invalid_packets = Vec::new();
+
     // Set up verifier:
     let mut verifier = Verifier {
-        debiter: balances.0.clone(),
+        debiter: balances,
         config_server: orgs,
     };
 
     // Run the verifier:
+    let mut pending_burn_txn = pool.begin().await?;
     verifier
         .verify(
             1,
-            &mut balances.clone(),
+            &mut pending_burn_txn,
             stream::iter(packets),
             &mut valid_packets,
             &mut invalid_packets,
         )
         .await
         .unwrap();
+    pending_burn_txn.commit().await?;
 
     // Verify packet reports:
     assert_eq!(
@@ -424,32 +464,31 @@ async fn test_verifier() {
     assert!(!payers.get(&0).unwrap().enabled);
     assert!(payers.get(&1).unwrap().enabled);
     assert!(payers.get(&2).unwrap().enabled);
+
+    Ok(())
 }
 
-#[tokio::test]
-async fn test_end_to_end() {
+#[sqlx::test]
+async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
     let payer = PublicKeyBinary::from(vec![0]);
 
-    // Pending tables:
-    let pending_burns: Arc<Mutex<HashMap<PublicKeyBinary, u64>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let pending_tables = MockPendingTables {
-        pending_txns: Default::default(),
-        pending_burns: pending_burns.clone(),
-    };
+    // Our balance and packet size has to surpass BURN_THRESHOLD
+    // for burning to consider the verified packets.
+    const STARTING_BALANCE: u64 = BURN_THRESHOLD as u64 * 3;
+    const LARGE_PACKET_SIZE: u32 = (BURN_THRESHOLD as u64 * BYTES_PER_DC) as u32;
 
     // Solana network:
     let mut solana_network = TestSolanaClientMap::default();
-    solana_network.insert(payer.clone(), 3_u64).await; // start with 3 data credits
+    solana_network.insert(payer.clone(), STARTING_BALANCE).await;
 
     // Balance cache:
-    let balance_cache = BalanceCache::new(&pending_tables, solana_network.clone())
+    let balance_cache = BalanceCache::new(&pool, solana_network.clone())
         .await
         .unwrap();
 
     // Burner:
     let mut burner = Burner::new(
-        pending_tables.clone(),
+        pool.clone(),
         &balance_cache,
         Duration::default(), // Burn period does not matter, we manually burn
         solana_network.clone(),
@@ -465,26 +504,28 @@ async fn test_end_to_end() {
 
     // Set up verifier:
     let mut verifier = Verifier {
-        debiter: balance_cache,
+        debiter: balance_cache.clone(),
         config_server: orgs,
     };
 
-    // Verify four packets, each costing one DC. The last one should be invalid
+    // Verify four packets, each costing one BURN_THRESHOLD. The last one should be invalid
+    let mut pending_burn_txn = pool.begin().await?;
     verifier
         .verify(
             1,
-            &mut pending_burns.clone(),
+            &mut pending_burn_txn,
             stream::iter(vec![
-                packet_report(0, 0, BYTES_PER_DC as u32, vec![1], false),
-                packet_report(0, 1, BYTES_PER_DC as u32, vec![2], false),
-                packet_report(0, 2, BYTES_PER_DC as u32, vec![3], false),
-                packet_report(0, 3, BYTES_PER_DC as u32, vec![4], false),
+                packet_report(0, 0, LARGE_PACKET_SIZE, vec![1], false),
+                packet_report(0, 1, LARGE_PACKET_SIZE, vec![2], false),
+                packet_report(0, 2, LARGE_PACKET_SIZE, vec![3], false),
+                packet_report(0, 3, LARGE_PACKET_SIZE, vec![4], false),
             ]),
             &mut valid_packets,
             &mut invalid_packets,
         )
         .await
         .unwrap();
+    pending_burn_txn.commit().await?;
 
     // Org 0 should be disabled now:
     assert!(
@@ -501,30 +542,27 @@ async fn test_end_to_end() {
     assert_eq!(
         valid_packets,
         vec![
-            valid_packet(0, BYTES_PER_DC as u32, vec![1], true),
-            valid_packet(1000, BYTES_PER_DC as u32, vec![2], true),
-            valid_packet(2000, BYTES_PER_DC as u32, vec![3], true),
+            valid_packet(0, LARGE_PACKET_SIZE, vec![1], true),
+            valid_packet(1000, LARGE_PACKET_SIZE, vec![2], true),
+            valid_packet(2000, LARGE_PACKET_SIZE, vec![3], true),
         ]
     );
 
     // Last packet is invalid:
     assert_eq!(
         invalid_packets,
-        vec![invalid_packet(BYTES_PER_DC as u32, vec![4])]
+        vec![invalid_packet(LARGE_PACKET_SIZE, vec![4])]
     );
 
     // Check current balance:
+    // Check that 3x the BURN_THRESHOLD DC are pending to be burned:
     let balance = {
         let balances = verifier.debiter.balances();
         let balances = balances.lock().await;
         *balances.get(&payer).unwrap()
     };
-    assert_eq!(balance.balance, 3);
-    assert_eq!(balance.burned, 3);
-
-    // Check that 3 DC are pending to be burned:
-    let pending_burn = *pending_burns.lock().await.get(&payer).unwrap();
-    assert_eq!(pending_burn, 3);
+    assert_eq!(balance.balance, STARTING_BALANCE);
+    assert_eq!(balance.burned, STARTING_BALANCE);
 
     // Initiate the burn:
     burner.burn().await.unwrap();
@@ -539,8 +577,14 @@ async fn test_end_to_end() {
     assert_eq!(balance.burned, 0);
 
     // Pending burns should be empty as well:
-    let pending_burn = *pending_burns.lock().await.get(&payer).unwrap();
-    assert_eq!(pending_burn, 0, "pending burn");
+    let payer_balance = balance_cache
+        .balances()
+        .lock()
+        .await
+        .get(&payer)
+        .cloned()
+        .unwrap();
+    assert_eq!(payer_balance.burned, 0, "pending was burned");
 
     // Additionally, the balance on the solana network should be zero:
     let solana_balance = *solana_network
@@ -555,10 +599,11 @@ async fn test_end_to_end() {
     valid_packets.clear();
     invalid_packets.clear();
 
+    let mut pending_burn_txn = pool.begin().await?;
     verifier
         .verify(
             1,
-            &mut pending_burns.clone(),
+            &mut pending_burn_txn,
             stream::iter(vec![packet_report(
                 0,
                 4,
@@ -571,6 +616,7 @@ async fn test_end_to_end() {
         )
         .await
         .unwrap();
+    pending_burn_txn.commit().await?;
 
     assert_eq!(valid_packets, vec![]);
 
@@ -578,6 +624,8 @@ async fn test_end_to_end() {
         invalid_packets,
         vec![invalid_packet(BYTES_PER_DC as u32, vec![5])]
     );
+
+    Ok(())
 }
 
 #[derive(Clone)]
