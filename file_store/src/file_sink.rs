@@ -676,7 +676,7 @@ mod tests {
             .file_name()
             .to_str()
             .and_then(|file_name| FileInfo::from_str(file_name).ok())
-            .map_or(false, |file_info| {
+            .is_some_and(|file_info| {
                 FileType::from_str(&file_info.prefix).expect("entropy report prefix")
                     == FileType::EntropyReport
             })
