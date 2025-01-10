@@ -66,7 +66,7 @@ sqlx = { version = "0", features = [
 ] }
 helium-anchor-gen = { git = "https://github.com/helium/helium-anchor-gen.git" }
 helium-crypto = { version = "0.8.4", features = ["multisig"] }
-helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = "master" }
+helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = "mj/lib-transaction" }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
@@ -136,5 +136,5 @@ sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df65
 # helium-proto = { path = "../proto" }
 # beacon = { path = "../proto/beacon" }
 
-[patch.'https://github.com/helium/helium-wallet-rs.git']
-helium-lib = { path = "../helium-wallet-rs/helium-lib" }
+# [patch.'https://github.com/helium/helium-wallet-rs.git']
+# helium-lib = { path = "../helium-wallet-rs/helium-lib" }
