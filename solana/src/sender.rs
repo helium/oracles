@@ -1,12 +1,11 @@
 use std::time::Duration;
 
 use exponential_backoff::Backoff;
-use helium_lib::{client, Signature, TransactionWithBlockhash};
+use helium_lib::{client, keypair::Signature, TransactionWithBlockhash};
 use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_sdk::commitment_config::CommitmentConfig;
 
-pub use helium_lib::send_txn::SolanaClientError;
-
+pub type SolanaClientError = solana_client::client_error::ClientError;
 pub type SenderResult<T> = Result<T, SenderError>;
 
 #[derive(Debug, thiserror::Error)]
