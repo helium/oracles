@@ -1,4 +1,4 @@
-use crate::{send_with_retry, GetSignature, SolanaRpcError};
+use crate::{GetSignature, SolanaRpcError};
 use anchor_client::RequestBuilder;
 use async_trait::async_trait;
 use file_store::hex_boost::BoostedHexActivation;
@@ -17,6 +17,26 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use std::sync::Arc;
+
+macro_rules! send_with_retry {
+    ($rpc:expr) => {{
+        let mut attempt = 1;
+        loop {
+            match $rpc.await {
+                Ok(resp) => break Ok(resp),
+                Err(err) => {
+                    if attempt < 5 {
+                        attempt += 1;
+                        tokio::time::sleep(std::time::Duration::from_secs(attempt)).await;
+                        continue;
+                    } else {
+                        break Err(err);
+                    }
+                }
+            }
+        }
+    }};
+}
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
