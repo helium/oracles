@@ -193,7 +193,7 @@ impl<PT: PendingTables> sender::TxnStore for BurnTxnStore<PT> {
     }
 
     async fn on_sent(&self, _txn: &solana::TransactionWithBlockhash) {
-        tracing::info!("txn submitted");
+        tracing::info!("txn sent");
     }
 
     async fn on_sent_retry(&self, _txn: &solana::TransactionWithBlockhash, attempt: usize) {
@@ -201,11 +201,10 @@ impl<PT: PendingTables> sender::TxnStore for BurnTxnStore<PT> {
     }
 
     async fn on_finalized(&self, txn: &solana::TransactionWithBlockhash) {
-        println!("===== finzlied");
         tracing::info!("txn finalized");
 
         let Ok(mut db_txn) = self.pool.begin().await else {
-            tracing::error!("failed to start finalized txn transaction");
+            tracing::error!("failed to start finalized txn db transaction");
             return;
         };
 
@@ -231,7 +230,7 @@ impl<PT: PendingTables> sender::TxnStore for BurnTxnStore<PT> {
         payer_account.balance = payer_account.balance.saturating_sub(self.amount);
 
         let Ok(()) = db_txn.commit().await else {
-            tracing::error!("failed to commit finalized transaction");
+            tracing::error!("failed to commit finalized txn db transaction");
             return;
         };
 
