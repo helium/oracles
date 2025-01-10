@@ -14,27 +14,6 @@ pub mod burn;
 pub mod carrier;
 pub mod start_boost;
 
-macro_rules! send_with_retry {
-    ($rpc:expr) => {{
-        let mut attempt = 1;
-        loop {
-            match $rpc.await {
-                Ok(resp) => break Ok(resp),
-                Err(err) => {
-                    if attempt < 5 {
-                        attempt += 1;
-                        tokio::time::sleep(std::time::Duration::from_secs(attempt)).await;
-                        continue;
-                    } else {
-                        break Err(err);
-                    }
-                }
-            }
-        }
-    }};
-}
-pub(crate) use send_with_retry;
-
 pub fn read_keypair_from_file<F: AsRef<Path>>(path: F) -> anyhow::Result<Keypair> {
     let mut file = File::open(path.as_ref())?;
     let mut sk_buf = [0u8; 64];
