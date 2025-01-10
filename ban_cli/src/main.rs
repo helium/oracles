@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf, str::FromStr};
+use std::{collections::HashSet, io::Write, path::PathBuf, str::FromStr};
 
 use ban_cli::{tracker::TrackGood, DbArgs, RadioType};
 use chrono::{Duration, Utc};
@@ -266,6 +266,7 @@ async fn ban_radios(
             .submit_sp_boosted_rewards_banned_radio(request)
             .await?;
         print!(".");
+        std::io::stdout().flush()?;
     }
     Ok(())
 }
@@ -297,6 +298,7 @@ async fn unban_radios(
             .submit_sp_boosted_rewards_banned_radio(request)
             .await?;
         print!(".");
+        std::io::stdout().flush()?;
     }
     Ok(())
 }
