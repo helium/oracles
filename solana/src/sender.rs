@@ -164,3 +164,259 @@ impl<T: AsRef<client::SolanaRpcClient> + Send + Sync> SenderClientExt for T {
         Ok(self.as_ref().get_block_height().await?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        sync::{Arc, Mutex},
+        time::Instant,
+    };
+
+    use solana_sdk::signer::SignerError;
+
+    use crate::GetSignature;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct MockTxnStore {
+        pub fail_prepared: bool,
+        pub calls: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl MockTxnStore {
+        fn fail_prepared() -> Self {
+            Self {
+                fail_prepared: true,
+                ..Default::default()
+            }
+        }
+        fn record_call(&self, method: String) {
+            self.calls.lock().unwrap().push(method);
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl TxnStore for MockTxnStore {
+        async fn on_prepared(&self, txn: &TransactionWithBlockhash) -> SenderResult<()> {
+            if self.fail_prepared {
+                return Err(SenderError::preparation("mock failure"));
+            }
+            let signature = txn.get_signature();
+            self.record_call(format!("on_prepared: {signature}"));
+            Ok(())
+        }
+        async fn on_sent(&self, txn: &TransactionWithBlockhash) {
+            let signature = txn.get_signature();
+            self.record_call(format!("on_sent: {signature}"));
+        }
+        async fn on_sent_retry(&self, txn: &TransactionWithBlockhash, attempt: usize) {
+            let signature = txn.get_signature();
+            self.record_call(format!("on_sent_retry: {attempt} {signature}"));
+        }
+        async fn on_finalized(&self, txn: &TransactionWithBlockhash) {
+            let signature = txn.get_signature();
+            self.record_call(format!("on_finalized: {signature}"))
+        }
+        async fn on_error_sending(&self, txn: &TransactionWithBlockhash, _err: &SolanaClientError) {
+            let signature = txn.get_signature();
+            self.record_call(format!(
+                "on_error_sending: {signature} could not submit 5 times"
+            ));
+        }
+        async fn on_error_finalizing(
+            &self,
+            txn: &TransactionWithBlockhash,
+            _err: &SolanaClientError,
+        ) {
+            let signature = txn.get_signature();
+            self.record_call(format!(
+                "on_error_finalizing: {signature} could not finalize"
+            ));
+        }
+    }
+
+    struct MockClient {
+        pub sent_attempts: Mutex<usize>,
+        pub succeed_after_sent_attempts: usize,
+        pub finalize_success: bool,
+        pub block_height: Instant,
+    }
+
+    impl MockClient {
+        fn succeed() -> Self {
+            Self {
+                sent_attempts: Mutex::new(0),
+                succeed_after_sent_attempts: 0,
+                finalize_success: true,
+                block_height: Instant::now(),
+            }
+        }
+
+        fn succeed_after(succeed_after_sent_attempts: usize) -> Self {
+            Self {
+                sent_attempts: Mutex::new(0),
+                succeed_after_sent_attempts,
+                finalize_success: true,
+                block_height: Instant::now(),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl SenderClientExt for MockClient {
+        async fn send_txn(
+            &self,
+            txn: &TransactionWithBlockhash,
+        ) -> Result<Signature, SolanaClientError> {
+            let mut attempts = self.sent_attempts.lock().unwrap();
+            *attempts += 1;
+
+            if *attempts >= self.succeed_after_sent_attempts {
+                return Ok(txn.inner_txn().get_signature().clone());
+            }
+
+            // Fake Error
+            Err(SignerError::KeypairPubkeyMismatch.into())
+        }
+
+        async fn finalize_signature(
+            &self,
+            _signature: &Signature,
+        ) -> Result<(), SolanaClientError> {
+            if self.finalize_success {
+                return Ok(());
+            }
+            // Fake Error
+            Err(SignerError::KeypairPubkeyMismatch.into())
+        }
+
+        async fn get_block_height(&self) -> Result<u64, SolanaClientError> {
+            // Using nanoseconds since test start as block_height
+            let block_height = self.block_height.elapsed().as_nanos();
+            Ok(block_height as u64)
+        }
+    }
+
+    fn mk_test_transaction() -> TransactionWithBlockhash {
+        let mut inner = solana_sdk::transaction::Transaction::default();
+        inner.signatures.push(Signature::new_unique());
+        TransactionWithBlockhash {
+            inner,
+            block_height: 1,
+        }
+    }
+
+    #[tokio::test]
+    async fn send_finalized_success() -> anyhow::Result<()> {
+        let tx = mk_test_transaction();
+        let store = MockTxnStore::default();
+        let client = MockClient::succeed();
+
+        let _ = send_and_finalize(&client, &tx, &store).await?;
+
+        let signature = tx.get_signature();
+        let calls = store.calls.lock().unwrap();
+        assert_eq!(
+            *calls,
+            vec![
+                format!("on_prepared: {signature}"),
+                format!("on_sent: {signature}"),
+                format!("on_finalized: {signature}")
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn send_finalized_success_after_retry() -> anyhow::Result<()> {
+        let txn = mk_test_transaction();
+        let store = MockTxnStore::default();
+        let client = MockClient::succeed_after(5);
+
+        let _ = send_and_finalize(&client, &txn, &store).await?;
+
+        let signature = txn.get_signature();
+        let calls = store.calls.lock().unwrap();
+        assert_eq!(
+            *calls,
+            vec![
+                format!("on_prepared: {signature}"),
+                format!("on_sent_retry: 1 {signature}"),
+                format!("on_sent_retry: 2 {signature}"),
+                format!("on_sent_retry: 3 {signature}"),
+                format!("on_sent_retry: 4 {signature}"),
+                format!("on_sent: {signature}"),
+                format!("on_finalized: {signature}")
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn send_error_with_retry() -> anyhow::Result<()> {
+        let txn = mk_test_transaction();
+        let store = MockTxnStore::default();
+        let client = MockClient::succeed_after(999);
+
+        let res = send_and_finalize(&client, &txn, &store).await;
+        assert!(res.is_err());
+
+        let signature = txn.get_signature();
+        let calls = store.calls.lock().unwrap();
+        assert_eq!(
+            *calls,
+            vec![
+                format!("on_prepared: {signature}"),
+                format!("on_sent_retry: 1 {signature}"),
+                format!("on_sent_retry: 2 {signature}"),
+                format!("on_sent_retry: 3 {signature}"),
+                format!("on_sent_retry: 4 {signature}"),
+                format!("on_error_sending: {signature} could not submit 5 times")
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn send_success_finalize_error() -> anyhow::Result<()> {
+        let txn = mk_test_transaction();
+        let store = MockTxnStore::default();
+        let mut client = MockClient::succeed();
+        client.finalize_success = false;
+
+        let res = send_and_finalize(&client, &txn, &store).await;
+        assert!(res.is_err());
+
+        let signature = txn.get_signature();
+        let calls = store.calls.lock().unwrap();
+        assert_eq!(
+            *calls,
+            vec![
+                format!("on_prepared: {signature}"),
+                format!("on_sent: {signature}"),
+                format!("on_error_finalizing: {signature} could not finalize")
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failed_preparation() -> anyhow::Result<()> {
+        let txn = mk_test_transaction();
+        let store = MockTxnStore::fail_prepared();
+        let client = MockClient::succeed();
+
+        let res = send_and_finalize(&client, &txn, &store).await;
+        assert!(res.is_err());
+
+        let calls = store.calls.lock().unwrap();
+        assert_eq!(*calls, Vec::<String>::new());
+
+        Ok(())
+    }
+}
