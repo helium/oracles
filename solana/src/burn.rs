@@ -1,12 +1,14 @@
-use crate::{read_keypair_from_file, GetSignature, Keypair, Pubkey, SolanaRpcError, SubDao};
+use crate::{
+    read_keypair_from_file, sender, GetSignature, Keypair, Pubkey, SolanaRpcError, SubDao,
+};
 use async_trait::async_trait;
 use helium_crypto::PublicKeyBinary;
-use helium_lib::send_txn::{SolanaClientError, TxnSender, TxnSenderClientExt};
-use helium_lib::{client, dc, send_txn, token, TransactionOpts, TransactionWithBlockhash};
+use helium_lib::send_txn::SolanaClientError;
+use helium_lib::{client, dc, token, TransactionOpts, TransactionWithBlockhash};
 use serde::Deserialize;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::Instant;
 use std::{collections::HashMap, str::FromStr};
 use tokio::sync::Mutex;
 
@@ -25,9 +27,7 @@ pub trait SolanaNetwork: Send + Sync + 'static {
     async fn submit_transaction(
         &self,
         transaction: &Self::Transaction,
-        store: &impl send_txn::TxnStore,
-        max_attempts: usize,
-        retry_delay: Duration,
+        store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError>;
 
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError>;
@@ -146,23 +146,9 @@ impl SolanaNetwork for SolanaRpc {
     async fn submit_transaction(
         &self,
         tx: &Self::Transaction,
-        store: &impl send_txn::TxnStore,
-        max_attempts: usize,
-        retry_delay: Duration,
+        store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
-        let config = solana_client::rpc_config::RpcSendTransactionConfig {
-            skip_preflight: true,
-            ..Default::default()
-        };
-
-        let sender = TxnSender::new(self, tx)
-            .finalized(true)
-            .with_store(store)
-            .with_retry(max_attempts, retry_delay)
-            .send(config)
-            .await;
-
-        match sender {
+        match sender::send_and_finalize(&self, tx, store).await {
             Ok(_tracked) => {
                 let signature = tx.get_signature();
                 tracing::info!(
@@ -241,14 +227,11 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
     async fn submit_transaction(
         &self,
         transaction: &Self::Transaction,
-        store: &impl send_txn::TxnStore,
-        max_attempts: usize,
-        retry_delay: Duration,
+        store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
         match (self, transaction) {
             (Some(ref rpc), PossibleTransaction::Transaction(ref txn)) => {
-                rpc.submit_transaction(txn, store, max_attempts, retry_delay)
-                    .await?
+                rpc.submit_transaction(txn, store).await?
             }
             (None, PossibleTransaction::NoTransaction(_)) => (),
             _ => unreachable!(),
@@ -277,10 +260,22 @@ impl GetSignature for MockTransaction {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct TestSolanaClientMap {
     pub payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
     pub txn_sig_to_payer: Arc<Mutex<HashMap<Signature, (PublicKeyBinary, u64)>>>,
+    // Using the nanoseconds since the client was made as block height
+    pub block_height: Instant,
+}
+
+impl Default for TestSolanaClientMap {
+    fn default() -> Self {
+        Self {
+            payer_balances: Default::default(),
+            txn_sig_to_payer: Default::default(),
+            block_height: Instant::now(),
+        }
+    }
 }
 
 impl TestSolanaClientMap {
@@ -288,6 +283,7 @@ impl TestSolanaClientMap {
         Self {
             payer_balances: ledger,
             txn_sig_to_payer: Default::default(),
+            block_height: Instant::now(),
         }
     }
     pub async fn insert(&mut self, payer: PublicKeyBinary, amount: u64) {
@@ -327,26 +323,15 @@ impl SolanaNetwork for TestSolanaClientMap {
     async fn submit_transaction(
         &self,
         txn: &TransactionWithBlockhash,
-        store: &impl send_txn::TxnStore,
-        _max_attempts: usize,
-        _retry_delay: Duration,
+        store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
-        let config = solana_client::rpc_config::RpcSendTransactionConfig {
-            skip_preflight: true,
-            ..Default::default()
-        };
+        sender::send_and_finalize(self, txn, store).await?;
 
-        let _sender = TxnSender::new(self, txn)
-            .finalized(true)
-            .with_store(store)
-            .send(config)
-            .await?;
-
-        if let Some((payer, amount)) = self.txn_sig_to_payer.lock().await.get(txn.get_signature()) {
+        let signature = txn.get_signature();
+        if let Some((payer, amount)) = self.txn_sig_to_payer.lock().await.get(signature) {
             *self.payer_balances.lock().await.get_mut(payer).unwrap() -= amount;
         }
 
-        //*self.0.lock().await.get_mut(&txn.payer).unwrap() -= txn.amount;
         Ok(())
     }
 
@@ -356,11 +341,10 @@ impl SolanaNetwork for TestSolanaClientMap {
 }
 
 #[async_trait::async_trait]
-impl TxnSenderClientExt for TestSolanaClientMap {
+impl sender::SenderClientExt for TestSolanaClientMap {
     async fn send_txn(
         &self,
         txn: &TransactionWithBlockhash,
-        _config: solana_client::rpc_config::RpcSendTransactionConfig,
     ) -> Result<Signature, SolanaClientError> {
         Ok(*txn.get_signature())
     }
@@ -368,6 +352,8 @@ impl TxnSenderClientExt for TestSolanaClientMap {
         Ok(())
     }
     async fn get_block_height(&self) -> Result<u64, SolanaClientError> {
-        Ok(1)
+        // Using the nanoseconds since the client was made as block height
+        let block_height = self.block_height.elapsed().as_nanos();
+        Ok(block_height as u64)
     }
 }
