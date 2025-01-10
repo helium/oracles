@@ -244,10 +244,13 @@ impl mobile_config::Gateway for GatewayService {
         tokio::spawn(async move {
             let min_updated_at = DateTime::UNIX_EPOCH;
 
+            let binding = Arc::clone(&radios_cache);
+            let radios_cache = binding.read().await;
+
             let stream = gateway_info::db::batch_info_stream(&metadata_db_pool, &addresses)?;
             let stream = stream
                 .filter_map(|gateway_info| {
-                    handle_updated_at(gateway_info, Arc::clone(&radios_cache), min_updated_at)
+                    handle_updated_at(gateway_info, &radios_cache, min_updated_at)
                 })
                 .boxed();
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
@@ -323,10 +326,13 @@ impl mobile_config::Gateway for GatewayService {
                     "Invalid min_refreshed_at argument",
                 ))?;
 
+            let binding = Arc::clone(&radios_cache);
+            let radios_cache = binding.read().await;
+
             let stream = gateway_info::db::all_info_stream(&metadata_db_pool, &device_types);
             let stream = stream
                 .filter_map(|gateway_info| {
-                    handle_updated_at(gateway_info, Arc::clone(&radios_cache), min_updated_at)
+                    handle_updated_at(gateway_info, &radios_cache, min_updated_at)
                 })
                 .boxed();
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
@@ -338,19 +344,16 @@ impl mobile_config::Gateway for GatewayService {
 
 async fn handle_updated_at(
     mut gateway_info: GatewayInfo,
-    updated_radios: Arc<RwLock<TrackedRadiosMap>>,
+    updated_radios: &TrackedRadiosMap,
     min_updated_at: chrono::DateTime<Utc>,
 ) -> Option<GatewayInfo> {
     // Check mobile_radio_tracker HashMap
-    {
-        let updated_radios = updated_radios.read().await;
-        if let Some(updated_at) = updated_radios.get(&gateway_info.address) {
-            if updated_at >= &min_updated_at {
-                gateway_info.updated_at = Some(*updated_at);
-                return Some(gateway_info);
-            }
-            return None;
+    if let Some(updated_at) = updated_radios.get(&gateway_info.address) {
+        if updated_at >= &min_updated_at {
+            gateway_info.updated_at = Some(*updated_at);
+            return Some(gateway_info);
         }
+        return None;
     }
 
     // Fallback solution #1. Try to use refreshed_at as updated_at field and check
