@@ -63,11 +63,11 @@ impl RouteService {
         self.update_channel.clone()
     }
 
-    async fn verify_request_signature<'a, R>(
+    async fn verify_request_signature<R>(
         &self,
         signer: &PublicKey,
         request: &R,
-        id: OrgId<'a>,
+        id: OrgId<'_>,
     ) -> Result<(), Status>
     where
         R: MsgVerify,
@@ -117,11 +117,11 @@ impl RouteService {
         }
     }
 
-    async fn verify_request_signature_or_stream<'a, R>(
+    async fn verify_request_signature_or_stream<R>(
         &self,
         signer: &PublicKey,
         request: &R,
-        id: OrgId<'a>,
+        id: OrgId<'_>,
     ) -> Result<(), Status>
     where
         R: MsgVerify,
@@ -151,9 +151,9 @@ impl RouteService {
         DevAddrEuiValidator::new(route_id, admin_keys, &self.pool, check_constraints).await
     }
 
-    async fn validate_skf_devaddrs<'a>(
+    async fn validate_skf_devaddrs(
         &self,
-        route_id: &'a str,
+        route_id: &str,
         updates: &[route_skf_update_req_v1::RouteSkfUpdateV1],
     ) -> Result<(), Status> {
         let ranges: Vec<DevAddrRange> = route::list_devaddr_ranges_for_route(route_id, &self.pool)
