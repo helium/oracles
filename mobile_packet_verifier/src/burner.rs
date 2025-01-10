@@ -1,32 +1,22 @@
-use std::time::Duration;
-
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::burn::SolanaNetwork;
+use solana::{burn::SolanaNetwork, sender};
 use sqlx::{PgPool, Pool, Postgres};
+use tracing::Instrument;
 
 use crate::pending_burns;
 
 pub struct Burner<S> {
     valid_sessions: FileSinkClient<ValidDataTransferSession>,
     solana: S,
-    failed_retry_attempts: usize,
-    failed_check_interval: Duration,
 }
 
 impl<S> Burner<S> {
-    pub fn new(
-        valid_sessions: FileSinkClient<ValidDataTransferSession>,
-        solana: S,
-        failed_retry_attempts: usize,
-        failed_check_interval: Duration,
-    ) -> Self {
+    pub fn new(valid_sessions: FileSinkClient<ValidDataTransferSession>, solana: S) -> Self {
         Self {
             valid_sessions,
             solana,
-            failed_retry_attempts,
-            failed_check_interval,
         }
     }
 }
@@ -57,18 +47,16 @@ where
             let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
             let store = BurnerTxnStore::new(
                 pool.clone(),
-                payer,
+                payer.clone(),
                 total_dcs,
                 sessions,
                 self.valid_sessions.clone(),
             );
+
+            let burn_span = tracing::info_span!("burn_txn", %payer, amount = total_dcs);
             self.solana
-                .submit_transaction(
-                    &txn,
-                    &store,
-                    self.failed_retry_attempts,
-                    self.failed_check_interval,
-                )
+                .submit_transaction(&txn, &store)
+                .instrument(burn_span)
                 .await?
         }
 
@@ -100,23 +88,31 @@ impl BurnerTxnStore {
             valid_sessions,
         }
     }
+
+    fn on_error(&self) {
+        metrics::counter!(
+            "burned",
+            "payer" => self.payer.to_string(),
+            "success" => "false"
+        )
+        .increment(self.amount);
+    }
 }
 
 #[async_trait::async_trait]
-impl solana::send_txn::TxnStore for BurnerTxnStore {
-    fn make_span(&self) -> tracing::Span {
-        tracing::info_span!(
-            "burn_txn",
-            payer = %self.payer,
-            amount = self.amount
-        )
-    }
+impl sender::TxnStore for BurnerTxnStore {
+    // fn make_span(&self) -> tracing::Span {
+    //     tracing::info_span!(
+    //         "burn_txn",
+    //         payer = %self.payer,
+    //         amount = self.amount
+    //     )
+    // }
 
     async fn on_prepared(
         &self,
-        _name: Option<String>,
         _txn: &solana::TransactionWithBlockhash,
-    ) -> Result<(), solana::send_txn::TxnStorePrepareError> {
+    ) -> sender::SenderResult<()> {
         tracing::info!("txn prepared");
         Ok(())
     }
@@ -155,18 +151,21 @@ impl solana::send_txn::TxnStore for BurnerTxnStore {
         }
     }
 
-    async fn on_error(
+    async fn on_error_sending(
         &self,
         _txn: &solana::TransactionWithBlockhash,
-        err: solana::send_txn::TxnSenderError,
+        err: &sender::SolanaClientError,
     ) {
-        tracing::warn!(?err, "failed to confirm");
+        tracing::warn!(?err, "failed to send");
+        self.on_error();
+    }
 
-        metrics::counter!(
-            "burned",
-            "payer" => self.payer.to_string(),
-            "success" => "false"
-        )
-        .increment(self.amount);
+    async fn on_error_finalizing(
+        &self,
+        _txn: &solana::TransactionWithBlockhash,
+        err: &sender::SolanaClientError,
+    ) {
+        tracing::warn!(?err, "failed to finalize");
+        self.on_error();
     }
 }

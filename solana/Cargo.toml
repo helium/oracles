@@ -28,3 +28,4 @@ spl-token = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+exponential-backoff = "2.0.0"

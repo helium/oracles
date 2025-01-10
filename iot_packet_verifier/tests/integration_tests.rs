@@ -18,7 +18,7 @@ use iot_packet_verifier::{
 };
 use solana::{
     burn::{SolanaNetwork, TestSolanaClientMap},
-    send_txn, Signature, SolanaRpcError, TransactionWithBlockhash,
+    sender, Signature, SolanaRpcError, TransactionWithBlockhash,
 };
 use sqlx::PgPool;
 use std::{
@@ -645,14 +645,11 @@ impl SolanaNetwork for MockSolanaNetwork {
     async fn submit_transaction(
         &self,
         txn: &TransactionWithBlockhash,
-        store: &impl send_txn::TxnStore,
-        max_attempts: usize,
-        retry_delay: Duration,
+        store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
         self.confirmed.lock().await.insert(*txn.get_signature());
-        self.ledger
-            .submit_transaction(txn, store, max_attempts, retry_delay)
-            .await
+        self.ledger.submit_transaction(txn, store).await?;
+        Ok(())
     }
 
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
@@ -708,7 +705,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         .await
         .unwrap();
         mock_network
-            .submit_transaction(&txn, &send_txn::NoopStore, 5, Duration::from_millis(0))
+            .submit_transaction(&txn, &sender::NoopStore)
             .await
             .unwrap();
     }

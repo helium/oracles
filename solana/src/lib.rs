@@ -12,6 +12,7 @@ pub use helium_lib::{
 
 pub mod burn;
 pub mod carrier;
+pub mod sender;
 pub mod start_boost;
 
 pub fn read_keypair_from_file<F: AsRef<Path>>(path: F) -> anyhow::Result<Keypair> {
@@ -43,10 +44,10 @@ pub enum SolanaRpcError {
     Crypto(#[from] helium_crypto::Error),
     #[error("helium-lib error: {0}")]
     HeliumLib(#[from] helium_lib::error::Error),
-    #[error("helium-lib txn send error: {0}")]
-    HeliumLibTxnSend(Box<helium_lib::send_txn::TxnSenderError>),
     #[error("Parse Solana Pubkey from slice error: {0}")]
     ParsePubkeyFromSliceError(#[from] std::array::TryFromSliceError),
+    #[error("Sender Error: {0}")]
+    Sender(#[from] sender::SenderError),
 }
 
 impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
@@ -58,12 +59,6 @@ impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
 impl From<ClientError> for SolanaRpcError {
     fn from(err: ClientError) -> Self {
         Self::RpcClientError(Box::new(err))
-    }
-}
-
-impl From<helium_lib::send_txn::TxnSenderError> for SolanaRpcError {
-    fn from(err: helium_lib::send_txn::TxnSenderError) -> Self {
-        Self::HeliumLibTxnSend(Box::new(err))
     }
 }
 
