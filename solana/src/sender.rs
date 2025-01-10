@@ -104,7 +104,7 @@ pub trait SenderClientExt: Send + Sync {
 #[async_trait::async_trait]
 pub trait TxnStore: Send + Sync {
     fn make_backoff(&self) -> Backoff {
-        Backoff::new(5, Duration::from_millis(50), Duration::from_secs(5))
+        Backoff::new(5, Duration::from_secs(1), Duration::from_secs(5))
     }
     // Last chance for _not_ send a transaction.
     async fn on_prepared(&self, _txn: &TransactionWithBlockhash) -> SenderResult<()> {
@@ -198,6 +198,10 @@ mod tests {
 
     #[async_trait::async_trait]
     impl TxnStore for MockTxnStore {
+        fn make_backoff(&self) -> Backoff {
+            Backoff::new(5, Duration::from_millis(10), Duration::from_millis(50))
+        }
+
         async fn on_prepared(&self, txn: &TransactionWithBlockhash) -> SenderResult<()> {
             if self.fail_prepared {
                 return Err(SenderError::preparation("mock failure"));
