@@ -111,10 +111,14 @@ pub trait TxnStore: Send + Sync {
         Ok(())
     }
     // The txn has been succesfully sent to Solana.
-    async fn on_sent(&self, _txn: &TransactionWithBlockhash) {}
+    async fn on_sent(&self, _txn: &TransactionWithBlockhash) {
+        tracing::info!("txn sent");
+    }
     // Sending the txn failed, and we're going to try again.
     // If any sleeping should be done, do it here.
-    async fn on_sent_retry(&self, _txn: &TransactionWithBlockhash, _attempt: usize) {}
+    async fn on_sent_retry(&self, _txn: &TransactionWithBlockhash, attempt: usize) {
+        tracing::info!(attempt, "txn retrying");
+    }
     // Txn's status has been successfully seen as Finalized.
     // Everything is done.
     async fn on_finalized(&self, _txn: &TransactionWithBlockhash) {}
