@@ -109,14 +109,6 @@ impl sender::TxnStore for BurnerTxnStore {
         Ok(())
     }
 
-    async fn on_sent(&self, _txn: &solana::TransactionWithBlockhash) {
-        tracing::info!("txn sent");
-    }
-
-    async fn on_sent_retry(&self, _txn: &solana::TransactionWithBlockhash, attempt: usize) {
-        tracing::warn!(attempt, "retrying");
-    }
-
     async fn on_finalized(&self, _txn: &solana::TransactionWithBlockhash) {
         tracing::info!("txn finalized");
         metrics::counter!(
