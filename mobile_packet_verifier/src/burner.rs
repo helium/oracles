@@ -101,14 +101,6 @@ impl BurnerTxnStore {
 
 #[async_trait::async_trait]
 impl sender::TxnStore for BurnerTxnStore {
-    // fn make_span(&self) -> tracing::Span {
-    //     tracing::info_span!(
-    //         "burn_txn",
-    //         payer = %self.payer,
-    //         amount = self.amount
-    //     )
-    // }
-
     async fn on_prepared(
         &self,
         _txn: &solana::TransactionWithBlockhash,
