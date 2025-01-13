@@ -3613,7 +3613,7 @@ dependencies = [
 [[package]]
 name = "helium-lib"
 version = "0.0.0"
-source = "git+https://github.com/helium/helium-wallet-rs.git?branch=mj%2Flib-transaction#06f83630e9a1b6bd5699efa0d3dd57e0b525724d"
+source = "git+https://github.com/helium/helium-wallet-rs.git?branch=master#bf7ae8aec834b1dfb37c4f0f636dcfa6b121fa11"
 dependencies = [
  "anchor-client",
  "anchor-spl",
