@@ -4,7 +4,8 @@ use chrono::{DateTime, Utc};
 use file_store::{mobile_session::DataTransferSessionReq, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use sqlx::{prelude::FromRow, Pool, Postgres, Row, Transaction};
+use solana::Signature;
+use sqlx::{postgres::PgRow, prelude::FromRow, PgPool, Pool, Postgres, Row, Transaction};
 
 const METRIC_NAME: &str = "pending_dc_burn";
 
@@ -156,6 +157,68 @@ pub async fn delete_for_payer(
     decrement_metric(payer, burnt_dc);
 
     Ok(())
+}
+
+pub async fn add_pending_transaction(
+    conn: &PgPool,
+    payer: &PublicKeyBinary,
+    amount: u64,
+    signature: &Signature,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO pending_txns (signature, payer, amount, time_of_submission)
+        VALUES ($1, $2, $3, $4)
+        "#,
+    )
+    .bind(signature.to_string())
+    .bind(payer)
+    .bind(amount as i64)
+    .bind(Utc::now())
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn remove_pending_transaction(
+    conn: &PgPool,
+    signature: &Signature,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
+        .bind(signature.to_string())
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+pub async fn fetch_all_pending_txns(conn: &PgPool) -> Result<Vec<PendingTxn>, sqlx::Error> {
+    sqlx::query_as("SELECT * from pending_txns")
+        .fetch_all(conn)
+        .await
+}
+
+pub struct PendingTxn {
+    pub signature: Signature,
+    pub payer: PublicKeyBinary,
+    pub amount: u64,
+    pub time_of_submission: DateTime<Utc>,
+}
+
+impl FromRow<'_, PgRow> for PendingTxn {
+    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            payer: row.try_get("payer")?,
+            amount: row.try_get::<i64, _>("amount")? as u64,
+            time_of_submission: row.try_get("time_of_submission")?,
+            signature: row
+                .try_get::<String, _>("signature")?
+                .parse()
+                .map_err(|e| sqlx::Error::ColumnDecode {
+                    index: "signature".to_string(),
+                    source: Box::new(e),
+                })?,
+        })
+    }
 }
 
 fn set_metric(payer: &PublicKeyBinary, value: u64) {

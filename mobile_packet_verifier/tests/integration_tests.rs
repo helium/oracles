@@ -51,6 +51,10 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     let burns = pending_burns::get_all_payer_burns(&pool).await?;
     assert_eq!(burns.len(), 1, "1 burn left");
 
+    // Ensure no pending transactions
+    let pending = pending_burns::fetch_all_pending_txns(&pool).await?;
+    assert!(pending.is_empty(), "pending txn should be removed");
+
     assert_eq!(
         solana_network.payer_balance(&payer_insufficient).await,
         ORIGINAL_BALANCE,

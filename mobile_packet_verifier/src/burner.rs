@@ -92,12 +92,24 @@ impl BurnTxnStore {
 
 #[async_trait::async_trait]
 impl sender::TxnStore for BurnTxnStore {
-    async fn on_prepared(&self, _txn: &solana::Transaction) -> sender::SenderResult<()> {
+    async fn on_prepared(&self, txn: &solana::Transaction) -> sender::SenderResult<()> {
         tracing::info!("txn prepared");
+
+        let signature = txn.get_signature();
+        let add_pending =
+            pending_burns::add_pending_transaction(&self.pool, &self.payer, self.amount, signature);
+
+        let Ok(()) = add_pending.await else {
+            tracing::error!("failed to add pending transaction");
+            return Err(sender::SenderError::preparation(
+                "could not add pending transaction",
+            ));
+        };
+
         Ok(())
     }
 
-    async fn on_finalized(&self, _txn: &solana::Transaction) {
+    async fn on_finalized(&self, txn: &solana::Transaction) {
         tracing::info!("txn finalized");
         metrics::counter!(
             "burned",
@@ -110,6 +122,12 @@ impl sender::TxnStore for BurnTxnStore {
         let remove_burn = pending_burns::delete_for_payer(&self.pool, &self.payer, self.amount);
         if let Err(err) = remove_burn.await {
             tracing::error!(?err, "failed to deduct finalized burn");
+        }
+
+        let signature = txn.get_signature();
+        let remove_pending = pending_burns::remove_pending_transaction(&self.pool, signature);
+        if let Err(err) = remove_pending.await {
+            tracing::error!(?err, "failed to remove pending txn");
         }
 
         for session in self.sessions.iter() {
