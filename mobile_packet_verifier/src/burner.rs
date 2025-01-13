@@ -88,23 +88,11 @@ impl BurnerTxnStore {
             valid_sessions,
         }
     }
-
-    fn on_error(&self) {
-        metrics::counter!(
-            "burned",
-            "payer" => self.payer.to_string(),
-            "success" => "false"
-        )
-        .increment(self.amount);
-    }
 }
 
 #[async_trait::async_trait]
 impl sender::TxnStore for BurnerTxnStore {
-    async fn on_prepared(
-        &self,
-        _txn: &solana::Transaction,
-    ) -> sender::SenderResult<()> {
+    async fn on_prepared(&self, _txn: &solana::Transaction) -> sender::SenderResult<()> {
         tracing::info!("txn prepared");
         Ok(())
     }
@@ -135,21 +123,13 @@ impl sender::TxnStore for BurnerTxnStore {
         }
     }
 
-    async fn on_error_sending(
-        &self,
-        _txn: &solana::Transaction,
-        err: &sender::SolanaClientError,
-    ) {
-        tracing::warn!(?err, "failed to send");
-        self.on_error();
-    }
-
-    async fn on_error_finalizing(
-        &self,
-        _txn: &solana::Transaction,
-        err: &sender::SolanaClientError,
-    ) {
-        tracing::warn!(?err, "failed to finalize");
-        self.on_error();
+    async fn on_error(&self, _txn: &solana::Transaction, err: sender::SenderError) {
+        tracing::warn!(?err, "txn failed");
+        metrics::counter!(
+            "burned",
+            "payer" => self.payer.to_string(),
+            "success" => "false"
+        )
+        .increment(self.amount);
     }
 }

@@ -16,6 +16,10 @@ pub enum SenderError {
     Preparation(String),
     #[error("Solana Client error: {0}")]
     SolanaClient(#[from] SolanaClientError),
+    #[error("Failed to send txn {attempt} times")]
+    Sending { attempt: usize },
+    #[error("Failed to finalize txn")]
+    Finalize,
 }
 
 impl SenderError {
@@ -49,15 +53,16 @@ async fn send_with_retry(
     let backoff = store.make_backoff().into_iter();
 
     for (attempt, duration) in backoff.enumerate() {
+        let attempt = attempt + 1; // 1-index loop
         match client.send_txn(txn).await {
             Ok(_sig) => return Ok(()),
             Err(err) => match duration {
                 Some(duration) => {
-                    store.on_sent_retry(txn, attempt + 1).await;
+                    store.on_sent_retry(txn, attempt).await;
                     tokio::time::sleep(duration).await;
                 }
                 None => {
-                    store.on_error_sending(txn, &err).await;
+                    store.on_error(txn, SenderError::Sending { attempt }).await;
                     return Err(err.into());
                 }
             },
@@ -86,7 +91,7 @@ async fn finalize_signature(
 
     let signature = txn.get_signature();
     if let Err(err) = client.finalize_signature(signature).await {
-        store.on_error_finalizing(txn, &err).await;
+        store.on_error(txn, SenderError::Finalize).await;
         return Err(err.into());
     };
 
@@ -121,10 +126,7 @@ pub trait TxnStore: Send + Sync {
     // Txn's status has been successfully seen as Finalized.
     // Everything is done.
     async fn on_finalized(&self, _txn: &Transaction) {}
-    // Something went wrong sending, the txn never made it anywhere.
-    async fn on_error_sending(&self, _txn: &Transaction, _err: &SolanaClientError) {}
-    // Somethign went wrong finalizing, the txn was sent but not confirmed on chain.
-    async fn on_error_finalizing(&self, _txn: &Transaction, _err: &SolanaClientError) {}
+    async fn on_error(&self, _txn: &Transaction, _err: SenderError) {}
 }
 
 pub struct NoopStore;
@@ -215,17 +217,9 @@ mod tests {
             let signature = txn.get_signature();
             self.record_call(format!("on_finalized: {signature}"))
         }
-        async fn on_error_sending(&self, txn: &Transaction, _err: &SolanaClientError) {
+        async fn on_error(&self, txn: &Transaction, err: SenderError) {
             let signature = txn.get_signature();
-            self.record_call(format!(
-                "on_error_sending: {signature} could not submit 5 times"
-            ));
-        }
-        async fn on_error_finalizing(&self, txn: &Transaction, _err: &SolanaClientError) {
-            let signature = txn.get_signature();
-            self.record_call(format!(
-                "on_error_finalizing: {signature} could not finalize"
-            ));
+            self.record_call(format!("on_error: {signature} {err}"));
         }
     }
 
@@ -364,7 +358,7 @@ mod tests {
                 format!("on_sent_retry: 2 {signature}"),
                 format!("on_sent_retry: 3 {signature}"),
                 format!("on_sent_retry: 4 {signature}"),
-                format!("on_error_sending: {signature} could not submit 5 times")
+                format!("on_error: {signature} Failed to send txn 5 times")
             ]
         );
 
@@ -388,7 +382,7 @@ mod tests {
             vec![
                 format!("on_prepared: {signature}"),
                 format!("on_sent: {signature}"),
-                format!("on_error_finalizing: {signature} could not finalize")
+                format!("on_error: {signature} Failed to finalize txn")
             ]
         );
 

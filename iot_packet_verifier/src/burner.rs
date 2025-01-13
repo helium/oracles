@@ -6,7 +6,7 @@ use crate::{
 };
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
-use solana::{burn::SolanaNetwork, sender, SolanaRpcError, Transaction};
+use solana::{burn::SolanaNetwork, sender, SolanaRpcError};
 use std::time::Duration;
 use task_manager::ManagedTask;
 use tokio::time::{self, MissedTickBehavior};
@@ -142,31 +142,6 @@ impl<PT: PendingTables + Clone> BurnTxnStore<PT> {
             amount,
         }
     }
-
-    async fn on_error(&self, txn: &Transaction) {
-        let Ok(mut db_txn) = self.pool.begin().await else {
-            tracing::error!("failed to start error transaction");
-            return;
-        };
-
-        let signature = txn.get_signature();
-        let Ok(()) = db_txn.remove_pending_transaction(signature).await else {
-            tracing::error!("failed to remove pending transaction on error");
-            return;
-        };
-
-        let Ok(()) = db_txn.commit().await else {
-            tracing::error!("failed to commit on error transaction");
-            return;
-        };
-
-        metrics::counter!(
-            "burned",
-            "payer" => self.payer.to_string(),
-            "success" => "false"
-        )
-        .increment(self.amount);
-    }
 }
 
 #[async_trait::async_trait]
@@ -231,17 +206,29 @@ impl<PT: PendingTables> sender::TxnStore for BurnTxnStore<PT> {
         .increment(self.amount);
     }
 
-    async fn on_error_sending(&self, txn: &solana::Transaction, err: &sender::SolanaClientError) {
-        tracing::warn!(?err, "failed to send");
-        self.on_error(txn).await;
-    }
+    async fn on_error(&self, txn: &solana::Transaction, err: sender::SenderError) {
+        tracing::warn!(?err, "txn failed");
+        let Ok(mut db_txn) = self.pool.begin().await else {
+            tracing::error!("failed to start error transaction");
+            return;
+        };
 
-    async fn on_error_finalizing(
-        &self,
-        txn: &solana::Transaction,
-        err: &sender::SolanaClientError,
-    ) {
-        tracing::warn!(?err, "failed to finalize");
-        self.on_error(txn).await;
+        let signature = txn.get_signature();
+        let Ok(()) = db_txn.remove_pending_transaction(signature).await else {
+            tracing::error!("failed to remove pending transaction on error");
+            return;
+        };
+
+        let Ok(()) = db_txn.commit().await else {
+            tracing::error!("failed to commit on error transaction");
+            return;
+        };
+
+        metrics::counter!(
+            "burned",
+            "payer" => self.payer.to_string(),
+            "success" => "false"
+        )
+        .increment(self.amount);
     }
 }
