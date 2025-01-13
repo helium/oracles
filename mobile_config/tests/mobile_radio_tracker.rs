@@ -1,10 +1,15 @@
+use std::sync::Arc;
+
 use chrono::Utc;
 use helium_crypto::PublicKeyBinary;
-use mobile_config::mobile_radio_tracker::{get_tracked_radios, track_changes};
+use mobile_config::mobile_radio_tracker::{
+    get_tracked_radios, MobileRadioTracker, TrackedRadiosMap,
+};
 use sqlx::PgPool;
 
 pub mod common;
 use common::*;
+use tokio::sync::RwLock;
 
 #[sqlx::test]
 async fn mobile_tracker_handle_entity_duplicates(pool: PgPool) {
@@ -53,7 +58,20 @@ async fn mobile_tracker_handle_entity_duplicates(pool: PgPool) {
     .await;
 
     let b58 = bs58::decode(pubkey_binary.to_string()).into_vec().unwrap();
-    track_changes(&pool, &pool).await.unwrap();
+
+    let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
+        Arc::new(RwLock::new(TrackedRadiosMap::new()));
+
+    let mobile_tracker = MobileRadioTracker::new(
+        pool.clone(),
+        pool.clone(),
+        // settings.mobile_radio_tracker_interval,
+        humantime::parse_duration("1 hour").unwrap(),
+        Arc::clone(&tracked_radios_cache),
+    );
+    mobile_tracker.track_changes().await.unwrap();
+
+    // track_changes(&pool, &pool).await.unwrap();
     let tracked_radios = get_tracked_radios(&pool).await.unwrap();
     assert_eq!(tracked_radios.len(), 1);
     let tracked_radio = tracked_radios.get::<Vec<u8>>(&b58).unwrap();

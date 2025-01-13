@@ -1,4 +1,4 @@
-use std::vec;
+use std::{sync::Arc, vec};
 
 use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
@@ -11,11 +11,12 @@ use helium_proto::services::mobile_config::{
 use mobile_config::{
     gateway_service::GatewayService,
     key_cache::{CacheKeys, KeyCache},
+    mobile_radio_tracker::{MobileRadioTracker, TrackedRadiosMap},
     KeyRole,
 };
 use prost::Message;
 use sqlx::PgPool;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::RwLock};
 use tonic::{transport, Code};
 
 pub mod common;
@@ -38,7 +39,9 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_key.public_key().to_owned(), KeyRole::Administrator)]);
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
+    let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
+        Arc::new(RwLock::new(TrackedRadiosMap::new()));
+    let gws = GatewayService::new(key_cache, pool.clone(), server_key, tracked_radios_cache);
     let _handle = tokio::spawn(
         transport::Server::builder()
             .add_service(proto::GatewayServer::new(gws))
@@ -54,7 +57,7 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     assert_ne!(
         err.code(),
         Code::PermissionDenied,
-        "gateway can request infomation about itself"
+        "gateway can request information about itself"
     );
 
     // Request gateway info as administrator
@@ -102,8 +105,22 @@ async fn spawn_gateway_service(
 
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
+
+    let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
+        Arc::new(RwLock::new(TrackedRadiosMap::new()));
+
+    let mobile_tracker = MobileRadioTracker::new(
+        pool.clone(),
+        pool.clone(),
+        // settings.mobile_radio_tracker_interval,
+        humantime::parse_duration("1 hour").unwrap(),
+        Arc::clone(&tracked_radios_cache),
+    );
+    mobile_tracker.track_changes().await.unwrap();
+
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
+
+    let gws = GatewayService::new(key_cache, pool.clone(), server_key, tracked_radios_cache);
     let handle = tokio::spawn(
         transport::Server::builder()
             .add_service(proto::GatewayServer::new(gws))
@@ -370,7 +387,6 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
 
     let created_at = Utc::now() - Duration::hours(5);
     let refreshed_at = Utc::now() - Duration::hours(3);
-    let updated_at = Utc::now() - Duration::hours(4);
 
     create_db_tables(&pool).await;
     add_db_record(
@@ -408,7 +424,6 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
         None,
     )
     .await;
-    add_mobile_tracker_record(&pool, asset3_pubkey.clone().into(), updated_at).await;
 
     // Must be ignored since not included in req
     add_db_record(
@@ -465,7 +480,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
             .find(|v| v.address == asset3_pubkey.to_vec())
             .unwrap()
             .updated_at,
-        updated_at.timestamp() as u64
+        refreshed_at.timestamp() as u64
     );
 }
 
@@ -602,7 +617,6 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
 
     let created_at = Utc::now() - Duration::hours(5);
     let refreshed_at = Utc::now() - Duration::hours(3);
-    let updated_at = Utc::now() - Duration::hours(4);
 
     create_db_tables(&pool).await;
     add_db_record(
@@ -640,7 +654,6 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
         None,
     )
     .await;
-    add_mobile_tracker_record(&pool, asset3_pubkey.clone().into(), updated_at).await;
 
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
@@ -677,7 +690,7 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
             .find(|v| v.address == asset3_pubkey.to_vec())
             .unwrap()
             .updated_at,
-        updated_at.timestamp() as u64
+        refreshed_at.timestamp() as u64
     );
 }
 
