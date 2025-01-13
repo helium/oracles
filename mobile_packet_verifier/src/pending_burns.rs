@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{mobile_session::DataTransferSessionReq, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::Signature;
+use solana::{burn::SolanaNetwork, Signature};
 use sqlx::{postgres::PgRow, prelude::FromRow, PgPool, Pool, Postgres, Row, Transaction};
 
 const METRIC_NAME: &str = "pending_dc_burn";
@@ -159,11 +159,49 @@ pub async fn delete_for_payer(
     Ok(())
 }
 
+pub async fn confirm_pending_txns<S: SolanaNetwork>(
+    conn: &PgPool,
+    solana: &S,
+) -> anyhow::Result<()> {
+    let pending = fetch_all_pending_txns(conn).await?;
+    tracing::info!(count = pending.len(), "confirming pending txns");
+
+    for pending in pending {
+        // Sleep for at least a minute since the time of submission to
+        // give the transaction plenty of time to be confirmed:
+        let time_since_submission = Utc::now() - pending.time_of_submission;
+        if Duration::minutes(1) > time_since_submission {
+            let delay = Duration::minutes(1) - time_since_submission;
+            tracing::info!(?pending, %delay, "waiting to confirm pending txn");
+            tokio::time::sleep(delay.to_std()?).await;
+        }
+
+        let confirmed = solana.confirm_transaction(&pending.signature).await?;
+        tracing::info!(?pending, confirmed, "confirming pending transaction");
+        if confirmed {
+            remove_pending_transaction(conn, &pending.signature).await?;
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn add_pending_transaction(
     conn: &PgPool,
     payer: &PublicKeyBinary,
     amount: u64,
     signature: &Signature,
+) -> Result<(), sqlx::Error> {
+    do_add_pending_transaction(conn, payer, amount, signature, Utc::now()).await?;
+    Ok(())
+}
+
+pub async fn do_add_pending_transaction(
+    conn: &PgPool,
+    payer: &PublicKeyBinary,
+    amount: u64,
+    signature: &Signature,
+    time_of_submission: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
@@ -174,7 +212,7 @@ pub async fn add_pending_transaction(
     .bind(signature.to_string())
     .bind(payer)
     .bind(amount as i64)
-    .bind(Utc::now())
+    .bind(time_of_submission)
     .execute(conn)
     .await?;
     Ok(())
@@ -197,6 +235,7 @@ pub async fn fetch_all_pending_txns(conn: &PgPool) -> Result<Vec<PendingTxn>, sq
         .await
 }
 
+#[derive(Debug)]
 pub struct PendingTxn {
     pub signature: Signature,
     pub payer: PublicKeyBinary,

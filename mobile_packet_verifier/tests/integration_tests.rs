@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Instant,
+};
 
 use chrono::Utc;
 use file_store::{
@@ -55,6 +59,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     let pending = pending_burns::fetch_all_pending_txns(&pool).await?;
     assert!(pending.is_empty(), "pending txn should be removed");
 
+    // Ensure balance for payers through solana mock
     assert_eq!(
         solana_network.payer_balance(&payer_insufficient).await,
         ORIGINAL_BALANCE,
@@ -71,6 +76,52 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
         written_sessions.push(session);
     }
     assert_eq!(written_sessions.len(), 1, "1 data transfer session written");
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
+    let payer_one = PublicKeyBinary::from(vec![1]);
+
+    let mut solana_network = TestSolanaClientMap::default();
+    solana_network.insert(payer_one.clone(), 10_000).await;
+
+    // First transaction is confirmed
+    // Make submission time in past to bypass confirm txn sleep
+    let confirmed_signature = Signature::new_unique();
+    pending_burns::do_add_pending_transaction(
+        &pool,
+        &payer_one,
+        1_000,
+        &confirmed_signature,
+        Utc::now() - chrono::Duration::minutes(2),
+    )
+    .await?;
+
+    // Second transaction is unconfirmed
+    // Make submission time in past to bypass confirm txn sleep
+    let unconfirmed_signature = Signature::new_unique();
+    pending_burns::do_add_pending_transaction(
+        &pool,
+        &payer_one,
+        500,
+        &unconfirmed_signature,
+        Utc::now() - chrono::Duration::minutes(2),
+    )
+    .await?;
+
+    // Tell Mock Solana which txn to confirm
+    solana_network.add_confirmed(confirmed_signature).await;
+    // solana_network.add_confirmed(unconfirmed_txn).await; // uncomment for failure
+
+    assert_eq!(pending_burns::fetch_all_pending_txns(&pool).await?.len(), 2);
+    pending_burns::confirm_pending_txns(&pool, &solana_network).await?;
+    assert_eq!(pending_burns::fetch_all_pending_txns(&pool).await?.len(), 1);
+
+    let remaining_txn = pending_burns::fetch_all_pending_txns(&pool).await?;
+    assert_eq!(remaining_txn.len(), 1);
+    assert_eq!(remaining_txn[0].amount, 500);
 
     Ok(())
 }
@@ -98,10 +149,11 @@ fn mk_data_transfer_session(
 
 #[derive(Debug, Clone)]
 pub struct TestSolanaClientMap {
-    pub payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
-    pub txn_sig_to_payer: Arc<Mutex<HashMap<Signature, (PublicKeyBinary, u64)>>>,
+    payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+    txn_sig_to_payer: Arc<Mutex<HashMap<Signature, (PublicKeyBinary, u64)>>>,
+    confirmed_txns: Arc<Mutex<HashSet<Signature>>>,
     // Using the nanoseconds since the client was made as block height
-    pub block_height: Instant,
+    block_height: Instant,
 }
 
 impl Default for TestSolanaClientMap {
@@ -110,6 +162,7 @@ impl Default for TestSolanaClientMap {
             payer_balances: Default::default(),
             txn_sig_to_payer: Default::default(),
             block_height: Instant::now(),
+            confirmed_txns: Default::default(),
         }
     }
 }
@@ -120,10 +173,15 @@ impl TestSolanaClientMap {
             payer_balances: ledger,
             txn_sig_to_payer: Default::default(),
             block_height: Instant::now(),
+            confirmed_txns: Default::default(),
         }
     }
     pub async fn insert(&mut self, payer: PublicKeyBinary, amount: u64) {
         self.payer_balances.lock().await.insert(payer, amount);
+    }
+
+    async fn add_confirmed(&mut self, signature: Signature) {
+        self.confirmed_txns.lock().await.insert(signature);
     }
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> u64 {
@@ -181,8 +239,8 @@ impl SolanaNetwork for TestSolanaClientMap {
         Ok(())
     }
 
-    async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, SolanaRpcError> {
-        Ok(true)
+    async fn confirm_transaction(&self, signature: &Signature) -> Result<bool, SolanaRpcError> {
+        Ok(self.confirmed_txns.lock().await.contains(signature))
     }
 }
 
