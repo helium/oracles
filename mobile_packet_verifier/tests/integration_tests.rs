@@ -1,9 +1,3 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Instant,
-};
-
 use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient,
@@ -12,11 +6,8 @@ use file_store::{
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
 use mobile_packet_verifier::{burner::Burner, pending_burns};
-use solana::{
-    burn::SolanaNetwork, sender, Signature, SolanaRpcError, SolanaTransaction, Transaction,
-};
+use solana::{burn::test_client::TestSolanaClientMap, Signature};
 use sqlx::PgPool;
-use tokio::sync::Mutex;
 
 #[sqlx::test]
 fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
@@ -61,12 +52,12 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
 
     // Ensure balance for payers through solana mock
     assert_eq!(
-        solana_network.payer_balance(&payer_insufficient).await,
+        solana_network.get_payer_balance(&payer_insufficient).await,
         ORIGINAL_BALANCE,
         "original balance"
     );
     assert!(
-        solana_network.payer_balance(&payer_sufficient).await < ORIGINAL_BALANCE,
+        solana_network.get_payer_balance(&payer_sufficient).await < ORIGINAL_BALANCE,
         "reduced balance"
     );
 
@@ -144,120 +135,5 @@ fn mk_data_transfer_session(
         rewardable_bytes,
         pub_key: payer_key.into(),
         signature: vec![],
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct TestSolanaClientMap {
-    payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
-    txn_sig_to_payer: Arc<Mutex<HashMap<Signature, (PublicKeyBinary, u64)>>>,
-    confirmed_txns: Arc<Mutex<HashSet<Signature>>>,
-    // Using the nanoseconds since the client was made as block height
-    block_height: Instant,
-}
-
-impl Default for TestSolanaClientMap {
-    fn default() -> Self {
-        Self {
-            payer_balances: Default::default(),
-            txn_sig_to_payer: Default::default(),
-            block_height: Instant::now(),
-            confirmed_txns: Default::default(),
-        }
-    }
-}
-
-impl TestSolanaClientMap {
-    pub fn new(ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>) -> Self {
-        Self {
-            payer_balances: ledger,
-            txn_sig_to_payer: Default::default(),
-            block_height: Instant::now(),
-            confirmed_txns: Default::default(),
-        }
-    }
-    pub async fn insert(&mut self, payer: PublicKeyBinary, amount: u64) {
-        self.payer_balances.lock().await.insert(payer, amount);
-    }
-
-    async fn add_confirmed(&mut self, signature: Signature) {
-        self.confirmed_txns.lock().await.insert(signature);
-    }
-
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> u64 {
-        self.payer_balances
-            .lock()
-            .await
-            .get(payer)
-            .cloned()
-            .unwrap_or_default()
-    }
-}
-
-#[async_trait::async_trait]
-impl SolanaNetwork for TestSolanaClientMap {
-    type Transaction = Transaction;
-
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        Ok(*self.payer_balances.lock().await.get(payer).unwrap())
-    }
-
-    async fn make_burn_transaction(
-        &self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-    ) -> Result<Transaction, SolanaRpcError> {
-        let mut inner = SolanaTransaction::default();
-
-        let sig = Signature::new_unique();
-        // add signature -> (payer, amount) so we can subtract
-        self.txn_sig_to_payer
-            .lock()
-            .await
-            .insert(sig, (payer.clone(), amount));
-        inner.signatures.push(sig);
-
-        Ok(Transaction {
-            inner,
-            sent_block_height: 1,
-        })
-    }
-
-    async fn submit_transaction(
-        &self,
-        txn: &Transaction,
-        store: &impl sender::TxnStore,
-    ) -> Result<(), SolanaRpcError> {
-        // Test client must attempt to send for changes to take place
-        sender::send_and_finalize(self, txn, store).await?;
-
-        let signature = txn.get_signature();
-        if let Some((payer, amount)) = self.txn_sig_to_payer.lock().await.get(signature) {
-            *self.payer_balances.lock().await.get_mut(payer).unwrap() -= amount;
-        }
-
-        Ok(())
-    }
-
-    async fn confirm_transaction(&self, signature: &Signature) -> Result<bool, SolanaRpcError> {
-        Ok(self.confirmed_txns.lock().await.contains(signature))
-    }
-}
-
-#[async_trait::async_trait]
-impl sender::SenderClientExt for TestSolanaClientMap {
-    async fn send_txn(&self, txn: &Transaction) -> Result<Signature, sender::SolanaClientError> {
-        Ok(*txn.get_signature())
-    }
-    async fn finalize_signature(
-        &self,
-        _signature: &Signature,
-    ) -> Result<(), sender::SolanaClientError> {
-        Ok(())
-    }
-    async fn get_block_height(&self) -> Result<u64, sender::SolanaClientError> {
-        // Using the nanoseconds since the client was made as block height
-        let block_height = self.block_height.elapsed().as_nanos();
-        Ok(block_height as u64)
     }
 }

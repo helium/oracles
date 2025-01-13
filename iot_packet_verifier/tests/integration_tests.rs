@@ -16,13 +16,12 @@ use iot_packet_verifier::{
     pending::{confirm_pending_txns, AddPendingBurn, Burn, PendingTables, BURN_THRESHOLD},
     verifier::{payload_size_to_dc, ConfigServer, ConfigServerError, Org, Verifier, BYTES_PER_DC},
 };
-use solana::{burn::SolanaNetwork, sender, Signature, SolanaRpcError, Transaction};
-use sqlx::PgPool;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::{Duration, Instant},
+use solana::{
+    burn::{test_client::TestSolanaClientMap, SolanaNetwork},
+    sender,
 };
+use sqlx::PgPool;
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
@@ -158,105 +157,6 @@ fn invalid_packet(payload_size: u32, payload_hash: Vec<u8>) -> InvalidPacket {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct TestSolanaClientMap {
-    pub payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
-    pub txn_sig_to_payer: Arc<Mutex<HashMap<Signature, (PublicKeyBinary, u64)>>>,
-    // Using the nanoseconds since the client was made as block height
-    pub block_height: Instant,
-}
-
-impl Default for TestSolanaClientMap {
-    fn default() -> Self {
-        Self {
-            payer_balances: Default::default(),
-            txn_sig_to_payer: Default::default(),
-            block_height: Instant::now(),
-        }
-    }
-}
-
-impl TestSolanaClientMap {
-    pub fn new(ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>) -> Self {
-        Self {
-            payer_balances: ledger,
-            txn_sig_to_payer: Default::default(),
-            block_height: Instant::now(),
-        }
-    }
-    pub async fn insert(&mut self, payer: PublicKeyBinary, amount: u64) {
-        self.payer_balances.lock().await.insert(payer, amount);
-    }
-}
-
-#[async_trait]
-impl SolanaNetwork for TestSolanaClientMap {
-    type Transaction = Transaction;
-
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        Ok(*self.payer_balances.lock().await.get(payer).unwrap())
-    }
-
-    async fn make_burn_transaction(
-        &self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-    ) -> Result<Transaction, SolanaRpcError> {
-        let mut inner = solana_sdk::transaction::Transaction::default();
-
-        let sig = Signature::new_unique();
-        // add signature -> (payer, amount) so we can subtract
-        self.txn_sig_to_payer
-            .lock()
-            .await
-            .insert(sig, (payer.clone(), amount));
-        inner.signatures.push(sig);
-
-        Ok(Transaction {
-            inner,
-            sent_block_height: 1,
-        })
-    }
-
-    async fn submit_transaction(
-        &self,
-        txn: &Transaction,
-        store: &impl sender::TxnStore,
-    ) -> Result<(), SolanaRpcError> {
-        // Test client must attempt to send for changes to take place
-        sender::send_and_finalize(self, txn, store).await?;
-
-        let signature = txn.get_signature();
-        if let Some((payer, amount)) = self.txn_sig_to_payer.lock().await.get(signature) {
-            *self.payer_balances.lock().await.get_mut(payer).unwrap() -= amount;
-        }
-
-        Ok(())
-    }
-
-    async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, SolanaRpcError> {
-        Ok(true)
-    }
-}
-
-#[async_trait::async_trait]
-impl sender::SenderClientExt for TestSolanaClientMap {
-    async fn send_txn(&self, txn: &Transaction) -> Result<Signature, sender::SolanaClientError> {
-        Ok(*txn.get_signature())
-    }
-    async fn finalize_signature(
-        &self,
-        _signature: &Signature,
-    ) -> Result<(), sender::SolanaClientError> {
-        Ok(())
-    }
-    async fn get_block_height(&self) -> Result<u64, sender::SolanaClientError> {
-        // Using the nanoseconds since the client was made as block height
-        let block_height = self.block_height.elapsed().as_nanos();
-        Ok(block_height as u64)
-    }
-}
-
 #[sqlx::test]
 async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
     // Set up orgs:
@@ -305,12 +205,9 @@ async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
     assert!(!orgs.payers.lock().await.get(&0).unwrap().enabled);
 
     // Update the solana network:
-    *solana_network
-        .payer_balances
-        .lock()
-        .await
-        .get_mut(&PublicKeyBinary::from(vec![0]))
-        .unwrap() = 50;
+    solana_network
+        .set_payer_balance(&PublicKeyBinary::from(vec![0]), 50)
+        .await;
 
     let (trigger, listener) = triggered::trigger();
 
@@ -666,12 +563,7 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(payer_balance.burned, 0, "pending was burned");
 
     // Additionally, the balance on the solana network should be zero:
-    let solana_balance = *solana_network
-        .payer_balances
-        .lock()
-        .await
-        .get(&payer)
-        .unwrap();
+    let solana_balance = solana_network.get_payer_balance(&payer).await;
     assert_eq!(solana_balance, 0, "solana balance");
 
     // Attempting to validate one packet should fail now:
@@ -707,52 +599,6 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Clone)]
-struct MockSolanaNetwork {
-    confirmed: Arc<Mutex<HashSet<Signature>>>,
-    ledger: TestSolanaClientMap,
-}
-
-impl MockSolanaNetwork {
-    fn new(ledger: HashMap<PublicKeyBinary, u64>) -> Self {
-        Self {
-            confirmed: Arc::new(Default::default()),
-            ledger: TestSolanaClientMap::new(Arc::new(Mutex::new(ledger))),
-        }
-    }
-}
-
-#[async_trait]
-impl SolanaNetwork for MockSolanaNetwork {
-    type Transaction = Transaction;
-
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        self.ledger.payer_balance(payer).await
-    }
-
-    async fn make_burn_transaction(
-        &self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-    ) -> Result<Transaction, SolanaRpcError> {
-        self.ledger.make_burn_transaction(payer, amount).await
-    }
-
-    async fn submit_transaction(
-        &self,
-        txn: &Transaction,
-        store: &impl sender::TxnStore,
-    ) -> Result<(), SolanaRpcError> {
-        self.confirmed.lock().await.insert(*txn.get_signature());
-        self.ledger.submit_transaction(txn, store).await?;
-        Ok(())
-    }
-
-    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
-        Ok(self.confirmed.lock().await.contains(txn))
-    }
-}
-
 #[sqlx::test]
 async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     const CONFIRMED_BURN_AMOUNT: u64 = 7;
@@ -773,7 +619,13 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
             burned: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
         },
     );
-    let mock_network = MockSolanaNetwork::new(ledger);
+    let mut solana_network = TestSolanaClientMap::default();
+    solana_network
+        .insert(
+            payer.clone(),
+            CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
+        )
+        .await;
 
     // Add both the burn amounts to the pending burns table
     {
@@ -788,7 +640,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // First transaction is confirmed
     // Make submission time in past to bypass confirm txn sleep
     {
-        let txn = mock_network
+        let txn = solana_network
             .make_burn_transaction(&payer, CONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
@@ -800,7 +652,8 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         )
         .await
         .unwrap();
-        mock_network
+        solana_network.add_confirmed(*txn.get_signature()).await;
+        solana_network
             .submit_transaction(&txn, &sender::NoopStore)
             .await
             .unwrap();
@@ -809,7 +662,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Second is unconfirmed
     // Make submission time in past to bypass confirm txn sleep
     {
-        let txn = mock_network
+        let txn = solana_network
             .make_burn_transaction(&payer, UNCONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
@@ -824,7 +677,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     }
 
     // Confirm pending transactions
-    confirm_pending_txns(&pool, &mock_network, &Arc::new(Mutex::new(cache)))
+    confirm_pending_txns(&pool, &solana_network, &Arc::new(Mutex::new(cache)))
         .await
         .unwrap();
 
