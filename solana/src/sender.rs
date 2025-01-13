@@ -110,7 +110,7 @@ pub trait TxnStore: Send + Sync {
     fn make_backoff(&self) -> Backoff {
         Backoff::new(5, Duration::from_secs(1), Duration::from_secs(5))
     }
-    // Last chance for _not_ send a transaction.
+    // Last chance to _not_ send a transaction.
     async fn on_prepared(&self, _txn: &Transaction) -> SenderResult<()> {
         Ok(())
     }
@@ -119,13 +119,14 @@ pub trait TxnStore: Send + Sync {
         tracing::info!("txn sent");
     }
     // Sending the txn failed, and we're going to try again.
-    // If any sleeping should be done, do it here.
     async fn on_sent_retry(&self, _txn: &Transaction, attempt: usize) {
         tracing::info!(attempt, "txn retrying");
     }
     // Txn's status has been successfully seen as Finalized.
-    // Everything is done.
     async fn on_finalized(&self, _txn: &Transaction) {}
+    // Something went wrong during sending or finalizing.
+    // _err will be `SenderError::Sending` or `SenderError::Finalize`.
+    // The actual cause of the error will be returned to the sender.
     async fn on_error(&self, _txn: &Transaction, _err: SenderError) {}
 }
 
@@ -149,8 +150,7 @@ impl<T: AsRef<client::SolanaRpcClient> + Send + Sync> SenderClientExt for T {
     }
 
     async fn finalize_signature(&self, signature: &Signature) -> Result<(), SolanaClientError> {
-        // TODO: poll while checking against the block height.
-        // Maybe return a different type of error here.
+        // Block height errors are handled in `finalize_signature`.
         Ok(self
             .as_ref()
             .poll_for_signature_with_commitment(signature, CommitmentConfig::finalized())
