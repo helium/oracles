@@ -103,13 +103,13 @@ impl BurnerTxnStore {
 impl sender::TxnStore for BurnerTxnStore {
     async fn on_prepared(
         &self,
-        _txn: &solana::TransactionWithBlockhash,
+        _txn: &solana::Transaction,
     ) -> sender::SenderResult<()> {
         tracing::info!("txn prepared");
         Ok(())
     }
 
-    async fn on_finalized(&self, _txn: &solana::TransactionWithBlockhash) {
+    async fn on_finalized(&self, _txn: &solana::Transaction) {
         tracing::info!("txn finalized");
         metrics::counter!(
             "burned",
@@ -137,7 +137,7 @@ impl sender::TxnStore for BurnerTxnStore {
 
     async fn on_error_sending(
         &self,
-        _txn: &solana::TransactionWithBlockhash,
+        _txn: &solana::Transaction,
         err: &sender::SolanaClientError,
     ) {
         tracing::warn!(?err, "failed to send");
@@ -146,7 +146,7 @@ impl sender::TxnStore for BurnerTxnStore {
 
     async fn on_error_finalizing(
         &self,
-        _txn: &solana::TransactionWithBlockhash,
+        _txn: &solana::Transaction,
         err: &sender::SolanaClientError,
     ) {
         tracing::warn!(?err, "failed to finalize");

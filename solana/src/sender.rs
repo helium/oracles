@@ -1,9 +1,11 @@
 use std::time::Duration;
 
 use exponential_backoff::Backoff;
-use helium_lib::{client, keypair::Signature, TransactionWithBlockhash};
+use helium_lib::{client, keypair::Signature};
 use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_sdk::commitment_config::CommitmentConfig;
+
+use crate::Transaction;
 
 pub type SolanaClientError = solana_client::client_error::ClientError;
 pub type SenderResult<T> = Result<T, SenderError>;
@@ -24,7 +26,7 @@ impl SenderError {
 
 pub async fn send_and_finalize(
     client: &impl SenderClientExt,
-    txn: &TransactionWithBlockhash,
+    txn: &Transaction,
     store: &impl TxnStore,
 ) -> SenderResult<()> {
     let sent_block_height = client.get_block_height().await?;
@@ -41,7 +43,7 @@ pub async fn send_and_finalize(
 
 async fn send_with_retry(
     client: &impl SenderClientExt,
-    txn: &TransactionWithBlockhash,
+    txn: &Transaction,
     store: &impl TxnStore,
 ) -> SenderResult<()> {
     let backoff = store.make_backoff().into_iter();
@@ -67,7 +69,7 @@ async fn send_with_retry(
 
 async fn finalize_signature(
     client: &impl SenderClientExt,
-    txn: &TransactionWithBlockhash,
+    txn: &Transaction,
     store: &impl TxnStore,
     sent_block_height: u64,
 ) -> SenderResult<()> {
@@ -93,10 +95,7 @@ async fn finalize_signature(
 
 #[async_trait::async_trait]
 pub trait SenderClientExt: Send + Sync {
-    async fn send_txn(
-        &self,
-        txn: &TransactionWithBlockhash,
-    ) -> Result<Signature, SolanaClientError>;
+    async fn send_txn(&self, txn: &Transaction) -> Result<Signature, SolanaClientError>;
     async fn finalize_signature(&self, signature: &Signature) -> Result<(), SolanaClientError>;
     async fn get_block_height(&self) -> Result<u64, SolanaClientError>;
 }
@@ -107,26 +106,25 @@ pub trait TxnStore: Send + Sync {
         Backoff::new(5, Duration::from_secs(1), Duration::from_secs(5))
     }
     // Last chance for _not_ send a transaction.
-    async fn on_prepared(&self, _txn: &TransactionWithBlockhash) -> SenderResult<()> {
+    async fn on_prepared(&self, _txn: &Transaction) -> SenderResult<()> {
         Ok(())
     }
     // The txn has been succesfully sent to Solana.
-    async fn on_sent(&self, _txn: &TransactionWithBlockhash) {
+    async fn on_sent(&self, _txn: &Transaction) {
         tracing::info!("txn sent");
     }
     // Sending the txn failed, and we're going to try again.
     // If any sleeping should be done, do it here.
-    async fn on_sent_retry(&self, _txn: &TransactionWithBlockhash, attempt: usize) {
+    async fn on_sent_retry(&self, _txn: &Transaction, attempt: usize) {
         tracing::info!(attempt, "txn retrying");
     }
     // Txn's status has been successfully seen as Finalized.
     // Everything is done.
-    async fn on_finalized(&self, _txn: &TransactionWithBlockhash) {}
+    async fn on_finalized(&self, _txn: &Transaction) {}
     // Something went wrong sending, the txn never made it anywhere.
-    async fn on_error_sending(&self, _txn: &TransactionWithBlockhash, _err: &SolanaClientError) {}
+    async fn on_error_sending(&self, _txn: &Transaction, _err: &SolanaClientError) {}
     // Somethign went wrong finalizing, the txn was sent but not confirmed on chain.
-    async fn on_error_finalizing(&self, _txn: &TransactionWithBlockhash, _err: &SolanaClientError) {
-    }
+    async fn on_error_finalizing(&self, _txn: &Transaction, _err: &SolanaClientError) {}
 }
 
 pub struct NoopStore;
@@ -136,10 +134,7 @@ impl TxnStore for NoopStore {}
 
 #[async_trait::async_trait]
 impl<T: AsRef<client::SolanaRpcClient> + Send + Sync> SenderClientExt for T {
-    async fn send_txn(
-        &self,
-        txn: &TransactionWithBlockhash,
-    ) -> Result<Signature, SolanaClientError> {
+    async fn send_txn(&self, txn: &Transaction) -> Result<Signature, SolanaClientError> {
         let config = RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
@@ -147,7 +142,7 @@ impl<T: AsRef<client::SolanaRpcClient> + Send + Sync> SenderClientExt for T {
 
         Ok(self
             .as_ref()
-            .send_transaction_with_config(txn.inner_txn(), config)
+            .send_transaction_with_config(txn, config)
             .await?)
     }
 
@@ -173,8 +168,6 @@ mod tests {
     };
 
     use solana_sdk::signer::SignerError;
-
-    use crate::GetSignature;
 
     use super::*;
 
@@ -202,7 +195,7 @@ mod tests {
             Backoff::new(5, Duration::from_millis(10), Duration::from_millis(50))
         }
 
-        async fn on_prepared(&self, txn: &TransactionWithBlockhash) -> SenderResult<()> {
+        async fn on_prepared(&self, txn: &Transaction) -> SenderResult<()> {
             if self.fail_prepared {
                 return Err(SenderError::preparation("mock failure"));
             }
@@ -210,29 +203,25 @@ mod tests {
             self.record_call(format!("on_prepared: {signature}"));
             Ok(())
         }
-        async fn on_sent(&self, txn: &TransactionWithBlockhash) {
+        async fn on_sent(&self, txn: &Transaction) {
             let signature = txn.get_signature();
             self.record_call(format!("on_sent: {signature}"));
         }
-        async fn on_sent_retry(&self, txn: &TransactionWithBlockhash, attempt: usize) {
+        async fn on_sent_retry(&self, txn: &Transaction, attempt: usize) {
             let signature = txn.get_signature();
             self.record_call(format!("on_sent_retry: {attempt} {signature}"));
         }
-        async fn on_finalized(&self, txn: &TransactionWithBlockhash) {
+        async fn on_finalized(&self, txn: &Transaction) {
             let signature = txn.get_signature();
             self.record_call(format!("on_finalized: {signature}"))
         }
-        async fn on_error_sending(&self, txn: &TransactionWithBlockhash, _err: &SolanaClientError) {
+        async fn on_error_sending(&self, txn: &Transaction, _err: &SolanaClientError) {
             let signature = txn.get_signature();
             self.record_call(format!(
                 "on_error_sending: {signature} could not submit 5 times"
             ));
         }
-        async fn on_error_finalizing(
-            &self,
-            txn: &TransactionWithBlockhash,
-            _err: &SolanaClientError,
-        ) {
+        async fn on_error_finalizing(&self, txn: &Transaction, _err: &SolanaClientError) {
             let signature = txn.get_signature();
             self.record_call(format!(
                 "on_error_finalizing: {signature} could not finalize"
@@ -269,15 +258,12 @@ mod tests {
 
     #[async_trait::async_trait]
     impl SenderClientExt for MockClient {
-        async fn send_txn(
-            &self,
-            txn: &TransactionWithBlockhash,
-        ) -> Result<Signature, SolanaClientError> {
+        async fn send_txn(&self, txn: &Transaction) -> Result<Signature, SolanaClientError> {
             let mut attempts = self.sent_attempts.lock().unwrap();
             *attempts += 1;
 
             if *attempts >= self.succeed_after_sent_attempts {
-                return Ok(txn.inner_txn().get_signature().clone());
+                return Ok(txn.get_signature().clone());
             }
 
             // Fake Error
@@ -302,12 +288,12 @@ mod tests {
         }
     }
 
-    fn mk_test_transaction() -> TransactionWithBlockhash {
+    fn mk_test_transaction() -> Transaction {
         let mut inner = solana_sdk::transaction::Transaction::default();
         inner.signatures.push(Signature::new_unique());
-        TransactionWithBlockhash {
+        Transaction {
             inner,
-            block_height: 1,
+            sent_block_height: 1,
         }
     }
 

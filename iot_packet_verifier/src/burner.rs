@@ -6,7 +6,7 @@ use crate::{
 };
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
-use solana::{burn::SolanaNetwork, sender, SolanaRpcError, TransactionWithBlockhash};
+use solana::{burn::SolanaNetwork, sender, SolanaRpcError, Transaction};
 use std::time::Duration;
 use task_manager::ManagedTask;
 use tokio::time::{self, MissedTickBehavior};
@@ -143,7 +143,7 @@ impl<PT: PendingTables + Clone> BurnTxnStore<PT> {
         }
     }
 
-    async fn on_error(&self, txn: &TransactionWithBlockhash) {
+    async fn on_error(&self, txn: &Transaction) {
         let Ok(mut db_txn) = self.pool.begin().await else {
             tracing::error!("failed to start error transaction");
             return;
@@ -171,10 +171,7 @@ impl<PT: PendingTables + Clone> BurnTxnStore<PT> {
 
 #[async_trait::async_trait]
 impl<PT: PendingTables> sender::TxnStore for BurnTxnStore<PT> {
-    async fn on_prepared(
-        &self,
-        txn: &solana::TransactionWithBlockhash,
-    ) -> sender::SenderResult<()> {
+    async fn on_prepared(&self, txn: &solana::Transaction) -> sender::SenderResult<()> {
         tracing::info!("txn prepared");
 
         let signature = txn.get_signature();
@@ -192,7 +189,7 @@ impl<PT: PendingTables> sender::TxnStore for BurnTxnStore<PT> {
         Ok(())
     }
 
-    async fn on_finalized(&self, txn: &solana::TransactionWithBlockhash) {
+    async fn on_finalized(&self, txn: &solana::Transaction) {
         tracing::info!("txn finalized");
 
         let Ok(mut db_txn) = self.pool.begin().await else {
@@ -234,18 +231,14 @@ impl<PT: PendingTables> sender::TxnStore for BurnTxnStore<PT> {
         .increment(self.amount);
     }
 
-    async fn on_error_sending(
-        &self,
-        txn: &solana::TransactionWithBlockhash,
-        err: &sender::SolanaClientError,
-    ) {
+    async fn on_error_sending(&self, txn: &solana::Transaction, err: &sender::SolanaClientError) {
         tracing::warn!(?err, "failed to send");
         self.on_error(txn).await;
     }
 
     async fn on_error_finalizing(
         &self,
-        txn: &solana::TransactionWithBlockhash,
+        txn: &solana::Transaction,
         err: &sender::SolanaClientError,
     ) {
         tracing::warn!(?err, "failed to finalize");

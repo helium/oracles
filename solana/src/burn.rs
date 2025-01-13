@@ -1,9 +1,10 @@
 use crate::{
     read_keypair_from_file, sender, GetSignature, Keypair, Pubkey, SolanaRpcError, SubDao,
+    Transaction,
 };
 use async_trait::async_trait;
 use helium_crypto::PublicKeyBinary;
-use helium_lib::{client, dc, token, TransactionOpts, TransactionWithBlockhash};
+use helium_lib::{client, dc, token, TransactionOpts};
 use serde::Deserialize;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
 use std::str::FromStr;
@@ -11,7 +12,7 @@ use std::sync::Arc;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
-    type Transaction: GetSignature + Send + Sync + 'static;
+    type Transaction: Send + Sync + 'static;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError>;
 
@@ -95,7 +96,7 @@ impl AsRef<client::SolanaRpcClient> for SolanaRpc {
 
 #[async_trait]
 impl SolanaNetwork for SolanaRpc {
-    type Transaction = TransactionWithBlockhash;
+    type Transaction = Transaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         let payer_pubkey = Pubkey::try_from(payer.as_ref())?;
@@ -137,7 +138,7 @@ impl SolanaNetwork for SolanaRpc {
         )
         .await?;
 
-        Ok(tx)
+        Ok(tx.into())
     }
 
     async fn submit_transaction(
@@ -183,7 +184,7 @@ const FIXED_BALANCE: u64 = 1_000_000_000;
 
 pub enum PossibleTransaction {
     NoTransaction(Signature),
-    Transaction(TransactionWithBlockhash),
+    Transaction(Transaction),
 }
 
 impl GetSignature for PossibleTransaction {

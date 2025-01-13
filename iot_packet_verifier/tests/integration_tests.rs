@@ -16,7 +16,7 @@ use iot_packet_verifier::{
     pending::{confirm_pending_txns, AddPendingBurn, Burn, PendingTables, BURN_THRESHOLD},
     verifier::{payload_size_to_dc, ConfigServer, ConfigServerError, Org, Verifier, BYTES_PER_DC},
 };
-use solana::{burn::SolanaNetwork, sender, Signature, SolanaRpcError, TransactionWithBlockhash};
+use solana::{burn::SolanaNetwork, sender, Signature, SolanaRpcError, Transaction};
 use sqlx::PgPool;
 use std::{
     collections::{HashMap, HashSet},
@@ -191,7 +191,7 @@ impl TestSolanaClientMap {
 
 #[async_trait]
 impl SolanaNetwork for TestSolanaClientMap {
-    type Transaction = TransactionWithBlockhash;
+    type Transaction = Transaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         Ok(*self.payer_balances.lock().await.get(payer).unwrap())
@@ -201,7 +201,7 @@ impl SolanaNetwork for TestSolanaClientMap {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<TransactionWithBlockhash, SolanaRpcError> {
+    ) -> Result<Transaction, SolanaRpcError> {
         let mut inner = solana_sdk::transaction::Transaction::default();
 
         let sig = Signature::new_unique();
@@ -212,15 +212,15 @@ impl SolanaNetwork for TestSolanaClientMap {
             .insert(sig, (payer.clone(), amount));
         inner.signatures.push(sig);
 
-        Ok(TransactionWithBlockhash {
+        Ok(Transaction {
             inner,
-            block_height: 1,
+            sent_block_height: 1,
         })
     }
 
     async fn submit_transaction(
         &self,
-        txn: &TransactionWithBlockhash,
+        txn: &Transaction,
         store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
         // Test client must attempt to send for changes to take place
@@ -241,10 +241,7 @@ impl SolanaNetwork for TestSolanaClientMap {
 
 #[async_trait::async_trait]
 impl sender::SenderClientExt for TestSolanaClientMap {
-    async fn send_txn(
-        &self,
-        txn: &TransactionWithBlockhash,
-    ) -> Result<Signature, sender::SolanaClientError> {
+    async fn send_txn(&self, txn: &Transaction) -> Result<Signature, sender::SolanaClientError> {
         Ok(*txn.get_signature())
     }
     async fn finalize_signature(
@@ -727,7 +724,7 @@ impl MockSolanaNetwork {
 
 #[async_trait]
 impl SolanaNetwork for MockSolanaNetwork {
-    type Transaction = TransactionWithBlockhash;
+    type Transaction = Transaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         self.ledger.payer_balance(payer).await
@@ -737,13 +734,13 @@ impl SolanaNetwork for MockSolanaNetwork {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<TransactionWithBlockhash, SolanaRpcError> {
+    ) -> Result<Transaction, SolanaRpcError> {
         self.ledger.make_burn_transaction(payer, amount).await
     }
 
     async fn submit_transaction(
         &self,
-        txn: &TransactionWithBlockhash,
+        txn: &Transaction,
         store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
         self.confirmed.lock().await.insert(*txn.get_signature());

@@ -1,4 +1,4 @@
-use crate::{GetSignature, SolanaRpcError};
+use crate::{GetSignature, SolanaRpcError, Transaction};
 use anchor_client::RequestBuilder;
 use async_trait::async_trait;
 use file_store::hex_boost::BoostedHexActivation;
@@ -14,7 +14,6 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::{read_keypair_file, Keypair, Signature},
     signer::Signer,
-    transaction::Transaction,
 };
 use std::sync::Arc;
 
@@ -125,14 +124,16 @@ impl SolanaNetwork for SolanaRpc {
         };
         tracing::debug!("instructions: {:?}", instructions);
         let blockhash = self.provider.get_latest_blockhash().await?;
+        let blockheight = self.provider.get_block_height().await?;
         let signer = Keypair::from_bytes(&self.keypair).unwrap();
 
-        Ok(Transaction::new_signed_with_payer(
+        let txn = solana_sdk::transaction::Transaction::new_signed_with_payer(
             &instructions,
             Some(&signer.pubkey()),
             &[&signer],
             blockhash,
-        ))
+        );
+        Ok((txn, blockheight).into())
     }
 
     async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), SolanaRpcError> {

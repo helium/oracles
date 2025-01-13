@@ -1,14 +1,47 @@
-use solana_client::client_error::ClientError;
+use solana_client::{client_error::ClientError, rpc_client::SerializableTransaction};
 use solana_sdk::pubkey::ParsePubkeyError;
-use solana_sdk::transaction::Transaction;
 use std::{fs::File, io::Read, path::Path, time::SystemTimeError};
 
 pub use helium_lib::{
     dao::SubDao,
     error,
     keypair::{Keypair, Pubkey, Signature},
-    TransactionWithBlockhash,
 };
+
+#[derive(serde::Serialize)]
+pub struct Transaction {
+    pub inner: solana_sdk::transaction::Transaction,
+    pub sent_block_height: u64,
+}
+
+impl From<(solana_sdk::transaction::Transaction, u64)> for Transaction {
+    fn from(value: (solana_sdk::transaction::Transaction, u64)) -> Self {
+        Self {
+            inner: value.0,
+            sent_block_height: value.1,
+        }
+    }
+}
+
+impl SerializableTransaction for Transaction {
+    fn get_signature(&self) -> &Signature {
+        self.inner.get_signature()
+    }
+
+    fn get_recent_blockhash(&self) -> &solana_sdk::hash::Hash {
+        self.inner.get_recent_blockhash()
+    }
+
+    fn uses_durable_nonce(&self) -> bool {
+        self.inner.uses_durable_nonce()
+    }
+}
+
+impl Transaction {
+    pub fn get_signature(&self) -> &Signature {
+        self.inner.get_signature()
+    }
+}
 
 pub mod burn;
 pub mod carrier;
@@ -66,19 +99,13 @@ pub trait GetSignature {
     fn get_signature(&self) -> &Signature;
 }
 
-impl GetSignature for Transaction {
-    fn get_signature(&self) -> &Signature {
-        &self.signatures[0]
-    }
-}
-
 impl GetSignature for Signature {
     fn get_signature(&self) -> &Signature {
         self
     }
 }
 
-impl GetSignature for TransactionWithBlockhash {
+impl GetSignature for Transaction {
     fn get_signature(&self) -> &Signature {
         self.get_signature()
     }
