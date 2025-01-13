@@ -70,14 +70,6 @@ impl SolanaRpc {
             CommitmentConfig::finalized(),
         );
 
-        // FIXME: The dc_burn_authority is fetched in helium-lib.
-        // I'm not sure I understand what should happen to this check.
-        //
-        // let program_cache = BurnProgramCache::new(&provider, dc_mint, dnt_mint).await?;
-        // if program_cache.dc_burn_authority != keypair.pubkey() {
-        //     return Err(SolanaRpcError::InvalidKeypair);
-        // }
-
         Ok(Arc::new(Self {
             sub_dao,
             provider,
