@@ -77,11 +77,11 @@ impl MobileRadio {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-struct TrackedMobileRadio {
-    entity_key: EntityKey,
-    hash: String,
-    last_changed_at: DateTime<Utc>,
-    last_checked_at: DateTime<Utc>,
+pub struct TrackedMobileRadio {
+    pub entity_key: EntityKey,
+    pub hash: String,
+    pub last_changed_at: DateTime<Utc>,
+    pub last_checked_at: DateTime<Utc>,
 }
 
 impl TrackedMobileRadio {
@@ -227,7 +227,7 @@ pub async fn get_updated_radios(
         .await
 }
 
-async fn get_tracked_radios(
+pub async fn get_tracked_radios(
     pool: &Pool<Postgres>,
 ) -> anyhow::Result<HashMap<EntityKey, TrackedMobileRadio>> {
     sqlx::query_as::<_, TrackedMobileRadio>(
@@ -253,20 +253,23 @@ fn get_all_mobile_radios(metadata: &Pool<Postgres>) -> impl Stream<Item = Mobile
     sqlx::query_as::<_, MobileRadio>(
         r#"
         SELECT
-        	kta.entity_key,
-        	mhi.refreshed_at,
-        	mhi.location::bigint,
-        	mhi.is_full_hotspot::int,
-        	mhi.num_location_asserts,
-        	mhi.is_active::int,
-        	mhi.dc_onboarding_fee_paid::bigint,
-        	mhi.device_type::text,
-        	mhi.deployment_info::text
+            DISTINCT ON (kta.entity_key, mhi.asset)
+            kta.entity_key,
+            mhi.asset,
+            mhi.refreshed_at,
+            mhi.location::bigint,
+            mhi.is_full_hotspot::int,
+            mhi.num_location_asserts,
+            mhi.is_active::int,
+            mhi.dc_onboarding_fee_paid::bigint,
+            mhi.device_type::text,
+            mhi.deployment_info::text
         FROM key_to_assets kta
         INNER JOIN mobile_hotspot_infos mhi ON
-        	kta.asset = mhi.asset
+            kta.asset = mhi.asset
         WHERE kta.entity_key IS NOT NULL
         	AND mhi.refreshed_at IS NOT NULL
+        ORDER BY kta.entity_key, mhi.asset, refreshed_at DESC
     "#,
     )
     .fetch(metadata)
