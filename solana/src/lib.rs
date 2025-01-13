@@ -7,15 +7,16 @@ pub use helium_lib::{
     error,
     keypair::{Keypair, Pubkey, Signature},
 };
+pub use solana_sdk::transaction::Transaction as SolanaTransaction;
 
 #[derive(serde::Serialize)]
 pub struct Transaction {
-    pub inner: solana_sdk::transaction::Transaction,
+    pub inner: SolanaTransaction,
     pub sent_block_height: u64,
 }
 
-impl From<(solana_sdk::transaction::Transaction, u64)> for Transaction {
-    fn from(value: (solana_sdk::transaction::Transaction, u64)) -> Self {
+impl From<(SolanaTransaction, u64)> for Transaction {
+    fn from(value: (SolanaTransaction, u64)) -> Self {
         Self {
             inner: value.0,
             sent_block_height: value.1,
