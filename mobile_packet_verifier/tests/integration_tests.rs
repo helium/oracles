@@ -16,21 +16,23 @@ use tokio::sync::Mutex;
 
 #[sqlx::test]
 fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
-    let (valid_sessions_tx, _rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
-
-    let payer_one = PublicKeyBinary::from(vec![1]);
-    let payer_two = PublicKeyBinary::from(vec![2]);
+    let payer_insufficient = PublicKeyBinary::from(vec![1]);
+    let payer_sufficient = PublicKeyBinary::from(vec![2]);
+    const ORIGINAL_BALANCE: u64 = 10_000;
 
     // Initialize payers with balances
     let mut solana_network = TestSolanaClientMap::default();
-    solana_network.insert(payer_one.clone(), 10_000).await;
-    solana_network.insert(payer_two.clone(), 10_000).await;
+    solana_network
+        .insert(payer_insufficient.clone(), ORIGINAL_BALANCE)
+        .await;
+    solana_network
+        .insert(payer_sufficient.clone(), ORIGINAL_BALANCE)
+        .await;
 
     // Add Data Transfer Sessiosn for both payers
     let mut txn = pool.begin().await?;
-    let session_one = mk_data_transfer_session(payer_one, 1_000_000_000); // exceeds balance
-    let session_two = mk_data_transfer_session(payer_two, 1_000_000); // within balance
+    let session_one = mk_data_transfer_session(payer_insufficient.clone(), 1_000_000_000); // exceeds balance
+    let session_two = mk_data_transfer_session(payer_sufficient.clone(), 1_000_000); // within balance
     pending_burns::save(&mut txn, &session_one, Utc::now()).await?;
     pending_burns::save(&mut txn, &session_two, Utc::now()).await?;
     txn.commit().await?;
@@ -40,12 +42,31 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(pre_burns.len(), 2, "2 burns for 2 payers");
 
     // Burn what we can
+    let (valid_sessions_tx, mut rx) = tokio::sync::mpsc::channel(10);
+    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let burner = Burner::new(valid_sessions, solana_network.clone());
     burner.burn(&pool).await?;
 
     // 1 burn succeeded, the other payer has insufficient balance
     let burns = pending_burns::get_all_payer_burns(&pool).await?;
     assert_eq!(burns.len(), 1, "1 burn left");
+
+    assert_eq!(
+        solana_network.payer_balance(&payer_insufficient).await,
+        ORIGINAL_BALANCE,
+        "original balance"
+    );
+    assert!(
+        solana_network.payer_balance(&payer_sufficient).await < ORIGINAL_BALANCE,
+        "reduced balance"
+    );
+
+    // Ensure successful data transfer sessions were output
+    let mut written_sessions = vec![];
+    while let Ok(session) = rx.try_recv() {
+        written_sessions.push(session);
+    }
+    assert_eq!(written_sessions.len(), 1, "1 data transfer session written");
 
     Ok(())
 }
@@ -99,6 +120,15 @@ impl TestSolanaClientMap {
     }
     pub async fn insert(&mut self, payer: PublicKeyBinary, amount: u64) {
         self.payer_balances.lock().await.insert(payer, amount);
+    }
+
+    async fn payer_balance(&self, payer: &PublicKeyBinary) -> u64 {
+        self.payer_balances
+            .lock()
+            .await
+            .get(payer)
+            .cloned()
+            .unwrap_or_default()
     }
 }
 
