@@ -45,7 +45,7 @@ where
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
             let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
-            let store = BurnerTxnStore::new(
+            let store = BurnTxnStore::new(
                 pool.clone(),
                 payer.clone(),
                 total_dcs,
@@ -64,7 +64,7 @@ where
     }
 }
 
-struct BurnerTxnStore {
+struct BurnTxnStore {
     pool: PgPool,
     payer: PublicKeyBinary,
     amount: u64,
@@ -72,7 +72,7 @@ struct BurnerTxnStore {
     valid_sessions: FileSinkClient<ValidDataTransferSession>,
 }
 
-impl BurnerTxnStore {
+impl BurnTxnStore {
     fn new(
         pool: PgPool,
         payer: PublicKeyBinary,
@@ -91,7 +91,7 @@ impl BurnerTxnStore {
 }
 
 #[async_trait::async_trait]
-impl sender::TxnStore for BurnerTxnStore {
+impl sender::TxnStore for BurnTxnStore {
     async fn on_prepared(&self, _txn: &solana::Transaction) -> sender::SenderResult<()> {
         tracing::info!("txn prepared");
         Ok(())
