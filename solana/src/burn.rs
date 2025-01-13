@@ -245,15 +245,3 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         }
     }
 }
-
-pub struct MockTransaction {
-    pub signature: Signature,
-    pub payer: PublicKeyBinary,
-    pub amount: u64,
-}
-
-impl GetSignature for MockTransaction {
-    fn get_signature(&self) -> &Signature {
-        &self.signature
-    }
-}
