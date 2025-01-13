@@ -1,8 +1,59 @@
 use bs58;
 use chrono::{DateTime, Duration, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_crypto::{KeyTag, Keypair};
+use helium_crypto::Sign;
+use helium_crypto::{KeyTag, Keypair, PublicKey};
+use helium_proto::Message;
+use mobile_config::{
+    gateway_service::GatewayService,
+    key_cache::{CacheKeys, KeyCache},
+    mobile_radio_tracker::{MobileRadioTracker, TrackedRadiosMap},
+    KeyRole,
+};
 use sqlx::PgPool;
+use std::sync::Arc;
+use tokio::{net::TcpListener, sync::RwLock};
+use tonic::transport;
+
+use helium_proto::services::mobile_config::{self as proto};
+
+pub async fn spawn_gateway_service(
+    pool: PgPool,
+    admin_pub_key: PublicKey,
+) -> (
+    String,
+    tokio::task::JoinHandle<std::result::Result<(), helium_proto::services::Error>>,
+    MobileRadioTracker,
+) {
+    let server_key = make_keypair();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    // Start the gateway server
+    let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
+
+    let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
+        Arc::new(RwLock::new(TrackedRadiosMap::new()));
+
+    let mobile_tracker = MobileRadioTracker::new(
+        pool.clone(),
+        pool.clone(),
+        humantime::parse_duration("1 hour").unwrap(),
+        Arc::clone(&tracked_radios_cache),
+    );
+    mobile_tracker.track_changes().await.unwrap();
+
+    let (_key_cache_tx, key_cache) = KeyCache::new(keys);
+
+    let gws = GatewayService::new(key_cache, pool.clone(), server_key, tracked_radios_cache);
+    let handle = tokio::spawn(
+        transport::Server::builder()
+            .add_service(proto::GatewayServer::new(gws))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)),
+    );
+
+    (format!("http://{addr}"), handle, mobile_tracker)
+}
 
 pub async fn add_mobile_tracker_record(
     pool: &PgPool,
@@ -130,4 +181,14 @@ pub async fn create_db_tables(pool: &PgPool) {
 
 pub fn make_keypair() -> Keypair {
     Keypair::generate(KeyTag::default(), &mut rand::rngs::OsRng)
+}
+
+pub fn make_signed_info_request(address: &PublicKey, signer: &Keypair) -> proto::GatewayInfoReqV1 {
+    let mut req = proto::GatewayInfoReqV1 {
+        address: address.to_vec(),
+        signer: signer.public_key().to_vec(),
+        signature: vec![],
+    };
+    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+    req
 }

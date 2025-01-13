@@ -11,7 +11,7 @@ use helium_proto::services::mobile_config::{
 use mobile_config::{
     gateway_service::GatewayService,
     key_cache::{CacheKeys, KeyCache},
-    mobile_radio_tracker::{MobileRadioTracker, TrackedRadiosMap},
+    mobile_radio_tracker::TrackedRadiosMap,
     KeyRole,
 };
 use prost::Message;
@@ -92,44 +92,6 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn spawn_gateway_service(
-    pool: PgPool,
-    admin_pub_key: PublicKey,
-) -> (
-    String,
-    tokio::task::JoinHandle<std::result::Result<(), helium_proto::services::Error>>,
-) {
-    let server_key = make_keypair();
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-
-    // Start the gateway server
-    let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
-
-    let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
-        Arc::new(RwLock::new(TrackedRadiosMap::new()));
-
-    let mobile_tracker = MobileRadioTracker::new(
-        pool.clone(),
-        pool.clone(),
-        // settings.mobile_radio_tracker_interval,
-        humantime::parse_duration("1 hour").unwrap(),
-        Arc::clone(&tracked_radios_cache),
-    );
-    mobile_tracker.track_changes().await.unwrap();
-
-    let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-
-    let gws = GatewayService::new(key_cache, pool.clone(), server_key, tracked_radios_cache);
-    let handle = tokio::spawn(
-        transport::Server::builder()
-            .add_service(proto::GatewayServer::new(gws))
-            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)),
-    );
-
-    (format!("http://{addr}"), handle)
-}
-
 #[sqlx::test]
 async fn gateway_stream_info_v1(pool: PgPool) {
     let admin_key = make_keypair();
@@ -164,7 +126,8 @@ async fn gateway_stream_info_v1(pool: PgPool) {
     )
     .await;
 
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle, _) =
+        spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
     // Select all devices
@@ -218,7 +181,8 @@ async fn gateway_stream_info_v2(pool: PgPool) {
     )
     .await;
 
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle, _) =
+        spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
     // Select all devices
@@ -276,7 +240,8 @@ async fn gateway_stream_info_v2_updated_at(pool: PgPool) {
     .await;
     add_mobile_tracker_record(&pool, asset2_pubkey.clone().into(), created_at).await;
 
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle, _) =
+        spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
     let req = make_gateway_stream_signed_req_v2(&admin_key, &[], updated_at.timestamp() as u64);
@@ -334,7 +299,8 @@ async fn gateway_info_batch_v2(pool: PgPool) {
     .await;
     add_mobile_tracker_record(&pool, asset2_pubkey.clone().into(), created_at).await;
 
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle, _) =
+        spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
     let req = make_signed_info_batch_request(
@@ -438,7 +404,8 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
     )
     .await;
 
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle, _) =
+        spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
     let req = make_signed_info_batch_request(
@@ -520,7 +487,8 @@ async fn gateway_info_v2_no_mobile_tracker_record(pool: PgPool) {
     )
     .await;
 
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle, _) =
+        spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
     // asset 1
@@ -563,7 +531,8 @@ async fn gateway_info_v2(pool: PgPool) {
     .await;
     add_mobile_tracker_record(&pool, asset1_pubkey.clone().into(), updated_at).await;
 
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle, _) =
+        spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
     let req = make_signed_info_request(&asset1_pubkey, &admin_key);
@@ -655,7 +624,8 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
     )
     .await;
 
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle, _) =
+        spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
     let req = make_gateway_stream_signed_req_v2(&admin_key, &[], 0);
@@ -741,7 +711,8 @@ async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     )
     .await;
 
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle, _) =
+        spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
 
     let mut client = GatewayClient::connect(addr).await.unwrap();
 
@@ -844,16 +815,6 @@ fn make_gateway_stream_signed_req_v1(
         device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),
     };
 
-    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
-    req
-}
-
-fn make_signed_info_request(address: &PublicKey, signer: &Keypair) -> proto::GatewayInfoReqV1 {
-    let mut req = proto::GatewayInfoReqV1 {
-        address: address.to_vec(),
-        signer: signer.public_key().to_vec(),
-        signature: vec![],
-    };
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
     req
 }
