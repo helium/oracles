@@ -133,9 +133,6 @@ impl Cmd {
             None
         };
 
-        // Check if we have any left over pending transactions and they've been confirmed.
-        pending_burns::confirm_pending_txns(&pool, &solana).await?;
-
         let (file_upload, file_upload_server) =
             file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
@@ -149,6 +146,9 @@ impl Cmd {
             env!("CARGO_PKG_NAME"),
         )
         .await?;
+
+        // Check if we have any left over pending transactions and they've been confirmed.
+        pending_burns::confirm_pending_txns(&pool, &solana, &valid_sessions).await?;
 
         let (invalid_sessions, invalid_sessions_server) =
             VerifiedDataTransferIngestReportV1::file_sink(

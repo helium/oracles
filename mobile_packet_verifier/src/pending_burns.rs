@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Duration, Utc};
-use file_store::{mobile_session::DataTransferSessionReq, traits::TimestampEncode};
+use file_store::{
+    file_sink::FileSinkClient, mobile_session::DataTransferSessionReq, traits::TimestampEncode,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
 use solana::{burn::SolanaNetwork, Signature};
@@ -162,9 +164,12 @@ pub async fn delete_for_payer(
 pub async fn confirm_pending_txns<S: SolanaNetwork>(
     conn: &PgPool,
     solana: &S,
+    valid_sessions: &FileSinkClient<ValidDataTransferSession>,
 ) -> anyhow::Result<()> {
     let pending = fetch_all_pending_txns(conn).await?;
     tracing::info!(count = pending.len(), "confirming pending txns");
+
+    println!("pending: {pending:?}");
 
     for pending in pending {
         // Sleep for at least a minute since the time of submission to
@@ -179,6 +184,13 @@ pub async fn confirm_pending_txns<S: SolanaNetwork>(
         let confirmed = solana.confirm_transaction(&pending.signature).await?;
         tracing::info!(?pending, confirmed, "confirming pending transaction");
         if confirmed {
+            let sessions = get_sessions_for_signature(conn, &pending.signature).await?;
+            println!("sessions: {sessions:?}");
+            for session in sessions {
+                let _write = valid_sessions
+                    .write(ValidDataTransferSession::from(session), &[])
+                    .await?;
+            }
             remove_pending_transaction(conn, &pending.signature).await?;
         }
     }
