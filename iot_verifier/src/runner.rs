@@ -514,7 +514,7 @@ where
             .witness_updater
             .get_last_witness(&beacon_report.report.pub_key)
             .await?;
-        Ok(last_witness.map_or(false, |lw| {
+        Ok(last_witness.is_some_and(|lw| {
             beacon_report.received_timestamp - lw.timestamp < *RECIPROCITY_WINDOW
         }))
     }
@@ -544,9 +544,8 @@ where
     ) -> anyhow::Result<bool> {
         let last_beacon_recip =
             LastBeaconReciprocity::get(&self.pool, &report.report.pub_key).await?;
-        Ok(last_beacon_recip.map_or(false, |lw| {
-            report.received_timestamp - lw.timestamp < *RECIPROCITY_WINDOW
-        }))
+        Ok(last_beacon_recip
+            .is_some_and(|lw| report.received_timestamp - lw.timestamp < *RECIPROCITY_WINDOW))
     }
 }
 
