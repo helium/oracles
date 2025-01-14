@@ -39,7 +39,7 @@ pub async fn spawn_gateway_service(
         pool.clone(),
         pool.clone(),
         humantime::parse_duration("1 hour").unwrap(),
-        Arc::clone(&tracked_radios_cache),
+        tracked_radios_cache.clone(),
     );
     mobile_tracker.track_changes().await.unwrap();
 

@@ -85,7 +85,7 @@ impl Daemon {
             key_cache.clone(),
             metadata_pool.clone(),
             settings.signing_keypair()?,
-            Arc::clone(&tracked_radios_cache),
+            tracked_radios_cache.clone(),
         );
         let auth_svc = AuthorizationService::new(key_cache.clone(), settings.signing_keypair()?);
         let entity_svc = EntityService::new(
@@ -121,7 +121,7 @@ impl Daemon {
             pool.clone(),
             metadata_pool.clone(),
             settings.mobile_radio_tracker_interval,
-            Arc::clone(&tracked_radios_cache),
+            tracked_radios_cache.clone(),
         );
         // (Pre)initialize tracked_radios_cache to avoid race condition in GatewayService
         mobile_tracker.track_changes().await?;

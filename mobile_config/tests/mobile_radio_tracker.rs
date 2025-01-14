@@ -121,7 +121,7 @@ async fn mobile_tracker_handle_entity_duplicates(pool: PgPool) {
         pool.clone(),
         pool.clone(),
         humantime::parse_duration("1 hour").unwrap(),
-        Arc::clone(&tracked_radios_cache),
+        tracked_radios_cache.clone(),
     );
     mobile_tracker.track_changes().await.unwrap();
 

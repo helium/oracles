@@ -240,12 +240,11 @@ impl mobile_config::Gateway for GatewayService {
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
-        let radios_cache = Arc::clone(&self.tracked_radios_cache);
+        let radios_cache = self.tracked_radios_cache.clone();
         tokio::spawn(async move {
             let min_updated_at = DateTime::UNIX_EPOCH;
 
-            let binding = Arc::clone(&radios_cache);
-            let radios_cache = binding.read().await;
+            let radios_cache = radios_cache.read().await;
 
             let stream = gateway_info::db::batch_info_stream(&metadata_db_pool, &addresses)?;
             let stream = stream
@@ -317,7 +316,7 @@ impl mobile_config::Gateway for GatewayService {
             device_types
         );
 
-        let radios_cache = Arc::clone(&self.tracked_radios_cache);
+        let radios_cache = self.tracked_radios_cache.clone();
         tokio::spawn(async move {
             let min_updated_at = Utc
                 .timestamp_opt(request.min_updated_at as i64, 0)
@@ -326,8 +325,7 @@ impl mobile_config::Gateway for GatewayService {
                     "Invalid min_refreshed_at argument",
                 ))?;
 
-            let binding = Arc::clone(&radios_cache);
-            let radios_cache = binding.read().await;
+            let radios_cache = radios_cache.read().await;
 
             let stream = gateway_info::db::all_info_stream(&metadata_db_pool, &device_types);
             let stream = stream
