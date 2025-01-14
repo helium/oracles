@@ -599,6 +599,11 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+struct NoopStore;
+
+#[async_trait::async_trait]
+impl sender::TxnStore for NoopStore {}
+
 #[sqlx::test]
 async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     const CONFIRMED_BURN_AMOUNT: u64 = 7;
@@ -654,7 +659,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         .unwrap();
         solana_network.add_confirmed(*txn.get_signature()).await;
         solana_network
-            .submit_transaction(&txn, &sender::NoopStore)
+            .submit_transaction(&txn, &NoopStore)
             .await
             .unwrap();
     }
