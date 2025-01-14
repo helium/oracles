@@ -130,11 +130,6 @@ pub trait TxnStore: Send + Sync {
     async fn on_error(&self, _txn: &Transaction, _err: SenderError) {}
 }
 
-pub struct NoopStore;
-
-#[async_trait::async_trait]
-impl TxnStore for NoopStore {}
-
 #[async_trait::async_trait]
 impl<T: AsRef<client::SolanaRpcClient> + Send + Sync> SenderClientExt for T {
     async fn send_txn(&self, txn: &Transaction) -> Result<Signature, SolanaClientError> {
