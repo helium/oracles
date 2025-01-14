@@ -99,12 +99,15 @@ impl sender::TxnStore for BurnTxnStore {
         let add_pending =
             pending_burns::add_pending_transaction(&self.pool, &self.payer, self.amount, signature);
 
-        let Ok(()) = add_pending.await else {
-            tracing::error!("failed to add pending transaction");
-            return Err(sender::SenderError::preparation(
-                "could not add pending transaction",
-            ));
-        };
+        match add_pending.await {
+            Ok(()) => {}
+            Err(err) => {
+                tracing::error!("failed to add pending transaction");
+                return Err(sender::SenderError::preparation(&format!(
+                    "could not add pending transaction: {err:?}"
+                )));
+            }
+        }
 
         Ok(())
     }
