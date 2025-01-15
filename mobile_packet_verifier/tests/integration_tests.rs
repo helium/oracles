@@ -1,14 +1,19 @@
 use chrono::Utc;
 use file_store::{
-    file_sink::FileSinkClient,
+    file_sink::{FileSinkClient, Message},
     mobile_session::{DataTransferEvent, DataTransferSessionReq},
 };
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
+use helium_proto::services::{
+    packet_verifier::ValidDataTransferSession, poc_mobile::DataTransferRadioAccessTechnology,
+};
 use mobile_packet_verifier::{burner::Burner, pending_burns};
-use solana::{burn::test_client::TestSolanaClientMap, Signature};
+use solana::{
+    burn::{test_client::TestSolanaClientMap, SolanaNetwork},
+    Signature,
+};
 use sqlx::PgPool;
-use tokio::sync::mpsc::error::TryRecvError;
+use tokio::sync::mpsc::{self, error::TryRecvError};
 
 #[sqlx::test]
 fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
@@ -40,9 +45,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(pre_burns.len(), 2, "2 burns for 2 payers");
 
     // Burn what we can
-    let (valid_sessions_tx, mut rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
-    let burner = Burner::new(valid_sessions, solana_network.clone());
+    let mut burner = TestBurner::new(solana_network.clone());
     burner.burn(&pool).await?;
 
     // 1 burn succeeded, the other payer has insufficient balance
@@ -65,10 +68,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     );
 
     // Ensure successful data transfer sessions were output
-    let mut written_sessions = vec![];
-    while let Ok(session) = rx.try_recv() {
-        written_sessions.push(session);
-    }
+    let written_sessions = burner.get_written_sessions();
     assert_eq!(written_sessions.len(), 1, "1 data transfer session written");
 
     Ok(())
@@ -85,20 +85,14 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     save_data_transfer_sessions(
         &pool,
         &[
-            (&payer_two, &payer_two, 1_000),
+            (&payer_one, &payer_one, 1_000),
             (&payer_two, &payer_two, 1_000),
         ],
     )
     .await?;
 
-    // The unconfirmed txn is moved back to ready for burning
     let burns = pending_burns::get_all_payer_burns(&pool).await?;
-    println!("burns: {burns:?}");
-    assert_eq!(
-        burns.len(),
-        1,
-        "one the unconfirmed txn has moved back to burn"
-    );
+    assert_eq!(burns.len(), 2, "two burns for two payers");
 
     // First transaction is confirmed
     // Make submission time in past to bypass confirm txn sleep
@@ -129,9 +123,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // solana_network.add_confirmed(unconfirmed_txn).await; // uncomment for failure
 
     assert_eq!(pending_burns::fetch_all_pending_txns(&pool).await?.len(), 2);
-    let (valid_sessions_tx, _rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
-    let burner = Burner::new(valid_sessions, solana_network);
+    let burner = TestBurner::new(solana_network);
     burner.confirm_pending_txns(&pool).await?;
     // confirmed and unconfirmed txns have been cleared
     assert_eq!(pending_burns::fetch_all_pending_txns(&pool).await?.len(), 0);
@@ -153,7 +145,7 @@ fn confirming_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<(
     // Insert a pending txn for some sessions.
     // Insert more sessions after the pending txn.
     // confirm txns and ensure sessions are written.
-    // ensure sessions not written for that pendint txn are still there.
+    // ensure sessions not written for that pending txn are still there.
 
     let payer = PublicKeyBinary::from(vec![0]);
     let pubkey_one = PublicKeyBinary::from(vec![1]);
@@ -185,16 +177,11 @@ fn confirming_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<(
     .await?;
 
     let solana_network = TestSolanaClientMap::default();
-    let (valid_sessions_tx, mut rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
-    let burner = Burner::new(valid_sessions, solana_network);
+    let mut burner = TestBurner::new(solana_network);
     burner.confirm_pending_txns(&pool).await?;
 
     // In flight session is written out
-    let mut written_sessions = vec![];
-    while let Ok(session) = rx.try_recv() {
-        written_sessions.push(session);
-    }
+    let written_sessions = burner.get_written_sessions();
     assert_eq!(written_sessions.len(), 2, "2 data transfer session written");
 
     // Late added session is still waiting for burn
@@ -266,13 +253,11 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     assert_eq!(txn_count, 1, "there should be a single pending txn");
 
     // Fail the pending txns
-    let (valid_sessions_tx, _rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let mut solana_network = TestSolanaClientMap::default();
     // Adding a random confirmed txn will cause other txns to not be considered finalized
     solana_network.add_confirmed(Signature::new_unique()).await;
 
-    let burner = Burner::new(valid_sessions, solana_network.clone());
+    let burner = TestBurner::new(solana_network);
     burner.confirm_pending_txns(&pool).await?;
 
     // Sessions are merged with 2nd set of sessions for burning
@@ -325,29 +310,21 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     // Burn does nothing because of pending transactions
-    let (valid_sessions_tx, mut rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let mut solana_network = TestSolanaClientMap::default();
     solana_network.insert(payer.clone(), 10_000).await;
 
-    let burner = Burner::new(valid_sessions, solana_network.clone());
+    let mut burner = TestBurner::new(solana_network);
     burner.burn(&pool).await?;
 
-    match rx.try_recv() {
-        Ok(_) => panic!("nothing should be written"),
-        Err(TryRecvError::Disconnected) => panic!("file sink client was incorrectly dropped"),
-        Err(TryRecvError::Empty) => (),
-    }
+    // No sessions written because of pending txn
+    burner.assert_no_sessions_written();
 
     // Remove pending burn.
     // Data Transfer Sessions should go through now.
     pending_burns::remove_pending_transaction_success(&pool, &signature).await?;
     burner.burn(&pool).await?;
 
-    let mut written_sessions = vec![];
-    while let Ok(session) = rx.try_recv() {
-        written_sessions.push(session);
-    }
+    let written_sessions = burner.get_written_sessions();
     assert_eq!(written_sessions.len(), 2, "2 data transfer session written");
 
     Ok(())
@@ -387,4 +364,44 @@ async fn save_data_transfer_sessions(
     txn.commit().await?;
 
     Ok(())
+}
+
+struct TestBurner<S> {
+    burner: Burner<S>,
+    rx: mpsc::Receiver<Message<ValidDataTransferSession>>,
+}
+
+impl<S: SolanaNetwork> TestBurner<S> {
+    fn new(solana: S) -> Self {
+        let (valid_sessions_tx, rx) = tokio::sync::mpsc::channel(10);
+        let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
+        Self {
+            burner: Burner::new(valid_sessions, solana),
+            rx,
+        }
+    }
+
+    async fn burn(&self, pool: &PgPool) -> anyhow::Result<()> {
+        self.burner.burn(pool).await
+    }
+
+    async fn confirm_pending_txns(&self, pool: &PgPool) -> anyhow::Result<()> {
+        self.burner.confirm_pending_txns(pool).await
+    }
+
+    fn get_written_sessions(&mut self) -> Vec<Message<ValidDataTransferSession>> {
+        let mut written_sessions = vec![];
+        while let Ok(session) = self.rx.try_recv() {
+            written_sessions.push(session);
+        }
+        written_sessions
+    }
+
+    fn assert_no_sessions_written(&mut self) {
+        match self.rx.try_recv() {
+            Ok(_) => panic!("nothing should be written"),
+            Err(TryRecvError::Disconnected) => panic!("file sink client was incorrectly dropped"),
+            Err(TryRecvError::Empty) => (),
+        }
+    }
 }
