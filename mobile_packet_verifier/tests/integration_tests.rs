@@ -26,13 +26,14 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
         .await;
 
     // Add Data Transfer Sessiosn for both payers
-    let mut txn = pool.begin().await?;
-    let session_one =
-        mk_data_transfer_session(&payer_insufficient, &payer_insufficient, 1_000_000_000); // exceeds balance
-    let session_two = mk_data_transfer_session(&payer_sufficient, &payer_sufficient, 1_000_000); // within balance
-    pending_burns::save(&mut txn, &session_one, Utc::now()).await?;
-    pending_burns::save(&mut txn, &session_two, Utc::now()).await?;
-    txn.commit().await?;
+    save_data_transfer_sessions(
+        &pool,
+        &[
+            (&payer_insufficient, &payer_insufficient, 1_000_000_000), // exceed balance
+            (&payer_sufficient, &payer_sufficient, 1_000_000),         // within balance
+        ],
+    )
+    .await?;
 
     // Ensure we see 2 pending burns
     let pre_burns = pending_burns::get_all_payer_burns(&pool).await?;
@@ -76,9 +77,28 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let payer_one = PublicKeyBinary::from(vec![1]);
+    let payer_two = PublicKeyBinary::from(vec![2]);
 
     let mut solana_network = TestSolanaClientMap::default();
     solana_network.insert(payer_one.clone(), 10_000).await;
+
+    save_data_transfer_sessions(
+        &pool,
+        &[
+            (&payer_two, &payer_two, 1_000),
+            (&payer_two, &payer_two, 1_000),
+        ],
+    )
+    .await?;
+
+    // The unconfirmed txn is moved back to ready for burning
+    let burns = pending_burns::get_all_payer_burns(&pool).await?;
+    println!("burns: {burns:?}");
+    assert_eq!(
+        burns.len(),
+        1,
+        "one the unconfirmed txn has moved back to burn"
+    );
 
     // First transaction is confirmed
     // Make submission time in past to bypass confirm txn sleep
@@ -97,7 +117,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let unconfirmed_signature = Signature::new_unique();
     pending_burns::do_add_pending_transaction(
         &pool,
-        &payer_one,
+        &payer_two,
         500,
         &unconfirmed_signature,
         Utc::now() - chrono::Duration::minutes(2),
@@ -140,12 +160,11 @@ fn confirming_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<(
     let pubkey_two = PublicKeyBinary::from(vec![2]);
 
     // Add a transfer session for payer
-    let session_one = mk_data_transfer_session(&payer, &pubkey_one, 1_000);
-    let session_two = mk_data_transfer_session(&payer, &pubkey_two, 1_000);
-    let mut txn = pool.begin().await?;
-    pending_burns::save(&mut txn, &session_one, Utc::now()).await?;
-    pending_burns::save(&mut txn, &session_two, Utc::now()).await?;
-    txn.commit().await?;
+    save_data_transfer_sessions(
+        &pool,
+        &[(&payer, &pubkey_one, 1_000), (&payer, &pubkey_two, 1_000)],
+    )
+    .await?;
 
     // Mark the session as pending
     let signature = Signature::new_unique();
@@ -159,12 +178,11 @@ fn confirming_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<(
     .await?;
 
     // Add another transfer session that should not be written out
-    let session_three = mk_data_transfer_session(&payer, &pubkey_one, 5_000);
-    let session_four = mk_data_transfer_session(&payer, &pubkey_two, 5_000);
-    let mut txn = pool.begin().await?;
-    pending_burns::save(&mut txn, &session_three, Utc::now()).await?;
-    pending_burns::save(&mut txn, &session_four, Utc::now()).await?;
-    txn.commit().await?;
+    save_data_transfer_sessions(
+        &pool,
+        &[(&payer, &pubkey_one, 5_000), (&payer, &pubkey_two, 5_000)],
+    )
+    .await?;
 
     let solana_network = TestSolanaClientMap::default();
     let (valid_sessions_tx, mut rx) = tokio::sync::mpsc::channel(10);
@@ -203,17 +221,17 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     // processing If the txn cannot be finalized, the data sessions that were
     // going to be written need to be moved back to being considerd for burn.
 
-    let payer = PublicKeyBinary::from(vec![0]);
+    let var_name = PublicKeyBinary::from(vec![0]);
+    let payer = var_name;
     let pubkey_one = PublicKeyBinary::from(vec![1]);
     let pubkey_two = PublicKeyBinary::from(vec![2]);
 
     // Insert sessions
-    let session_one = mk_data_transfer_session(&payer, &pubkey_one, 1_000);
-    let session_two = mk_data_transfer_session(&payer, &pubkey_two, 1_000);
-    let mut txn = pool.begin().await?;
-    pending_burns::save(&mut txn, &session_one, Utc::now()).await?;
-    pending_burns::save(&mut txn, &session_two, Utc::now()).await?;
-    txn.commit().await?;
+    save_data_transfer_sessions(
+        &pool,
+        &[(&payer, &pubkey_one, 1_000), (&payer, &pubkey_two, 1_000)],
+    )
+    .await?;
 
     // Mark as pending txns
     let signature = Signature::new_unique();
@@ -227,12 +245,11 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     .await?;
 
     // Insert more sessions
-    let session_three = mk_data_transfer_session(&payer, &pubkey_one, 5_000);
-    let session_four = mk_data_transfer_session(&payer, &pubkey_two, 5_000);
-    let mut txn = pool.begin().await?;
-    pending_burns::save(&mut txn, &session_three, Utc::now()).await?;
-    pending_burns::save(&mut txn, &session_four, Utc::now()).await?;
-    txn.commit().await?;
+    save_data_transfer_sessions(
+        &pool,
+        &[(&payer, &pubkey_one, 5_000), (&payer, &pubkey_two, 5_000)],
+    )
+    .await?;
 
     // There are sessions for burning, but we cannot because there are also pending txns.
     let payer_burns = pending_burns::get_all_payer_burns(&pool).await?;
@@ -283,12 +300,11 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let pubkey_two = PublicKeyBinary::from(vec![2]);
 
     // Add a transfer session for payer
-    let session_one = mk_data_transfer_session(&payer, &pubkey_one, 1_000);
-    let session_two = mk_data_transfer_session(&payer, &pubkey_two, 1_000);
-    let mut txn = pool.begin().await?;
-    pending_burns::save(&mut txn, &session_one, Utc::now()).await?;
-    pending_burns::save(&mut txn, &session_two, Utc::now()).await?;
-    txn.commit().await?;
+    save_data_transfer_sessions(
+        &pool,
+        &[(&payer, &pubkey_one, 1_000), (&payer, &pubkey_two, 1_000)],
+    )
+    .await?;
 
     // Mark the session as pending
     let signature = Signature::new_unique();
@@ -302,12 +318,11 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     // Add more sessions that are ready for burning
-    let session_three = mk_data_transfer_session(&payer, &pubkey_one, 5_000);
-    let session_four = mk_data_transfer_session(&payer, &pubkey_two, 5_000);
-    let mut txn = pool.begin().await?;
-    pending_burns::save(&mut txn, &session_three, Utc::now()).await?;
-    pending_burns::save(&mut txn, &session_four, Utc::now()).await?;
-    txn.commit().await?;
+    save_data_transfer_sessions(
+        &pool,
+        &[(&payer, &pubkey_one, 5_000), (&payer, &pubkey_two, 5_000)],
+    )
+    .await?;
 
     // Burn does nothing because of pending transactions
     let (valid_sessions_tx, mut rx) = tokio::sync::mpsc::channel(10);
@@ -358,4 +373,18 @@ fn mk_data_transfer_session(
         pub_key: pubkey.clone(),
         signature: vec![],
     }
+}
+
+async fn save_data_transfer_sessions(
+    pool: &PgPool,
+    sessions: &[(&PublicKeyBinary, &PublicKeyBinary, u64)],
+) -> anyhow::Result<()> {
+    let mut txn = pool.begin().await?;
+    for (payer, pubkey, amount) in sessions {
+        let session = mk_data_transfer_session(payer, pubkey, *amount);
+        pending_burns::save(&mut txn, &session, Utc::now()).await?;
+    }
+    txn.commit().await?;
+
+    Ok(())
 }
