@@ -189,17 +189,16 @@ async fn stream_only_sends_data_modified_since(pool: Pool<Postgres>) {
     let _handle = start_server(socket_addr, signing_keypair, auth_cache, pool.clone()).await;
     let mut client = connect_client(socket_addr).await;
 
-    let org_res_v1 = fixtures::create_org(socket_addr, &pool).await;
-
-    let proto::OrgResV1 { org: Some(org), .. } = org_res_v1 else {
-        panic!("invalid OrgResV1")
+    let org_res_v2 = fixtures::create_org(socket_addr, &pool).await;
+    let proto::OrgResV2 { org: Some(org), .. } = org_res_v2 else {
+        panic!("invalid OrgResV2")
     };
 
     let route1 = create_route(&mut client, &org, &admin_keypair).await;
 
     create_euis(&mut client, &route1, vec![(200, 201)], &admin_keypair).await;
 
-    let constraint = org_res_v1.devaddr_constraints.first().unwrap();
+    let constraint = org_res_v2.devaddr_constraints.first().unwrap();
     create_devaddr_ranges(
         &mut client,
         &route1,
@@ -295,10 +294,10 @@ async fn stream_updates_with_deactivate_reactivate(pool: Pool<Postgres>) {
 
     let _handle = start_server(socket_addr, signing_keypair, auth_cache, pool.clone()).await;
     let mut client = connect_client(socket_addr).await;
-    let org_res_v1 = fixtures::create_org(socket_addr, &pool).await;
+    let org_res_v2 = fixtures::create_org(socket_addr, &pool).await;
 
-    let proto::OrgResV1 { org: Some(org), .. } = org_res_v1 else {
-        panic!("invalid OrgResV1")
+    let proto::OrgResV2 { org: Some(org), .. } = org_res_v2 else {
+        panic!("invalid OrgResV2")
     };
 
     let route = create_route(&mut client, &org, &admin_keypair).await;
