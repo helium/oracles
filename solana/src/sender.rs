@@ -258,7 +258,7 @@ mod tests {
             *attempts += 1;
 
             if *attempts >= self.succeed_after_sent_attempts {
-                return Ok(txn.get_signature().clone());
+                return Ok(*txn.get_signature());
             }
 
             // Fake Error
@@ -298,7 +298,7 @@ mod tests {
         let store = MockTxnStore::default();
         let client = MockClient::succeed();
 
-        let _ = send_and_finalize(&client, &tx, &store).await?;
+        send_and_finalize(&client, &tx, &store).await?;
 
         let signature = tx.get_signature();
         let calls = store.calls.lock().unwrap();
@@ -320,7 +320,7 @@ mod tests {
         let store = MockTxnStore::default();
         let client = MockClient::succeed_after(5);
 
-        let _ = send_and_finalize(&client, &txn, &store).await?;
+        send_and_finalize(&client, &txn, &store).await?;
 
         let signature = txn.get_signature();
         let calls = store.calls.lock().unwrap();

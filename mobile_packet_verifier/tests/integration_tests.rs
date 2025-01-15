@@ -249,6 +249,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
         payer_burns[0].total_dcs,
         bytes_to_dc(5_000) + bytes_to_dc(5_000)
     );
+
     let txn_count = pending_txns::pending_txn_count(&pool).await?;
     assert_eq!(txn_count, 1, "there should be a single pending txn");
 
