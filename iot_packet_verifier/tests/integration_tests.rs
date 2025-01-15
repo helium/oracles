@@ -344,12 +344,9 @@ async fn test_verifier_free_packets(pool: PgPool) -> anyhow::Result<()> {
     assert!(payers.get(&0).unwrap().enabled);
 
     let payer_balance = balances
-        .balances()
-        .lock()
+        .get_payer_balance(&org_pubkey)
         .await
-        .get(&org_pubkey)
-        .cloned()
-        .unwrap();
+        .expect("known payer");
     assert_eq!(payer_balance.balance, 5, "balance should not have chnaged");
     assert_eq!(payer_balance.burned, 0, "nothing should be burned");
 
@@ -532,11 +529,11 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
 
     // Check current balance:
     // Check that 3x the BURN_THRESHOLD DC are pending to be burned:
-    let balance = {
-        let balances = verifier.debiter.balances();
-        let balances = balances.lock().await;
-        *balances.get(&payer).unwrap()
-    };
+    let balance = verifier
+        .debiter
+        .get_payer_balance(&payer)
+        .await
+        .expect("known payer");
     assert_eq!(balance.balance, STARTING_BALANCE);
     assert_eq!(balance.burned, STARTING_BALANCE);
 
@@ -554,12 +551,9 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
 
     // Pending burns should be empty as well:
     let payer_balance = balance_cache
-        .balances()
-        .lock()
+        .get_payer_balance(&payer)
         .await
-        .get(&payer)
-        .cloned()
-        .unwrap();
+        .expect("known payer");
     assert_eq!(payer_balance.burned, 0, "pending was burned");
 
     // Additionally, the balance on the solana network should be zero:

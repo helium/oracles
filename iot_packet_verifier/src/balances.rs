@@ -56,6 +56,10 @@ impl<S> BalanceCache<S> {
     pub fn balances(&self) -> BalanceStore {
         self.payer_accounts.clone()
     }
+
+    pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> Option<PayerAccount> {
+        self.payer_accounts.lock().await.get(payer).cloned()
+    }
 }
 
 #[async_trait::async_trait]
