@@ -1,8 +1,9 @@
+use chrono::{Duration, Utc};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
 use solana::{burn::SolanaNetwork, sender};
-use sqlx::{PgPool, Pool, Postgres};
+use sqlx::PgPool;
 use tracing::Instrument;
 
 use crate::pending_burns;
@@ -25,7 +26,47 @@ impl<S> Burner<S>
 where
     S: SolanaNetwork,
 {
-    pub async fn burn(&self, pool: &Pool<Postgres>) -> anyhow::Result<()> {
+    pub async fn confirm_pending_txns(&self, pool: &PgPool) -> anyhow::Result<()> {
+        let pending = pending_burns::fetch_all_pending_txns(pool).await?;
+        tracing::info!(count = pending.len(), "confirming pending txns");
+
+        for pending in pending {
+            // Sleep for at least a minute since the time of submission to
+            // give the transaction plenty of time to be confirmed:
+            let time_since_submission = Utc::now() - pending.time_of_submission;
+            if Duration::minutes(1) > time_since_submission {
+                let delay = Duration::minutes(1) - time_since_submission;
+                tracing::info!(?pending, %delay, "waiting to confirm pending txn");
+                tokio::time::sleep(delay.to_std()?).await;
+            }
+
+            let signature = pending.signature;
+            let confirmed = self.solana.confirm_transaction(&signature).await?;
+            tracing::info!(?pending, confirmed, "confirming pending transaction");
+            if confirmed {
+                let sessions =
+                    pending_burns::get_pending_data_sessions_for_signature(pool, &signature)
+                        .await?;
+                for session in sessions {
+                    let _write = self
+                        .valid_sessions
+                        .write(ValidDataTransferSession::from(session), &[])
+                        .await?;
+                }
+                pending_burns::remove_pending_transaction(pool, &signature).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn burn(&self, pool: &PgPool) -> anyhow::Result<()> {
+        let pending_txns = pending_burns::pending_txn_count(pool).await?;
+        if pending_txns > 0 {
+            tracing::warn!(pending_txns, "ignoring burn");
+            return Ok(());
+        }
+
         for payer_pending_burn in pending_burns::get_all_payer_burns(pool).await? {
             let payer = payer_pending_burn.payer;
             let total_dcs = payer_pending_burn.total_dcs;

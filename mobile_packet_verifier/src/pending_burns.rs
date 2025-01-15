@@ -1,17 +1,15 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Duration, Utc};
-use file_store::{
-    file_sink::FileSinkClient, mobile_session::DataTransferSessionReq, traits::TimestampEncode,
-};
+use chrono::{DateTime, Utc};
+use file_store::{mobile_session::DataTransferSessionReq, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::{burn::SolanaNetwork, Signature};
+use solana::Signature;
 use sqlx::{postgres::PgRow, prelude::FromRow, PgPool, Pool, Postgres, Row, Transaction};
 
 const METRIC_NAME: &str = "pending_dc_burn";
 
-#[derive(FromRow, Clone)]
+#[derive(Debug, FromRow, Clone)]
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
@@ -45,6 +43,7 @@ impl From<DataTransferSession> for ValidDataTransferSession {
     }
 }
 
+#[derive(Debug)]
 pub struct PendingPayerBurn {
     pub payer: PublicKeyBinary,
     pub total_dcs: u64,
@@ -77,6 +76,32 @@ pub async fn get_all(conn: &Pool<Postgres>) -> anyhow::Result<Vec<DataTransferSe
         .fetch_all(conn)
         .await
         .map_err(anyhow::Error::from)
+}
+
+pub async fn get_pending_data_sessions_for_signature(
+    conn: &PgPool,
+    signature: &Signature,
+) -> anyhow::Result<Vec<DataTransferSession>> {
+    let pending = sqlx::query_as(
+        r#"
+        SELECT * FROM pending_data_transfer_sessions 
+        WHERE signature = $1
+        "#,
+    )
+    .bind(signature.to_string())
+    .fetch_all(conn)
+    .await?;
+    Ok(pending)
+}
+
+pub async fn pending_txn_count(conn: &PgPool) -> anyhow::Result<usize> {
+    // QUESTION: Pending Txns exists across two tables,
+    // `pending_data_transfer_sessions` and `pending_txns`.
+    // Do we want to be checking that both tables are empty?
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pending_txns")
+        .fetch_one(conn)
+        .await?;
+    Ok(count as usize)
 }
 
 pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<PendingPayerBurn>> {
@@ -161,43 +186,6 @@ pub async fn delete_for_payer(
     Ok(())
 }
 
-pub async fn confirm_pending_txns<S: SolanaNetwork>(
-    conn: &PgPool,
-    solana: &S,
-    valid_sessions: &FileSinkClient<ValidDataTransferSession>,
-) -> anyhow::Result<()> {
-    let pending = fetch_all_pending_txns(conn).await?;
-    tracing::info!(count = pending.len(), "confirming pending txns");
-
-    println!("pending: {pending:?}");
-
-    for pending in pending {
-        // Sleep for at least a minute since the time of submission to
-        // give the transaction plenty of time to be confirmed:
-        let time_since_submission = Utc::now() - pending.time_of_submission;
-        if Duration::minutes(1) > time_since_submission {
-            let delay = Duration::minutes(1) - time_since_submission;
-            tracing::info!(?pending, %delay, "waiting to confirm pending txn");
-            tokio::time::sleep(delay.to_std()?).await;
-        }
-
-        let confirmed = solana.confirm_transaction(&pending.signature).await?;
-        tracing::info!(?pending, confirmed, "confirming pending transaction");
-        if confirmed {
-            let sessions = get_sessions_for_signature(conn, &pending.signature).await?;
-            println!("sessions: {sessions:?}");
-            for session in sessions {
-                let _write = valid_sessions
-                    .write(ValidDataTransferSession::from(session), &[])
-                    .await?;
-            }
-            remove_pending_transaction(conn, &pending.signature).await?;
-        }
-    }
-
-    Ok(())
-}
-
 pub async fn add_pending_transaction(
     conn: &PgPool,
     payer: &PublicKeyBinary,
@@ -215,6 +203,7 @@ pub async fn do_add_pending_transaction(
     signature: &Signature,
     time_of_submission: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
+    let mut txn = conn.begin().await?;
     sqlx::query(
         r#"
         INSERT INTO pending_txns (signature, payer, amount, time_of_submission)
@@ -225,8 +214,44 @@ pub async fn do_add_pending_transaction(
     .bind(payer)
     .bind(amount as i64)
     .bind(time_of_submission)
-    .execute(conn)
+    .execute(&mut *txn)
     .await?;
+
+    sqlx::query(
+        r#"
+        WITH moved_rows AS (
+            DELETE FROM data_transfer_sessions
+            WHERE payer = $1
+            RETURNING *
+        )
+        INSERT INTO pending_data_transfer_sessions (
+            pub_key, 
+            payer, 
+            uploaded_bytes, 
+            downloaded_bytes, 
+            rewardable_bytes,
+            first_timestamp, 
+            last_timestamp, 
+            signature
+        )
+        SELECT 
+            pub_key, 
+            payer, 
+            uploaded_bytes, 
+            downloaded_bytes, 
+            rewardable_bytes,
+            first_timestamp, 
+            last_timestamp, 
+            $2 
+        FROM moved_rows;
+        "#,
+    )
+    .bind(payer)
+    .bind(signature.to_string())
+    .execute(&mut *txn)
+    .await?;
+
+    txn.commit().await?;
     Ok(())
 }
 
@@ -234,10 +259,18 @@ pub async fn remove_pending_transaction(
     conn: &PgPool,
     signature: &Signature,
 ) -> Result<(), sqlx::Error> {
+    let mut txn = conn.begin().await?;
     sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
         .bind(signature.to_string())
-        .execute(conn)
+        .execute(&mut *txn)
         .await?;
+
+    sqlx::query("DELETE FROM pending_data_transfer_sessions WHERE signature = $1")
+        .bind(signature.to_string())
+        .execute(&mut *txn)
+        .await?;
+
+    txn.commit().await?;
     Ok(())
 }
 
@@ -286,7 +319,7 @@ fn decrement_metric(payer: &PublicKeyBinary, value: u64) {
 
 const BYTES_PER_DC: u64 = 20_000;
 
-fn bytes_to_dc(bytes: u64) -> u64 {
+pub fn bytes_to_dc(bytes: u64) -> u64 {
     let bytes = bytes.max(BYTES_PER_DC);
     bytes.div_ceil(BYTES_PER_DC)
 }

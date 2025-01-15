@@ -89,6 +89,7 @@ where
                         Err(e) => {
                             burn_time = Instant::now() + self.min_burn_period;
                             tracing::warn!("failed to burn {e:?}, re running burn in {:?} min", self.min_burn_period);
+                            self.burner.confirm_pending_txns(&self.pool).await?;
                         }
                     }
                 }
@@ -147,9 +148,6 @@ impl Cmd {
         )
         .await?;
 
-        // Check if we have any left over pending transactions and they've been confirmed.
-        pending_burns::confirm_pending_txns(&pool, &solana, &valid_sessions).await?;
-
         let (invalid_sessions, invalid_sessions_server) =
             VerifiedDataTransferIngestReportV1::file_sink(
                 store_base_path,
@@ -161,6 +159,8 @@ impl Cmd {
             .await?;
 
         let burner = Burner::new(valid_sessions, solana);
+        // Check if we have any left over pending transactions.
+        burner.confirm_pending_txns(&pool).await?;
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
