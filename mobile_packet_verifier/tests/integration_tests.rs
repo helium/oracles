@@ -7,7 +7,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::DataTransferRadioAccessTechnology,
 };
-use mobile_packet_verifier::{burner::Burner, pending_burns, pending_txns};
+use mobile_packet_verifier::{burner::Burner, bytes_to_dc, pending_burns, pending_txns};
 use solana::{
     burn::{test_client::TestSolanaClientMap, SolanaNetwork},
     Signature,
@@ -134,7 +134,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     let payer_burn = &burns[0];
     assert_eq!(payer_burn.payer, payer_two);
-    assert_eq!(payer_burn.total_dcs, pending_burns::bytes_to_dc(2_000));
+    assert_eq!(payer_burn.total_dcs, bytes_to_dc(2_000));
     assert_eq!(payer_burn.sessions.len(), 1);
 
     Ok(())
@@ -193,7 +193,7 @@ fn confirming_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<(
     // DC is calculated for each session individually, then summed
     assert_eq!(
         payer_burn.total_dcs,
-        pending_burns::bytes_to_dc(5_000) + pending_burns::bytes_to_dc(5_000),
+        bytes_to_dc(5_000) + bytes_to_dc(5_000),
     );
     assert_eq!(payer_burn.sessions.len(), 2);
 
@@ -247,7 +247,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     );
     assert_eq!(
         payer_burns[0].total_dcs,
-        pending_burns::bytes_to_dc(5_000) + pending_burns::bytes_to_dc(5_000)
+        bytes_to_dc(5_000) + bytes_to_dc(5_000)
     );
     let txn_count = pending_txns::pending_txn_count(&pool).await?;
     assert_eq!(txn_count, 1, "there should be a single pending txn");
@@ -269,7 +269,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     assert_eq!(payer_burns.len(), 1, "still have 1 burn to go");
     assert_eq!(
         payer_burns[0].total_dcs,
-        pending_burns::bytes_to_dc(5_000) + pending_burns::bytes_to_dc(5_000)
+        bytes_to_dc(5_000) + bytes_to_dc(5_000)
     );
 
     Ok(())

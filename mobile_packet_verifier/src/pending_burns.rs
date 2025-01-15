@@ -6,6 +6,8 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
 use sqlx::{FromRow, Pool, Postgres, Row, Transaction};
 
+use crate::bytes_to_dc;
+
 const METRIC_NAME: &str = "pending_dc_burn";
 
 #[derive(Debug, FromRow, Clone)]
@@ -169,23 +171,4 @@ fn increment_metric(payer: &PublicKeyBinary, value: u64) {
 
 fn decrement_metric(payer: &PublicKeyBinary, value: u64) {
     metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).decrement(value as f64);
-}
-
-const BYTES_PER_DC: u64 = 20_000;
-
-pub fn bytes_to_dc(bytes: u64) -> u64 {
-    let bytes = bytes.max(BYTES_PER_DC);
-    bytes.div_ceil(BYTES_PER_DC)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_bytes_to_dc() {
-        assert_eq!(1, bytes_to_dc(1));
-        assert_eq!(1, bytes_to_dc(20_000));
-        assert_eq!(2, bytes_to_dc(20_001));
-    }
 }
