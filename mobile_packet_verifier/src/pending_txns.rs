@@ -56,17 +56,17 @@ pub async fn pending_txn_count(conn: &PgPool) -> anyhow::Result<usize> {
     Ok(count as usize)
 }
 
-pub async fn add_pending_transaction(
+pub async fn add_pending_txn(
     conn: &PgPool,
     payer: &PublicKeyBinary,
     amount: u64,
     signature: &Signature,
 ) -> Result<(), sqlx::Error> {
-    do_add_pending_transaction(conn, payer, amount, signature, Utc::now()).await?;
+    do_add_pending_txn(conn, payer, amount, signature, Utc::now()).await?;
     Ok(())
 }
 
-pub async fn do_add_pending_transaction(
+pub async fn do_add_pending_txn(
     conn: &PgPool,
     payer: &PublicKeyBinary,
     amount: u64,
@@ -125,18 +125,18 @@ pub async fn do_add_pending_transaction(
     Ok(())
 }
 
-pub async fn remove_pending_transaction_failure(
+pub async fn remove_pending_txn_failure(
     conn: &PgPool,
     signature: &Signature,
 ) -> Result<(), sqlx::Error> {
     let mut txn = conn.begin().await?;
-    let pt = sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
+    sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
         .bind(signature.to_string())
         .execute(&mut *txn)
         .await?;
 
-    let moved = sqlx::query(
-    r#"
+    sqlx::query(
+        r#"
         WITH moved_rows AS (
             DELETE FROM pending_data_transfer_sessions
             WHERE signature = $1
@@ -166,19 +166,17 @@ pub async fn remove_pending_transaction_failure(
             rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
             last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
         "#,
-)
-.bind(signature.to_string())
-.execute(&mut *txn)
-.await?;
-    println!("pending_txs deleted: {}", pt.rows_affected());
-    println!("rows moved back: {}", moved.rows_affected());
+    )
+    .bind(signature.to_string())
+    .execute(&mut *txn)
+    .await?;
 
     txn.commit().await?;
 
     Ok(())
 }
 
-pub async fn remove_pending_transaction_success(
+pub async fn remove_pending_txn_success(
     conn: &PgPool,
     signature: &Signature,
 ) -> Result<(), sqlx::Error> {

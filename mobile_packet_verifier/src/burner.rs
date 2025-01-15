@@ -52,9 +52,9 @@ where
                         .write(ValidDataTransferSession::from(session), &[])
                         .await?;
                 }
-                pending_txns::remove_pending_transaction_success(pool, &signature).await?;
+                pending_txns::remove_pending_txn_success(pool, &signature).await?;
             } else {
-                pending_txns::remove_pending_transaction_failure(pool, &signature).await?;
+                pending_txns::remove_pending_txn_failure(pool, &signature).await?;
             }
         }
 
@@ -139,7 +139,7 @@ impl sender::TxnStore for BurnTxnStore {
 
         let signature = txn.get_signature();
         let add_pending =
-            pending_txns::add_pending_transaction(&self.pool, &self.payer, self.amount, signature);
+            pending_txns::add_pending_txn(&self.pool, &self.payer, self.amount, signature);
 
         match add_pending.await {
             Ok(()) => {}
@@ -170,8 +170,7 @@ impl sender::TxnStore for BurnTxnStore {
         }
 
         let signature = txn.get_signature();
-        let remove_pending =
-            pending_txns::remove_pending_transaction_success(&self.pool, signature);
+        let remove_pending = pending_txns::remove_pending_txn_success(&self.pool, signature);
         if let Err(err) = remove_pending.await {
             tracing::error!(?err, "failed to remove successful pending txn");
         }
@@ -191,8 +190,7 @@ impl sender::TxnStore for BurnTxnStore {
         tracing::warn!(?err, "txn failed");
 
         let signature = txn.get_signature();
-        let remove_pending =
-            pending_txns::remove_pending_transaction_failure(&self.pool, signature);
+        let remove_pending = pending_txns::remove_pending_txn_failure(&self.pool, signature);
         if let Err(err) = remove_pending.await {
             tracing::error!(?err, "failed to remove failed pending txn");
         }

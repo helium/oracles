@@ -97,7 +97,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // First transaction is confirmed
     // Make submission time in past to bypass confirm txn sleep
     let confirmed_signature = Signature::new_unique();
-    pending_txns::do_add_pending_transaction(
+    pending_txns::do_add_pending_txn(
         &pool,
         &payer_one,
         1_000,
@@ -109,7 +109,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Second transaction is unconfirmed
     // Make submission time in past to bypass confirm txn sleep
     let unconfirmed_signature = Signature::new_unique();
-    pending_txns::do_add_pending_transaction(
+    pending_txns::do_add_pending_txn(
         &pool,
         &payer_two,
         500,
@@ -160,7 +160,7 @@ fn confirming_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<(
 
     // Mark the session as pending
     let signature = Signature::new_unique();
-    pending_txns::do_add_pending_transaction(
+    pending_txns::do_add_pending_txn(
         &pool,
         &payer,
         1_000,
@@ -222,7 +222,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
 
     // Mark as pending txns
     let signature = Signature::new_unique();
-    pending_txns::do_add_pending_transaction(
+    pending_txns::do_add_pending_txn(
         &pool,
         &payer,
         1_000,
@@ -293,7 +293,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // Mark the session as pending
     let signature = Signature::new_unique();
-    pending_txns::do_add_pending_transaction(
+    pending_txns::do_add_pending_txn(
         &pool,
         &payer,
         1_000,
@@ -321,7 +321,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // Remove pending burn.
     // Data Transfer Sessions should go through now.
-    pending_txns::remove_pending_transaction_success(&pool, &signature).await?;
+    pending_txns::remove_pending_txn_success(&pool, &signature).await?;
     burner.burn(&pool).await?;
 
     let written_sessions = burner.get_written_sessions();
