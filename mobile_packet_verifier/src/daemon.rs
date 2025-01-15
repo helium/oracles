@@ -85,10 +85,11 @@ where
                     match self.burner.burn(&self.pool).await {
                         Ok(_) => {
                             burn_time = Instant::now() + self.burn_period;
+                            tracing::info!(next_burn = ?self.burn_period, "successful burn")
                         }
-                        Err(e) => {
+                        Err(err) => {
                             burn_time = Instant::now() + self.min_burn_period;
-                            tracing::warn!("failed to burn {e:?}, re running burn in {:?} min", self.min_burn_period);
+                            tracing::warn!(?err, next_burn = ?self.min_burn_period, "failed to burn");
                             self.burner.confirm_pending_txns(&self.pool).await?;
                         }
                     }
