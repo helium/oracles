@@ -90,7 +90,7 @@ impl AsRef<client::SolanaRpcClient> for SolanaRpc {
 
 struct BoostedHex<'a>(&'a Pubkey, &'a BoostedHexActivation);
 
-impl<'a> helium_lib::boosting::StartBoostingHex for BoostedHex<'a> {
+impl helium_lib::boosting::StartBoostingHex for BoostedHex<'_> {
     fn start_authority(&self) -> Pubkey {
         *self.0
     }

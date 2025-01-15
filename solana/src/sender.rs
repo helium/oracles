@@ -15,11 +15,17 @@ pub enum SenderError {
     #[error("Txn Preparation error: {0}")]
     Preparation(String),
     #[error("Solana Client error: {0}")]
-    SolanaClient(#[from] SolanaClientError),
+    SolanaClient(Box<SolanaClientError>),
     #[error("Failed to send txn {attempt} times")]
     Sending { attempt: usize },
     #[error("Failed to finalize txn")]
     Finalize,
+}
+
+impl From<SolanaClientError> for SenderError {
+    fn from(err: SolanaClientError) -> Self {
+        Self::SolanaClient(Box::new(err))
+    }
 }
 
 impl SenderError {
@@ -35,12 +41,12 @@ pub async fn send_and_finalize(
 ) -> SenderResult<()> {
     let sent_block_height = client.get_block_height().await?;
 
-    store.on_prepared(&txn).await?;
-    send_with_retry(client, &txn, store).await?;
-    store.on_sent(&txn).await;
+    store.on_prepared(txn).await?;
+    send_with_retry(client, txn, store).await?;
+    store.on_sent(txn).await;
 
-    finalize_signature(client, &txn, store, sent_block_height).await?;
-    store.on_finalized(&txn).await;
+    finalize_signature(client, txn, store, sent_block_height).await?;
+    store.on_finalized(txn).await;
 
     Ok(())
 }
