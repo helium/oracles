@@ -53,7 +53,9 @@ where
                         .write(ValidDataTransferSession::from(session), &[])
                         .await?;
                 }
-                pending_burns::remove_pending_transaction(pool, &signature).await?;
+                pending_burns::remove_pending_transaction_success(pool, &signature).await?;
+            } else {
+                pending_burns::remove_pending_transaction_failure(pool, &signature).await?;
             }
         }
 
@@ -169,9 +171,10 @@ impl sender::TxnStore for BurnTxnStore {
         }
 
         let signature = txn.get_signature();
-        let remove_pending = pending_burns::remove_pending_transaction(&self.pool, signature);
+        let remove_pending =
+            pending_burns::remove_pending_transaction_success(&self.pool, signature);
         if let Err(err) = remove_pending.await {
-            tracing::error!(?err, "failed to remove pending txn");
+            tracing::error!(?err, "failed to remove successful pending txn");
         }
 
         for session in self.sessions.iter() {
@@ -185,8 +188,16 @@ impl sender::TxnStore for BurnTxnStore {
         }
     }
 
-    async fn on_error(&self, _txn: &solana::Transaction, err: sender::SenderError) {
+    async fn on_error(&self, txn: &solana::Transaction, err: sender::SenderError) {
         tracing::warn!(?err, "txn failed");
+
+        let signature = txn.get_signature();
+        let remove_pending =
+            pending_burns::remove_pending_transaction_failure(&self.pool, signature);
+        if let Err(err) = remove_pending.await {
+            tracing::error!(?err, "failed to remove failed pending txn");
+        }
+
         metrics::counter!(
             "burned",
             "payer" => self.payer.to_string(),

@@ -151,10 +151,10 @@ pub async fn save(
             INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
             VALUES ($1, $2, $3, $4, $5, $6, $6)
             ON CONFLICT (pub_key, payer) DO UPDATE SET
-            uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
-            downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
-            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+                uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
+                downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
+                rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
+                last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
             "#
         )
             .bind(&req.data_transfer_usage.pub_key)
@@ -255,7 +255,60 @@ pub async fn do_add_pending_transaction(
     Ok(())
 }
 
-pub async fn remove_pending_transaction(
+pub async fn remove_pending_transaction_failure(
+    conn: &PgPool,
+    signature: &Signature,
+) -> Result<(), sqlx::Error> {
+    let mut txn = conn.begin().await?;
+    let pt = sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
+        .bind(signature.to_string())
+        .execute(&mut *txn)
+        .await?;
+
+    let moved = sqlx::query(
+        r#"
+        WITH moved_rows AS (
+            DELETE FROM pending_data_transfer_sessions
+            WHERE signature = $1
+            RETURNING *
+        )
+        INSERT INTO data_transfer_sessions (
+            pub_key, 
+            payer, 
+            uploaded_bytes, 
+            downloaded_bytes, 
+            rewardable_bytes,
+            first_timestamp, 
+            last_timestamp
+        )
+        SELECT 
+            pub_key, 
+            payer, 
+            uploaded_bytes, 
+            downloaded_bytes, 
+            rewardable_bytes,
+            first_timestamp, 
+            last_timestamp
+        FROM moved_rows
+        ON CONFLICT (pub_key, payer) DO UPDATE SET
+            uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
+            downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
+            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
+            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+        "#,
+    )
+    .bind(signature.to_string())
+    .execute(&mut *txn)
+    .await?;
+    println!("pending_txs deleted: {}", pt.rows_affected());
+    println!("rows moved back: {}", moved.rows_affected());
+
+    txn.commit().await?;
+
+    Ok(())
+}
+
+pub async fn remove_pending_transaction_success(
     conn: &PgPool,
     signature: &Signature,
 ) -> Result<(), sqlx::Error> {

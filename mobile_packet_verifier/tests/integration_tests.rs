@@ -113,11 +113,17 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let burner = Burner::new(valid_sessions, solana_network);
     burner.confirm_pending_txns(&pool).await?;
-    assert_eq!(pending_burns::fetch_all_pending_txns(&pool).await?.len(), 1);
+    // confirmed and unconfirmed txns have been cleared
+    assert_eq!(pending_burns::fetch_all_pending_txns(&pool).await?.len(), 0);
 
-    let remaining_txn = pending_burns::fetch_all_pending_txns(&pool).await?;
-    assert_eq!(remaining_txn.len(), 1);
-    assert_eq!(remaining_txn[0].amount, 500);
+    // The unconfirmed txn is moved back to ready for burning
+    let burns = pending_burns::get_all_payer_burns(&pool).await?;
+    assert_eq!(burns.len(), 1, "the unconfirmed txn has moved back to burn");
+
+    let payer_burn = &burns[0];
+    assert_eq!(payer_burn.payer, payer_two);
+    assert_eq!(payer_burn.total_dcs, pending_burns::bytes_to_dc(2_000));
+    assert_eq!(payer_burn.sessions.len(), 1);
 
     Ok(())
 }
@@ -190,6 +196,84 @@ fn confirming_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<(
 }
 
 #[sqlx::test]
+fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    // After making a pending_txn, and the data sessions are moved for
+    // processing If the txn cannot be finalized, the data sessions that were
+    // going to be written need to be moved back to being considerd for burn.
+
+    let payer = PublicKeyBinary::from(vec![0]);
+    let pubkey_one = PublicKeyBinary::from(vec![1]);
+    let pubkey_two = PublicKeyBinary::from(vec![2]);
+
+    // Insert sessions
+    let session_one = mk_data_transfer_session(&payer, &pubkey_one, 1_000);
+    let session_two = mk_data_transfer_session(&payer, &pubkey_two, 1_000);
+    let mut txn = pool.begin().await?;
+    pending_burns::save(&mut txn, &session_one, Utc::now()).await?;
+    pending_burns::save(&mut txn, &session_two, Utc::now()).await?;
+    txn.commit().await?;
+
+    // Mark as pending txns
+    let signature = Signature::new_unique();
+    pending_burns::do_add_pending_transaction(
+        &pool,
+        &payer,
+        1_000,
+        &signature,
+        Utc::now() - chrono::Duration::minutes(2),
+    )
+    .await?;
+
+    // Insert more sessions
+    let session_three = mk_data_transfer_session(&payer, &pubkey_one, 5_000);
+    let session_four = mk_data_transfer_session(&payer, &pubkey_two, 5_000);
+    let mut txn = pool.begin().await?;
+    pending_burns::save(&mut txn, &session_three, Utc::now()).await?;
+    pending_burns::save(&mut txn, &session_four, Utc::now()).await?;
+    txn.commit().await?;
+
+    // There are sessions for burning, but we cannot because there are also pending txns.
+    let payer_burns = pending_burns::get_all_payer_burns(&pool).await?;
+    assert_eq!(
+        payer_burns.len(),
+        1,
+        "still have sessions ready for burning"
+    );
+    assert_eq!(
+        payer_burns[0].total_dcs,
+        pending_burns::bytes_to_dc(5_000) + pending_burns::bytes_to_dc(5_000)
+    );
+    let txn_count = pending_burns::pending_txn_count(&pool).await?;
+    assert_eq!(txn_count, 1, "there should be a single pending txn");
+
+    // Fail the pending txns
+    let (valid_sessions_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
+    let mut solana_network = TestSolanaClientMap::default();
+    // Adding a random confirmed txn will cause other txns to not be considered finalized
+    solana_network.add_confirmed(Signature::new_unique()).await;
+
+    let burner = Burner::new(valid_sessions, solana_network.clone());
+    burner.confirm_pending_txns(&pool).await?;
+
+    // Sessions are merged with 2nd set of sessions for burning
+    let txn_count = pending_burns::pending_txn_count(&pool).await?;
+    assert_eq!(txn_count, 0, "should be no more pending txns");
+
+    // There is still only 1 payer burn, but the amount to burn contains both sets of sessions.
+    let payer_burns = pending_burns::get_all_payer_burns(&pool).await?;
+    assert_eq!(payer_burns.len(), 1, "still have 1 burn to go");
+    assert_eq!(
+        payer_burns[0].total_dcs,
+        pending_burns::bytes_to_dc(5_000) + pending_burns::bytes_to_dc(5_000)
+    );
+
+    Ok(())
+}
+
+#[sqlx::test]
 fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Trigger a burn when there are data sessions that can be burned _and_ pending txns.
     // Nothing should happen until the pending_txns are gone.
@@ -242,7 +326,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // Remove pending burn.
     // Data Transfer Sessions should go through now.
-    pending_burns::remove_pending_transaction(&pool, &signature).await?;
+    pending_burns::remove_pending_transaction_success(&pool, &signature).await?;
     burner.burn(&pool).await?;
 
     let mut written_sessions = vec![];
@@ -261,7 +345,7 @@ fn mk_data_transfer_session(
 ) -> DataTransferSessionReq {
     DataTransferSessionReq {
         data_transfer_usage: DataTransferEvent {
-            pub_key: pubkey.clone().into(),
+            pub_key: pubkey.clone(),
             upload_bytes: rewardable_bytes / 2,
             download_bytes: rewardable_bytes / 2,
             radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
@@ -271,7 +355,7 @@ fn mk_data_transfer_session(
             signature: vec![],
         },
         rewardable_bytes,
-        pub_key: pubkey.clone().into(),
+        pub_key: pubkey.clone(),
         signature: vec![],
     }
 }
