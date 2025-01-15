@@ -6,7 +6,7 @@ use solana::{burn::SolanaNetwork, sender};
 use sqlx::PgPool;
 use tracing::Instrument;
 
-use crate::pending_burns;
+use crate::{pending_burns, pending_txns};
 
 pub struct Burner<S> {
     valid_sessions: FileSinkClient<ValidDataTransferSession>,
@@ -27,7 +27,7 @@ where
     S: SolanaNetwork,
 {
     pub async fn confirm_pending_txns(&self, pool: &PgPool) -> anyhow::Result<()> {
-        let pending = pending_burns::fetch_all_pending_txns(pool).await?;
+        let pending = pending_txns::fetch_all_pending_txns(pool).await?;
         tracing::info!(count = pending.len(), "confirming pending txns");
 
         for pending in pending {
@@ -45,17 +45,16 @@ where
             tracing::info!(?pending, confirmed, "confirming pending transaction");
             if confirmed {
                 let sessions =
-                    pending_burns::get_pending_data_sessions_for_signature(pool, &signature)
-                        .await?;
+                    pending_txns::get_pending_data_sessions_for_signature(pool, &signature).await?;
                 for session in sessions {
                     let _write = self
                         .valid_sessions
                         .write(ValidDataTransferSession::from(session), &[])
                         .await?;
                 }
-                pending_burns::remove_pending_transaction_success(pool, &signature).await?;
+                pending_txns::remove_pending_transaction_success(pool, &signature).await?;
             } else {
-                pending_burns::remove_pending_transaction_failure(pool, &signature).await?;
+                pending_txns::remove_pending_transaction_failure(pool, &signature).await?;
             }
         }
 
@@ -63,7 +62,7 @@ where
     }
 
     pub async fn burn(&self, pool: &PgPool) -> anyhow::Result<()> {
-        let pending_txns = pending_burns::pending_txn_count(pool).await?;
+        let pending_txns = pending_txns::pending_txn_count(pool).await?;
         if pending_txns > 0 {
             tracing::warn!(pending_txns, "ignoring burn");
             return Ok(());
@@ -140,7 +139,7 @@ impl sender::TxnStore for BurnTxnStore {
 
         let signature = txn.get_signature();
         let add_pending =
-            pending_burns::add_pending_transaction(&self.pool, &self.payer, self.amount, signature);
+            pending_txns::add_pending_transaction(&self.pool, &self.payer, self.amount, signature);
 
         match add_pending.await {
             Ok(()) => {}
@@ -172,7 +171,7 @@ impl sender::TxnStore for BurnTxnStore {
 
         let signature = txn.get_signature();
         let remove_pending =
-            pending_burns::remove_pending_transaction_success(&self.pool, signature);
+            pending_txns::remove_pending_transaction_success(&self.pool, signature);
         if let Err(err) = remove_pending.await {
             tracing::error!(?err, "failed to remove successful pending txn");
         }
@@ -193,7 +192,7 @@ impl sender::TxnStore for BurnTxnStore {
 
         let signature = txn.get_signature();
         let remove_pending =
-            pending_burns::remove_pending_transaction_failure(&self.pool, signature);
+            pending_txns::remove_pending_transaction_failure(&self.pool, signature);
         if let Err(err) = remove_pending.await {
             tracing::error!(?err, "failed to remove failed pending txn");
         }

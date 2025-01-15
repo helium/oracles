@@ -9,6 +9,7 @@ pub mod burner;
 pub mod daemon;
 pub mod event_ids;
 pub mod pending_burns;
+pub mod pending_txns;
 pub mod settings;
 
 pub struct MobileConfigClients {

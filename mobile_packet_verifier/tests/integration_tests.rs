@@ -7,7 +7,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::DataTransferRadioAccessTechnology,
 };
-use mobile_packet_verifier::{burner::Burner, pending_burns};
+use mobile_packet_verifier::{burner::Burner, pending_burns, pending_txns};
 use solana::{
     burn::{test_client::TestSolanaClientMap, SolanaNetwork},
     Signature,
@@ -53,7 +53,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(burns.len(), 1, "1 burn left");
 
     // Ensure no pending transactions
-    let pending = pending_burns::fetch_all_pending_txns(&pool).await?;
+    let pending = pending_txns::fetch_all_pending_txns(&pool).await?;
     assert!(pending.is_empty(), "pending txn should be removed");
 
     // Ensure balance for payers through solana mock
@@ -97,7 +97,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // First transaction is confirmed
     // Make submission time in past to bypass confirm txn sleep
     let confirmed_signature = Signature::new_unique();
-    pending_burns::do_add_pending_transaction(
+    pending_txns::do_add_pending_transaction(
         &pool,
         &payer_one,
         1_000,
@@ -109,7 +109,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Second transaction is unconfirmed
     // Make submission time in past to bypass confirm txn sleep
     let unconfirmed_signature = Signature::new_unique();
-    pending_burns::do_add_pending_transaction(
+    pending_txns::do_add_pending_transaction(
         &pool,
         &payer_two,
         500,
@@ -122,11 +122,11 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     solana_network.add_confirmed(confirmed_signature).await;
     // solana_network.add_confirmed(unconfirmed_txn).await; // uncomment for failure
 
-    assert_eq!(pending_burns::fetch_all_pending_txns(&pool).await?.len(), 2);
+    assert_eq!(pending_txns::fetch_all_pending_txns(&pool).await?.len(), 2);
     let burner = TestBurner::new(solana_network);
     burner.confirm_pending_txns(&pool).await?;
     // confirmed and unconfirmed txns have been cleared
-    assert_eq!(pending_burns::fetch_all_pending_txns(&pool).await?.len(), 0);
+    assert_eq!(pending_txns::fetch_all_pending_txns(&pool).await?.len(), 0);
 
     // The unconfirmed txn is moved back to ready for burning
     let burns = pending_burns::get_all_payer_burns(&pool).await?;
@@ -160,7 +160,7 @@ fn confirming_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<(
 
     // Mark the session as pending
     let signature = Signature::new_unique();
-    pending_burns::do_add_pending_transaction(
+    pending_txns::do_add_pending_transaction(
         &pool,
         &payer,
         1_000,
@@ -222,7 +222,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
 
     // Mark as pending txns
     let signature = Signature::new_unique();
-    pending_burns::do_add_pending_transaction(
+    pending_txns::do_add_pending_transaction(
         &pool,
         &payer,
         1_000,
@@ -249,7 +249,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
         payer_burns[0].total_dcs,
         pending_burns::bytes_to_dc(5_000) + pending_burns::bytes_to_dc(5_000)
     );
-    let txn_count = pending_burns::pending_txn_count(&pool).await?;
+    let txn_count = pending_txns::pending_txn_count(&pool).await?;
     assert_eq!(txn_count, 1, "there should be a single pending txn");
 
     // Fail the pending txns
@@ -261,7 +261,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     burner.confirm_pending_txns(&pool).await?;
 
     // Sessions are merged with 2nd set of sessions for burning
-    let txn_count = pending_burns::pending_txn_count(&pool).await?;
+    let txn_count = pending_txns::pending_txn_count(&pool).await?;
     assert_eq!(txn_count, 0, "should be no more pending txns");
 
     // There is still only 1 payer burn, but the amount to burn contains both sets of sessions.
@@ -293,7 +293,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // Mark the session as pending
     let signature = Signature::new_unique();
-    pending_burns::do_add_pending_transaction(
+    pending_txns::do_add_pending_transaction(
         &pool,
         &payer,
         1_000,
@@ -321,7 +321,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // Remove pending burn.
     // Data Transfer Sessions should go through now.
-    pending_burns::remove_pending_transaction_success(&pool, &signature).await?;
+    pending_txns::remove_pending_transaction_success(&pool, &signature).await?;
     burner.burn(&pool).await?;
 
     let written_sessions = burner.get_written_sessions();
