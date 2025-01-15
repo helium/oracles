@@ -42,7 +42,8 @@ pub struct Settings {
     /// Target output bucket details Metrics settings
     pub metrics: poc_metrics::Settings,
     // mobile config client settings
-    pub config_client: mobile_config::ClientSettings,
+    // optional to avoid having to define a client for IOT mode
+    pub config_client: Option<mobile_config::ClientSettings>,
 }
 
 fn default_roll_time() -> Duration {

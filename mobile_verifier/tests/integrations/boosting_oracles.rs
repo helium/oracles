@@ -24,6 +24,7 @@ use mobile_verifier::{
     sp_boosted_rewards_bans::BannedRadios,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
+    unique_connections::UniqueConnectionCounts,
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -386,6 +387,7 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &epoch,
     )
     .await

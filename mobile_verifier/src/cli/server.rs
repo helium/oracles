@@ -12,7 +12,9 @@ use crate::{
     speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor,
     subscriber_verified_mapping_event::SubscriberVerifiedMappingEventDaemon,
-    telemetry, Settings,
+    telemetry,
+    unique_connections::ingestor::UniqueConnectionsIngestor,
+    Settings,
 };
 use anyhow::Result;
 use file_store::{
@@ -185,6 +187,16 @@ impl Cmd {
             )
             .add_task(
                 RadioThresholdIngestor::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    file_upload.clone(),
+                    report_ingest.clone(),
+                    auth_client.clone(),
+                )
+                .await?,
+            )
+            .add_task(
+                UniqueConnectionsIngestor::create_managed_task(
                     pool.clone(),
                     settings,
                     file_upload.clone(),

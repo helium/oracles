@@ -1,25 +1,39 @@
+use std::ops::Range;
+
 use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient, RadioRewardV2Ext};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     speedtest::CellSpeedtest,
+    unique_connections::{UniqueConnectionReq, UniqueConnectionsIngestReport},
 };
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{
-    CoverageObjectValidity, GatewayReward, HeartbeatValidity, LocationSource, MobileRewardShare,
-    RadioRewardV2, SeniorityUpdateReason, SignalLevel,
-};
 use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
     data_session,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
-    reward_shares, rewarder, speedtests,
+    reward_shares, rewarder,
+    sp_boosted_rewards_bans::{self, BannedRadioReport},
+    speedtests, unique_connections,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
+
+pub mod proto {
+    pub use helium_proto::services::poc_mobile::{
+        service_provider_boosted_rewards_banned_radio_req_v1::KeyType,
+        service_provider_boosted_rewards_banned_radio_req_v1::{
+            SpBoostedRewardsBannedRadioBanType, SpBoostedRewardsBannedRadioReason,
+        },
+        CoverageObjectValidity, GatewayReward, HeartbeatValidity, LocationSource,
+        MobileRewardShare, RadioRewardV2, SeniorityUpdateReason,
+        ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+        ServiceProviderBoostedRewardsBannedRadioReqV1, SignalLevel,
+    };
+}
 
 const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 const HOTSPOT_2: &str = "11uJHS2YaEWJqgqC7yza9uvSmpv5FWoMQXiP8WbxBGgNUmifUJf";
@@ -55,7 +69,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             &epoch,
             dec!(0.0001)
         ),
-        receive_expected_rewards(&mut mobile_rewards)
+        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, false)
     );
     if let Ok((poc_rewards, dc_rewards)) = rewards {
         // assert poc reward outputs
@@ -123,29 +137,103 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn receive_expected_rewards(
-    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
-) -> anyhow::Result<(Vec<RadioRewardV2>, Vec<GatewayReward>)> {
-    // get the filestore outputs from rewards run
+#[sqlx::test]
+async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+    sqlx::migrate!().run(&pool).await?;
 
-    // expect 3 gateway rewards for dc transfer
-    let dc_reward1 = mobile_rewards.receive_gateway_reward().await;
-    let dc_reward2 = mobile_rewards.receive_gateway_reward().await;
-    let dc_reward3 = mobile_rewards.receive_gateway_reward().await;
-    let mut dc_rewards = vec![dc_reward1, dc_reward2, dc_reward3];
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
+    let now = Utc::now();
+    let epoch = (now - ChronoDuration::hours(24))..now;
+    let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
+
+    // seed all the things
+    let mut txn = pool.clone().begin().await?;
+    seed_heartbeats(epoch.start, &mut txn).await?;
+    seed_speedtests(epoch.end, &mut txn).await?;
+    seed_data_sessions(epoch.start, &mut txn).await?;
+    txn.commit().await?;
+    update_assignments_bad(&pool).await?;
+
+    // Run rewards with no unique connections, no poc rewards, expect unallocated
+    let boosted_hexes = vec![];
+    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+    let (_, _rewards) = tokio::join!(
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &hex_boosting_client,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &epoch,
+            dec!(0.0001)
+        ),
+        // expecting NO poc rewards, expecting unallocated
+        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 0, true)
+    );
+
+    // seed single unique conections report within epoch
+    let mut txn = pool.begin().await?;
+    seed_unique_connections(&mut txn, &[(pubkey.clone(), 42)], &epoch).await?;
+    txn.commit().await?;
+
+    // SP ban radio, unique connections should supersede banning
+    let mut txn = pool.begin().await?;
+    ban_wifi_radio_for_epoch(&mut txn, pubkey.clone(), &epoch).await?;
+    txn.commit().await?;
+
+    let (_, rewards) = tokio::join!(
+        // run rewards for poc and dc
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &hex_boosting_client,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &epoch,
+            dec!(0.0001)
+        ),
+        // expecting single radio with poc rewards, no unallocated
+        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 1, false)
+    );
+    let Ok((poc_rewards, dc_rewards)) = rewards else {
+        panic!("rewards failed");
+    };
+
+    let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
+    let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
+    let total = poc_sum + dc_sum;
+
+    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+        .to_u64()
+        .unwrap();
+    assert_eq!(expected_sum, total);
+
+    Ok(())
+}
+
+async fn receive_expected_rewards_with_counts(
+    mobile_rewards: &mut MockFileSinkReceiver<proto::MobileRewardShare>,
+    expected_dc_reward_count: usize,
+    expected_poc_reward_count: usize,
+    expect_unallocated: bool,
+) -> anyhow::Result<(Vec<proto::RadioRewardV2>, Vec<proto::GatewayReward>)> {
+    let mut dc_rewards = vec![];
+    let mut poc_rewards = vec![];
+
+    for _ in 0..expected_dc_reward_count {
+        dc_rewards.push(mobile_rewards.receive_gateway_reward().await);
+    }
+
+    for _ in 0..expected_poc_reward_count {
+        poc_rewards.push(mobile_rewards.receive_radio_reward().await);
+    }
+
+    if expect_unallocated {
+        mobile_rewards.receive_unallocated_reward().await;
+    }
+
     dc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
-
-    // we will have 3 radio rewards, 1 wifi radio and 2 cbrs radios
-    let radio_reward1 = mobile_rewards.receive_radio_reward().await;
-    let radio_reward2 = mobile_rewards.receive_radio_reward().await;
-    let radio_reward3 = mobile_rewards.receive_radio_reward().await;
-    // ordering is not guaranteed, so stick the rewards into a vec and sort
-    let mut poc_rewards = vec![radio_reward1, radio_reward2, radio_reward3];
-    // after sorting reward 1 = cbrs radio1, 2 = cbrs radio2, 3 = wifi radio
     poc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
-
-    // should be no further msgs
-    mobile_rewards.assert_no_messages();
 
     Ok((poc_rewards, dc_rewards))
 }
@@ -175,13 +263,13 @@ async fn seed_heartbeats(
                 coverage_object: Some(cov_obj_1.coverage_object.uuid),
                 location_validation_timestamp: None,
                 timestamp: ts + ChronoDuration::hours(n),
-                location_source: LocationSource::Gps,
+                location_source: proto::LocationSource::Gps,
             },
             cell_type: CellType::SercommIndoor,
             distance_to_asserted: None,
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
-            validity: HeartbeatValidity::Valid,
+            validity: proto::HeartbeatValidity::Valid,
         };
 
         let hotspot_key2: PublicKeyBinary = HOTSPOT_2.to_string().parse().unwrap();
@@ -204,13 +292,13 @@ async fn seed_heartbeats(
                 coverage_object: Some(cov_obj_2.coverage_object.uuid),
                 location_validation_timestamp: None,
                 timestamp: ts + ChronoDuration::hours(n),
-                location_source: LocationSource::Gps,
+                location_source: proto::LocationSource::Gps,
             },
             cell_type: CellType::SercommOutdoor,
             distance_to_asserted: None,
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
-            validity: HeartbeatValidity::Valid,
+            validity: proto::HeartbeatValidity::Valid,
         };
 
         let hotspot_key3: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap();
@@ -232,13 +320,13 @@ async fn seed_heartbeats(
                 coverage_object: Some(cov_obj_3.coverage_object.uuid),
                 location_validation_timestamp: Some(ts - ChronoDuration::hours(24)),
                 timestamp: ts + ChronoDuration::hours(n),
-                location_source: LocationSource::Skyhook,
+                location_source: proto::LocationSource::Skyhook,
             },
             cell_type: CellType::NovaGenericWifiIndoor,
             distance_to_asserted: Some(10),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
-            validity: HeartbeatValidity::Valid,
+            validity: proto::HeartbeatValidity::Valid,
         };
 
         save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat, txn).await?;
@@ -260,6 +348,15 @@ async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
     let _ = common::set_unassigned_oracle_boosting_assignments(
         pool,
         &common::mock_hex_boost_data_default(),
+    )
+    .await?;
+    Ok(())
+}
+
+async fn update_assignments_bad(pool: &PgPool) -> anyhow::Result<()> {
+    let _ = common::set_unassigned_oracle_boosting_assignments(
+        pool,
+        &common::mock_hex_boost_data_bad(),
     )
     .await?;
     Ok(())
@@ -338,6 +435,30 @@ async fn seed_data_sessions(
     Ok(())
 }
 
+async fn seed_unique_connections(
+    txn: &mut Transaction<'_, Postgres>,
+    things: &[(PublicKeyBinary, u64)],
+    epoch: &Range<DateTime<Utc>>,
+) -> anyhow::Result<()> {
+    let mut reports = vec![];
+    for (pubkey, unique_connections) in things {
+        reports.push(UniqueConnectionsIngestReport {
+            received_timestamp: epoch.start + chrono::Duration::hours(1),
+            report: UniqueConnectionReq {
+                pubkey: pubkey.clone(),
+                start_timestamp: Utc::now(),
+                end_timestamp: Utc::now(),
+                unique_connections: *unique_connections,
+                timestamp: Utc::now(),
+                carrier_key: pubkey.clone(),
+                signature: vec![],
+            },
+        });
+    }
+    unique_connections::db::save(txn, &reports).await?;
+    Ok(())
+}
+
 fn create_coverage_object(
     ts: DateTime<Utc>,
     cbsd_id: Option<String>,
@@ -357,7 +478,7 @@ fn create_coverage_object(
         coverage_claim_time: ts,
         coverage: vec![RadioHexSignalLevel {
             location,
-            signal_level: SignalLevel::High,
+            signal_level: proto::SignalLevel::High,
             signal_power: 1000,
         }],
         indoor,
@@ -366,7 +487,7 @@ fn create_coverage_object(
     };
     CoverageObject {
         coverage_object: report,
-        validity: CoverageObjectValidity::Valid,
+        validity: proto::CoverageObjectValidity::Valid,
     }
 }
 
@@ -389,9 +510,33 @@ async fn save_seniority_object(
     .bind(hb.heartbeat.coverage_object)
     .bind(ts)
     .bind(ts)
-    .bind(SeniorityUpdateReason::NewCoverageClaimTime as i32)
+    .bind(proto::SeniorityUpdateReason::NewCoverageClaimTime as i32)
     .bind(hb.heartbeat.hb_type)
     .execute(&mut *exec)
     .await?;
+    Ok(())
+}
+
+async fn ban_wifi_radio_for_epoch(
+    txn: &mut Transaction<'_, Postgres>,
+    pubkey: PublicKeyBinary,
+    epoch: &Range<DateTime<Utc>>,
+) -> anyhow::Result<()> {
+    let until = (epoch.start + chrono::Duration::days(7)).timestamp_millis() as u64;
+    let received_timestamp = (epoch.start + chrono::Duration::hours(2)).timestamp_millis() as u64;
+
+    let ban_report = proto::ServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
+        received_timestamp,
+        report: Some(proto::ServiceProviderBoostedRewardsBannedRadioReqV1 {
+            pubkey: pubkey.clone().into(),
+            reason: proto::SpBoostedRewardsBannedRadioReason::NoNetworkCorrelation.into(),
+            until,
+            signature: vec![],
+            ban_type: proto::SpBoostedRewardsBannedRadioBanType::Poc.into(),
+            key_type: Some(proto::KeyType::HotspotKey(pubkey.into())),
+        }),
+    };
+    let ban_report = BannedRadioReport::try_from(ban_report)?;
+    sp_boosted_rewards_bans::db::update_report(txn, &ban_report).await?;
     Ok(())
 }

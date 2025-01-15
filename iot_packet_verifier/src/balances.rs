@@ -3,7 +3,7 @@ use crate::{
     verifier::Debiter,
 };
 use helium_crypto::PublicKeyBinary;
-use solana::burn::SolanaNetwork;
+use solana::{burn::SolanaNetwork, SolanaRpcError};
 use std::{
     collections::{hash_map::Entry, HashMap},
     sync::Arc,
@@ -62,8 +62,6 @@ impl<S> Debiter for BalanceCache<S>
 where
     S: SolanaNetwork,
 {
-    type Error = S::Error;
-
     /// Debits the balance from the cache, returning the remaining balance as an
     /// option if there was enough and none otherwise.
     async fn debit_if_sufficient(
@@ -71,7 +69,7 @@ where
         payer: &PublicKeyBinary,
         amount: u64,
         trigger_balance_check_threshold: u64,
-    ) -> Result<Option<u64>, S::Error> {
+    ) -> Result<Option<u64>, SolanaRpcError> {
         let mut payer_accounts = self.payer_accounts.lock().await;
 
         // Fetch the balance if we haven't seen the payer before

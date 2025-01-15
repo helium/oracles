@@ -98,6 +98,7 @@ run_fpm()
 # install fpm
 sudo apt update
 sudo apt install --yes ruby
+sudo gem install rchardet -v 1.8.0
 sudo gem install fpm -v 1.14.2 # current as of 2022-11-08
 echo "ruby deps installed" 
 

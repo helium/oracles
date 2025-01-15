@@ -77,13 +77,18 @@ pub(crate) fn clean_covered_hexes(
 
             // hip-131: if the radio is banned, it automatically gets an assignment_multiplier of 0.0
             // hip-103: if a hex is boosted by a service provider >=1x, the oracle
-            // multiplier will automatically be 1x, regardless of boosted_hex_status.
-            let assignment_multiplier = if oracle_boosting_status == OracleBoostingStatus::Banned {
-                dec!(0)
-            } else if ranked.boosted.is_some() {
-                dec!(1)
-            } else {
-                ranked.assignments.boosting_multiplier()
+            //   multiplier will automatically be 1x, regardless of boosted_hex_status.
+            // hip-134: qualified radios earn full Oracle Boosting rewards
+            let assignment_multiplier = match oracle_boosting_status {
+                OracleBoostingStatus::Qualified if radio_type.is_wifi() => dec!(1),
+                OracleBoostingStatus::Banned => dec!(0),
+                OracleBoostingStatus::Qualified | OracleBoostingStatus::Eligible => {
+                    if ranked.boosted.is_some() {
+                        dec!(1)
+                    } else {
+                        ranked.assignments.boosting_multiplier()
+                    }
+                }
             };
 
             let base_coverage_points =
@@ -209,9 +214,54 @@ mod tests {
         )
         .unwrap();
 
-        dbg!(&covered_hexes);
-
         assert_eq!(dec!(0), covered_hexes[0].assignment_multiplier);
         assert_eq!(dec!(0), covered_hexes[1].assignment_multiplier);
+    }
+
+    #[rstest]
+    fn hip134_qualified_radio(
+        #[values(
+            OracleBoostingStatus::Qualified,
+            OracleBoostingStatus::Eligible,
+            OracleBoostingStatus::Banned
+        )]
+        boost_status: OracleBoostingStatus,
+        #[values(
+            RadioType::IndoorCbrs,
+            RadioType::OutdoorCbrs,
+            RadioType::IndoorWifi,
+            RadioType::OutdoorWifi
+        )]
+        radio_type: RadioType,
+    ) {
+        let coverage = RankedCoverage {
+            hotspot_key: vec![1],
+            cbsd_id: None,
+            hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
+            rank: 1,
+            signal_level: SignalLevel::High,
+            assignments: HexAssignments {
+                footfall: Assignment::C,
+                landtype: Assignment::C,
+                urbanized: Assignment::C,
+            },
+            boosted: NonZeroU32::new(0),
+        };
+
+        let covered_hexes = clean_covered_hexes(
+            radio_type,
+            SpBoostedHexStatus::Eligible,
+            vec![coverage],
+            boost_status,
+        )
+        .unwrap();
+
+        // Only Qualified WIFI radios should bypass bad assignment multiplier
+        let expected_multiplier = match boost_status {
+            OracleBoostingStatus::Qualified if radio_type.is_wifi() => dec!(1),
+            _ => dec!(0),
+        };
+
+        assert_eq!(expected_multiplier, covered_hexes[0].assignment_multiplier);
     }
 }

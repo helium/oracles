@@ -6,7 +6,7 @@ use crate::{
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
-    Settings,
+    unique_connections, Settings,
 };
 use anyhow::Result;
 use chrono::NaiveDateTime;
@@ -43,6 +43,8 @@ impl Cmd {
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
 
+        let unique_connections = unique_connections::db::get(&pool, &epoch).await?;
+
         let reward_shares = CoverageShares::new(
             &pool,
             heartbeats,
@@ -50,6 +52,7 @@ impl Cmd {
             &BoostedHexes::default(),
             &BoostedHexEligibility::default(),
             &BannedRadios::default(),
+            &unique_connections,
             &epoch,
         )
         .await?;

@@ -11,11 +11,10 @@ use helium_proto::services::{
     packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
     router::packet_router_packet_report_v1::PacketType,
 };
-use iot_config::client::org_client::Orgs;
-use solana::burn::SolanaNetwork;
+use iot_config::client::{org_client::Orgs, ClientError};
+use solana::{burn::SolanaNetwork, SolanaRpcError};
 use std::{
     collections::{hash_map::Entry, HashMap},
-    convert::Infallible,
     fmt::Debug,
     sync::Arc,
 };
@@ -31,17 +30,17 @@ pub struct Verifier<D, C> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum VerificationError<DE, CE, VPE, IPE> {
+pub enum VerificationError {
     #[error("Debit error: {0}")]
-    DebitError(DE),
+    DebitError(#[from] SolanaRpcError),
     #[error("Config server error: {0}")]
-    ConfigError(CE),
+    ConfigError(#[from] ConfigServerError),
     #[error("Burn error: {0}")]
     BurnError(#[from] sqlx::Error),
     #[error("Valid packet writer error: {0}")]
-    ValidPacketWriterError(VPE),
+    ValidPacketWriterError(file_store::Error),
     #[error("Invalid packet writer error: {0}")]
-    InvalidPacketWriterError(IPE),
+    InvalidPacketWriterError(file_store::Error),
 }
 
 impl<D, C> Verifier<D, C>
@@ -50,20 +49,14 @@ where
     C: ConfigServer,
 {
     /// Verify a stream of packet reports. Writes out `valid_packets` and `invalid_packets`.
-    pub async fn verify<B, R, VP, IP>(
+    pub async fn verify(
         &mut self,
         minimum_allowed_balance: u64,
-        mut pending_burns: B,
-        reports: R,
-        mut valid_packets: VP,
-        mut invalid_packets: IP,
-    ) -> Result<(), VerificationError<D::Error, C::Error, VP::Error, IP::Error>>
-    where
-        B: AddPendingBurn,
-        R: Stream<Item = PacketRouterPacketReport>,
-        VP: PacketWriter<ValidPacket>,
-        IP: PacketWriter<InvalidPacket>,
-    {
+        pending_burns: &mut impl AddPendingBurn,
+        reports: impl Stream<Item = PacketRouterPacketReport>,
+        valid_packets: &mut impl PacketWriter<ValidPacket>,
+        invalid_packets: &mut impl PacketWriter<InvalidPacket>,
+    ) -> Result<(), VerificationError> {
         let mut org_cache = HashMap::<u64, PublicKeyBinary>::new();
 
         tokio::pin!(reports);
@@ -82,19 +75,16 @@ where
             let payer = self
                 .config_server
                 .fetch_org(report.oui, &mut org_cache)
-                .await
-                .map_err(VerificationError::ConfigError)?;
+                .await?;
 
             if let Some(remaining_balance) = self
                 .debiter
                 .debit_if_sufficient(&payer, debit_amount, minimum_allowed_balance)
-                .await
-                .map_err(VerificationError::DebitError)?
+                .await?
             {
                 pending_burns
                     .add_burned_amount(&payer, debit_amount)
-                    .await
-                    .map_err(VerificationError::BurnError)?;
+                    .await?;
 
                 valid_packets
                     .write(ValidPacket {
@@ -108,10 +98,7 @@ where
                     .map_err(VerificationError::ValidPacketWriterError)?;
 
                 if remaining_balance < minimum_allowed_balance {
-                    self.config_server
-                        .disable_org(report.oui)
-                        .await
-                        .map_err(VerificationError::ConfigError)?;
+                    self.config_server.disable_org(report.oui).await?;
                 }
             } else {
                 invalid_packets
@@ -123,10 +110,8 @@ where
                     })
                     .await
                     .map_err(VerificationError::InvalidPacketWriterError)?;
-                self.config_server
-                    .disable_org(report.oui)
-                    .await
-                    .map_err(VerificationError::ConfigError)?;
+
+                self.config_server.disable_org(report.oui).await?;
             }
         }
 
@@ -143,8 +128,6 @@ pub fn payload_size_to_dc(payload_size: u64) -> u64 {
 
 #[async_trait]
 pub trait Debiter {
-    type Error;
-
     /// Debit the balance from the account. If the debit was successful,
     /// return the remaining amount.
     async fn debit_if_sufficient(
@@ -152,19 +135,17 @@ pub trait Debiter {
         payer: &PublicKeyBinary,
         amount: u64,
         trigger_balance_check_threshold: u64,
-    ) -> Result<Option<u64>, Self::Error>;
+    ) -> Result<Option<u64>, SolanaRpcError>;
 }
 
 #[async_trait]
 impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
-    type Error = Infallible;
-
     async fn debit_if_sufficient(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
         _trigger_balance_check_threshold: u64,
-    ) -> Result<Option<u64>, Infallible> {
+    ) -> Result<Option<u64>, SolanaRpcError> {
         let map = self.lock().await;
         let balance = map.get(payer).unwrap();
         // Don't debit the amount if we're mocking. That is a job for the burner.
@@ -182,19 +163,17 @@ pub struct Org {
 
 #[async_trait]
 pub trait ConfigServer: Sized + Send + Sync + 'static {
-    type Error: Send + Sync + 'static;
-
     async fn fetch_org(
         &self,
         oui: u64,
         cache: &mut HashMap<u64, PublicKeyBinary>,
-    ) -> Result<PublicKeyBinary, Self::Error>;
+    ) -> Result<PublicKeyBinary, ConfigServerError>;
 
-    async fn disable_org(&self, oui: u64) -> Result<(), Self::Error>;
+    async fn disable_org(&self, oui: u64) -> Result<(), ConfigServerError>;
 
-    async fn enable_org(&self, oui: u64) -> Result<(), Self::Error>;
+    async fn enable_org(&self, oui: u64) -> Result<(), ConfigServerError>;
 
-    async fn list_orgs(&self) -> Result<Vec<Org>, Self::Error>;
+    async fn list_orgs(&self) -> Result<Vec<Org>, ConfigServerError>;
 
     async fn monitor_funds<S, B>(
         self,
@@ -203,7 +182,7 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
         minimum_allowed_balance: u64,
         monitor_period: Duration,
         shutdown: triggered::Listener,
-    ) -> Result<(), MonitorError<S::Error, Self::Error>>
+    ) -> Result<(), MonitorError>
     where
         S: SolanaNetwork,
         B: BalanceStore,
@@ -212,22 +191,12 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
             loop {
                 tracing::info!("Checking if any orgs need to be re-enabled");
 
-                for Org { locked, payer, oui } in self
-                    .list_orgs()
-                    .await
-                    .map_err(MonitorError::ConfigClientError)?
-                    .into_iter()
-                {
+                for Org { locked, payer, oui } in self.list_orgs().await?.into_iter() {
                     if locked {
-                        let balance = solana
-                            .payer_balance(&payer)
-                            .await
-                            .map_err(MonitorError::SolanaError)?;
+                        let balance = solana.payer_balance(&payer).await?;
                         if balance >= minimum_allowed_balance {
                             balances.set_balance(&payer, balance).await;
-                            self.enable_org(oui)
-                                .await
-                                .map_err(MonitorError::ConfigClientError)?;
+                            self.enable_org(oui).await?;
                         }
                     }
                 }
@@ -267,19 +236,19 @@ impl BalanceStore for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum MonitorError<S, E> {
+pub enum MonitorError {
     #[error("Join error: {0}")]
     JoinError(#[from] JoinError),
     #[error("Config client error: {0}")]
-    ConfigClientError(E),
+    ConfigClientError(#[from] ConfigServerError),
     #[error("Solana error: {0}")]
-    SolanaError(S),
+    SolanaError(#[from] SolanaRpcError),
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum ConfigServerError<OrgsError> {
+pub enum ConfigServerError {
     #[error("orgs  error: {0}")]
-    OrgError(#[from] OrgsError),
+    OrgError(#[from] ClientError),
     #[error("not found: {0}")]
     NotFound(u64),
 }
@@ -303,13 +272,11 @@ impl<O> ConfigServer for Arc<Mutex<CachedOrgClient<O>>>
 where
     O: Orgs,
 {
-    type Error = ConfigServerError<O::Error>;
-
     async fn fetch_org(
         &self,
         oui: u64,
         oui_cache: &mut HashMap<u64, PublicKeyBinary>,
-    ) -> Result<PublicKeyBinary, Self::Error> {
+    ) -> Result<PublicKeyBinary, ConfigServerError> {
         if let Entry::Vacant(e) = oui_cache.entry(oui) {
             let pubkey = PublicKeyBinary::from(
                 self.lock()
@@ -326,7 +293,7 @@ where
         Ok(oui_cache.get(&oui).unwrap().clone())
     }
 
-    async fn disable_org(&self, oui: u64) -> Result<(), Self::Error> {
+    async fn disable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         let mut cached_client = self.lock().await;
         if *cached_client.locked_cache.entry(oui).or_insert(true) {
             cached_client.orgs.disable(oui).await?;
@@ -335,7 +302,7 @@ where
         Ok(())
     }
 
-    async fn enable_org(&self, oui: u64) -> Result<(), Self::Error> {
+    async fn enable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         let mut cached_client = self.lock().await;
         if !*cached_client.locked_cache.entry(oui).or_insert(false) {
             cached_client.orgs.enable(oui).await?;
@@ -344,7 +311,7 @@ where
         Ok(())
     }
 
-    async fn list_orgs(&self) -> Result<Vec<Org>, Self::Error> {
+    async fn list_orgs(&self) -> Result<Vec<Org>, ConfigServerError> {
         Ok(self
             .lock()
             .await
@@ -363,29 +330,23 @@ where
 
 #[async_trait]
 pub trait PacketWriter<T> {
-    type Error;
-
     // The redundant &mut receivers we see for PacketWriter and Burner are so
     // that we are able to resolve to either a mutable or immutable ref without
     // having to take ownership of the mutable reference.
-    async fn write(&mut self, packet: T) -> Result<(), Self::Error>;
+    async fn write(&mut self, packet: T) -> Result<(), file_store::Error>;
 }
 
 #[async_trait]
-impl<T: MsgBytes + Send + Sync + 'static> PacketWriter<T> for &'_ FileSinkClient<T> {
-    type Error = file_store::Error;
-
-    async fn write(&mut self, packet: T) -> Result<(), Self::Error> {
+impl<T: MsgBytes + Send + Sync + 'static> PacketWriter<T> for FileSinkClient<T> {
+    async fn write(&mut self, packet: T) -> Result<(), file_store::Error> {
         (*self).write(packet, []).await?;
         Ok(())
     }
 }
 
 #[async_trait]
-impl<T: Send> PacketWriter<T> for &'_ mut Vec<T> {
-    type Error = ();
-
-    async fn write(&mut self, packet: T) -> Result<(), ()> {
+impl<T: Send> PacketWriter<T> for Vec<T> {
+    async fn write(&mut self, packet: T) -> Result<(), file_store::Error> {
         (*self).push(packet);
         Ok(())
     }

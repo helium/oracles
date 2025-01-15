@@ -157,7 +157,12 @@ impl Cmd {
             )
             .await?;
 
-        let burner = Burner::new(valid_sessions, solana);
+        let burner = Burner::new(
+            valid_sessions,
+            solana,
+            settings.txn_confirmation_retry_attempts,
+            settings.txn_confirmation_check_interval,
+        );
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 

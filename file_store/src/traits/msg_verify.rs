@@ -90,15 +90,18 @@ impl_msg_verify!(mobile_config::CarrierKeyToEntityReqV1, signature);
 impl_msg_verify!(mobile_config::CarrierKeyToEntityResV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoReqV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoStreamReqV1, signature);
+impl_msg_verify!(mobile_config::GatewayInfoStreamReqV2, signature);
 impl_msg_verify!(mobile_config::GatewayInfoResV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoBatchReqV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoStreamResV1, signature);
+impl_msg_verify!(mobile_config::GatewayInfoStreamResV2, signature);
 impl_msg_verify!(mobile_config::BoostedHexInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexModifiedInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexInfoStreamResV1, signature);
 impl_msg_verify!(poc_mobile::SubscriberVerifiedMappingEventReqV1, signature);
 impl_msg_verify!(poc_mobile::HexUsageStatsReqV1, signature);
 impl_msg_verify!(poc_mobile::RadioUsageStatsReqV1, signature);
+impl_msg_verify!(poc_mobile::UniqueConnectionsReqV1, signature);
 
 #[cfg(test)]
 mod test {

@@ -16,21 +16,23 @@ use solana_sdk::{
     signer::Signer,
     transaction::Transaction,
 };
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
     type Transaction: GetSignature + Send + Sync + 'static;
 
     async fn make_start_boost_transaction(
         &self,
         batch: &[BoostedHexActivation],
-    ) -> Result<Self::Transaction, Self::Error>;
+    ) -> Result<Self::Transaction, SolanaRpcError>;
 
-    async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error>;
+    async fn submit_transaction(
+        &self,
+        transaction: &Self::Transaction,
+    ) -> Result<(), SolanaRpcError>;
 
-    async fn confirm_transaction(&self, txn: &str) -> Result<bool, Self::Error>;
+    async fn confirm_transaction(&self, txn: &str) -> Result<bool, SolanaRpcError>;
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,7 +52,9 @@ pub struct SolanaRpc {
 impl SolanaRpc {
     pub async fn new(settings: &Settings) -> Result<Arc<Self>, SolanaRpcError> {
         let Ok(keypair) = read_keypair_file(&settings.start_authority_keypair) else {
-            return Err(SolanaRpcError::FailedToReadKeypairError);
+            return Err(SolanaRpcError::FailedToReadKeypairError(
+                settings.start_authority_keypair.to_owned(),
+            ));
         };
         let provider =
             RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());
@@ -66,13 +70,12 @@ impl SolanaRpc {
 
 #[async_trait]
 impl SolanaNetwork for SolanaRpc {
-    type Error = SolanaRpcError;
     type Transaction = Transaction;
 
     async fn make_start_boost_transaction(
         &self,
         batch: &[BoostedHexActivation],
-    ) -> Result<Self::Transaction, Self::Error> {
+    ) -> Result<Self::Transaction, SolanaRpcError> {
         let instructions = {
             let mut request = RequestBuilder::from(
                 hexboosting::id(),
@@ -112,7 +115,7 @@ impl SolanaNetwork for SolanaRpc {
         ))
     }
 
-    async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), Self::Error> {
+    async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), SolanaRpcError> {
         match send_with_retry!(self.provider.send_and_confirm_transaction(tx)) {
             Ok(signature) => {
                 tracing::info!(
@@ -127,12 +130,12 @@ impl SolanaNetwork for SolanaRpc {
                     transaction = %signature,
                     "hex start boost failed: {err:?}"
                 );
-                Err(SolanaRpcError::RpcClientError(Box::new(err)))
+                Err(err.into())
             }
         }
     }
 
-    async fn confirm_transaction(&self, signature: &str) -> Result<bool, Self::Error> {
+    async fn confirm_transaction(&self, signature: &str) -> Result<bool, SolanaRpcError> {
         let txn: Signature = signature.parse()?;
         Ok(matches!(
             self.provider
@@ -162,13 +165,12 @@ impl GetSignature for PossibleTransaction {
 
 #[async_trait]
 impl SolanaNetwork for Option<Arc<SolanaRpc>> {
-    type Error = SolanaRpcError;
     type Transaction = PossibleTransaction;
 
     async fn make_start_boost_transaction(
         &self,
         batch: &[BoostedHexActivation],
-    ) -> Result<Self::Transaction, Self::Error> {
+    ) -> Result<Self::Transaction, SolanaRpcError> {
         if let Some(ref rpc) = self {
             Ok(PossibleTransaction::Transaction(
                 rpc.make_start_boost_transaction(batch).await?,
@@ -178,7 +180,10 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         }
     }
 
-    async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error> {
+    async fn submit_transaction(
+        &self,
+        transaction: &Self::Transaction,
+    ) -> Result<(), SolanaRpcError> {
         match (self, transaction) {
             (Some(ref rpc), PossibleTransaction::Transaction(ref txn)) => {
                 rpc.submit_transaction(txn).await?
@@ -189,7 +194,7 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         Ok(())
     }
 
-    async fn confirm_transaction(&self, txn: &str) -> Result<bool, Self::Error> {
+    async fn confirm_transaction(&self, txn: &str) -> Result<bool, SolanaRpcError> {
         if let Some(ref rpc) = self {
             rpc.confirm_transaction(txn).await
         } else {
