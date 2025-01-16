@@ -1,10 +1,11 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
     traits::TimestampEncode,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
+use helium_lib::token::Token;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{
@@ -17,14 +18,15 @@ use helium_proto::services::{
 use hex_assignments::{Assignment, HexAssignment, HexBoostData};
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
+    client::sub_dao_client::SubDaoEpochRewardInfoResolver,
     client::{
         authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
         hex_boosting_client::HexBoostingInfoResolver, ClientError,
     },
+    sub_dao_epoch_reward_info::EpochRewardInfo,
 };
-
 use mobile_verifier::{
-    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver,
+    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -33,10 +35,20 @@ use std::{collections::HashMap, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 use tonic::async_trait;
 
+pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
+pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+
+pub const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 82_191_780_821_917;
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct MockHexBoostingClient {
     boosted_hexes: Vec<BoostedHexInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MockSubDaoRewardsClient {
+    info: Option<EpochRewardInfo>,
 }
 
 impl MockHexBoostingClient {
@@ -61,6 +73,18 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
     }
 }
 
+#[async_trait::async_trait]
+impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
+    type Error = ClientError;
+
+    async fn resolve_info(
+        &self,
+        _sub_dao: &str,
+        _epoch: u64,
+    ) -> Result<Option<EpochRewardInfo>, Self::Error> {
+        Ok(self.info.clone())
+    }
+}
 pub struct MockFileSinkReceiver<T> {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>,
 }
@@ -368,4 +392,24 @@ impl GatewayResolver for GatewayClientAllOwnersValid {
     ) -> Result<GatewayResolution, Self::Error> {
         Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
     }
+}
+
+pub fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
+    let now = Utc::now();
+    EpochRewardInfo {
+        epoch_day: 1,
+        epoch_address: EPOCH_ADDRESS.into(),
+        sub_dao_address: SUB_DAO_ADDRESS.into(),
+        epoch_period: (now - epoch_duration)..now,
+        epoch_emissions: Decimal::from(total_emissions),
+        rewards_issued_at: now,
+    }
+}
+
+pub fn default_price_info() -> PriceInfo {
+    let token = Token::Hnt;
+    let price_info = PriceInfo::new(1000000000000, token.decimals());
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
+    price_info
 }

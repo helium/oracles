@@ -24,8 +24,8 @@ use file_store::{
 };
 use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate, SpeedtestAvg};
 use mobile_config::client::{
-    entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
-    CarrierServiceClient, GatewayClient,
+    entity_client::EntityClient, hex_boosting_client::HexBoostingClient,
+    sub_dao_client::SubDaoClient, AuthorizationClient, CarrierServiceClient, GatewayClient,
 };
 use task_manager::TaskManager;
 
@@ -54,6 +54,7 @@ impl Cmd {
         let entity_client = EntityClient::from_settings(&settings.config_client)?;
         let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
         let hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
+        let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.config_client)?;
 
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
             store_base_path,
@@ -224,6 +225,7 @@ impl Cmd {
                     file_upload,
                     carrier_client,
                     hex_boosting_client,
+                    sub_dao_rewards_client,
                     speedtests_avg,
                 )
                 .await?,
