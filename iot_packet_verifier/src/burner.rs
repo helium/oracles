@@ -96,9 +96,17 @@ where
     }
 
     pub async fn burn(&mut self) -> Result<(), BurnError> {
+        // There should only be a single pending txn at a time
+        let pending_txns = self.pending_tables.fetch_all_pending_txns().await?;
+        if !pending_txns.is_empty() {
+            tracing::info!(pending_txns = pending_txns.len(), "skipping burn");
+            return Ok(());
+        }
+
         // Fetch the next payer and amount that should be burn. If no such burn
         // exists, perform no action.
         let Some(Burn { payer, amount }) = self.pending_tables.fetch_next_burn().await? else {
+            tracing::info!("no pending burns");
             return Ok(());
         };
 
