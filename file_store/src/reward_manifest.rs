@@ -1,6 +1,7 @@
 use crate::{error::DecodeError, traits::MsgDecode, Error};
 use chrono::{DateTime, TimeZone, Utc};
 use helium_proto as proto;
+use helium_proto::{IotRewardToken, MobileRewardToken};
 use rust_decimal::Decimal;
 use serde::Serialize;
 
@@ -19,11 +20,13 @@ pub enum RewardData {
     MobileRewardData {
         poc_bones_per_reward_share: Decimal,
         boosted_poc_bones_per_reward_share: Decimal,
+        token: MobileRewardToken,
     },
     IotRewardData {
         poc_bones_per_beacon_reward_share: Decimal,
         poc_bones_per_witness_reward_share: Decimal,
         dc_bones_per_share: Decimal,
+        token: IotRewardToken,
     },
 }
 
@@ -53,6 +56,12 @@ impl TryFrom<proto::RewardManifest> for RewardManifest {
             price: value.price,
             reward_data: match value.reward_data {
                 Some(proto::reward_manifest::RewardData::MobileRewardData(reward_data)) => {
+                    let token = MobileRewardToken::try_from(reward_data.token).map_err(|_| {
+                        DecodeError::unsupported_token_type(
+                            "mobile_reward_manifest",
+                            reward_data.token,
+                        )
+                    })?;
                     Some(RewardData::MobileRewardData {
                         poc_bones_per_reward_share: reward_data
                             .poc_bones_per_reward_share
@@ -68,9 +77,16 @@ impl TryFrom<proto::RewardManifest> for RewardManifest {
                             .value
                             .parse()
                             .map_err(DecodeError::from)?,
+                        token,
                     })
                 }
                 Some(proto::reward_manifest::RewardData::IotRewardData(reward_data)) => {
+                    let token = IotRewardToken::try_from(reward_data.token).map_err(|_| {
+                        DecodeError::unsupported_token_type(
+                            "iot_reward_manifest",
+                            reward_data.token,
+                        )
+                    })?;
                     Some(RewardData::IotRewardData {
                         poc_bones_per_beacon_reward_share: reward_data
                             .poc_bones_per_beacon_reward_share
@@ -94,6 +110,7 @@ impl TryFrom<proto::RewardManifest> for RewardManifest {
                             .value
                             .parse()
                             .map_err(DecodeError::from)?,
+                        token,
                     })
                 }
                 None => None,
