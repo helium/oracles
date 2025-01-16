@@ -258,6 +258,7 @@ pub mod test_client {
         payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
         txn_sig_to_payer: Arc<Mutex<HashMap<Signature, (PublicKeyBinary, u64)>>>,
         confirm_all_txns: bool,
+        fail_on_submit_txn: bool,
         confirmed_txns: Arc<Mutex<HashSet<Signature>>>,
         // Using the nanoseconds since the client was made as block height
         block_height: Instant,
@@ -270,18 +271,25 @@ pub mod test_client {
                 txn_sig_to_payer: Default::default(),
                 block_height: Instant::now(),
                 confirm_all_txns: true,
+                fail_on_submit_txn: false,
                 confirmed_txns: Default::default(),
             }
         }
     }
 
     impl TestSolanaClientMap {
+        pub fn fail_on_send() -> Self {
+            let mut me = Self::default();
+            me.fail_on_submit_txn = true;
+            me
+        }
         pub fn new(ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>) -> Self {
             Self {
                 payer_balances: ledger,
                 txn_sig_to_payer: Default::default(),
                 block_height: Instant::now(),
                 confirm_all_txns: true,
+                fail_on_submit_txn: false,
                 confirmed_txns: Default::default(),
             }
         }
@@ -342,6 +350,9 @@ pub mod test_client {
             txn: &Transaction,
             store: &impl sender::TxnStore,
         ) -> Result<(), SolanaRpcError> {
+            if self.fail_on_submit_txn {
+                panic!("attempting to send transaction");
+            }
             // Test client must attempt to send for changes to take place
             sender::send_and_finalize(self, txn, store).await?;
 
