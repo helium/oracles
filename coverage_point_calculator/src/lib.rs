@@ -241,8 +241,7 @@ impl CoveragePoints {
             SpBoostedHexStatus::Eligible => self.coverage_points.boosted,
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
             SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
-            SpBoostedHexStatus::RadioThresholdNotMet => dec!(0),
-            SpBoostedHexStatus::ServiceProviderBanned => dec!(0),
+            SpBoostedHexStatus::NotEnoughConnections => dec!(0),
         }
     }
 }
@@ -259,8 +258,7 @@ pub enum SpBoostedHexStatus {
     Eligible,
     WifiLocationScoreBelowThreshold(Decimal),
     AverageAssertedDistanceOverLimit(Decimal),
-    RadioThresholdNotMet,
-    ServiceProviderBanned,
+    NotEnoughConnections,
 }
 
 impl SpBoostedHexStatus {
@@ -271,10 +269,8 @@ impl SpBoostedHexStatus {
         service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     ) -> Self {
         match service_provider_boosted_reward_eligibility {
-            // hip-125: if radio has been banned by service provider, no boosting
-            SPBoostedRewardEligibility::ServiceProviderBanned => Self::ServiceProviderBanned,
-            // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
-            SPBoostedRewardEligibility::RadioThresholdNotMet => Self::RadioThresholdNotMet,
+            // hip-140: radio must have enough unique connections
+            SPBoostedRewardEligibility::NotEnoughConnections => Self::NotEnoughConnections,
             SPBoostedRewardEligibility::Eligible => {
                 // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
                 if radio_type.is_wifi() && location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {

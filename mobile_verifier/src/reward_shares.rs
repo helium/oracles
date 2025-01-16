@@ -509,7 +509,7 @@ impl CoverageShares {
             }
 
             let sp_boosted_reward_eligibility =
-                boosted_hex_eligibility.eligibility(radio_type, pubkey, cbsd_id);
+                boosted_hex_eligibility.eligibility(radio_type, pubkey);
 
             radio_infos.insert(
                 key,

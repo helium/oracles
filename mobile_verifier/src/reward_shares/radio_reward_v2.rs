@@ -64,14 +64,11 @@ impl RadioRewardV2Ext for coverage_point_calculator::CoveragePoints {
             coverage_point_calculator::SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => {
                 SpBoostedHexStatus::LocationScoreBelowThreshold
             }
-            coverage_point_calculator::SpBoostedHexStatus::RadioThresholdNotMet => {
-                SpBoostedHexStatus::RadioThresholdNotMet
-            }
-            coverage_point_calculator::SpBoostedHexStatus::ServiceProviderBanned => {
-                SpBoostedHexStatus::ServiceProviderBan
-            }
             coverage_point_calculator::SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => {
                 SpBoostedHexStatus::AverageAssertedDistanceOverLimit
+            }
+            coverage_point_calculator::SpBoostedHexStatus::NotEnoughConnections => {
+                SpBoostedHexStatus::NotEnoughConnections
             }
         }
     }
