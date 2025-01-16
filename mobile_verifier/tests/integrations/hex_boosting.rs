@@ -2,8 +2,8 @@ use crate::common::{self, MockFileSinkReceiver, MockHexBoostingClient, RadioRewa
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
-    mobile_radio_threshold::{RadioThresholdIngestReport, RadioThresholdReportReq},
     speedtest::CellSpeedtest,
+    unique_connections::{UniqueConnectionReq, UniqueConnectionsIngestReport},
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
@@ -19,7 +19,8 @@ use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
-    radio_threshold, reward_shares, rewarder, speedtests,
+    reward_shares, rewarder, speedtests,
+    unique_connections::{self, MINIMUM_UNIQUE_CONNECTIONS},
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -63,7 +64,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     // seed HBs where we have a coverage reports for a singluar hex location per radio
     seed_heartbeats_v1(epoch.start, &mut txn).await?;
     seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_unique_connections(epoch.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -396,7 +397,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     // seed HBs where we have multiple coverage reports for one radio and one report for the others
     seed_heartbeats_v2(epoch.start, &mut txn).await?;
     seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_unique_connections(epoch.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -610,7 +611,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     let mut txn = pool.clone().begin().await?;
     seed_heartbeats_v1(epoch.start, &mut txn).await?;
     seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_unique_connections(epoch.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -748,7 +749,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     )
     .await?;
     seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_unique_connections(epoch.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -928,7 +929,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     )
     .await?;
     seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_unique_connections(epoch.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -1090,7 +1091,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     // include a cbrs radio alongside 2 wifi radios
     seed_heartbeats_v4(epoch.start, &mut txn).await?;
     seed_speedtests(epoch.end, &mut txn).await?;
-    seed_radio_thresholds(epoch.start, &mut txn).await?;
+    seed_unique_connections(epoch.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments(&pool).await?;
 
@@ -1190,6 +1191,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             ExpectUnallocated::NoWhenValue(total_poc_emissions)
         )
     );
+    dbg!(&rewards);
     let Ok((poc_rewards, unallocated_reward)) = rewards else {
         panic!("no rewards received");
     };
@@ -1740,59 +1742,28 @@ async fn seed_speedtests(
     Ok(())
 }
 
-async fn seed_radio_thresholds(
+async fn seed_unique_connections(
     ts: DateTime<Utc>,
     txn: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<()> {
-    let report1 = RadioThresholdIngestReport {
-        received_timestamp: Default::default(),
-        report: RadioThresholdReportReq {
-            hotspot_pubkey: HOTSPOT_1.parse().unwrap(),
-            cbsd_id: Some("".to_string()),
-            bytes_threshold: 1000000,
-            subscriber_threshold: 3,
-            threshold_timestamp: ts,
-            carrier_pub_key: CARRIER_HOTSPOT_KEY.parse().unwrap(),
-        },
-    };
-    let report2 = RadioThresholdIngestReport {
-        received_timestamp: Default::default(),
-        report: RadioThresholdReportReq {
-            hotspot_pubkey: HOTSPOT_2.parse().unwrap(),
-            cbsd_id: None,
-            bytes_threshold: 1000000,
-            subscriber_threshold: 3,
-            threshold_timestamp: ts,
-            carrier_pub_key: CARRIER_HOTSPOT_KEY.parse().unwrap(),
-        },
-    };
-    let report3 = RadioThresholdIngestReport {
-        received_timestamp: Default::default(),
-        report: RadioThresholdReportReq {
-            hotspot_pubkey: HOTSPOT_3.parse().unwrap(),
-            cbsd_id: Some("".to_string()),
-            bytes_threshold: 1000000,
-            subscriber_threshold: 3,
-            threshold_timestamp: ts,
-            carrier_pub_key: CARRIER_HOTSPOT_KEY.parse().unwrap(),
-        },
-    };
-    let cbsd_id = Some("P27-SCE4255W0002".to_string());
-    let report4 = RadioThresholdIngestReport {
-        received_timestamp: Default::default(),
-        report: RadioThresholdReportReq {
-            hotspot_pubkey: HOTSPOT_4.parse().unwrap(),
-            cbsd_id,
-            bytes_threshold: 1000000,
-            subscriber_threshold: 3,
-            threshold_timestamp: ts,
-            carrier_pub_key: CARRIER_HOTSPOT_KEY.parse().unwrap(),
-        },
-    };
-    radio_threshold::save(&report1, txn).await?;
-    radio_threshold::save(&report2, txn).await?;
-    radio_threshold::save(&report3, txn).await?;
-    radio_threshold::save(&report4, txn).await?;
+    let reports: Vec<_> = vec![HOTSPOT_1, HOTSPOT_2, HOTSPOT_3, HOTSPOT_4]
+        .into_iter()
+        .map(|key| UniqueConnectionsIngestReport {
+            received_timestamp: ts,
+            report: UniqueConnectionReq {
+                pubkey: key.parse().unwrap(),
+                start_timestamp: ts,
+                end_timestamp: ts + Duration::hours(24),
+                unique_connections: MINIMUM_UNIQUE_CONNECTIONS + 1,
+                timestamp: ts,
+                carrier_key: CARRIER_HOTSPOT_KEY.parse().unwrap(),
+                signature: vec![],
+            },
+        })
+        .collect();
+
+    unique_connections::db::save(txn, &reports).await?;
+
     Ok(())
 }
 

@@ -436,7 +436,7 @@ mod tests {
 
         // Radio not meeting the threshold is not eligible for boosted hexes.
         // Boost from hex is not applied, radio receives base points.
-        let unverified_wifi = calculate_wifi(SPBoostedRewardEligibility::RadioThresholdNotMet);
+        let unverified_wifi = calculate_wifi(SPBoostedRewardEligibility::NotEnoughConnections);
         assert_eq!(base_points, unverified_wifi.coverage_points_v1());
     }
 
@@ -937,12 +937,8 @@ mod tests {
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(0)),
         );
         assert_eq!(
-            wifi_bad_trust_score(SPBoostedRewardEligibility::ServiceProviderBanned),
-            SpBoostedHexStatus::ServiceProviderBanned
-        );
-        assert_eq!(
-            wifi_bad_trust_score(SPBoostedRewardEligibility::RadioThresholdNotMet),
-            SpBoostedHexStatus::RadioThresholdNotMet
+            wifi_bad_trust_score(SPBoostedRewardEligibility::NotEnoughConnections),
+            SpBoostedHexStatus::NotEnoughConnections
         );
     }
 
