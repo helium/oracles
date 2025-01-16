@@ -695,16 +695,20 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 async fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let payer = PublicKeyBinary::from(vec![1]);
 
+    const BURN_ONE: u64 = 20_000;
+    const BURN_TWO: u64 = 30_000;
+    const INITIAL_BALANCE: u64 = 500_000;
+
     // Add pending burns for both payer
     let mut transaction = pool.begin().await.unwrap();
-    transaction.add_burned_amount(&payer, 20_000).await?;
+    transaction.add_burned_amount(&payer, BURN_ONE).await?;
     transaction.commit().await.unwrap();
 
     // Mark payer_one burn as pending
     let signature = Signature::new_unique();
     pool.do_add_pending_transaction(
         &payer,
-        20_000,
+        BURN_ONE,
         &signature,
         Utc::now() - chrono::Duration::minutes(2),
     )
@@ -712,7 +716,7 @@ async fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // Make the Burner
     let mut solana_network = TestSolanaClientMap::fail_on_send(); // panic if txn is sent
-    solana_network.insert(payer.clone(), 500_000).await;
+    solana_network.insert(payer.clone(), INITIAL_BALANCE).await;
     let balance_cache = BalanceCache::new(&pool, solana_network.clone()).await?;
     let mut burner = Burner::new(
         pool.clone(),
@@ -721,8 +725,9 @@ async fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         solana_network.clone(),
     );
 
+    // Add more burn that is not part of pending txn
     let mut transaction = pool.begin().await.unwrap();
-    transaction.add_burned_amount(&payer, 30_000).await?;
+    transaction.add_burned_amount(&payer, BURN_TWO).await?;
     transaction.commit().await.unwrap();
 
     // Do the burn
@@ -732,14 +737,14 @@ async fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // pending burns contains full amount
     let next_burn = pool.fetch_next_burn().await?.expect("pending burn");
     assert_eq!(next_burn.payer, payer);
-    assert_eq!(next_burn.amount, 50_000);
+    assert_eq!(next_burn.amount, BURN_ONE + BURN_TWO);
 
     // Ensure state is unchanged, no burns were added
     let pending_txns = pool.fetch_all_pending_txns().await?;
     assert_eq!(1, pending_txns.len(), "single txn after burn");
-    let pending = pending_txns.get(0).expect("pending txn");
+    let pending = pending_txns.first().expect("pending txn");
     assert_eq!(pending.payer, payer);
-    assert_eq!(pending.amount, 20_000);
+    assert_eq!(pending.amount, BURN_ONE);
 
     // ===========================================
     // The Burner did not add a new transaction when there was one in flight.
@@ -752,12 +757,12 @@ async fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // The pending burn amount has been deducted
     let next_burn = pool.fetch_next_burn().await?.expect("valid pending burn");
     assert_eq!(next_burn.payer, payer);
-    assert_eq!(next_burn.amount, 30_000);
+    assert_eq!(next_burn.amount, BURN_TWO);
 
     // Recreate a Burner with a Solana client that allows sending.
     // All burns should be done after this.
     let mut solana_network = TestSolanaClientMap::default();
-    solana_network.insert(payer.clone(), 500_000).await;
+    solana_network.insert(payer.clone(), INITIAL_BALANCE).await;
     let mut burner = Burner::new(
         pool.clone(),
         &balance_cache,

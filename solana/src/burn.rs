@@ -279,9 +279,10 @@ pub mod test_client {
 
     impl TestSolanaClientMap {
         pub fn fail_on_send() -> Self {
-            let mut me = Self::default();
-            me.fail_on_submit_txn = true;
-            me
+            Self {
+                fail_on_submit_txn: true,
+                ..Default::default()
+            }
         }
         pub fn new(ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>) -> Self {
             Self {
