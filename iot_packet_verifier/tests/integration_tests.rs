@@ -18,7 +18,7 @@ use iot_packet_verifier::{
 };
 use solana::{
     burn::{test_client::TestSolanaClientMap, SolanaNetwork},
-    sender,
+    sender, Signature,
 };
 use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -687,6 +687,89 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // The unconfirmed burn amount should be what's left
     assert_eq!(pending_burn.amount, UNCONFIRMED_BURN_AMOUNT);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
+    let payer = PublicKeyBinary::from(vec![1]);
+
+    // Add pending burns for both payer
+    let mut transaction = pool.begin().await.unwrap();
+    transaction.add_burned_amount(&payer, 20_000).await?;
+    transaction.commit().await.unwrap();
+
+    // Mark payer_one burn as pending
+    let signature = Signature::new_unique();
+    pool.do_add_pending_transaction(
+        &payer,
+        20_000,
+        &signature,
+        Utc::now() - chrono::Duration::minutes(2),
+    )
+    .await?;
+
+    // Make the Burner
+    let mut solana_network = TestSolanaClientMap::fail_on_send(); // panic if txn is sent
+    solana_network.insert(payer.clone(), 500_000).await;
+    let balance_cache = BalanceCache::new(&pool, solana_network.clone()).await?;
+    let mut burner = Burner::new(
+        pool.clone(),
+        &balance_cache,
+        Duration::default(),
+        solana_network.clone(),
+    );
+
+    let mut transaction = pool.begin().await.unwrap();
+    transaction.add_burned_amount(&payer, 30_000).await?;
+    transaction.commit().await.unwrap();
+
+    // Do the burn
+    // Burning will fail if a txn is sent
+    burner.burn().await?;
+
+    // pending burns contains full amount
+    let next_burn = pool.fetch_next_burn().await?.expect("pending burn");
+    assert_eq!(next_burn.payer, payer);
+    assert_eq!(next_burn.amount, 50_000);
+
+    // Ensure state is unchanged, no burns were added
+    let pending_txns = pool.fetch_all_pending_txns().await?;
+    assert_eq!(1, pending_txns.len(), "single txn after burn");
+    let pending = pending_txns.get(0).expect("pending txn");
+    assert_eq!(pending.payer, payer);
+    assert_eq!(pending.amount, 20_000);
+
+    // ===========================================
+    // The Burner did not add a new transaction when there was one in flight.
+    // Now we confirm the inflight transaction and make sure it will send the
+    // next one.
+
+    // Confirm the pending transaction
+    confirm_pending_txns(&pool, &solana_network, &balance_cache.balances()).await?;
+
+    // The pending burn amount has been deducted
+    let next_burn = pool.fetch_next_burn().await?.expect("valid pending burn");
+    assert_eq!(next_burn.payer, payer);
+    assert_eq!(next_burn.amount, 30_000);
+
+    // Recreate a Burner with a Solana client that allows sending.
+    // All burns should be done after this.
+    let mut solana_network = TestSolanaClientMap::default();
+    solana_network.insert(payer.clone(), 500_000).await;
+    let mut burner = Burner::new(
+        pool.clone(),
+        &balance_cache,
+        Duration::default(),
+        solana_network.clone(),
+    );
+    burner.burn().await?;
+
+    assert!(
+        pool.fetch_next_burn().await?.is_none(),
+        "nothing left to burn"
+    );
 
     Ok(())
 }
