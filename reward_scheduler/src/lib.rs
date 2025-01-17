@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use std::{ops::Range, time::Duration};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Scheduler {
     pub period_duration: Duration,
     pub schedule_period: Range<DateTime<Utc>>,
