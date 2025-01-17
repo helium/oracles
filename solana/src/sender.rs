@@ -37,7 +37,7 @@ impl SenderError {
 pub async fn send_and_finalize(
     client: &impl SenderClientExt,
     txn: &Transaction,
-    store: &impl TxnStore,
+    store: &dyn TxnStore,
 ) -> SenderResult<()> {
     let sent_block_height = client.get_block_height().await?;
 
@@ -54,7 +54,7 @@ pub async fn send_and_finalize(
 async fn send_with_retry(
     client: &impl SenderClientExt,
     txn: &Transaction,
-    store: &impl TxnStore,
+    store: &dyn TxnStore,
 ) -> SenderResult<()> {
     let backoff = store.make_backoff().into_iter();
 
@@ -81,7 +81,7 @@ async fn send_with_retry(
 async fn finalize_signature(
     client: &impl SenderClientExt,
     txn: &Transaction,
-    store: &impl TxnStore,
+    store: &dyn TxnStore,
     sent_block_height: u64,
 ) -> SenderResult<()> {
     const FINALIZATION_BLOCK_COUNT: u64 = 152;

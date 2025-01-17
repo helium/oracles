@@ -13,20 +13,20 @@ use tokio::sync::Mutex;
 /// Caches balances fetched from the solana chain and debits made by the
 /// packet verifier.
 #[derive(Clone)]
-pub struct BalanceCache<S> {
+pub struct BalanceCache {
     payer_accounts: BalanceStore,
-    solana: S,
+    solana: Arc<dyn SolanaNetwork>,
 }
 
 pub type BalanceStore = Arc<Mutex<HashMap<PublicKeyBinary, PayerAccount>>>;
 
-impl<S> BalanceCache<S>
-where
-    S: SolanaNetwork,
-{
+impl BalanceCache {
     /// Fetch all of the current balances that have been actively burned so that
     /// we have an accurate cache.
-    pub async fn new(pending_tables: &impl PendingTables, solana: S) -> anyhow::Result<Self> {
+    pub async fn new(
+        pending_tables: &impl PendingTables,
+        solana: Arc<dyn SolanaNetwork>,
+    ) -> anyhow::Result<Self> {
         let mut balances = HashMap::new();
 
         for Burn {
@@ -52,7 +52,7 @@ where
     }
 }
 
-impl<S> BalanceCache<S> {
+impl BalanceCache {
     pub fn balances(&self) -> BalanceStore {
         self.payer_accounts.clone()
     }
@@ -63,10 +63,7 @@ impl<S> BalanceCache<S> {
 }
 
 #[async_trait::async_trait]
-impl<S> Debiter for BalanceCache<S>
-where
-    S: SolanaNetwork,
-{
+impl Debiter for BalanceCache {
     /// Debits the balance from the cache, returning the remaining balance as an
     /// option if there was enough and none otherwise.
     async fn debit_if_sufficient(

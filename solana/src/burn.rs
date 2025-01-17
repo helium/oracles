@@ -8,7 +8,6 @@ use helium_lib::{client, dc, token, TransactionOpts};
 use serde::Deserialize;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
 use std::str::FromStr;
-use std::sync::Arc;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
@@ -23,7 +22,7 @@ pub trait SolanaNetwork: Send + Sync + 'static {
     async fn submit_transaction(
         &self,
         transaction: &Transaction,
-        store: &impl sender::TxnStore,
+        store: &dyn sender::TxnStore,
     ) -> Result<(), SolanaRpcError>;
 
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError>;
@@ -56,7 +55,7 @@ pub struct SolanaRpc {
 }
 
 impl SolanaRpc {
-    pub async fn new(settings: &Settings, sub_dao: SubDao) -> Result<Arc<Self>, SolanaRpcError> {
+    pub async fn new(settings: &Settings, sub_dao: SubDao) -> Result<Self, SolanaRpcError> {
         let Ok(keypair) = read_keypair_from_file(&settings.burn_keypair) else {
             return Err(SolanaRpcError::FailedToReadKeypairError(
                 settings.burn_keypair.to_owned(),
@@ -68,13 +67,13 @@ impl SolanaRpc {
             CommitmentConfig::finalized(),
         );
 
-        Ok(Arc::new(Self {
+        Ok(Self {
             sub_dao,
             provider,
             keypair,
             payers_to_monitor: settings.payers_to_monitor()?,
             transaction_opts: TransactionOpts::default(),
-        }))
+        })
     }
 }
 
@@ -132,7 +131,7 @@ impl SolanaNetwork for SolanaRpc {
     async fn submit_transaction(
         &self,
         tx: &Transaction,
-        store: &impl sender::TxnStore,
+        store: &dyn sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
         match sender::send_and_finalize(&self, tx, store).await {
             Ok(_tracked) => {
@@ -168,54 +167,39 @@ impl SolanaNetwork for SolanaRpc {
     }
 }
 
-const FIXED_BALANCE: u64 = 1_000_000_000;
+pub struct DisabledSolanaRpc;
 
 #[async_trait]
-impl SolanaNetwork for Option<Arc<SolanaRpc>> {
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        if let Some(ref rpc) = self {
-            rpc.payer_balance(payer).await
-        } else {
-            Ok(FIXED_BALANCE)
-        }
+impl SolanaNetwork for DisabledSolanaRpc {
+    async fn payer_balance(&self, _payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
+        Ok(1_000_000_000)
     }
 
     async fn make_burn_transaction(
         &self,
-        payer: &PublicKeyBinary,
-        amount: u64,
+        _payer: &PublicKeyBinary,
+        _amount: u64,
     ) -> Result<Transaction, SolanaRpcError> {
-        if let Some(ref rpc) = self {
-            rpc.make_burn_transaction(payer, amount).await
-        } else {
-            let mut inner = SolanaTransaction::default();
-            let sig = Signature::new_unique();
-            inner.signatures.push(sig);
+        let mut inner = SolanaTransaction::default();
+        let sig = Signature::new_unique();
+        inner.signatures.push(sig);
 
-            Ok(Transaction {
-                inner,
-                sent_block_height: 1,
-            })
-        }
+        Ok(Transaction {
+            inner,
+            sent_block_height: 1,
+        })
     }
 
     async fn submit_transaction(
         &self,
-        txn: &Transaction,
-        store: &impl sender::TxnStore,
+        _txn: &Transaction,
+        _store: &dyn sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
-        if let Some(ref rpc) = self {
-            return rpc.submit_transaction(txn, store).await;
-        }
         Ok(())
     }
 
-    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
-        if let Some(ref rpc) = self {
-            rpc.confirm_transaction(txn).await
-        } else {
-            panic!("We will not confirm transactions when Solana is disabled");
-        }
+    async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, SolanaRpcError> {
+        Ok(true)
     }
 }
 
@@ -238,50 +222,56 @@ pub mod test_client {
     pub struct TestSolanaClientMap {
         payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
         txn_sig_to_payer: Arc<Mutex<HashMap<Signature, (PublicKeyBinary, u64)>>>,
-        confirm_all_txns: bool,
-        fail_on_submit_txn: bool,
+        confirm_all_txns: Arc<Mutex<bool>>,
+        fail_on_submit_txn: Arc<Mutex<bool>>,
         confirmed_txns: Arc<Mutex<HashSet<Signature>>>,
         // Using the nanoseconds since the client was made as block height
         block_height: Instant,
     }
 
-    impl Default for TestSolanaClientMap {
-        fn default() -> Self {
+    impl TestSolanaClientMap {
+        pub fn as_trait(&self) -> Arc<dyn SolanaNetwork> {
+            Arc::new(self.clone())
+        }
+
+        fn empty() -> Self {
             Self {
                 payer_balances: Default::default(),
                 txn_sig_to_payer: Default::default(),
                 block_height: Instant::now(),
-                confirm_all_txns: true,
-                fail_on_submit_txn: false,
+                confirm_all_txns: Arc::new(Mutex::new(true)),
+                fail_on_submit_txn: Arc::new(Mutex::new(false)),
                 confirmed_txns: Default::default(),
             }
         }
-    }
+        pub fn new() -> Self {
+            Self::empty()
+        }
 
-    impl TestSolanaClientMap {
         pub fn fail_on_send() -> Self {
             Self {
-                fail_on_submit_txn: true,
-                ..Default::default()
+                fail_on_submit_txn: Arc::new(Mutex::new(false)),
+                ..Self::empty()
             }
         }
-        pub fn new(ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>) -> Self {
+
+        pub fn with_ledger(ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>) -> Self {
             Self {
                 payer_balances: ledger,
-                txn_sig_to_payer: Default::default(),
-                block_height: Instant::now(),
-                confirm_all_txns: true,
-                fail_on_submit_txn: false,
-                confirmed_txns: Default::default(),
+                ..Self::empty()
             }
         }
-        pub async fn insert(&mut self, payer: PublicKeyBinary, amount: u64) {
+        pub async fn insert(&self, payer: PublicKeyBinary, amount: u64) {
             self.payer_balances.lock().await.insert(payer, amount);
         }
 
-        pub async fn add_confirmed(&mut self, signature: Signature) {
-            self.confirm_all_txns = false;
+        pub async fn add_confirmed(&self, signature: Signature) {
+            *self.confirm_all_txns.lock().await = false;
             self.confirmed_txns.lock().await.insert(signature);
+        }
+
+        pub async fn allow_sending(&self) {
+            *self.fail_on_submit_txn.lock().await = false;
         }
 
         pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> u64 {
@@ -319,18 +309,19 @@ pub mod test_client {
                 .insert(sig, (payer.clone(), amount));
             inner.signatures.push(sig);
 
+            let block_height = self.block_height.elapsed().as_nanos();
             Ok(Transaction {
                 inner,
-                sent_block_height: 1,
+                sent_block_height: block_height as u64,
             })
         }
 
         async fn submit_transaction(
             &self,
             txn: &Transaction,
-            store: &impl sender::TxnStore,
+            store: &dyn sender::TxnStore,
         ) -> Result<(), SolanaRpcError> {
-            if self.fail_on_submit_txn {
+            if *self.fail_on_submit_txn.lock().await {
                 panic!("attempting to send transaction");
             }
             // Test client must attempt to send for changes to take place
@@ -345,7 +336,7 @@ pub mod test_client {
         }
 
         async fn confirm_transaction(&self, signature: &Signature) -> Result<bool, SolanaRpcError> {
-            if self.confirm_all_txns {
+            if *self.confirm_all_txns.lock().await {
                 return Ok(true);
             }
             Ok(self.confirmed_txns.lock().await.contains(signature))

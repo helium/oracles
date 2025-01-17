@@ -17,7 +17,7 @@ use file_store::{
 use futures_util::TryFutureExt;
 use helium_proto::services::packet_verifier::{InvalidPacket, ValidPacket};
 use iot_config::client::{org_client::Orgs, OrgClient};
-use solana::burn::SolanaRpc;
+use solana::burn::{DisabledSolanaRpc, SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use task_manager::{ManagedTask, TaskManager};
@@ -27,7 +27,7 @@ type SharedCachedOrgClient<T> = Arc<Mutex<CachedOrgClient<T>>>;
 
 struct Daemon<O> {
     pool: Pool<Postgres>,
-    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, SharedCachedOrgClient<O>>,
+    verifier: Verifier<BalanceCache, SharedCachedOrgClient<O>>,
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
     valid_packets: FileSinkClient<ValidPacket>,
     invalid_packets: FileSinkClient<InvalidPacket>,
@@ -107,14 +107,14 @@ impl Cmd {
         let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let solana = if settings.enable_solana_integration {
+        let solana: Arc<dyn SolanaNetwork> = if settings.enable_solana_integration {
             let Some(ref solana_settings) = settings.solana else {
                 bail!("Missing solana section in settings");
             };
             // Set up the solana RpcClient:
-            Some(SolanaRpc::new(solana_settings, solana::SubDao::Iot).await?)
+            Arc::new(SolanaRpc::new(solana_settings, solana::SubDao::Iot).await?)
         } else {
-            None
+            Arc::new(DisabledSolanaRpc)
         };
 
         // Set up the balance cache:

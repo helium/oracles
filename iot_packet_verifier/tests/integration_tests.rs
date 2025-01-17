@@ -164,7 +164,7 @@ async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
     orgs.insert(0_u64, PublicKeyBinary::from(vec![0])).await;
 
     // Set up balances:
-    let mut solana_network = TestSolanaClientMap::default();
+    let solana_network = TestSolanaClientMap::new();
     solana_network
         .insert(PublicKeyBinary::from(vec![0]), 3)
         .await;
@@ -174,7 +174,7 @@ async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
     txn.add_burned_amount(&PublicKeyBinary::from(vec![0]), 3)
         .await?;
     txn.commit().await?;
-    let balances = BalanceCache::new(&pool, solana_network.clone()).await?;
+    let balances = BalanceCache::new(&pool, solana_network.as_trait()).await?;
 
     // Set up verifier:
     let mut verifier = Verifier {
@@ -213,13 +213,12 @@ async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
 
     // Calling monitor funds should re-enable the org and update the
     // verifier's cache
-    let solana = solana_network.clone();
     let balance_cache = balances.balances().clone();
     let orgs_clone = orgs.clone();
     tokio::spawn(async move {
         orgs_clone
             .monitor_funds(
-                solana.clone(),
+                solana_network.as_trait(),
                 balance_cache,
                 1,
                 Duration::from_secs(100),
@@ -301,9 +300,9 @@ async fn test_verifier_free_packets(pool: PgPool) -> anyhow::Result<()> {
     orgs.insert(0_u64, org_pubkey.clone()).await;
 
     // Set up balances:
-    let mut solana_network = TestSolanaClientMap::default();
+    let solana_network = TestSolanaClientMap::new();
     solana_network.insert(org_pubkey.clone(), 5).await;
-    let balances = BalanceCache::new(&pool, solana_network).await?;
+    let balances = BalanceCache::new(&pool, solana_network.as_trait()).await?;
 
     // Set up output:
     let mut valid_packets = Vec::new();
@@ -376,7 +375,7 @@ async fn test_verifier(pool: PgPool) -> anyhow::Result<()> {
     orgs.insert(1_u64, PublicKeyBinary::from(vec![1])).await;
     orgs.insert(2_u64, PublicKeyBinary::from(vec![2])).await;
     // Set up balances:
-    let mut solana_network = TestSolanaClientMap::default();
+    let solana_network = TestSolanaClientMap::new();
 
     // let mut balances = HashMap::new();
     solana_network
@@ -388,7 +387,7 @@ async fn test_verifier(pool: PgPool) -> anyhow::Result<()> {
     solana_network
         .insert(PublicKeyBinary::from(vec![2]), 2)
         .await;
-    let balances = BalanceCache::new(&pool, solana_network.clone()).await?;
+    let balances = BalanceCache::new(&pool, solana_network.as_trait()).await?;
 
     // Set up output:
     let mut valid_packets = Vec::new();
@@ -451,11 +450,11 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
     const LARGE_PACKET_SIZE: u32 = (BURN_THRESHOLD as u64 * BYTES_PER_DC) as u32;
 
     // Solana network:
-    let mut solana_network = TestSolanaClientMap::default();
+    let solana_network = TestSolanaClientMap::new();
     solana_network.insert(payer.clone(), STARTING_BALANCE).await;
 
     // Balance cache:
-    let balance_cache = BalanceCache::new(&pool, solana_network.clone())
+    let balance_cache = BalanceCache::new(&pool, solana_network.as_trait())
         .await
         .unwrap();
 
@@ -464,7 +463,7 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
         pool.clone(),
         &balance_cache,
         Duration::default(), // Burn period does not matter, we manually burn
-        solana_network.clone(),
+        solana_network.as_trait(),
     );
 
     // Orgs:
@@ -618,7 +617,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
             burned: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
         },
     );
-    let mut solana_network = TestSolanaClientMap::default();
+    let solana_network = TestSolanaClientMap::new();
     solana_network
         .insert(
             payer.clone(),
@@ -676,9 +675,13 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     }
 
     // Confirm pending transactions
-    confirm_pending_txns(&pool, &solana_network, &Arc::new(Mutex::new(cache)))
-        .await
-        .unwrap();
+    confirm_pending_txns(
+        &pool,
+        &solana_network.as_trait(),
+        &Arc::new(Mutex::new(cache)),
+    )
+    .await
+    .unwrap();
 
     let pending_burn: Burn = sqlx::query_as("SELECT * FROM pending_burns LIMIT 1")
         .fetch_one(&pool)
@@ -715,14 +718,14 @@ async fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     // Make the Burner
-    let mut solana_network = TestSolanaClientMap::fail_on_send(); // panic if txn is sent
+    let solana_network = TestSolanaClientMap::fail_on_send(); // panic if txn is sent
     solana_network.insert(payer.clone(), INITIAL_BALANCE).await;
-    let balance_cache = BalanceCache::new(&pool, solana_network.clone()).await?;
+    let balance_cache = BalanceCache::new(&pool, solana_network.as_trait()).await?;
     let mut burner = Burner::new(
         pool.clone(),
         &balance_cache,
         Duration::default(),
-        solana_network.clone(),
+        solana_network.as_trait(),
     );
 
     // Add more burn that is not part of pending txn
@@ -752,7 +755,7 @@ async fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // next one.
 
     // Confirm the pending transaction
-    confirm_pending_txns(&pool, &solana_network, &balance_cache.balances()).await?;
+    confirm_pending_txns(&pool, &solana_network.as_trait(), &balance_cache.balances()).await?;
 
     // The pending burn amount has been deducted
     let next_burn = pool.fetch_next_burn().await?.expect("valid pending burn");
@@ -761,13 +764,12 @@ async fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // Recreate a Burner with a Solana client that allows sending.
     // All burns should be done after this.
-    let mut solana_network = TestSolanaClientMap::default();
-    solana_network.insert(payer.clone(), INITIAL_BALANCE).await;
+    solana_network.allow_sending().await;
     let mut burner = Burner::new(
         pool.clone(),
         &balance_cache,
         Duration::default(),
-        solana_network.clone(),
+        solana_network.as_trait(),
     );
     burner.burn().await?;
 

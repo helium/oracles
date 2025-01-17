@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use helium_crypto::PublicKeyBinary;
@@ -63,14 +65,11 @@ pub enum ConfirmPendingError {
     SolanaError(#[from] SolanaRpcError),
 }
 
-pub async fn confirm_pending_txns<S>(
+pub async fn confirm_pending_txns(
     pending_tables: &impl PendingTables,
-    solana: &S,
+    solana: &Arc<dyn SolanaNetwork>,
     balances: &BalanceStore,
-) -> Result<(), ConfirmPendingError>
-where
-    S: SolanaNetwork,
-{
+) -> Result<(), ConfirmPendingError> {
     // Fetch all pending transactions and confirm them:
     let pending = pending_tables.fetch_all_pending_txns().await?;
     for pending in pending {

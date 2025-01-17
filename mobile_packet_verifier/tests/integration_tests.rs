@@ -8,10 +8,7 @@ use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::DataTransferRadioAccessTechnology,
 };
 use mobile_packet_verifier::{burner::Burner, bytes_to_dc, pending_burns, pending_txns};
-use solana::{
-    burn::{test_client::TestSolanaClientMap, SolanaNetwork},
-    Signature,
-};
+use solana::{burn::test_client::TestSolanaClientMap, Signature};
 use sqlx::PgPool;
 use tokio::sync::mpsc::{self, error::TryRecvError};
 
@@ -22,7 +19,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     const ORIGINAL_BALANCE: u64 = 10_000;
 
     // Initialize payers with balances
-    let mut solana_network = TestSolanaClientMap::default();
+    let solana_network = TestSolanaClientMap::new();
     solana_network
         .insert(payer_insufficient.clone(), ORIGINAL_BALANCE)
         .await;
@@ -45,7 +42,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(pre_burns.len(), 2, "2 burns for 2 payers");
 
     // Burn what we can
-    let mut burner = TestBurner::new(solana_network.clone());
+    let mut burner = TestBurner::new(&solana_network);
     burner.burn(&pool).await?;
 
     // 1 burn succeeded, the other payer has insufficient balance
@@ -79,7 +76,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let payer_one = PublicKeyBinary::from(vec![1]);
     let payer_two = PublicKeyBinary::from(vec![2]);
 
-    let mut solana_network = TestSolanaClientMap::default();
+    let solana_network = TestSolanaClientMap::new();
     solana_network.insert(payer_one.clone(), 10_000).await;
 
     save_data_transfer_sessions(
@@ -123,7 +120,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // solana_network.add_confirmed(unconfirmed_txn).await; // uncomment for failure
 
     assert_eq!(pending_txns::fetch_all_pending_txns(&pool).await?.len(), 2);
-    let burner = TestBurner::new(solana_network);
+    let burner = TestBurner::new(&solana_network);
     burner.confirm_pending_txns(&pool).await?;
     // confirmed and unconfirmed txns have been cleared
     assert_eq!(pending_txns::fetch_all_pending_txns(&pool).await?.len(), 0);
@@ -176,8 +173,8 @@ fn confirming_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<(
     )
     .await?;
 
-    let solana_network = TestSolanaClientMap::default();
-    let mut burner = TestBurner::new(solana_network);
+    let solana_network = TestSolanaClientMap::new();
+    let mut burner = TestBurner::new(&solana_network);
     burner.confirm_pending_txns(&pool).await?;
 
     // In flight session is written out
@@ -254,11 +251,11 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     assert_eq!(txn_count, 1, "there should be a single pending txn");
 
     // Fail the pending txns
-    let mut solana_network = TestSolanaClientMap::default();
+    let solana_network = TestSolanaClientMap::new();
     // Adding a random confirmed txn will cause other txns to not be considered finalized
     solana_network.add_confirmed(Signature::new_unique()).await;
 
-    let burner = TestBurner::new(solana_network);
+    let burner = TestBurner::new(&solana_network);
     burner.confirm_pending_txns(&pool).await?;
 
     // Sessions are merged with 2nd set of sessions for burning
@@ -311,10 +308,10 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     // Burn does nothing because of pending transactions
-    let mut solana_network = TestSolanaClientMap::default();
+    let solana_network = TestSolanaClientMap::new();
     solana_network.insert(payer.clone(), 10_000).await;
 
-    let mut burner = TestBurner::new(solana_network);
+    let mut burner = TestBurner::new(&solana_network);
     burner.burn(&pool).await?;
 
     // No sessions written because of pending txn
@@ -367,17 +364,17 @@ async fn save_data_transfer_sessions(
     Ok(())
 }
 
-struct TestBurner<S> {
-    burner: Burner<S>,
+struct TestBurner {
+    burner: Burner,
     rx: mpsc::Receiver<Message<ValidDataTransferSession>>,
 }
 
-impl<S: SolanaNetwork> TestBurner<S> {
-    fn new(solana: S) -> Self {
+impl TestBurner {
+    fn new(solana: &TestSolanaClientMap) -> Self {
         let (valid_sessions_tx, rx) = tokio::sync::mpsc::channel(10);
         let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
         Self {
-            burner: Burner::new(valid_sessions, solana),
+            burner: Burner::new(valid_sessions, solana.as_trait()),
             rx,
         }
     }

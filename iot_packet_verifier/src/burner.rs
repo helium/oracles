@@ -7,22 +7,21 @@ use crate::{
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
 use solana::{burn::SolanaNetwork, sender, SolanaRpcError};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use task_manager::ManagedTask;
 use tokio::time::{self, MissedTickBehavior};
 use tracing::Instrument;
 
-pub struct Burner<P, S> {
+pub struct Burner<P> {
     pending_tables: P,
     balances: BalanceStore,
     burn_period: Duration,
-    solana: S,
+    solana: Arc<dyn SolanaNetwork>,
 }
 
-impl<P, S> ManagedTask for Burner<P, S>
+impl<P> ManagedTask for Burner<P>
 where
     P: PendingTables,
-    S: SolanaNetwork,
 {
     fn start_task(
         self: Box<Self>,
@@ -50,12 +49,12 @@ pub enum BurnError {
     ConfirmPendingError(#[from] ConfirmPendingError),
 }
 
-impl<P, S> Burner<P, S> {
+impl<P> Burner<P> {
     pub fn new(
         pending_tables: P,
-        balances: &BalanceCache<S>,
+        balances: &BalanceCache,
         burn_period: Duration,
-        solana: S,
+        solana: Arc<dyn SolanaNetwork>,
     ) -> Self {
         Self {
             pending_tables,
@@ -66,10 +65,9 @@ impl<P, S> Burner<P, S> {
     }
 }
 
-impl<P, S> Burner<P, S>
+impl<P> Burner<P>
 where
     P: PendingTables + Send + Sync + 'static,
-    S: SolanaNetwork,
 {
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<(), BurnError> {
         tracing::info!("Starting burner");

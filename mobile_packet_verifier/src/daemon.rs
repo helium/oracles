@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     burner::Burner, event_ids::EventIdPurger, pending_burns, settings::Settings,
     MobileConfigClients, MobileConfigResolverExt,
@@ -16,7 +18,7 @@ use file_store::{
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::VerifiedDataTransferIngestReportV1,
 };
-use solana::burn::{SolanaNetwork, SolanaRpc};
+use solana::burn::{DisabledSolanaRpc, SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{
@@ -24,9 +26,9 @@ use tokio::{
     time::{sleep_until, Duration, Instant},
 };
 
-pub struct Daemon<S, MCR> {
+pub struct Daemon<MCR> {
     pool: Pool<Postgres>,
-    burner: Burner<S>,
+    burner: Burner,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
     min_burn_period: Duration,
@@ -34,12 +36,12 @@ pub struct Daemon<S, MCR> {
     verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
 }
 
-impl<S, MCR> Daemon<S, MCR> {
+impl<MCR> Daemon<MCR> {
     pub fn new(
         settings: &Settings,
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
-        burner: Burner<S>,
+        burner: Burner,
         mobile_config_resolver: MCR,
         verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
     ) -> Self {
@@ -55,9 +57,8 @@ impl<S, MCR> Daemon<S, MCR> {
     }
 }
 
-impl<S, MCR> ManagedTask for Daemon<S, MCR>
+impl<MCR> ManagedTask for Daemon<MCR>
 where
-    S: SolanaNetwork,
     MCR: MobileConfigResolverExt + 'static,
 {
     fn start_task(
@@ -68,9 +69,8 @@ where
     }
 }
 
-impl<S, MCR> Daemon<S, MCR>
+impl<MCR> Daemon<MCR>
 where
-    S: SolanaNetwork,
     MCR: MobileConfigResolverExt,
 {
     pub async fn run(mut self, mut shutdown: triggered::Listener) -> Result<()> {
@@ -125,14 +125,14 @@ impl Cmd {
         pending_burns::initialize(&pool).await?;
 
         // Set up the solana network:
-        let solana = if settings.enable_solana_integration {
+        let solana: Arc<dyn SolanaNetwork> = if settings.enable_solana_integration {
             let Some(ref solana_settings) = settings.solana else {
                 bail!("Missing solana section in settings");
             };
             // Set up the solana RpcClient:
-            Some(SolanaRpc::new(solana_settings, solana::SubDao::Mobile).await?)
+            Arc::new(SolanaRpc::new(solana_settings, solana::SubDao::Mobile).await?)
         } else {
-            None
+            Arc::new(DisabledSolanaRpc)
         };
 
         let (file_upload, file_upload_server) =

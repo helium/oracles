@@ -160,16 +160,15 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
 
     async fn list_orgs(&self) -> Result<Vec<Org>, ConfigServerError>;
 
-    async fn monitor_funds<S, B>(
+    async fn monitor_funds<B>(
         self,
-        solana: S,
+        solana: Arc<dyn SolanaNetwork>,
         balances: B,
         minimum_allowed_balance: u64,
         monitor_period: Duration,
         shutdown: triggered::Listener,
     ) -> Result<(), MonitorError>
     where
-        S: SolanaNetwork,
         B: BalanceStore,
     {
         let join_handle = tokio::spawn(async move {

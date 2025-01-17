@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use chrono::{Duration, Utc};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
@@ -8,13 +10,16 @@ use tracing::Instrument;
 
 use crate::{pending_burns, pending_txns};
 
-pub struct Burner<S> {
+pub struct Burner {
     valid_sessions: FileSinkClient<ValidDataTransferSession>,
-    solana: S,
+    solana: Arc<dyn SolanaNetwork>,
 }
 
-impl<S> Burner<S> {
-    pub fn new(valid_sessions: FileSinkClient<ValidDataTransferSession>, solana: S) -> Self {
+impl Burner {
+    pub fn new(
+        valid_sessions: FileSinkClient<ValidDataTransferSession>,
+        solana: Arc<dyn SolanaNetwork>,
+    ) -> Self {
         Self {
             valid_sessions,
             solana,
@@ -22,10 +27,7 @@ impl<S> Burner<S> {
     }
 }
 
-impl<S> Burner<S>
-where
-    S: SolanaNetwork,
-{
+impl Burner {
     pub async fn confirm_pending_txns(&self, pool: &PgPool) -> anyhow::Result<()> {
         let pending = pending_txns::fetch_all_pending_txns(pool).await?;
         tracing::info!(count = pending.len(), "confirming pending txns");
