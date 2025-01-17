@@ -1,5 +1,5 @@
 use crate::{
-    read_keypair_from_file, sender, GetSignature, Keypair, Pubkey, SolanaRpcError, SubDao,
+    read_keypair_from_file, sender, Keypair, Pubkey, SolanaRpcError, SolanaTransaction, SubDao,
     Transaction,
 };
 use async_trait::async_trait;
@@ -12,19 +12,17 @@ use std::sync::Arc;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
-    type Transaction: Send + Sync + 'static;
-
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError>;
 
     async fn make_burn_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<Self::Transaction, SolanaRpcError>;
+    ) -> Result<Transaction, SolanaRpcError>;
 
     async fn submit_transaction(
         &self,
-        transaction: &Self::Transaction,
+        transaction: &Transaction,
         store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError>;
 
@@ -88,8 +86,6 @@ impl AsRef<client::SolanaRpcClient> for SolanaRpc {
 
 #[async_trait]
 impl SolanaNetwork for SolanaRpc {
-    type Transaction = Transaction;
-
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         let payer_pubkey = Pubkey::try_from(payer.as_ref())?;
         let delegated_dc_key = SubDao::Iot.delegated_dc_key(&payer_pubkey.to_string());
@@ -118,7 +114,7 @@ impl SolanaNetwork for SolanaRpc {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<Self::Transaction, SolanaRpcError> {
+    ) -> Result<Transaction, SolanaRpcError> {
         let payer = Pubkey::try_from(payer.as_ref())?;
         let tx = dc::burn_delegated(
             self,
@@ -135,7 +131,7 @@ impl SolanaNetwork for SolanaRpc {
 
     async fn submit_transaction(
         &self,
-        tx: &Self::Transaction,
+        tx: &Transaction,
         store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
         match sender::send_and_finalize(&self, tx, store).await {
@@ -174,24 +170,8 @@ impl SolanaNetwork for SolanaRpc {
 
 const FIXED_BALANCE: u64 = 1_000_000_000;
 
-pub enum PossibleTransaction {
-    NoTransaction(Signature),
-    Transaction(Transaction),
-}
-
-impl GetSignature for PossibleTransaction {
-    fn get_signature(&self) -> &Signature {
-        match self {
-            Self::NoTransaction(ref sig) => sig,
-            Self::Transaction(ref txn) => txn.get_signature(),
-        }
-    }
-}
-
 #[async_trait]
 impl SolanaNetwork for Option<Arc<SolanaRpc>> {
-    type Transaction = PossibleTransaction;
-
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
         if let Some(ref rpc) = self {
             rpc.payer_balance(payer).await
@@ -204,27 +184,28 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<Self::Transaction, SolanaRpcError> {
+    ) -> Result<Transaction, SolanaRpcError> {
         if let Some(ref rpc) = self {
-            Ok(PossibleTransaction::Transaction(
-                rpc.make_burn_transaction(payer, amount).await?,
-            ))
+            rpc.make_burn_transaction(payer, amount).await
         } else {
-            Ok(PossibleTransaction::NoTransaction(Signature::new_unique()))
+            let mut inner = SolanaTransaction::default();
+            let sig = Signature::new_unique();
+            inner.signatures.push(sig);
+
+            Ok(Transaction {
+                inner,
+                sent_block_height: 1,
+            })
         }
     }
 
     async fn submit_transaction(
         &self,
-        transaction: &Self::Transaction,
+        txn: &Transaction,
         store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
-        match (self, transaction) {
-            (Some(ref rpc), PossibleTransaction::Transaction(ref txn)) => {
-                rpc.submit_transaction(txn, store).await?
-            }
-            (None, PossibleTransaction::NoTransaction(_)) => (),
-            _ => unreachable!(),
+        if let Some(ref rpc) = self {
+            return rpc.submit_transaction(txn, store).await;
         }
         Ok(())
     }
@@ -319,8 +300,6 @@ pub mod test_client {
 
     #[async_trait::async_trait]
     impl SolanaNetwork for TestSolanaClientMap {
-        type Transaction = Transaction;
-
         async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
             Ok(*self.payer_balances.lock().await.get(payer).unwrap())
         }
