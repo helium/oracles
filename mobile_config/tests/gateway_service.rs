@@ -39,8 +39,8 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_key.public_key().to_owned(), KeyRole::Administrator)]);
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
-        Arc::new(RwLock::new(TrackedRadiosMap::new()));
+    let tracked_radios_cache = TrackedRadiosMap::new();
+
     let gws = GatewayService::new(key_cache, pool.clone(), server_key, tracked_radios_cache);
     let _handle = tokio::spawn(
         transport::Server::builder()

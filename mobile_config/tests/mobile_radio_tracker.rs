@@ -114,8 +114,7 @@ async fn mobile_tracker_handle_entity_duplicates(pool: PgPool) {
 
     let b58 = bs58::decode(pubkey_binary.to_string()).into_vec().unwrap();
 
-    let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
-        Arc::new(RwLock::new(TrackedRadiosMap::new()));
+    let tracked_radios_cache = TrackedRadiosMap::new();
 
     let mobile_tracker = MobileRadioTracker::new(
         pool.clone(),

@@ -32,8 +32,7 @@ pub async fn spawn_gateway_service(
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
 
-    let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
-        Arc::new(RwLock::new(TrackedRadiosMap::new()));
+    let tracked_radios_cache = TrackedRadiosMap::new();
 
     let mobile_tracker = MobileRadioTracker::new(
         pool.clone(),
