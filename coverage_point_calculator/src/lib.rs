@@ -241,6 +241,7 @@ impl CoveragePoints {
             SpBoostedHexStatus::Eligible => self.coverage_points.boosted,
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
             SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
+            SpBoostedHexStatus::RadioThresholdNotMet => dec!(0),
             SpBoostedHexStatus::NotEnoughConnections => dec!(0),
         }
     }
@@ -258,6 +259,7 @@ pub enum SpBoostedHexStatus {
     Eligible,
     WifiLocationScoreBelowThreshold(Decimal),
     AverageAssertedDistanceOverLimit(Decimal),
+    RadioThresholdNotMet,
     NotEnoughConnections,
 }
 
@@ -269,6 +271,8 @@ impl SpBoostedHexStatus {
         service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     ) -> Self {
         match service_provider_boosted_reward_eligibility {
+            // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
+            SPBoostedRewardEligibility::RadioThresholdNotMet => Self::RadioThresholdNotMet,
             // hip-140: radio must have enough unique connections
             SPBoostedRewardEligibility::NotEnoughConnections => Self::NotEnoughConnections,
             SPBoostedRewardEligibility::Eligible => {
@@ -436,7 +440,7 @@ mod tests {
 
         // Radio not meeting the threshold is not eligible for boosted hexes.
         // Boost from hex is not applied, radio receives base points.
-        let unverified_wifi = calculate_wifi(SPBoostedRewardEligibility::NotEnoughConnections);
+        let unverified_wifi = calculate_wifi(SPBoostedRewardEligibility::RadioThresholdNotMet);
         assert_eq!(base_points, unverified_wifi.coverage_points_v1());
     }
 

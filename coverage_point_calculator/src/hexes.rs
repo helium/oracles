@@ -143,6 +143,7 @@ mod tests {
     #[rstest]
     #[case(SpBoostedHexStatus::Eligible)]
     #[case(SpBoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(999)))]
+    #[case(SpBoostedHexStatus::RadioThresholdNotMet)]
     fn hip_103_provider_boosted_hex_receives_maximum_oracle_boost(
         #[case] boost_status: SpBoostedHexStatus,
     ) {

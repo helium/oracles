@@ -1,16 +1,26 @@
 use coverage_point_calculator::{RadioType, SPBoostedRewardEligibility};
 use helium_crypto::PublicKeyBinary;
 
-use crate::unique_connections::{self, UniqueConnectionCounts};
+use crate::{
+    radio_threshold::VerifiedRadioThresholds,
+    unique_connections::{self, UniqueConnectionCounts},
+};
 
 #[derive(Debug, Default)]
 pub struct BoostedHexEligibility {
+    radio_thresholds: VerifiedRadioThresholds,
     unique_connections: UniqueConnectionCounts,
 }
 
 impl BoostedHexEligibility {
-    pub fn new(unique_connections: UniqueConnectionCounts) -> Self {
-        Self { unique_connections }
+    pub fn new(
+        radio_thresholds: VerifiedRadioThresholds,
+        unique_connections: UniqueConnectionCounts,
+    ) -> Self {
+        Self {
+            radio_thresholds,
+            unique_connections,
+        }
     }
 
     pub fn eligibility(
@@ -18,6 +28,7 @@ impl BoostedHexEligibility {
         radio_type: RadioType,
         key: PublicKeyBinary,
     ) -> SPBoostedRewardEligibility {
+        //TODO only check radio thresholds if in mexico?
         if unique_connections::is_qualified(&self.unique_connections, &key, &radio_type) {
             SPBoostedRewardEligibility::Eligible
         } else {
