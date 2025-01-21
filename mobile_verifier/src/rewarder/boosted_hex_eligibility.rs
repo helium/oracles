@@ -73,13 +73,15 @@ impl BoostedHexEligibility {
 #[cfg(test)]
 mod tests {
     use helium_crypto::{KeyTag, Keypair};
+    use hex_assignments::assignment::HexAssignments;
+    use hextree::Cell;
     use rand::rngs::OsRng;
     use unique_connections::MINIMUM_UNIQUE_CONNECTIONS;
 
     use super::*;
 
     #[test]
-    fn eligible() {
+    fn eligible_in_united_states() {
         let keypair = generate_keypair();
 
         let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
@@ -87,11 +89,71 @@ mod tests {
         let mut unique_connections = UniqueConnectionCounts::default();
         unique_connections.insert(pub_key.clone(), MINIMUM_UNIQUE_CONNECTIONS + 1);
 
-        let boosted_hex_eligibility = BoostedHexEligibility::new(unique_connections);
+        let boosted_hex_eligibility =
+            BoostedHexEligibility::new(VerifiedRadioThresholds::default(), unique_connections);
 
-        let eligibility = boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key);
+        let covered_hexes = vec![unranked_coverage(Assignment::A)];
+
+        let eligibility = boosted_hex_eligibility.eligibility(
+            RadioType::OutdoorWifi,
+            pub_key,
+            None,
+            &covered_hexes,
+        );
 
         assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
+    }
+
+    #[test]
+    fn eligible_outside_states() {
+        let keypair = generate_keypair();
+
+        let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
+
+        let unique_connections = UniqueConnectionCounts::default();
+        let mut verified_thresholds = VerifiedRadioThresholds::default();
+        verified_thresholds.insert(pub_key.clone(), None);
+
+        let boosted_hex_eligibility =
+            BoostedHexEligibility::new(verified_thresholds, unique_connections);
+
+        let covered_hexes = vec![unranked_coverage(Assignment::C)];
+
+        let eligibility = boosted_hex_eligibility.eligibility(
+            RadioType::OutdoorWifi,
+            pub_key,
+            None,
+            &covered_hexes,
+        );
+
+        assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
+    }
+
+    #[test]
+    fn radio_thresholds_not_met() {
+        let keypair = generate_keypair();
+
+        let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
+
+        let unique_connections = UniqueConnectionCounts::default();
+        let verified_thresholds = VerifiedRadioThresholds::default();
+
+        let boosted_hex_eligibility =
+            BoostedHexEligibility::new(verified_thresholds, unique_connections);
+
+        let covered_hexes = vec![unranked_coverage(Assignment::C)];
+
+        let eligibility = boosted_hex_eligibility.eligibility(
+            RadioType::OutdoorWifi,
+            pub_key,
+            None,
+            &covered_hexes,
+        );
+
+        assert_eq!(
+            SPBoostedRewardEligibility::RadioThresholdNotMet,
+            eligibility
+        );
     }
 
     #[test]
@@ -103,9 +165,17 @@ mod tests {
         let mut unique_connections = UniqueConnectionCounts::default();
         unique_connections.insert(pub_key.clone(), MINIMUM_UNIQUE_CONNECTIONS);
 
-        let boosted_hex_eligibility = BoostedHexEligibility::new(unique_connections);
+        let boosted_hex_eligibility =
+            BoostedHexEligibility::new(VerifiedRadioThresholds::default(), unique_connections);
 
-        let eligibility = boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key);
+        let covered_hexes = vec![unranked_coverage(Assignment::A)];
+
+        let eligibility = boosted_hex_eligibility.eligibility(
+            RadioType::OutdoorWifi,
+            pub_key,
+            None,
+            &covered_hexes,
+        );
 
         assert_eq!(
             SPBoostedRewardEligibility::NotEnoughConnections,
@@ -115,5 +185,18 @@ mod tests {
 
     fn generate_keypair() -> Keypair {
         Keypair::generate(KeyTag::default(), &mut OsRng)
+    }
+
+    fn unranked_coverage(urbanized: Assignment) -> UnrankedCoverage {
+        UnrankedCoverage {
+            location: Cell::from_raw(631236586635449855).expect("invalid cell"),
+            signal_power: 0,
+            signal_level: coverage_map::SignalLevel::High,
+            assignments: HexAssignments {
+                footfall: Assignment::A,
+                landtype: Assignment::A,
+                urbanized,
+            },
+        }
     }
 }
