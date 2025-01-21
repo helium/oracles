@@ -493,6 +493,13 @@ impl CoverageShares {
                     OracleBoostingStatus::Eligible
                 };
 
+            let sp_boosted_reward_eligibility = boosted_hex_eligibility.eligibility(
+                radio_type,
+                pubkey.clone(),
+                cbsd_id.clone(),
+                &covered_hexes,
+            );
+
             if eligible_for_coverage_map(
                 oracle_boosting_status,
                 &speedtests,
@@ -501,15 +508,12 @@ impl CoverageShares {
             ) {
                 coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
                     indoor: is_indoor,
-                    hotspot_key: pubkey.clone().into(),
-                    cbsd_id: cbsd_id.clone(),
+                    hotspot_key: pubkey.into(),
+                    cbsd_id,
                     seniority_timestamp: seniority.seniority_ts,
                     coverage: covered_hexes,
                 });
             }
-
-            let sp_boosted_reward_eligibility =
-                boosted_hex_eligibility.eligibility(radio_type, pubkey);
 
             radio_infos.insert(
                 key,

@@ -1,5 +1,7 @@
+use coverage_map::UnrankedCoverage;
 use coverage_point_calculator::{RadioType, SPBoostedRewardEligibility};
 use helium_crypto::PublicKeyBinary;
+use hex_assignments::Assignment;
 
 use crate::{
     radio_threshold::VerifiedRadioThresholds,
@@ -27,13 +29,44 @@ impl BoostedHexEligibility {
         &self,
         radio_type: RadioType,
         key: PublicKeyBinary,
+        cbsd_id_opt: Option<String>,
+        covered_hexes: &[UnrankedCoverage],
     ) -> SPBoostedRewardEligibility {
-        //TODO only check radio thresholds if in mexico?
-        if unique_connections::is_qualified(&self.unique_connections, &key, &radio_type) {
+        if Self::in_united_states(covered_hexes) {
+            self.check_unique_connections(&key, &radio_type)
+        } else {
+            self.check_radio_thresholds(key, cbsd_id_opt)
+        }
+    }
+
+    fn check_unique_connections(
+        &self,
+        key: &PublicKeyBinary,
+        radio_type: &RadioType,
+    ) -> SPBoostedRewardEligibility {
+        if unique_connections::is_qualified(&self.unique_connections, key, radio_type) {
             SPBoostedRewardEligibility::Eligible
         } else {
             SPBoostedRewardEligibility::NotEnoughConnections
         }
+    }
+
+    fn check_radio_thresholds(
+        &self,
+        key: PublicKeyBinary,
+        cbsd_id_opt: Option<String>,
+    ) -> SPBoostedRewardEligibility {
+        if self.radio_thresholds.is_verified(key, cbsd_id_opt) {
+            SPBoostedRewardEligibility::Eligible
+        } else {
+            SPBoostedRewardEligibility::RadioThresholdNotMet
+        }
+    }
+
+    fn in_united_states(covered_hexes: &[UnrankedCoverage]) -> bool {
+        covered_hexes
+            .iter()
+            .any(|uc| uc.assignments.urbanized != Assignment::C)
     }
 }
 
