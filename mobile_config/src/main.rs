@@ -78,8 +78,7 @@ impl Daemon {
         let admin_svc =
             AdminService::new(settings, key_cache.clone(), key_cache_updater, pool.clone())?;
 
-        let tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>> =
-            Arc::new(RwLock::new(TrackedRadiosMap::new()));
+        let tracked_radios_cache = TrackedRadiosMap::new();
 
         let gateway_svc = GatewayService::new(
             key_cache.clone(),

@@ -20,15 +20,14 @@ use helium_proto::{
     Message,
 };
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::{collections::HashMap, sync::Arc};
 use tonic::{Request, Response, Status};
 
 pub struct GatewayService {
     key_cache: KeyCache,
     metadata_pool: Pool<Postgres>,
     signing_key: Arc<Keypair>,
-    tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>>,
+    tracked_radios_cache: TrackedRadiosMap,
 }
 
 impl GatewayService {
@@ -36,7 +35,7 @@ impl GatewayService {
         key_cache: KeyCache,
         metadata_pool: Pool<Postgres>,
         signing_key: Keypair,
-        tracked_radios_cache: Arc<RwLock<TrackedRadiosMap>>,
+        tracked_radios_cache: TrackedRadiosMap,
     ) -> Self {
         Self {
             key_cache,
@@ -342,7 +341,7 @@ impl mobile_config::Gateway for GatewayService {
 
 async fn handle_updated_at(
     mut gateway_info: GatewayInfo,
-    updated_radios: &TrackedRadiosMap,
+    updated_radios: &HashMap<PublicKeyBinary, DateTime<Utc>>,
     min_updated_at: chrono::DateTime<Utc>,
 ) -> Option<GatewayInfo> {
     // Check mobile_radio_tracker HashMap
