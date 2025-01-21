@@ -547,11 +547,11 @@ impl CoverageClaimTimeCache {
         Self { cache }
     }
 
-    pub async fn fetch_coverage_claim_time<'a, 'b>(
+    pub async fn fetch_coverage_claim_time(
         &self,
-        radio_key: KeyType<'a>,
-        coverage_object: &'a Option<Uuid>,
-        exec: &mut Transaction<'b, Postgres>,
+        radio_key: KeyType<'_>,
+        coverage_object: &'_ Option<Uuid>,
+        exec: &mut Transaction<'_, Postgres>,
     ) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
         let key = (radio_key.to_id(), *coverage_object);
         if let Some(coverage_claim_time) = self.cache.get(&key).await {
