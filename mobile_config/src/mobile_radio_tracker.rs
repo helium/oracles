@@ -209,7 +209,7 @@ const GET_UPDATED_RADIOS: &str =
 pub async fn get_updated_radios(
     pool: &Pool<Postgres>,
     min_updated_at: DateTime<Utc>,
-) -> anyhow::Result<HashMap<PublicKeyBinary, DateTime<Utc>>> {
+) -> anyhow::Result<TrackedRadiosMap> {
     sqlx::query(GET_UPDATED_RADIOS)
         .bind(min_updated_at)
         .fetch(pool)
