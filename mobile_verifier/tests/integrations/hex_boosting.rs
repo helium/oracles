@@ -1250,8 +1250,6 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     // assert the number of boosted hexes for each radio
     assert_eq!(1, hotspot_2.boosted_hexes_len());
     assert_eq!(2, hotspot_1.boosted_hexes_len());
-    // hotspot 3 has 1 boosted hex at 1x, it does not effect rewards, but all
-    // covered hexes are reported with their corresponding boost values.
     // hotspot 3 is CBRS and is no longer eligible for boosted rewards according
     // to HIP-140
     assert_eq!(0, hotspot_3.boosted_hexes_len());

@@ -48,7 +48,8 @@
 //!
 //! - [SPBoostedRewardEligibility]
 //!   - Radio must pass at least 1mb of data from 3 unique phones [HIP-84][provider-boosting]
-//!   - Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
+//!   - Radio must serve >25 unique connections on a rolling 7-day window [HIP-140][sp-boost-qualifiers]
+//!   - [@deprecated] Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
 //! - [OracleBoostingStatus]
 //!   - Eligible: Radio is eligible for normal oracle boosting multipliers
@@ -69,6 +70,7 @@
 //! [provider-banning]:        https://github.com/helium/HIP/blob/main/0125-temporary-anti-gaming-measures-for-boosted-hexes.md
 //! [anti-gaming]:             https://github.com/helium/HIP/blob/main/0131-bridging-gap-between-verification-mappers-and-anti-gaming-measures.md
 //! [carrier-offload]:         https://github.com/helium/HIP/blob/main/0134-reward-mobile-carrier-offload-hotspots.md
+//! [sp-boost-qualifiers]:     https://github.com/helium/HIP/blob/main/0140-adjust-service-provider-boost-qualifiers.md
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
