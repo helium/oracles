@@ -81,16 +81,14 @@ where
                 biased;
                 _ = &mut shutdown => return Ok(()),
                 _ = sleep_until(burn_time) => {
-                    // It's time to burn
-                    match self.burner.burn(&self.pool).await {
+                    match self.burner.confirm_and_burn(&self.pool).await {
                         Ok(_) => {
                             burn_time = Instant::now() + self.burn_period;
                             tracing::info!(next_burn = ?self.burn_period, "successful burn")
                         }
                         Err(err) => {
                             burn_time = Instant::now() + self.min_burn_period;
-                            tracing::warn!(?err, next_burn = ?self.min_burn_period, "failed to burn");
-                            self.burner.confirm_pending_txns(&self.pool).await?;
+                            tracing::warn!(?err, next_burn = ?self.min_burn_period, "failed to confirm or burn");
                         }
                     }
                 }
@@ -160,8 +158,6 @@ impl Cmd {
             .await?;
 
         let burner = Burner::new(valid_sessions, solana);
-        // Check if we have any left over pending transactions.
-        burner.confirm_pending_txns(&pool).await?;
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 

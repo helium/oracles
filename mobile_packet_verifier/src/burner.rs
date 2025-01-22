@@ -1,3 +1,4 @@
+use anyhow::Context;
 use chrono::{Duration, Utc};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
@@ -26,6 +27,14 @@ impl<S> Burner<S>
 where
     S: SolanaNetwork,
 {
+    pub async fn confirm_and_burn(&self, pool: &PgPool) -> anyhow::Result<()> {
+        self.confirm_pending_txns(pool)
+            .await
+            .context("confirming pending txns")?;
+        self.burn(pool).await.context("burning")?;
+        Ok(())
+    }
+
     pub async fn confirm_pending_txns(&self, pool: &PgPool) -> anyhow::Result<()> {
         let pending = pending_txns::fetch_all_pending_txns(pool).await?;
         tracing::info!(count = pending.len(), "confirming pending txns");
@@ -64,7 +73,7 @@ where
     pub async fn burn(&self, pool: &PgPool) -> anyhow::Result<()> {
         let pending_txns = pending_txns::pending_txn_count(pool).await?;
         if pending_txns > 0 {
-            tracing::warn!(pending_txns, "ignoring burn");
+            tracing::error!(pending_txns, "ignoring burn");
             return Ok(());
         }
 
