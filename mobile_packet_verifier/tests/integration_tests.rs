@@ -360,7 +360,7 @@ async fn save_data_transfer_sessions(
     let mut txn = pool.begin().await?;
     for (payer, pubkey, amount) in sessions {
         let session = mk_data_transfer_session(payer, pubkey, *amount);
-        pending_burns::save(&mut txn, &session, Utc::now()).await?;
+        pending_burns::save_data_transfer_session_req(&mut txn, &session, Utc::now()).await?;
     }
     txn.commit().await?;
 

@@ -3,7 +3,7 @@ use helium_crypto::PublicKeyBinary;
 use solana::Signature;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Row};
 
-use crate::pending_burns::DataTransferSession;
+use crate::pending_burns::{self, DataTransferSession};
 
 #[derive(Debug)]
 pub struct PendingTxn {
@@ -135,41 +135,21 @@ pub async fn remove_pending_txn_failure(
         .execute(&mut *txn)
         .await?;
 
-    sqlx::query(
+    // Move pending data sessions back to the main table
+    let transfer_sessions: Vec<DataTransferSession> = sqlx::query_as(
         r#"
-        WITH moved_rows AS (
-            DELETE FROM pending_data_transfer_sessions
-            WHERE signature = $1
-            RETURNING *
-        )
-        INSERT INTO data_transfer_sessions (
-            pub_key, 
-            payer, 
-            uploaded_bytes, 
-            downloaded_bytes, 
-            rewardable_bytes,
-            first_timestamp, 
-            last_timestamp
-        )
-        SELECT 
-            pub_key, 
-            payer, 
-            uploaded_bytes, 
-            downloaded_bytes, 
-            rewardable_bytes,
-            first_timestamp, 
-            last_timestamp
-        FROM moved_rows
-        ON CONFLICT (pub_key, payer) DO UPDATE SET
-            uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
-            downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
-            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+        DELETE FROM pending_data_transfer_sessions
+        WHERE signature = $1
+        RETURNING *
         "#,
     )
     .bind(signature.to_string())
-    .execute(&mut *txn)
+    .fetch_all(&mut *txn)
     .await?;
+
+    for session in transfer_sessions.iter() {
+        pending_burns::save_data_transfer_session(&mut txn, session).await?;
+    }
 
     txn.commit().await?;
 
