@@ -1,55 +1,59 @@
 use crate::{
-    key_cache::KeyCache, sub_dao_epoch_reward_info, telemetry, verify_public_key, GrpcResult,
+    admin::AuthCache, sub_dao_epoch_reward_info, telemetry, verify_public_key, GrpcResult, Settings,
 };
+use anyhow::Result;
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
-use helium_proto::{
-    services::sub_dao::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},
-    Message,
+use helium_proto::services::sub_dao::{
+    self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1,
 };
+use helium_proto::Message;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub struct SubDaoService {
-    key_cache: KeyCache,
+    auth_cache: AuthCache,
     metadata_pool: Pool<Postgres>,
     signing_key: Arc<Keypair>,
 }
 
 impl SubDaoService {
-    pub fn new(key_cache: KeyCache, metadata_pool: Pool<Postgres>, signing_key: Keypair) -> Self {
-        Self {
-            key_cache,
+    pub fn new(
+        settings: &Settings,
+        auth_cache: AuthCache,
+        metadata_pool: Pool<Postgres>,
+    ) -> Result<Self> {
+        Ok(Self {
+            auth_cache,
             metadata_pool,
-            signing_key: Arc::new(signing_key),
-        }
-    }
-
-    fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
-    where
-        R: MsgVerify,
-    {
-        if self.key_cache.verify_signature(signer, request).is_ok() {
-            tracing::debug!(signer = signer.to_string(), "request authorized");
-            return Ok(());
-        }
-        Err(Status::permission_denied("unauthorized request signature"))
-    }
-
-    fn verify_request_signature_for_info(
-        &self,
-        request: &SubDaoEpochRewardInfoReqV1,
-    ) -> Result<(), Status> {
-        let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, request)
+            signing_key: Arc::new(settings.signing_keypair()?),
+        })
     }
 
     fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
         self.signing_key
             .sign(response)
             .map_err(|_| Status::internal("response signing error"))
+    }
+
+    fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        self.auth_cache
+            .verify_signature(signer, request)
+            .map_err(|_| Status::permission_denied("invalid admin signature"))?;
+        Ok(())
+    }
+
+    fn verify_request_signature_for_info(
+        &self,
+        request: &SubDaoEpochRewardInfoReqV1,
+    ) -> std::result::Result<(), Status> {
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, request)
     }
 }
 
@@ -68,10 +72,10 @@ impl sub_dao::sub_dao_server::SubDao for SubDaoService {
         self.verify_request_signature_for_info(&request)?;
 
         let epoch = request.epoch;
-        let sub_dao_address = request.sub_dao_address;
-        tracing::debug!(sub_dao_address = %sub_dao_address, epoch = epoch, "fetching sub_dao epoch reward info");
+        let sub_dao = request.sub_dao_address;
+        tracing::info!(sub_dao = %sub_dao, epoch = epoch, "fetching sub_dao epoch reward info");
 
-        sub_dao_epoch_reward_info::db::get_info(&self.metadata_pool, epoch, &sub_dao_address)
+        sub_dao_epoch_reward_info::db::get_info(&self.metadata_pool, epoch, &sub_dao)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "error fetching sub_dao epoch reward info");
