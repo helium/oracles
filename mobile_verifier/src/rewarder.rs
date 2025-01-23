@@ -426,12 +426,6 @@ async fn reward_poc(
 
     let boosted_hex_eligibility = BoostedHexEligibility::new(
         radio_threshold::verified_radio_thresholds(pool, reward_period).await?,
-        sp_boosted_rewards_bans::db::get_banned_radios(
-            pool,
-            SpBoostedRewardsBannedRadioBanType::BoostedHex,
-            reward_period.end,
-        )
-        .await?,
         unique_connections.clone(),
     );
 
