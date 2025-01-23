@@ -73,7 +73,10 @@ impl sub_dao::sub_dao_server::SubDao for SubDaoService {
 
         sub_dao_epoch_reward_info::db::get_info(&self.metadata_pool, epoch, &sub_dao_address)
             .await
-            .map_err(|_| Status::internal("error fetching sub_dao epoch reward info"))?
+            .map_err(|e| {
+                tracing::error!(error = %e, "error fetching sub_dao epoch reward info");
+                Status::internal("error fetching sub_dao epoch reward info")
+            })?
             .map_or_else(
                 || {
                     telemetry::count_epoch_chain_lookup("not-found");
