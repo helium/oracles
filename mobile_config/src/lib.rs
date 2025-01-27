@@ -105,9 +105,7 @@ pub struct EpochInfo {
 
 impl From<u64> for EpochInfo {
     fn from(next_reward_epoch: u64) -> Self {
-        let start_time = DateTime::<Utc>::UNIX_EPOCH
-            + Duration::days(next_reward_epoch as i64)
-            + Duration::hours(1);
+        let start_time = DateTime::<Utc>::UNIX_EPOCH + Duration::days(next_reward_epoch as i64);
         let end_time = start_time + Duration::days(1);
         EpochInfo {
             period: start_time..end_time,

@@ -73,7 +73,7 @@ pub(crate) mod db {
                 address AS epoch_address,
                 sub_dao AS sub_dao_address,
                 epoch::BIGINT,
-                delegation_rewards_issued::BIGINT as hnt_rewards_issued,
+                hnt_rewards_issued::BIGINT,
                 delegation_rewards_issued::BIGINT,
                 rewards_issued_at::BIGINT
             FROM sub_dao_epoch_infos
