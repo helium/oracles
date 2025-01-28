@@ -1611,17 +1611,17 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#463c2ab3c383885dd1cfd4ea56ca26f87e737a5c"
+source = "git+https://github.com/helium/proto?branch=master#1af76ea8784be68d118a262976e6b030ca01f1ef"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -1784,7 +1784,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -2625,7 +2625,7 @@ dependencies = [
  "axum 0.7.4",
  "bs58 0.4.0",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "http 0.2.11",
  "notify",
  "serde",
@@ -3207,7 +3207,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "hex-literal",
  "http 0.2.11",
  "lazy_static",
@@ -3789,7 +3789,7 @@ dependencies = [
  "h3o",
  "helium-anchor-gen",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
+ "helium-proto",
  "hex",
  "itertools",
  "jsonrpc_client",
@@ -3816,23 +3816,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support#463c2ab3c383885dd1cfd4ea56ca26f87e737a5c"
-dependencies = [
- "bytes",
- "prost",
- "prost-build",
- "serde",
- "serde_json",
- "strum",
- "strum_macros",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "helium-proto"
-version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#f79c34f0a6d9c9e17d5cea8d7692797bdaed09be"
+source = "git+https://github.com/helium/proto?branch=master#1af76ea8784be68d118a262976e6b030ca01f1ef"
 dependencies = [
  "bytes",
  "prost",
@@ -3886,7 +3870,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -4302,7 +4286,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "http 0.2.11",
  "humantime-serde",
  "metrics",
@@ -4373,7 +4357,7 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-lib",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -4417,7 +4401,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -4460,7 +4444,7 @@ dependencies = [
  "h3o",
  "helium-crypto",
  "helium-lib",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -5049,7 +5033,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "hextree",
  "http 0.2.11",
  "http-serde",
@@ -5092,7 +5076,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5128,7 +5112,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -5172,7 +5156,7 @@ dependencies = [
  "h3o",
  "helium-crypto",
  "helium-lib",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "hex-assignments",
  "hextree",
  "http-serde",
@@ -5856,7 +5840,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "http 0.2.11",
  "hyper 0.14.28",
  "jsonrpsee",
@@ -5939,7 +5923,7 @@ dependencies = [
  "futures-util",
  "helium-anchor-gen",
  "helium-lib",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -6080,7 +6064,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.4.0",
+ "heck 0.5.0",
  "itertools",
  "log",
  "multimap",
@@ -6578,7 +6562,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck%2Fsub-dao-epoch-support)",
+ "helium-proto",
  "humantime-serde",
  "lazy_static",
  "metrics",
@@ -10005,7 +9989,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
  "twox-hash",
  "xorf",
