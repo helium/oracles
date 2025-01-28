@@ -1,5 +1,8 @@
-use crate::common::{self, MockFileSinkReceiver};
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use crate::common::{
+    self, default_price_info, default_rewards_info, MockFileSinkReceiver,
+    EMISSIONS_POOL_IN_BONES_24_HOURS,
+};
+use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{
     GatewayReward, IotRewardShare, UnallocatedReward, UnallocatedRewardType,
@@ -23,18 +26,20 @@ const HOTSPOT_4: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 #[sqlx::test]
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (iot_rewards_client, mut iot_rewards) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+
+    let price_info = default_price_info();
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    seed_pocs(epoch.start, &mut txn).await?;
-    seed_dc(epoch.start, &mut txn).await?;
+    seed_pocs(reward_info.epoch_period.start, &mut txn).await?;
+    seed_dc(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
 
     // run rewards for poc and dc
     let (_, rewards) = tokio::join!(
-        rewarder::reward_poc_and_dc(&pool, &iot_rewards_client, &epoch, dec!(0.0001)),
+        rewarder::reward_poc_and_dc(&pool, &iot_rewards_client, &reward_info, price_info),
         receive_expected_rewards(&mut iot_rewards)
     );
     if let Ok((gateway_rewards, unallocated_poc_reward)) = rewards {
@@ -51,9 +56,11 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             gateway_rewards[1].hotspot_key,
             PublicKeyBinary::from_str(HOTSPOT_2).unwrap().as_ref()
         );
+
         assert_eq!(gateway_rewards[1].beacon_amount, 0);
         assert_eq!(gateway_rewards[1].witness_amount, 8_547_945_205_479);
         assert_eq!(gateway_rewards[1].dc_transfer_amount, 29_680_365_296_803);
+
         // hotspot 2 should have double the dc rewards of hotspot 1
         assert_eq!(
             gateway_rewards[1].dc_transfer_amount,
@@ -96,16 +103,16 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         let dc_sum: u64 = gateway_rewards.iter().map(|r| r.dc_transfer_amount).sum();
         let unallocated_sum: u64 = unallocated_poc_reward.amount;
 
-        let expected_dc = reward_share::get_scheduled_dc_tokens(epoch.end - epoch.start);
+        let expected_dc = reward_share::get_scheduled_dc_tokens(reward_info.epoch_emissions);
         let (expected_beacon_sum, expected_witness_sum) =
-            reward_share::get_scheduled_poc_tokens(epoch.end - epoch.start, expected_dc);
+            reward_share::get_scheduled_poc_tokens(reward_info.epoch_emissions, expected_dc);
         let expected_total =
             expected_beacon_sum.to_u64().unwrap() + expected_witness_sum.to_u64().unwrap();
         assert_eq!(expected_total, poc_sum + dc_sum + unallocated_sum);
 
         // confirm the poc & dc percentage amount matches expectations
-        let daily_total = *reward_share::REWARDS_PER_DAY;
-        let poc_dc_percent = (Decimal::from(poc_sum + dc_sum + unallocated_sum) / daily_total)
+        let poc_dc_percent = (Decimal::from(poc_sum + dc_sum + unallocated_sum)
+            / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(poc_dc_percent, dec!(0.8));
     } else {
