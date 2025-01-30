@@ -83,7 +83,7 @@ impl CarrierService {
             r#"
                 SELECT 
                     c.name as carrier_name, c.incentive_escrow_fund_bps, 
-                    iep.carrier, iep.start_ts::bigint, iep.stop_ts::bigint, iep.shares, iep.name as promo_name
+                    iep.carrier, iep.start_ts::bigint, iep.stop_ts::bigint, CAST(iep.shares AS integer), iep.name as promo_name
                 FROM carriers c
                 JOIN incentive_escrow_programs iep 
                     on c.address = iep.carrier
