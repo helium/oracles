@@ -66,6 +66,9 @@ pub(crate) mod db {
     use crate::sub_dao_epoch_reward_info::RawSubDaoEpochRewardInfo;
     use chrono::{DateTime, Utc};
     use file_store::traits::TimestampDecode;
+    use rust_decimal::prelude::ToPrimitive;
+    use rust_decimal::{Decimal, RoundingStrategy};
+    use rust_decimal_macros::dec;
     use sqlx::postgres::PgRow;
     use sqlx::{FromRow, PgExecutor, Row};
 
@@ -112,13 +115,17 @@ pub(crate) mod db {
                 ))));
             };
 
+            let hnt_rewards_issued = (Decimal::from(hnt_rewards_issued) / dec!(0.94))
+                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                .to_u64()
+                .unwrap_or(0);
+
             Ok(Self {
                 epoch: row.try_get::<i64, &str>("epoch")? as u64,
                 epoch_address: row.try_get::<String, &str>("epoch_address")?,
                 sub_dao_address: row.try_get::<String, &str>("sub_dao_address")?,
                 hnt_rewards_issued,
-                delegation_rewards_issued: row.try_get::<i64, &str>("delegation_rewards_issued")?
-                    as u64,
+                delegation_rewards_issued: 0,
                 rewards_issued_at,
             })
         }
