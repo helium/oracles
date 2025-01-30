@@ -125,8 +125,8 @@ where
             };
 
             tracing::info!(
-                "rewards will be retried in {}",
-                humantime::format_duration(REWARDS_NOT_CURRENT_DELAY_PERIOD)
+                "rewards will be rerun in {}",
+                humantime::format_duration(sleep_duration)
             );
 
             let shutdown = shutdown.clone();
