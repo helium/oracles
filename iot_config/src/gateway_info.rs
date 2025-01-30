@@ -132,7 +132,7 @@ pub(crate) mod db {
     }
 
     const GET_METADATA_SQL: &str = r#"
-            select kta.entity_key, infos.location::bigint, infos.elevation, infos.gain, infos.is_full_hotspot
+            select kta.entity_key, infos.location::bigint, CAST(infos.elevation AS integer), CAST(infos.gain as integer), infos.is_full_hotspot
             from iot_hotspot_infos infos
             join key_to_assets kta on infos.asset = kta.asset
         "#;
