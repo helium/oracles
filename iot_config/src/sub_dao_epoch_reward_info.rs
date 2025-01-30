@@ -112,13 +112,20 @@ pub(crate) mod db {
                 ))));
             };
 
+            let delegation_rewards_issued =
+                row.get::<i64, &str>("delegation_rewards_issued") as u64;
+            if delegation_rewards_issued == 0 {
+                return Err(sqlx::Error::Decode(Box::new(sqlx::Error::Decode(
+                    Box::from("delegation_rewards_issued is 0"),
+                ))));
+            };
+
             Ok(Self {
                 epoch: row.try_get::<i64, &str>("epoch")? as u64,
                 epoch_address: row.try_get::<String, &str>("epoch_address")?,
                 sub_dao_address: row.try_get::<String, &str>("sub_dao_address")?,
                 hnt_rewards_issued,
-                delegation_rewards_issued: row.try_get::<i64, &str>("delegation_rewards_issued")?
-                    as u64,
+                delegation_rewards_issued,
                 rewards_issued_at,
             })
         }
