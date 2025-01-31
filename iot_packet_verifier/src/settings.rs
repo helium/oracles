@@ -32,7 +32,7 @@ pub struct Settings {
     pub start_after: DateTime<Utc>,
     /// Number of minutes we should sleep before checking to re-enable
     /// any disabled orgs.
-    #[serde(default = "default_monitor_funds_period")]
+    #[serde(with = "humantime_serde", default = "default_monitor_funds_period")]
     pub monitor_funds_period: Duration,
 }
 
