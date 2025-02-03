@@ -2,7 +2,10 @@ use crate::{reward_index, settings, telemetry, Settings};
 use anyhow::{anyhow, bail, Result};
 use chrono::Utc;
 use file_store::{
-    file_info_poller::FileInfoStream, reward_manifest::RewardManifest, FileInfo, FileStore,
+    file_info_poller::FileInfoStream,
+    reward_manifest::RewardData::{self, IotRewardData, MobileRewardData},
+    reward_manifest::RewardManifest,
+    FileInfo, FileStore,
 };
 use futures::{stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -11,7 +14,7 @@ use helium_proto::{
         poc_lora::{iot_reward_share::Reward as IotReward, IotRewardShare},
         poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
     },
-    Message, ServiceProvider,
+    IotRewardToken, Message, MobileRewardToken, ServiceProvider,
 };
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
@@ -111,6 +114,9 @@ impl Indexer {
                 .map(|file_name| FileInfo::from_str(&file_name)),
         )
         .boxed();
+
+        // if the token type defined in the reward data is not HNT, then bail
+        self.verify_token_type(&manifest.reward_data)?;
 
         let mut reward_shares = self.verifier_store.source_unordered(5, reward_files);
         let mut hotspot_rewards: HashMap<RewardKey, u64> = HashMap::new();
@@ -224,5 +230,28 @@ impl Indexer {
                 }
             }
         }
+    }
+
+    fn verify_token_type(&self, reward_data: &Option<RewardData>) -> Result<()> {
+        match reward_data {
+            Some(MobileRewardData { token, .. }) => {
+                if *token != MobileRewardToken::Hnt {
+                    bail!(
+                        "legacy token type defined in manifest: {}",
+                        token.as_str_name()
+                    );
+                }
+            }
+            Some(IotRewardData { token, .. }) => {
+                if *token != IotRewardToken::Hnt {
+                    bail!(
+                        "legacy token type defined in manifest: {}",
+                        token.as_str_name()
+                    );
+                }
+            }
+            None => bail!("missing reward data in manifest"),
+        }
+        Ok(())
     }
 }

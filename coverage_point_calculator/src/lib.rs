@@ -48,7 +48,8 @@
 //!
 //! - [SPBoostedRewardEligibility]
 //!   - Radio must pass at least 1mb of data from 3 unique phones [HIP-84][provider-boosting]
-//!   - Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
+//!   - Radio must serve >25 unique connections on a rolling 7-day window [HIP-140][sp-boost-qualifiers]
+//!   - [@deprecated] Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
 //! - [OracleBoostingStatus]
 //!   - Eligible: Radio is eligible for normal oracle boosting multipliers
@@ -69,6 +70,7 @@
 //! [provider-banning]:        https://github.com/helium/HIP/blob/main/0125-temporary-anti-gaming-measures-for-boosted-hexes.md
 //! [anti-gaming]:             https://github.com/helium/HIP/blob/main/0131-bridging-gap-between-verification-mappers-and-anti-gaming-measures.md
 //! [carrier-offload]:         https://github.com/helium/HIP/blob/main/0134-reward-mobile-carrier-offload-hotspots.md
+//! [sp-boost-qualifiers]:     https://github.com/helium/HIP/blob/main/0140-adjust-service-provider-boost-qualifiers.md
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
@@ -242,7 +244,7 @@ impl CoveragePoints {
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
             SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
             SpBoostedHexStatus::RadioThresholdNotMet => dec!(0),
-            SpBoostedHexStatus::ServiceProviderBanned => dec!(0),
+            SpBoostedHexStatus::NotEnoughConnections => dec!(0),
         }
     }
 }
@@ -260,7 +262,7 @@ pub enum SpBoostedHexStatus {
     WifiLocationScoreBelowThreshold(Decimal),
     AverageAssertedDistanceOverLimit(Decimal),
     RadioThresholdNotMet,
-    ServiceProviderBanned,
+    NotEnoughConnections,
 }
 
 impl SpBoostedHexStatus {
@@ -271,10 +273,10 @@ impl SpBoostedHexStatus {
         service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     ) -> Self {
         match service_provider_boosted_reward_eligibility {
-            // hip-125: if radio has been banned by service provider, no boosting
-            SPBoostedRewardEligibility::ServiceProviderBanned => Self::ServiceProviderBanned,
             // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
             SPBoostedRewardEligibility::RadioThresholdNotMet => Self::RadioThresholdNotMet,
+            // hip-140: radio must have enough unique connections
+            SPBoostedRewardEligibility::NotEnoughConnections => Self::NotEnoughConnections,
             SPBoostedRewardEligibility::Eligible => {
                 // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
                 if radio_type.is_wifi() && location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
@@ -941,12 +943,8 @@ mod tests {
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(0)),
         );
         assert_eq!(
-            wifi_bad_trust_score(SPBoostedRewardEligibility::ServiceProviderBanned),
-            SpBoostedHexStatus::ServiceProviderBanned
-        );
-        assert_eq!(
-            wifi_bad_trust_score(SPBoostedRewardEligibility::RadioThresholdNotMet),
-            SpBoostedHexStatus::RadioThresholdNotMet
+            wifi_bad_trust_score(SPBoostedRewardEligibility::NotEnoughConnections),
+            SpBoostedHexStatus::NotEnoughConnections
         );
     }
 

@@ -1,28 +1,26 @@
+use coverage_map::UnrankedCoverage;
 use coverage_point_calculator::{RadioType, SPBoostedRewardEligibility};
 use helium_crypto::PublicKeyBinary;
+use hex_assignments::Assignment;
 
 use crate::{
     radio_threshold::VerifiedRadioThresholds,
-    sp_boosted_rewards_bans::BannedRadios,
     unique_connections::{self, UniqueConnectionCounts},
 };
 
 #[derive(Debug, Default)]
 pub struct BoostedHexEligibility {
     radio_thresholds: VerifiedRadioThresholds,
-    banned_radios: BannedRadios,
     unique_connections: UniqueConnectionCounts,
 }
 
 impl BoostedHexEligibility {
     pub fn new(
         radio_thresholds: VerifiedRadioThresholds,
-        banned_radios: BannedRadios,
         unique_connections: UniqueConnectionCounts,
     ) -> Self {
         Self {
             radio_thresholds,
-            banned_radios,
             unique_connections,
         }
     }
@@ -32,184 +30,173 @@ impl BoostedHexEligibility {
         radio_type: RadioType,
         key: PublicKeyBinary,
         cbsd_id_opt: Option<String>,
+        covered_hexes: &[UnrankedCoverage],
     ) -> SPBoostedRewardEligibility {
-        if unique_connections::is_qualified(&self.unique_connections, &key, &radio_type) {
+        if Self::in_united_states(covered_hexes) {
+            self.check_unique_connections(&key, &radio_type)
+        } else {
+            self.check_radio_thresholds(key, cbsd_id_opt)
+        }
+    }
+
+    fn check_unique_connections(
+        &self,
+        key: &PublicKeyBinary,
+        radio_type: &RadioType,
+    ) -> SPBoostedRewardEligibility {
+        if unique_connections::is_qualified(&self.unique_connections, key, radio_type) {
             SPBoostedRewardEligibility::Eligible
-        } else if self.banned_radios.contains(&key, cbsd_id_opt.as_deref()) {
-            SPBoostedRewardEligibility::ServiceProviderBanned
-        } else if self.radio_thresholds.is_verified(key, cbsd_id_opt) {
+        } else {
+            SPBoostedRewardEligibility::NotEnoughConnections
+        }
+    }
+
+    fn check_radio_thresholds(
+        &self,
+        key: PublicKeyBinary,
+        cbsd_id_opt: Option<String>,
+    ) -> SPBoostedRewardEligibility {
+        if self.radio_thresholds.is_verified(key, cbsd_id_opt) {
             SPBoostedRewardEligibility::Eligible
         } else {
             SPBoostedRewardEligibility::RadioThresholdNotMet
         }
+    }
+
+    fn in_united_states(covered_hexes: &[UnrankedCoverage]) -> bool {
+        covered_hexes
+            .iter()
+            .any(|uc| uc.assignments.urbanized != Assignment::C)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use helium_crypto::{KeyTag, Keypair};
+    use hex_assignments::assignment::HexAssignments;
+    use hextree::Cell;
     use rand::rngs::OsRng;
     use unique_connections::MINIMUM_UNIQUE_CONNECTIONS;
 
     use super::*;
 
     #[test]
-    fn wifi_eligible_with_unique_connections_even_if_banned() {
+    fn eligible_in_united_states() {
         let keypair = generate_keypair();
 
         let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
-        let cbsd_id = "cbsd-id-1".to_string();
-
-        let mut banned_radios = BannedRadios::default();
-        banned_radios.insert_wifi(pub_key.clone());
-        banned_radios.insert_cbrs(cbsd_id.clone());
 
         let mut unique_connections = UniqueConnectionCounts::default();
         unique_connections.insert(pub_key.clone(), MINIMUM_UNIQUE_CONNECTIONS + 1);
 
-        let boosted_hex_eligibility = BoostedHexEligibility::new(
-            VerifiedRadioThresholds::default(),
-            banned_radios,
-            unique_connections,
+        let boosted_hex_eligibility =
+            BoostedHexEligibility::new(VerifiedRadioThresholds::default(), unique_connections);
+
+        let covered_hexes = vec![unranked_coverage(Assignment::A)];
+
+        let eligibility = boosted_hex_eligibility.eligibility(
+            RadioType::OutdoorWifi,
+            pub_key,
+            None,
+            &covered_hexes,
         );
 
-        let eligibility =
-            boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key.clone(), None);
+        assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
+    }
+
+    #[test]
+    fn eligible_outside_states() {
+        let keypair = generate_keypair();
+
+        let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
+
+        let unique_connections = UniqueConnectionCounts::default();
+        let mut verified_thresholds = VerifiedRadioThresholds::default();
+        verified_thresholds.insert(pub_key.clone(), None);
+
+        let boosted_hex_eligibility =
+            BoostedHexEligibility::new(verified_thresholds, unique_connections);
+
+        let covered_hexes = vec![unranked_coverage(Assignment::C)];
+
+        let eligibility = boosted_hex_eligibility.eligibility(
+            RadioType::OutdoorWifi,
+            pub_key,
+            None,
+            &covered_hexes,
+        );
 
         assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
+    }
 
-        let eligibility =
-            boosted_hex_eligibility.eligibility(RadioType::OutdoorCbrs, pub_key, Some(cbsd_id));
+    #[test]
+    fn radio_thresholds_not_met() {
+        let keypair = generate_keypair();
+
+        let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
+
+        let unique_connections = UniqueConnectionCounts::default();
+        let verified_thresholds = VerifiedRadioThresholds::default();
+
+        let boosted_hex_eligibility =
+            BoostedHexEligibility::new(verified_thresholds, unique_connections);
+
+        let covered_hexes = vec![unranked_coverage(Assignment::C)];
+
+        let eligibility = boosted_hex_eligibility.eligibility(
+            RadioType::OutdoorWifi,
+            pub_key,
+            None,
+            &covered_hexes,
+        );
 
         assert_eq!(
-            SPBoostedRewardEligibility::ServiceProviderBanned,
+            SPBoostedRewardEligibility::RadioThresholdNotMet,
             eligibility
         );
     }
 
     #[test]
-    fn wifi_eligible_with_unique_connections_even_if_no_radio_threshold() {
+    fn not_enough_connections() {
         let keypair = generate_keypair();
 
         let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
-        let cbsd_id = "cbsd-id-1".to_string();
 
         let mut unique_connections = UniqueConnectionCounts::default();
-        unique_connections.insert(pub_key.clone(), MINIMUM_UNIQUE_CONNECTIONS + 1);
+        unique_connections.insert(pub_key.clone(), MINIMUM_UNIQUE_CONNECTIONS);
 
-        let boosted_hex_eligibility = BoostedHexEligibility::new(
-            VerifiedRadioThresholds::default(),
-            BannedRadios::default(),
-            unique_connections,
+        let boosted_hex_eligibility =
+            BoostedHexEligibility::new(VerifiedRadioThresholds::default(), unique_connections);
+
+        let covered_hexes = vec![unranked_coverage(Assignment::A)];
+
+        let eligibility = boosted_hex_eligibility.eligibility(
+            RadioType::OutdoorWifi,
+            pub_key,
+            None,
+            &covered_hexes,
         );
-
-        let eligibility =
-            boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key.clone(), None);
-
-        assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
-
-        let eligibility =
-            boosted_hex_eligibility.eligibility(RadioType::OutdoorCbrs, pub_key, Some(cbsd_id));
 
         assert_eq!(
-            SPBoostedRewardEligibility::RadioThresholdNotMet,
+            SPBoostedRewardEligibility::NotEnoughConnections,
             eligibility
         );
-    }
-
-    #[test]
-    fn banned() {
-        let keypair = generate_keypair();
-
-        let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
-        let cbsd_id = "cbsd-id-1".to_string();
-
-        let mut banned_radios = BannedRadios::default();
-        banned_radios.insert_wifi(pub_key.clone());
-        banned_radios.insert_cbrs(cbsd_id.clone());
-
-        let boosted_hex_eligibility = BoostedHexEligibility::new(
-            VerifiedRadioThresholds::default(),
-            banned_radios,
-            UniqueConnectionCounts::default(),
-        );
-
-        let eligibility =
-            boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key.clone(), None);
-
-        assert_eq!(
-            SPBoostedRewardEligibility::ServiceProviderBanned,
-            eligibility
-        );
-
-        let eligibility =
-            boosted_hex_eligibility.eligibility(RadioType::OutdoorCbrs, pub_key, Some(cbsd_id));
-
-        assert_eq!(
-            SPBoostedRewardEligibility::ServiceProviderBanned,
-            eligibility
-        );
-    }
-
-    #[test]
-    fn radio_threshold_not_met() {
-        let keypair = generate_keypair();
-
-        let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
-        let cbsd_id = "cbsd-id-1".to_string();
-
-        let boosted_hex_eligibility = BoostedHexEligibility::new(
-            VerifiedRadioThresholds::default(),
-            BannedRadios::default(),
-            UniqueConnectionCounts::default(),
-        );
-
-        let eligibility =
-            boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key.clone(), None);
-
-        assert_eq!(
-            SPBoostedRewardEligibility::RadioThresholdNotMet,
-            eligibility
-        );
-
-        let eligibility =
-            boosted_hex_eligibility.eligibility(RadioType::OutdoorCbrs, pub_key, Some(cbsd_id));
-
-        assert_eq!(
-            SPBoostedRewardEligibility::RadioThresholdNotMet,
-            eligibility
-        );
-    }
-
-    #[test]
-    fn eligible() {
-        let keypair = generate_keypair();
-
-        let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
-        let cbsd_id = "cbsd-id-1".to_string();
-
-        let mut verified_radio_thresholds = VerifiedRadioThresholds::default();
-        verified_radio_thresholds.insert(pub_key.clone(), None);
-        verified_radio_thresholds.insert(pub_key.clone(), Some(cbsd_id.clone()));
-
-        let boosted_hex_eligibility = BoostedHexEligibility::new(
-            verified_radio_thresholds,
-            BannedRadios::default(),
-            UniqueConnectionCounts::default(),
-        );
-
-        let eligibility =
-            boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key.clone(), None);
-
-        assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
-
-        let eligibility =
-            boosted_hex_eligibility.eligibility(RadioType::OutdoorCbrs, pub_key, Some(cbsd_id));
-
-        assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
     }
 
     fn generate_keypair() -> Keypair {
         Keypair::generate(KeyTag::default(), &mut OsRng)
+    }
+
+    fn unranked_coverage(urbanized: Assignment) -> UnrankedCoverage {
+        UnrankedCoverage {
+            location: Cell::from_raw(631236586635449855).expect("invalid cell"),
+            signal_power: 0,
+            signal_level: coverage_map::SignalLevel::High,
+            assignments: HexAssignments {
+                footfall: Assignment::A,
+                landtype: Assignment::A,
+                urbanized,
+            },
+        }
     }
 }

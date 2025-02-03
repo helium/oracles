@@ -2,9 +2,12 @@ use anyhow::{Error, Result};
 use clap::Parser;
 use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
-use helium_proto::services::mobile_config::{
-    AdminServer, AuthorizationServer, CarrierServiceServer, EntityServer, GatewayServer,
-    HexBoostingServer,
+use helium_proto::services::{
+    mobile_config::{
+        AdminServer, AuthorizationServer, CarrierServiceServer, EntityServer, GatewayServer,
+        HexBoostingServer,
+    },
+    sub_dao::SubDaoServer,
 };
 use mobile_config::{
     admin_service::AdminService,
@@ -16,6 +19,7 @@ use mobile_config::{
     key_cache::KeyCache,
     mobile_radio_tracker::{MobileRadioTracker, TrackedRadiosMap},
     settings::Settings,
+    sub_dao_service::SubDaoService,
 };
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -106,6 +110,12 @@ impl Daemon {
             settings.signing_keypair()?,
         );
 
+        let sub_dao_svc = SubDaoService::new(
+            key_cache.clone(),
+            metadata_pool.clone(),
+            settings.signing_keypair()?,
+        );
+
         let listen_addr = settings.listen;
         let grpc_server = GrpcServer {
             listen_addr,
@@ -115,6 +125,7 @@ impl Daemon {
             entity_svc,
             carrier_svc,
             hex_boosting_svc,
+            sub_dao_svc,
         };
 
         let mobile_tracker = MobileRadioTracker::new(
@@ -144,6 +155,7 @@ pub struct GrpcServer {
     entity_svc: EntityService,
     carrier_svc: CarrierService,
     hex_boosting_svc: HexBoostingService,
+    sub_dao_svc: SubDaoService,
 }
 
 impl ManagedTask for GrpcServer {
@@ -162,6 +174,7 @@ impl ManagedTask for GrpcServer {
                 .add_service(EntityServer::new(self.entity_svc))
                 .add_service(CarrierServiceServer::new(self.carrier_svc))
                 .add_service(HexBoostingServer::new(self.hex_boosting_svc))
+                .add_service(SubDaoServer::new(self.sub_dao_svc))
                 .serve_with_shutdown(self.listen_addr, shutdown)
                 .map_err(Error::from)
                 .await
