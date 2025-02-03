@@ -288,6 +288,16 @@ async fn update_tracked_radios(
     Ok(())
 }
 
+pub fn migrate_mobile_tracker_locations(
+    _mobile_config_pool: Pool<Postgres>,
+    _metadata_pool: Pool<Postgres>,
+    _csv_file_path: &str,
+) {
+    // 1. Fill mobile_radio_tracker asserted_location from mobile_hotspot_infos
+    // 2. Update mobile_tracker.asserted_location_changed_at from mobile_hotspot_infos for num_location_assert = 1
+    // 3. Read data from csv report. Fill mobile_radio_tracker if and only if location from csv and in mobile_hotspot_infos table matches
+}
+
 #[cfg(test)]
 mod tests {
 

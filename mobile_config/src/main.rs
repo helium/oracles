@@ -10,10 +10,16 @@ use helium_proto::services::{
     sub_dao::SubDaoServer,
 };
 use mobile_config::{
-    admin_service::AdminService, authorization_service::AuthorizationService,
-    carrier_service::CarrierService, entity_service::EntityService,
-    gateway_service::GatewayService, hex_boosting_service::HexBoostingService, key_cache::KeyCache,
-    mobile_radio_tracker::MobileRadioTracker, settings::Settings, sub_dao_service::SubDaoService,
+    admin_service::AdminService,
+    authorization_service::AuthorizationService,
+    carrier_service::CarrierService,
+    entity_service::EntityService,
+    gateway_service::GatewayService,
+    hex_boosting_service::HexBoostingService,
+    key_cache::KeyCache,
+    mobile_radio_tracker::{migrate_mobile_tracker_locations, MobileRadioTracker},
+    settings::Settings,
+    sub_dao_service::SubDaoService,
 };
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -36,21 +42,31 @@ pub struct Cli {
 impl Cli {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
-        self.cmd.run(settings).await
+
+        match self.cmd {
+            Cmd::Server(daemon) => daemon.run(&settings).await,
+            Cmd::MigrateMobileTracker(csv_file) => {
+                let mobile_config_pool = settings.database.connect("mobile-config-store").await?;
+                let metadata_pool = settings.metadata.connect("mobile-config-metadata").await?;
+                sqlx::migrate!().run(&mobile_config_pool).await?;
+                dbg!(&csv_file.path);
+                migrate_mobile_tracker_locations(mobile_config_pool, metadata_pool, &csv_file.path);
+                Ok(())
+            }
+        }
     }
 }
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Cmd {
     Server(Daemon),
+    // Oneshot command to migrate location data for mobile tracker
+    MigrateMobileTracker(CsvFile),
 }
 
-impl Cmd {
-    pub async fn run(&self, settings: Settings) -> Result<()> {
-        match self {
-            Self::Server(cmd) => cmd.run(&settings).await,
-        }
-    }
+#[derive(Debug, clap::Args)]
+pub struct CsvFile {
+    pub path: String,
 }
 
 #[derive(Debug, clap::Args)]
