@@ -79,6 +79,8 @@ pub enum DecodeError {
     UnsupportedPacketType(String, i32),
     #[error("file stream try decode error: {0}")]
     FileStreamTryDecode(String),
+    #[error("unsupported token type {0}")]
+    UnsupportedTokenType(String, i32),
 }
 
 #[derive(Error, Debug)]
@@ -173,6 +175,10 @@ impl DecodeError {
 
     pub const fn empty_field(field: &'static str) -> Error {
         Error::Decode(Self::EmptyField(field))
+    }
+
+    pub fn unsupported_token_type<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedTokenType(msg1.to_string(), msg2))
     }
 }
 

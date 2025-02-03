@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::string::ToString;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use helium_proto::{
     service_provider_promotions::Promotion,
     services::poc_mobile::{
@@ -14,7 +14,9 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
 
-use crate::common::{self, MockFileSinkReceiver};
+use crate::common::{
+    self, default_rewards_info, MockFileSinkReceiver, EMISSIONS_POOL_IN_BONES_24_HOURS,
+};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use mobile_verifier::{data_session, reward_shares, rewarder, service_provider};
 
@@ -75,17 +77,18 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     let carrier_client = MockCarrierServiceClient::new(valid_sps);
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
 
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     // seed db with test specific data
     let mut txn = pool.clone().begin().await?;
-    seed_hotspot_data(epoch.end, &mut txn).await?;
+    seed_hotspot_data(reward_info.epoch_period.end, &mut txn).await?;
     txn.commit().await?;
 
-    let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await?;
+    let dc_sessions =
+        service_provider::get_dc_sessions(&pool, &carrier_client, &reward_info.epoch_period)
+            .await?;
     let sp_promotions = carrier_client
-        .list_incentive_promotions(&epoch.start)
+        .list_incentive_promotions(&reward_info.epoch_period.start)
         .await?;
 
     let (_, rewards) = tokio::join!(
@@ -93,7 +96,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
             dc_sessions,
             sp_promotions.into(),
             &mobile_rewards_client,
-            &epoch,
+            &reward_info,
             dec!(0.0001),
         ),
         receive_expected_rewards(&mut mobile_rewards)
@@ -115,14 +118,13 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
 
         // confirm the total rewards allocated matches expectations
         let expected_sum =
-            reward_shares::get_scheduled_tokens_for_service_providers(epoch.end - epoch.start)
+            reward_shares::get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions)
                 .to_u64()
                 .unwrap();
         assert_eq!(expected_sum, sp_reward.amount + unallocated_reward.amount);
 
         // confirm the rewarded percentage amount matches expectations
-        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
-        let percent = (Decimal::from(unallocated_reward.amount) / daily_total)
+        let percent = (Decimal::from(unallocated_reward.amount) / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(percent, dec!(0.1));
     } else {
@@ -140,14 +142,14 @@ async fn test_service_provider_rewards_halt_on_invalid_sp(pool: PgPool) -> anyho
     valid_sps.insert(PAYER_1.to_string(), SP_1.to_string());
     let carrier_client = MockCarrierServiceClient::new(valid_sps);
 
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
     let mut txn = pool.clone().begin().await?;
-    seed_hotspot_data_invalid_sp(epoch.end, &mut txn).await?;
+    seed_hotspot_data_invalid_sp(reward_info.epoch_period.end, &mut txn).await?;
     txn.commit().await.expect("db txn failed");
 
-    let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await;
+    let dc_sessions =
+        service_provider::get_dc_sessions(&pool, &carrier_client, &reward_info.epoch_period).await;
     assert_eq!(
         dc_sessions.unwrap_err().to_string(),
         format!("unknown service provider {PAYER_2}")
@@ -187,18 +189,20 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
             ],
         }]);
 
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
 
     let mut txn = pool.begin().await?;
-    seed_hotspot_data(epoch.end, &mut txn).await?; // DC transferred == 6,000 reward amount
+    seed_hotspot_data(reward_info.epoch_period.end, &mut txn).await?; // DC transferred == 6,000 reward amount
 
     txn.commit().await?;
 
-    let dc_sessions = service_provider::get_dc_sessions(&pool, &carrier_client, &epoch).await?;
+    let dc_sessions =
+        service_provider::get_dc_sessions(&pool, &carrier_client, &reward_info.epoch_period)
+            .await?;
     let sp_promotions = carrier_client
-        .list_incentive_promotions(&epoch.start)
+        .list_incentive_promotions(&reward_info.epoch_period.start)
         .await?;
 
     let (_, rewards) = tokio::join!(
@@ -206,7 +210,7 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
             dc_sessions,
             sp_promotions.into(),
             &mobile_rewards_client,
-            &epoch,
+            &reward_info,
             dec!(0.00001)
         ),
         async move {
@@ -233,25 +237,26 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     let promo_reward_3 = promos[2].clone();
 
     // 1 share
-    assert_eq!(promo_reward_1.service_provider_amount, 1_500);
-    assert_eq!(promo_reward_1.matched_amount, 1_500);
+    assert_eq!(promo_reward_1.service_provider_amount, 1_499);
+    assert_eq!(promo_reward_1.matched_amount, 1_499);
 
     // 2 shares
-    assert_eq!(promo_reward_2.service_provider_amount, 3_000);
-    assert_eq!(promo_reward_2.matched_amount, 3_000);
+    assert_eq!(promo_reward_2.service_provider_amount, 2999);
+    assert_eq!(promo_reward_2.matched_amount, 2999);
 
     // 3 shares
-    assert_eq!(promo_reward_3.service_provider_amount, 4_500);
-    assert_eq!(promo_reward_3.matched_amount, 4_500);
+    assert_eq!(promo_reward_3.service_provider_amount, 4_499);
+    assert_eq!(promo_reward_3.matched_amount, 4_499);
 
     // dc_percentage * total_sp_allocation rounded down
     assert_eq!(sp_reward.amount, 50_999);
 
-    let unallocated_sp_rewards = get_unallocated_sp_rewards(&epoch);
+    let unallocated_sp_rewards = get_unallocated_sp_rewards(reward_info.epoch_emissions);
     let expected_unallocated = unallocated_sp_rewards
         - 50_999 // 85% service provider rewards rounded down
-        - 9_000 // 15% service provider promotions
-        - 9_000; // matched promotion
+        - 8_998 // 15% service provider promotions
+        - 8_998 // matched promotion
+        + 2; // rounding
 
     assert_eq!(unallocated.amount, expected_unallocated);
 
@@ -286,7 +291,7 @@ async fn seed_hotspot_data(
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 10000,
         num_dcs: 10_000,
-        received_timestamp: ts - ChronoDuration::hours(1),
+        received_timestamp: ts - Duration::hours(1),
     };
 
     let data_session_2 = data_session::HotspotDataSession {
@@ -295,7 +300,7 @@ async fn seed_hotspot_data(
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
         num_dcs: 50_000,
-        received_timestamp: ts - ChronoDuration::hours(2),
+        received_timestamp: ts - Duration::hours(2),
     };
 
     data_session_1.save(txn).await?;
@@ -313,7 +318,7 @@ async fn seed_hotspot_data_invalid_sp(
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 10000,
         num_dcs: 10_000,
-        received_timestamp: ts - ChronoDuration::hours(2),
+        received_timestamp: ts - Duration::hours(2),
     };
 
     let data_session_2 = data_session::HotspotDataSession {
@@ -322,7 +327,7 @@ async fn seed_hotspot_data_invalid_sp(
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
         num_dcs: 50_000,
-        received_timestamp: ts - ChronoDuration::hours(2),
+        received_timestamp: ts - Duration::hours(2),
     };
 
     data_session_1.save(txn).await?;
@@ -331,8 +336,8 @@ async fn seed_hotspot_data_invalid_sp(
 }
 
 // Helper for turning Decimal -> u64 to compare against output rewards
-fn get_unallocated_sp_rewards(epoch: &std::ops::Range<DateTime<Utc>>) -> u64 {
-    reward_shares::get_scheduled_tokens_for_service_providers(epoch.end - epoch.start)
+fn get_unallocated_sp_rewards(total_emissions: Decimal) -> u64 {
+    reward_shares::get_scheduled_tokens_for_service_providers(total_emissions)
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0)

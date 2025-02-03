@@ -4,6 +4,7 @@ pub mod entity_client;
 pub mod gateway_client;
 pub mod hex_boosting_client;
 mod settings;
+pub mod sub_dao_client;
 
 use std::time::Duration;
 
@@ -12,6 +13,7 @@ pub use carrier_service_client::CarrierServiceClient;
 pub use entity_client::EntityClient;
 pub use gateway_client::GatewayClient;
 pub use settings::Settings;
+pub use sub_dao_client::SubDaoClient;
 
 const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
 
@@ -29,6 +31,10 @@ pub enum ClientError {
     UnknownServiceProvider(String),
     #[error("Invalid GatewayInfo proto response {0}")]
     InvalidGatewayInfoProto(#[from] crate::gateway_info::GatewayInfoProtoParseError),
+    #[error("Invalid SubDaoRewardInfo proto response {0}")]
+    InvalidSubDaoRewardInfoProto(
+        #[from] crate::sub_dao_epoch_reward_info::SubDaoRewardInfoParseError,
+    ),
 }
 
 macro_rules! call_with_retry {
