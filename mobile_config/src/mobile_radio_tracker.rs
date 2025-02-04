@@ -299,8 +299,10 @@ pub async fn migrate_mobile_tracker_locations(
     _csv_file_path: &str,
 ) -> anyhow::Result<()> {
     // 1. Fill mobile_radio_tracker asserted_location from mobile_hotspot_infos
-    let gateway_infos = all_info_stream(&metadata_pool, &[])
-        .filter(|v| futures::future::ready(v.metadata.is_some()))
+    // get_all_mobile_radios
+    // let mobiles = get_all_mobile_radios(&metadata_pool).awa;
+    let mobile_infos = get_all_mobile_radios(&metadata_pool)
+        .filter(|v| futures::future::ready(v.location.is_some()))
         .collect::<Vec<_>>()
         .await;
 
@@ -308,19 +310,16 @@ pub async fn migrate_mobile_tracker_locations(
 
     const BATCH_SIZE: usize = (u16::MAX / 3) as usize;
 
-    for chunk in gateway_infos.chunks(BATCH_SIZE) {
+    for chunk in mobile_infos.chunks(BATCH_SIZE) {
         let mut query_builder = QueryBuilder::new(
             "UPDATE mobile_radio_tracker AS mrt SET asserted_location = data.location
          FROM ( ",
         );
 
-        query_builder.push_values(chunk, |mut builder, gw_info| {
-            let entity_key = bs58::decode(gw_info.address.to_string())
-                .into_vec()
-                .unwrap();
+        query_builder.push_values(chunk, |mut builder, mob_info| {
             builder
-                .push_bind(gw_info.metadata.clone().unwrap().location as i64)
-                .push_bind(entity_key);
+                .push_bind(&mob_info.location)
+                .push_bind(&mob_info.entity_key);
         });
 
         query_builder.push(
