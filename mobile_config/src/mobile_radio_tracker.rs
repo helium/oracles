@@ -5,6 +5,8 @@ use futures::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use sqlx::{Pool, Postgres, QueryBuilder};
 use task_manager::ManagedTask;
 
+use crate::gateway_info::db::all_info_stream;
+
 type EntityKey = Vec<u8>;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -288,14 +290,50 @@ async fn update_tracked_radios(
     Ok(())
 }
 
-pub fn migrate_mobile_tracker_locations(
-    _mobile_config_pool: Pool<Postgres>,
-    _metadata_pool: Pool<Postgres>,
+// 1. Fill mobile_radio_tracker asserted_location from mobile_hotspot_infos
+// 2. Update mobile_tracker.asserted_location_changed_at from mobile_hotspot_infos for num_location_assert = 1
+// 3. Read data from csv report. Fill mobile_radio_tracker if and only if location from csv and in mobile_hotspot_infos table matches
+pub async fn migrate_mobile_tracker_locations(
+    mobile_config_pool: Pool<Postgres>,
+    metadata_pool: Pool<Postgres>,
     _csv_file_path: &str,
-) {
+) -> anyhow::Result<()> {
     // 1. Fill mobile_radio_tracker asserted_location from mobile_hotspot_infos
-    // 2. Update mobile_tracker.asserted_location_changed_at from mobile_hotspot_infos for num_location_assert = 1
-    // 3. Read data from csv report. Fill mobile_radio_tracker if and only if location from csv and in mobile_hotspot_infos table matches
+    let gateway_infos = all_info_stream(&metadata_pool, &[])
+        .filter(|v| futures::future::ready(v.metadata.is_some()))
+        .collect::<Vec<_>>()
+        .await;
+
+    let mut txn = mobile_config_pool.begin().await?;
+
+    const BATCH_SIZE: usize = (u16::MAX / 3) as usize;
+
+    for chunk in gateway_infos.chunks(BATCH_SIZE) {
+        let mut query_builder = QueryBuilder::new(
+            "UPDATE mobile_radio_tracker AS mrt SET asserted_location = data.location
+         FROM ( ",
+        );
+
+        query_builder.push_values(chunk, |mut builder, gw_info| {
+            let entity_key = bs58::decode(gw_info.address.to_string())
+                .into_vec()
+                .unwrap();
+            builder
+                .push_bind(gw_info.metadata.clone().unwrap().location as i64)
+                .push_bind(entity_key);
+        });
+
+        query_builder.push(
+            ") AS data(location, entity_key)
+         WHERE mrt.entity_key = data.entity_key",
+        );
+
+        let built = query_builder.build();
+        built.execute(&mut txn).await?;
+    }
+    txn.commit().await?;
+
+    Ok(())
 }
 
 #[cfg(test)]
