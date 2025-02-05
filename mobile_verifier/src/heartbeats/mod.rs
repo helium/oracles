@@ -524,7 +524,7 @@ impl ValidatedHeartbeat {
                 let is_valid = match heartbeat.location_validation_timestamp {
                     None => {
                         if let Some(last_location) = last_location_cache
-                            .fetch_last_location(&heartbeat.hotspot_key)
+                            .get(&heartbeat.hotspot_key, heartbeat.timestamp)
                             .await?
                         {
                             heartbeat.lat = last_location.lat;
@@ -540,16 +540,14 @@ impl ValidatedHeartbeat {
                     }
                     Some(location_validation_timestamp) => {
                         last_location_cache
-                            .set_last_location(
+                            .set(
                                 &heartbeat.hotspot_key,
-                                LastLocation::new(
+                                LastLocation::from_heartbeat(
+                                    &heartbeat,
                                     location_validation_timestamp,
-                                    heartbeat.timestamp,
-                                    heartbeat.lat,
-                                    heartbeat.lon,
                                 ),
                             )
-                            .await?;
+                            .await;
                         true
                     }
                 };
