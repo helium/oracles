@@ -192,6 +192,10 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
         dec!(1.0)
     );
 
+    // NOTE: A new cache will only query backwards up to 12 hours.
+    // But values are cached for 24 hours.
+    let location_cache = LocationCache::new(&pool);
+
     let validated_heartbeat_2 = ValidatedHeartbeat::validate(
         heartbeat(&hotspot, &coverage_object)
             .latlng((0.0, 0.0))
