@@ -49,7 +49,6 @@ impl Cli {
                 let mobile_config_pool = settings.database.connect("mobile-config-store").await?;
                 let metadata_pool = settings.metadata.connect("mobile-config-metadata").await?;
                 sqlx::migrate!().run(&mobile_config_pool).await?;
-                dbg!(&csv_file.path);
                 migrate_mobile_tracker_locations(mobile_config_pool, metadata_pool, &csv_file.path)
                     .await?;
                 Ok(())
