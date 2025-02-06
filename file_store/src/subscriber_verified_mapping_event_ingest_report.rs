@@ -21,7 +21,7 @@ impl MsgDecode for SubscriberVerifiedMappingEventIngestReport {
 
 impl MsgTimestamp<Result<DateTime<Utc>>> for SubscriberVerifiedMappingEventIngestReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
-        self.received_timestamp.to_timestamp()
+        self.received_timestamp.to_timestamp_millis()
     }
 }
 
