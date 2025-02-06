@@ -159,7 +159,7 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
 }
 
 #[sqlx::test]
-async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
+async fn heartbeat_does_not_use_last_good_location_when_more_than_24_hours(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let hotspot = PublicKeyBinary::from_str(PUB_KEY)?;
@@ -173,10 +173,13 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
     let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
     transaction.commit().await?;
 
+    let location_validation_timestamp = Utc::now();
+
     let validated_heartbeat_1 = ValidatedHeartbeat::validate(
         heartbeat(&hotspot, &coverage_object)
-            .location_validation_timestamp(Utc::now())
-            .timestamp(Utc::now() - Duration::hours(12) - Duration::seconds(1))
+            .location_validation_timestamp(location_validation_timestamp)
+            // within the 24 hour window of validation timestamp
+            .timestamp(location_validation_timestamp - Duration::hours(24) + Duration::seconds(1))
             .build(),
         &GatewayClientAllOwnersValid,
         &coverage_objects,
@@ -192,12 +195,10 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_12_hours(
         dec!(1.0)
     );
 
-    // NOTE: A new cache will only query backwards up to 12 hours.
-    // But values are cached for 24 hours.
-    let location_cache = LocationCache::new(&pool);
-
     let validated_heartbeat_2 = ValidatedHeartbeat::validate(
         heartbeat(&hotspot, &coverage_object)
+            // 24 hours past validation timestamp
+            .timestamp(location_validation_timestamp + Duration::hours(24) + Duration::seconds(1))
             .latlng((0.0, 0.0))
             .build(),
         &GatewayClientAllOwnersValid,
