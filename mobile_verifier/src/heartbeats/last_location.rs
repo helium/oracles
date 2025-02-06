@@ -81,7 +81,7 @@ impl LocationCache {
     }
 
     pub async fn set(&self, hotspot: &PublicKeyBinary, last_location: LastLocation) {
-        self.maybe_cache_last_location(hotspot, Some(last_location))
+        self.cache_last_location(hotspot, Some(last_location))
             .await;
     }
 
@@ -99,7 +99,7 @@ impl LocationCache {
             }
             None => {
                 let last = self.fetch_from_db(hotspot, heartbeat_timestamp).await?;
-                self.maybe_cache_last_location(hotspot, last).await;
+                self.cache_last_location(hotspot, last).await;
                 last
             }
         };
@@ -133,7 +133,7 @@ impl LocationCache {
         Ok(last_location)
     }
 
-    async fn maybe_cache_last_location(
+    async fn cache_last_location(
         &self,
         hotspot: &PublicKeyBinary,
         last_location: Option<LastLocation>,
