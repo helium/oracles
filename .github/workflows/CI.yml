@@ -98,7 +98,7 @@ jobs:
       cancel-in-progress: true
     services:
       postgres:
-        image: postgres
+        image: postgres:14.9-alpine
         env:
           POSTGRES_PASSWORD: postgres
         options: >-
