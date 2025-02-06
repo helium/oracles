@@ -27,7 +27,7 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for SubscriberVerifiedMappingEventInges
 
 impl MsgTimestamp<u64> for SubscriberVerifiedMappingEventIngestReport {
     fn timestamp(&self) -> u64 {
-        self.received_timestamp.encode_timestamp()
+        self.received_timestamp.encode_timestamp_millis()
     }
 }
 
