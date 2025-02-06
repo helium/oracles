@@ -146,6 +146,9 @@ impl MobileRadioTracker {
         tracing::info!("starting");
         let mut interval = tokio::time::interval(self.interval);
 
+        // Skip the first (instant) tick
+        interval.tick().await;
+
         loop {
             tokio::select! {
                 biased;
@@ -181,7 +184,7 @@ impl MobileRadioTracker {
             *map = tracked_radios_map;
         }
 
-        tracing::info!("done");
+        tracing::info!("updating tracked radios cache is done");
         Ok(())
     }
 }
