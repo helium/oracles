@@ -81,8 +81,7 @@ impl LocationCache {
     }
 
     pub async fn set(&self, hotspot: &PublicKeyBinary, last_location: LastLocation) {
-        self.cache_last_location(hotspot, Some(last_location))
-            .await;
+        self.cache_last_location(hotspot, Some(last_location)).await;
     }
 
     pub async fn get(
