@@ -252,11 +252,11 @@ mod tests {
             cache.get(&hotspot_one, now).await?,
             "Invalid timestamp current"
         );
-        assert_eq!(
-            Some(test_last_location(now, limit_timestamp)),
-            cache.get(&hotspot_two, now).await?,
-            "Limit timestamp current"
-        );
+        let expect = Some(test_last_location(now, limit_timestamp));
+        let cached = cache.get(&hotspot_two, now).await?;
+        println!("expect: {:?}", expect);
+        println!("cached: {:?}", cached);
+        assert_eq!(expect, cached, "Limit timestamp current");
         assert_eq!(
             Some(test_last_location(now, good_timestamp)),
             cache.get(&hotspot_three, now).await?,
