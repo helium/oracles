@@ -81,7 +81,7 @@ impl HexAssignments {
 
         use Assignment::*;
         match (footfall, landtype, urbanized, service_provider_selected) {
-            // service provide point of interest
+            // service provider selected hex
             // Overrides other dataset assignments
             (_, _, _, A) => dec!(1.00),
             // yellow - POI ≥ 1 Urbanized

@@ -46,8 +46,8 @@ pub struct HexBoostData<Foot, Land, Urban, ServiceProviderSelected> {
     pub urbanization: Urban,
     pub service_provider_selected: ServiceProviderSelected,
 }
-impl<F, L, U, R> HexBoostData<F, L, U, R> {
-    pub fn builder() -> HexBoostDataBuilder<F, L, U, R> {
+impl<F, L, U, S> HexBoostData<F, L, U, S> {
+    pub fn builder() -> HexBoostDataBuilder<F, L, U, S> {
         HexBoostDataBuilder::default()
     }
 }

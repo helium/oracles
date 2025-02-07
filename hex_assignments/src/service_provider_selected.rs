@@ -26,7 +26,7 @@ impl Default for ServiceProviderSelected {
 impl HexAssignment for ServiceProviderSelected {
     fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
         let Some(ref service_provider_selected) = self.service_provider_selected else {
-            anyhow::bail!("No outside USA boost hex data set has been loaded");
+            anyhow::bail!("No service provider selected hex data set has been loaded");
         };
         match service_provider_selected.contains(cell) {
             Ok(true) => Ok(Assignment::A),
