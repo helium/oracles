@@ -1,9 +1,10 @@
 pub mod assignment;
 pub mod footfall;
 pub mod landtype;
+pub mod service_provider_selected;
 pub mod urbanization;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub use assignment::Assignment;
 use assignment::HexAssignments;
@@ -18,40 +19,53 @@ impl HexAssignment for HashMap<hextree::Cell, Assignment> {
     }
 }
 
+impl HexAssignment for HashSet<hextree::Cell> {
+    fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment> {
+        Ok(if self.contains(&cell) {
+            Assignment::A
+        } else {
+            Assignment::C
+        })
+    }
+}
+
 impl HexAssignment for Assignment {
     fn assignment(&self, _cell: hextree::Cell) -> anyhow::Result<Assignment> {
         Ok(*self)
     }
 }
-
 pub trait HexBoostDataAssignments: Send + Sync + 'static {
     fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments>;
 }
 
 #[derive(derive_builder::Builder)]
 #[builder(pattern = "owned")]
-pub struct HexBoostData<Foot, Land, Urban> {
+pub struct HexBoostData<Foot, Land, Urban, ServiceProviderSelected> {
     pub footfall: Foot,
     pub landtype: Land,
     pub urbanization: Urban,
+    pub service_provider_selected: ServiceProviderSelected,
 }
-impl<F, L, U> HexBoostData<F, L, U> {
-    pub fn builder() -> HexBoostDataBuilder<F, L, U> {
+impl<F, L, U, R> HexBoostData<F, L, U, R> {
+    pub fn builder() -> HexBoostDataBuilder<F, L, U, R> {
         HexBoostDataBuilder::default()
     }
 }
 
-impl<Foot, Land, Urban> HexBoostDataAssignments for HexBoostData<Foot, Land, Urban>
+impl<Foot, Land, Urban, ServiceProviderSelected> HexBoostDataAssignments
+    for HexBoostData<Foot, Land, Urban, ServiceProviderSelected>
 where
     Foot: HexAssignment,
     Land: HexAssignment,
     Urban: HexAssignment,
+    ServiceProviderSelected: HexAssignment,
 {
     fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
         HexAssignments::builder(cell)
             .footfall(&self.footfall)
             .landtype(&self.landtype)
             .urbanized(&self.urbanization)
+            .service_provider_selected(&self.service_provider_selected)
             .build()
     }
 }
@@ -59,11 +73,13 @@ where
 #[cfg(test)]
 mod tests {
 
+    use hextree::{disktree::DiskTreeMap, HexTreeMap, HexTreeSet};
     use std::io::Cursor;
 
-    use hextree::{disktree::DiskTreeMap, HexTreeMap};
-
-    use self::{footfall::Footfall, landtype::Landtype, urbanization::Urbanization};
+    use self::{
+        footfall::Footfall, landtype::Landtype, service_provider_selected::ServiceProviderSelected,
+        urbanization::Urbanization,
+    };
 
     use super::*;
 
@@ -109,6 +125,10 @@ mod tests {
         let no_poi_built_outside_us = hextree::Cell::from_raw(0x8c2681a306523ff)?;
         let no_poi_grass_outside_us = hextree::Cell::from_raw(0x8c2681a306525ff)?;
         let no_poi_water_outside_us = hextree::Cell::from_raw(0x8c2681a306527ff)?;
+
+        // service provider selected
+        let service_provider_selected_outside_us = hextree::Cell::from_raw(0x834995fffffffff)?;
+        let service_provider_selected_us = hextree::Cell::from_raw(0x84446c3ffffffff)?;
 
         // Footfall Data
         // POI         - footfalls > 1 for a POI across hexes
@@ -181,6 +201,13 @@ mod tests {
         urbanized.insert(no_poi_grass_urbanized, 1);
         urbanized.insert(no_poi_water_urbanized, 1);
 
+        // Service provider selected data
+        let cells = vec![
+            service_provider_selected_outside_us,
+            service_provider_selected_us,
+        ];
+        let service_provider_selected = HexTreeSet::from_iter(cells);
+
         let inside_usa = [
             poi_built_urbanized,
             poi_grass_urbanized,
@@ -208,21 +235,30 @@ mod tests {
         let mut urbanized_buf = vec![];
         let mut footfall_buff = vec![];
         let mut landtype_buf = vec![];
+        let mut service_provider_selected_buf = vec![];
 
         // Turn the HexTrees into DiskTrees
         urbanized.to_disktree(Cursor::new(&mut urbanized_buf), |w, v| w.write_all(&[*v]))?;
         footfall.to_disktree(Cursor::new(&mut footfall_buff), |w, v| w.write_all(&[*v]))?;
         landtype.to_disktree(Cursor::new(&mut landtype_buf), |w, v| w.write_all(&[*v]))?;
+        service_provider_selected
+            .to_disktree(Cursor::new(&mut service_provider_selected_buf), |_, _| {
+                Ok::<(), std::io::Error>(())
+            })?;
 
         let footfall = Footfall::new(Some(DiskTreeMap::with_buf(footfall_buff)?));
         let landtype = Landtype::new(Some(DiskTreeMap::with_buf(landtype_buf)?));
         let urbanization = Urbanization::new(Some(DiskTreeMap::with_buf(urbanized_buf)?));
+        let service_provider_selected = ServiceProviderSelected::new(Some(DiskTreeMap::with_buf(
+            service_provider_selected_buf,
+        )?));
 
         // Let the testing commence
         let data = HexBoostData::builder()
             .footfall(footfall)
             .landtype(landtype)
             .urbanization(urbanization)
+            .service_provider_selected(service_provider_selected)
             .build()?;
 
         // NOTE(mj): formatting ignored to make it easier to see the expected change in assignments.
@@ -232,41 +268,45 @@ mod tests {
         {
             use Assignment::*;
             // yellow
-            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: A }, data.assignments(poi_built_urbanized)?);
-            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: A }, data.assignments(poi_grass_urbanized)?);
-            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: A }, data.assignments(poi_water_urbanized)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: A, service_provider_selected: C}, data.assignments(poi_built_urbanized)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: A, service_provider_selected: C }, data.assignments(poi_grass_urbanized)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: A, service_provider_selected: C }, data.assignments(poi_water_urbanized)?);
             // orange
-            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: B }, data.assignments(poi_built_not_urbanized)?);
-            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: B }, data.assignments(poi_grass_not_urbanized)?);
-            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: B }, data.assignments(poi_water_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: B, service_provider_selected: C }, data.assignments(poi_built_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: B, service_provider_selected: C }, data.assignments(poi_grass_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: B, service_provider_selected: C }, data.assignments(poi_water_not_urbanized)?);
             // light green
-            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: A }, data.assignments(poi_no_data_built_urbanized)?);
-            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: A }, data.assignments(poi_no_data_grass_urbanized)?);
-            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: A }, data.assignments(poi_no_data_water_urbanized)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: A, service_provider_selected: C }, data.assignments(poi_no_data_built_urbanized)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: A, service_provider_selected: C }, data.assignments(poi_no_data_grass_urbanized)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: A, service_provider_selected: C }, data.assignments(poi_no_data_water_urbanized)?);
             // green
-            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: B }, data.assignments(poi_no_data_built_not_urbanized)?);
-            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: B }, data.assignments(poi_no_data_grass_not_urbanized)?);
-            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: B }, data.assignments(poi_no_data_water_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: B, service_provider_selected: C }, data.assignments(poi_no_data_built_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: B, service_provider_selected: C }, data.assignments(poi_no_data_grass_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: B, service_provider_selected: C }, data.assignments(poi_no_data_water_not_urbanized)?);
             // light blue
-            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: A }, data.assignments(no_poi_built_urbanized)?);
-            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: A }, data.assignments(no_poi_grass_urbanized)?);
-            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: A }, data.assignments(no_poi_water_urbanized)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: A, service_provider_selected: C }, data.assignments(no_poi_built_urbanized)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: A, service_provider_selected: C }, data.assignments(no_poi_grass_urbanized)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: A, service_provider_selected: C }, data.assignments(no_poi_water_urbanized)?);
             // dark blue
-            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: B }, data.assignments(no_poi_built_not_urbanized)?);
-            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: B }, data.assignments(no_poi_grass_not_urbanized)?);
-            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: B }, data.assignments(no_poi_water_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: B, service_provider_selected: C }, data.assignments(no_poi_built_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: B, service_provider_selected: C }, data.assignments(no_poi_grass_not_urbanized)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: B, service_provider_selected: C }, data.assignments(no_poi_water_not_urbanized)?);
             // gray
-            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: C }, data.assignments(poi_built_outside_us)?);
-            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: C }, data.assignments(poi_grass_outside_us)?);
-            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: C }, data.assignments(poi_water_outside_us)?);
-            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: C }, data.assignments(poi_no_data_built_outside_us)?);
-            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: C }, data.assignments(poi_no_data_grass_outside_us)?);
-            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: C }, data.assignments(poi_no_data_water_outside_us)?);
-            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: C }, data.assignments(no_poi_built_outside_us)?);
-            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: C }, data.assignments(no_poi_grass_outside_us)?);
-            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C }, data.assignments(no_poi_water_outside_us)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: A, urbanized: C, service_provider_selected: C }, data.assignments(poi_built_outside_us)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: B, urbanized: C, service_provider_selected: C }, data.assignments(poi_grass_outside_us)?);
+            assert_eq!(HexAssignments { footfall: A, landtype: C, urbanized: C, service_provider_selected: C }, data.assignments(poi_water_outside_us)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: A, urbanized: C, service_provider_selected: C }, data.assignments(poi_no_data_built_outside_us)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: C, service_provider_selected: C }, data.assignments(poi_no_data_grass_outside_us)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: C, urbanized: C, service_provider_selected: C }, data.assignments(poi_no_data_water_outside_us)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: A, urbanized: C, service_provider_selected: C }, data.assignments(no_poi_built_outside_us)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: C, service_provider_selected: C }, data.assignments(no_poi_grass_outside_us)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_selected: C }, data.assignments(no_poi_water_outside_us)?);
+            // service provider selected
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_selected: A }, data.assignments(service_provider_selected_outside_us)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_selected: A }, data.assignments(service_provider_selected_us)?);
+
             // never inserted
-            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C }, data.assignments(unknown_cell)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_selected: C  }, data.assignments(unknown_cell)?);
         };
 
         Ok(())
