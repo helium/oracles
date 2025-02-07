@@ -174,15 +174,20 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
+    // Make sure test timestamps and DB timestamps have the same granularity
+    fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
+        ts.duration_trunc(Duration::nanoseconds(10)).unwrap()
+    }
+    fn hour_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
+        ts.duration_trunc(Duration::hours(1)).unwrap()
+    }
+
     async fn insert_heartbeat(
         pool: &PgPool,
         hotspot: &PublicKeyBinary,
         received_timestamp: DateTime<Utc>,
         validation_timestamp: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let truncated = received_timestamp
-            .duration_trunc(Duration::hours(1))
-            .unwrap();
         sqlx::query(
             r#"
             INSERT INTO wifi_heartbeats
@@ -203,9 +208,9 @@ mod tests {
             "#,
         )
         .bind(hotspot)
-        .bind(validation_timestamp)
-        .bind(received_timestamp)
-        .bind(truncated)
+        .bind(nanos_trunc(validation_timestamp))
+        .bind(nanos_trunc(received_timestamp))
+        .bind(hour_trunc(received_timestamp))
         .bind(Uuid::new_v4())
         .execute(pool)
         .await?;
@@ -218,8 +223,8 @@ mod tests {
         location_validation_timestamp: DateTime<Utc>,
     ) -> LastLocation {
         LastLocation {
-            location_validation_timestamp,
-            latest_timestamp,
+            location_validation_timestamp: nanos_trunc(location_validation_timestamp),
+            latest_timestamp: nanos_trunc(latest_timestamp),
             lat: 0.0,
             lon: 0.0,
         }
