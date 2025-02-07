@@ -176,7 +176,7 @@ mod tests {
 
     // Make sure test timestamps and DB timestamps have the same granularity
     fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
-        ts.duration_trunc(Duration::nanoseconds(10)).unwrap()
+        ts.duration_trunc(Duration::nanoseconds(1000)).unwrap()
     }
     fn hour_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
         ts.duration_trunc(Duration::hours(1)).unwrap()
