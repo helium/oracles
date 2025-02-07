@@ -195,13 +195,13 @@ pub(crate) mod db {
 
     const GET_BOOSTED_HEX_INFO_SQL: &str = r#"
             select 
-                CAST(hexes.location as bigint), 
-                CAST(hexes.start_ts as bigint), 
-                config.period_length,
+                CAST(hexes.location AS bigint),
+                CAST(hexes.start_ts AS bigint),
+                CAST(config.period_length AS bigint),
                 hexes.boosts_by_period as multipliers,
                 hexes.address as boosted_hex_pubkey, 
                 config.address as boost_config_pubkey,
-                hexes.version
+                CAST(hexes.version AS integer)
             from boosted_hexes hexes
             join boost_configs config on hexes.boost_config = config.address
         "#;
@@ -209,13 +209,13 @@ pub(crate) mod db {
     // TODO: reuse with string above
     const GET_MODIFIED_BOOSTED_HEX_INFO_SQL: &str = r#"
             select 
-                CAST(hexes.location as bigint), 
-                CAST(hexes.start_ts as bigint), 
-                config.period_length,
+                CAST(hexes.location AS bigint),
+                CAST(hexes.start_ts AS bigint),
+                CAST(config.period_length AS bigint),
                 hexes.boosts_by_period as multipliers,
                 hexes.address as boosted_hex_pubkey, 
                 config.address as boost_config_pubkey,
-                hexes.version
+                CAST(hexes.version AS integer)
             from boosted_hexes hexes
             join boost_configs config on hexes.boost_config = config.address
             where hexes.refreshed_at > $1
@@ -243,7 +243,7 @@ pub(crate) mod db {
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for BoostedHexInfo {
         fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-            let period_length = Duration::seconds(row.get::<i32, &str>("period_length") as i64);
+            let period_length = Duration::seconds(row.get::<i64, &str>("period_length"));
             let start_ts = to_start_ts(row.get::<i64, &str>("start_ts") as u64);
             let multipliers = row
                 .get::<Vec<u8>, &str>("multipliers")
