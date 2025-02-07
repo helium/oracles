@@ -1,16 +1,16 @@
+use super::HexAssignment;
 use anyhow::Result;
 use helium_proto::services::poc_mobile::OracleBoostingAssignment as ProtoAssignment;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::fmt;
 
-use super::HexAssignment;
-
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct HexAssignments {
     pub footfall: Assignment,
     pub landtype: Assignment,
     pub urbanized: Assignment,
+    pub service_provider_selected: Assignment,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, sqlx::Type)]
@@ -67,6 +67,7 @@ impl HexAssignments {
             footfall: None,
             landtype: None,
             urbanized: None,
+            service_provider_selected: None,
         }
     }
 
@@ -75,36 +76,40 @@ impl HexAssignments {
             footfall,
             landtype,
             urbanized,
+            service_provider_selected,
         } = self;
 
         use Assignment::*;
-        match (footfall, landtype, urbanized) {
+        match (footfall, landtype, urbanized, service_provider_selected) {
+            // service provider selected hex
+            // Overrides other dataset assignments if set
+            (_, _, _, A) => dec!(1.00),
             // yellow - POI ≥ 1 Urbanized
-            (A, A, A) => dec!(1.00),
-            (A, B, A) => dec!(1.00),
-            (A, C, A) => dec!(1.00),
+            (A, A, A, _) => dec!(1.00),
+            (A, B, A, _) => dec!(1.00),
+            (A, C, A, _) => dec!(1.00),
             // orange - POI ≥ 1 Not Urbanized
-            (A, A, B) => dec!(1.00),
-            (A, B, B) => dec!(1.00),
-            (A, C, B) => dec!(1.00),
+            (A, A, B, _) => dec!(1.00),
+            (A, B, B, _) => dec!(1.00),
+            (A, C, B, _) => dec!(1.00),
             // light green - Point of Interest Urbanized
-            (B, A, A) => dec!(0.70),
-            (B, B, A) => dec!(0.70),
-            (B, C, A) => dec!(0.70),
+            (B, A, A, _) => dec!(0.70),
+            (B, B, A, _) => dec!(0.70),
+            (B, C, A, _) => dec!(0.70),
             // dark green - Point of Interest Not Urbanized
-            (B, A, B) => dec!(0.50),
-            (B, B, B) => dec!(0.50),
-            (B, C, B) => dec!(0.50),
+            (B, A, B, _) => dec!(0.50),
+            (B, B, B, _) => dec!(0.50),
+            (B, C, B, _) => dec!(0.50),
             // light blue - No POI Urbanized
-            (C, A, A) => dec!(0.40),
-            (C, B, A) => dec!(0.30),
-            (C, C, A) => dec!(0.05),
+            (C, A, A, _) => dec!(0.40),
+            (C, B, A, _) => dec!(0.30),
+            (C, C, A, _) => dec!(0.05),
             // dark blue - No POI Not Urbanized
-            (C, A, B) => dec!(0.20),
-            (C, B, B) => dec!(0.15),
-            (C, C, B) => dec!(0.03),
+            (C, A, B, _) => dec!(0.20),
+            (C, B, B, _) => dec!(0.15),
+            (C, C, B, _) => dec!(0.03),
             // gray - Outside of USA
-            (_, _, C) => dec!(0.00),
+            (_, _, C, _) => dec!(0.00),
         }
     }
 }
@@ -114,6 +119,7 @@ pub struct HexAssignmentsBuilder {
     footfall: Option<Result<Assignment>>,
     landtype: Option<Result<Assignment>>,
     urbanized: Option<Result<Assignment>>,
+    service_provider_selected: Option<Result<Assignment>>,
 }
 
 impl HexAssignmentsBuilder {
@@ -132,6 +138,14 @@ impl HexAssignmentsBuilder {
         self
     }
 
+    pub fn service_provider_selected(
+        mut self,
+        service_provider_selected: &impl HexAssignment,
+    ) -> Self {
+        self.service_provider_selected = Some(service_provider_selected.assignment(self.cell));
+        self
+    }
+
     pub fn build(self) -> anyhow::Result<HexAssignments> {
         let Some(footfall) = self.footfall else {
             anyhow::bail!("footfall assignment not set");
@@ -142,10 +156,14 @@ impl HexAssignmentsBuilder {
         let Some(urbanized) = self.urbanized else {
             anyhow::bail!("urbanized assignment not set");
         };
+        let Some(service_provider_selected) = self.service_provider_selected else {
+            anyhow::bail!("service_provider_selected assignment not set");
+        };
         Ok(HexAssignments {
             footfall: footfall?,
             urbanized: urbanized?,
             landtype: landtype?,
+            service_provider_selected: service_provider_selected?,
         })
     }
 }

@@ -40,6 +40,7 @@ fn base_radio_coverage_points() {
             footfall: Assignment::A,
             landtype: Assignment::A,
             urbanized: Assignment::A,
+            service_provider_selected: Assignment::C,
         },
         boosted: NonZeroU32::new(0),
     }];
@@ -82,6 +83,7 @@ fn radios_with_coverage() {
             footfall: Assignment::A,
             landtype: Assignment::A,
             urbanized: Assignment::A,
+            service_provider_selected: Assignment::C,
         },
         boosted: NonZeroU32::new(0),
     };
@@ -426,6 +428,7 @@ fn ranked_coverage(hex: u64, rank: usize, signal_level: SignalLevel) -> RankedCo
             footfall: Assignment::A,
             landtype: Assignment::A,
             urbanized: Assignment::A,
+            service_provider_selected: Assignment::C,
         },
         boosted: None,
         signal_level,
@@ -441,6 +444,7 @@ fn unranked_coverage(hex: u64, signal_level: SignalLevel) -> UnrankedCoverage {
             footfall: Assignment::A,
             landtype: Assignment::A,
             urbanized: Assignment::A,
+            service_provider_selected: Assignment::C,
         },
     }
 }
