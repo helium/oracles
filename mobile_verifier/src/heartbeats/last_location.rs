@@ -174,7 +174,8 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    // Make sure test timestamps and DB timestamps have the same granularity
+    // Make sure test timestamps and DB timestamps have the same granularity.
+    // 6 decimal places.
     fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
         ts.duration_trunc(Duration::nanoseconds(1000)).unwrap()
     }
@@ -252,11 +253,11 @@ mod tests {
             cache.get(&hotspot_one, now).await?,
             "Invalid timestamp current"
         );
-        let expect = Some(test_last_location(now, limit_timestamp));
-        let cached = cache.get(&hotspot_two, now).await?;
-        println!("expect: {:?}", expect);
-        println!("cached: {:?}", cached);
-        assert_eq!(expect, cached, "Limit timestamp current");
+        assert_eq!(
+            Some(test_last_location(now, limit_timestamp)),
+            cache.get(&hotspot_two, now).await?,
+            "Limit timestamp current"
+        );
         assert_eq!(
             Some(test_last_location(now, good_timestamp)),
             cache.get(&hotspot_three, now).await?,
