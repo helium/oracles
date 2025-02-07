@@ -258,7 +258,7 @@ mod tests {
             "Good timestamp current"
         );
 
-        // Moving an hour into the future should invalidate all timestamps
+        // Moving an 1 day into the future should invalidate all timestamps
         // regardless of what has already been cached.
         let future = now + Duration::days(1);
         assert_eq!(
