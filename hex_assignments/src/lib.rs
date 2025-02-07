@@ -95,6 +95,7 @@ mod tests {
         let poi_built_urbanized = hextree::Cell::from_raw(0x8c2681a3064dbff)?;
         let poi_grass_urbanized = hextree::Cell::from_raw(0x8c2681a3064ddff)?;
         let poi_water_urbanized = hextree::Cell::from_raw(0x8c2681a3064e1ff)?;
+
         // orange - POI ≥ 1 Not Urbanized
         let poi_built_not_urbanized = hextree::Cell::from_raw(0x8c2681a3064e3ff)?;
         let poi_grass_not_urbanized = hextree::Cell::from_raw(0x8c2681a3064e5ff)?;
@@ -115,6 +116,7 @@ mod tests {
         let no_poi_built_not_urbanized = hextree::Cell::from_raw(0x8c2681a30650dff)?;
         let no_poi_grass_not_urbanized = hextree::Cell::from_raw(0x8c2681a306511ff)?;
         let no_poi_water_not_urbanized = hextree::Cell::from_raw(0x8c2681a306513ff)?;
+
         // gray - Outside of USA
         let poi_built_outside_us = hextree::Cell::from_raw(0x8c2681a306515ff)?;
         let poi_grass_outside_us = hextree::Cell::from_raw(0x8c2681a306517ff)?;
@@ -127,8 +129,9 @@ mod tests {
         let no_poi_water_outside_us = hextree::Cell::from_raw(0x8c2681a306527ff)?;
 
         // service provider selected
-        let service_provider_selected_outside_us = hextree::Cell::from_raw(0x834995fffffffff)?;
-        let service_provider_selected_us = hextree::Cell::from_raw(0x84446c3ffffffff)?;
+        let poi_no_data_grass_not_urbanized_and_service_provider_selected =
+            hextree::Cell::from_raw(0x8a446c214737fff)?;
+        let service_provider_selected_outside_us = hextree::Cell::from_raw(0x8a498c969177fff)?;
 
         // Footfall Data
         // POI         - footfalls > 1 for a POI across hexes
@@ -153,6 +156,10 @@ mod tests {
         footfall.insert(poi_no_data_built_outside_us, 0);
         footfall.insert(poi_no_data_grass_outside_us, 0);
         footfall.insert(poi_no_data_water_outside_us, 0);
+        footfall.insert(
+            poi_no_data_grass_not_urbanized_and_service_provider_selected,
+            0,
+        );
 
         // Landtype Data
         // Map to enum values for Landtype
@@ -185,6 +192,10 @@ mod tests {
         landtype.insert(no_poi_built_outside_us, 50);
         landtype.insert(no_poi_grass_outside_us, 30);
         landtype.insert(no_poi_water_outside_us, 80);
+        landtype.insert(
+            poi_no_data_grass_not_urbanized_and_service_provider_selected,
+            30,
+        );
 
         // Urbanized data
         // Urban     - something in the map, and in the geofence
@@ -203,8 +214,8 @@ mod tests {
 
         // Service provider selected data
         let cells = vec![
+            poi_no_data_grass_not_urbanized_and_service_provider_selected,
             service_provider_selected_outside_us,
-            service_provider_selected_us,
         ];
         let service_provider_selected = HexTreeSet::from_iter(cells);
 
@@ -227,6 +238,7 @@ mod tests {
             no_poi_built_not_urbanized,
             no_poi_grass_not_urbanized,
             no_poi_water_not_urbanized,
+            poi_no_data_grass_not_urbanized_and_service_provider_selected,
         ];
         for inside_usa in inside_usa.into_iter() {
             urbanized.entry(inside_usa).or_insert(0);
@@ -302,8 +314,8 @@ mod tests {
             assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: C, service_provider_selected: C }, data.assignments(no_poi_grass_outside_us)?);
             assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_selected: C }, data.assignments(no_poi_water_outside_us)?);
             // service provider selected
+            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: B, service_provider_selected: A }, data.assignments(poi_no_data_grass_not_urbanized_and_service_provider_selected)?);
             assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_selected: A }, data.assignments(service_provider_selected_outside_us)?);
-            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_selected: A }, data.assignments(service_provider_selected_us)?);
 
             // never inserted
             assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_selected: C  }, data.assignments(unknown_cell)?);

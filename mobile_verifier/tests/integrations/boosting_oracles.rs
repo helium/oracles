@@ -1,4 +1,5 @@
 use crate::common::{self, GatewayClientAllOwnersValid};
+use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::RadioHexSignalLevel,
@@ -406,8 +407,8 @@ async fn test_footfall_and_urbanization_and_landtype(pool: PgPool) -> anyhow::Re
         &UniqueConnectionCounts::default(),
         &epoch,
     )
-    .await?;
-    // .context("aggregating points")?;
+    .await
+    .context("aggregating points")?;
 
     //        (Footfall, Landtype, Urbanized)
     // Hex   | Assignment | Points Equation | Sum
