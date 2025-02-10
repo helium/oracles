@@ -100,6 +100,7 @@ impl RadioRewardV2Ext for coverage_point_calculator::CoveragePoints {
                 urbanized: covered_hex.assignments.urbanized.into(),
                 footfall: covered_hex.assignments.footfall.into(),
                 landtype: covered_hex.assignments.landtype.into(),
+                service_provider_selected: covered_hex.assignments.service_provider_selected.into(),
                 assignment_multiplier: Some(covered_hex.assignment_multiplier.proto_decimal()),
                 rank: covered_hex.rank as u32,
                 rank_multiplier: Some(covered_hex.rank_multiplier.proto_decimal()),

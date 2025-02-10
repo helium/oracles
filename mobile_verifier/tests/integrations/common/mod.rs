@@ -336,6 +336,7 @@ pub async fn set_unassigned_oracle_boosting_assignments(
                     urbanized: hex.assignments.urbanized.into(),
                     footfall: hex.assignments.footfall.into(),
                     landtype: hex.assignments.landtype.into(),
+                    service_provider_selected: hex.assignments.service_provider_selected.into(),
                     assignment_multiplier,
                 }
             })

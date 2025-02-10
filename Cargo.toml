@@ -70,10 +70,10 @@ helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = 
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
-helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
+helium-proto = { git = "https://github.com/helium/proto", branch = "andymck/support-sp-selected-assignment", features = [
   "services",
 ] }
-beacon = { git = "https://github.com/helium/proto", branch = "master" }
+beacon = { git = "https://github.com/helium/proto", branch = "andymck/support-sp-selected-assignment" }
 solana-client = "1.18"
 solana-sdk = "1.18"
 solana-program = "1.18"
@@ -128,10 +128,10 @@ sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df65
 
 # When attempting to test proto changes without needing to push a branch you can
 # patch the github url to point to your local proto repo.
-# 
+#
 # Patching for beacon must point directly to the crate, it will not look in the
 # repo for sibling crates.
-# 
+#
 # [patch.'https://github.com/helium/proto']
 # helium-proto = { path = "../../proto" }
 # beacon = { path = "../../proto" }

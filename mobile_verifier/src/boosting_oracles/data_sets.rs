@@ -834,7 +834,7 @@ impl AssignedCoverageObjects {
                         urbanized: hex.assignments.urbanized.into(),
                         footfall: hex.assignments.footfall.into(),
                         landtype: hex.assignments.landtype.into(),
-                        // todo: add service_provider_selected support to proto
+                        service_provider_selected: hex.assignments.service_provider_selected.into(),
                         assignment_multiplier,
                     }
                 })
