@@ -93,6 +93,7 @@ impl_msg_verify!(mobile_config::GatewayInfoReqV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoStreamReqV2, signature);
 impl_msg_verify!(mobile_config::GatewayInfoResV1, signature);
+impl_msg_verify!(mobile_config::GatewayInfoResV2, signature);
 impl_msg_verify!(mobile_config::GatewayInfoBatchReqV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoStreamResV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoStreamResV2, signature);
