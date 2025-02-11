@@ -497,7 +497,7 @@ fn get_data_set_path(
 }
 
 lazy_static! {
-    static ref RE: Regex = Regex::new(r"([a-z,_]+).(\d+)(.res10.h3tree)?").unwrap();
+    static ref RE: Regex = Regex::new(r"([a-z,_]+).(\d+)(.res[0-9]{1,2}.h3tree)?").unwrap();
 }
 
 async fn delete_old_data_sets(
