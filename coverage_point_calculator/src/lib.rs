@@ -410,13 +410,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case::unboosted_sp_selected(0, dec!(400), true)]
-    #[case::minimum_boosted_sp_selected(1, dec!(400), true)]
-    #[case::boosted_sp_selected(5, dec!(2000), true)]
-    fn service_provider_selected_assignment_overrides_other_assignments(
+    #[case::unboosted_sp_override(0, dec!(400), true)]
+    #[case::minimum_boosted_sp_override(1, dec!(400), true)]
+    #[case::boosted_sp_override(5, dec!(2000), true)]
+    fn service_provider_override_assignment_overrides_other_assignments(
         #[case] boost_multiplier: u32,
         #[case] expected_points: Decimal,
-        #[case] service_provider_selected: bool,
+        #[case] service_provider_override: bool,
     ) {
         let wifi = CoveragePoints::new(
             RadioType::IndoorWifi,
@@ -429,7 +429,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
-                assignments: assignments_from(Assignment::C, service_provider_selected),
+                assignments: assignments_from(Assignment::C, service_provider_override),
                 boosted: NonZeroU32::new(boost_multiplier),
             }],
             OracleBoostingStatus::Eligible,
@@ -455,7 +455,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum_no_sp_selected(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: NonZeroU32::new(5),
                 }],
                 OracleBoostingStatus::Eligible,
@@ -492,7 +492,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum_no_sp_selected(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: NonZeroU32::new(5),
                 }],
                 OracleBoostingStatus::Eligible,
@@ -531,7 +531,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum_no_sp_selected(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: NonZeroU32::new(5),
                 }],
                 OracleBoostingStatus::Eligible,
@@ -568,7 +568,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum_no_sp_selected(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: None,
                 }],
                 OracleBoostingStatus::Eligible,
@@ -629,7 +629,7 @@ mod tests {
             footfall: Assignment,
             landtype: Assignment,
             urbanized: Assignment,
-            service_provider_selected: Assignment,
+            service_provider_override: Assignment,
         ) -> RankedCoverage {
             RankedCoverage {
                 hotspot_key: pubkey(),
@@ -641,7 +641,7 @@ mod tests {
                     footfall,
                     landtype,
                     urbanized,
-                    service_provider_selected,
+                    service_provider_override,
                 },
                 boosted: None,
             }
@@ -717,7 +717,7 @@ mod tests {
                 hex: hex_location(),
                 rank,
                 signal_level: SignalLevel::High,
-                assignments: assignments_maximum_no_sp_selected(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -748,7 +748,7 @@ mod tests {
                     hex: hex_location(),
                     rank,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum_no_sp_selected(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: None,
                 },
                 RankedCoverage {
@@ -757,7 +757,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 2,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum_no_sp_selected(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: None,
                 },
                 RankedCoverage {
@@ -766,7 +766,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 42,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum_no_sp_selected(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: None,
                 },
             ],
@@ -791,7 +791,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
-                assignments: assignments_maximum_no_sp_selected(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -812,7 +812,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
-                assignments: assignments_maximum_no_sp_selected(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             },
             RankedCoverage {
@@ -821,7 +821,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::Low,
-                assignments: assignments_maximum_no_sp_selected(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: NonZeroU32::new(4),
             },
         ];
@@ -860,7 +860,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
-                assignments: assignments_maximum_no_sp_selected(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -888,7 +888,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
-                assignments: assignments_maximum_no_sp_selected(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -918,7 +918,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
-                assignments: assignments_maximum_no_sp_selected(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -946,7 +946,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
-                assignments: assignments_maximum_no_sp_selected(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -986,17 +986,17 @@ mod tests {
         hextree::Cell::from_raw(0x8c2681a3064edff).unwrap()
     }
 
-    fn assignments_maximum_no_sp_selected() -> HexAssignments {
+    fn assignments_maximum_no_sp_override() -> HexAssignments {
         HexAssignments {
             footfall: Assignment::A,
             landtype: Assignment::A,
             urbanized: Assignment::A,
-            service_provider_selected: Assignment::C,
+            service_provider_override: Assignment::C,
         }
     }
 
-    fn assignments_from(assignment: Assignment, service_provider_selected: bool) -> HexAssignments {
-        let service_provider_selected_assignment = if service_provider_selected {
+    fn assignments_from(assignment: Assignment, service_provider_override: bool) -> HexAssignments {
+        let service_provider_override_assignment = if service_provider_override {
             Assignment::A
         } else {
             Assignment::C
@@ -1005,7 +1005,7 @@ mod tests {
             footfall: assignment,
             landtype: assignment,
             urbanized: assignment,
-            service_provider_selected: service_provider_selected_assignment,
+            service_provider_override: service_provider_override_assignment,
         }
     }
 

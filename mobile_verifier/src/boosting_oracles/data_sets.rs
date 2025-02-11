@@ -33,7 +33,7 @@ use crate::{
 
 use hex_assignments::{
     assignment::HexAssignments, footfall::Footfall, landtype::Landtype,
-    service_provider_selected::ServiceProviderSelected, urbanization::Urbanization, HexAssignment,
+    service_provider_override::ServiceProviderOverride, urbanization::Urbanization, HexAssignment,
     HexBoostData,
 };
 
@@ -169,21 +169,21 @@ impl DataSet for Urbanization {
 }
 
 #[async_trait::async_trait]
-impl DataSet for ServiceProviderSelected {
-    const TYPE: DataSetType = DataSetType::ServiceProviderSelected;
+impl DataSet for ServiceProviderOverride {
+    const TYPE: DataSetType = DataSetType::ServiceProviderOverride;
 
     fn timestamp(&self) -> Option<DateTime<Utc>> {
         self.timestamp
     }
 
     fn update(&mut self, path: &Path, time_to_use: DateTime<Utc>) -> anyhow::Result<()> {
-        self.service_provider_selected = Some(DiskTreeMap::open(path)?);
+        self.service_provider_override = Some(DiskTreeMap::open(path)?);
         self.timestamp = Some(time_to_use);
         Ok(())
     }
 
     fn is_ready(&self) -> bool {
-        self.service_provider_selected.is_some()
+        self.service_provider_override.is_some()
     }
 }
 
@@ -197,7 +197,7 @@ where
     h.urbanization.is_ready()
         && h.footfall.is_ready()
         && h.landtype.is_ready()
-        && h.service_provider_selected.is_ready()
+        && h.service_provider_override.is_ready()
 }
 
 pub struct DataSetDownloaderDaemon<A, B, C, D, T> {
@@ -277,7 +277,7 @@ impl
         Footfall,
         Landtype,
         Urbanization,
-        ServiceProviderSelected,
+        ServiceProviderOverride,
         FileSinkClient<proto::OracleBoostingReportV1>,
     >
 {
@@ -301,12 +301,12 @@ impl
         let urbanization = Urbanization::new(None);
         let footfall = Footfall::new(None);
         let landtype = Landtype::new(None);
-        let service_provider_selected = ServiceProviderSelected::new(None);
+        let service_provider_override = ServiceProviderOverride::new(None);
         let hex_boost_data = HexBoostData::builder()
             .footfall(footfall)
             .landtype(landtype)
             .urbanization(urbanization)
-            .service_provider_selected(service_provider_selected)
+            .service_provider_override(service_provider_override)
             .build()?;
 
         let data_set_downloader = Self::new(
@@ -370,9 +370,9 @@ where
             .landtype
             .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
             .await?;
-        let new_service_provider_selected = self
+        let new_service_provider_override = self
             .data_sets
-            .service_provider_selected
+            .service_provider_override
             .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
             .await?;
 
@@ -381,7 +381,7 @@ where
         let new_data_set = new_urbanized.is_some()
             || new_footfall.is_some()
             || new_landtype.is_some()
-            || new_service_provider_selected.is_some();
+            || new_service_provider_override.is_some();
         if is_hex_boost_data_ready(&self.data_sets) && new_data_set {
             tracing::info!("Processing new data sets");
             self.data_set_processor
@@ -417,14 +417,14 @@ where
             )
             .await?;
         }
-        if let Some(new_service_provider_selected) = new_service_provider_selected {
-            new_service_provider_selected
+        if let Some(new_service_provider_override) = new_service_provider_override {
+            new_service_provider_override
                 .mark_as_processed(&self.pool)
                 .await?;
             delete_old_data_sets(
                 &self.data_set_directory,
-                DataSetType::ServiceProviderSelected,
-                new_service_provider_selected.time_to_use,
+                DataSetType::ServiceProviderOverride,
+                new_service_provider_override.time_to_use,
             )
             .await?;
         }
@@ -446,7 +446,7 @@ where
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
             .await?;
         self.data_sets
-            .service_provider_selected
+            .service_provider_override
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
             .await?;
         // Attempt to fill in any unassigned hexes. This is for the edge case in
@@ -550,7 +550,7 @@ pub enum DataSetType {
     Urbanization,
     Footfall,
     Landtype,
-    ServiceProviderSelected,
+    ServiceProviderOverride,
 }
 
 impl DataSetType {
@@ -559,7 +559,7 @@ impl DataSetType {
             Self::Urbanization => "urbanization",
             Self::Footfall => "footfall",
             Self::Landtype => "landtype",
-            Self::ServiceProviderSelected => "service_provider_selected",
+            Self::ServiceProviderOverride => "service_provider_override",
         }
     }
 
@@ -568,7 +568,7 @@ impl DataSetType {
             Self::Urbanization => "res10",
             Self::Footfall => "res10",
             Self::Landtype => "res10",
-            Self::ServiceProviderSelected => "res12",
+            Self::ServiceProviderOverride => "res12",
         }
     }
 }
@@ -779,7 +779,7 @@ pub mod db {
                            urbanized IS NULL
                            OR footfall IS NULL
                            OR landtype IS NULL
-                           OR service_provider_selected IS NULL
+                           OR service_provider_override IS NULL
                 )
                 "#,
             )
@@ -804,7 +804,7 @@ pub mod db {
                 urbanized IS NULL
                 OR footfall IS NULL
                 OR landtype IS NULL
-                OR service_provider_selected IS NULL",
+                OR service_provider_override IS NULL",
         )
         .fetch(pool)
     }
@@ -852,7 +852,7 @@ impl AssignedCoverageObjects {
                         urbanized: hex.assignments.urbanized.into(),
                         footfall: hex.assignments.footfall.into(),
                         landtype: hex.assignments.landtype.into(),
-                        service_provider_selected: hex.assignments.service_provider_selected.into(),
+                        service_provider_override: hex.assignments.service_provider_override.into(),
                         assignment_multiplier,
                     }
                 })
@@ -880,7 +880,7 @@ impl AssignedCoverageObjects {
         let assigned_hexes: Vec<_> = self.coverage_objs.into_values().flatten().collect();
         for assigned_hexes in assigned_hexes.chunks(ASSIGNMENTS_MAX_BATCH_ENTRIES) {
             QueryBuilder::new(
-                "INSERT INTO hexes (uuid, hex, signal_level, signal_power, footfall, landtype, urbanized, service_provider_selected)",
+                "INSERT INTO hexes (uuid, hex, signal_level, signal_power, footfall, landtype, urbanized, service_provider_override)",
             )
                 .push_values(assigned_hexes, |mut b, hex| {
                     b.push_bind(hex.uuid)
@@ -890,7 +890,7 @@ impl AssignedCoverageObjects {
                         .push_bind(hex.assignments.footfall)
                         .push_bind(hex.assignments.landtype)
                         .push_bind(hex.assignments.urbanized)
-                        .push_bind(hex.assignments.service_provider_selected);
+                        .push_bind(hex.assignments.service_provider_override);
                 })
                 .push(
                     r#"
@@ -898,7 +898,7 @@ impl AssignedCoverageObjects {
                         footfall = EXCLUDED.footfall,
                         landtype = EXCLUDED.landtype,
                         urbanized = EXCLUDED.urbanized,
-                        service_provider_selected = EXCLUDED.service_provider_selected
+                        service_provider_override = EXCLUDED.service_provider_override
                     "#,
                 )
                 .build()
@@ -934,7 +934,7 @@ impl UnassignedHex {
             .footfall(&data_sets.footfall)
             .landtype(&data_sets.landtype)
             .urbanized(&data_sets.urbanization)
-            .service_provider_selected(&data_sets.service_provider_selected)
+            .service_provider_override(&data_sets.service_provider_override)
             .build()?;
         Ok(AssignedHex {
             uuid: self.uuid,

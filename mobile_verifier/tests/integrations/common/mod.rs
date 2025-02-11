@@ -273,7 +273,7 @@ pub fn mock_hex_boost_data_default(
         .urbanization(Assignment::A)
         .footfall(Assignment::A)
         .landtype(Assignment::A)
-        .service_provider_selected(Assignment::C)
+        .service_provider_override(Assignment::C)
         .build()
         .unwrap()
 }
@@ -284,7 +284,7 @@ pub fn mock_hex_boost_data_bad(
         .urbanization(Assignment::C)
         .footfall(Assignment::C)
         .landtype(Assignment::C)
-        .service_provider_selected(Assignment::C)
+        .service_provider_override(Assignment::C)
         .build()
         .unwrap()
 }
@@ -296,13 +296,13 @@ pub fn mock_hex_boost_data(
     footfall: MockAssignmentMap,
     urbanized: MockAssignmentMap,
     landtype: MockAssignmentMap,
-    service_provider_selected: MockAssignmentMap,
+    service_provider_override: MockAssignmentMap,
 ) -> HexBoostData<MockAssignmentMap, MockAssignmentMap, MockAssignmentMap, MockAssignmentMap> {
     HexBoostData::builder()
         .footfall(footfall)
         .urbanization(urbanized)
         .landtype(landtype)
-        .service_provider_selected(service_provider_selected)
+        .service_provider_override(service_provider_override)
         .build()
         .unwrap()
 }
@@ -336,7 +336,7 @@ pub async fn set_unassigned_oracle_boosting_assignments(
                     urbanized: hex.assignments.urbanized.into(),
                     footfall: hex.assignments.footfall.into(),
                     landtype: hex.assignments.landtype.into(),
-                    service_provider_selected: hex.assignments.service_provider_selected.into(),
+                    service_provider_override: hex.assignments.service_provider_override.into(),
                     assignment_multiplier,
                 }
             })
