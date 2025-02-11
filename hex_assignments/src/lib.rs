@@ -129,9 +129,9 @@ mod tests {
         let no_poi_water_outside_us = hextree::Cell::from_raw(0x8c2681a306527ff)?;
 
         // service provider override
-        let poi_no_data_grass_not_urbanized_and_service_provider_selected =
+        let poi_no_data_grass_not_urbanized_and_service_provider_override =
             hextree::Cell::from_raw(0x8a446c214737fff)?;
-        let service_provider_selected_outside_us = hextree::Cell::from_raw(0x8a498c969177fff)?;
+        let service_provider_override_outside_us = hextree::Cell::from_raw(0x8a498c969177fff)?;
 
         // Footfall Data
         // POI         - footfalls > 1 for a POI across hexes
@@ -157,7 +157,7 @@ mod tests {
         footfall.insert(poi_no_data_grass_outside_us, 0);
         footfall.insert(poi_no_data_water_outside_us, 0);
         footfall.insert(
-            poi_no_data_grass_not_urbanized_and_service_provider_selected,
+            poi_no_data_grass_not_urbanized_and_service_provider_override,
             0,
         );
 
@@ -193,7 +193,7 @@ mod tests {
         landtype.insert(no_poi_grass_outside_us, 30);
         landtype.insert(no_poi_water_outside_us, 80);
         landtype.insert(
-            poi_no_data_grass_not_urbanized_and_service_provider_selected,
+            poi_no_data_grass_not_urbanized_and_service_provider_override,
             30,
         );
 
@@ -214,8 +214,8 @@ mod tests {
 
         // Service provider selected data
         let cells = vec![
-            poi_no_data_grass_not_urbanized_and_service_provider_selected,
-            service_provider_selected_outside_us,
+            poi_no_data_grass_not_urbanized_and_service_provider_override,
+            service_provider_override_outside_us,
         ];
         let service_provider_override = HexTreeSet::from_iter(cells);
 
@@ -238,7 +238,7 @@ mod tests {
             no_poi_built_not_urbanized,
             no_poi_grass_not_urbanized,
             no_poi_water_not_urbanized,
-            poi_no_data_grass_not_urbanized_and_service_provider_selected,
+            poi_no_data_grass_not_urbanized_and_service_provider_override,
         ];
         for inside_usa in inside_usa.into_iter() {
             urbanized.entry(inside_usa).or_insert(0);
@@ -247,14 +247,14 @@ mod tests {
         let mut urbanized_buf = vec![];
         let mut footfall_buff = vec![];
         let mut landtype_buf = vec![];
-        let mut service_provider_selected_buf = vec![];
+        let mut service_provider_override_buf = vec![];
 
         // Turn the HexTrees into DiskTrees
         urbanized.to_disktree(Cursor::new(&mut urbanized_buf), |w, v| w.write_all(&[*v]))?;
         footfall.to_disktree(Cursor::new(&mut footfall_buff), |w, v| w.write_all(&[*v]))?;
         landtype.to_disktree(Cursor::new(&mut landtype_buf), |w, v| w.write_all(&[*v]))?;
         service_provider_override
-            .to_disktree(Cursor::new(&mut service_provider_selected_buf), |_, _| {
+            .to_disktree(Cursor::new(&mut service_provider_override_buf), |_, _| {
                 Ok::<(), std::io::Error>(())
             })?;
 
@@ -262,7 +262,7 @@ mod tests {
         let landtype = Landtype::new(Some(DiskTreeMap::with_buf(landtype_buf)?));
         let urbanization = Urbanization::new(Some(DiskTreeMap::with_buf(urbanized_buf)?));
         let service_provider_override = ServiceProviderOverride::new(Some(DiskTreeMap::with_buf(
-            service_provider_selected_buf,
+            service_provider_override_buf,
         )?));
 
         // Let the testing commence
@@ -314,8 +314,8 @@ mod tests {
             assert_eq!(HexAssignments { footfall: C, landtype: B, urbanized: C, service_provider_override: C }, data.assignments(no_poi_grass_outside_us)?);
             assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_override: C }, data.assignments(no_poi_water_outside_us)?);
             // service provider override
-            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: B, service_provider_override: A }, data.assignments(poi_no_data_grass_not_urbanized_and_service_provider_selected)?);
-            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_override: A }, data.assignments(service_provider_selected_outside_us)?);
+            assert_eq!(HexAssignments { footfall: B, landtype: B, urbanized: B, service_provider_override: A }, data.assignments(poi_no_data_grass_not_urbanized_and_service_provider_override)?);
+            assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_override: A }, data.assignments(service_provider_override_outside_us)?);
 
             // never inserted
             assert_eq!(HexAssignments { footfall: C, landtype: C, urbanized: C, service_provider_override: C  }, data.assignments(unknown_cell)?);

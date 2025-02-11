@@ -370,7 +370,7 @@ where
             .landtype
             .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
             .await?;
-        let new_service_provider_selected = self
+        let new_service_provider_override = self
             .data_sets
             .service_provider_override
             .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
@@ -381,7 +381,7 @@ where
         let new_data_set = new_urbanized.is_some()
             || new_footfall.is_some()
             || new_landtype.is_some()
-            || new_service_provider_selected.is_some();
+            || new_service_provider_override.is_some();
         if is_hex_boost_data_ready(&self.data_sets) && new_data_set {
             tracing::info!("Processing new data sets");
             self.data_set_processor
@@ -417,14 +417,14 @@ where
             )
             .await?;
         }
-        if let Some(new_service_provider_selected) = new_service_provider_selected {
-            new_service_provider_selected
+        if let Some(new_service_provider_override) = new_service_provider_override {
+            new_service_provider_override
                 .mark_as_processed(&self.pool)
                 .await?;
             delete_old_data_sets(
                 &self.data_set_directory,
                 DataSetType::ServiceProviderOverride,
-                new_service_provider_selected.time_to_use,
+                new_service_provider_override.time_to_use,
             )
             .await?;
         }

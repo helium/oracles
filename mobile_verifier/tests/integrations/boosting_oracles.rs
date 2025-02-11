@@ -223,7 +223,7 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
 }
 
 #[sqlx::test]
-async fn test_footfall_and_urbanization_and_landtype_and_service_provider_selected(
+async fn test_footfall_and_urbanization_and_landtype_and_service_provider_override(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
