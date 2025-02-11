@@ -170,7 +170,7 @@ impl DataSet for Urbanization {
 
 #[async_trait::async_trait]
 impl DataSet for ServiceProviderSelected {
-    const TYPE: DataSetType = DataSetType::Urbanization;
+    const TYPE: DataSetType = DataSetType::ServiceProviderSelected;
 
     fn timestamp(&self) -> Option<DateTime<Utc>> {
         self.timestamp
@@ -545,7 +545,7 @@ async fn download_data_set(
 
 #[derive(Copy, Clone, sqlx::Type)]
 #[sqlx(type_name = "data_set_type")]
-#[sqlx(rename_all = "lowercase")]
+#[sqlx(rename_all = "snake_case")]
 pub enum DataSetType {
     Urbanization,
     Footfall,
