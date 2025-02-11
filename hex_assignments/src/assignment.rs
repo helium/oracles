@@ -10,7 +10,7 @@ pub struct HexAssignments {
     pub footfall: Assignment,
     pub landtype: Assignment,
     pub urbanized: Assignment,
-    pub service_provider_selected: Assignment,
+    pub service_provider_override: Assignment,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, sqlx::Type)]
@@ -67,7 +67,7 @@ impl HexAssignments {
             footfall: None,
             landtype: None,
             urbanized: None,
-            service_provider_selected: None,
+            service_provider_override: None,
         }
     }
 
@@ -76,12 +76,12 @@ impl HexAssignments {
             footfall,
             landtype,
             urbanized,
-            service_provider_selected,
+            service_provider_override,
         } = self;
 
         use Assignment::*;
-        match (footfall, landtype, urbanized, service_provider_selected) {
-            // service provider selected hex
+        match (footfall, landtype, urbanized, service_provider_override) {
+            // service provider override hex
             // Overrides other dataset assignments if set
             (_, _, _, A) => dec!(1.00),
             // yellow - POI ≥ 1 Urbanized
@@ -119,7 +119,7 @@ pub struct HexAssignmentsBuilder {
     footfall: Option<Result<Assignment>>,
     landtype: Option<Result<Assignment>>,
     urbanized: Option<Result<Assignment>>,
-    service_provider_selected: Option<Result<Assignment>>,
+    service_provider_override: Option<Result<Assignment>>,
 }
 
 impl HexAssignmentsBuilder {
@@ -138,11 +138,11 @@ impl HexAssignmentsBuilder {
         self
     }
 
-    pub fn service_provider_selected(
+    pub fn service_provider_override(
         mut self,
-        service_provider_selected: &impl HexAssignment,
+        service_provider_override: &impl HexAssignment,
     ) -> Self {
-        self.service_provider_selected = Some(service_provider_selected.assignment(self.cell));
+        self.service_provider_override = Some(service_provider_override.assignment(self.cell));
         self
     }
 
@@ -156,14 +156,14 @@ impl HexAssignmentsBuilder {
         let Some(urbanized) = self.urbanized else {
             anyhow::bail!("urbanized assignment not set");
         };
-        let Some(service_provider_selected) = self.service_provider_selected else {
-            anyhow::bail!("service_provider_selected assignment not set");
+        let Some(service_provider_override) = self.service_provider_override else {
+            anyhow::bail!("service_provider_override assignment not set");
         };
         Ok(HexAssignments {
             footfall: footfall?,
             urbanized: urbanized?,
             landtype: landtype?,
-            service_provider_selected: service_provider_selected?,
+            service_provider_override: service_provider_override?,
         })
     }
 }

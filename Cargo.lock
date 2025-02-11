@@ -1611,7 +1611,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsupport-sp-selected-assignment#22e0f8674c81257f449b52c72c53e84e633faebb"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsupport-sp-selected-assignment#c03e15d09bc6d12e39cb74cf08bd1330f9fcc0c0"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -1621,7 +1621,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -3816,7 +3816,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck%2Fsupport-sp-selected-assignment#22e0f8674c81257f449b52c72c53e84e633faebb"
+source = "git+https://github.com/helium/proto?branch=andymck%2Fsupport-sp-selected-assignment#c03e15d09bc6d12e39cb74cf08bd1330f9fcc0c0"
 dependencies = [
  "bytes",
  "prost",
@@ -6080,7 +6080,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.5.0",
+ "heck 0.4.0",
  "itertools",
  "log",
  "multimap",
@@ -10005,7 +10005,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.9.9",
  "thiserror",
  "twox-hash",
  "xorf",

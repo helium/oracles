@@ -114,7 +114,7 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
         footfall: Assignment,
         landtype: Assignment,
         urbanized: Assignment,
-        service_provider_selected: Assignment,
+        service_provider_override: Assignment,
         assignment_multiplier: u32,
     ) -> OracleBoostingHexAssignment {
         let loc = cell.to_string();
@@ -125,7 +125,7 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
             urbanized: urbanized.into(),
             footfall: footfall.into(),
             landtype: landtype.into(),
-            service_provider_selected: service_provider_selected.into(),
+            service_provider_override: service_provider_override.into(),
         }
     }
 
@@ -188,14 +188,14 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     let mut footfall = HashMap::<hextree::Cell, Assignment>::new();
     let mut urbanized = HashMap::<hextree::Cell, Assignment>::new();
     let mut landtype = HashMap::<hextree::Cell, Assignment>::new();
-    let mut service_provider_selected = HashSet::<hextree::Cell>::new();
+    let mut service_provider_override = HashSet::<hextree::Cell>::new();
 
     for hex in hexes.iter() {
         urbanized.insert(hex_cell(&hex.location), hex.urbanized().into());
         footfall.insert(hex_cell(&hex.location), hex.footfall().into());
         landtype.insert(hex_cell(&hex.location), hex.landtype().into());
-        if hex.service_provider_selected == Assignment::A as i32 {
-            service_provider_selected.insert(hex_cell(&hex.location));
+        if hex.service_provider_override == Assignment::A as i32 {
+            service_provider_override.insert(hex_cell(&hex.location));
         }
     }
 
@@ -212,7 +212,7 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
         .footfall(footfall)
         .landtype(landtype)
         .urbanization(urbanized)
-        .service_provider_selected(service_provider_selected)
+        .service_provider_override(service_provider_override)
         .build()?;
     let oba = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
@@ -234,7 +234,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_select
         landtype: Assignment,
         footfall: Assignment,
         urbanized: Assignment,
-        service_provider_selected: Assignment,
+        service_provider_override: Assignment,
         expected_score: Decimal,
     }
 
@@ -244,7 +244,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_select
             footfall: Assignment,
             landtype: Assignment,
             urbanized: Assignment,
-            service_provider_selected: Assignment,
+            service_provider_override: Assignment,
             expected_score: usize,
         ) -> Self {
             let loc = cell.to_string();
@@ -254,7 +254,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_select
                 landtype,
                 footfall,
                 urbanized,
-                service_provider_selected,
+                service_provider_override,
                 expected_score: Decimal::from(expected_score),
             }
         }
@@ -265,31 +265,31 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_select
         let mut cell = CellIndex::try_from(0x8c2681a3064d9ff)?;
         use hex_assignments::Assignment::*;
         vec![
-            // yellow - POI ≥ 1 Urbanized, not service provider selected
+            // yellow - POI ≥ 1 Urbanized, not service provider override
             TestHex::new(&mut cell, A, A, A, C, 400),
             TestHex::new(&mut cell, A, B, A, C, 400),
             TestHex::new(&mut cell, A, C, A, C, 400),
-            // orange - POI ≥ 1 Not Urbanized, not service provider selected
+            // orange - POI ≥ 1 Not Urbanized, not service provider override
             TestHex::new(&mut cell, A, A, B, C, 400),
             TestHex::new(&mut cell, A, B, B, C, 400),
             TestHex::new(&mut cell, A, C, B, C, 400),
-            // light green - Point of Interest Urbanized, not service provider selected
+            // light green - Point of Interest Urbanized, not service provider override
             TestHex::new(&mut cell, B, A, A, C, 280),
             TestHex::new(&mut cell, B, B, A, C, 280),
             TestHex::new(&mut cell, B, C, A, C, 280),
-            // dark green - Point of Interest Not Urbanized, not service provider selected
+            // dark green - Point of Interest Not Urbanized, not service provider override
             TestHex::new(&mut cell, B, A, B, C, 200),
             TestHex::new(&mut cell, B, B, B, C, 200),
             TestHex::new(&mut cell, B, C, B, C, 200),
-            // light blue - No POI Urbanized, not service provider selected
+            // light blue - No POI Urbanized, not service provider override
             TestHex::new(&mut cell, C, A, A, C, 160),
             TestHex::new(&mut cell, C, B, A, C, 120),
             TestHex::new(&mut cell, C, C, A, C, 20),
-            // dark blue - No POI Not Urbanized, not service provider selected
+            // dark blue - No POI Not Urbanized, not service provider override
             TestHex::new(&mut cell, C, A, B, C, 80),
             TestHex::new(&mut cell, C, B, B, C, 60),
             TestHex::new(&mut cell, C, C, B, C, 12),
-            // gray - Outside of USA, not service provider selected
+            // gray - Outside of USA, not service provider override
             TestHex::new(&mut cell, A, A, C, C, 0),
             TestHex::new(&mut cell, A, B, C, C, 0),
             TestHex::new(&mut cell, A, C, C, C, 0),
@@ -299,7 +299,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_select
             TestHex::new(&mut cell, C, A, C, C, 0),
             TestHex::new(&mut cell, C, B, C, C, 0),
             TestHex::new(&mut cell, C, C, C, C, 0),
-            // gray - Outside of USA, IS service provider selected
+            // gray - Outside of USA, IS service provider override
             TestHex::new(&mut cell, C, C, C, A, 100),
         ]
     };
@@ -311,14 +311,14 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_select
     let mut footfall = HashMap::new();
     let mut landtype = HashMap::new();
     let mut urbanized = HashMap::new();
-    let mut service_provider_selected = HashSet::<Cell>::new();
+    let mut service_provider_override = HashSet::<Cell>::new();
 
     for hex in hexes.iter() {
         footfall.insert(hex_cell(&hex.loc), hex.footfall);
         urbanized.insert(hex_cell(&hex.loc), hex.urbanized);
         landtype.insert(hex_cell(&hex.loc), hex.landtype);
-        if hex.service_provider_selected == Assignment::A {
-            service_provider_selected.insert(hex_cell(&hex.loc));
+        if hex.service_provider_override == Assignment::A {
+            service_provider_override.insert(hex_cell(&hex.loc));
         }
     }
 
@@ -353,7 +353,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_select
         .footfall(footfall)
         .landtype(landtype)
         .urbanization(urbanized)
-        .service_provider_selected(service_provider_selected)
+        .service_provider_override(service_provider_override)
         .build()?;
     let _ = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
@@ -421,31 +421,31 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_select
     // (Footfall, Landtype, Urbanized, Service Provider Selected)
     // Hex   | Assignment | Points Equation | Sum
     // -----------------------------------------------
-    // == yellow - POI ≥ 1 Urbanized, not service provider selected
+    // == yellow - POI ≥ 1 Urbanized, not service provider override
     // hex1  | A, A, A, C    | 100 * 1         | 100
     // hex2  | A, B, A, C    | 100 * 1         | 100
     // hex3  | A, C, A, C    | 100 * 1         | 100
-    // == orange - POI ≥ 1 Not Urbanized, not service provider selected
+    // == orange - POI ≥ 1 Not Urbanized, not service provider override
     // hex4  | A, A, B, C    | 100 * 1         | 100
     // hex5  | A, B, B, C    | 100 * 1         | 100
     // hex6  | A, C, B, C    | 100 * 1         | 100
-    // == light green - Point of Interest Urbanized, not service provider selected
+    // == light green - Point of Interest Urbanized, not service provider override
     // hex7  | B, A, A, C    | 100 * 0.70      | 70
     // hex8  | B, B, A, C    | 100 * 0.70      | 70
     // hex9  | B, C, A, C    | 100 * 0.70      | 70
-    // == dark green - Point of Interest Not Urbanized, not service provider selected
+    // == dark green - Point of Interest Not Urbanized, not service provider override
     // hex10 | B, A, B, C    | 100 * 0.50      | 50
     // hex11 | B, B, B, C    | 100 * 0.50      | 50
     // hex12 | B, C, B, C    | 100 * 0.50      | 50
-    // == light blue - No POI Urbanized, not service provider selected
+    // == light blue - No POI Urbanized, not service provider override
     // hex13 | C, A, A, C    | 100 * 0.40      | 40
     // hex14 | C, B, A, C    | 100 * 0.30      | 30
     // hex15 | C, C, A, C    | 100 * 0.05      | 5
-    // == dark blue - No POI Not Urbanized, not service provider selected
+    // == dark blue - No POI Not Urbanized, not service provider override
     // hex16 | C, A, B, C    | 100 * 0.20      | 20
     // hex17 | C, B, B, C    | 100 * 0.15      | 15
     // hex18 | C, C, B, C    | 100 * 0.03      | 3
-    // == gray - Outside of USA, not service provider selected
+    // == gray - Outside of USA, not service provider override
     // hex19 | A, A, C, C    | 100 * 0.00     | 0
     // hex20 | A, B, C, C    | 100 * 0.00     | 0
     // hex21 | A, C, C, C    | 100 * 0.00     | 0
@@ -455,7 +455,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_select
     // hex25 | C, A, C, C    | 100 * 0.00     | 0
     // hex26 | C, B, C, C    | 100 * 0.00     | 0
     // hex27 | C, C, C, C    | 100 * 0.00     | 0
-    // == gray - Outside of USA, IS service provider selected
+    // == gray - Outside of USA, IS service provider override
     // hex28 | A, A, C, A    | 100 * 1.00     | 100
 
     // -----------------------------------------------
