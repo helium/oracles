@@ -9,9 +9,9 @@ pub struct ServiceProviderSelected {
 }
 
 impl ServiceProviderSelected {
-    pub fn new(urbanized: Option<DiskTreeMap>) -> Self {
+    pub fn new(service_provider_selected: Option<DiskTreeMap>) -> Self {
         Self {
-            service_provider_selected: urbanized,
+            service_provider_selected,
             timestamp: None,
         }
     }

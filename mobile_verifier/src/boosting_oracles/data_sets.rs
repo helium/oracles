@@ -66,6 +66,7 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
         store: &FileStore,
         pool: &PgPool,
     ) -> anyhow::Result<()> {
+        tracing::info!("Checking for new {} data sets", Self::TYPE.to_prefix());
         let mut new_data_sets = store.list(Self::TYPE.to_prefix(), self.timestamp(), None);
         while let Some(new_data_set) = new_data_sets.next().await.transpose()? {
             db::insert_new_data_set(pool, &new_data_set.key, Self::TYPE, new_data_set.timestamp)
@@ -82,7 +83,6 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
     ) -> anyhow::Result<Option<NewDataSet>> {
         self.check_for_available_data_sets(store, pool).await?;
 
-        tracing::info!("Checking for new {} data sets", Self::TYPE.to_prefix());
         let latest_unprocessed_data_set =
             db::fetch_latest_unprocessed_data_set(pool, Self::TYPE, self.timestamp()).await?;
 
@@ -287,6 +287,7 @@ impl
         file_upload: FileUpload,
         new_coverage_object_notification: NewCoverageObjectNotification,
     ) -> anyhow::Result<impl ManagedTask> {
+        tracing::info!("Creating data set downloader task");
         let (oracle_boosting_reports, oracle_boosting_reports_server) =
             OracleBoostingReportV1::file_sink(
                 settings.store_base_path(),
@@ -300,10 +301,12 @@ impl
         let urbanization = Urbanization::new(None);
         let footfall = Footfall::new(None);
         let landtype = Landtype::new(None);
+        let service_provider_selected = ServiceProviderSelected::new(None);
         let hex_boost_data = HexBoostData::builder()
             .footfall(footfall)
             .landtype(landtype)
             .urbanization(urbanization)
+            .service_provider_selected(service_provider_selected)
             .build()?;
 
         let data_set_downloader = Self::new(
@@ -375,8 +378,10 @@ where
 
         // If all of the data sets are ready and there is at least one new one, re-process all
         // hex assignments:
-        let new_data_set =
-            new_urbanized.is_some() || new_footfall.is_some() || new_landtype.is_some();
+        let new_data_set = new_urbanized.is_some()
+            || new_footfall.is_some()
+            || new_landtype.is_some()
+            || new_service_provider_selected.is_some();
         if is_hex_boost_data_ready(&self.data_sets) && new_data_set {
             tracing::info!("Processing new data sets");
             self.data_set_processor
@@ -418,7 +423,7 @@ where
                 .await?;
             delete_old_data_sets(
                 &self.data_set_directory,
-                DataSetType::Landtype,
+                DataSetType::ServiceProviderSelected,
                 new_service_provider_selected.time_to_use,
             )
             .await?;
@@ -427,6 +432,7 @@ where
     }
 
     pub async fn run(mut self) -> anyhow::Result<()> {
+        tracing::info!("Starting data set downloader task");
         self.data_sets
             .urbanization
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
@@ -480,9 +486,10 @@ fn get_data_set_path(
     time_to_use: DateTime<Utc>,
 ) -> PathBuf {
     let path = PathBuf::from(format!(
-        "{}.{}.res10.h3tree",
+        "{}.{}.{}.h3tree",
         data_set_type.to_prefix(),
-        time_to_use.timestamp_millis()
+        time_to_use.timestamp_millis(),
+        data_set_type.to_hex_res_prefix(),
     ));
     let mut dir = data_set_directory.to_path_buf();
     dir.push(path);
@@ -553,6 +560,15 @@ impl DataSetType {
             Self::Footfall => "footfall",
             Self::Landtype => "landtype",
             Self::ServiceProviderSelected => "service_provider_selected",
+        }
+    }
+
+    pub fn to_hex_res_prefix(self) -> &'static str {
+        match self {
+            Self::Urbanization => "res10",
+            Self::Footfall => "res10",
+            Self::Landtype => "res10",
+            Self::ServiceProviderSelected => "res12",
         }
     }
 }
@@ -763,6 +779,7 @@ pub mod db {
                            urbanized IS NULL
                            OR footfall IS NULL
                            OR landtype IS NULL
+                           OR service_provider_selected IS NULL
                 )
                 "#,
             )
@@ -786,7 +803,8 @@ pub mod db {
             WHERE
                 urbanized IS NULL
                 OR footfall IS NULL
-                OR landtype IS NULL",
+                OR landtype IS NULL
+                OR service_provider_selected IS NULL",
         )
         .fetch(pool)
     }
@@ -862,7 +880,7 @@ impl AssignedCoverageObjects {
         let assigned_hexes: Vec<_> = self.coverage_objs.into_values().flatten().collect();
         for assigned_hexes in assigned_hexes.chunks(ASSIGNMENTS_MAX_BATCH_ENTRIES) {
             QueryBuilder::new(
-                "INSERT INTO hexes (uuid, hex, signal_level, signal_power, footfall, landtype, service_provider_selected, urbanized)",
+                "INSERT INTO hexes (uuid, hex, signal_level, signal_power, footfall, landtype, urbanized, service_provider_selected)",
             )
                 .push_values(assigned_hexes, |mut b, hex| {
                     b.push_bind(hex.uuid)
@@ -871,16 +889,16 @@ impl AssignedCoverageObjects {
                         .push_bind(hex.signal_power)
                         .push_bind(hex.assignments.footfall)
                         .push_bind(hex.assignments.landtype)
-                        .push_bind(hex.assignments.service_provider_selected)
-                        .push_bind(hex.assignments.urbanized);
+                        .push_bind(hex.assignments.urbanized)
+                        .push_bind(hex.assignments.service_provider_selected);
                 })
                 .push(
                     r#"
                     ON CONFLICT (uuid, hex) DO UPDATE SET
                         footfall = EXCLUDED.footfall,
                         landtype = EXCLUDED.landtype,
-                        service_provider_selected = EXCLUDED.service_provider_selected,
-                        urbanized = EXCLUDED.urbanized
+                        urbanized = EXCLUDED.urbanized,
+                        service_provider_selected = EXCLUDED.service_provider_selected
                     "#,
                 )
                 .build()
