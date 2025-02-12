@@ -654,31 +654,31 @@ mod tests {
             speedtest_maximum(),
             location_trust_maximum(),
             vec![
-                // yellow - POI ≥ 1 Urbanized
+                // yellow - POI ≥ 1 Urbanized, no SP override
                 ranked_coverage(A, A, A, C), // 100
                 ranked_coverage(A, B, A, C), // 100
                 ranked_coverage(A, C, A, C), // 100
-                // orange - POI ≥ 1 Not Urbanized
+                // orange - POI ≥ 1 Not Urbanized, no SP override
                 ranked_coverage(A, A, B, C), // 100
                 ranked_coverage(A, B, B, C), // 100
                 ranked_coverage(A, C, B, C), // 100
-                // light green - Point of Interest Urbanized
+                // light green - Point of Interest Urbanized, no SP override
                 ranked_coverage(B, A, A, C), // 70
                 ranked_coverage(B, B, A, C), // 70
                 ranked_coverage(B, C, A, C), // 70
-                // dark green - Point of Interest Not Urbanized
+                // dark green - Point of Interest Not Urbanized, no SP override
                 ranked_coverage(B, A, B, C), // 50
                 ranked_coverage(B, B, B, C), // 50
                 ranked_coverage(B, C, B, C), // 50
-                // light blue - No POI Urbanized
+                // light blue - No POI Urbanized, no SP override
                 ranked_coverage(C, A, A, C), // 40
                 ranked_coverage(C, B, A, C), // 30
                 ranked_coverage(C, C, A, C), // 5
-                // dark blue - No POI Not Urbanized
+                // dark blue - No POI Not Urbanized, no SP override
                 ranked_coverage(C, A, B, C), // 20
                 ranked_coverage(C, B, B, C), // 15
                 ranked_coverage(C, C, B, C), // 3
-                // gray - Outside of USA
+                // gray - Outside of USA, no SP override
                 ranked_coverage(A, A, C, C), // 0
                 ranked_coverage(A, B, C, C), // 0
                 ranked_coverage(A, C, C, C), // 0
