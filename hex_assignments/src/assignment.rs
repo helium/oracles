@@ -32,6 +32,8 @@ impl From<Assignment> for ProtoAssignment {
     }
 }
 
+#[allow(clippy::from_over_into)]
+// used one direction only
 impl Into<bool> for Assignment {
     fn into(self) -> bool {
         match self {
