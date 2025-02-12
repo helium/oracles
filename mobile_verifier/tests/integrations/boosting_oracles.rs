@@ -194,7 +194,7 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
         urbanized.insert(hex_cell(&hex.location), hex.urbanized().into());
         footfall.insert(hex_cell(&hex.location), hex.footfall().into());
         landtype.insert(hex_cell(&hex.location), hex.landtype().into());
-        if hex.service_provider_override == Assignment::A as i32 {
+        if hex.service_provider_override {
             service_provider_override.insert(hex_cell(&hex.location));
         }
     }

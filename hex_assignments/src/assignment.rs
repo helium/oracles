@@ -32,6 +32,16 @@ impl From<Assignment> for ProtoAssignment {
     }
 }
 
+impl Into<bool> for Assignment {
+    fn into(self) -> bool {
+        match self {
+            Assignment::A => true,
+            Assignment::B => true,
+            Assignment::C => false,
+        }
+    }
+}
+
 impl From<Assignment> for i32 {
     fn from(assignment: Assignment) -> i32 {
         ProtoAssignment::from(assignment) as i32
