@@ -30,7 +30,6 @@ impl HexAssignment for ServiceProviderOverride {
         };
         match service_provider_override.contains(cell) {
             Ok(true) => Ok(Assignment::A),
-            Ok(false) => Ok(Assignment::C),
             _ => Ok(Assignment::C),
         }
     }
