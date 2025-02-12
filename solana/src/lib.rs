@@ -1,33 +1,60 @@
-use solana_client::client_error::ClientError;
+use solana_client::{client_error::ClientError, rpc_client::SerializableTransaction};
 use solana_sdk::pubkey::ParsePubkeyError;
-use solana_sdk::signature::Signature;
-use solana_sdk::transaction::Transaction;
-use std::time::SystemTimeError;
+use std::{fs::File, io::Read, path::Path, time::SystemTimeError};
+
+pub use helium_lib::{
+    dao::SubDao,
+    error,
+    keypair::{Keypair, Pubkey, Signature},
+};
+pub use solana_sdk::transaction::Transaction as SolanaTransaction;
+
+#[derive(serde::Serialize)]
+pub struct Transaction {
+    pub inner: SolanaTransaction,
+    pub sent_block_height: u64,
+}
+
+impl From<(SolanaTransaction, u64)> for Transaction {
+    fn from(value: (SolanaTransaction, u64)) -> Self {
+        Self {
+            inner: value.0,
+            sent_block_height: value.1,
+        }
+    }
+}
+
+impl SerializableTransaction for Transaction {
+    fn get_signature(&self) -> &Signature {
+        self.inner.get_signature()
+    }
+
+    fn get_recent_blockhash(&self) -> &solana_sdk::hash::Hash {
+        self.inner.get_recent_blockhash()
+    }
+
+    fn uses_durable_nonce(&self) -> bool {
+        self.inner.uses_durable_nonce()
+    }
+}
+
+impl Transaction {
+    pub fn get_signature(&self) -> &Signature {
+        self.inner.get_signature()
+    }
+}
 
 pub mod burn;
 pub mod carrier;
+pub mod sender;
 pub mod start_boost;
 
-macro_rules! send_with_retry {
-    ($rpc:expr) => {{
-        let mut attempt = 1;
-        loop {
-            match $rpc.await {
-                Ok(resp) => break Ok(resp),
-                Err(err) => {
-                    if attempt < 5 {
-                        attempt += 1;
-                        tokio::time::sleep(std::time::Duration::from_secs(attempt)).await;
-                        continue;
-                    } else {
-                        break Err(err);
-                    }
-                }
-            }
-        }
-    }};
+pub fn read_keypair_from_file<F: AsRef<Path>>(path: F) -> anyhow::Result<Keypair> {
+    let mut file = File::open(path.as_ref())?;
+    let mut sk_buf = [0u8; 64];
+    file.read_exact(&mut sk_buf)?;
+    Ok(Keypair::try_from(&sk_buf)?)
 }
-pub(crate) use send_with_retry;
 
 #[derive(thiserror::Error, Debug)]
 pub enum SolanaRpcError {
@@ -49,9 +76,12 @@ pub enum SolanaRpcError {
     FailedToReadKeypairError(String),
     #[error("crypto error: {0}")]
     Crypto(#[from] helium_crypto::Error),
-    // TODO: Remove when fully integrated with helium-lib
-    #[error("Test Error")]
-    Test(String),
+    #[error("helium-lib error: {0}")]
+    HeliumLib(#[from] helium_lib::error::Error),
+    #[error("Parse Solana Pubkey from slice error: {0}")]
+    ParsePubkeyFromSliceError(#[from] std::array::TryFromSliceError),
+    #[error("Sender Error: {0}")]
+    Sender(#[from] sender::SenderError),
 }
 
 impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
@@ -70,14 +100,14 @@ pub trait GetSignature {
     fn get_signature(&self) -> &Signature;
 }
 
-impl GetSignature for Transaction {
-    fn get_signature(&self) -> &Signature {
-        &self.signatures[0]
-    }
-}
-
 impl GetSignature for Signature {
     fn get_signature(&self) -> &Signature {
         self
+    }
+}
+
+impl GetSignature for Transaction {
+    fn get_signature(&self) -> &Signature {
+        self.get_signature()
     }
 }

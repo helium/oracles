@@ -1,22 +1,36 @@
-use crate::{send_with_retry, GetSignature, SolanaRpcError};
-use anchor_client::RequestBuilder;
+use crate::{read_keypair_from_file, GetSignature, SolanaRpcError, Transaction};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use file_store::hex_boost::BoostedHexActivation;
-use helium_anchor_gen::{
-    anchor_lang::{InstructionData, ToAccountMetas},
-    hexboosting::{self, accounts, instruction},
+use helium_lib::{
+    boosting, client,
+    keypair::{Keypair, Signature},
+    TransactionOpts,
 };
 use serde::Deserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_program::instruction::Instruction;
-use solana_sdk::{
-    commitment_config::CommitmentConfig,
-    pubkey::Pubkey,
-    signature::{read_keypair_file, Keypair, Signature},
-    signer::Signer,
-    transaction::Transaction,
-};
+use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signer::Signer};
 use std::sync::Arc;
+
+macro_rules! send_with_retry {
+    ($rpc:expr) => {{
+        let mut attempt = 1;
+        loop {
+            match $rpc.await {
+                Ok(resp) => break Ok(resp),
+                Err(err) => {
+                    if attempt < 5 {
+                        attempt += 1;
+                        tokio::time::sleep(std::time::Duration::from_secs(attempt)).await;
+                        continue;
+                    } else {
+                        break Err(err);
+                    }
+                }
+            }
+        }
+    }};
+}
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
@@ -38,33 +52,59 @@ pub trait SolanaNetwork: Send + Sync + 'static {
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     rpc_url: String,
-    cluster: String,
     start_authority_keypair: String,
 }
-
 pub struct SolanaRpc {
     provider: RpcClient,
-    cluster: String,
-    keypair: [u8; 64],
+    keypair: Keypair,
     start_authority: Pubkey,
+    transaction_opts: TransactionOpts,
 }
 
 impl SolanaRpc {
     pub async fn new(settings: &Settings) -> Result<Arc<Self>, SolanaRpcError> {
-        let Ok(keypair) = read_keypair_file(&settings.start_authority_keypair) else {
+        let Ok(keypair) = read_keypair_from_file(&settings.start_authority_keypair) else {
             return Err(SolanaRpcError::FailedToReadKeypairError(
                 settings.start_authority_keypair.to_owned(),
             ));
         };
-        let provider =
-            RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());
-        let start_authority = keypair.pubkey();
+        let provider = client::SolanaRpcClient::new_with_commitment(
+            settings.rpc_url.clone(),
+            CommitmentConfig::finalized(),
+        );
+
         Ok(Arc::new(Self {
-            cluster: settings.cluster.clone(),
             provider,
-            keypair: keypair.to_bytes(),
-            start_authority,
+            start_authority: keypair.pubkey(),
+            keypair,
+            transaction_opts: TransactionOpts::default(),
         }))
+    }
+}
+
+impl AsRef<client::SolanaRpcClient> for SolanaRpc {
+    fn as_ref(&self) -> &client::SolanaRpcClient {
+        &self.provider
+    }
+}
+
+struct BoostedHex<'a>(&'a Pubkey, &'a BoostedHexActivation);
+
+impl helium_lib::boosting::StartBoostingHex for BoostedHex<'_> {
+    fn start_authority(&self) -> Pubkey {
+        *self.0
+    }
+
+    fn boost_config(&self) -> Pubkey {
+        self.1.boost_config_pubkey.parse().unwrap()
+    }
+
+    fn boosted_hex(&self) -> Pubkey {
+        self.1.boosted_hex_pubkey.parse().unwrap()
+    }
+
+    fn activation_ts(&self) -> DateTime<Utc> {
+        self.1.activation_ts
     }
 }
 
@@ -76,43 +116,15 @@ impl SolanaNetwork for SolanaRpc {
         &self,
         batch: &[BoostedHexActivation],
     ) -> Result<Self::Transaction, SolanaRpcError> {
-        let instructions = {
-            let mut request = RequestBuilder::from(
-                hexboosting::id(),
-                &self.cluster,
-                std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
-                Some(CommitmentConfig::finalized()),
-            );
-            for update in batch {
-                let account = accounts::StartBoostV0 {
-                    start_authority: self.start_authority,
-                    boost_config: update.boost_config_pubkey.parse()?,
-                    boosted_hex: update.boosted_hex_pubkey.parse()?,
-                };
-                let args = instruction::StartBoostV0 {
-                    _args: hexboosting::StartBoostArgsV0 {
-                        start_ts: update.activation_ts.timestamp(),
-                    },
-                };
-                let instruction = Instruction {
-                    program_id: hexboosting::id(),
-                    accounts: account.to_account_metas(None),
-                    data: args.data(),
-                };
-                request = request.instruction(instruction);
-            }
-            request.instructions().unwrap()
-        };
-        tracing::debug!("instructions: {:?}", instructions);
-        let blockhash = self.provider.get_latest_blockhash().await?;
-        let signer = Keypair::from_bytes(&self.keypair).unwrap();
+        let tx = boosting::start_boost(
+            &self,
+            batch.iter().map(|b| BoostedHex(&self.start_authority, b)),
+            &self.keypair,
+            &self.transaction_opts,
+        )
+        .await?;
 
-        Ok(Transaction::new_signed_with_payer(
-            &instructions,
-            Some(&signer.pubkey()),
-            &[&signer],
-            blockhash,
-        ))
+        Ok(tx.into())
     }
 
     async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), SolanaRpcError> {
