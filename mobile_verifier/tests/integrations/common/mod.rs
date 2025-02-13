@@ -267,20 +267,24 @@ pub fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
-pub fn mock_hex_boost_data_default() -> HexBoostData<Assignment, Assignment, Assignment> {
+pub fn mock_hex_boost_data_default(
+) -> HexBoostData<Assignment, Assignment, Assignment, impl HexAssignment> {
     HexBoostData::builder()
         .urbanization(Assignment::A)
         .footfall(Assignment::A)
         .landtype(Assignment::A)
+        .service_provider_override(Assignment::C)
         .build()
         .unwrap()
 }
 
-pub fn mock_hex_boost_data_bad() -> HexBoostData<Assignment, Assignment, Assignment> {
+pub fn mock_hex_boost_data_bad(
+) -> HexBoostData<Assignment, Assignment, Assignment, impl HexAssignment> {
     HexBoostData::builder()
         .urbanization(Assignment::C)
         .footfall(Assignment::C)
         .landtype(Assignment::C)
+        .service_provider_override(Assignment::C)
         .build()
         .unwrap()
 }
@@ -292,18 +296,25 @@ pub fn mock_hex_boost_data(
     footfall: MockAssignmentMap,
     urbanized: MockAssignmentMap,
     landtype: MockAssignmentMap,
-) -> HexBoostData<MockAssignmentMap, MockAssignmentMap, MockAssignmentMap> {
+    service_provider_override: MockAssignmentMap,
+) -> HexBoostData<MockAssignmentMap, MockAssignmentMap, MockAssignmentMap, MockAssignmentMap> {
     HexBoostData::builder()
         .footfall(footfall)
         .urbanization(urbanized)
         .landtype(landtype)
+        .service_provider_override(service_provider_override)
         .build()
         .unwrap()
 }
 
 pub async fn set_unassigned_oracle_boosting_assignments(
     pool: &PgPool,
-    data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
+    data_sets: &HexBoostData<
+        impl HexAssignment,
+        impl HexAssignment,
+        impl HexAssignment,
+        impl HexAssignment,
+    >,
 ) -> anyhow::Result<Vec<OracleBoostingReportV1>> {
     let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
         mobile_verifier::boosting_oracles::data_sets::db::fetch_hexes_with_null_assignments(pool),
@@ -325,6 +336,7 @@ pub async fn set_unassigned_oracle_boosting_assignments(
                     urbanized: hex.assignments.urbanized.into(),
                     footfall: hex.assignments.footfall.into(),
                     landtype: hex.assignments.landtype.into(),
+                    service_provider_override: hex.assignments.service_provider_override.into(),
                     assignment_multiplier,
                 }
             })

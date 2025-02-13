@@ -159,6 +159,7 @@ mod tests {
                 footfall: Assignment::C,
                 landtype: Assignment::C,
                 urbanized: Assignment::C,
+                service_provider_override: Assignment::C,
             },
             boosted: NonZeroU32::new(0),
         };
@@ -197,6 +198,7 @@ mod tests {
                 footfall: Assignment::A,
                 landtype: Assignment::A,
                 urbanized: Assignment::A,
+                service_provider_override: Assignment::C,
             },
             boosted: NonZeroU32::new(0),
         };
@@ -244,6 +246,7 @@ mod tests {
                 footfall: Assignment::C,
                 landtype: Assignment::C,
                 urbanized: Assignment::C,
+                service_provider_override: Assignment::C,
             },
             boosted: NonZeroU32::new(0),
         };
