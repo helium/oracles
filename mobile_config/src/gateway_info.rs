@@ -363,13 +363,10 @@ pub(crate) mod db {
     use super::{DeviceType, GatewayInfo, GatewayMetadata};
     use crate::gateway_info::DeploymentInfo;
     use chrono::{DateTime, Utc};
-    use futures::{
-        stream::{Stream, StreamExt},
-        TryStreamExt,
-    };
+    use futures::stream::{Stream, StreamExt};
     use helium_crypto::PublicKeyBinary;
     use sqlx::{types::Json, PgExecutor, Row};
-    use std::{collections::HashMap, str::FromStr};
+    use std::str::FromStr;
 
     const GET_METADATA_SQL: &str = r#"
             select kta.entity_key, infos.location::bigint, infos.device_type,
@@ -380,48 +377,9 @@ pub(crate) mod db {
     const BATCH_SQL_WHERE_SNIPPET: &str = " where kta.entity_key = any($1::bytea[]) ";
     const DEVICE_TYPES_WHERE_SNIPPET: &str = " where device_type::text = any($1) ";
 
-    const GET_UPDATED_RADIOS: &str =
-        "SELECT entity_key, last_changed_at FROM mobile_radio_tracker WHERE last_changed_at >= $1";
-
-    const GET_UPDATED_AT: &str =
-        "SELECT last_changed_at FROM mobile_radio_tracker WHERE entity_key = $1";
-
     lazy_static::lazy_static! {
         static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
         static ref DEVICE_TYPES_METADATA_SQL: String = format!("{GET_METADATA_SQL} {DEVICE_TYPES_WHERE_SNIPPET}");
-    }
-
-    pub async fn get_updated_radios(
-        db: impl PgExecutor<'_>,
-        min_updated_at: DateTime<Utc>,
-    ) -> anyhow::Result<HashMap<PublicKeyBinary, DateTime<Utc>>> {
-        sqlx::query(GET_UPDATED_RADIOS)
-            .bind(min_updated_at)
-            .fetch(db)
-            .map_err(anyhow::Error::from)
-            .try_fold(
-                HashMap::new(),
-                |mut map: HashMap<PublicKeyBinary, DateTime<Utc>>, row| async move {
-                    let entity_key_b = row.get::<&[u8], &str>("entity_key");
-                    let entity_key = bs58::encode(entity_key_b).into_string();
-                    let updated_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
-                    map.insert(PublicKeyBinary::from_str(&entity_key)?, updated_at);
-                    Ok(map)
-                },
-            )
-            .await
-    }
-
-    pub async fn get_updated_at(
-        db: impl PgExecutor<'_>,
-        address: &PublicKeyBinary,
-    ) -> anyhow::Result<Option<DateTime<Utc>>> {
-        let entity_key = bs58::decode(address.to_string()).into_vec()?;
-        sqlx::query_scalar(GET_UPDATED_AT)
-            .bind(entity_key)
-            .fetch_optional(db)
-            .await
-            .map_err(anyhow::Error::from)
     }
 
     pub async fn get_info(
