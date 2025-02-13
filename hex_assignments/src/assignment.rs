@@ -32,15 +32,19 @@ impl From<Assignment> for ProtoAssignment {
     }
 }
 
+// used solely for service provider override assignment
+// internally SP override assignment is a regular assignment
+// but when outputted as part of a `covered_hex` or
+// `oracle_boosting_hex_assignment` proto msg it gets converted to a bool
+// we do not read either of those protos back into the verifier
+// hence the one direction for this conversion
+// should we ever need to read the proto back into the verifier
+// we will need to replace this with a From<bool> for Assignment
+// but at that point we should just make v2's of the relevant msgs and enums
 #[allow(clippy::from_over_into)]
-// used one direction only
 impl Into<bool> for Assignment {
     fn into(self) -> bool {
-        match self {
-            Assignment::A => true,
-            Assignment::B => true,
-            Assignment::C => false,
-        }
+        matches!(self, Assignment::A)
     }
 }
 
