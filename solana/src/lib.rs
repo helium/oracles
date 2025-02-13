@@ -8,7 +8,7 @@ pub use helium_lib::{
     error,
     keypair::{Keypair, Pubkey, Signature},
 };
-pub use solana_sdk::transaction::Transaction as SolanaTransaction;
+pub use solana_sdk::transaction::VersionedTransaction as SolanaTransaction;
 
 #[derive(serde::Serialize)]
 pub struct Transaction {

@@ -287,7 +287,7 @@ mod tests {
         let mut inner = solana_sdk::transaction::Transaction::default();
         inner.signatures.push(Signature::new_unique());
         Transaction {
-            inner,
+            inner: inner.into(),
             sent_block_height: 1,
         }
     }
