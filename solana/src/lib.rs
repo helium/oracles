@@ -1,6 +1,7 @@
 use solana_client::{client_error::ClientError, rpc_client::SerializableTransaction};
 use solana_sdk::pubkey::ParsePubkeyError;
-use std::{fs::File, io::Read, path::Path, time::SystemTimeError};
+use solana_sdk::signature::read_keypair_file;
+use std::{path::Path, time::SystemTimeError};
 
 pub use helium_lib::{
     dao::SubDao,
@@ -50,10 +51,13 @@ pub mod sender;
 pub mod start_boost;
 
 pub fn read_keypair_from_file<F: AsRef<Path>>(path: F) -> anyhow::Result<Keypair> {
-    let mut file = File::open(path.as_ref())?;
-    let mut sk_buf = [0u8; 64];
-    file.read_exact(&mut sk_buf)?;
-    Ok(Keypair::try_from(&sk_buf)?)
+    let path = path.as_ref();
+    let keypair = read_keypair_file(path).map_err(|_e| {
+        let path = path.display().to_string();
+        SolanaRpcError::FailedToReadKeypairError(path)
+    })?;
+    let bytes = keypair.to_bytes();
+    Ok(Keypair::try_from(&bytes)?)
 }
 
 #[derive(thiserror::Error, Debug)]
