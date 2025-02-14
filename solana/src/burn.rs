@@ -85,7 +85,7 @@ impl SolanaNetwork for SolanaRpc {
     type Transaction = Transaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        let delegated_dc_key = SubDao::Iot.delegated_dc_key(&payer.to_string());
+        let delegated_dc_key = SubDao::Iot.delegated_dc_key(payer);
         let escrow_account = SubDao::Iot.escrow_key(&delegated_dc_key);
 
         let amount = match token::balance_for_address(&self, &escrow_account).await? {
@@ -117,7 +117,7 @@ impl SolanaNetwork for SolanaRpc {
             self.sub_dao,
             &self.keypair,
             amount,
-            payer.to_string(),
+            payer,
             &self.transaction_opts,
         )
         .await?;
