@@ -58,12 +58,7 @@ pub struct SolanaRpc {
 
 impl SolanaRpc {
     pub async fn new(settings: &Settings, sub_dao: SubDao) -> Result<Arc<Self>, SolanaRpcError> {
-        let Ok(keypair) = read_keypair_from_file(&settings.burn_keypair) else {
-            return Err(SolanaRpcError::FailedToReadKeypairError(
-                settings.burn_keypair.to_owned(),
-            ));
-        };
-
+        let keypair = read_keypair_from_file(&settings.burn_keypair)?;
         let provider = client::SolanaRpcClient::new_with_commitment(
             settings.rpc_url.clone(),
             CommitmentConfig::finalized(),
