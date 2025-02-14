@@ -65,7 +65,7 @@ sqlx = { version = "0", features = [
   "runtime-tokio-rustls",
 ] }
 helium-anchor-gen = { git = "https://github.com/helium/helium-anchor-gen.git" }
-helium-crypto = { version = "0.8.4", features = ["multisig"] }
+helium-crypto = { version = "0.8.4", features = ["multisig", "solana"] }
 helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = "master" }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",

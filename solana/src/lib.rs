@@ -8,7 +8,7 @@ pub use helium_lib::{
     error,
     keypair::{Keypair, Pubkey, Signature},
 };
-pub use solana_sdk::transaction::Transaction as SolanaTransaction;
+pub use solana_sdk::transaction::VersionedTransaction as SolanaTransaction;
 
 #[derive(serde::Serialize)]
 pub struct Transaction {
@@ -50,14 +50,11 @@ pub mod carrier;
 pub mod sender;
 pub mod start_boost;
 
-pub fn read_keypair_from_file<F: AsRef<Path>>(path: F) -> anyhow::Result<Keypair> {
+pub fn read_keypair_from_file<F: AsRef<Path>>(path: F) -> Result<Keypair, SolanaRpcError> {
     let path = path.as_ref();
-    let keypair = read_keypair_file(path).map_err(|_e| {
-        let path = path.display().to_string();
-        SolanaRpcError::FailedToReadKeypairError(path)
-    })?;
-    let bytes = keypair.to_bytes();
-    Ok(Keypair::try_from(&bytes)?)
+    let keypair = read_keypair_file(path)
+        .map_err(|_err| SolanaRpcError::FailedToReadKeypairError(path.display().to_string()))?;
+    Ok(keypair.into())
 }
 
 #[derive(thiserror::Error, Debug)]

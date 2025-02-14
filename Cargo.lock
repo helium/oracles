@@ -1443,7 +1443,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -3612,8 +3612,8 @@ dependencies = [
 
 [[package]]
 name = "helium-lib"
-version = "0.0.0"
-source = "git+https://github.com/helium/helium-wallet-rs.git?branch=master#bf7ae8aec834b1dfb37c4f0f636dcfa6b121fa11"
+version = "0.1.1"
+source = "git+https://github.com/helium/helium-wallet-rs.git?branch=master#f7e0651d85679852d2b06033535c46053ce81ed4"
 dependencies = [
  "anchor-client",
  "anchor-spl",
@@ -9645,7 +9645,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
  "twox-hash",
  "xorf",
