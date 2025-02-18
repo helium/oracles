@@ -24,10 +24,9 @@ impl CoverageMapBuilder {
     /// Inserts a new coverage object into the builder.
     pub fn insert_coverage_object(&mut self, coverage_obj: CoverageObject) {
         match (coverage_obj.indoor, coverage_obj.cbsd_id.is_some()) {
-            (true, true) => insert_indoor_coverage_object(&mut self.indoor_cbrs, coverage_obj),
             (true, false) => insert_indoor_coverage_object(&mut self.indoor_wifi, coverage_obj),
-            (false, true) => insert_outdoor_coverage_object(&mut self.outdoor_cbrs, coverage_obj),
             (false, false) => insert_outdoor_coverage_object(&mut self.outdoor_wifi, coverage_obj),
+            (_, _) => {}
         }
     }
 
@@ -133,6 +132,7 @@ impl CoverageMap {
             .unwrap_or(&[])
     }
 
+    // TODO remove
     /// Returns the hexes covered by the CBRS radio. The returned slice can be empty, indicating that
     /// the radio did not meet the criteria to be ranked in any hex.
     pub fn get_cbrs_coverage(&self, cbrs_radio: &str) -> &[RankedCoverage] {
@@ -202,35 +202,6 @@ mod test {
     use hex_assignments::Assignment;
 
     #[test]
-    fn test_indoor_cbrs_submap() {
-        let mut coverage_map_builder = CoverageMapBuilder::default();
-        coverage_map_builder.insert_coverage_object(indoor_cbrs_coverage(
-            "1",
-            0x8a1fb46622dffff,
-            SignalLevel::High,
-        ));
-        coverage_map_builder.insert_coverage_object(indoor_cbrs_coverage(
-            "2",
-            0x8c2681a3064d9ff,
-            SignalLevel::Low,
-        ));
-        let submap_builder = coverage_map_builder.submap(vec![indoor_cbrs_coverage(
-            "3",
-            0x8c2681a3064d9ff,
-            SignalLevel::High,
-        )]);
-        let submap = submap_builder.build(&NoBoostedHexes, Utc::now());
-        let cov_1 = submap.get_cbrs_coverage("1");
-        assert_eq!(cov_1.len(), 0);
-        let cov_2 = submap.get_cbrs_coverage("2");
-        assert_eq!(cov_2.len(), 1);
-        assert_eq!(cov_2[0].rank, 2);
-        let cov_3 = submap.get_cbrs_coverage("3");
-        assert_eq!(cov_3.len(), 1);
-        assert_eq!(cov_3[0].rank, 1);
-    }
-
-    #[test]
     fn test_indoor_wifi_submap() {
         let radio1 = vec![1, 1, 1];
         let radio2 = vec![1, 1, 2];
@@ -259,32 +230,6 @@ mod test {
         assert_eq!(cov_2.len(), 1);
         assert_eq!(cov_2[0].rank, 2);
         let cov_3 = submap.get_wifi_coverage(&radio3);
-        assert_eq!(cov_3.len(), 1);
-        assert_eq!(cov_3[0].rank, 1);
-    }
-
-    #[test]
-    fn test_outdoor_cbrs_submap() {
-        let mut coverage_map_builder = CoverageMapBuilder::default();
-        coverage_map_builder.insert_coverage_object(outdoor_cbrs_coverage(
-            "1",
-            0x8a1fb46622dffff,
-            3,
-        ));
-        coverage_map_builder.insert_coverage_object(outdoor_cbrs_coverage(
-            "2",
-            0x8c2681a3064d9ff,
-            1,
-        ));
-        let submap_builder =
-            coverage_map_builder.submap(vec![outdoor_cbrs_coverage("3", 0x8c2681a3064d9ff, 2)]);
-        let submap = submap_builder.build(&NoBoostedHexes, Utc::now());
-        let cov_1 = submap.get_cbrs_coverage("1");
-        assert_eq!(cov_1.len(), 0);
-        let cov_2 = submap.get_cbrs_coverage("2");
-        assert_eq!(cov_2.len(), 1);
-        assert_eq!(cov_2[0].rank, 2);
-        let cov_3 = submap.get_cbrs_coverage("3");
         assert_eq!(cov_3.len(), 1);
         assert_eq!(cov_3[0].rank, 1);
     }
@@ -328,21 +273,6 @@ mod test {
         }
     }
 
-    fn indoor_cbrs_coverage(cbsd_id: &str, hex: u64, signal_level: SignalLevel) -> CoverageObject {
-        CoverageObject {
-            indoor: true,
-            hotspot_key: vec![1, 0],
-            seniority_timestamp: Utc::now(),
-            cbsd_id: Some(cbsd_id.to_string()),
-            coverage: vec![UnrankedCoverage {
-                location: Cell::from_raw(hex).expect("valid h3 cell"),
-                signal_power: 0,
-                signal_level,
-                assignments: hex_assignments_mock(),
-            }],
-        }
-    }
-
     fn indoor_wifi_coverage(owner: &[u8], hex: u64, signal_level: SignalLevel) -> CoverageObject {
         CoverageObject {
             indoor: true,
@@ -353,21 +283,6 @@ mod test {
                 location: Cell::from_raw(hex).expect("valid h3 cell"),
                 signal_power: 0,
                 signal_level,
-                assignments: hex_assignments_mock(),
-            }],
-        }
-    }
-
-    fn outdoor_cbrs_coverage(cbsd_id: &str, hex: u64, signal_power: i32) -> CoverageObject {
-        CoverageObject {
-            indoor: false,
-            hotspot_key: vec![0, 0],
-            seniority_timestamp: Utc::now(),
-            cbsd_id: Some(cbsd_id.to_string()),
-            coverage: vec![UnrankedCoverage {
-                location: Cell::from_raw(hex).expect("valid h3 cell"),
-                signal_power,
-                signal_level: SignalLevel::None,
                 assignments: hex_assignments_mock(),
             }],
         }
