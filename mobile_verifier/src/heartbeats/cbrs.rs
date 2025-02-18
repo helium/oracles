@@ -6,7 +6,7 @@ use crate::{
     GatewayResolver, Settings,
 };
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
@@ -24,6 +24,8 @@ use std::{
 };
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
+
+const CBRS_DISABLE_TIME: i64 = 1740787200;
 
 pub struct CbrsHeartbeatDaemon<GIR, GFV> {
     pool: sqlx::Pool<sqlx::Postgres>,
@@ -152,10 +154,16 @@ where
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
         let heartbeat_cache_clone = heartbeat_cache.clone();
+        let cbrs_disable_time = Utc.timestamp_opt(CBRS_DISABLE_TIME, 0).single().unwrap();
+
         let heartbeats = file
             .into_stream(&mut transaction)
             .await?
             .map(Heartbeat::from)
+            .filter(move |h| {
+                let timestamp = h.timestamp;
+                async move { timestamp < cbrs_disable_time }
+            })
             .filter(move |h| {
                 let hb_cache = heartbeat_cache_clone.clone();
                 let id = h.id().unwrap();
