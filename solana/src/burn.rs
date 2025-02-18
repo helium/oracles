@@ -72,7 +72,6 @@ impl SolanaRpc {
 
         tracing::info!(
             min_priority_fee = settings.min_priority_fee,
-            rpc_url = settings.rpc_url,
             "initialize solana"
         );
 
