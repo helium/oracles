@@ -5,7 +5,7 @@ use crate::{
     coverage::{new_coverage_object_notification_channel, CoverageDaemon},
     data_session::DataSessionIngestor,
     geofence::Geofence,
-    heartbeats::{cbrs::CbrsHeartbeatDaemon, wifi::WifiHeartbeatDaemon},
+    heartbeats::wifi::WifiHeartbeatDaemon,
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
     sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
@@ -84,12 +84,6 @@ impl Cmd {
         )
         .await?;
 
-        let usa_region_paths = settings.usa_region_paths()?;
-        tracing::info!(?usa_region_paths, "usa_geofence_regions");
-
-        let usa_geofence =
-            Geofence::from_paths(usa_region_paths, settings.usa_fencing_resolution()?)?;
-
         let usa_and_mexico_region_paths = settings.usa_and_mexico_region_paths()?;
         tracing::info!(
             ?usa_and_mexico_region_paths,
@@ -109,18 +103,6 @@ impl Cmd {
             .add_task(valid_heartbeats_server)
             .add_task(seniority_updates_server)
             .add_task(speedtests_avg_server)
-            .add_task(
-                CbrsHeartbeatDaemon::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    report_ingest.clone(),
-                    gateway_client.clone(),
-                    valid_heartbeats.clone(),
-                    seniority_updates.clone(),
-                    usa_geofence,
-                )
-                .await?,
-            )
             .add_task(
                 WifiHeartbeatDaemon::create_managed_task(
                     pool.clone(),
