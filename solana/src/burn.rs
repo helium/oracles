@@ -36,6 +36,12 @@ pub struct Settings {
     burn_keypair: String,
     #[serde(default)]
     payers_to_monitor: Vec<String>,
+    #[serde(default = "default_min_priority_fee")]
+    min_priority_fee: u64,
+}
+
+fn default_min_priority_fee() -> u64 {
+    1
 }
 
 impl Settings {
@@ -69,7 +75,10 @@ impl SolanaRpc {
             provider,
             keypair,
             payers_to_monitor: settings.payers_to_monitor()?,
-            transaction_opts: TransactionOpts::default(),
+            transaction_opts: TransactionOpts {
+                min_priority_fee: settings.min_priority_fee,
+                ..Default::default()
+            },
         }))
     }
 }
