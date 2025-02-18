@@ -70,6 +70,12 @@ impl SolanaRpc {
             CommitmentConfig::finalized(),
         );
 
+        tracing::info!(
+            min_priority_fee = settings.min_priority_fee,
+            rpc_url = settings.rpc_url,
+            "initialize solana"
+        );
+
         Ok(Arc::new(Self {
             sub_dao,
             provider,
@@ -130,6 +136,13 @@ impl SolanaNetwork for SolanaRpc {
             &self.transaction_opts,
         )
         .await?;
+        tracing::info!(
+            amount,
+            %payer,
+            sub_dao = %self.sub_dao,
+            min_priority_fee = self.transaction_opts.min_priority_fee,
+            "created burn txn"
+        );
 
         Ok(tx.into())
     }
