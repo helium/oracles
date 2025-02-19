@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use helium_crypto::PublicKeyBinary;
 use helium_lib::{client, dc, token, TransactionOpts};
 use serde::Deserialize;
+use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -38,6 +39,7 @@ pub struct Settings {
     payers_to_monitor: Vec<String>,
     #[serde(default = "default_min_priority_fee")]
     min_priority_fee: u64,
+    skip_preflight: bool,
 }
 
 fn default_min_priority_fee() -> u64 {
@@ -60,6 +62,7 @@ pub struct SolanaRpc {
     keypair: Keypair,
     payers_to_monitor: Vec<PublicKeyBinary>,
     transaction_opts: TransactionOpts,
+    skip_preflight: bool,
 }
 
 impl SolanaRpc {
@@ -72,6 +75,7 @@ impl SolanaRpc {
 
         tracing::info!(
             min_priority_fee = settings.min_priority_fee,
+            skip_preflight = settings.skip_preflight,
             "initialize solana"
         );
 
@@ -80,6 +84,7 @@ impl SolanaRpc {
             provider,
             keypair,
             payers_to_monitor: settings.payers_to_monitor()?,
+            skip_preflight: settings.skip_preflight,
             transaction_opts: TransactionOpts {
                 min_priority_fee: settings.min_priority_fee,
                 ..Default::default()
@@ -151,7 +156,11 @@ impl SolanaNetwork for SolanaRpc {
         tx: &Self::Transaction,
         store: &impl sender::TxnStore,
     ) -> Result<(), SolanaRpcError> {
-        match sender::send_and_finalize(&self, tx, store).await {
+        let config = RpcSendTransactionConfig {
+            skip_preflight: self.skip_preflight,
+            ..Default::default()
+        };
+        match sender::send_and_finalize(&self, tx, config, store).await {
             Ok(_tracked) => {
                 let signature = tx.get_signature();
                 tracing::info!(
@@ -260,6 +269,7 @@ pub mod test_client {
 
     use helium_crypto::PublicKeyBinary;
     use helium_lib::keypair::Signature;
+    use solana_client::rpc_config::RpcSendTransactionConfig;
     use tokio::sync::Mutex;
 
     use crate::{sender, SolanaRpcError, SolanaTransaction, Transaction};
@@ -368,7 +378,8 @@ pub mod test_client {
                 panic!("attempting to send transaction");
             }
             // Test client must attempt to send for changes to take place
-            sender::send_and_finalize(self, txn, store).await?;
+            sender::send_and_finalize(self, txn, RpcSendTransactionConfig::default(), store)
+                .await?;
 
             let signature = txn.get_signature();
             if let Some((payer, amount)) = self.txn_sig_to_payer.lock().await.get(signature) {
@@ -391,6 +402,7 @@ pub mod test_client {
         async fn send_txn(
             &self,
             txn: &Transaction,
+            _config: RpcSendTransactionConfig,
         ) -> Result<Signature, sender::SolanaClientError> {
             Ok(*txn.get_signature())
         }
