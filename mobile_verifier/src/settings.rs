@@ -50,6 +50,8 @@ pub struct Settings {
     pub usa_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
     pub usa_fencing_resolution: u8,
+    #[serde(default = "default_cbrs_disable_time")]
+    pub cbrs_disable_time: DateTime<Utc>,
 }
 
 fn default_fencing_resolution() -> u8 {
@@ -67,6 +69,12 @@ fn default_log() -> String {
 
 fn default_start_after() -> DateTime<Utc> {
     DateTime::UNIX_EPOCH
+}
+
+fn default_cbrs_disable_time() -> DateTime<Utc> {
+    "2025-03-01 00:00:00Z"
+        .parse::<DateTime<Utc>>()
+        .expect("invalid default date for cbrs_disable_time")
 }
 
 fn default_reward_period() -> Duration {
