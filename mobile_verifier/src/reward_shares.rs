@@ -662,6 +662,7 @@ impl DataTransferAndPocAllocatedRewardBuckets {
         }
     }
 
+    // TODO is it test only purposes? If yes move from prod codebase?
     pub fn new_poc_only(total_emission_pool: Decimal) -> Self {
         let poc = total_emission_pool * POC_REWARDS_PERCENT;
         let data_transfer = total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT;
@@ -1116,6 +1117,19 @@ mod test {
         mbps * 125000
     }
 
+    fn good_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
+        Speedtest {
+            report: CellSpeedtest {
+                pubkey,
+                timestamp,
+                upload_speed: bytes_per_s(15),
+                download_speed: bytes_per_s(100),
+                latency: 1,
+                serial: "".to_string(),
+            },
+        }
+    }
+
     fn acceptable_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
             report: CellSpeedtest {
@@ -1137,32 +1151,6 @@ mod test {
                 upload_speed: bytes_per_s(5),
                 download_speed: bytes_per_s(60),
                 latency: 60,
-                serial: "".to_string(),
-            },
-        }
-    }
-
-    fn failed_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
-        Speedtest {
-            report: CellSpeedtest {
-                pubkey,
-                timestamp,
-                upload_speed: bytes_per_s(1),
-                download_speed: bytes_per_s(20),
-                latency: 110,
-                serial: "".to_string(),
-            },
-        }
-    }
-
-    fn poor_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
-        Speedtest {
-            report: CellSpeedtest {
-                pubkey,
-                timestamp,
-                upload_speed: bytes_per_s(2),
-                download_speed: bytes_per_s(40),
-                latency: 90,
                 serial: "".to_string(),
             },
         }
@@ -1250,10 +1238,10 @@ mod test {
         let timestamp = now - Duration::minutes(20);
 
         let heartbeat_rewards = vec![HeartbeatReward {
-            cbsd_id: Some(c1.clone()),
+            cbsd_id: None,
             hotspot_key: gw1.clone(),
             coverage_object: cov_obj_1,
-            cell_type: CellType::from_cbsd_id(&c1).unwrap(),
+            cell_type: CellType::NovaGenericWifiOutdoor,
             distances_to_asserted: None,
             trust_score_multipliers: vec![dec!(1.0)],
         }]
@@ -1263,7 +1251,7 @@ mod test {
 
         let mut hex_coverage = HashMap::new();
         hex_coverage.insert(
-            (OwnedKeyType::from(c1.clone()), cov_obj_1),
+            (OwnedKeyType::Wifi(gw1.clone()), cov_obj_1),
             simple_hex_coverage(&c1, 0x8a1fb46622dffff),
         );
 
@@ -1333,7 +1321,17 @@ mod test {
     /// Test to ensure that different speedtest averages correctly afferct reward shares.
     #[tokio::test]
     async fn ensure_speedtest_averages_affect_reward_shares() {
-        // init owners
+        // https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md#maximum-asserted-distance-difference
+        // Scenario:
+        // All gateways are indoors.
+        // owner 1: (x1)
+        //  gw10(location_trust_score_multipliers: [1], speedtest_multipliers: [1])
+        // owner 2: (x1.5)
+        //  gw20(location_trust_score_multipliers: [1, 0.25, 0.25], speedtest_multipliers: [1])=0.5
+        //  gw21(location_trust_score_multipliers: [1], speedtest_multipliers: [1])
+        // owner 3: (x0.75)
+        //  gw30(location_trust_score_multipliers: [1], , speedtest_multipliers: [0.75])
+
         let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner1 parse");
@@ -1343,223 +1341,67 @@ mod test {
         let owner3: PublicKeyBinary = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
             .parse()
             .expect("failed owner3 parse");
-        let owner4: PublicKeyBinary = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
-            .parse()
-            .expect("failed owner4 parse");
-        let owner5: PublicKeyBinary = "112bUGwooPd1dCDd3h3yZwskjxCzBsQNKeaJTuUF4hSgYedcsFa9"
-            .parse()
-            .expect("failed owner5 parse");
-        let owner6: PublicKeyBinary = "112WqD16uH8GLmCMhyRUrp6Rw5MTELzBdx7pSepySYUoSjixQoxJ"
-            .parse()
-            .expect("failed owner6 parse");
-        let owner7: PublicKeyBinary = "112WnYhq4qX3wdw6JTZT3w3A9FNGxeescJwJffcBN5jiZvovWRkQ"
-            .parse()
-            .expect("failed owner7 parse");
 
-        // init hotspots
-        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+        let gw10: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
-        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+        let gw20: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
             .parse()
             .expect("failed gw2 parse");
-        let gw3: PublicKeyBinary = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
+        let gw21: PublicKeyBinary = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
             .parse()
             .expect("failed gw3 parse");
-        let gw4: PublicKeyBinary = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
+        let gw30: PublicKeyBinary = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
             .parse()
             .expect("failed gw4 parse");
-        let gw5: PublicKeyBinary = "112j1iw1sV2B2Tz2DxPSeum9Cmc5kMKNdDTDg1zDRsdwuvZueq3B"
-            .parse()
-            .expect("failed gw5 parse");
-        let gw6: PublicKeyBinary = "11fCasUk9XvU15ktsMMH64J9E7XuqQ2L5FJPv8HZMCDG6kdZ3SC"
-            .parse()
-            .expect("failed gw6 parse");
-        let gw7: PublicKeyBinary = "11HdwRpQDrYM7LJtRGSzRF3vY2iwuumx1Z2MUhBYAVTwZdSh6Bi"
-            .parse()
-            .expect("failed gw7 parse");
-        let gw8: PublicKeyBinary = "112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ"
-            .parse()
-            .expect("failed gw8 parse");
-        // include a couple of wifi spots in the mix
-        let gw9: PublicKeyBinary = "112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf"
-            .parse()
-            .expect("failed gw9 parse");
-        let gw10: PublicKeyBinary = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo"
-            .parse()
-            .expect("failed gw10 parse");
-        let gw11: PublicKeyBinary = "112WnYhq4qX3wdw6JTZT3w3A9FNGxeescJwJffcBN5jiZvovWRkQ"
-            .parse()
-            .expect("failed gw11 parse");
 
         // link gws to owners
         let mut owners = HashMap::new();
-        owners.insert(gw1.clone(), owner1.clone());
-        owners.insert(gw2.clone(), owner1.clone());
-        owners.insert(gw3.clone(), owner1.clone());
-        owners.insert(gw4.clone(), owner2.clone());
-        owners.insert(gw5.clone(), owner2.clone());
-        owners.insert(gw6.clone(), owner3.clone());
-        owners.insert(gw7.clone(), owner3.clone());
-        owners.insert(gw8.clone(), owner4.clone());
-        owners.insert(gw9.clone(), owner5.clone());
-        owners.insert(gw10.clone(), owner6.clone());
-        owners.insert(gw11.clone(), owner7.clone());
+        owners.insert(gw10.clone(), owner1.clone());
+        owners.insert(gw20.clone(), owner2.clone());
+        owners.insert(gw21.clone(), owner2.clone());
+        owners.insert(gw30.clone(), owner3.clone());
 
-        // init cells and cell_types
-        let c2 = "P27-SCE4255W2107CW5000015".to_string();
-        let c4 = "2AG32PBS3101S1202000464223GY0154".to_string();
-        let c5 = "P27-SCE4255W2107CW5000016".to_string();
-        let c6 = "2AG32PBS3101S1202000464223GY0155".to_string();
-        let c7 = "2AG32PBS3101S1202000464223GY0156".to_string();
-        let c8 = "P27-SCE4255W2107CW5000017".to_string();
-        let c9 = "P27-SCE4255W2107CW5000018".to_string();
-        let c10 = "P27-SCE4255W2107CW5000019".to_string();
-        let c11 = "P27-SCE4255W2107CW5000020".to_string();
-        let c12 = "P27-SCE4255W2107CW5000021".to_string();
-        let c13 = "P27-SCE4255W2107CW5000022".to_string();
-        let c14 = "2AG32PBS3101S1202000464223GY0157".to_string();
-
-        let cov_obj_2 = Uuid::new_v4();
-        let cov_obj_4 = Uuid::new_v4();
-        let cov_obj_5 = Uuid::new_v4();
-        let cov_obj_6 = Uuid::new_v4();
-        let cov_obj_7 = Uuid::new_v4();
-        let cov_obj_8 = Uuid::new_v4();
-        let cov_obj_9 = Uuid::new_v4();
         let cov_obj_10 = Uuid::new_v4();
-        let cov_obj_11 = Uuid::new_v4();
-        let cov_obj_12 = Uuid::new_v4();
-        let cov_obj_13 = Uuid::new_v4();
-        let cov_obj_14 = Uuid::new_v4();
-        let cov_obj_15 = Uuid::new_v4();
-        let cov_obj_16 = Uuid::new_v4();
-        let cov_obj_17 = Uuid::new_v4();
+        let cov_obj_20 = Uuid::new_v4();
+        let cov_obj_21 = Uuid::new_v4();
+        let cov_obj_30 = Uuid::new_v4();
 
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
 
-        // setup heartbeats
         let heartbeat_rewards = vec![
-            HeartbeatReward {
-                cbsd_id: Some(c2.clone()),
-                hotspot_key: gw2.clone(),
-                coverage_object: cov_obj_2,
-                cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c4.clone()),
-                hotspot_key: gw3.clone(),
-                coverage_object: cov_obj_4,
-                cell_type: CellType::from_cbsd_id(&c4).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c5.clone()),
-                hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_5,
-                cell_type: CellType::from_cbsd_id(&c5).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c6.clone()),
-                hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_6,
-                cell_type: CellType::from_cbsd_id(&c6).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c7.clone()),
-                hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_7,
-                cell_type: CellType::from_cbsd_id(&c7).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c8.clone()),
-                hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_8,
-                cell_type: CellType::from_cbsd_id(&c8).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c9.clone()),
-                hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_9,
-                cell_type: CellType::from_cbsd_id(&c9).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c10.clone()),
-                hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_10,
-                cell_type: CellType::from_cbsd_id(&c10).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c11.clone()),
-                hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_11,
-                cell_type: CellType::from_cbsd_id(&c11).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c12.clone()),
-                hotspot_key: gw5.clone(),
-                coverage_object: cov_obj_12,
-                cell_type: CellType::from_cbsd_id(&c12).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c13.clone()),
-                hotspot_key: gw6.clone(),
-                coverage_object: cov_obj_13,
-                cell_type: CellType::from_cbsd_id(&c13).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: Some(c14.clone()),
-                hotspot_key: gw7.clone(),
-                coverage_object: cov_obj_14,
-                cell_type: CellType::from_cbsd_id(&c14).unwrap(),
-                distances_to_asserted: None,
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
-            HeartbeatReward {
-                cbsd_id: None,
-                hotspot_key: gw9.clone(),
-                cell_type: CellType::NovaGenericWifiIndoor,
-                coverage_object: cov_obj_15,
-                distances_to_asserted: Some(vec![0]),
-                trust_score_multipliers: vec![dec!(1.0)],
-            },
             HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw10.clone(),
+                coverage_object: cov_obj_10,
                 cell_type: CellType::NovaGenericWifiIndoor,
-                coverage_object: cov_obj_16,
                 distances_to_asserted: Some(vec![0]),
-                trust_score_multipliers: vec![dec!(0.25)],
+                trust_score_multipliers: vec![dec!(1.0)],
             },
             HeartbeatReward {
                 cbsd_id: None,
-                hotspot_key: gw11.clone(),
+                hotspot_key: gw20.clone(),
+                coverage_object: cov_obj_20,
                 cell_type: CellType::NovaGenericWifiIndoor,
-                coverage_object: cov_obj_17,
+                distances_to_asserted: Some(vec![0, 250, 250]),
+                trust_score_multipliers: vec![dec!(1.0), dec!(0.25), dec!(0.25)],
+            },
+            HeartbeatReward {
+                cbsd_id: None,
+                hotspot_key: gw21.clone(),
+                coverage_object: cov_obj_21,
+                cell_type: CellType::NovaGenericWifiIndoor,
                 distances_to_asserted: Some(vec![0]),
-                trust_score_multipliers: vec![dec!(0.25)],
+                trust_score_multipliers: vec![dec!(1.0)],
+            },
+            HeartbeatReward {
+                cbsd_id: None,
+                hotspot_key: gw30.clone(),
+                coverage_object: cov_obj_30,
+                cell_type: CellType::NovaGenericWifiIndoor,
+                distances_to_asserted: Some(vec![0]),
+                trust_score_multipliers: vec![dec!(1.0)],
             },
         ]
         .into_iter()
@@ -1569,130 +1411,53 @@ mod test {
         // Setup hex coverages
         let mut hex_coverage = HashMap::new();
         hex_coverage.insert(
-            (OwnedKeyType::from(c2.clone()), cov_obj_2),
-            simple_hex_coverage(&c2, 0x8a1fb46622dffff),
+            (OwnedKeyType::Wifi(gw10.clone()), cov_obj_10),
+            simple_hex_coverage(&gw10, 0x8a1fb46622dffff),
         );
         hex_coverage.insert(
-            (OwnedKeyType::from(c4.clone()), cov_obj_4),
-            simple_hex_coverage(&c4, 0x8a1fb46632dffff),
+            (OwnedKeyType::from(gw20.clone()), cov_obj_20),
+            simple_hex_coverage(&gw20, 0x8a1fb46632dffff),
         );
         hex_coverage.insert(
-            (OwnedKeyType::from(c5.clone()), cov_obj_5),
-            simple_hex_coverage(&c5, 0x8a1fb46642dffff),
+            (OwnedKeyType::from(gw21.clone()), cov_obj_21),
+            simple_hex_coverage(&gw21, 0x8a1fb46642dffff),
         );
         hex_coverage.insert(
-            (OwnedKeyType::from(c6.clone()), cov_obj_6),
-            simple_hex_coverage(&c6, 0x8a1fb46652dffff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(c7.clone()), cov_obj_7),
-            simple_hex_coverage(&c7, 0x8a1fb46662dffff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(c8.clone()), cov_obj_8),
-            simple_hex_coverage(&c8, 0x8a1fb46522dffff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(c9.clone()), cov_obj_9),
-            simple_hex_coverage(&c9, 0x8a1fb46682dffff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(c10.clone()), cov_obj_10),
-            simple_hex_coverage(&c10, 0x8a1fb46692dffff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(c11.clone()), cov_obj_11),
-            simple_hex_coverage(&c11, 0x8a1fb466a2dffff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(c12.clone()), cov_obj_12),
-            simple_hex_coverage(&c12, 0x8a1fb466b2dffff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(c13.clone()), cov_obj_13),
-            simple_hex_coverage(&c13, 0x8a1fb466c2dffff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(c14.clone()), cov_obj_14),
-            simple_hex_coverage(&c14, 0x8a1fb466d2dffff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(gw9.clone()), cov_obj_15),
-            simple_hex_coverage(&gw9, 0x8c2681a30641dff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(gw10.clone()), cov_obj_16),
-            simple_hex_coverage(&gw10, 0x8c2681a3065d3ff),
-        );
-        hex_coverage.insert(
-            (OwnedKeyType::from(gw11.clone()), cov_obj_17),
-            simple_hex_coverage(&gw11, 0x8c2681a306607ff),
+            (OwnedKeyType::from(gw30.clone()), cov_obj_30),
+            simple_hex_coverage(&gw30, 0x8a1fb46652dffff),
         );
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
-        let gw1_speedtests = vec![
-            acceptable_speedtest(gw1.clone(), last_speedtest),
-            acceptable_speedtest(gw1.clone(), timestamp),
-        ];
-        let gw2_speedtests = vec![
-            acceptable_speedtest(gw2.clone(), last_speedtest),
-            acceptable_speedtest(gw2.clone(), timestamp),
-        ];
-        let gw3_speedtests = vec![
-            acceptable_speedtest(gw3.clone(), last_speedtest),
-            acceptable_speedtest(gw3.clone(), timestamp),
-        ];
-        let gw4_speedtests = vec![
-            acceptable_speedtest(gw4.clone(), last_speedtest),
-            acceptable_speedtest(gw4.clone(), timestamp),
-        ];
-        let gw5_speedtests = vec![
-            degraded_speedtest(gw5.clone(), last_speedtest),
-            degraded_speedtest(gw5.clone(), timestamp),
-        ];
-        let gw6_speedtests = vec![
-            failed_speedtest(gw6.clone(), last_speedtest),
-            failed_speedtest(gw6.clone(), timestamp),
-        ];
-        let gw7_speedtests = vec![
-            poor_speedtest(gw7.clone(), last_speedtest),
-            poor_speedtest(gw7.clone(), timestamp),
-        ];
-        let gw9_speedtests = vec![
-            acceptable_speedtest(gw9.clone(), last_speedtest),
-            acceptable_speedtest(gw9.clone(), timestamp),
-        ];
         let gw10_speedtests = vec![
-            acceptable_speedtest(gw10.clone(), last_speedtest),
-            acceptable_speedtest(gw10.clone(), timestamp),
+            good_speedtest(gw10.clone(), last_speedtest),
+            good_speedtest(gw10.clone(), timestamp),
         ];
-        let gw11_speedtests = vec![
-            acceptable_speedtest(gw11.clone(), last_speedtest),
-            acceptable_speedtest(gw11.clone(), timestamp),
+        let gw20_speedtests = vec![
+            good_speedtest(gw20.clone(), last_speedtest),
+            good_speedtest(gw20.clone(), timestamp),
         ];
 
-        let gw1_average = SpeedtestAverage::from(gw1_speedtests);
-        let gw2_average = SpeedtestAverage::from(gw2_speedtests);
-        let gw3_average = SpeedtestAverage::from(gw3_speedtests);
-        let gw4_average = SpeedtestAverage::from(gw4_speedtests);
-        let gw5_average = SpeedtestAverage::from(gw5_speedtests);
-        let gw6_average = SpeedtestAverage::from(gw6_speedtests);
-        let gw7_average = SpeedtestAverage::from(gw7_speedtests);
-        let gw9_average = SpeedtestAverage::from(gw9_speedtests);
+        let gw21_speedtests = vec![
+            good_speedtest(gw21.clone(), last_speedtest),
+            good_speedtest(gw21.clone(), timestamp),
+        ];
+
+        let gw30_speedtests = vec![
+            good_speedtest(gw30.clone(), last_speedtest),
+            degraded_speedtest(gw30.clone(), timestamp),
+        ];
+
         let gw10_average = SpeedtestAverage::from(gw10_speedtests);
-        let gw11_average = SpeedtestAverage::from(gw11_speedtests);
+        let gw20_average = SpeedtestAverage::from(gw20_speedtests);
+        let gw21_average = SpeedtestAverage::from(gw21_speedtests);
+        let gw30_average = SpeedtestAverage::from(gw30_speedtests);
+
         let mut averages = HashMap::new();
-        averages.insert(gw1.clone(), gw1_average);
-        averages.insert(gw2.clone(), gw2_average);
-        averages.insert(gw3.clone(), gw3_average);
-        averages.insert(gw4.clone(), gw4_average);
-        averages.insert(gw5.clone(), gw5_average);
-        averages.insert(gw6.clone(), gw6_average);
-        averages.insert(gw7.clone(), gw7_average);
-        averages.insert(gw9.clone(), gw9_average);
         averages.insert(gw10.clone(), gw10_average);
-        averages.insert(gw11.clone(), gw11_average);
+        averages.insert(gw20.clone(), gw20_average);
+        averages.insert(gw21.clone(), gw21_average);
+        averages.insert(gw30.clone(), gw30_average);
 
         let speedtest_avgs = SpeedtestAverages { averages };
 
@@ -1741,66 +1506,31 @@ mod test {
             *owner_rewards.entry(owner).or_default() += poc_reward;
         }
 
+        let owner_1_reward = *owner_rewards
+            .get(&owner1)
+            .expect("Could not fetch owner1 rewards");
+
+        let owner_2_reward = *owner_rewards
+            .get(&owner2)
+            .expect("Could not fetch owner1 rewards");
+
+        let owner_3_reward = *owner_rewards
+            .get(&owner3)
+            .expect("Could not fetch owner1 rewards");
+
+        assert_eq!((owner_1_reward as f64 * 1.5) as u64, owner_2_reward);
+        assert_eq!((owner_1_reward as f64 * 0.75) as u64, owner_3_reward);
+
+        let expected_unallocated = 3;
         assert_eq!(
-            *owner_rewards
-                .get(&owner1)
-                .expect("Could not fetch owner1 rewards"),
-            260_926_288_322
+            allocated_poc_rewards,
+            reward_shares.total_poc().to_u64().unwrap() - expected_unallocated
         );
-        assert_eq!(
-            *owner_rewards
-                .get(&owner2)
-                .expect("Could not fetch owner2 rewards"),
-            978_473_581_207
-        );
-        assert_eq!(
-            *owner_rewards
-                .get(&owner3)
-                .expect("Could not fetch owner3 rewards"),
-            32_615_786_040
-        );
-        assert_eq!(owner_rewards.get(&owner4), None);
-
-        let owner5_reward = *owner_rewards
-            .get(&owner5)
-            .expect("Could not fetch owner5 rewards");
-        assert_eq!(owner5_reward, 521_852_576_647);
-
-        let owner6_reward = *owner_rewards
-            .get(&owner6)
-            .expect("Could not fetch owner6 rewards");
-        assert_eq!(owner6_reward, 130_463_144_161);
-
-        // confirm owner 6 reward is 0.25 of owner 5's reward
-        // this is due to owner 6's hotspot not having a validation location timestamp
-        // and thus its reward scale is reduced
-        assert_eq!((owner5_reward as f64 * 0.25) as u64, owner6_reward);
-
-        let owner7_reward = *owner_rewards
-            .get(&owner6)
-            .expect("Could not fetch owner7 rewards");
-        assert_eq!(owner7_reward, 130_463_144_161);
-
-        // confirm owner 7 reward is 0.25 of owner 5's reward
-        // owner 7's hotspot does have a validation location timestamp
-        // but its distance beyond the asserted location is too high
-        // and thus its reward scale is reduced
-        assert_eq!((owner5_reward as f64 * 0.25) as u64, owner7_reward);
-
-        // confirm total sum of allocated poc rewards
-        assert_eq!(allocated_poc_rewards, 2_054_794_520_538);
-
-        // confirm the unallocated poc reward amounts
-        let unallocated_sp_reward_amount = (reward_shares.total_poc()
-            - Decimal::from(allocated_poc_rewards))
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 10);
     }
 
     #[tokio::test]
     async fn full_wifi_indoor_vs_sercomm_indoor_reward_shares() {
+        // UPD: Just check that wifi gets whole reward, Since cbrs is shut down
         // init owners
         let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -1924,17 +1654,13 @@ mod test {
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-        assert_eq!(owner1_reward, 1_643_835_616_438);
-
-        // sercomm
-        let owner2_reward = *owner_rewards
-            .get(&owner2)
-            .expect("Could not fetch owner2 rewards");
-        assert_eq!(owner2_reward, 410_958_904_109);
+        assert_eq!(owner1_reward, reward_shares.total_poc().to_u64().unwrap());
     }
 
     #[tokio::test]
     async fn reduced_wifi_indoor_vs_sercomm_indoor_reward_shares() {
+        // UPD: Just check that wifi gets whole reward, Since cbrs is shut down
+
         // init owners
         let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -2055,26 +1781,16 @@ mod test {
             let boosted = radio_reward.boosted_poc_reward;
             *owner_rewards.entry(owner).or_default() += base + boosted;
         }
-
         // wifi
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-
-        // sercomm
-        let owner2_reward = *owner_rewards
-            .get(&owner2)
-            .expect("Could not fetch owner2 rewards");
-
-        // confirm owner 1 reward is 0.1 of owner 2's reward
-        // owner 1 is a wifi indoor with a distance_to_asserted > max
-        // and so gets the reduced reward scale of 0.1 ( radio reward scale of 0.4 * location scale of 0.25)
-        // owner 2 is a cbrs sercomm indoor which has a reward scale of 1.0
-        assert_eq!(owner1_reward, owner2_reward);
+        assert_eq!(owner1_reward, reward_shares.total_poc().to_u64().unwrap());
     }
 
     #[tokio::test]
     async fn full_wifi_outdoor_vs_sercomm_indoor_reward_shares() {
+        // UPD: Just check that wifi gets whole reward, Since cbrs is shut down
         // init owners
         let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -2197,13 +1913,7 @@ mod test {
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-        assert_eq!(owner1_reward, 1_643_835_616_438);
-
-        // sercomm
-        let owner2_reward = *owner_rewards
-            .get(&owner2)
-            .expect("Could not fetch owner2 rewards");
-        assert_eq!(owner2_reward, 410_958_904_109);
+        assert_eq!(owner1_reward, reward_shares.total_poc().to_u64().unwrap());
     }
 
     #[tokio::test]
