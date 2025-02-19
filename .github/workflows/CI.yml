@@ -176,7 +176,7 @@ jobs:
     needs: [fmt, clippy, tests, tests-postgres]
     runs-on: ubuntu-latest
     container:
-      image: ubuntu-20.04
+      image: ubuntu:20.04
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-build-release
       cancel-in-progress: true
