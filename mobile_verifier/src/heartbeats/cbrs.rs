@@ -6,7 +6,7 @@ use crate::{
     GatewayResolver, Settings,
 };
 
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
@@ -25,8 +25,6 @@ use std::{
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-const CBRS_DISABLE_TIME: i64 = 1740787200;
-
 pub struct CbrsHeartbeatDaemon<GIR, GFV> {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_info_resolver: GIR,
@@ -35,6 +33,7 @@ pub struct CbrsHeartbeatDaemon<GIR, GFV> {
     heartbeat_sink: FileSinkClient<proto::Heartbeat>,
     seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
     geofence: GFV,
+    disable_time: DateTime<Utc>,
 }
 
 impl<GIR, GFV> CbrsHeartbeatDaemon<GIR, GFV>
@@ -71,6 +70,7 @@ where
             valid_heartbeats,
             seniority_updates,
             geofence,
+            settings.cbrs_disable_time,
         );
 
         Ok(TaskManager::builder()
@@ -88,6 +88,7 @@ where
         heartbeat_sink: FileSinkClient<proto::Heartbeat>,
         seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
+        disable_time: DateTime<Utc>,
     ) -> Self {
         Self {
             pool,
@@ -97,6 +98,7 @@ where
             heartbeat_sink,
             seniority_sink,
             geofence,
+            disable_time,
         }
     }
 
@@ -154,7 +156,6 @@ where
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
         let heartbeat_cache_clone = heartbeat_cache.clone();
-        let cbrs_disable_time = Utc.timestamp_opt(CBRS_DISABLE_TIME, 0).single().unwrap();
 
         let heartbeats = file
             .into_stream(&mut transaction)
@@ -162,7 +163,8 @@ where
             .map(Heartbeat::from)
             .filter(move |h| {
                 let timestamp = h.timestamp;
-                async move { timestamp < cbrs_disable_time }
+                let disable_time = self.disable_time;
+                async move { timestamp < disable_time }
             })
             .filter(move |h| {
                 let hb_cache = heartbeat_cache_clone.clone();
