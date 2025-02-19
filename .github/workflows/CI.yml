@@ -6,6 +6,12 @@ on:
   push:
     branches: ["main"]
     tags: ["*"]
+  workflow_dispatch:  # Allows manual triggering for testing
+    inputs:
+      release_version:
+        description: "Release Version (e.g., 1.0.0)"
+        required: true
+        type: string
 
 env:
   CARGO_INCREMENTAL: 0 # this setting is automatically applied by rust-cache but documented here for explicitness
@@ -17,7 +23,7 @@ env:
 jobs:
 
   build:
-    runs-on: oracles-20.04
+    runs-on: ubuntu-latest
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-build
       cancel-in-progress: true
@@ -48,7 +54,7 @@ jobs:
         run: cargo build --all --tests 
 
   fmt:
-    runs-on: oracles-20.04
+    runs-on: ubuntu-latest
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-fmt
       cancel-in-progress: true
@@ -65,7 +71,7 @@ jobs:
         run: cargo fmt  -- --check
 
   clippy:
-    runs-on: oracles-20.04
+    runs-on: ubuntu-latest
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-clippy
       cancel-in-progress: true
@@ -88,7 +94,7 @@ jobs:
 
   tests-postgres:
     needs: build
-    runs-on: oracles-20.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -138,7 +144,7 @@ jobs:
   
   tests:
     needs: build
-    runs-on: oracles-20.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -174,12 +180,18 @@ jobs:
 
   build-release:
     needs: [fmt, clippy, tests, tests-postgres]
-    runs-on: oracles-20.04
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-build-release
       cancel-in-progress: true
-    if: contains(github.ref, 'refs/tags/')
+    if: contains(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     steps:
+      - name: Show Inputs
+        run: |
+          echo "Release Version: ${{ github.event.inputs.release_version }}"
+
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
@@ -189,16 +201,18 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      # Commenting this until we can build cache on same OS
+
+      # - name: Cache
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: |
+      #       ~/.cargo/bin/
+      #       ~/.cargo/registry/index/
+      #       ~/.cargo/registry/cache/
+      #       ~/.cargo/git/db/
+      #       target/
+      #     key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build Release
         run: cargo build --all --release
@@ -206,6 +220,7 @@ jobs:
       - name: Debian packaging
         env:
           PACKAGECLOUD_API_KEY: ${{ secrets.PACKAGECLOUD_API_KEY }}
+          RELEASE_VERSION: ${{ github.event.inputs.release_version }}
         run: |
           chmod +x ./.github/scripts/make_debian.sh
           ./.github/scripts/make_debian.sh
