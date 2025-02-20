@@ -33,7 +33,7 @@ jobs:
       - name: Install Dependencies
         run: |
           apt-get update
-          apt-get install -y curl unzip
+          apt-get install -y curl unzip build-essential
 
       - uses: actions/checkout@v4
 
