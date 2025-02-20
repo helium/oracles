@@ -183,6 +183,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ubuntu:20.04
+      options: --user root
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-build-release
       cancel-in-progress: true
@@ -191,6 +192,11 @@ jobs:
       - name: Show Inputs
         run: |
           echo "Release Version: ${{ github.event.inputs.release_version }}"
+
+      - name: Install Dependencies
+        run: |
+          apt-get update
+          apt-get install -y curl
 
       - uses: actions/checkout@v4
 
