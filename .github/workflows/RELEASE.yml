@@ -32,7 +32,11 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          export DEBIAN_FRONTEND=noninteractive
           apt-get update
+          apt-get install -y tzdata
+          ln -fs /usr/share/zoneinfo/UTC /etc/localtime
+          dpkg-reconfigure -f noninteractive tzdata
           apt-get install -y curl build-essential pkg-config libssl-dev unzip
 
       - uses: actions/checkout@v4
