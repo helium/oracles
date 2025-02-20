@@ -31,17 +31,6 @@ jobs:
       (github.event_name == 'workflow_dispatch') || 
       (github.event.workflow_run.conclusion == 'success' && contains(github.ref, 'refs/tags/'))
     steps:
-      - name: Free Up Disk Space
-        run: |
-          echo "Freeing up disk space..."
-          echo "Disk space before cleanup:"
-          df -h
-          sudo apt-get clean
-          sudo rm -rf /usr/local/lib/android /usr/lib/jvm /usr/local/share/boost /opt/hostedtoolcache
-          docker system prune -a -f
-          echo "Disk space after cleanup:"
-          df -h
-
       - name: Show Inputs
         run: |
           echo "Release Version: ${{ github.event.inputs.release_version }}"
