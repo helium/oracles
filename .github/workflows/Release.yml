@@ -65,6 +65,16 @@ jobs:
             target/
           key: ubuntu-20.04-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+
+      - name: Free Up Disk Space
+        run: |
+          echo "Freeing up disk space..."
+          sudo apt-get clean
+          sudo rm -rf /usr/local/lib/android /usr/lib/jvm /usr/local/share/boost /opt/hostedtoolcache
+          docker system prune -a -f
+          echo "Disk space after cleanup:"
+          df -h
+
       - name: Build Release
         run: cargo build --all --release
 

@@ -12,7 +12,7 @@ env:
   CARGO_INCREMENTAL: 0 # this setting is automatically applied by rust-cache but documented here for explicitness
   CARGO_NET_RETRY: 10
   RUST_BACKTRACE: short
-  RUSTFLAGS: "-D warnings"
+  RUSTFLAGS: "-C debuginfo=0 -D warnings"
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
@@ -43,6 +43,15 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Free Up Disk Space
+        run: |
+          echo "Freeing up disk space..."
+          sudo apt-get clean
+          sudo rm -rf /usr/local/lib/android /usr/lib/jvm /usr/local/share/boost /opt/hostedtoolcache
+          docker system prune -a -f
+          echo "Disk space after cleanup:"
+          df -h
 
       - name: Build
         run: cargo build --all --tests 
