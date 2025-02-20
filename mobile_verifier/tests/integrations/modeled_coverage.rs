@@ -1,7 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
-    heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     speedtest::CellSpeedtest,
     wifi_heartbeat::{WifiHeartbeat, WifiHeartbeatIngestReport},
 };
@@ -266,36 +265,6 @@ impl IsAuthorized for AllPubKeysAuthed {
     }
 }
 
-fn cbrs_heartbeats<'a>(
-    num: usize,
-    start: DateTime<Utc>,
-    hotspot_key: &'a PublicKeyBinary,
-    cbsd_id: &'a str,
-    lon: f64,
-    lat: f64,
-    coverage_object: Uuid,
-) -> impl Iterator<Item = CbrsHeartbeatIngestReport> + 'a {
-    (0..num).map(move |i| {
-        let report = CbrsHeartbeat {
-            pubkey: hotspot_key.clone(),
-            lon,
-            lat,
-            operation_mode: true,
-            cbsd_id: cbsd_id.to_string(),
-            // Unused:
-            hotspot_type: String::new(),
-            cell_id: 0,
-            timestamp: DateTime::<Utc>::MIN_UTC,
-            cbsd_category: String::new(),
-            coverage_object: Vec::from(coverage_object.into_bytes()),
-        };
-        CbrsHeartbeatIngestReport {
-            report,
-            received_timestamp: start + Duration::hours(i as i64),
-        }
-    })
-}
-
 // TODO move to common
 fn wifi_heartbeats(
     num: usize,
@@ -398,66 +367,6 @@ fn signal_power(
         signal_level,
         signal_power,
     })
-}
-
-// TODO remove
-async fn process_cbrs_input(
-    pool: &PgPool,
-    epoch: &Range<DateTime<Utc>>,
-    coverage_objs: impl Iterator<Item = CoverageObjectIngestReport>,
-    heartbeats: impl Iterator<Item = CbrsHeartbeatIngestReport>,
-) -> anyhow::Result<()> {
-    let coverage_objects = CoverageObjectCache::new(pool);
-    let coverage_claim_time_cache = CoverageClaimTimeCache::new();
-    let location_cache = LocationCache::new(pool);
-
-    let mut transaction = pool.begin().await?;
-    let mut coverage_objs = pin!(CoverageObject::validate_coverage_objects(
-        &AllPubKeysAuthed,
-        stream::iter(coverage_objs)
-    ));
-    while let Some(coverage_obj) = coverage_objs.next().await.transpose()? {
-        coverage_obj.save(&mut transaction).await?;
-    }
-    transaction.commit().await?;
-
-    let _ = common::set_unassigned_oracle_boosting_assignments(
-        pool,
-        &common::mock_hex_boost_data_default(),
-    )
-    .await?;
-
-    let mut transaction = pool.begin().await?;
-    let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
-        stream::iter(heartbeats.map(Heartbeat::from)),
-        &GatewayClientAllOwnersValid,
-        &coverage_objects,
-        &location_cache,
-        2000,
-        epoch,
-        &MockGeofence,
-    ));
-    while let Some(heartbeat) = heartbeats.next().await.transpose()? {
-        let coverage_claim_time = coverage_claim_time_cache
-            .fetch_coverage_claim_time(
-                heartbeat.heartbeat.key(),
-                &heartbeat.heartbeat.coverage_object,
-                &mut transaction,
-            )
-            .await?;
-        let latest_seniority =
-            Seniority::fetch_latest(heartbeat.heartbeat.key(), &mut transaction).await?;
-        let seniority_update = SeniorityUpdate::determine_update_action(
-            &heartbeat,
-            coverage_claim_time.unwrap(),
-            latest_seniority,
-        )?;
-        seniority_update.execute(&mut transaction).await?;
-        heartbeat.save(&mut transaction).await?;
-    }
-    transaction.commit().await?;
-
-    Ok(())
 }
 
 async fn process_wifi_input(
