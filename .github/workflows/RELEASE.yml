@@ -33,7 +33,7 @@ jobs:
       - name: Install Dependencies
         run: |
           apt-get update
-          apt-get install -y curl unzip build-essential
+          apt-get install -y curl build-essential pkg-config libssl-dev unzip
 
       - uses: actions/checkout@v4
 
