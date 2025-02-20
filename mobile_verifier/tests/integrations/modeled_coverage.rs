@@ -326,6 +326,7 @@ fn bytes_per_s(mbps: u64) -> u64 {
     mbps * 125000
 }
 
+// TODO rename to good!
 fn acceptable_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
     Speedtest {
         report: CellSpeedtest {
@@ -398,6 +399,7 @@ fn signal_power(
     })
 }
 
+// TODO remove
 async fn process_cbrs_input(
     pool: &PgPool,
     epoch: &Range<DateTime<Utc>>,
@@ -598,26 +600,23 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     let uuid_1 = Uuid::new_v4();
     let uuid_2 = Uuid::new_v4();
 
-    let cbsd_id_1 = "P27-SCE4255W120200039521XGB0103".to_string();
-    let cbsd_id_2 = "P27-SCE4255W120200039521XGB0104".to_string();
+    let hs_pubkey_1 = PublicKeyBinary::from(vec![1]);
+    let hs_pubkey_2 = PublicKeyBinary::from(vec![2]);
 
     let coverage_object_1 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_1,
-            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_1.clone()),
-            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
-            indoor: true,
+            key_type: file_store::coverage::KeyType::HotspotKey(hs_pubkey_1.clone()),
+            // older then in co2
+            coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
+            indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?,
-                signal_level("8c2681a3065d3ff", SignalLevel::Low)?,
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,
-                signal_level("8c2681a3066e7ff", SignalLevel::Low)?,
-                signal_level("8c2681a3065adff", SignalLevel::Low)?,
-                signal_level("8c2681a339a4bff", SignalLevel::Low)?,
-                signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 8
+                signal_level("8c2681a3066e7ff", SignalLevel::Low)?,  // 4
             ],
             trust_score: 1000,
         },
@@ -627,30 +626,39 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_2,
-            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_2.clone()),
+            key_type: file_store::coverage::KeyType::HotspotKey(hs_pubkey_2.clone()),
             coverage_claim_time: "2022-01-31 00:00:00.000000000 UTC".parse()?,
-            indoor: true,
+            indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a30641dff", SignalLevel::High)?,
-                signal_level("8c2681a3065d3ff", SignalLevel::Low)?, // Second hex is shared
-                signal_level("8c2681a3066a9ff", SignalLevel::Low)?,
-                signal_level("8c2681a306607ff", SignalLevel::Low)?,
-                signal_level("8c2681a3066e9ff", SignalLevel::Low)?,
-                signal_level("8c2681a306481ff", SignalLevel::Low)?,
-                signal_level("8c2681a302991ff", SignalLevel::Low)?,
+                signal_level("8c2681a3065adff", SignalLevel::High)?, // 16
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 8 * 0.5 = 4 (this hex is
+                // shared
+                signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
             trust_score: 1000,
         },
     };
 
-    let owner_1: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
-    let owner_2: PublicKeyBinary = "11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR".parse()?;
+    let heartbeats_1 = wifi_heartbeats(
+        13,
+        start,
+        hs_pubkey_1.clone(),
+        40.019427814,
+        -105.27158489,
+        uuid_1,
+    );
 
-    let heartbeats_1 = cbrs_heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
-    let heartbeats_2 = cbrs_heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
+    let heartbeats_2 = wifi_heartbeats(
+        13,
+        start,
+        hs_pubkey_2.clone(),
+        40.019427814,
+        -105.27158489,
+        uuid_2,
+    );
 
-    process_cbrs_input(
+    process_wifi_input(
         &pool,
         &(start..end),
         vec![coverage_object_1, coverage_object_2].into_iter(),
@@ -660,16 +668,17 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
 
     let last_timestamp = end - Duration::hours(12);
     let speedtests_1 = vec![
-        degraded_speedtest(owner_1.clone(), last_timestamp),
-        degraded_speedtest(owner_1.clone(), end),
+        degraded_speedtest(hs_pubkey_1.clone(), last_timestamp),
+        degraded_speedtest(hs_pubkey_1.clone(), end),
     ];
+
     let speedtests_2 = vec![
-        acceptable_speedtest(owner_2.clone(), last_timestamp),
-        acceptable_speedtest(owner_2.clone(), end),
+        acceptable_speedtest(hs_pubkey_2.clone(), last_timestamp),
+        acceptable_speedtest(hs_pubkey_2.clone(), end),
     ];
     let mut averages = HashMap::new();
-    averages.insert(owner_1.clone(), SpeedtestAverage::from(speedtests_1));
-    averages.insert(owner_2.clone(), SpeedtestAverage::from(speedtests_2));
+    averages.insert(hs_pubkey_1.clone(), SpeedtestAverage::from(speedtests_1));
+    averages.insert(hs_pubkey_2.clone(), SpeedtestAverage::from(speedtests_2));
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
@@ -687,12 +696,13 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(owner_1, Some(cbsd_id_1))),
-        dec!(112.5)
+        coverage_shares.test_hotspot_reward_shares(&(hs_pubkey_1, None)),
+        (dec!(16) + dec!(8) + dec!(4)) * dec!(0.5) // speedtest degraded
     );
+
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(owner_2, Some(cbsd_id_2))),
-        dec!(250)
+        coverage_shares.test_hotspot_reward_shares(&(hs_pubkey_2, None)),
+        (dec!(16) + dec!(8) * dec!(0.5) + dec!(4))
     );
 
     Ok(())
