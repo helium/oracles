@@ -31,6 +31,7 @@ impl CbrsHeartbeat {
     }
 }
 
+// TODO REMOVE
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CbrsHeartbeatIngestReport {
     pub received_timestamp: DateTime<Utc>,
