@@ -104,6 +104,7 @@ apt update
 apt install --yes ruby
 gem install public_suffix -v 5.1.1
 gem install rchardet -v 1.8.0
+gem install dotenv -v 2.8.1
 gem install fpm -v 1.14.2 # current as of 2022-11-08
 echo "ruby deps installed" 
 
