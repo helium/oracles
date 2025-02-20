@@ -16,10 +16,11 @@ fi
 
 echo "Building Debian package with version: $VERSION"
 
-write_unit_template() {
+write_unit_template()
+{
     local ORACLE=$1
 
-    cat <<-EOF >"/tmp/$ORACLE.service"
+    cat << -EOF >"/tmp/$ORACLE.service"
 [Unit]
 Description=$ORACLE
 After=network.target
@@ -45,25 +46,27 @@ WantedBy=multi-user.target
 -EOF
 }
 
-write_prepost_template() {
+write_prepost_template()
+{
     local ORACLE=$1
 
-    cat <<-EOF >"/tmp/$ORACLE-preinst"
+    cat << -EOF >"/tmp/$ORACLE-preinst"
 # add system user for file ownership and systemd user, if not exists
 useradd --system --home-dir /opt/helium --create-home helium || true
 -EOF
 
-    cat <<-EOF >"/tmp/$ORACLE-postinst"
+    cat << -EOF >"/tmp/$ORACLE-postinst"
 # add to /usr/local/bin so it appears in path
 ln -s /opt/$ORACLE/bin/$ORACLE /usr/local/bin/$ORACLE || true
 -EOF
 
-    cat <<-EOF >"/tmp/$ORACLE-postrm"
+    cat << -EOF >"/tmp/$ORACLE-postrm"
 rm -f /usr/local/bin/$ORACLE
 -EOF
 }
 
-run_fpm() {
+run_fpm()
+{
     local ORACLE=$1
     local CONF_PATH=$2
     local VERSION=$3
@@ -101,11 +104,12 @@ sudo apt update
 sudo apt install --yes ruby
 sudo gem install rchardet -v 1.8.0
 sudo gem install fpm -v 1.14.2 # current as of 2022-11-08
-echo "ruby deps installed"
+echo "ruby deps installed" 
 
-for config_path in $(find . -name 'settings-template.toml'); do
+for config_path in $( find . -name 'settings-template.toml' )
+do
     oracle=$(echo $config_path | sed -E 's!\./([^/]+)/.+$!\1!' | sed -E 's!_!-!g')
-
+    
     echo "starting  $oracle $config_path $VERSION"
     write_unit_template $oracle
     echo "write_unit_template  $oracle done"
@@ -115,10 +119,11 @@ for config_path in $(find . -name 'settings-template.toml'); do
     echo "run_fpm  $oracle done"
 done
 
-for deb in /tmp/*.deb; do
+for deb in /tmp/*.deb
+do
     echo "uploading $deb"
     curl -u "${PACKAGECLOUD_API_KEY}:" \
-        -F "package[distro_version_id]=210" \
-        -F "package[package_file]=@$deb" \
-        https://packagecloud.io/api/v1/repos/helium/oracles/packages.json
+         -F "package[distro_version_id]=210" \
+         -F "package[package_file]=@$deb" \
+         https://packagecloud.io/api/v1/repos/helium/oracles/packages.json
 done
