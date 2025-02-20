@@ -196,7 +196,7 @@ jobs:
       - name: Install Dependencies
         run: |
           apt-get update
-          apt-get install -y curl
+          apt-get install -y curl unzip
 
       - uses: actions/checkout@v4
 
@@ -208,7 +208,6 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Commenting this until we can build cache on same OS
-
       # - name: Cache
       #   uses: actions/cache@v4
       #   with:
