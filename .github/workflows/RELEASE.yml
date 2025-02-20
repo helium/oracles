@@ -24,7 +24,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ubuntu:20.04
-      options: --user root
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-build-release
       cancel-in-progress: true
