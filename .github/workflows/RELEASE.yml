@@ -1,7 +1,11 @@
 name: Release
 
 on:
-  workflow_dispatch:  # Allows manual triggering for testing
+  workflow_run:
+    workflows: ["CI"]  # Triggers after CI workflow completes
+    types:
+      - completed
+  workflow_dispatch:  # Allows manual triggering
     inputs:
       release_version:
         description: "Release Version (e.g., 1.0.0)"
@@ -24,7 +28,9 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-build-release
       cancel-in-progress: true
-    if: contains(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: > 
+      (github.event_name == 'workflow_dispatch') || 
+      (github.event.workflow_run.conclusion == 'success' && contains(github.ref, 'refs/tags/'))
     steps:
       - name: Show Inputs
         run: |
@@ -47,6 +53,18 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # TODO: update key when we retire 20.04
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ubuntu-20.04-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build Release
         run: cargo build --all --release
