@@ -23,6 +23,7 @@ pub struct CoverageMapBuilder {
 impl CoverageMapBuilder {
     /// Inserts a new coverage object into the builder.
     pub fn insert_coverage_object(&mut self, coverage_obj: CoverageObject) {
+        // TODO-K remove cbsd_id from match
         match (coverage_obj.indoor, coverage_obj.cbsd_id.is_some()) {
             (true, false) => insert_indoor_coverage_object(&mut self.indoor_wifi, coverage_obj),
             (false, false) => insert_outdoor_coverage_object(&mut self.outdoor_wifi, coverage_obj),
@@ -148,6 +149,7 @@ impl CoverageMap {
 pub struct CoverageObject {
     pub indoor: bool,
     pub hotspot_key: Vec<u8>,
+    // TODO-K remove
     pub cbsd_id: Option<String>,
     pub seniority_timestamp: DateTime<Utc>,
     pub coverage: Vec<UnrankedCoverage>,
