@@ -1,4 +1,3 @@
-pub mod cbrs;
 pub mod last_location;
 pub mod wifi;
 

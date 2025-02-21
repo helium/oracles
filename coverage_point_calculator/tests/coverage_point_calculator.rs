@@ -7,6 +7,7 @@ use coverage_point_calculator::{
     SPBoostedRewardEligibility, Speedtest, SpeedtestTier,
 };
 use hex_assignments::{assignment::HexAssignments, Assignment};
+use rust_decimal::{prelude::FromPrimitive, Decimal};
 use rust_decimal_macros::dec;
 
 #[test]
@@ -45,11 +46,9 @@ fn base_radio_coverage_points() {
         boosted: NonZeroU32::new(0),
     }];
 
-    for (radio_type, expcted_base_coverage_point) in [
+    for (radio_type, expected_base_coverage_point) in [
         (RadioType::IndoorWifi, dec!(400)),
-        (RadioType::IndoorCbrs, dec!(100)),
         (RadioType::OutdoorWifi, dec!(16)),
-        (RadioType::OutdoorCbrs, dec!(4)),
     ] {
         let coverage_points = CoveragePoints::new(
             radio_type,
@@ -62,7 +61,7 @@ fn base_radio_coverage_points() {
         .unwrap();
 
         assert_eq!(
-            expcted_base_coverage_point,
+            expected_base_coverage_point,
             coverage_points.coverage_points_v1()
         );
     }
@@ -108,12 +107,7 @@ fn radios_with_coverage() {
         trust_score: dec!(1.0),
     }];
 
-    for (radio_type, num_hexes) in [
-        (RadioType::IndoorWifi, 1),
-        (RadioType::IndoorCbrs, 4),
-        (RadioType::OutdoorWifi, 25),
-        (RadioType::OutdoorCbrs, 100),
-    ] {
+    for (radio_type, num_hexes) in [(RadioType::IndoorWifi, 1), (RadioType::OutdoorWifi, 25)] {
         let coverage_points = CoveragePoints::new(
             radio_type,
             SPBoostedRewardEligibility::Eligible,
@@ -129,108 +123,100 @@ fn radios_with_coverage() {
 }
 
 #[test]
-fn cbrs_with_mixed_signal_level_coverage() -> Result {
-    // Scenario One
-    let coverage_points = indoor_cbrs_radio(
+fn outdoor_wifi_with_mixed_signal_level_coverage() -> Result {
+    // https://github.com/helium/HIP/blob/main/0093-addition-of-wifi-aps-to-mobile-subdao.md#342-outdoor-access-points-rewards
+    let coverage_points = outdoor_wifi_radio(
         SpeedtestTier::Good,
         &[
-            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High),
-            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a3065adff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a339a4bff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),
+            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16
+            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Medium), // 8
+            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Medium), // 8
+            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),  // 4
+            top_ranked_coverage(0x8c2681a3065adff, SignalLevel::Low),  // 4
         ],
     )?;
 
-    assert_eq!(dec!(250), coverage_points.total_shares());
+    assert_eq!(dec!(40), coverage_points.total_shares());
 
     Ok(())
 }
 
 #[test]
-fn cbrs_with_partially_overlapping_coverage_and_differing_speedtests() -> Result {
-    // Scenario two
+fn outdoor_wifi_with_partially_overlapping_coverage_and_differing_speedtests() -> Result {
+    // https://github.com/helium/HIP/blob/main/0105-modification-of-mobile-subdao-hex-limits.md#outdoor-wi-fi
     // Two radios, with a single overlapping hex and differing speedtest scores.
-    let radio_1 = indoor_cbrs_radio(
-        SpeedtestTier::Degraded,
+    let radio_1 = outdoor_wifi_radio(
+        SpeedtestTier::Degraded, // multiplier 0.5 on all hexes
         &[
-            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High),
-            second_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Low), // This hex is shared
-            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a3065adff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a339a4bff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),
+            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16
+            // This hex is shared (0.5 multiplier)
+            second_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Medium), // 8 * 0.5 = 4
+            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Medium),    // 8
+            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),       // 4
+            top_ranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),       // 4
         ],
     )?;
 
-    let radio_2 = indoor_cbrs_radio(
+    let radio_2 = outdoor_wifi_radio(
         SpeedtestTier::Good,
         &[
-            top_ranked_coverage(0x8c2681a30641dff, SignalLevel::High),
-            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Low), // This hex is shared
-            top_ranked_coverage(0x8c2681a3066a9ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a306607ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a3066e9ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a306481ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a302991ff, SignalLevel::Low),
+            top_ranked_coverage(0x8c2681a30641dff, SignalLevel::High), // 16
+            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Medium), // 8
+            top_ranked_coverage(0x8c2681a3066a9ff, SignalLevel::Medium), // 8
+            top_ranked_coverage(0x8c2681a306481ff, SignalLevel::Low),  // 4
+            top_ranked_coverage(0x8c2681a302991ff, SignalLevel::Low),  // 4
         ],
     )?;
 
-    assert_eq!(dec!(112.5), radio_1.total_shares());
-    assert_eq!(dec!(250), radio_2.total_shares());
+    assert_eq!(dec!(18), radio_1.total_shares());
+    assert_eq!(dec!(40), radio_2.total_shares());
 
     Ok(())
 }
 
 #[test]
-fn cbrs_with_wholly_overlapping_coverage_and_differing_speedtests() -> Result {
-    // Scenario Three
+fn outdoor_wifi_with_wholly_overlapping_coverage_and_differing_speedtests() -> Result {
+    // https://github.com/helium/HIP/blob/main/0105-modification-of-mobile-subdao-hex-limits.md#modeling-wi-fi-ap-ranking
     // All radios cover the same hexes.
     // Seniority timestamps determine rank.
-    // Only the first ranked radio (radio_4) should receive rewards.
+    // The first three ranked radio (radio_4) should receive rewards.
 
     let mut coverage_map_builder = coverage_map::CoverageMapBuilder::default();
-    let mut insert_coverage = |cbsd_id: &str, timestamp: &str| {
+    let mut insert_coverage = |hotspot_key: Vec<u8>, timestamp: &str| {
         coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
             indoor: true,
-            hotspot_key: vec![],
-            cbsd_id: Some(cbsd_id.to_string()),
+            hotspot_key,
+            cbsd_id: None,
             seniority_timestamp: timestamp.parse().expect("valid timestamp"),
             coverage: vec![
-                unranked_coverage(0x8c2681a3064d9ff, SignalLevel::High),
-                unranked_coverage(0x8c2681a3065d3ff, SignalLevel::Low),
-                unranked_coverage(0x8c2681a306635ff, SignalLevel::Low),
-                unranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),
-                unranked_coverage(0x8c2681a3065adff, SignalLevel::Low),
-                unranked_coverage(0x8c2681a339a4bff, SignalLevel::Low),
-                unranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),
+                unranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16
+                unranked_coverage(0x8c2681a3065d3ff, SignalLevel::High), // 16
+                unranked_coverage(0x8c2681a306635ff, SignalLevel::Medium), // 8
+                unranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),  // 4
             ],
         })
     };
 
-    insert_coverage("serial-1", "2022-02-01 00:00:00.000000000 UTC");
-    insert_coverage("serial-2", "2022-02-01 00:00:00.000000000 UTC");
-    insert_coverage("serial-3", "2022-02-01 00:00:00.000000000 UTC");
-    insert_coverage("serial-4", "2022-01-31 00:00:00.000000000 UTC"); // earliest
-    insert_coverage("serial-5", "2022-02-01 00:00:00.000000000 UTC");
-    insert_coverage("serial-6", "2022-02-02 00:00:00.000000000 UTC"); // latest
+    insert_coverage(vec![1], "2022-02-01 00:00:00.000000000 UTC");
+    insert_coverage(vec![2], "2022-02-02 00:00:00.000000000 UTC");
+    insert_coverage(vec![3], "2022-02-03 00:00:00.000000000 UTC");
+    insert_coverage(vec![4], "2022-02-04 00:00:00.000000000 UTC");
+    insert_coverage(vec![5], "2022-02-05 00:00:00.000000000 UTC");
+    insert_coverage(vec![6], "2022-02-06 00:00:00.000000000 UTC");
 
     let map = coverage_map_builder.build(&NoBoostedHexes, Utc::now());
 
-    let radio_1 = indoor_cbrs_radio(SpeedtestTier::Poor, map.get_cbrs_coverage("serial-1"))?;
-    let radio_2 = indoor_cbrs_radio(SpeedtestTier::Poor, map.get_cbrs_coverage("serial-2"))?;
-    let radio_3 = indoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-3"))?;
-    let radio_4 = indoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-4"))?;
-    let radio_5 = indoor_cbrs_radio(SpeedtestTier::Fail, map.get_cbrs_coverage("serial-5"))?;
-    let radio_6 = indoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-6"))?;
+    let radio_1 = outdoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[1]))?;
+    let radio_2 = outdoor_wifi_radio(SpeedtestTier::Acceptable, map.get_wifi_coverage(&[2]))?;
+    let radio_3 = outdoor_wifi_radio(SpeedtestTier::Degraded, map.get_wifi_coverage(&[3]))?;
+    let radio_4 = outdoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[4]))?;
+    let radio_5 = outdoor_wifi_radio(SpeedtestTier::Fail, map.get_wifi_coverage(&[5]))?;
+    let radio_6 = outdoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[6]))?;
 
-    assert_eq!(dec!(0), radio_1.total_shares());
-    assert_eq!(dec!(0), radio_2.total_shares());
-    assert_eq!(dec!(0), radio_3.total_shares());
-    assert_eq!(dec!(250), radio_4.total_shares());
+    assert_eq!(dec!(44), radio_1.total_shares());
+    assert_eq!(dec!(16.5), radio_2.total_shares());
+    assert_eq!(dec!(5.5), radio_3.total_shares());
+    assert_eq!(dec!(0), radio_4.total_shares());
     assert_eq!(dec!(0), radio_5.total_shares());
     assert_eq!(dec!(0), radio_6.total_shares());
 
@@ -238,131 +224,114 @@ fn cbrs_with_wholly_overlapping_coverage_and_differing_speedtests() -> Result {
 }
 
 #[test]
-fn cbrs_outdoor_with_mixed_signal_level_coverage() -> Result {
-    // Scenario four
-    // Outdoor Cbrs with mixed signal level coverage
-
+fn wifi_outdoor_with_mixed_signal_level_coverage() -> Result {
     let radio = CoveragePoints::new(
-        RadioType::OutdoorCbrs,
+        RadioType::OutdoorWifi,
         SPBoostedRewardEligibility::Eligible,
         Speedtest::mock(SpeedtestTier::Good),
-        vec![], // Location Trust is ignored for Cbrs
+        vec![LocationTrust {
+            meters_to_asserted: 1,
+            trust_score: Decimal::from_u8(1).unwrap(),
+        }],
         vec![
-            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High),
-            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::High),
-            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Medium),
-            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Medium),
-            top_ranked_coverage(0x8c2681a3065adff, SignalLevel::Medium),
-            top_ranked_coverage(0x8c2681a339a4bff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a306481ff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a30648bff, SignalLevel::Low),
-            top_ranked_coverage(0x8c2681a30646bff, SignalLevel::Low),
+            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16
+            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::High), // 16
+            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Medium), // 8
+            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Medium), // 8
+            top_ranked_coverage(0x8c2681a3065adff, SignalLevel::Medium), // 8
+            top_ranked_coverage(0x8c2681a339a4bff, SignalLevel::Low),  // 4
+            top_ranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),  // 4
         ],
         OracleBoostingStatus::Eligible,
     )
     .unwrap();
 
-    assert_eq!(dec!(19), radio.total_shares());
+    assert_eq!(
+        Decimal::from_i32(16 * 2 + 8 * 3 + 4 * 2).unwrap(),
+        radio.total_shares()
+    );
 
     Ok(())
 }
 
 #[test]
-fn cbrs_outdoor_with_single_overlapping_coverage() -> Result {
+fn wifi_outdoor_with_single_overlapping_coverage() -> Result {
     // Scenario Five
     // 2 radios overlapping a single hex with a medium Signal Level.
-    // First radio has seniority.
+    // First radio has older seniority and degradet speedtest
 
     let mut coverage_map_builder = coverage_map::CoverageMapBuilder::default();
 
     coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
         indoor: false,
         hotspot_key: vec![1],
-        cbsd_id: Some("serial-1".to_string()),
+        cbsd_id: None,
         seniority_timestamp: "2022-02-01 00:00:00.000000000 UTC"
             .parse()
             .expect("valid timestamp"),
         coverage: vec![
-            unranked_coverage(0x8c2681a302991ff, SignalLevel::High),
-            unranked_coverage(0x8c2681a306601ff, SignalLevel::High),
-            unranked_coverage(0x8c2681a306697ff, SignalLevel::High),
-            unranked_coverage(0x8c2681a3028a7ff, SignalLevel::Medium), // This hex is shared
-            unranked_coverage(0x8c2681a3064c1ff, SignalLevel::Medium),
-            unranked_coverage(0x8c2681a30671bff, SignalLevel::Low),
-            unranked_coverage(0x8c2681a306493ff, SignalLevel::Low),
-            unranked_coverage(0x8c2681a30659dff, SignalLevel::Low),
+            unranked_coverage(0x8c2681a302991ff, SignalLevel::High), // 16
+            unranked_coverage(0x8c2681a3028a7ff, SignalLevel::Medium), // 8. This hex is shared
+            unranked_coverage(0x8c2681a30659dff, SignalLevel::Low),  // 4
         ],
     });
     coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
         indoor: false,
         hotspot_key: vec![2],
-        cbsd_id: Some("serial-2".to_string()),
-        seniority_timestamp: "2022-02-01 00:00:01.000000000 UTC"
+        cbsd_id: None,
+        seniority_timestamp: "2022-02-02 00:00:01.000000000 UTC"
             .parse()
             .expect("valid timestamp"),
         coverage: vec![
-            unranked_coverage(0x8c2681a3066abff, SignalLevel::High),
-            unranked_coverage(0x8c2681a3028a7ff, SignalLevel::Medium), // This hex is shared
-            unranked_coverage(0x8c2681a3066a9ff, SignalLevel::Low),
-            unranked_coverage(0x8c2681a3066a5ff, SignalLevel::Low),
-            unranked_coverage(0x8c2681a30640dff, SignalLevel::Low),
+            unranked_coverage(0x8c2681a3066abff, SignalLevel::High), // 16
+            unranked_coverage(0x8c2681a3028a7ff, SignalLevel::Medium), // 8 * 0.5 = 4(This hex is shared)
+            unranked_coverage(0x8c2681a3066a9ff, SignalLevel::Low),    // 4
         ],
     });
 
     let map = coverage_map_builder.build(&NoBoostedHexes, Utc::now());
 
-    let radio_1 = outdoor_cbrs_radio(SpeedtestTier::Degraded, map.get_cbrs_coverage("serial-1"))?;
-    let radio_2 = outdoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-2"))?;
+    let radio_1 = outdoor_wifi_radio(SpeedtestTier::Degraded, map.get_wifi_coverage(&[1]))?;
+    let radio_2 = outdoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[2]))?;
 
-    assert_eq!(dec!(19) * dec!(0.5), radio_1.total_shares());
-    assert_eq!(dec!(8), radio_2.total_shares());
+    assert_eq!(dec!(28) * dec!(0.50), radio_1.total_shares());
+    assert_eq!(dec!(24), radio_2.total_shares());
 
     Ok(())
 }
 
 #[test]
-fn cbrs_indoor_with_wholly_overlapping_coverage_and_no_failing_speedtests() -> Result {
-    // Scenario Six
-    // Similar to Scenario Three, but there are no failing speedtests.
-    // Radios have the same coverage.
-
+fn widi_indoor_with_wholly_overlapping_coverage_and_no_failing_speedtests() -> Result {
     let mut coverage_map_builder = coverage_map::CoverageMapBuilder::default();
-    let mut insert_coverage = |cbsd_id: &str, timestamp: &str| {
+    let mut insert_coverage = |hotspot_key: Vec<u8>, timestamp: &str| {
         coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
             indoor: true,
-            hotspot_key: vec![0],
-            cbsd_id: Some(cbsd_id.to_string()),
+            hotspot_key,
+            cbsd_id: None,
             seniority_timestamp: timestamp.parse().expect("valid timestamp"),
             coverage: vec![
-                unranked_coverage(0x8c2681a3064d9ff, SignalLevel::High),
-                unranked_coverage(0x8c2681a3065d3ff, SignalLevel::Low),
-                unranked_coverage(0x8c2681a306635ff, SignalLevel::Low),
-                unranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),
-                unranked_coverage(0x8c2681a3065adff, SignalLevel::Low),
-                unranked_coverage(0x8c2681a339a4bff, SignalLevel::Low),
-                unranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),
+                unranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16
             ],
         })
     };
 
-    insert_coverage("serial-1", "2022-02-01 00:00:00.000000000 UTC");
-    insert_coverage("serial-2", "2022-01-31 00:00:00.000000000 UTC"); // Oldest
-    insert_coverage("serial-3", "2022-02-01 00:00:00.000000000 UTC");
-    insert_coverage("serial-4", "2022-02-01 00:00:00.000000000 UTC");
-    insert_coverage("serial-5", "2022-02-01 00:00:00.000000000 UTC");
-    insert_coverage("serial-6", "2022-02-02 00:00:00.000000000 UTC"); // Newest
+    insert_coverage(vec![1], "2022-02-01 00:00:00.000000000 UTC");
+    insert_coverage(vec![2], "2022-02-02 00:00:00.000000000 UTC");
+    insert_coverage(vec![3], "2022-02-03 00:00:00.000000000 UTC");
+    insert_coverage(vec![4], "2022-02-04 00:00:00.000000000 UTC");
+    insert_coverage(vec![5], "2022-02-05 00:00:00.000000000 UTC");
+    insert_coverage(vec![6], "2022-02-06 00:00:00.000000000 UTC");
     let map = coverage_map_builder.build(&NoBoostedHexes, Utc::now());
 
-    let radio_1 = indoor_cbrs_radio(SpeedtestTier::Poor, map.get_cbrs_coverage("serial-1"))?;
-    let radio_2 = indoor_cbrs_radio(SpeedtestTier::Poor, map.get_cbrs_coverage("serial-2"))?;
-    let radio_3 = indoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-3"))?;
-    let radio_4 = indoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-4"))?;
-    let radio_5 = indoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-5"))?;
-    let radio_6 = indoor_cbrs_radio(SpeedtestTier::Good, map.get_cbrs_coverage("serial-6"))?;
+    let radio_1 = indoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[1]))?;
+    let radio_2 = indoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[2]))?;
+    let radio_3 = indoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[3]))?;
+    let radio_4 = indoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[4]))?;
+    let radio_5 = indoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[5]))?;
+    let radio_6 = indoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[6]))?;
 
-    assert_eq!(dec!(0), radio_1.total_shares());
-    assert_eq!(dec!(62.5), radio_2.total_shares());
+    assert_eq!(dec!(400), radio_1.total_shares());
+    assert_eq!(dec!(0), radio_2.total_shares());
     assert_eq!(dec!(0), radio_3.total_shares());
     assert_eq!(dec!(0), radio_4.total_shares());
     assert_eq!(dec!(0), radio_5.total_shares());
@@ -371,29 +340,35 @@ fn cbrs_indoor_with_wholly_overlapping_coverage_and_no_failing_speedtests() -> R
     Ok(())
 }
 
-fn indoor_cbrs_radio(
+fn indoor_wifi_radio(
     speedtest_tier: SpeedtestTier,
     coverage: &[RankedCoverage],
 ) -> Result<CoveragePoints> {
     CoveragePoints::new(
-        RadioType::IndoorCbrs,
+        RadioType::IndoorWifi,
         SPBoostedRewardEligibility::Eligible,
         Speedtest::mock(speedtest_tier),
-        vec![],
+        vec![LocationTrust {
+            meters_to_asserted: 1,
+            trust_score: Decimal::from_u8(1).unwrap(),
+        }],
         coverage.to_owned(),
         OracleBoostingStatus::Eligible,
     )
 }
 
-fn outdoor_cbrs_radio(
+fn outdoor_wifi_radio(
     speedtest_tier: SpeedtestTier,
     coverage: &[RankedCoverage],
 ) -> Result<CoveragePoints> {
     CoveragePoints::new(
-        RadioType::OutdoorCbrs,
+        RadioType::OutdoorWifi,
         SPBoostedRewardEligibility::Eligible,
         Speedtest::mock(speedtest_tier),
-        vec![],
+        vec![LocationTrust {
+            meters_to_asserted: 1,
+            trust_score: Decimal::from_u8(1).unwrap(),
+        }],
         coverage.to_owned(),
         OracleBoostingStatus::Eligible,
     )

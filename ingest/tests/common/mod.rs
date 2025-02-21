@@ -65,7 +65,6 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
 
     let (trigger, listener) = triggered::trigger();
 
-    let (cbrs_heartbeat_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (wifi_heartbeat_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (speedtest_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (data_transfer_tx, _rx) = tokio::sync::mpsc::channel(10);
@@ -83,7 +82,6 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
 
     tokio::spawn(async move {
         let grpc_server = GrpcServer::new(
-            FileSinkClient::new(cbrs_heartbeat_tx, "noop"),
             FileSinkClient::new(wifi_heartbeat_tx, "noop"),
             FileSinkClient::new(speedtest_tx, "noop"),
             FileSinkClient::new(data_transfer_tx, "noop"),

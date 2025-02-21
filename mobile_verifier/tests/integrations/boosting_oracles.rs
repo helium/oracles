@@ -3,14 +3,14 @@ use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::RadioHexSignalLevel,
-    heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     speedtest::CellSpeedtest,
+    wifi_heartbeat::{WifiHeartbeat, WifiHeartbeatIngestReport},
 };
 use futures::stream::{self, StreamExt};
 use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    CoverageObjectValidity, OracleBoostingHexAssignment, SignalLevel,
+    CoverageObjectValidity, LocationSource, OracleBoostingHexAssignment, SignalLevel,
 };
 use hex_assignments::{Assignment, HexBoostData};
 use hextree::Cell;
@@ -45,30 +45,26 @@ impl GeofenceValidator for MockGeofence {
     }
 }
 
-fn heartbeats<'a>(
+fn heartbeats(
     num: usize,
     start: DateTime<Utc>,
-    hotspot_key: &'a PublicKeyBinary,
-    cbsd_id: &'a str,
+    hotspot_key: &PublicKeyBinary,
     lon: f64,
     lat: f64,
     coverage_object: Uuid,
-) -> impl Iterator<Item = CbrsHeartbeatIngestReport> + 'a {
+) -> impl Iterator<Item = WifiHeartbeatIngestReport> + '_ {
     (0..num).map(move |i| {
-        let report = CbrsHeartbeat {
+        let report = WifiHeartbeat {
             pubkey: hotspot_key.clone(),
             lon,
             lat,
             operation_mode: true,
-            cbsd_id: cbsd_id.to_string(),
-            // Unused:
-            hotspot_type: String::new(),
-            cell_id: 0,
             timestamp: DateTime::<Utc>::MIN_UTC,
-            cbsd_category: String::new(),
             coverage_object: Vec::from(coverage_object.into_bytes()),
+            location_validation_timestamp: Some(start),
+            location_source: LocationSource::Gps,
         };
-        CbrsHeartbeatIngestReport {
+        WifiHeartbeatIngestReport {
             report,
             received_timestamp: start + Duration::hours(i as i64),
         }
@@ -262,7 +258,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
 
     let hexes = {
         // NOTE(mj): Cell is mutated in constructor to keep elements aligned for readability
-        let mut cell = CellIndex::try_from(0x8c2681a3064d9ff)?;
+        let mut cell = CellIndex::try_from(0x8c2681a3064c5ff)?;
         use hex_assignments::Assignment::*;
         vec![
             // yellow - POI ≥ 1 Urbanized, no service provider override
@@ -323,19 +319,18 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     }
 
     let uuid = Uuid::new_v4();
-    let cbsd_id = "P27-SCE4255W120200039521XGB0102".to_string();
-    let owner: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
 
+    let pub_key = PublicKeyBinary::from(vec![1]);
     let coverage_object = file_store::coverage::CoverageObject {
-        pub_key: PublicKeyBinary::from(vec![1]),
+        pub_key: pub_key.clone(),
         uuid,
-        key_type: file_store::coverage::KeyType::CbsdId(cbsd_id.clone()),
+        key_type: file_store::coverage::KeyType::HotspotKey(pub_key.clone()),
         coverage_claim_time: start,
         indoor: true,
         signature: Vec::new(),
         coverage: hexes
             .iter()
-            .map(|hex| signal_level(&hex.loc, SignalLevel::High).unwrap())
+            .map(|hex| signal_level(&hex.loc, SignalLevel::Low).unwrap())
             .collect(),
         trust_score: 1000,
     };
@@ -357,8 +352,8 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
         .build()?;
     let _ = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
-    let heartbeat_owner = owner.clone();
-    let heartbeats = heartbeats(13, start, &heartbeat_owner, &cbsd_id, 0.0, 0.0, uuid);
+    let hb_pubkey = pub_key.clone();
+    let heartbeats = heartbeats(13, start, &hb_pubkey, -105.272404746, 40.019418356, uuid);
 
     let coverage_objects = CoverageObjectCache::new(&pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
@@ -397,11 +392,11 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
 
     let last_timestamp = end - Duration::hours(12);
     let owner_speedtests = vec![
-        acceptable_speedtest(owner.clone(), last_timestamp),
-        acceptable_speedtest(owner.clone(), end),
+        acceptable_speedtest(hb_pubkey.clone(), last_timestamp),
+        acceptable_speedtest(hb_pubkey.clone(), end),
     ];
     let mut averages = HashMap::new();
-    averages.insert(owner.clone(), SpeedtestAverage::from(owner_speedtests));
+    averages.insert(hb_pubkey.clone(), SpeedtestAverage::from(owner_speedtests));
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let heartbeats = HeartbeatReward::validated(&pool, &epoch);
@@ -462,7 +457,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     //                                     = 1,173
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(owner, Some(cbsd_id.clone()))),
+        coverage_shares.test_hotspot_reward_shares(&(pub_key, None)),
         dec!(1173.0)
     );
 
