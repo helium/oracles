@@ -662,7 +662,7 @@ impl DataTransferAndPocAllocatedRewardBuckets {
         }
     }
 
-    // TODO is it test only purposes? If yes move from prod codebase?
+    // TODO-K is it test only purposes? If yes move from prod codebase?
     pub fn new_poc_only(total_emission_pool: Decimal) -> Self {
         let poc = total_emission_pool * POC_REWARDS_PERCENT;
         let data_transfer = total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT;

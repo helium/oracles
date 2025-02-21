@@ -42,7 +42,7 @@ pub(crate) fn average_distance(radio_type: RadioType, trust_scores: &[LocationTr
         return dec!(0);
     }
 
-    // FIXME: if count = 0, division by zero happens
+    // FIXME-K: if count = 0, division by zero happens
     let count = Decimal::from(trust_scores.len());
     let sum: Decimal = trust_scores
         .iter()
@@ -58,7 +58,7 @@ pub fn multiplier(radio_type: RadioType, trust_scores: &[LocationTrust]) -> Deci
         return dec!(1);
     }
 
-    // FIXME: if count = 0, division by zero happens
+    // FIXME-K: if count = 0, division by zero happens
     let count = Decimal::from(trust_scores.len());
     let scores: Decimal = trust_scores.iter().map(|l| l.trust_score).sum();
 

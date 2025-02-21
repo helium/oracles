@@ -265,7 +265,7 @@ impl IsAuthorized for AllPubKeysAuthed {
     }
 }
 
-// TODO move to common
+// TODO-K move to common
 fn wifi_heartbeats(
     num: usize,
     start: DateTime<Utc>,
@@ -296,8 +296,7 @@ fn bytes_per_s(mbps: u64) -> u64 {
     mbps * 125000
 }
 
-// TODO rename to good!
-fn acceptable_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
+fn good_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
     Speedtest {
         report: CellSpeedtest {
             pubkey,
@@ -473,8 +472,8 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
 
     let last_timestamp = end - Duration::hours(12);
     let owner_speedtests = vec![
-        acceptable_speedtest(pub_key.clone(), last_timestamp),
-        acceptable_speedtest(pub_key.clone(), end),
+        good_speedtest(pub_key.clone(), last_timestamp),
+        good_speedtest(pub_key.clone(), end),
     ];
     let mut averages = HashMap::new();
     averages.insert(pub_key.clone(), SpeedtestAverage::from(owner_speedtests));
@@ -583,8 +582,8 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     ];
 
     let speedtests_2 = vec![
-        acceptable_speedtest(hs_pubkey_2.clone(), last_timestamp),
-        acceptable_speedtest(hs_pubkey_2.clone(), end),
+        good_speedtest(hs_pubkey_2.clone(), last_timestamp),
+        good_speedtest(hs_pubkey_2.clone(), end),
     ];
     let mut averages = HashMap::new();
     averages.insert(hs_pubkey_1.clone(), SpeedtestAverage::from(speedtests_1));
@@ -807,16 +806,16 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     ];
     let expected_speedtest_mult_co3 = dec!(1);
     let speedtests_3 = vec![
-        acceptable_speedtest(hs_pub_key_3.clone(), last_timestamp),
-        acceptable_speedtest(hs_pub_key_3.clone(), end),
+        good_speedtest(hs_pub_key_3.clone(), last_timestamp),
+        good_speedtest(hs_pub_key_3.clone(), end),
     ];
     let speedtests_4 = vec![
-        acceptable_speedtest(hs_pub_key_4.clone(), last_timestamp),
-        acceptable_speedtest(hs_pub_key_4.clone(), end),
+        good_speedtest(hs_pub_key_4.clone(), last_timestamp),
+        good_speedtest(hs_pub_key_4.clone(), end),
     ];
     let speedtests_5 = vec![
-        acceptable_speedtest(hs_pub_key_5.clone(), last_timestamp),
-        acceptable_speedtest(hs_pub_key_5.clone(), end),
+        good_speedtest(hs_pub_key_5.clone(), last_timestamp),
+        good_speedtest(hs_pub_key_5.clone(), end),
     ];
 
     let mut averages = HashMap::new();
@@ -993,12 +992,12 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
 
     let last_timestamp = end - Duration::hours(12);
     let speedtests_1 = vec![
-        acceptable_speedtest(pub_key_1.clone(), last_timestamp),
-        acceptable_speedtest(pub_key_1.clone(), end),
+        good_speedtest(pub_key_1.clone(), last_timestamp),
+        good_speedtest(pub_key_1.clone(), end),
     ];
     let speedtests_2 = vec![
-        acceptable_speedtest(pub_key_2.clone(), last_timestamp),
-        acceptable_speedtest(pub_key_2.clone(), end),
+        good_speedtest(pub_key_2.clone(), last_timestamp),
+        good_speedtest(pub_key_2.clone(), end),
     ];
 
     let mut averages = HashMap::new();

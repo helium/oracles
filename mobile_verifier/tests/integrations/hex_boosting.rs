@@ -1419,7 +1419,6 @@ async fn seed_heartbeats_v2(
         let hotspot_key2: PublicKeyBinary = HOTSPOT_2.to_string().parse().unwrap();
         let cov_obj_2 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key2.clone(),
             0x8a1fb49642dffff_u64,
             true,
@@ -1447,7 +1446,6 @@ async fn seed_heartbeats_v2(
         let hotspot_key3: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap();
         let cov_obj_3 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key3.clone(),
             0x8c2681a306607ff_u64,
             true,
@@ -1503,7 +1501,6 @@ async fn seed_heartbeats_with_location_trust(
         let hotspot_key1: PublicKeyBinary = HOTSPOT_1.to_string().parse().unwrap();
         let cov_obj_1 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key1.clone(),
             0x8a1fb466d2dffff_u64,
             true,
@@ -1531,7 +1528,6 @@ async fn seed_heartbeats_with_location_trust(
         let hotspot_key2: PublicKeyBinary = HOTSPOT_2.to_string().parse().unwrap();
         let cov_obj_2 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key2.clone(),
             0x8a1fb49642dffff_u64,
             true,
@@ -1559,7 +1555,6 @@ async fn seed_heartbeats_with_location_trust(
         let hotspot_key3: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap();
         let cov_obj_3 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key3.clone(),
             0x8c2681a306607ff_u64,
             true,
@@ -1636,7 +1631,6 @@ async fn seed_heartbeats_v4(
         let hotspot_key2: PublicKeyBinary = HOTSPOT_2.to_string().parse().unwrap();
         let cov_obj_2 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key2.clone(),
             0x8a1fb49642dffff_u64,
             true,
@@ -1665,7 +1659,6 @@ async fn seed_heartbeats_v4(
         // let cbsd_id = Some("P27-SCE4255W0002".to_string());
         let cov_obj_3 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key4.clone(),
             0x8c2681a306607ff_u64,
             true,
@@ -1779,19 +1772,14 @@ async fn seed_unique_connections(
     Ok(())
 }
 
-// TODO Remove cbsd_id
 fn create_coverage_object(
     ts: DateTime<Utc>,
-    cbsd_id: Option<String>,
     pub_key: PublicKeyBinary,
     hex: u64,
     indoor: bool,
 ) -> CoverageObject {
     let location = h3o::CellIndex::try_from(hex).unwrap();
-    let key_type = match cbsd_id {
-        Some(s) => KeyType::CbsdId(s),
-        None => KeyType::HotspotKey(pub_key.clone()),
-    };
+    let key_type = KeyType::HotspotKey(pub_key.clone());
     let report = FSCoverageObject {
         pub_key,
         uuid: Uuid::new_v4(),

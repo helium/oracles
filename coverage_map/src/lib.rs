@@ -132,7 +132,7 @@ impl CoverageMap {
             .unwrap_or(&[])
     }
 
-    // TODO remove
+    // TODO-K remove
     /// Returns the hexes covered by the CBRS radio. The returned slice can be empty, indicating that
     /// the radio did not meet the criteria to be ranked in any hex.
     pub fn get_cbrs_coverage(&self, cbrs_radio: &str) -> &[RankedCoverage] {

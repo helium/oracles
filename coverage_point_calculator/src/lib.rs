@@ -160,7 +160,7 @@ pub struct CoveragePoints {
 
 impl CoveragePoints {
     pub fn new(
-        radio_type: RadioType, // TODO remove
+        radio_type: RadioType, // TODO-K remove
         service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
         speedtests: Vec<Speedtest>,
         location_trust_scores: Vec<LocationTrust>,
