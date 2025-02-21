@@ -11,6 +11,7 @@ pub mod event_ids;
 pub mod pending_burns;
 pub mod pending_txns;
 pub mod settings;
+pub mod test_burn;
 
 const BYTES_PER_DC: u64 = 20_000;
 
