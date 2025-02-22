@@ -100,6 +100,9 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             socket_addr,
             api_token,
             auth_client,
+            "2025-01-01 00:00:00Z"
+                .parse::<DateTime<Utc>>()
+                .expect("invalid cbrs disable time"),
         );
 
         grpc_server.run(listener).await
