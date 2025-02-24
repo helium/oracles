@@ -26,7 +26,10 @@ impl Cmd {
         let solana = SolanaRpc::new(solana_settings, solana::SubDao::Mobile).await?;
 
         let payer = PublicKeyBinary::from_str(&self.payer).context("Payer -> PublicKeyBinary")?;
-        let txn = solana.make_burn_transaction(&payer, 1).await.context("making burn txn")?;
+        let txn = solana
+            .make_burn_transaction(&payer, 1)
+            .await
+            .context("making burn txn")?;
 
         if self.use_txn_store {
             println!("sending with txn store...");
