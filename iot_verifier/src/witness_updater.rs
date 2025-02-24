@@ -1,3 +1,12 @@
+//
+// Manages a short lived cache and  bulk updating of last witness timestamps to the DB
+// Each time a POC is processed, the 'update' API is called with a vec of witness timestamps
+// These timestamps get appended to the cache and that cache is then flushed to the DB every 60 seconds
+// The 'get_last_witness' API provides a read through API to get the last witness timestamp for a given gateway
+// The primary value of this setup is to reduce the number of DB read/writes associated with POC verification
+// The last witness timestamp values are used as part of beacon reciprocity verification
+//
+
 use crate::last_witness::LastWitness;
 use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;

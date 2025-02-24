@@ -14,84 +14,103 @@ pub struct Settings {
     pub custom_tracing: custom_tracing::Settings,
     /// Cache location for generated verified reports
     pub cache: String,
+
     /// the base_stale period in seconds
     /// if this is set, this value will be added to the entropy and report
     /// stale periods and is to prevent data being unnecessarily purged
     /// in the event the verifier is down for an extended period of time
     #[serde(with = "humantime_serde", default = "default_base_stale_period")]
     pub base_stale_period: Duration,
+
     /// the period after which a beacon report in the DB will be deemed stale
     #[serde(with = "humantime_serde", default = "default_beacon_stale_period")]
     pub beacon_stale_period: Duration,
+
     /// the period after which a witness report in the DB will be deemed stale
     #[serde(with = "humantime_serde", default = "default_witness_stale_period")]
     pub witness_stale_period: Duration,
+
     /// the period after which an entropy report in the DB will be deemed stale
     #[serde(with = "humantime_serde", default = "default_entropy_stale_period")]
     pub entropy_stale_period: Duration,
+
     pub database: db_store::Settings,
     pub iot_config_client: iot_config::client::Settings,
     pub ingest: file_store::Settings,
     pub packet_ingest: file_store::Settings,
-
     pub entropy: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     pub denylist: denylist::Settings,
     pub price_tracker: price::price_tracker::Settings,
+
     /// Reward period in hours. (Default to 24)
     #[serde(with = "humantime_serde", default = "default_reward_period")]
     pub reward_period: Duration,
+
     /// Reward calculation offset in minutes, rewards will be calculated at the end
     /// of the reward_period + reward_period_offset
     #[serde(with = "humantime_serde", default = "default_reward_period_offset")]
     pub reward_period_offset: Duration,
+
     #[serde(default = "default_max_witnesses_per_poc")]
     pub max_witnesses_per_poc: u64,
-    /// The cadence at which hotspots are permitted to beacon (in seconds)
+
+    /// The cadence at which hotspots are permitted to beacon
     /// this should be a factor of 24 so that we can have clear
     /// beaconing bucket sizes
     #[serde(with = "humantime_serde", default = "default_beacon_interval")]
     pub beacon_interval: Duration,
-    // roll up time defined in the ingestors ( in seconds )
-    // ie the time after which they will write out files to s3
-    // this will be used when padding out the witness
-    // loader window before and after values
+
+    /// roll up time defined in the ingestors
+    /// ie the time after which they will write out files to s3
+    /// this will be used when padding out the witness
+    /// loader window before and after values
     #[serde(with = "humantime_serde", default = "default_ingestor_rollup_time")]
     pub ingestor_rollup_time: Duration,
-    /// window width for the poc report loader ( in seconds )
+
+    /// window width for the poc report loader
     /// each poll the loader will load reports from start time to start time + window width
     /// NOTE: the window width should be as a minimum equal to the ingestor roll up period
     ///       any less and the verifier will potentially miss incoming reports
     #[serde(with = "humantime_serde", default = "default_poc_loader_window_width")]
     pub poc_loader_window_width: Duration,
+
     /// cadence for how often to look for poc reports from s3 buckets
     #[serde(with = "humantime_serde", default = "default_poc_loader_poll_time")]
     pub poc_loader_poll_time: Duration,
+
     /// max window age for the poc report loader ( in seconds )
     /// the starting point of the window will never be older than now - max age
+    /// if ingesting historic data, this value should be set appropriately
     #[serde(
         with = "humantime_serde",
         default = "default_loader_window_max_lookback_age"
     )]
     pub loader_window_max_lookback_age: Duration,
+
     /// File store poll interval for incoming entropy reports, in seconds
     #[serde(with = "humantime_serde", default = "default_entropy_interval")]
     pub entropy_interval: Duration,
+
     /// File store poll interval for incoming packets, in seconds. (Default 15 minutes)
     #[serde(with = "humantime_serde", default = "default_packet_interval")]
     pub packet_interval: Duration,
+
     /// the max number of times a beacon report will be retried
     /// after this the report will be ignored and eventually be purged
     #[serde(default = "default_beacon_max_retries")]
     pub beacon_max_retries: u64,
+
     /// the max number of times a witness report will be retried
     /// after this the report will be ignored and eventually be purged
     #[serde(default = "default_witness_max_retries")]
     pub witness_max_retries: u64,
+
     /// interval at which gateways are refreshed
     #[serde(with = "humantime_serde", default = "default_gateway_refresh_interval")]
     pub gateway_refresh_interval: Duration,
+
     /// interval at which region params in the cache are refreshed
     #[serde(
         with = "humantime_serde",
