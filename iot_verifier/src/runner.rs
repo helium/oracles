@@ -1,3 +1,35 @@
+//
+// the runner polls the DB for ready POCs
+// Each poc is then verified by running verifications against the beacon and witnesses
+// A POC is determined ready when the following conditions are met:
+// 1. A beacon report is available
+// 2. The associated beacon entropy is available
+// 3. The entropy has expired, ie we are beyond its lifespan
+// 4. The beacon has not exceeded the max number of retries
+//
+// The end result of the runner process is to assign reward shares to each gateway
+// for each beacon and witness report and save these to the DB
+// These are then picked up by the rewarder
+
+//
+// *denylist*
+// Beaconing and witnessing gateways are checked against the denylist
+// The denylist is updated from a remote source at a regular interval
+// At one point the denylist check was performed in the loader
+// and any denied gateway has its reports silently dropped
+// however this was changed to allow the runner to handle the deny list
+// and output a paper trail of denied gateways to S3
+// the deny list check is now a 'regular' part of the verification process
+//
+//
+// * reciprocity checks *
+// Reciprocity checks are performed on both beacons and witnesses
+// For more context see HIP 106
+// https://github.com/helium/HIP/blob/main/0106-hotspot-bidirectional-coverage-requirement.md
+//
+
+// TODO: work required to properly handle db writes via transactions
+
 use crate::{
     gateway_cache::GatewayCache,
     hex_density::HexDensityMap,
@@ -37,6 +69,7 @@ use tokio::time::{self, MissedTickBehavior};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: Duration = Duration::from_secs(30);
+/// the max number of concurrent workers processing beacons
 const BEACON_WORKERS: usize = 100;
 
 const WITNESS_REDUNDANCY: u32 = 4;
@@ -44,7 +77,7 @@ const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
 const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
 lazy_static! {
-/// the duration in which a beaconer or witness must have a valid opposite report from
+    /// the duration in which a beaconer or witnesser must have a valid opposite report from
     static ref RECIPROCITY_WINDOW: ChronoDuration = ChronoDuration::hours(48);
 }
 
@@ -118,7 +151,7 @@ where
         let mut deny_list = DenyList::new(&settings.denylist)?;
         let region_cache = RegionCache::new(settings.region_params_refresh_interval, gateways)?;
         // force update to latest in order to update the tag name
-        // when first run, the denylist will load the local filter
+        // during startup, the denylist will load the local filter
         // but we dont save the tag name so it defaults to 0
         // updating it here forces the tag name to be refreshed
         // which will see it carry through to invalid poc reports
@@ -208,7 +241,7 @@ where
             tracing::info!("no beacons ready for verification");
             return Ok(());
         }
-        // iterate over the beacons pulled from the db
+        // iterate over our beacons
         // for each get witnesses from the DB
         // if a beacon is invalid, then ev thing is invalid
         // but a beacon could be valid whilst witnesses
@@ -233,7 +266,7 @@ where
     }
 
     async fn handle_beacon_report(&self, db_beacon: Report) -> anyhow::Result<()> {
-        // get the beacon report and any associated witnesses and then generate a POC
+        // sanity checks
         let entropy_start_time = match db_beacon.timestamp {
             Some(v) => v,
             None => return Ok(()),
@@ -244,9 +277,12 @@ where
         };
         let packet_data = &db_beacon.packet_data;
 
+        // beacon reports ( and witness reports ) are saved to the db as protobuf bytes
+        // decode the protobuf beacon report
         let beacon_buf: &[u8] = &db_beacon.report_data;
         let beacon_report = IotBeaconIngestReport::decode(beacon_buf)?;
 
+        // get any associated witnesses for the beacon
         let db_witnesses =
             Report::get_witnesses_for_beacon(&self.pool, packet_data, self.witness_max_retries)
                 .await?;
@@ -270,11 +306,12 @@ where
         )
         .await;
 
+        // run the verifications
         self.verify_poc(poc).await
     }
 
     async fn verify_poc(&self, mut poc: Poc) -> anyhow::Result<()> {
-        // verify POC beacon
+        // verify beacon
         let beacon_verify_result = poc
             .verify_beacon(
                 &self.hex_density_map,
@@ -290,7 +327,7 @@ where
                 gateway_info: Some(beacon_info),
                 ..
             } => {
-                // beacon is valid, verify the POC witnesses
+                // beacon is valid, verify the witnesses
                 let verified_witnesses_result = poc
                     .verify_witnesses(
                         &beacon_info,
@@ -318,6 +355,7 @@ where
                     return Ok(());
                 };
 
+                // apply reciprocity checks now that regular verifications are complete
                 if !self.verify_beacon_reciprocity(&poc.beacon_report).await? {
                     return self
                         .handle_invalid_poc(
@@ -329,6 +367,7 @@ where
                         .await;
                 }
 
+                // witness reciprocity
                 let final_verified_witnesses = self
                     .verify_witnesses_reciprocity(verified_witnesses_result.verified_witnesses)
                     .await?;
@@ -397,16 +436,17 @@ where
             beacon_info,
         )?;
 
-        // save the gateway shares for each poc to db
+        // calculate & save the gateway shares for each poc to db
+        // TODO: the txn for saving the gateway shares should likely be committed after the poc is saved to s3
         let mut transaction = self.pool.begin().await?;
         for reward_share in GatewayPocShare::shares_from_poc(&iot_poc) {
             reward_share.save(&mut transaction).await?;
         }
         transaction.commit().await?;
 
-        let poc_proto: LoraPocV1 = iot_poc.into();
         // save the poc to s3, if write fails update attempts and go no further
         // allow the poc to be reprocessed next tick
+        let poc_proto: LoraPocV1 = iot_poc.into();
         match self.poc_sink.write(poc_proto, []).await {
             Ok(_) => (),
             Err(err) => {
@@ -506,6 +546,8 @@ where
         Ok(())
     }
 
+    // beacon recropocity checks require that a beaconer must have a prior valid witness report within
+    // the RECIPROCITY_WINDOW ( default 48 hours )
     async fn verify_beacon_reciprocity(
         &self,
         beacon_report: &IotBeaconIngestReport,
@@ -519,6 +561,8 @@ where
         }))
     }
 
+    // witness recropocity checks require that a witnesser must have a prior valid beacon report within
+    // the RECIPROCITY_WINDOW ( default 48 hours )
     async fn verify_witnesses_reciprocity(
         &self,
         witnesses: Vec<IotVerifiedWitnessReport>,
@@ -638,7 +682,7 @@ fn poc_per_witness_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
     Ok(reward_units.round_dp(SCALING_PRECISION))
 }
 
-/// maybe sort & split the verified witness list
+// maybe sort & split the verified witness list
 // if the number of witnesses exceeds our cap
 // split the list into two
 // one representing selected witnesses
