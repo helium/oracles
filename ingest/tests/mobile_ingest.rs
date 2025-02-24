@@ -1,6 +1,8 @@
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
+use common::generate_keypair;
 use helium_crypto::PublicKeyBinary;
 use std::str::FromStr;
+use tonic::Status;
 
 mod common;
 
@@ -8,7 +10,8 @@ const PUBKEY1: &str = "113HRxtzxFbFUjDEJJpyeMRZRtdAW38LAUnB5mshRwi6jt7uFbt";
 
 #[tokio::test]
 async fn submit_unique_connections() -> anyhow::Result<()> {
-    let (mut client, trigger) = common::setup_mobile().await?;
+    let (mut client, trigger) =
+        common::setup_mobile("2025-03-01 00:00:00Z".parse::<DateTime<Utc>>()?).await?;
 
     let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
     let timestamp = Utc::now();
@@ -37,7 +40,8 @@ async fn submit_unique_connections() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn submit_verified_subscriber_mapping_event() -> anyhow::Result<()> {
-    let (mut client, trigger) = common::setup_mobile().await?;
+    let (mut client, trigger) =
+        common::setup_mobile("2025-03-01 00:00:00Z".parse::<DateTime<Utc>>()?).await?;
 
     let subscriber_id = vec![0];
     let total_reward_points = 100;
@@ -71,7 +75,8 @@ async fn submit_verified_subscriber_mapping_event() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn submit_hex_usage_report() -> anyhow::Result<()> {
-    let (mut client, trigger) = common::setup_mobile().await?;
+    let (mut client, trigger) =
+        common::setup_mobile("2025-03-01 00:00:00Z".parse::<DateTime<Utc>>()?).await?;
 
     const HEX: u64 = 360;
     const SERVICE_PROVIDER_USER_COUNT: u64 = 10;
@@ -126,7 +131,8 @@ async fn submit_hex_usage_report() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn submit_radio_usage_report() -> anyhow::Result<()> {
-    let (mut client, trigger) = common::setup_mobile().await?;
+    let (mut client, trigger) =
+        common::setup_mobile("2025-03-01 00:00:00Z".parse::<DateTime<Utc>>()?).await?;
 
     let hotspot_pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
     let cbsd_id = "cbsd_id".to_string();
@@ -177,6 +183,46 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
         }
         Err(e) => panic!("got error {e}"),
     }
+
+    trigger.trigger();
+    Ok(())
+}
+
+#[tokio::test]
+async fn cell_heartbeat_before() -> anyhow::Result<()> {
+    let cbrs_disable_time = Utc::now() + Duration::hours(1);
+    let (mut client, trigger) = common::setup_mobile(cbrs_disable_time).await?;
+
+    let keypair = generate_keypair();
+
+    client.submit_cell_heartbeat(&keypair, "cbsd-1").await?;
+
+    let ingest_report = client.cell_heartbeat_recv().await?;
+
+    assert!(ingest_report
+        .report
+        .is_some_and(|r| r.pub_key == keypair.public_key().to_vec() && r.cbsd_id == "cbsd-1"));
+
+    trigger.trigger();
+    Ok(())
+}
+
+#[tokio::test]
+async fn cell_heartbeat_after() -> anyhow::Result<()> {
+    let cbrs_disable_time = Utc::now() - Duration::hours(1);
+    let (mut client, trigger) = common::setup_mobile(cbrs_disable_time).await?;
+
+    let keypair = generate_keypair();
+
+    let Err(error) = client.submit_cell_heartbeat(&keypair, "cbsd-1").await else {
+        panic!("should have return an Err")
+    };
+
+    let Ok(status) = error.downcast::<Status>() else {
+        panic!("error should have been a Status")
+    };
+
+    assert_eq!(status.code(), tonic::Code::FailedPrecondition);
 
     trigger.trigger();
     Ok(())

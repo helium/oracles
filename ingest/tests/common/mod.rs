@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
+    CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
     UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
@@ -49,7 +50,9 @@ impl AuthorizationVerifier for MockAuthorizationClient {
         Ok(true)
     }
 }
-pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
+pub async fn setup_mobile(
+    cbrs_disable_time: DateTime<Utc>,
+) -> anyhow::Result<(TestClient, Trigger)> {
     let key_pair = generate_keypair();
 
     let socket_addr = {
@@ -65,7 +68,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
 
     let (trigger, listener) = triggered::trigger();
 
-    let (cbrs_heartbeat_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (cbrs_heartbeat_tx, cbrs_hearbeat_rx) = tokio::sync::mpsc::channel(10);
     let (wifi_heartbeat_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (speedtest_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (data_transfer_tx, _rx) = tokio::sync::mpsc::channel(10);
@@ -100,9 +103,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             socket_addr,
             api_token,
             auth_client,
-            "2025-01-01 00:00:00Z"
-                .parse::<DateTime<Utc>>()
-                .expect("invalid cbrs disable time"),
+            cbrs_disable_time,
         );
 
         grpc_server.run(listener).await
@@ -116,6 +117,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
         hex_usage_stat_rx,
         radio_usage_stat_rx,
         unique_connections_rx,
+        cbrs_hearbeat_rx,
     )
     .await;
 
@@ -134,6 +136,7 @@ pub struct TestClient {
         Receiver<file_store::file_sink::Message<RadioUsageStatsIngestReportV1>>,
     unique_connections_file_sink_rx:
         Receiver<file_store::file_sink::Message<UniqueConnectionsIngestReportV1>>,
+    cell_heartbeat_rx: Receiver<file_store::file_sink::Message<CellHeartbeatIngestReportV1>>,
 }
 
 impl TestClient {
@@ -153,6 +156,7 @@ impl TestClient {
         unique_connections_file_sink_rx: Receiver<
             file_store::file_sink::Message<UniqueConnectionsIngestReportV1>,
         >,
+        cell_heartbeat_rx: Receiver<file_store::file_sink::Message<CellHeartbeatIngestReportV1>>,
     ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
             .retry(&ExponentialBuilder::default())
@@ -167,6 +171,19 @@ impl TestClient {
             hex_usage_stats_file_sink_rx,
             radio_usage_stats_file_sink_rx,
             unique_connections_file_sink_rx,
+            cell_heartbeat_rx,
+        }
+    }
+
+    pub async fn cell_heartbeat_recv(mut self) -> anyhow::Result<CellHeartbeatIngestReportV1> {
+        match timeout(Duration::from_secs(2), self.cell_heartbeat_rx.recv()).await {
+            Ok(Some(msg)) => match msg {
+                file_store::file_sink::Message::Data(_, data) => Ok(data),
+                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
+                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
+            },
+            Ok(None) => bail!("got none"),
+            Err(reason) => bail!("got error {reason}"),
         }
     }
 
@@ -368,6 +385,37 @@ impl TestClient {
         metadata.insert("authorization", self.authorization.clone());
 
         let res = self.client.submit_radio_usage_stats_report(request).await?;
+
+        Ok(res.into_inner())
+    }
+
+    pub async fn submit_cell_heartbeat(
+        &mut self,
+        keypair: &Keypair,
+        cbsd_id: &str,
+    ) -> anyhow::Result<CellHeartbeatRespV1> {
+        let mut heartbeat = CellHeartbeatReqV1 {
+            pub_key: keypair.public_key().into(),
+            hotspot_type: "unknown".to_string(),
+            cell_id: 1,
+            timestamp: Utc::now().timestamp() as u64,
+            lat: 0.0,
+            lon: 0.0,
+            operation_mode: true,
+            cbsd_category: "unknown".to_string(),
+            cbsd_id: cbsd_id.to_owned(),
+            signature: vec![],
+            coverage_object: vec![1, 2, 3, 4],
+        };
+
+        heartbeat.signature = keypair.sign(&heartbeat.encode_to_vec()).expect("sign");
+
+        let mut request = Request::new(heartbeat);
+        let metadata = request.metadata_mut();
+
+        metadata.insert("authorization", self.authorization.clone());
+
+        let res = self.client.submit_cell_heartbeat(request).await?;
 
         Ok(res.into_inner())
     }
