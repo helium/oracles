@@ -1,3 +1,9 @@
+//
+// DB functions related to the poc_report table
+// the poc_report table stores all the beacon and witness reports which represent POCs
+// The last beacon time is used in the poc verifications to determine if a gateway is beaconing
+// according to a valid cadence
+//
 use crate::entropy::ENTROPY_LIFESPAN;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -363,7 +369,7 @@ impl Report {
     {
         // NOTE: the query for stale beacons cannot rely on poc_report.attempts
         // as beacons could be deteached from any entropy report
-        // ie we may receive a beacon report but never see an assocaited entropy report
+        // ie we may receive a beacon report but never see an associated entropy report
         // in such cases, the beacon report will never be processed
         // as when pulling beacon reports, the verifier performs a join to entropy table
         // if the entropy is not there the beacon will never be processed
@@ -404,7 +410,7 @@ impl Report {
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         // NOTE: the query for stale witnesses cannot rely on poc_report.attempts
-        // as witnesses could be deteached from any beacon report
+        // as witnesses could be detached from any beacon report
         // ie we may receive witnesses but not receive the associated beacon report
         // in such cases, the witness report will never be verified
         // as the verifier processes beacon reports and then pulls witness reports

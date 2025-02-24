@@ -1,3 +1,8 @@
+//
+// consumes iot packets from S3, verifies them and converts to GatewayDCShares and
+// inserts to the DB to be picked up by the rewarder
+// any non rewardable packets are written to S3 as an audit trail
+//
 use crate::{
     gateway_cache::GatewayCache, reward_share::GatewayDCShare, telemetry::LoaderMetricTracker,
     Settings,
