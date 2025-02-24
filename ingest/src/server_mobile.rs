@@ -224,10 +224,9 @@ where
         let timestamp = Utc::now();
 
         if timestamp >= self.cbrs_disable_time {
-            return Err(Status::failed_precondition(format!(
-                "CBRS radios are no longer supported as of {}",
-                self.cbrs_disable_time
-            )));
+            return Ok(Response::new(CellHeartbeatRespV1 {
+                id: timestamp.to_string(),
+            }));
         }
 
         let event = request.into_inner();
@@ -281,10 +280,9 @@ where
         let event = request.into_inner();
 
         if is_data_transfer_for_cbrs(&event) && timestamp > self.cbrs_disable_time {
-            return Err(Status::failed_precondition(format!(
-                "CBRS radios are no longer supported as of {}",
-                self.cbrs_disable_time
-            )));
+            return Ok(Response::new(DataTransferSessionRespV1 {
+                id: timestamp.to_string(),
+            }));
         }
 
         custom_tracing::record_b58("pub_key", &event.pub_key);

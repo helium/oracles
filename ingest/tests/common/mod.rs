@@ -22,6 +22,7 @@ use mobile_config::client::authorization_client::AuthorizationVerifier;
 use prost::Message;
 use rand::rngs::OsRng;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::sync::mpsc::error::TryRecvError;
 use tokio::{net::TcpListener, sync::mpsc::Receiver, time::timeout};
 use tonic::{
     async_trait,
@@ -195,6 +196,14 @@ impl TestClient {
         }
     }
 
+    pub fn is_cell_heartbeat_rx_empty(&mut self) -> anyhow::Result<bool> {
+        match self.cell_heartbeat_rx.try_recv() {
+            Ok(_) => Ok(false),
+            Err(TryRecvError::Empty) => Ok(true),
+            Err(err) => bail!(err),
+        }
+    }
+
     pub async fn data_transfer_recv(mut self) -> anyhow::Result<DataTransferSessionIngestReportV1> {
         match timeout(Duration::from_secs(2), self.data_transfer_rx.recv()).await {
             Ok(Some(msg)) => match msg {
@@ -204,6 +213,14 @@ impl TestClient {
             },
             Ok(None) => bail!("got none"),
             Err(reason) => bail!("got error {reason}"),
+        }
+    }
+
+    pub fn is_data_transfer_rx_empty(&mut self) -> anyhow::Result<bool> {
+        match self.data_transfer_rx.try_recv() {
+            Ok(_) => Ok(false),
+            Err(TryRecvError::Empty) => Ok(true),
+            Err(err) => bail!(err),
         }
     }
 

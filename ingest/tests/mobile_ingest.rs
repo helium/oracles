@@ -3,7 +3,6 @@ use common::generate_keypair;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
 use std::str::FromStr;
-use tonic::Status;
 
 mod common;
 
@@ -215,15 +214,9 @@ async fn cell_heartbeat_after() -> anyhow::Result<()> {
 
     let keypair = generate_keypair();
 
-    let Err(error) = client.submit_cell_heartbeat(&keypair, "cbsd-1").await else {
-        panic!("should have return an Err")
-    };
+    client.submit_cell_heartbeat(&keypair, "cbsd-1").await?;
 
-    let Ok(status) = error.downcast::<Status>() else {
-        panic!("error should have been a Status")
-    };
-
-    assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+    assert!(client.is_cell_heartbeat_rx_empty()?);
 
     trigger.trigger();
     Ok(())
@@ -288,18 +281,11 @@ async fn cbrs_data_transfer_after() -> anyhow::Result<()> {
 
     let keypair = generate_keypair();
 
-    let Err(error) = client
+    client
         .submit_data_transfer(&keypair, DataTransferRadioAccessTechnology::Eutran)
-        .await
-    else {
-        panic!("should have return an Err")
-    };
+        .await?;
 
-    let Ok(status) = error.downcast::<Status>() else {
-        panic!("error should have been a Status")
-    };
-
-    assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+    assert!(client.is_data_transfer_rx_empty()?);
 
     trigger.trigger();
     Ok(())
