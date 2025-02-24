@@ -58,7 +58,7 @@ impl Settings {
 
 pub struct SolanaRpc {
     sub_dao: SubDao,
-    provider: client::SolanaRpcClient,
+    pub provider: client::SolanaRpcClient,
     keypair: Keypair,
     payers_to_monitor: Vec<PublicKeyBinary>,
     transaction_opts: TransactionOpts,

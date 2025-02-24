@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use mobile_packet_verifier::{daemon, settings::Settings};
+use mobile_packet_verifier::{daemon, settings::Settings, test_burn};
 use std::path::PathBuf;
 
 #[derive(clap::Parser)]
@@ -28,12 +28,14 @@ impl Cli {
 #[derive(clap::Subcommand)]
 pub enum Cmd {
     Server(daemon::Cmd),
+    TestBurn(test_burn::Cmd),
 }
 
 impl Cmd {
     async fn run(self, settings: Settings) -> Result<()> {
         match self {
             Self::Server(cmd) => cmd.run(&settings).await,
+            Self::TestBurn(cmd) => cmd.run(&settings).await,
         }
     }
 }
