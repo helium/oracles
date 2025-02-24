@@ -1,6 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use common::generate_keypair;
 use helium_crypto::PublicKeyBinary;
+use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
 use std::str::FromStr;
 use tonic::Status;
 
@@ -215,6 +216,82 @@ async fn cell_heartbeat_after() -> anyhow::Result<()> {
     let keypair = generate_keypair();
 
     let Err(error) = client.submit_cell_heartbeat(&keypair, "cbsd-1").await else {
+        panic!("should have return an Err")
+    };
+
+    let Ok(status) = error.downcast::<Status>() else {
+        panic!("error should have been a Status")
+    };
+
+    assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+
+    trigger.trigger();
+    Ok(())
+}
+
+#[tokio::test]
+async fn wifi_data_transfer() -> anyhow::Result<()> {
+    let cbrs_disable_time = Utc::now() - Duration::hours(1);
+    let (mut client, trigger) = common::setup_mobile(cbrs_disable_time).await?;
+
+    let keypair = generate_keypair();
+
+    client
+        .submit_data_transfer(&keypair, DataTransferRadioAccessTechnology::Wlan)
+        .await?;
+
+    let ingest_report = client.data_transfer_recv().await?;
+
+    let ingest_pubkey = ingest_report
+        .report
+        .unwrap()
+        .data_transfer_usage
+        .unwrap()
+        .pub_key;
+
+    assert_eq!(ingest_pubkey, keypair.public_key().to_vec());
+
+    trigger.trigger();
+    Ok(())
+}
+
+#[tokio::test]
+async fn cbrs_data_transfer_before() -> anyhow::Result<()> {
+    let cbrs_disable_time = Utc::now() + Duration::hours(1);
+    let (mut client, trigger) = common::setup_mobile(cbrs_disable_time).await?;
+
+    let keypair = generate_keypair();
+
+    client
+        .submit_data_transfer(&keypair, DataTransferRadioAccessTechnology::Eutran)
+        .await?;
+
+    let ingest_report = client.data_transfer_recv().await?;
+
+    let ingest_pubkey = ingest_report
+        .report
+        .unwrap()
+        .data_transfer_usage
+        .unwrap()
+        .pub_key;
+
+    assert_eq!(ingest_pubkey, keypair.public_key().to_vec());
+
+    trigger.trigger();
+    Ok(())
+}
+
+#[tokio::test]
+async fn cbrs_data_transfer_after() -> anyhow::Result<()> {
+    let cbrs_disable_time = Utc::now() - Duration::hours(1);
+    let (mut client, trigger) = common::setup_mobile(cbrs_disable_time).await?;
+
+    let keypair = generate_keypair();
+
+    let Err(error) = client
+        .submit_data_transfer(&keypair, DataTransferRadioAccessTechnology::Eutran)
+        .await
+    else {
         panic!("should have return an Err")
     };
 

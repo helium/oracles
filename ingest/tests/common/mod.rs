@@ -4,8 +4,9 @@ use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
-    CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
-    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
+    CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1, DataTransferEvent,
+    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
+    DataTransferSessionRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
     UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
 };
@@ -71,7 +72,7 @@ pub async fn setup_mobile(
     let (cbrs_heartbeat_tx, cbrs_hearbeat_rx) = tokio::sync::mpsc::channel(10);
     let (wifi_heartbeat_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (speedtest_tx, _rx) = tokio::sync::mpsc::channel(10);
-    let (data_transfer_tx, _rx) = tokio::sync::mpsc::channel(10);
+    let (data_transfer_tx, data_transfer_rx) = tokio::sync::mpsc::channel(10);
     let (subscriber_location_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (radio_threshold_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (invalidated_threshold_tx, _rx) = tokio::sync::mpsc::channel(10);
@@ -118,6 +119,7 @@ pub async fn setup_mobile(
         radio_usage_stat_rx,
         unique_connections_rx,
         cbrs_hearbeat_rx,
+        data_transfer_rx,
     )
     .await;
 
@@ -137,9 +139,11 @@ pub struct TestClient {
     unique_connections_file_sink_rx:
         Receiver<file_store::file_sink::Message<UniqueConnectionsIngestReportV1>>,
     cell_heartbeat_rx: Receiver<file_store::file_sink::Message<CellHeartbeatIngestReportV1>>,
+    data_transfer_rx: Receiver<file_store::file_sink::Message<DataTransferSessionIngestReportV1>>,
 }
 
 impl TestClient {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         socket_addr: SocketAddr,
         key_pair: Keypair,
@@ -157,6 +161,9 @@ impl TestClient {
             file_store::file_sink::Message<UniqueConnectionsIngestReportV1>,
         >,
         cell_heartbeat_rx: Receiver<file_store::file_sink::Message<CellHeartbeatIngestReportV1>>,
+        data_transfer_rx: Receiver<
+            file_store::file_sink::Message<DataTransferSessionIngestReportV1>,
+        >,
     ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
             .retry(&ExponentialBuilder::default())
@@ -172,11 +179,24 @@ impl TestClient {
             radio_usage_stats_file_sink_rx,
             unique_connections_file_sink_rx,
             cell_heartbeat_rx,
+            data_transfer_rx,
         }
     }
 
     pub async fn cell_heartbeat_recv(mut self) -> anyhow::Result<CellHeartbeatIngestReportV1> {
         match timeout(Duration::from_secs(2), self.cell_heartbeat_rx.recv()).await {
+            Ok(Some(msg)) => match msg {
+                file_store::file_sink::Message::Data(_, data) => Ok(data),
+                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
+                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
+            },
+            Ok(None) => bail!("got none"),
+            Err(reason) => bail!("got error {reason}"),
+        }
+    }
+
+    pub async fn data_transfer_recv(mut self) -> anyhow::Result<DataTransferSessionIngestReportV1> {
+        match timeout(Duration::from_secs(2), self.data_transfer_rx.recv()).await {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Data(_, data) => Ok(data),
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
@@ -416,6 +436,40 @@ impl TestClient {
         metadata.insert("authorization", self.authorization.clone());
 
         let res = self.client.submit_cell_heartbeat(request).await?;
+
+        Ok(res.into_inner())
+    }
+
+    pub async fn submit_data_transfer(
+        &mut self,
+        keypair: &Keypair,
+        technology: DataTransferRadioAccessTechnology,
+    ) -> anyhow::Result<DataTransferSessionRespV1> {
+        let mut data_transfer = DataTransferSessionReqV1 {
+            data_transfer_usage: Some(DataTransferEvent {
+                pub_key: keypair.public_key().into(),
+                upload_bytes: 0,
+                download_bytes: 0,
+                radio_access_technology: technology as i32,
+                event_id: "event-1".to_string(),
+                payer: vec![1, 2, 3, 4],
+                timestamp: Utc::now().timestamp() as u64,
+                signature: vec![],
+            }),
+            reward_cancelled: false,
+            pub_key: keypair.public_key().into(),
+            signature: vec![],
+            rewardable_bytes: 0,
+        };
+
+        data_transfer.signature = keypair.sign(&data_transfer.encode_to_vec())?;
+
+        let mut request = Request::new(data_transfer);
+        let metadata = request.metadata_mut();
+
+        metadata.insert("authorization", self.authorization.clone());
+
+        let res = self.client.submit_data_transfer_session(request).await?;
 
         Ok(res.into_inner())
     }
