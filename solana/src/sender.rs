@@ -37,13 +37,12 @@ impl SenderError {
 pub async fn send_and_finalize(
     client: &impl SenderClientExt,
     txn: &Transaction,
-    config: RpcSendTransactionConfig,
     store: &impl TxnStore,
 ) -> SenderResult<()> {
     let sent_block_height = client.get_block_height().await?;
 
     store.on_prepared(txn).await?;
-    send_with_retry(client, txn, config, store).await?;
+    send_with_retry(client, txn, store).await?;
     store.on_sent(txn).await;
 
     finalize_signature(client, txn, store, sent_block_height).await?;
@@ -55,14 +54,13 @@ pub async fn send_and_finalize(
 async fn send_with_retry(
     client: &impl SenderClientExt,
     txn: &Transaction,
-    config: RpcSendTransactionConfig,
     store: &impl TxnStore,
 ) -> SenderResult<()> {
     let backoff = store.make_backoff().into_iter();
 
     for (attempt, duration) in backoff.enumerate() {
         let attempt = attempt + 1; // 1-index loop
-        match client.send_txn(txn, config).await {
+        match client.send_txn(txn).await {
             Ok(_sig) => return Ok(()),
             Err(err) => match duration {
                 Some(duration) => {
@@ -108,11 +106,7 @@ async fn finalize_signature(
 
 #[async_trait::async_trait]
 pub trait SenderClientExt: Send + Sync {
-    async fn send_txn(
-        &self,
-        txn: &Transaction,
-        config: RpcSendTransactionConfig,
-    ) -> Result<Signature, SolanaClientError>;
+    async fn send_txn(&self, txn: &Transaction) -> Result<Signature, SolanaClientError>;
     async fn finalize_signature(&self, signature: &Signature) -> Result<(), SolanaClientError>;
     async fn get_block_height(&self) -> Result<u64, SolanaClientError>;
 }
@@ -144,11 +138,12 @@ pub trait TxnStore: Send + Sync {
 
 #[async_trait::async_trait]
 impl<T: AsRef<client::SolanaRpcClient> + Send + Sync> SenderClientExt for T {
-    async fn send_txn(
-        &self,
-        txn: &Transaction,
-        config: RpcSendTransactionConfig,
-    ) -> Result<Signature, SolanaClientError> {
+    async fn send_txn(&self, txn: &Transaction) -> Result<Signature, SolanaClientError> {
+        let config = RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        };
+
         Ok(self
             .as_ref()
             .send_transaction_with_config(txn, config)
@@ -258,11 +253,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl SenderClientExt for MockClient {
-        async fn send_txn(
-            &self,
-            txn: &Transaction,
-            _config: RpcSendTransactionConfig,
-        ) -> Result<Signature, SolanaClientError> {
+        async fn send_txn(&self, txn: &Transaction) -> Result<Signature, SolanaClientError> {
             let mut attempts = self.sent_attempts.lock().unwrap();
             *attempts += 1;
 
@@ -307,7 +298,7 @@ mod tests {
         let store = MockTxnStore::default();
         let client = MockClient::succeed();
 
-        send_and_finalize(&client, &tx, RpcSendTransactionConfig::default(), &store).await?;
+        send_and_finalize(&client, &tx, &store).await?;
 
         let signature = tx.get_signature();
         let calls = store.calls.lock().unwrap();
@@ -329,7 +320,7 @@ mod tests {
         let store = MockTxnStore::default();
         let client = MockClient::succeed_after(5);
 
-        send_and_finalize(&client, &txn, RpcSendTransactionConfig::default(), &store).await?;
+        send_and_finalize(&client, &txn, &store).await?;
 
         let signature = txn.get_signature();
         let calls = store.calls.lock().unwrap();
@@ -355,8 +346,7 @@ mod tests {
         let store = MockTxnStore::default();
         let client = MockClient::succeed_after(999);
 
-        let res =
-            send_and_finalize(&client, &txn, RpcSendTransactionConfig::default(), &store).await;
+        let res = send_and_finalize(&client, &txn, &store).await;
         assert!(res.is_err());
 
         let signature = txn.get_signature();
@@ -383,8 +373,7 @@ mod tests {
         let mut client = MockClient::succeed();
         client.finalize_success = false;
 
-        let res =
-            send_and_finalize(&client, &txn, RpcSendTransactionConfig::default(), &store).await;
+        let res = send_and_finalize(&client, &txn, &store).await;
         assert!(res.is_err());
 
         let signature = txn.get_signature();
@@ -407,8 +396,7 @@ mod tests {
         let store = MockTxnStore::fail_prepared();
         let client = MockClient::succeed();
 
-        let res =
-            send_and_finalize(&client, &txn, RpcSendTransactionConfig::default(), &store).await;
+        let res = send_and_finalize(&client, &txn, &store).await;
         assert!(res.is_err());
 
         let calls = store.calls.lock().unwrap();
