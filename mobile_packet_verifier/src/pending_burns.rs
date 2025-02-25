@@ -113,7 +113,7 @@ pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<Pe
     Ok(pending_payer_burns)
 }
 
-pub async fn save(
+pub async fn save_data_transfer_session(
     txn: &mut Transaction<'_, Postgres>,
     req: &DataTransferSessionReq,
     last_timestamp: DateTime<Utc>,
