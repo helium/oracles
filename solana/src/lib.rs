@@ -1,8 +1,9 @@
 use solana_client::client_error::ClientError;
 use solana_sdk::pubkey::ParsePubkeyError;
-use solana_sdk::signature::Signature;
 use solana_sdk::transaction::Transaction;
 use std::time::SystemTimeError;
+
+pub use solana_sdk::signature::Signature;
 
 pub mod burn;
 pub mod carrier;
