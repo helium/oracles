@@ -113,34 +113,59 @@ pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<Pe
     Ok(pending_payer_burns)
 }
 
-pub async fn save_data_transfer_session(
+pub async fn save_data_transfer_session_req(
     txn: &mut Transaction<'_, Postgres>,
     req: &DataTransferSessionReq,
     last_timestamp: DateTime<Utc>,
-) -> anyhow::Result<()> {
-    let dc_to_burn = bytes_to_dc(req.rewardable_bytes);
+) -> Result<(), sqlx::Error> {
+    save_data_transfer_session(
+        txn,
+        &DataTransferSession {
+            pub_key: req.data_transfer_usage.pub_key.clone(),
+            payer: req.data_transfer_usage.payer.clone(),
+            uploaded_bytes: req.data_transfer_usage.upload_bytes as i64,
+            downloaded_bytes: req.data_transfer_usage.download_bytes as i64,
+            rewardable_bytes: req.rewardable_bytes as i64,
+            // timestamps are the same upon ingest
+            first_timestamp: last_timestamp,
+            last_timestamp,
+        },
+    )
+    .await?;
 
+    let dc_to_burn = bytes_to_dc(req.rewardable_bytes);
+    increment_metric(&req.data_transfer_usage.payer, dc_to_burn);
+
+    Ok(())
+}
+
+pub async fn save_data_transfer_session(
+    txn: &mut Transaction<'_, Postgres>,
+    data_transfer_session: &DataTransferSession,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
             r#"
-            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
-            VALUES ($1, $2, $3, $4, $5, $6, $6)
+            INSERT INTO data_transfer_sessions
+                (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
+            VALUES
+                ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (pub_key, payer) DO UPDATE SET
-            uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
-            downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
-            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+                uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
+                downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
+                rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
+                first_timestamp = LEAST(data_transfer_sessions.first_timestamp, EXCLUDED.first_timestamp),
+                last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
             "#
         )
-            .bind(&req.data_transfer_usage.pub_key)
-            .bind(&req.data_transfer_usage.payer)
-            .bind(req.data_transfer_usage.upload_bytes as i64)
-            .bind(req.data_transfer_usage.download_bytes as i64)
-            .bind(req.rewardable_bytes as i64)
-            .bind(last_timestamp)
+            .bind(&data_transfer_session.pub_key)
+            .bind(&data_transfer_session.payer)
+            .bind(data_transfer_session.uploaded_bytes)
+            .bind(data_transfer_session.downloaded_bytes)
+            .bind(data_transfer_session.rewardable_bytes)
+            .bind(data_transfer_session.first_timestamp)
+            .bind(data_transfer_session.last_timestamp)
             .execute(txn)
             .await?;
-
-    increment_metric(&req.data_transfer_usage.payer, dc_to_burn);
 
     Ok(())
 }
