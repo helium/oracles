@@ -1,5 +1,6 @@
 use crate::{
-    read_keypair_from_file, sender, GetSignature, Keypair, SolanaRpcError, SubDao, Transaction,
+    read_keypair_from_file, sender, GetSignature, Keypair, Pubkey, SolanaRpcError, SubDao,
+    Transaction,
 };
 use async_trait::async_trait;
 use helium_crypto::PublicKeyBinary;
@@ -58,7 +59,12 @@ pub struct SolanaRpc {
 
 impl SolanaRpc {
     pub async fn new(settings: &Settings, sub_dao: SubDao) -> Result<Arc<Self>, SolanaRpcError> {
-        let keypair = read_keypair_from_file(&settings.burn_keypair)?;
+        let Ok(keypair) = read_keypair_from_file(&settings.burn_keypair) else {
+            return Err(SolanaRpcError::FailedToReadKeypairError(
+                settings.burn_keypair.to_owned(),
+            ));
+        };
+
         let provider = client::SolanaRpcClient::new_with_commitment(
             settings.rpc_url.clone(),
             CommitmentConfig::finalized(),
@@ -85,7 +91,8 @@ impl SolanaNetwork for SolanaRpc {
     type Transaction = Transaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        let delegated_dc_key = SubDao::Iot.delegated_dc_key(payer);
+        let payer_pubkey = Pubkey::try_from(payer.as_ref())?;
+        let delegated_dc_key = SubDao::Iot.delegated_dc_key(&payer_pubkey.to_string());
         let escrow_account = SubDao::Iot.escrow_key(&delegated_dc_key);
 
         let amount = match token::balance_for_address(&self, &escrow_account).await? {
@@ -112,6 +119,7 @@ impl SolanaNetwork for SolanaRpc {
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<Self::Transaction, SolanaRpcError> {
+        let payer = Pubkey::try_from(payer.as_ref())?;
         let tx = dc::burn_delegated(
             self,
             self.sub_dao,
