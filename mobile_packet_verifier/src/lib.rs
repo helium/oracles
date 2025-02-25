@@ -11,6 +11,13 @@ pub mod event_ids;
 pub mod pending_burns;
 pub mod settings;
 
+const BYTES_PER_DC: u64 = 20_000;
+
+pub fn bytes_to_dc(bytes: u64) -> u64 {
+    let bytes = bytes.max(BYTES_PER_DC);
+    bytes.div_ceil(BYTES_PER_DC)
+}
+
 pub struct MobileConfigClients {
     gateway_client: client::GatewayClient,
     auth_client: client::AuthorizationClient,
@@ -45,5 +52,17 @@ impl MobileConfigResolverExt for MobileConfigClients {
             .verify_authorized_key(public_key, NetworkKeyRole::MobileRouter)
             .await
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bytes_to_dc() {
+        assert_eq!(1, bytes_to_dc(1));
+        assert_eq!(1, bytes_to_dc(20_000));
+        assert_eq!(2, bytes_to_dc(20_001));
     }
 }
