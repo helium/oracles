@@ -65,7 +65,7 @@ sqlx = { version = "0", features = [
   "runtime-tokio-rustls",
 ] }
 helium-anchor-gen = { git = "https://github.com/helium/helium-anchor-gen.git" }
-helium-crypto = { version = "0.8.4", features = ["multisig", "solana"] }
+helium-crypto = { version = "0.8.4", features = ["multisig"] }
 helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = "master" }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
@@ -128,13 +128,10 @@ sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df65
 
 # When attempting to test proto changes without needing to push a branch you can
 # patch the github url to point to your local proto repo.
-#
+# 
 # Patching for beacon must point directly to the crate, it will not look in the
 # repo for sibling crates.
-#
+# 
 # [patch.'https://github.com/helium/proto']
-# helium-proto = { path = "../proto" }
-# beacon = { path = "../proto/beacon" }
-
-# [patch.'https://github.com/helium/helium-wallet-rs.git']
-# helium-lib = { path = "../helium-wallet-rs/helium-lib" }
+# helium-proto = { path = "../../proto" }
+# beacon = { path = "../../proto" }
