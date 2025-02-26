@@ -81,14 +81,14 @@ where
                 biased;
                 _ = &mut shutdown => return Ok(()),
                 _ = sleep_until(burn_time) => {
-                    match self.burner.confirm_and_burn(&self.pool).await {
+                    // It's time to burn
+                    match self.burner.burn(&self.pool).await {
                         Ok(_) => {
                             burn_time = Instant::now() + self.burn_period;
-                            tracing::info!(next_burn = ?self.burn_period, "successful burn")
                         }
-                        Err(err) => {
+                        Err(e) => {
                             burn_time = Instant::now() + self.min_burn_period;
-                            tracing::warn!(?err, next_burn = ?self.min_burn_period, "failed to confirm or burn");
+                            tracing::warn!("failed to burn {e:?}, re running burn in {:?} min", self.min_burn_period);
                         }
                     }
                 }
@@ -128,7 +128,7 @@ impl Cmd {
                 bail!("Missing solana section in settings");
             };
             // Set up the solana RpcClient:
-            Some(SolanaRpc::new(solana_settings, solana::SubDao::Mobile).await?)
+            Some(SolanaRpc::new(solana_settings).await?)
         } else {
             None
         };
@@ -157,7 +157,12 @@ impl Cmd {
             )
             .await?;
 
-        let burner = Burner::new(valid_sessions, solana);
+        let burner = Burner::new(
+            valid_sessions,
+            solana,
+            settings.txn_confirmation_retry_attempts,
+            settings.txn_confirmation_check_interval,
+        );
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 

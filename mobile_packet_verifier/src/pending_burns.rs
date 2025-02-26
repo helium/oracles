@@ -4,13 +4,11 @@ use chrono::{DateTime, Utc};
 use file_store::{mobile_session::DataTransferSessionReq, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use sqlx::{FromRow, Pool, Postgres, Row, Transaction};
-
-use crate::bytes_to_dc;
+use sqlx::{prelude::FromRow, Pool, Postgres, Row, Transaction};
 
 const METRIC_NAME: &str = "pending_dc_burn";
 
-#[derive(Debug, FromRow, Clone)]
+#[derive(FromRow)]
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
@@ -44,7 +42,6 @@ impl From<DataTransferSession> for ValidDataTransferSession {
     }
 }
 
-#[derive(Debug)]
 pub struct PendingPayerBurn {
     pub payer: PublicKeyBinary,
     pub total_dcs: u64,
@@ -114,59 +111,34 @@ pub async fn get_all_payer_burns(conn: &Pool<Postgres>) -> anyhow::Result<Vec<Pe
     Ok(pending_payer_burns)
 }
 
-pub async fn save_data_transfer_session_req(
+pub async fn save(
     txn: &mut Transaction<'_, Postgres>,
     req: &DataTransferSessionReq,
     last_timestamp: DateTime<Utc>,
-) -> Result<(), sqlx::Error> {
-    save_data_transfer_session(
-        txn,
-        &DataTransferSession {
-            pub_key: req.data_transfer_usage.pub_key.clone(),
-            payer: req.data_transfer_usage.payer.clone(),
-            uploaded_bytes: req.data_transfer_usage.upload_bytes as i64,
-            downloaded_bytes: req.data_transfer_usage.download_bytes as i64,
-            rewardable_bytes: req.rewardable_bytes as i64,
-            // timestamps are the same upon ingest
-            first_timestamp: last_timestamp,
-            last_timestamp,
-        },
-    )
-    .await?;
-
+) -> anyhow::Result<()> {
     let dc_to_burn = bytes_to_dc(req.rewardable_bytes);
-    increment_metric(&req.data_transfer_usage.payer, dc_to_burn);
 
-    Ok(())
-}
-
-pub async fn save_data_transfer_session(
-    txn: &mut Transaction<'_, Postgres>,
-    data_transfer_session: &DataTransferSession,
-) -> Result<(), sqlx::Error> {
     sqlx::query(
             r#"
-            INSERT INTO data_transfer_sessions 
-                (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
-            VALUES 
-                ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
+            VALUES ($1, $2, $3, $4, $5, $6, $6)
             ON CONFLICT (pub_key, payer) DO UPDATE SET
-                uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
-                downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-                rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
-                first_timestamp = LEAST(data_transfer_sessions.first_timestamp, EXCLUDED.first_timestamp),
-                last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+            uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
+            downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
+            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
+            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
             "#
         )
-            .bind(&data_transfer_session.pub_key)
-            .bind(&data_transfer_session.payer)
-            .bind(data_transfer_session.uploaded_bytes)
-            .bind(data_transfer_session.downloaded_bytes)
-            .bind(data_transfer_session.rewardable_bytes)
-            .bind(data_transfer_session.first_timestamp)
-            .bind(data_transfer_session.last_timestamp)
+            .bind(&req.data_transfer_usage.pub_key)
+            .bind(&req.data_transfer_usage.payer)
+            .bind(req.data_transfer_usage.upload_bytes as i64)
+            .bind(req.data_transfer_usage.download_bytes as i64)
+            .bind(req.rewardable_bytes as i64)
+            .bind(last_timestamp)
             .execute(txn)
             .await?;
+
+    increment_metric(&req.data_transfer_usage.payer, dc_to_burn);
 
     Ok(())
 }
@@ -196,4 +168,23 @@ fn increment_metric(payer: &PublicKeyBinary, value: u64) {
 
 fn decrement_metric(payer: &PublicKeyBinary, value: u64) {
     metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).decrement(value as f64);
+}
+
+const BYTES_PER_DC: u64 = 20_000;
+
+fn bytes_to_dc(bytes: u64) -> u64 {
+    let bytes = bytes.max(BYTES_PER_DC);
+    bytes.div_ceil(BYTES_PER_DC)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bytes_to_dc() {
+        assert_eq!(1, bytes_to_dc(1));
+        assert_eq!(1, bytes_to_dc(20_000));
+        assert_eq!(2, bytes_to_dc(20_001));
+    }
 }
