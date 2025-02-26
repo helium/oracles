@@ -195,7 +195,7 @@ impl ManagedTask for CoverageDaemon {
         Box::pin(
             handle
                 .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+                .and_then(|result| async move { result }),
         )
     }
 }
@@ -440,7 +440,7 @@ impl CoveredHexStream for Pool<Postgres> {
         Ok(
             sqlx::query_as(
                 r#"
-                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, h.signal_power, co.coverage_claim_time, co.inserted_at, h.urbanized, h.footfall, h.landtype
+                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, h.signal_power, co.coverage_claim_time, co.inserted_at, h.urbanized, h.footfall, h.landtype, h.service_provider_override
                 FROM coverage_objects co
                     INNER JOIN hexes h on co.uuid = h.uuid
                 WHERE co.radio_key = $1
@@ -547,11 +547,11 @@ impl CoverageClaimTimeCache {
         Self { cache }
     }
 
-    pub async fn fetch_coverage_claim_time<'a, 'b>(
+    pub async fn fetch_coverage_claim_time<'a>(
         &self,
         radio_key: KeyType<'a>,
         coverage_object: &'a Option<Uuid>,
-        exec: &mut Transaction<'b, Postgres>,
+        exec: &mut Transaction<'_, Postgres>,
     ) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
         let key = (radio_key.to_id(), *coverage_object);
         if let Some(coverage_claim_time) = self.cache.get(&key).await {

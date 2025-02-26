@@ -38,7 +38,7 @@ use crate::{
 
 const CLEANUP_DAYS: i64 = 7;
 
-struct BannedRadioReport {
+pub struct BannedRadioReport {
     received_timestamp: DateTime<Utc>,
     pubkey: PublicKeyBinary,
     key: OwnedKeyType,
@@ -140,7 +140,7 @@ where
         Box::pin(
             handle
                 .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+                .and_then(|result| async move { result }),
         )
     }
 }
@@ -367,7 +367,7 @@ pub mod db {
         .map_err(anyhow::Error::from)
     }
 
-    pub(super) async fn update_report(
+    pub async fn update_report(
         transaction: &mut Transaction<'_, Postgres>,
         report: &BannedRadioReport,
     ) -> anyhow::Result<()> {

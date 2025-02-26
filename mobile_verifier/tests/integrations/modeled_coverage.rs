@@ -27,6 +27,7 @@ use mobile_verifier::{
     sp_boosted_rewards_bans::BannedRadios,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
+    unique_connections::UniqueConnectionCounts,
     IsAuthorized,
 };
 use rust_decimal_macros::dec;
@@ -264,7 +265,7 @@ impl IsAuthorized for AllPubKeysAuthed {
     }
 }
 
-fn heartbeats<'a>(
+fn cbrs_heartbeats<'a>(
     num: usize,
     start: DateTime<Utc>,
     hotspot_key: &'a PublicKeyBinary,
@@ -288,6 +289,32 @@ fn heartbeats<'a>(
             coverage_object: Vec::from(coverage_object.into_bytes()),
         };
         CbrsHeartbeatIngestReport {
+            report,
+            received_timestamp: start + Duration::hours(i as i64),
+        }
+    })
+}
+
+fn wifi_heartbeats(
+    num: usize,
+    start: DateTime<Utc>,
+    hotspot_key: PublicKeyBinary,
+    lat: f64,
+    lon: f64,
+    coverage_object: Uuid,
+) -> impl Iterator<Item = WifiHeartbeatIngestReport> {
+    (0..num).map(move |i| {
+        let report = WifiHeartbeat {
+            pubkey: hotspot_key.clone(),
+            lat,
+            lon,
+            operation_mode: true,
+            location_validation_timestamp: Some(start + Duration::hours(i as i64)),
+            coverage_object: Vec::from(coverage_object.into_bytes()),
+            timestamp: DateTime::<Utc>::MIN_UTC,
+            location_source: LocationSource::Asserted,
+        };
+        WifiHeartbeatIngestReport {
             report,
             received_timestamp: start + Duration::hours(i as i64),
         }
@@ -370,11 +397,70 @@ fn signal_power(
     })
 }
 
-async fn process_input(
+async fn process_cbrs_input(
     pool: &PgPool,
     epoch: &Range<DateTime<Utc>>,
     coverage_objs: impl Iterator<Item = CoverageObjectIngestReport>,
     heartbeats: impl Iterator<Item = CbrsHeartbeatIngestReport>,
+) -> anyhow::Result<()> {
+    let coverage_objects = CoverageObjectCache::new(pool);
+    let coverage_claim_time_cache = CoverageClaimTimeCache::new();
+    let location_cache = LocationCache::new(pool);
+
+    let mut transaction = pool.begin().await?;
+    let mut coverage_objs = pin!(CoverageObject::validate_coverage_objects(
+        &AllPubKeysAuthed,
+        stream::iter(coverage_objs)
+    ));
+    while let Some(coverage_obj) = coverage_objs.next().await.transpose()? {
+        coverage_obj.save(&mut transaction).await?;
+    }
+    transaction.commit().await?;
+
+    let _ = common::set_unassigned_oracle_boosting_assignments(
+        pool,
+        &common::mock_hex_boost_data_default(),
+    )
+    .await?;
+
+    let mut transaction = pool.begin().await?;
+    let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
+        stream::iter(heartbeats.map(Heartbeat::from)),
+        &GatewayClientAllOwnersValid,
+        &coverage_objects,
+        &location_cache,
+        2000,
+        epoch,
+        &MockGeofence,
+    ));
+    while let Some(heartbeat) = heartbeats.next().await.transpose()? {
+        let coverage_claim_time = coverage_claim_time_cache
+            .fetch_coverage_claim_time(
+                heartbeat.heartbeat.key(),
+                &heartbeat.heartbeat.coverage_object,
+                &mut transaction,
+            )
+            .await?;
+        let latest_seniority =
+            Seniority::fetch_latest(heartbeat.heartbeat.key(), &mut transaction).await?;
+        let seniority_update = SeniorityUpdate::determine_update_action(
+            &heartbeat,
+            coverage_claim_time.unwrap(),
+            latest_seniority,
+        )?;
+        seniority_update.execute(&mut transaction).await?;
+        heartbeat.save(&mut transaction).await?;
+    }
+    transaction.commit().await?;
+
+    Ok(())
+}
+
+async fn process_wifi_input(
+    pool: &PgPool,
+    epoch: &Range<DateTime<Utc>>,
+    coverage_objs: impl Iterator<Item = CoverageObjectIngestReport>,
+    heartbeats: impl Iterator<Item = WifiHeartbeatIngestReport>,
 ) -> anyhow::Result<()> {
     let coverage_objects = CoverageObjectCache::new(pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
@@ -458,11 +544,11 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         },
     };
     let owner: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
-    process_input(
+    process_cbrs_input(
         &pool,
         &(start..end),
         vec![coverage_object].into_iter(),
-        heartbeats(13, start, &owner, &cbsd_id, 0.0, 0.0, uuid),
+        cbrs_heartbeats(13, start, &owner, &cbsd_id, 0.0, 0.0, uuid),
     )
     .await?;
 
@@ -484,6 +570,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -553,10 +640,10 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     let owner_1: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
     let owner_2: PublicKeyBinary = "11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR".parse()?;
 
-    let heartbeats_1 = heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
-    let heartbeats_2 = heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
+    let heartbeats_1 = cbrs_heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
+    let heartbeats_2 = cbrs_heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
 
-    process_input(
+    process_cbrs_input(
         &pool,
         &(start..end),
         vec![coverage_object_1, coverage_object_2].into_iter(),
@@ -587,6 +674,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -763,14 +851,14 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     let owner_5: PublicKeyBinary = "11Bn2erjB83zdCBrE248pTVBpTXSuN8Lur4v4mWFnf5Rpd8XK7n".parse()?;
     let owner_6: PublicKeyBinary = "11d5KySrfiMgaDoZ7B5CDm3meE1gQhUJ5EHuJvzwiWjdSUGhBsZ".parse()?;
 
-    let heartbeats_1 = heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
-    let heartbeats_2 = heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
-    let heartbeats_3 = heartbeats(13, start, &owner_3, &cbsd_id_3, 0.0, 0.0, uuid_3);
-    let heartbeats_4 = heartbeats(13, start, &owner_4, &cbsd_id_4, 0.0, 0.0, uuid_4);
-    let heartbeats_5 = heartbeats(13, start, &owner_5, &cbsd_id_5, 0.0, 0.0, uuid_5);
-    let heartbeats_6 = heartbeats(13, start, &owner_6, &cbsd_id_6, 0.0, 0.0, uuid_6);
+    let heartbeats_1 = cbrs_heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
+    let heartbeats_2 = cbrs_heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
+    let heartbeats_3 = cbrs_heartbeats(13, start, &owner_3, &cbsd_id_3, 0.0, 0.0, uuid_3);
+    let heartbeats_4 = cbrs_heartbeats(13, start, &owner_4, &cbsd_id_4, 0.0, 0.0, uuid_4);
+    let heartbeats_5 = cbrs_heartbeats(13, start, &owner_5, &cbsd_id_5, 0.0, 0.0, uuid_5);
+    let heartbeats_6 = cbrs_heartbeats(13, start, &owner_6, &cbsd_id_6, 0.0, 0.0, uuid_6);
 
-    process_input(
+    process_cbrs_input(
         &pool,
         &(start..end),
         vec![
@@ -876,6 +964,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         &boosted_hexes,
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -940,11 +1029,11 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         },
     };
     let owner: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
-    process_input(
+    process_cbrs_input(
         &pool,
         &(start..end),
         vec![coverage_object].into_iter(),
-        heartbeats(13, start, &owner, &cbsd_id, 0.0, 0.0, uuid),
+        cbrs_heartbeats(13, start, &owner, &cbsd_id, 0.0, 0.0, uuid),
     )
     .await?;
 
@@ -966,6 +1055,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -1034,10 +1124,10 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
     let owner_1: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
     let owner_2: PublicKeyBinary = "11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR".parse()?;
 
-    let heartbeats_1 = heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
-    let heartbeats_2 = heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
+    let heartbeats_1 = cbrs_heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
+    let heartbeats_2 = cbrs_heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
 
-    process_input(
+    process_cbrs_input(
         &pool,
         &(start..end),
         vec![coverage_object_1, coverage_object_2].into_iter(),
@@ -1068,6 +1158,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -1247,14 +1338,14 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
     let owner_5: PublicKeyBinary = "11Bn2erjB83zdCBrE248pTVBpTXSuN8Lur4v4mWFnf5Rpd8XK7n".parse()?;
     let owner_6: PublicKeyBinary = "11d5KySrfiMgaDoZ7B5CDm3meE1gQhUJ5EHuJvzwiWjdSUGhBsZ".parse()?;
 
-    let heartbeats_1 = heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
-    let heartbeats_2 = heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
-    let heartbeats_3 = heartbeats(13, start, &owner_3, &cbsd_id_3, 0.0, 0.0, uuid_3);
-    let heartbeats_4 = heartbeats(13, start, &owner_4, &cbsd_id_4, 0.0, 0.0, uuid_4);
-    let heartbeats_5 = heartbeats(13, start, &owner_5, &cbsd_id_5, 0.0, 0.0, uuid_5);
-    let heartbeats_6 = heartbeats(13, start, &owner_6, &cbsd_id_6, 0.0, 0.0, uuid_6);
+    let heartbeats_1 = cbrs_heartbeats(13, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
+    let heartbeats_2 = cbrs_heartbeats(13, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
+    let heartbeats_3 = cbrs_heartbeats(13, start, &owner_3, &cbsd_id_3, 0.0, 0.0, uuid_3);
+    let heartbeats_4 = cbrs_heartbeats(13, start, &owner_4, &cbsd_id_4, 0.0, 0.0, uuid_4);
+    let heartbeats_5 = cbrs_heartbeats(13, start, &owner_5, &cbsd_id_5, 0.0, 0.0, uuid_5);
+    let heartbeats_6 = cbrs_heartbeats(13, start, &owner_6, &cbsd_id_6, 0.0, 0.0, uuid_6);
 
-    process_input(
+    process_cbrs_input(
         &pool,
         &(start..end),
         vec![
@@ -1318,6 +1409,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         &BoostedHexes::default(),
         &BoostedHexEligibility::default(),
         &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
         &reward_period,
     )
     .await?;
@@ -1384,7 +1476,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
             lon: latlng.lng(),
             lat: latlng.lat(),
             timestamp: DateTime::<Utc>::MIN_UTC,
-            location_validation_timestamp: Some(DateTime::<Utc>::MIN_UTC),
+            location_validation_timestamp: Some(Utc::now() - Duration::hours(23)),
             operation_mode: true,
             coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
             location_source: LocationSource::Skyhook,
@@ -1441,5 +1533,340 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         dec!(0.00)
     );
 
+    Ok(())
+}
+
+#[sqlx::test]
+async fn eligible_for_coverage_map_bad_speedtest(pool: PgPool) -> anyhow::Result<()> {
+    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
+    let start: DateTime<Utc> = end - Duration::days(1);
+
+    let uuid_1 = Uuid::new_v4();
+    let uuid_2 = Uuid::new_v4();
+
+    let good_hotspot: PublicKeyBinary =
+        "11Bn2erjB83zdCBrE248pTVBpTXSuN8Lur4v4mWFnf5Rpd8XK7n".parse()?;
+    // This hotspot will have a failing speedtest and should be removed from coverage map
+    let bad_speedtest_hotspot: PublicKeyBinary =
+        "11d5KySrfiMgaDoZ7B5CDm3meE1gQhUJ5EHuJvzwiWjdSUGhBsZ".parse()?;
+
+    // All coverage objects share the same hexes
+    let coverage_object_1 = CoverageObjectIngestReport {
+        received_timestamp: Utc::now(),
+        report: file_store::coverage::CoverageObject {
+            pub_key: good_hotspot.clone(),
+            uuid: uuid_1,
+            key_type: file_store::coverage::KeyType::HotspotKey(good_hotspot.clone()),
+            coverage_claim_time: "2022-02-01 12:00:00.000000000 UTC".parse()?, // Later
+            indoor: true,
+            signature: Vec::new(),
+            coverage: vec![signal_level("8c2681a3064d9ff", SignalLevel::High)?],
+            trust_score: 1000,
+        },
+    };
+
+    let coverage_object_2 = CoverageObjectIngestReport {
+        received_timestamp: Utc::now(),
+        report: file_store::coverage::CoverageObject {
+            pub_key: bad_speedtest_hotspot.clone(),
+            uuid: uuid_2,
+            key_type: file_store::coverage::KeyType::HotspotKey(bad_speedtest_hotspot.clone()),
+            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?, // Earlier
+            indoor: true,
+            signature: Vec::new(),
+            coverage: vec![signal_level("8c2681a3064d9ff", SignalLevel::High)?],
+            trust_score: 1000,
+        },
+    };
+
+    let heartbeats_1 = wifi_heartbeats(
+        13,
+        start,
+        good_hotspot.clone(),
+        40.019427814,
+        -105.27158489,
+        uuid_1,
+    );
+    let heartbeats_2 = wifi_heartbeats(
+        13,
+        start,
+        bad_speedtest_hotspot.clone(),
+        40.019427814,
+        -105.27158489,
+        uuid_2,
+    );
+
+    process_wifi_input(
+        &pool,
+        &(start..end),
+        vec![coverage_object_1, coverage_object_2].into_iter(),
+        heartbeats_1.chain(heartbeats_2),
+    )
+    .await?;
+
+    let last_timestamp = end - Duration::hours(12);
+    let speedtests_1 = vec![
+        poor_speedtest(good_hotspot.clone(), last_timestamp),
+        poor_speedtest(good_hotspot.clone(), end),
+    ];
+    let speedtests_2 = vec![
+        failed_speedtest(bad_speedtest_hotspot.clone(), last_timestamp),
+        failed_speedtest(bad_speedtest_hotspot.clone(), end),
+    ];
+
+    let mut averages = HashMap::new();
+    averages.insert(good_hotspot.clone(), SpeedtestAverage::from(speedtests_1));
+    averages.insert(
+        bad_speedtest_hotspot.clone(),
+        SpeedtestAverage::from(speedtests_2),
+    );
+
+    let speedtest_avgs = SpeedtestAverages { averages };
+
+    let boosted_hexes = BoostedHexes::default();
+    let reward_period = start..end;
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
+    let coverage_shares = CoverageShares::new(
+        &pool,
+        heartbeats,
+        &speedtest_avgs,
+        &boosted_hexes,
+        &BoostedHexEligibility::default(),
+        &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
+        &reward_period,
+    )
+    .await?;
+
+    assert_eq!(
+        coverage_shares.test_hotspot_reward_shares(&(good_hotspot, None)),
+        dec!(100)
+    );
+    assert_eq!(
+        coverage_shares.test_hotspot_reward_shares(&(bad_speedtest_hotspot, None)),
+        dec!(0)
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn eligible_for_coverage_map_bad_trust_score(pool: PgPool) -> anyhow::Result<()> {
+    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
+    let start: DateTime<Utc> = end - Duration::days(1);
+
+    let uuid_1 = Uuid::new_v4();
+    let uuid_2 = Uuid::new_v4();
+
+    let good_hotspot: PublicKeyBinary =
+        "11Bn2erjB83zdCBrE248pTVBpTXSuN8Lur4v4mWFnf5Rpd8XK7n".parse()?;
+    // This hotspot will have a bad trust score and should be removed from coverage map
+    let bad_location_hotspot: PublicKeyBinary =
+        "11d5KySrfiMgaDoZ7B5CDm3meE1gQhUJ5EHuJvzwiWjdSUGhBsZ".parse()?;
+
+    // All coverage objects share the same hexes
+    let coverage_object_1 = CoverageObjectIngestReport {
+        received_timestamp: Utc::now(),
+        report: file_store::coverage::CoverageObject {
+            pub_key: good_hotspot.clone(),
+            uuid: uuid_1,
+            key_type: file_store::coverage::KeyType::HotspotKey(good_hotspot.clone()),
+            coverage_claim_time: "2022-02-01 12:00:00.000000000 UTC".parse()?, // Later
+            indoor: true,
+            signature: Vec::new(),
+            coverage: vec![signal_level("8c2681a3064d9ff", SignalLevel::High)?],
+            trust_score: 1000,
+        },
+    };
+
+    let coverage_object_2 = CoverageObjectIngestReport {
+        received_timestamp: Utc::now(),
+        report: file_store::coverage::CoverageObject {
+            pub_key: bad_location_hotspot.clone(),
+            uuid: uuid_2,
+            key_type: file_store::coverage::KeyType::HotspotKey(bad_location_hotspot.clone()),
+            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?, // Earlier
+            indoor: true,
+            signature: Vec::new(),
+            coverage: vec![signal_level("8c2681a3064d9ff", SignalLevel::High)?],
+            trust_score: 1000,
+        },
+    };
+
+    let heartbeats_1 = wifi_heartbeats(
+        13,
+        start,
+        good_hotspot.clone(),
+        40.019427814,
+        -105.27158489,
+        uuid_1,
+    );
+    // Making location trust score not valid by making it too far from ^
+    let heartbeats_2 = wifi_heartbeats(13, start, bad_location_hotspot.clone(), 0.0, 0.0, uuid_2);
+
+    process_wifi_input(
+        &pool,
+        &(start..end),
+        vec![coverage_object_1, coverage_object_2].into_iter(),
+        heartbeats_1.chain(heartbeats_2),
+    )
+    .await?;
+
+    let last_timestamp = end - Duration::hours(12);
+    let speedtests_1 = vec![
+        poor_speedtest(good_hotspot.clone(), last_timestamp),
+        poor_speedtest(good_hotspot.clone(), end),
+    ];
+    let speedtests_2 = vec![
+        poor_speedtest(bad_location_hotspot.clone(), last_timestamp),
+        poor_speedtest(bad_location_hotspot.clone(), end),
+    ];
+
+    let mut averages = HashMap::new();
+    averages.insert(good_hotspot.clone(), SpeedtestAverage::from(speedtests_1));
+    averages.insert(
+        bad_location_hotspot.clone(),
+        SpeedtestAverage::from(speedtests_2),
+    );
+
+    let speedtest_avgs = SpeedtestAverages { averages };
+
+    let boosted_hexes = BoostedHexes::default();
+    let reward_period = start..end;
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
+    let coverage_shares = CoverageShares::new(
+        &pool,
+        heartbeats,
+        &speedtest_avgs,
+        &boosted_hexes,
+        &BoostedHexEligibility::default(),
+        &BannedRadios::default(),
+        &UniqueConnectionCounts::default(),
+        &reward_period,
+    )
+    .await?;
+
+    assert_eq!(
+        coverage_shares.test_hotspot_reward_shares(&(good_hotspot, None)),
+        dec!(100)
+    );
+    assert_eq!(
+        coverage_shares.test_hotspot_reward_shares(&(bad_location_hotspot, None)),
+        dec!(0)
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn eligible_for_coverage_map_banned(pool: PgPool) -> anyhow::Result<()> {
+    let end: DateTime<Utc> = Utc::now() + Duration::minutes(10);
+    let start: DateTime<Utc> = end - Duration::days(1);
+
+    let uuid_1 = Uuid::new_v4();
+    let uuid_2 = Uuid::new_v4();
+
+    let good_hotspot: PublicKeyBinary =
+        "11Bn2erjB83zdCBrE248pTVBpTXSuN8Lur4v4mWFnf5Rpd8XK7n".parse()?;
+    // This hotspot will have a bad trust score and should be removed from coverage map
+    let banned_hotspot: PublicKeyBinary =
+        "11d5KySrfiMgaDoZ7B5CDm3meE1gQhUJ5EHuJvzwiWjdSUGhBsZ".parse()?;
+
+    // All coverage objects share the same hexes
+    let coverage_object_1 = CoverageObjectIngestReport {
+        received_timestamp: Utc::now(),
+        report: file_store::coverage::CoverageObject {
+            pub_key: good_hotspot.clone(),
+            uuid: uuid_1,
+            key_type: file_store::coverage::KeyType::HotspotKey(good_hotspot.clone()),
+            coverage_claim_time: "2022-02-01 12:00:00.000000000 UTC".parse()?, // Later
+            indoor: true,
+            signature: Vec::new(),
+            coverage: vec![signal_level("8c2681a3064d9ff", SignalLevel::High)?],
+            trust_score: 1000,
+        },
+    };
+
+    let coverage_object_2 = CoverageObjectIngestReport {
+        received_timestamp: Utc::now(),
+        report: file_store::coverage::CoverageObject {
+            pub_key: banned_hotspot.clone(),
+            uuid: uuid_2,
+            key_type: file_store::coverage::KeyType::HotspotKey(banned_hotspot.clone()),
+            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?, // Earlier
+            indoor: true,
+            signature: Vec::new(),
+            coverage: vec![signal_level("8c2681a3064d9ff", SignalLevel::High)?],
+            trust_score: 1000,
+        },
+    };
+
+    let heartbeats_1 = wifi_heartbeats(
+        13,
+        start,
+        good_hotspot.clone(),
+        40.019427814,
+        -105.27158489,
+        uuid_1,
+    );
+    let heartbeats_2 = wifi_heartbeats(
+        13,
+        start,
+        banned_hotspot.clone(),
+        40.019427814,
+        -105.27158489,
+        uuid_2,
+    );
+
+    process_wifi_input(
+        &pool,
+        &(start..end),
+        vec![coverage_object_1, coverage_object_2].into_iter(),
+        heartbeats_1.chain(heartbeats_2),
+    )
+    .await?;
+
+    let last_timestamp = end - Duration::hours(12);
+    let speedtests_1 = vec![
+        poor_speedtest(good_hotspot.clone(), last_timestamp),
+        poor_speedtest(good_hotspot.clone(), end),
+    ];
+    let speedtests_2 = vec![
+        poor_speedtest(banned_hotspot.clone(), last_timestamp),
+        poor_speedtest(banned_hotspot.clone(), end),
+    ];
+
+    let mut averages = HashMap::new();
+    averages.insert(good_hotspot.clone(), SpeedtestAverage::from(speedtests_1));
+    averages.insert(banned_hotspot.clone(), SpeedtestAverage::from(speedtests_2));
+
+    let speedtest_avgs = SpeedtestAverages { averages };
+
+    let boosted_hexes = BoostedHexes::default();
+    let reward_period = start..end;
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
+
+    // We are banning hotspot2 and therefore should not be in coverage map
+    let mut ban_radios = BannedRadios::default();
+    ban_radios.insert_wifi(banned_hotspot.clone());
+
+    let coverage_shares = CoverageShares::new(
+        &pool,
+        heartbeats,
+        &speedtest_avgs,
+        &boosted_hexes,
+        &BoostedHexEligibility::default(),
+        &ban_radios,
+        &UniqueConnectionCounts::default(),
+        &reward_period,
+    )
+    .await?;
+
+    assert_eq!(
+        coverage_shares.test_hotspot_reward_shares(&(good_hotspot, None)),
+        dec!(100)
+    );
+    assert_eq!(
+        coverage_shares.test_hotspot_reward_shares(&(banned_hotspot, None)),
+        dec!(0)
+    );
     Ok(())
 }

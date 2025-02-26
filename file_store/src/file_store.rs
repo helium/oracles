@@ -3,7 +3,7 @@ use crate::{
     settings::{self, Settings},
     BytesMutStream, Error, FileInfo, FileInfoStream, Result,
 };
-use aws_config::meta::region::RegionProviderChain;
+use aws_config::{meta::region::RegionProviderChain, retry::RetryConfig, timeout::TimeoutConfig};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
@@ -25,44 +25,33 @@ pub struct FileData {
 
 impl FileStore {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
-        let endpoint: Option<Endpoint> = match &settings.endpoint {
-            Some(endpoint) => Uri::from_str(endpoint)
-                .map(Endpoint::immutable)
-                .map(Some)
-                .map_err(DecodeError::from)?,
-            _ => None,
-        };
-        let region = Region::new(settings.region.clone());
-        let region_provider = RegionProviderChain::first_try(region).or_default_provider();
-
-        let mut config = aws_config::from_env().region(region_provider);
-        if let Some(endpoint) = endpoint {
-            config = config.endpoint_resolver(endpoint);
-        }
-
-        #[cfg(feature = "local")]
-        if settings.access_key_id.is_some() && settings.secret_access_key.is_some() {
-            let creds = aws_types::credentials::Credentials::from_keys(
-                settings.access_key_id.as_ref().unwrap(),
-                settings.secret_access_key.as_ref().unwrap(),
-                None,
-            );
-            config = config.credentials_provider(creds);
-        }
-
-        let config = config.load().await;
-
-        let client = Client::new(&config);
-        Ok(Self {
-            client,
-            bucket: settings.bucket.clone(),
-        })
+        let Settings {
+            bucket,
+            endpoint,
+            access_key_id,
+            secret_access_key,
+            region,
+        } = settings.clone();
+        Self::new(
+            bucket,
+            endpoint,
+            Some(region),
+            None,
+            None,
+            access_key_id,
+            secret_access_key,
+        )
+        .await
     }
 
     pub async fn new(
         bucket: String,
         endpoint: Option<String>,
         region: Option<String>,
+        timeout_config: Option<TimeoutConfig>,
+        retry_config: Option<RetryConfig>,
+        _access_key_id: Option<String>,
+        _secret_access_key: Option<String>,
     ) -> Result<Self> {
         let endpoint: Option<Endpoint> = match &endpoint {
             Some(endpoint) => Uri::from_str(endpoint)
@@ -77,6 +66,24 @@ impl FileStore {
         let mut config = aws_config::from_env().region(region_provider);
         if let Some(endpoint) = endpoint {
             config = config.endpoint_resolver(endpoint);
+        }
+
+        #[cfg(feature = "local")]
+        if _access_key_id.is_some() && _secret_access_key.is_some() {
+            let creds = aws_types::credentials::Credentials::from_keys(
+                _access_key_id.as_ref().unwrap(),
+                _secret_access_key.as_ref().unwrap(),
+                None,
+            );
+            config = config.credentials_provider(creds);
+        }
+
+        if let Some(timeout) = timeout_config {
+            config = config.timeout_config(timeout);
+        }
+
+        if let Some(retry) = retry_config {
+            config = config.retry_config(retry);
         }
 
         let config = config.load().await;
@@ -146,8 +153,8 @@ impl FileStore {
                             None
                         }
                     })
-                    .filter(move |info| after.map_or(true, |v| info.timestamp > v))
-                    .filter(move |info| before.map_or(true, |v| info.timestamp <= v))
+                    .filter(move |info| after.is_none_or(|v| info.timestamp > v))
+                    .filter(move |info| before.is_none_or(|v| info.timestamp <= v))
                     .map(Ok);
                 stream::iter(filtered).boxed()
             }

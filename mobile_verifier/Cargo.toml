@@ -14,6 +14,7 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 h3o = { workspace = true, features = ["geo"] }
+helium-lib = { workspace = true }
 hextree = { workspace = true }
 http-serde = { workspace = true }
 clap = { workspace = true }
@@ -62,5 +63,4 @@ coverage-point-calculator = { path = "../coverage_point_calculator" }
 coverage-map = { path = "../coverage_map" }
 
 [dev-dependencies]
-backon = "0"
 proptest = "1.5.0"

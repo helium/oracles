@@ -263,6 +263,11 @@ impl From<CbrsHeartbeatIngestReport> for Heartbeat {
 
 impl From<WifiHeartbeatIngestReport> for Heartbeat {
     fn from(value: WifiHeartbeatIngestReport) -> Self {
+        let received_timestamp = value.received_timestamp;
+        let location_validation_timestamp = value
+            .report
+            .location_validation_timestamp
+            .filter(|ts| received_timestamp.signed_duration_since(ts) <= Duration::hours(24));
         Self {
             hb_type: HbType::Wifi,
             coverage_object: value.report.coverage_object(),
@@ -271,9 +276,9 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
             operation_mode: value.report.operation_mode,
             lat: value.report.lat,
             lon: value.report.lon,
-            location_validation_timestamp: value.report.location_validation_timestamp,
+            location_validation_timestamp,
             location_source: value.report.location_source,
-            timestamp: value.received_timestamp,
+            timestamp: received_timestamp,
         }
     }
 }
@@ -519,7 +524,7 @@ impl ValidatedHeartbeat {
                 let is_valid = match heartbeat.location_validation_timestamp {
                     None => {
                         if let Some(last_location) = last_location_cache
-                            .fetch_last_location(&heartbeat.hotspot_key)
+                            .get(&heartbeat.hotspot_key, heartbeat.timestamp)
                             .await?
                         {
                             heartbeat.lat = last_location.lat;
@@ -535,16 +540,14 @@ impl ValidatedHeartbeat {
                     }
                     Some(location_validation_timestamp) => {
                         last_location_cache
-                            .set_last_location(
+                            .set(
                                 &heartbeat.hotspot_key,
-                                LastLocation::new(
+                                LastLocation::from_heartbeat(
+                                    &heartbeat,
                                     location_validation_timestamp,
-                                    heartbeat.timestamp,
-                                    heartbeat.lat,
-                                    heartbeat.lon,
                                 ),
                             )
-                            .await?;
+                            .await;
                         true
                     }
                 };
@@ -785,6 +788,7 @@ mod test {
     use crate::seniority::SeniorityUpdateAction;
 
     use super::*;
+    use file_store::wifi_heartbeat::WifiHeartbeat;
     use proto::SeniorityUpdateReason::*;
 
     fn heartbeat(timestamp: DateTime<Utc>, coverage_object: Uuid) -> ValidatedHeartbeat {
@@ -969,5 +973,47 @@ mod test {
         )?;
         assert_eq!(seniority_action.action, SeniorityUpdateAction::NoAction);
         Ok(())
+    }
+
+    #[test]
+    fn wifi_heartbeat_cannot_contain_validation_timestamp() {
+        fn make_report(
+            received: DateTime<Utc>,
+            valid_at: Option<DateTime<Utc>>,
+        ) -> WifiHeartbeatIngestReport {
+            WifiHeartbeatIngestReport {
+                received_timestamp: received,
+                report: WifiHeartbeat {
+                    pubkey: PublicKeyBinary::from(vec![0]),
+                    lat: 0.0,
+                    lon: 0.0,
+                    operation_mode: true,
+                    location_validation_timestamp: valid_at,
+                    coverage_object: vec![],
+                    timestamp: Utc::now(),
+                    location_source: LocationSource::Skyhook,
+                },
+            }
+        }
+
+        let received = Utc::now();
+
+        // validation timestamp is invalid after 24 hours
+        let valid_at = received - Duration::hours(25);
+        let hb = Heartbeat::from(make_report(received, Some(valid_at)));
+        assert_eq!(None, hb.location_validation_timestamp);
+
+        // 24 hours is inclusive
+        let valid_at = received - Duration::hours(24);
+        let hb = Heartbeat::from(make_report(received, Some(valid_at)));
+        assert_eq!(Some(valid_at), hb.location_validation_timestamp);
+
+        // sanity check
+        let valid_at = received - Duration::hours(0);
+        let hb = Heartbeat::from(make_report(received, Some(valid_at)));
+        assert_eq!(Some(valid_at), hb.location_validation_timestamp);
+
+        let hb = Heartbeat::from(make_report(received, None));
+        assert_eq!(None, hb.location_validation_timestamp);
     }
 }

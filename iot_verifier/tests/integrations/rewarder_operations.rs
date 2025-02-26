@@ -1,5 +1,7 @@
-use crate::common::{self, MockFileSinkReceiver};
-use chrono::{Duration as ChronoDuration, Utc};
+use crate::common::{
+    self, default_rewards_info, MockFileSinkReceiver, EMISSIONS_POOL_IN_BONES_24_HOURS,
+};
+use chrono::Duration;
 use helium_proto::services::poc_lora::{IotRewardShare, OperationalReward};
 use iot_verifier::{reward_share, rewarder};
 use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
@@ -8,23 +10,24 @@ use rust_decimal_macros::dec;
 #[tokio::test]
 async fn test_operations() -> anyhow::Result<()> {
     let (iot_rewards_client, mut iot_rewards) = common::create_file_sink();
-    let now = Utc::now();
-    let epoch = (now - ChronoDuration::hours(24))..now;
+
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+
     let (_, rewards) = tokio::join!(
-        rewarder::reward_operational(&iot_rewards_client, &epoch),
+        rewarder::reward_operational(&iot_rewards_client, &reward_info),
         receive_expected_rewards(&mut iot_rewards)
     );
     if let Ok(ops_reward) = rewards {
         // confirm the total rewards allocated matches expectations
-        let expected_total = reward_share::get_scheduled_ops_fund_tokens(epoch.end - epoch.start)
-            .to_u64()
-            .unwrap();
+        let expected_total =
+            reward_share::get_scheduled_ops_fund_tokens(reward_info.epoch_emissions)
+                .to_u64()
+                .unwrap();
         assert_eq!(ops_reward.amount, 6_232_876_712_328);
         assert_eq!(ops_reward.amount, expected_total);
 
         // confirm the ops percentage amount matches expectations
-        let daily_total = *reward_share::REWARDS_PER_DAY;
-        let ops_percent = (Decimal::from(ops_reward.amount) / daily_total)
+        let ops_percent = (Decimal::from(ops_reward.amount) / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(ops_percent, dec!(0.07));
     } else {

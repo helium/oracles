@@ -84,8 +84,8 @@ where
                 self.minimum_allowed_balance,
                 &mut transaction,
                 reports,
-                &self.valid_packets,
-                &self.invalid_packets,
+                &mut self.valid_packets,
+                &mut self.invalid_packets,
             )
             .await?;
         transaction.commit().await?;
@@ -112,7 +112,7 @@ impl Cmd {
                 bail!("Missing solana section in settings");
             };
             // Set up the solana RpcClient:
-            Some(SolanaRpc::new(solana_settings).await?)
+            Some(SolanaRpc::new(solana_settings, solana::SubDao::Iot).await?)
         } else {
             None
         };

@@ -27,7 +27,7 @@ where
         Box::pin(
             handle
                 .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+                .and_then(|result| async move { result }),
         )
     }
 }
@@ -173,7 +173,7 @@ where
         Ok(())
     }
 
-    async fn confirm_txn<'a>(&self, txn_row: &TxnRow) -> Result<()> {
+    async fn confirm_txn(&self, txn_row: &TxnRow) -> Result<()> {
         if self.solana.confirm_transaction(&txn_row.txn_id).await? {
             tracing::info!("txn_id {} confirmed on chain, updated db", txn_row.txn_id);
             db::update_verified_txns_onchain(&self.pool, &txn_row.txn_id).await?

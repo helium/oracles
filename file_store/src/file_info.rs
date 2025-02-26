@@ -141,19 +141,19 @@ pub const SPEEDTEST_AVG: &str = "speedtest_avg";
 pub const VALIDATED_HEARTBEAT: &str = "validated_heartbeat";
 pub const SIGNED_POC_RECEIPT_TXN: &str = "signed_poc_receipt_txn";
 pub const RADIO_REWARD_SHARE: &str = "radio_reward_share";
-pub const REWARD_MANIFEST: &str = "reward_manifest";
+pub const REWARD_MANIFEST: &str = "network_reward_manifest_v1";
 pub const IOT_PACKET_REPORT: &str = "packetreport";
 pub const IOT_VALID_PACKET: &str = "iot_valid_packet";
 pub const INVALID_PACKET: &str = "invalid_packet";
 pub const NON_REWARDABLE_PACKET: &str = "non_rewardable_packet";
-pub const IOT_REWARD_SHARE: &str = "iot_reward_share";
+pub const IOT_REWARD_SHARE: &str = "iot_network_reward_shares_v1";
 pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ingest_report";
 pub const INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT: &str =
     "invalid_data_transfer_session_ingest_report";
 pub const VALID_DATA_TRANSFER_SESSION: &str = "valid_data_transfer_session";
 pub const VERIFIED_DATA_TRANSFER_SESSION: &str = "verified_data_transfer_session";
 pub const PRICE_REPORT: &str = "price_report";
-pub const MOBILE_REWARD_SHARE: &str = "mobile_reward_share";
+pub const MOBILE_REWARD_SHARE: &str = "mobile_network_reward_shares_v1";
 pub const MAPPER_MSG: &str = "mapper_msg";
 pub const COVERAGE_OBJECT: &str = "coverage_object";
 pub const COVERAGE_OBJECT_INGEST_REPORT: &str = "coverage_object_ingest_report";
@@ -173,6 +173,8 @@ pub const VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT: &str =
 pub const PROMOTION_REWARD_INGEST_REPORT: &str = "promotion_reward_ingest_report";
 pub const VERIFIED_PROMOTION_REWARD: &str = "verified_promotion_reward";
 pub const SERVICE_PROVIDER_PROMOTION_FUND: &str = "service_provider_promotion_fund";
+pub const UNIQUE_CONNECTIONS_REPORT: &str = "unique_connections_report";
+pub const VERIFIED_UNIQUE_CONNECTIONS_REPORT: &str = "verified_unique_connections_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -237,87 +239,13 @@ pub enum FileType {
     RadioUsageStatsIngestReport,
     HexUsageStatsReq,
     RadioUsageStatsReq,
+    UniqueConnectionsReport,
+    VerifiedUniqueConnectionsReport,
 }
 
 impl fmt::Display for FileType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::InvalidatedRadioThresholdReq => INVALIDATED_RADIO_THRESHOLD_REQ,
-            Self::InvalidatedRadioThresholdIngestReport => {
-                INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT
-            }
-            Self::VerifiedInvalidatedRadioThresholdIngestReport => {
-                VERIFIED_INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT
-            }
-            Self::RadioThresholdReq => RADIO_THRESHOLD_REQ,
-            Self::RadioThresholdIngestReport => RADIO_THRESHOLD_INGEST_REPORT,
-            Self::VerifiedRadioThresholdIngestReport => VERIFIED_RADIO_THRESHOLD_INGEST_REPORT,
-            Self::SubscriberLocationReq => SUBSCRIBER_LOCATION_REQ,
-            Self::SubscriberLocationIngestReport => SUBSCRIBER_LOCATION_INGEST_REPORT,
-            Self::VerifiedSubscriberLocationIngestReport => {
-                VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
-            }
-            Self::CbrsHeartbeat => CBRS_HEARTBEAT,
-            Self::WifiHeartbeat => WIFI_HEARTBEAT,
-            Self::CellSpeedtest => CELL_SPEEDTEST,
-            Self::VerifiedSpeedtest => VERIFIED_SPEEDTEST,
-            Self::CbrsHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
-            Self::WifiHeartbeatIngestReport => WIFI_HEARTBEAT_INGEST_REPORT,
-            Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
-            Self::Entropy => ENTROPY,
-            Self::SubnetworkRewards => SUBNETWORK_REWARDS,
-            Self::EntropyReport => ENTROPY_REPORT,
-            Self::IotBeaconIngestReport => IOT_BEACON_INGEST_REPORT,
-            Self::IotWitnessIngestReport => IOT_WITNESS_INGEST_REPORT,
-            Self::IotPoc => IOT_POC,
-            Self::IotInvalidBeaconReport => IOT_INVALID_BEACON_REPORT,
-            Self::IotInvalidWitnessReport => IOT_INVALID_WITNESS_REPORT,
-            Self::SpeedtestAvg => SPEEDTEST_AVG,
-            Self::ValidatedHeartbeat => VALIDATED_HEARTBEAT,
-            Self::SignedPocReceiptTxn => SIGNED_POC_RECEIPT_TXN,
-            Self::RadioRewardShare => RADIO_REWARD_SHARE,
-            Self::RewardManifest => REWARD_MANIFEST,
-            Self::IotPacketReport => IOT_PACKET_REPORT,
-            Self::IotValidPacket => IOT_VALID_PACKET,
-            Self::InvalidPacket => INVALID_PACKET,
-            Self::NonRewardablePacket => NON_REWARDABLE_PACKET,
-            Self::IotRewardShare => IOT_REWARD_SHARE,
-            Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
-            Self::InvalidDataTransferSessionIngestReport => {
-                INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT
-            }
-            Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
-            Self::VerifiedDataTransferSession => VERIFIED_DATA_TRANSFER_SESSION,
-            Self::PriceReport => PRICE_REPORT,
-            Self::MobileRewardShare => MOBILE_REWARD_SHARE,
-            Self::MapperMsg => MAPPER_MSG,
-            Self::CoverageObject => COVERAGE_OBJECT,
-            Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
-            Self::SeniorityUpdate => SENIORITY_UPDATE,
-            Self::BoostedHexUpdate => BOOSTED_HEX_UPDATE,
-            Self::OracleBoostingReport => ORACLE_BOOSTING_REPORT,
-            Self::UrbanizationDataSet => URBANIZATION_DATA_SET,
-            Self::FootfallDataSet => FOOTFALL_DATA_SET,
-            Self::LandtypeDataSet => LANDTYPE_DATA_SET,
-            Self::SPBoostedRewardsBannedRadioIngestReport => SP_BOOSTED_REWARDS_BANNED_RADIO,
-            Self::VerifiedSPBoostedRewardsBannedRadioIngestReport => {
-                VERIFIED_SP_BOOSTED_REWARDS_BANNED_RADIO
-            }
-            Self::SubscriberVerifiedMappingEventIngestReport => {
-                SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
-            }
-            Self::VerifiedSubscriberVerifiedMappingEventIngestReport => {
-                VERIFIED_SUBSCRIBER_VERIFIED_MAPPING_INGEST_REPORT
-            }
-            Self::PromotionRewardIngestReport => PROMOTION_REWARD_INGEST_REPORT,
-            Self::VerifiedPromotionReward => VERIFIED_PROMOTION_REWARD,
-            Self::ServiceProviderPromotionFund => SERVICE_PROVIDER_PROMOTION_FUND,
-            Self::HexUsageStatsIngestReport => HEX_USAGE_STATS_INGEST_REPORT,
-            Self::RadioUsageStatsIngestReport => RADIO_USAGE_STATS_INGEST_REPORT,
-            Self::HexUsageStatsReq => HEX_USAGE_STATS_REQ,
-            Self::RadioUsageStatsReq => RADIO_USAGE_STATS_REQ,
-        };
-        f.write_str(s)
+        f.write_str(self.to_str())
     }
 }
 
@@ -398,6 +326,8 @@ impl FileType {
             Self::RadioUsageStatsIngestReport => RADIO_USAGE_STATS_INGEST_REPORT,
             Self::HexUsageStatsReq => HEX_USAGE_STATS_REQ,
             Self::RadioUsageStatsReq => RADIO_USAGE_STATS_REQ,
+            Self::UniqueConnectionsReport => UNIQUE_CONNECTIONS_REPORT,
+            Self::VerifiedUniqueConnectionsReport => VERIFIED_UNIQUE_CONNECTIONS_REPORT,
         }
     }
 }
@@ -479,6 +409,8 @@ impl FromStr for FileType {
             RADIO_USAGE_STATS_INGEST_REPORT => Self::RadioUsageStatsIngestReport,
             HEX_USAGE_STATS_REQ => Self::HexUsageStatsReq,
             RADIO_USAGE_STATS_REQ => Self::RadioUsageStatsReq,
+            UNIQUE_CONNECTIONS_REPORT => Self::UniqueConnectionsReport,
+            VERIFIED_UNIQUE_CONNECTIONS_REPORT => Self::VerifiedUniqueConnectionsReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

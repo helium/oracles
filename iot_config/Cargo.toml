@@ -15,10 +15,13 @@ chrono = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
 db-store = { path = "../db_store" }
+rust_decimal = { workspace = true, features = ["maths"] }
+rust_decimal_macros = { workspace = true }
 file-store = { path = "../file_store" }
 futures = { workspace = true }
 futures-util = { workspace = true }
-helium-crypto = { workspace = true, features = ["sqlx-postgres", "solana"] }
+helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
+helium-lib = { workspace = true }
 helium-proto = { workspace = true }
 helium-anchor-gen = { workspace = true }
 hextree = { workspace = true }
@@ -47,7 +50,6 @@ humantime-serde = { workspace = true }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 solana = { path = "../solana" }
 solana-sdk = { workspace = true }
-rust_decimal = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }

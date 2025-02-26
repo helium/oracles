@@ -2,7 +2,7 @@ use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
-    radio_threshold,
+    radio_threshold, resolve_subdao_pubkey,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
@@ -10,7 +10,8 @@ use crate::{
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_location, subscriber_verified_mapping_event, telemetry, Settings,
+    subscriber_location, subscriber_verified_mapping_event, telemetry, unique_connections,
+    PriceInfo, Settings,
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -22,6 +23,9 @@ use file_store::{
 };
 use futures_util::TryFutureExt;
 
+use self::boosted_hex_eligibility::BoostedHexEligibility;
+use helium_lib::keypair::Pubkey;
+use helium_lib::token::Token;
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -29,34 +33,37 @@ use helium_proto::{
         service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType,
         MobileRewardShare, UnallocatedReward, UnallocatedRewardType,
     },
-    MobileRewardData as ManifestMobileRewardData, RewardManifest,
+    MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
 };
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{
         carrier_service_client::CarrierServiceVerifier,
-        hex_boosting_client::HexBoostingInfoResolver, ClientError,
+        hex_boosting_client::HexBoostingInfoResolver,
+        sub_dao_client::SubDaoEpochRewardInfoResolver, ClientError,
     },
+    sub_dao_epoch_reward_info::EpochRewardInfo,
+    EpochInfo,
 };
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
-use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
 
-use self::boosted_hex_eligibility::BoostedHexEligibility;
-
 pub mod boosted_hex_eligibility;
+mod db;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
-pub struct Rewarder<A, B> {
+pub struct Rewarder<A, B, C> {
+    sub_dao: Pubkey,
     pool: Pool<Postgres>,
     carrier_client: A,
     hex_service_client: B,
+    sub_dao_epoch_reward_client: C,
     reward_period_duration: Duration,
     reward_offset: Duration,
     pub mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
@@ -65,10 +72,11 @@ pub struct Rewarder<A, B> {
     speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
 }
 
-impl<A, B> Rewarder<A, B>
+impl<A, B, C> Rewarder<A, B, C>
 where
     A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
     B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
+    C: SubDaoEpochRewardInfoResolver<Error = ClientError> + Send + Sync + 'static,
 {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
@@ -76,6 +84,7 @@ where
         file_upload: FileUpload,
         carrier_service_verifier: A,
         hex_boosting_info_resolver: B,
+        sub_dao_epoch_reward_info_resolver: C,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
     ) -> anyhow::Result<impl ManagedTask> {
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
@@ -102,13 +111,14 @@ where
             pool.clone(),
             carrier_service_verifier,
             hex_boosting_info_resolver,
+            sub_dao_epoch_reward_info_resolver,
             settings.reward_period,
             settings.reward_period_offset,
             mobile_rewards,
             reward_manifests,
             price_tracker,
             speedtests_avg,
-        );
+        )?;
 
         Ok(TaskManager::builder()
             .add_task(price_daemon)
@@ -123,41 +133,60 @@ where
         pool: Pool<Postgres>,
         carrier_client: A,
         hex_service_client: B,
+        sub_dao_epoch_reward_client: C,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
         reward_manifests: FileSinkClient<RewardManifest>,
         price_tracker: PriceTracker,
         speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        // get the subdao address
+        let sub_dao = resolve_subdao_pubkey();
+        tracing::info!("Mobile SubDao pubkey: {}", sub_dao);
+
+        Ok(Self {
+            sub_dao,
             pool,
             carrier_client,
             hex_service_client,
+            sub_dao_epoch_reward_client,
             reward_period_duration,
             reward_offset,
             mobile_rewards,
             reward_manifests,
             price_tracker,
             speedtest_averages,
-        }
+        })
     }
 
     pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("Starting rewarder");
+
         loop {
-            let last_rewarded_end_time = last_rewarded_end_time(&self.pool).await?;
-            let next_rewarded_end_time = next_rewarded_end_time(&self.pool).await?;
+            let next_reward_epoch = next_reward_epoch(&self.pool).await?;
+            let next_reward_epoch_period = EpochInfo::from(next_reward_epoch);
+
             let scheduler = Scheduler::new(
                 self.reward_period_duration,
-                last_rewarded_end_time,
-                next_rewarded_end_time,
+                next_reward_epoch_period.period.start,
+                next_reward_epoch_period.period.end,
                 self.reward_offset,
             );
+
             let now = Utc::now();
-            let sleep_duration = if scheduler.should_reward(now) {
-                if self.is_data_current(&scheduler.reward_period).await? {
-                    self.reward(&scheduler).await?;
-                    continue;
+            let sleep_duration = if scheduler.should_trigger(now) {
+                if self.is_data_current(&scheduler.schedule_period).await? {
+                    match self.reward(next_reward_epoch).await {
+                        Ok(_) => {
+                            tracing::info!("Successfully rewarded for epoch {}", next_reward_epoch);
+                            continue;
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to reward: {}", e);
+                            chrono::Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
+                        }
+                    }
                 } else {
                     chrono::Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
                 }
@@ -177,6 +206,7 @@ where
             }
         }
 
+        tracing::info!("Stopping rewarder");
         Ok(())
     }
 
@@ -193,39 +223,25 @@ where
         &self,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<bool> {
-        // Check if we have heartbeats and speedtests past the end of the reward period
+        // Check if we have heartbeats and speedtests and unique connections past the end of the reward period
         if reward_period.end >= self.disable_complete_data_checks_until().await? {
-            if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM cbrs_heartbeats WHERE latest_timestamp >= $1",
-            )
-            .bind(reward_period.end)
-            .fetch_one(&self.pool)
-            .await?
-                == 0
-            {
+            if db::no_cbrs_heartbeats(&self.pool, reward_period).await? {
                 tracing::info!("No cbrs heartbeats found past reward period");
                 return Ok(false);
             }
 
-            if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM wifi_heartbeats WHERE latest_timestamp >= $1",
-            )
-            .bind(reward_period.end)
-            .fetch_one(&self.pool)
-            .await?
-                == 0
-            {
+            if db::no_wifi_heartbeats(&self.pool, reward_period).await? {
                 tracing::info!("No wifi heartbeats found past reward period");
                 return Ok(false);
             }
 
-            if sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM speedtests WHERE timestamp >= $1")
-                .bind(reward_period.end)
-                .fetch_one(&self.pool)
-                .await?
-                == 0
-            {
+            if db::no_speedtests(&self.pool, reward_period).await? {
                 tracing::info!("No speedtests found past reward period");
+                return Ok(false);
+            }
+
+            if db::no_unique_connections(&self.pool, reward_period).await? {
+                tracing::info!("No unique connections found past reward period");
                 return Ok(false);
             }
 
@@ -240,24 +256,37 @@ where
         Ok(true)
     }
 
-    pub async fn reward(&self, scheduler: &Scheduler) -> anyhow::Result<()> {
-        let reward_period = &scheduler.reward_period;
-
+    pub async fn reward(&self, next_reward_epoch: u64) -> anyhow::Result<()> {
         tracing::info!(
-            "Rewarding for period: {} to {}",
-            reward_period.start,
-            reward_period.end
+            "Resolving reward info for epoch: {}, subdao: {}",
+            next_reward_epoch,
+            self.sub_dao
         );
 
-        let mobile_price = self
+        let reward_info = self
+            .sub_dao_epoch_reward_client
+            .resolve_info(&self.sub_dao.to_string(), next_reward_epoch)
+            .await?
+            .ok_or(anyhow::anyhow!(
+                "No reward info found for epoch {}",
+                next_reward_epoch
+            ))?;
+
+        let pricer_hnt_price = self
             .price_tracker
-            .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
+            .price(&helium_proto::BlockchainTokenTypeV1::Hnt)
             .await?;
 
-        // Mobile prices are supplied in 10^6, so we must convert them to Decimal
-        let mobile_bone_price = Decimal::from(mobile_price)
-                / dec!(1_000_000)  // Per Mobile token
-                / dec!(1_000_000); // Per Bone
+        let price_info = PriceInfo::new(pricer_hnt_price, Token::Hnt.decimals());
+
+        tracing::info!(
+            "Rewarding for epoch {} period: {} to {} with hnt bone price: {} and reward pool: {}",
+            reward_info.epoch_day,
+            reward_info.epoch_period.start,
+            reward_info.epoch_period.end,
+            price_info.price_per_bone,
+            reward_info.epoch_emissions,
+        );
 
         // process rewards for poc and data transfer
         let poc_dc_shares = reward_poc_and_dc(
@@ -265,48 +294,58 @@ where
             &self.hex_service_client,
             &self.mobile_rewards,
             &self.speedtest_averages,
-            reward_period,
-            mobile_bone_price,
+            &reward_info,
+            price_info.clone(),
         )
         .await?;
 
         // process rewards for mappers
-        reward_mappers(&self.pool, &self.mobile_rewards, reward_period).await?;
+        reward_mappers(&self.pool, &self.mobile_rewards, &reward_info).await?;
 
         // process rewards for service providers
-        let dc_sessions =
-            service_provider::get_dc_sessions(&self.pool, &self.carrier_client, reward_period)
-                .await?;
+        let dc_sessions = service_provider::get_dc_sessions(
+            &self.pool,
+            &self.carrier_client,
+            &reward_info.epoch_period,
+        )
+        .await?;
         let sp_promotions =
-            service_provider::get_promotions(&self.carrier_client, &reward_period.start).await?;
+            service_provider::get_promotions(&self.carrier_client, &reward_info.epoch_period.start)
+                .await?;
         reward_service_providers(
             dc_sessions,
             sp_promotions.clone(),
             &self.mobile_rewards,
-            reward_period,
-            mobile_bone_price,
+            &reward_info,
+            price_info.price_per_bone,
         )
         .await?;
 
         // process rewards for oracles
-        reward_oracles(&self.mobile_rewards, reward_period).await?;
+        reward_oracles(&self.mobile_rewards, &reward_info).await?;
 
         self.speedtest_averages.commit().await?;
         let written_files = self.mobile_rewards.commit().await?.await??;
 
         let mut transaction = self.pool.begin().await?;
         // clear out the various db tables
-        heartbeats::clear_heartbeats(&mut transaction, &reward_period.start).await?;
-        speedtests::clear_speedtests(&mut transaction, &reward_period.start).await?;
-        data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.start).await?;
-        coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
-        sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_period.start).await?;
-        subscriber_verified_mapping_event::clear(&mut transaction, &reward_period.start).await?;
+        heartbeats::clear_heartbeats(&mut transaction, &reward_info.epoch_period.start).await?;
+        speedtests::clear_speedtests(&mut transaction, &reward_info.epoch_period.start).await?;
+        data_session::clear_hotspot_data_sessions(
+            &mut transaction,
+            &reward_info.epoch_period.start,
+        )
+        .await?;
+        coverage::clear_coverage_objects(&mut transaction, &reward_info.epoch_period.start).await?;
+        sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_info.epoch_period.start)
+            .await?;
+        subscriber_verified_mapping_event::clear(&mut transaction, &reward_info.epoch_period.start)
+            .await?;
+        unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
-        let next_reward_period = scheduler.next_reward_period();
-        save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;
-        save_next_rewarded_end_time(&mut transaction, &next_reward_period.end).await?;
+        save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
+
         transaction.commit().await?;
 
         // now that the db has been purged, safe to write out the manifest
@@ -318,14 +357,17 @@ where
                 value: poc_dc_shares.boost.to_string(),
             }),
             service_provider_promotions: sp_promotions.into_proto(),
+            token: MobileRewardToken::Hnt as i32,
         };
         self.reward_manifests
             .write(
                 RewardManifest {
-                    start_timestamp: reward_period.start.encode_timestamp(),
-                    end_timestamp: reward_period.end.encode_timestamp(),
+                    start_timestamp: reward_info.epoch_period.start.encode_timestamp(),
+                    end_timestamp: reward_info.epoch_period.end.encode_timestamp(),
                     written_files,
                     reward_data: Some(MobileRewardData(reward_data)),
+                    epoch: reward_info.epoch_day,
+                    price: price_info.price_in_bones,
                 },
                 [],
             )
@@ -333,15 +375,16 @@ where
             .await??;
 
         self.reward_manifests.commit().await?;
-        telemetry::last_rewarded_end_time(next_reward_period.start);
+        telemetry::last_rewarded_end_time(reward_info.epoch_period.end);
         Ok(())
     }
 }
 
-impl<A, B> ManagedTask for Rewarder<A, B>
+impl<A, B, C> ManagedTask for Rewarder<A, B, C>
 where
     A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
     B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
+    C: SubDaoEpochRewardInfoResolver<Error = ClientError> + Send + Sync + 'static,
 {
     fn start_task(
         self: Box<Self>,
@@ -351,7 +394,7 @@ where
         Box::pin(
             handle
                 .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+                .and_then(|result| async move { result }),
         )
     }
 }
@@ -361,14 +404,16 @@ pub async fn reward_poc_and_dc(
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
-    reward_period: &Range<DateTime<Utc>>,
-    mobile_bone_price: Decimal,
+    reward_info: &EpochRewardInfo,
+    price_info: PriceInfo,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
-    let mut reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(reward_period);
+    let mut reward_shares =
+        DataTransferAndPocAllocatedRewardBuckets::new(reward_info.epoch_emissions);
 
     let transfer_rewards = TransferRewards::from_transfer_sessions(
-        mobile_bone_price,
-        data_session::aggregate_hotspot_data_sessions_to_dc(pool, reward_period).await?,
+        price_info,
+        data_session::aggregate_hotspot_data_sessions_to_dc(pool, &reward_info.epoch_period)
+            .await?,
         &reward_shares,
     )
     .await;
@@ -384,7 +429,7 @@ pub async fn reward_poc_and_dc(
     // and carry this into the poc pool
     let dc_unallocated_amount = reward_dc(
         mobile_rewards,
-        reward_period,
+        reward_info,
         transfer_rewards,
         &reward_shares,
     )
@@ -396,7 +441,7 @@ pub async fn reward_poc_and_dc(
         hex_service_client,
         mobile_rewards,
         speedtest_avg_sink,
-        reward_period,
+        reward_info,
         reward_shares,
     )
     .await?;
@@ -410,7 +455,7 @@ pub async fn reward_poc_and_dc(
         mobile_rewards,
         UnallocatedRewardType::Poc,
         poc_unallocated_amount,
-        reward_period,
+        reward_info,
     )
     .await?;
 
@@ -422,31 +467,28 @@ async fn reward_poc(
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
-    reward_period: &Range<DateTime<Utc>>,
+    reward_info: &EpochRewardInfo,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
-    let heartbeats = HeartbeatReward::validated(pool, reward_period);
+    let heartbeats = HeartbeatReward::validated(pool, &reward_info.epoch_period);
     let speedtest_averages =
-        SpeedtestAverages::aggregate_epoch_averages(reward_period.end, pool).await?;
+        SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, pool).await?;
 
     speedtest_averages.write_all(speedtest_avg_sink).await?;
 
     let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
 
+    let unique_connections = unique_connections::db::get(pool, &reward_info.epoch_period).await?;
+
     let boosted_hex_eligibility = BoostedHexEligibility::new(
-        radio_threshold::verified_radio_thresholds(pool, reward_period).await?,
-        sp_boosted_rewards_bans::db::get_banned_radios(
-            pool,
-            SpBoostedRewardsBannedRadioBanType::BoostedHex,
-            reward_period.end,
-        )
-        .await?,
+        radio_threshold::verified_radio_thresholds(pool, &reward_info.epoch_period).await?,
+        unique_connections.clone(),
     );
 
     let poc_banned_radios = sp_boosted_rewards_bans::db::get_banned_radios(
         pool,
         SpBoostedRewardsBannedRadioBanType::Poc,
-        reward_period.end,
+        reward_info.epoch_period.end,
     )
     .await?;
 
@@ -457,7 +499,8 @@ async fn reward_poc(
         &boosted_hexes,
         &boosted_hex_eligibility,
         &poc_banned_radios,
-        reward_period,
+        &unique_connections,
+        &reward_info.epoch_period,
     )
     .await?;
 
@@ -465,7 +508,7 @@ async fn reward_poc(
 
     let (unallocated_poc_amount, calculated_poc_rewards_per_share) =
         if let Some((calculated_poc_rewards_per_share, mobile_reward_shares)) =
-            coverage_shares.into_rewards(reward_shares, reward_period)
+            coverage_shares.into_rewards(reward_shares, &reward_info.epoch_period)
         {
             // handle poc reward outputs
             let mut allocated_poc_rewards = 0_u64;
@@ -498,13 +541,13 @@ async fn reward_poc(
 
 pub async fn reward_dc(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_period: &Range<DateTime<Utc>>,
+    reward_info: &EpochRewardInfo,
     transfer_rewards: TransferRewards,
     reward_shares: &DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<Decimal> {
     // handle dc reward outputs
     let mut allocated_dc_rewards = 0_u64;
-    for (dc_reward_amount, mobile_reward_share) in transfer_rewards.into_rewards(reward_period) {
+    for (dc_reward_amount, mobile_reward_share) in transfer_rewards.into_rewards(reward_info) {
         allocated_dc_rewards += dc_reward_amount;
         mobile_rewards
             .write(mobile_reward_share, [])
@@ -523,34 +566,36 @@ pub async fn reward_dc(
 pub async fn reward_mappers(
     pool: &Pool<Postgres>,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_period: &Range<DateTime<Utc>>,
+    reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
     // Mapper rewards currently include rewards for discovery mapping only.
     // Verification mapping rewards to be added
     // get subscriber location shares this epoch
     let location_shares =
-        subscriber_location::aggregate_location_shares(pool, reward_period).await?;
+        subscriber_location::aggregate_location_shares(pool, &reward_info.epoch_period).await?;
 
     // Verification mappers can only earn rewards if they qualified for disco mapping
     // rewards during the same reward_period
-    let vsme_shares =
-        subscriber_verified_mapping_event::aggregate_verified_mapping_events(pool, reward_period)
-            .await?
-            .into_iter()
-            .filter(|vsme| location_shares.contains(&vsme.subscriber_id))
-            .collect();
+    let vsme_shares = subscriber_verified_mapping_event::aggregate_verified_mapping_events(
+        pool,
+        &reward_info.epoch_period,
+    )
+    .await?
+    .into_iter()
+    .filter(|vsme| location_shares.contains(&vsme.subscriber_id))
+    .collect();
 
     // determine mapping shares based on location shares and data transferred
     let mapping_shares = MapperShares::new(location_shares, vsme_shares);
     let total_mappers_pool =
-        reward_shares::get_scheduled_tokens_for_mappers(reward_period.end - reward_period.start);
+        reward_shares::get_scheduled_tokens_for_mappers(reward_info.epoch_emissions);
     let rewards_per_share = mapping_shares.rewards_per_share(total_mappers_pool)?;
 
     // translate discovery mapping shares into subscriber rewards
     let mut allocated_mapping_rewards = 0_u64;
 
     for (reward_amount, mapping_share) in
-        mapping_shares.into_subscriber_rewards(reward_period, rewards_per_share)
+        mapping_shares.into_subscriber_rewards(&reward_info.epoch_period, rewards_per_share)
     {
         allocated_mapping_rewards += reward_amount;
         mobile_rewards
@@ -570,7 +615,7 @@ pub async fn reward_mappers(
         mobile_rewards,
         UnallocatedRewardType::Mapper,
         unallocated_mapping_reward_amount,
-        reward_period,
+        reward_info,
     )
     .await?;
 
@@ -579,11 +624,11 @@ pub async fn reward_mappers(
 
 pub async fn reward_oracles(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_period: &Range<DateTime<Utc>>,
+    reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
     // atm 100% of oracle rewards are assigned to 'unallocated'
     let total_oracle_rewards =
-        reward_shares::get_scheduled_tokens_for_oracles(reward_period.end - reward_period.start);
+        reward_shares::get_scheduled_tokens_for_oracles(reward_info.epoch_emissions);
     let allocated_oracle_rewards = 0_u64;
     let unallocated_oracle_reward_amount = total_oracle_rewards
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
@@ -594,7 +639,7 @@ pub async fn reward_oracles(
         mobile_rewards,
         UnallocatedRewardType::Oracle,
         unallocated_oracle_reward_amount,
-        reward_period,
+        reward_info,
     )
     .await?;
     Ok(())
@@ -604,19 +649,19 @@ pub async fn reward_service_providers(
     dc_sessions: ServiceProviderDCSessions,
     sp_promotions: ServiceProviderPromotions,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    reward_period: &Range<DateTime<Utc>>,
-    mobile_bone_price: Decimal,
+    reward_info: &EpochRewardInfo,
+    hnt_bone_price: Decimal,
 ) -> anyhow::Result<()> {
     use service_provider::ServiceProviderRewardInfos;
 
-    let total_sp_rewards = service_provider::get_scheduled_tokens(reward_period);
+    let total_sp_rewards = service_provider::get_scheduled_tokens(reward_info.epoch_emissions);
 
     let sps = ServiceProviderRewardInfos::new(
         dc_sessions,
         sp_promotions,
         total_sp_rewards,
-        mobile_bone_price,
-        reward_period.clone(),
+        hnt_bone_price,
+        reward_info.clone(),
     );
 
     let mut unallocated_sp_rewards = total_sp_rewards
@@ -634,7 +679,7 @@ pub async fn reward_service_providers(
         mobile_rewards,
         UnallocatedRewardType::ServiceProvider,
         unallocated_sp_rewards,
-        reward_period,
+        reward_info,
     )
     .await?;
     Ok(())
@@ -644,12 +689,12 @@ async fn write_unallocated_reward(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
-    reward_period: &'_ Range<DateTime<Utc>>,
+    reward_info: &'_ EpochRewardInfo,
 ) -> anyhow::Result<()> {
     if unallocated_amount > 0 {
         let unallocated_reward = proto::MobileRewardShare {
-            start_period: reward_period.start.encode_timestamp(),
-            end_period: reward_period.end.encode_timestamp(),
+            start_period: reward_info.epoch_period.start.encode_timestamp(),
+            end_period: reward_info.epoch_period.end.encode_timestamp(),
             reward: Some(ProtoReward::UnallocatedReward(UnallocatedReward {
                 reward_type: unallocated_type as i32,
                 amount: unallocated_amount,
@@ -663,28 +708,10 @@ async fn write_unallocated_reward(
     Ok(())
 }
 
-pub async fn last_rewarded_end_time(db: &Pool<Postgres>) -> db_store::Result<DateTime<Utc>> {
-    Utc.timestamp_opt(meta::fetch(db, "last_rewarded_end_time").await?, 0)
-        .single()
-        .ok_or(db_store::Error::DecodeError)
+pub async fn next_reward_epoch(db: &Pool<Postgres>) -> db_store::Result<u64> {
+    meta::fetch(db, "next_reward_epoch").await
 }
 
-async fn next_rewarded_end_time(db: &Pool<Postgres>) -> db_store::Result<DateTime<Utc>> {
-    Utc.timestamp_opt(meta::fetch(db, "next_rewarded_end_time").await?, 0)
-        .single()
-        .ok_or(db_store::Error::DecodeError)
-}
-
-async fn save_last_rewarded_end_time(
-    exec: impl PgExecutor<'_>,
-    value: &DateTime<Utc>,
-) -> db_store::Result<()> {
-    meta::store(exec, "last_rewarded_end_time", value.timestamp()).await
-}
-
-async fn save_next_rewarded_end_time(
-    exec: impl PgExecutor<'_>,
-    value: &DateTime<Utc>,
-) -> db_store::Result<()> {
-    meta::store(exec, "next_rewarded_end_time", value.timestamp()).await
+async fn save_next_reward_epoch(exec: impl PgExecutor<'_>, value: u64) -> db_store::Result<()> {
+    meta::store(exec, "next_reward_epoch", value).await
 }

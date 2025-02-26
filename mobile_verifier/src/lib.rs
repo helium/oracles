@@ -17,10 +17,13 @@ pub mod speedtests_average;
 pub mod subscriber_location;
 pub mod subscriber_verified_mapping_event;
 pub mod telemetry;
+pub mod unique_connections;
 
 pub use settings::Settings;
 
 use async_trait::async_trait;
+use helium_lib::keypair::Pubkey;
+use rust_decimal::Decimal;
 use std::error::Error;
 
 pub enum GatewayResolution {
@@ -95,4 +98,30 @@ impl IsAuthorized for mobile_config::client::AuthorizationClient {
         use mobile_config::client::authorization_client::AuthorizationVerifier;
         self.verify_authorized_key(address, role).await
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct PriceInfo {
+    pub price_in_bones: u64,
+    pub price_per_token: Decimal,
+    pub price_per_bone: Decimal,
+    pub decimals: u8,
+}
+
+impl PriceInfo {
+    pub fn new(price_in_bones: u64, decimals: u8) -> Self {
+        let price_per_token =
+            Decimal::from(price_in_bones) / Decimal::from(10_u64.pow(decimals as u32));
+        let price_per_bone = price_per_token / Decimal::from(10_u64.pow(decimals as u32));
+        Self {
+            price_in_bones,
+            price_per_token,
+            price_per_bone,
+            decimals,
+        }
+    }
+}
+
+pub fn resolve_subdao_pubkey() -> Pubkey {
+    helium_lib::dao::SubDao::Mobile.key()
 }

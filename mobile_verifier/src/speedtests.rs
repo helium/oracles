@@ -223,7 +223,7 @@ where
         Box::pin(
             handle
                 .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+                .and_then(|result| async move { result }),
         )
     }
 }
@@ -275,7 +275,7 @@ pub async fn get_latest_speedtests_for_pubkey(
     Ok(speedtests)
 }
 
-pub async fn aggregate_epoch_speedtests<'a>(
+pub async fn aggregate_epoch_speedtests(
     epoch_end: DateTime<Utc>,
     exec: &sqlx::Pool<sqlx::Postgres>,
 ) -> Result<EpochSpeedTests, sqlx::Error> {

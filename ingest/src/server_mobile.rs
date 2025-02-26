@@ -1,6 +1,6 @@
 use crate::Settings;
 use anyhow::{bail, Error, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use file_store::{
     file_sink::FileSinkClient,
     file_upload,
@@ -9,12 +9,11 @@ use file_store::{
 use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey, PublicKeyBinary};
-use helium_proto::services::mobile_config::NetworkKeyRole;
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
-    DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
-    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
+    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
+    DataTransferSessionRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
     RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
@@ -23,8 +22,12 @@ use helium_proto::services::poc_mobile::{
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1,
     SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventReqV1,
-    SubscriberVerifiedMappingEventResV1, WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1,
-    WifiHeartbeatRespV1,
+    SubscriberVerifiedMappingEventResV1, UniqueConnectionsIngestReportV1,
+    WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1, WifiHeartbeatRespV1,
+};
+use helium_proto::services::{
+    mobile_config::NetworkKeyRole,
+    poc_mobile::{UniqueConnectionsReqV1, UniqueConnectionsRespV1},
 };
 use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use std::{net::SocketAddr, path::Path};
@@ -52,10 +55,12 @@ pub struct GrpcServer<AV> {
     subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
     hex_usage_stats_event_sink: FileSinkClient<HexUsageStatsIngestReportV1>,
     radio_usage_stats_event_sink: FileSinkClient<RadioUsageStatsIngestReportV1>,
+    unique_connections_sink: FileSinkClient<UniqueConnectionsIngestReportV1>,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
     authorization_verifier: AV,
+    cbrs_disable_time: DateTime<Utc>,
 }
 
 impl<AV> ManagedTask for GrpcServer<AV>
@@ -100,10 +105,12 @@ where
         subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
         hex_usage_stats_event_sink: FileSinkClient<HexUsageStatsIngestReportV1>,
         radio_usage_stats_event_sink: FileSinkClient<RadioUsageStatsIngestReportV1>,
+        unique_connections_sink: FileSinkClient<UniqueConnectionsIngestReportV1>,
         required_network: Network,
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
         authorization_verifier: AV,
+        cbrs_disable_time: DateTime<Utc>,
     ) -> Self {
         GrpcServer {
             heartbeat_report_sink,
@@ -118,10 +125,12 @@ where
             subscriber_mapping_event_sink,
             hex_usage_stats_event_sink,
             radio_usage_stats_event_sink,
+            unique_connections_sink,
             required_network,
             address,
             api_token,
             authorization_verifier,
+            cbrs_disable_time,
         }
     }
 
@@ -212,7 +221,14 @@ where
         &self,
         request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
-        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+        let timestamp = Utc::now();
+
+        if timestamp >= self.cbrs_disable_time {
+            return Ok(Response::new(CellHeartbeatRespV1 {
+                id: timestamp.to_string(),
+            }));
+        }
+
         let event = request.into_inner();
 
         custom_tracing::record_b58("pub_key", &event.pub_key);
@@ -222,7 +238,7 @@ where
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))
             .map(|(_, event)| CellHeartbeatIngestReportV1 {
-                received_timestamp: timestamp,
+                received_timestamp: timestamp.timestamp_millis() as u64,
                 report: Some(event),
             })?;
 
@@ -260,8 +276,14 @@ where
         &self,
         request: Request<DataTransferSessionReqV1>,
     ) -> GrpcResult<DataTransferSessionRespV1> {
-        let timestamp = Utc::now().timestamp_millis() as u64;
+        let timestamp = Utc::now();
         let event = request.into_inner();
+
+        if is_data_transfer_for_cbrs(&event) && timestamp > self.cbrs_disable_time {
+            return Ok(Response::new(DataTransferSessionRespV1 {
+                id: timestamp.to_string(),
+            }));
+        }
 
         custom_tracing::record_b58("pub_key", &event.pub_key);
 
@@ -270,7 +292,7 @@ where
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))
             .map(|(_, event)| DataTransferSessionIngestReportV1 {
-                received_timestamp: timestamp,
+                received_timestamp: timestamp.timestamp_millis() as u64,
                 report: Some(event),
             })?;
 
@@ -523,6 +545,38 @@ where
         let id = timestamp.to_string();
         Ok(Response::new(RadioUsageStatsResV1 { id }))
     }
+
+    async fn submit_unique_connections(
+        &self,
+        request: Request<UniqueConnectionsReqV1>,
+    ) -> GrpcResult<UniqueConnectionsRespV1> {
+        let received_timestamp = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+
+        let timestamp = event.timestamp;
+
+        custom_tracing::record_b58("pub_key", &event.pubkey);
+
+        let report = self
+            .verify_public_key(event.carrier_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| UniqueConnectionsIngestReportV1 {
+                received_timestamp,
+                report: Some(event),
+            })?;
+
+        _ = self.unique_connections_sink.write(report, []).await;
+
+        Ok(Response::new(UniqueConnectionsRespV1 { timestamp }))
+    }
+}
+
+fn is_data_transfer_for_cbrs(event: &DataTransferSessionReqV1) -> bool {
+    event
+        .data_transfer_usage
+        .as_ref()
+        .is_some_and(|u| u.radio_access_technology() == DataTransferRadioAccessTechnology::Eutran)
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
@@ -652,12 +706,26 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         )
         .await?;
 
+    let (unique_connections_sink, unique_connections_server) =
+        UniqueConnectionsIngestReportV1::file_sink(
+            store_base_path,
+            file_upload.clone(),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
+
     let Some(api_token) = settings
         .token
         .as_ref()
         .and_then(|token| format!("Bearer {token}").parse::<MetadataValue<_>>().ok())
     else {
         bail!("expected valid api token in settings");
+    };
+
+    let Some(config_client) = settings.config_client.as_ref() else {
+        bail!("expected mobile config client settings");
     };
 
     let grpc_server = GrpcServer::new(
@@ -673,10 +741,12 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         subscriber_mapping_event_sink,
         hex_usage_stats_event_sink,
         radio_usage_stats_event_sink,
+        unique_connections_sink,
         settings.network,
         settings.listen_addr,
         api_token,
-        AuthorizationClient::from_settings(&settings.config_client)?,
+        AuthorizationClient::from_settings(config_client)?,
+        settings.cbrs_disable_time,
     );
 
     tracing::info!(
@@ -699,6 +769,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(subscriber_mapping_event_server)
         .add_task(hex_usage_stats_event_server)
         .add_task(radio_usage_stats_event_server)
+        .add_task(unique_connections_server)
         .add_task(grpc_server)
         .build()
         .start()

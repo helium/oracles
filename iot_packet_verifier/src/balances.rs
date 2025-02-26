@@ -2,7 +2,8 @@ use crate::{
     pending::{Burn, PendingTables},
     verifier::Debiter,
 };
-use solana::burn::SolanaNetwork;
+use helium_crypto::PublicKeyBinary;
+use solana::{burn::SolanaNetwork, SolanaRpcError};
 use std::{
     collections::{hash_map::Entry, HashMap},
     sync::Arc,
@@ -11,6 +12,7 @@ use tokio::sync::Mutex;
 
 /// Caches balances fetched from the solana chain and debits made by the
 /// packet verifier.
+#[derive(Clone)]
 pub struct BalanceCache<S> {
     payer_accounts: BalanceStore,
     solana: S,
@@ -54,6 +56,10 @@ impl<S> BalanceCache<S> {
     pub fn balances(&self) -> BalanceStore {
         self.payer_accounts.clone()
     }
+
+    pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> Option<PayerAccount> {
+        self.payer_accounts.lock().await.get(payer).cloned()
+    }
 }
 
 #[async_trait::async_trait]
@@ -61,8 +67,6 @@ impl<S> Debiter for BalanceCache<S>
 where
     S: SolanaNetwork,
 {
-    type Error = S::Error;
-
     /// Debits the balance from the cache, returning the remaining balance as an
     /// option if there was enough and none otherwise.
     async fn debit_if_sufficient(
@@ -70,7 +74,7 @@ where
         escrow_key: &String,
         amount: u64,
         trigger_balance_check_threshold: u64,
-    ) -> Result<Option<u64>, S::Error> {
+    ) -> Result<Option<u64>, SolanaRpcError> {
         let mut payer_accounts = self.payer_accounts.lock().await;
 
         // Fetch the balance if we haven't seen the payer before

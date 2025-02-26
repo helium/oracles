@@ -324,6 +324,7 @@ mod test {
             footfall: Assignment::A,
             urbanized: Assignment::A,
             landtype: Assignment::A,
+            service_provider_override: Assignment::C,
         }
     }
 

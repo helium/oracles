@@ -1,7 +1,7 @@
 use file_store::traits::TimestampEncode;
 use helium_proto::services::poc_mobile::{
     radio_reward_v2::{CoveredHex, LocationTrustScore},
-    BoostedHexStatus, Speedtest,
+    OracleBoostedHexStatus, SpBoostedHexStatus, Speedtest,
 };
 use rust_decimal::prelude::ToPrimitive;
 
@@ -20,7 +20,8 @@ pub trait RadioRewardV2Ext {
     fn proto_location_trust_scores(&self) -> Vec<LocationTrustScore>;
     fn proto_speedtests(&self) -> Vec<Speedtest>;
     fn proto_speedtest_avg(&self) -> Speedtest;
-    fn proto_boosted_hex_status(&self) -> BoostedHexStatus;
+    fn proto_sp_boosted_hex_status(&self) -> SpBoostedHexStatus;
+    fn proto_oracle_boosted_hex_status(&self) -> OracleBoostedHexStatus;
     fn proto_covered_hexes(&self) -> Vec<CoveredHex>;
 }
 
@@ -57,20 +58,34 @@ impl RadioRewardV2Ext for coverage_point_calculator::CoveragePoints {
             .collect()
     }
 
-    fn proto_boosted_hex_status(&self) -> BoostedHexStatus {
-        match self.boosted_hex_eligibility {
-            coverage_point_calculator::SpBoostedHexStatus::Eligible => BoostedHexStatus::Eligible,
+    fn proto_sp_boosted_hex_status(&self) -> SpBoostedHexStatus {
+        match self.sp_boosted_hex_eligibility {
+            coverage_point_calculator::SpBoostedHexStatus::Eligible => SpBoostedHexStatus::Eligible,
             coverage_point_calculator::SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => {
-                BoostedHexStatus::LocationScoreBelowThreshold
-            }
-            coverage_point_calculator::SpBoostedHexStatus::RadioThresholdNotMet => {
-                BoostedHexStatus::RadioThresholdNotMet
-            }
-            coverage_point_calculator::SpBoostedHexStatus::ServiceProviderBanned => {
-                BoostedHexStatus::ServiceProviderBan
+                SpBoostedHexStatus::LocationScoreBelowThreshold
             }
             coverage_point_calculator::SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => {
-                BoostedHexStatus::AverageAssertedDistanceOverLimit
+                SpBoostedHexStatus::AverageAssertedDistanceOverLimit
+            }
+            coverage_point_calculator::SpBoostedHexStatus::RadioThresholdNotMet => {
+                SpBoostedHexStatus::RadioThresholdNotMet
+            }
+            coverage_point_calculator::SpBoostedHexStatus::NotEnoughConnections => {
+                SpBoostedHexStatus::NotEnoughConnections
+            }
+        }
+    }
+
+    fn proto_oracle_boosted_hex_status(&self) -> OracleBoostedHexStatus {
+        match self.oracle_boosted_hex_eligibility {
+            coverage_point_calculator::OracleBoostingStatus::Eligible => {
+                OracleBoostedHexStatus::Eligible
+            }
+            coverage_point_calculator::OracleBoostingStatus::Banned => {
+                OracleBoostedHexStatus::Banned
+            }
+            coverage_point_calculator::OracleBoostingStatus::Qualified => {
+                OracleBoostedHexStatus::Qualified
             }
         }
     }
@@ -85,6 +100,7 @@ impl RadioRewardV2Ext for coverage_point_calculator::CoveragePoints {
                 urbanized: covered_hex.assignments.urbanized.into(),
                 footfall: covered_hex.assignments.footfall.into(),
                 landtype: covered_hex.assignments.landtype.into(),
+                service_provider_override: covered_hex.assignments.service_provider_override.into(),
                 assignment_multiplier: Some(covered_hex.assignment_multiplier.proto_decimal()),
                 rank: covered_hex.rank as u32,
                 rank_multiplier: Some(covered_hex.rank_multiplier.proto_decimal()),

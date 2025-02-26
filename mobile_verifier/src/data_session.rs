@@ -124,7 +124,7 @@ impl ManagedTask for DataSessionIngestor {
         Box::pin(
             handle
                 .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+                .and_then(|result| async move { result }),
         )
     }
 }
@@ -215,7 +215,7 @@ pub async fn sum_data_sessions_to_dc_by_payer<'a>(
     .collect::<HashMap<String, u64>>())
 }
 
-pub async fn data_sessions_to_dc<'a>(
+pub async fn data_sessions_to_dc(
     stream: impl Stream<Item = Result<HotspotDataSession, sqlx::Error>>,
 ) -> Result<HotspotMap, sqlx::Error> {
     tokio::pin!(stream);

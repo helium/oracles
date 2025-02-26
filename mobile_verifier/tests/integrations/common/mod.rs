@@ -1,10 +1,11 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
     traits::TimestampEncode,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
+use helium_lib::token::Token;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{
@@ -17,14 +18,15 @@ use helium_proto::services::{
 use hex_assignments::{Assignment, HexAssignment, HexBoostData};
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
+    client::sub_dao_client::SubDaoEpochRewardInfoResolver,
     client::{
         authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
         hex_boosting_client::HexBoostingInfoResolver, ClientError,
     },
+    sub_dao_epoch_reward_info::EpochRewardInfo,
 };
-
 use mobile_verifier::{
-    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver,
+    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -33,10 +35,20 @@ use std::{collections::HashMap, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 use tonic::async_trait;
 
+pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
+pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
+
+pub const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 82_191_780_821_917;
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct MockHexBoostingClient {
     boosted_hexes: Vec<BoostedHexInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MockSubDaoRewardsClient {
+    info: Option<EpochRewardInfo>,
 }
 
 impl MockHexBoostingClient {
@@ -61,6 +73,18 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
     }
 }
 
+#[async_trait::async_trait]
+impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
+    type Error = ClientError;
+
+    async fn resolve_info(
+        &self,
+        _sub_dao: &str,
+        _epoch: u64,
+    ) -> Result<Option<EpochRewardInfo>, Self::Error> {
+        Ok(self.info.clone())
+    }
+}
 pub struct MockFileSinkReceiver<T> {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>,
 }
@@ -102,13 +126,10 @@ impl MockFileSinkReceiver<SpeedtestAvg> {
 impl MockFileSinkReceiver<MobileRewardShare> {
     pub async fn receive_radio_reward_v1(&mut self) -> RadioReward {
         match self.receive("receive_radio_reward_v1").await {
-            Some(mobile_reward) => {
-                println!("mobile_reward: {:?}", mobile_reward);
-                match mobile_reward.reward {
-                    Some(MobileReward::RadioReward(r)) => r,
-                    _ => panic!("failed to get radio reward"),
-                }
-            }
+            Some(mobile_reward) => match mobile_reward.reward {
+                Some(MobileReward::RadioReward(r)) => r,
+                err => panic!("failed to get radio reward: {err:?}"),
+            },
             None => panic!("failed to receive radio reward"),
         }
     }
@@ -127,7 +148,7 @@ impl MockFileSinkReceiver<MobileRewardShare> {
                     );
                     reward
                 }
-                _ => panic!("failed to get radio reward"),
+                err => panic!("failed to get radio reward: {err:?}"),
             },
             None => panic!("failed to receive radio reward"),
         }
@@ -246,11 +267,24 @@ pub fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
-pub fn mock_hex_boost_data_default() -> HexBoostData<Assignment, Assignment, Assignment> {
+pub fn mock_hex_boost_data_default(
+) -> HexBoostData<Assignment, Assignment, Assignment, impl HexAssignment> {
     HexBoostData::builder()
         .urbanization(Assignment::A)
         .footfall(Assignment::A)
         .landtype(Assignment::A)
+        .service_provider_override(Assignment::C)
+        .build()
+        .unwrap()
+}
+
+pub fn mock_hex_boost_data_bad(
+) -> HexBoostData<Assignment, Assignment, Assignment, impl HexAssignment> {
+    HexBoostData::builder()
+        .urbanization(Assignment::C)
+        .footfall(Assignment::C)
+        .landtype(Assignment::C)
+        .service_provider_override(Assignment::C)
         .build()
         .unwrap()
 }
@@ -262,18 +296,25 @@ pub fn mock_hex_boost_data(
     footfall: MockAssignmentMap,
     urbanized: MockAssignmentMap,
     landtype: MockAssignmentMap,
-) -> HexBoostData<MockAssignmentMap, MockAssignmentMap, MockAssignmentMap> {
+    service_provider_override: MockAssignmentMap,
+) -> HexBoostData<MockAssignmentMap, MockAssignmentMap, MockAssignmentMap, MockAssignmentMap> {
     HexBoostData::builder()
         .footfall(footfall)
         .urbanization(urbanized)
         .landtype(landtype)
+        .service_provider_override(service_provider_override)
         .build()
         .unwrap()
 }
 
 pub async fn set_unassigned_oracle_boosting_assignments(
     pool: &PgPool,
-    data_sets: &HexBoostData<impl HexAssignment, impl HexAssignment, impl HexAssignment>,
+    data_sets: &HexBoostData<
+        impl HexAssignment,
+        impl HexAssignment,
+        impl HexAssignment,
+        impl HexAssignment,
+    >,
 ) -> anyhow::Result<Vec<OracleBoostingReportV1>> {
     let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
         mobile_verifier::boosting_oracles::data_sets::db::fetch_hexes_with_null_assignments(pool),
@@ -295,6 +336,7 @@ pub async fn set_unassigned_oracle_boosting_assignments(
                     urbanized: hex.assignments.urbanized.into(),
                     footfall: hex.assignments.footfall.into(),
                     landtype: hex.assignments.landtype.into(),
+                    service_provider_override: hex.assignments.service_provider_override.into(),
                     assignment_multiplier,
                 }
             })
@@ -362,4 +404,24 @@ impl GatewayResolver for GatewayClientAllOwnersValid {
     ) -> Result<GatewayResolution, Self::Error> {
         Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
     }
+}
+
+pub fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
+    let now = Utc::now();
+    EpochRewardInfo {
+        epoch_day: 1,
+        epoch_address: EPOCH_ADDRESS.into(),
+        sub_dao_address: SUB_DAO_ADDRESS.into(),
+        epoch_period: (now - epoch_duration)..now,
+        epoch_emissions: Decimal::from(total_emissions),
+        rewards_issued_at: now,
+    }
+}
+
+pub fn default_price_info() -> PriceInfo {
+    let token = Token::Hnt;
+    let price_info = PriceInfo::new(1000000000000, token.decimals());
+    assert_eq!(price_info.price_per_token, dec!(10000));
+    assert_eq!(price_info.price_per_bone, dec!(0.0001));
+    price_info
 }

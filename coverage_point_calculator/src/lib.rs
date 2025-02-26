@@ -12,6 +12,8 @@
 //! - [CoveredHex::assignment_multiplier]
 //!   - [HIP-103][oracle-boosting]
 //!     - provider boosted hexes increase oracle boosting to 1x
+//!   - [HIP-134][carrier-offload]
+//!     - serving >25 unique connection increase oracle boosting to 1x
 //!
 //! - [CoveredHex::rank]
 //!   - [HIP-105][hex-limits]
@@ -44,13 +46,15 @@
 //!   - If a Radio is not [BoostedHexStatus::Eligible], boost values are removed before calculations.
 //!   - If a Hex is boosted by a Provider, the Oracle Assignment multiplier is automatically 1x.
 //!
-//! - [ServiceProviderBoostedRewardEligibility]
+//! - [SPBoostedRewardEligibility]
 //!   - Radio must pass at least 1mb of data from 3 unique phones [HIP-84][provider-boosting]
-//!   - Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
+//!   - Radio must serve >25 unique connections on a rolling 7-day window [HIP-140][sp-boost-qualifiers]
+//!   - [@deprecated] Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
 //! - [OracleBoostingStatus]
 //!   - Eligible: Radio is eligible for normal oracle boosting multipliers
 //!   - Banned: Radio is banned according to hip-131 rules and all assignment_multipliers are 0.0
+//!   - Qualified: Radio serves >25 unique connections, automatic oracle boosting multiplier of 1x
 //!
 //! [modeled-coverage]:        https://github.com/helium/HIP/blob/main/0074-mobile-poc-modeled-coverage-rewards.md#outdoor-radios
 //! [provider-boosting]:       https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
@@ -65,6 +69,8 @@
 //! [location-gaming]:         https://github.com/helium/HIP/blob/main/0119-closing-gaming-loopholes-within-the-mobile-network.md
 //! [provider-banning]:        https://github.com/helium/HIP/blob/main/0125-temporary-anti-gaming-measures-for-boosted-hexes.md
 //! [anti-gaming]:             https://github.com/helium/HIP/blob/main/0131-bridging-gap-between-verification-mappers-and-anti-gaming-measures.md
+//! [carrier-offload]:         https://github.com/helium/HIP/blob/main/0134-reward-mobile-carrier-offload-hotspots.md
+//! [sp-boost-qualifiers]:     https://github.com/helium/HIP/blob/main/0140-adjust-service-provider-boost-qualifiers.md
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
@@ -78,7 +84,7 @@ use rust_decimal_macros::dec;
 use service_provider_boosting::{MAX_AVERAGE_DISTANCE, MIN_WIFI_TRUST_MULTIPLIER};
 
 mod hexes;
-mod location;
+pub mod location;
 mod service_provider_boosting;
 pub mod speedtest;
 
@@ -136,10 +142,12 @@ pub struct CoveragePoints {
     pub speedtest_multiplier: Decimal,
     /// Input Radio Type
     pub radio_type: RadioType,
-    /// Input ServiceProviderBoostedRewardEligibility
+    /// Input SPBoostedRewardEligibility
     pub service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
-    /// Derived Eligibility for Boosted Hex Rewards
-    pub boosted_hex_eligibility: SpBoostedHexStatus,
+    /// Derived Eligibility for Service Provider Boosted Hex Rewards
+    pub sp_boosted_hex_eligibility: SpBoostedHexStatus,
+    /// Derived Eligibility for Oracle Boosted Hex Rewards
+    pub oracle_boosted_hex_eligibility: OracleBoostingStatus,
     /// Speedtests used in calculation
     pub speedtests: Vec<Speedtest>,
     /// Location Trust Scores used in calculation
@@ -157,11 +165,11 @@ impl CoveragePoints {
         speedtests: Vec<Speedtest>,
         location_trust_scores: Vec<LocationTrust>,
         ranked_coverage: Vec<coverage_map::RankedCoverage>,
-        oracle_boosting_status: OracleBoostingStatus,
+        oracle_boost_status: OracleBoostingStatus,
     ) -> Result<CoveragePoints> {
         let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
 
-        let boost_eligibility = SpBoostedHexStatus::new(
+        let sp_boost_eligibility = SpBoostedHexStatus::new(
             radio_type,
             location_trust_multiplier,
             &location_trust_scores,
@@ -170,9 +178,9 @@ impl CoveragePoints {
 
         let covered_hexes = hexes::clean_covered_hexes(
             radio_type,
-            boost_eligibility,
+            sp_boost_eligibility,
             ranked_coverage,
-            oracle_boosting_status,
+            oracle_boost_status,
         )?;
 
         let hex_coverage_points = hexes::calculated_coverage_points(&covered_hexes);
@@ -187,7 +195,8 @@ impl CoveragePoints {
             speedtest_avg,
             radio_type,
             service_provider_boosted_reward_eligibility,
-            boosted_hex_eligibility: boost_eligibility,
+            sp_boosted_hex_eligibility: sp_boost_eligibility,
+            oracle_boosted_hex_eligibility: oracle_boost_status,
             speedtests,
             location_trust_scores,
             covered_hexes,
@@ -230,12 +239,12 @@ impl CoveragePoints {
     }
 
     fn boosted_points(&self) -> Decimal {
-        match self.boosted_hex_eligibility {
+        match self.sp_boosted_hex_eligibility {
             SpBoostedHexStatus::Eligible => self.coverage_points.boosted,
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
             SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
             SpBoostedHexStatus::RadioThresholdNotMet => dec!(0),
-            SpBoostedHexStatus::ServiceProviderBanned => dec!(0),
+            SpBoostedHexStatus::NotEnoughConnections => dec!(0),
         }
     }
 }
@@ -244,6 +253,7 @@ impl CoveragePoints {
 pub enum OracleBoostingStatus {
     Eligible,
     Banned,
+    Qualified,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -252,7 +262,7 @@ pub enum SpBoostedHexStatus {
     WifiLocationScoreBelowThreshold(Decimal),
     AverageAssertedDistanceOverLimit(Decimal),
     RadioThresholdNotMet,
-    ServiceProviderBanned,
+    NotEnoughConnections,
 }
 
 impl SpBoostedHexStatus {
@@ -263,10 +273,10 @@ impl SpBoostedHexStatus {
         service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     ) -> Self {
         match service_provider_boosted_reward_eligibility {
-            // hip-125: if radio has been banned by service provider, no boosting
-            SPBoostedRewardEligibility::ServiceProviderBanned => Self::ServiceProviderBanned,
             // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
             SPBoostedRewardEligibility::RadioThresholdNotMet => Self::RadioThresholdNotMet,
+            // hip-140: radio must have enough unique connections
+            SPBoostedRewardEligibility::NotEnoughConnections => Self::NotEnoughConnections,
             SPBoostedRewardEligibility::Eligible => {
                 // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
                 if radio_type.is_wifi() && location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
@@ -387,7 +397,39 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
-                assignments: assignments_from(Assignment::C),
+                assignments: assignments_from(Assignment::C, false),
+                boosted: NonZeroU32::new(boost_multiplier),
+            }],
+            OracleBoostingStatus::Eligible,
+        )
+        .unwrap();
+
+        // A Hex with the worst possible oracle boosting assignment.
+        // The boosting assignment multiplier will be 1x when the hex is provider boosted.
+        assert_eq!(expected_points, wifi.coverage_points_v1());
+    }
+
+    #[rstest]
+    #[case::unboosted_sp_override(0, dec!(400), true)]
+    #[case::minimum_boosted_sp_override(1, dec!(400), true)]
+    #[case::boosted_sp_override(5, dec!(2000), true)]
+    fn service_provider_override_assignment_overrides_other_assignments(
+        #[case] boost_multiplier: u32,
+        #[case] expected_points: Decimal,
+        #[case] service_provider_override: bool,
+    ) {
+        let wifi = CoveragePoints::new(
+            RadioType::IndoorWifi,
+            SPBoostedRewardEligibility::Eligible,
+            speedtest_maximum(),
+            location_trust_maximum(),
+            vec![RankedCoverage {
+                hotspot_key: pubkey(),
+                cbsd_id: None,
+                hex: hex_location(),
+                rank: 1,
+                signal_level: SignalLevel::High,
+                assignments: assignments_from(Assignment::C, service_provider_override),
                 boosted: NonZeroU32::new(boost_multiplier),
             }],
             OracleBoostingStatus::Eligible,
@@ -413,7 +455,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: NonZeroU32::new(5),
                 }],
                 OracleBoostingStatus::Eligible,
@@ -450,7 +492,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: NonZeroU32::new(5),
                 }],
                 OracleBoostingStatus::Eligible,
@@ -489,7 +531,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: NonZeroU32::new(5),
                 }],
                 OracleBoostingStatus::Eligible,
@@ -526,7 +568,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: None,
                 }],
                 OracleBoostingStatus::Eligible,
@@ -587,6 +629,7 @@ mod tests {
             footfall: Assignment,
             landtype: Assignment,
             urbanized: Assignment,
+            service_provider_override: Assignment,
         ) -> RankedCoverage {
             RankedCoverage {
                 hotspot_key: pubkey(),
@@ -598,6 +641,7 @@ mod tests {
                     footfall,
                     landtype,
                     urbanized,
+                    service_provider_override,
                 },
                 boosted: None,
             }
@@ -610,40 +654,40 @@ mod tests {
             speedtest_maximum(),
             location_trust_maximum(),
             vec![
-                // yellow - POI ≥ 1 Urbanized
-                ranked_coverage(A, A, A), // 100
-                ranked_coverage(A, B, A), // 100
-                ranked_coverage(A, C, A), // 100
-                // orange - POI ≥ 1 Not Urbanized
-                ranked_coverage(A, A, B), // 100
-                ranked_coverage(A, B, B), // 100
-                ranked_coverage(A, C, B), // 100
-                // light green - Point of Interest Urbanized
-                ranked_coverage(B, A, A), // 70
-                ranked_coverage(B, B, A), // 70
-                ranked_coverage(B, C, A), // 70
-                // dark green - Point of Interest Not Urbanized
-                ranked_coverage(B, A, B), // 50
-                ranked_coverage(B, B, B), // 50
-                ranked_coverage(B, C, B), // 50
-                // light blue - No POI Urbanized
-                ranked_coverage(C, A, A), // 40
-                ranked_coverage(C, B, A), // 30
-                ranked_coverage(C, C, A), // 5
-                // dark blue - No POI Not Urbanized
-                ranked_coverage(C, A, B), // 20
-                ranked_coverage(C, B, B), // 15
-                ranked_coverage(C, C, B), // 3
-                // gray - Outside of USA
-                ranked_coverage(A, A, C), // 0
-                ranked_coverage(A, B, C), // 0
-                ranked_coverage(A, C, C), // 0
-                ranked_coverage(B, A, C), // 0
-                ranked_coverage(B, B, C), // 0
-                ranked_coverage(B, C, C), // 0
-                ranked_coverage(C, A, C), // 0
-                ranked_coverage(C, B, C), // 0
-                ranked_coverage(C, C, C), // 0
+                // yellow - POI ≥ 1 Urbanized, no SP override
+                ranked_coverage(A, A, A, C), // 100
+                ranked_coverage(A, B, A, C), // 100
+                ranked_coverage(A, C, A, C), // 100
+                // orange - POI ≥ 1 Not Urbanized, no SP override
+                ranked_coverage(A, A, B, C), // 100
+                ranked_coverage(A, B, B, C), // 100
+                ranked_coverage(A, C, B, C), // 100
+                // light green - Point of Interest Urbanized, no SP override
+                ranked_coverage(B, A, A, C), // 70
+                ranked_coverage(B, B, A, C), // 70
+                ranked_coverage(B, C, A, C), // 70
+                // dark green - Point of Interest Not Urbanized, no SP override
+                ranked_coverage(B, A, B, C), // 50
+                ranked_coverage(B, B, B, C), // 50
+                ranked_coverage(B, C, B, C), // 50
+                // light blue - No POI Urbanized, no SP override
+                ranked_coverage(C, A, A, C), // 40
+                ranked_coverage(C, B, A, C), // 30
+                ranked_coverage(C, C, A, C), // 5
+                // dark blue - No POI Not Urbanized, no SP override
+                ranked_coverage(C, A, B, C), // 20
+                ranked_coverage(C, B, B, C), // 15
+                ranked_coverage(C, C, B, C), // 3
+                // gray - Outside of USA, no SP override
+                ranked_coverage(A, A, C, C), // 0
+                ranked_coverage(A, B, C, C), // 0
+                ranked_coverage(A, C, C, C), // 0
+                ranked_coverage(B, A, C, C), // 0
+                ranked_coverage(B, B, C, C), // 0
+                ranked_coverage(B, C, C, C), // 0
+                ranked_coverage(C, A, C, C), // 0
+                ranked_coverage(C, B, C, C), // 0
+                ranked_coverage(C, C, C, C), // 0
             ],
             OracleBoostingStatus::Eligible,
         )
@@ -673,7 +717,7 @@ mod tests {
                 hex: hex_location(),
                 rank,
                 signal_level: SignalLevel::High,
-                assignments: assignments_maximum(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -704,7 +748,7 @@ mod tests {
                     hex: hex_location(),
                     rank,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: None,
                 },
                 RankedCoverage {
@@ -713,7 +757,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 2,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: None,
                 },
                 RankedCoverage {
@@ -722,7 +766,7 @@ mod tests {
                     hex: hex_location(),
                     rank: 42,
                     signal_level: SignalLevel::High,
-                    assignments: assignments_maximum(),
+                    assignments: assignments_maximum_no_sp_override(),
                     boosted: None,
                 },
             ],
@@ -747,7 +791,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
-                assignments: assignments_maximum(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -768,7 +812,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
-                assignments: assignments_maximum(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             },
             RankedCoverage {
@@ -777,7 +821,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::Low,
-                assignments: assignments_maximum(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: NonZeroU32::new(4),
             },
         ];
@@ -816,7 +860,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
-                assignments: assignments_maximum(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -844,7 +888,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
-                assignments: assignments_maximum(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -874,7 +918,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
-                assignments: assignments_maximum(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -902,7 +946,7 @@ mod tests {
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
-                assignments: assignments_maximum(),
+                assignments: assignments_maximum_no_sp_override(),
                 boosted: None,
             }],
             OracleBoostingStatus::Eligible,
@@ -933,12 +977,8 @@ mod tests {
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(dec!(0)),
         );
         assert_eq!(
-            wifi_bad_trust_score(SPBoostedRewardEligibility::ServiceProviderBanned),
-            SpBoostedHexStatus::ServiceProviderBanned
-        );
-        assert_eq!(
-            wifi_bad_trust_score(SPBoostedRewardEligibility::RadioThresholdNotMet),
-            SpBoostedHexStatus::RadioThresholdNotMet
+            wifi_bad_trust_score(SPBoostedRewardEligibility::NotEnoughConnections),
+            SpBoostedHexStatus::NotEnoughConnections
         );
     }
 
@@ -946,19 +986,26 @@ mod tests {
         hextree::Cell::from_raw(0x8c2681a3064edff).unwrap()
     }
 
-    fn assignments_maximum() -> HexAssignments {
+    fn assignments_maximum_no_sp_override() -> HexAssignments {
         HexAssignments {
             footfall: Assignment::A,
             landtype: Assignment::A,
             urbanized: Assignment::A,
+            service_provider_override: Assignment::C,
         }
     }
 
-    fn assignments_from(assignment: Assignment) -> HexAssignments {
+    fn assignments_from(assignment: Assignment, service_provider_override: bool) -> HexAssignments {
+        let service_provider_override_assignment = if service_provider_override {
+            Assignment::A
+        } else {
+            Assignment::C
+        };
         HexAssignments {
             footfall: assignment,
             landtype: assignment,
             urbanized: assignment,
+            service_provider_override: service_provider_override_assignment,
         }
     }
 
