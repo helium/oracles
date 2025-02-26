@@ -488,12 +488,32 @@ impl GetSignature for MockTransaction {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct TestSolanaClientMap {
+    inner: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+}
+
+impl TestSolanaClientMap {
+    pub async fn insert(&self, payer: &PublicKeyBinary, amount: u64) {
+        self.inner.lock().await.insert(payer.clone(), amount);
+    }
+
+    pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> u64 {
+        self.inner
+            .lock()
+            .await
+            .get(payer)
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
 #[async_trait]
-impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+impl SolanaNetwork for TestSolanaClientMap {
     type Transaction = MockTransaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        Ok(*self.lock().await.get(payer).unwrap())
+        Ok(*self.inner.lock().await.get(payer).unwrap())
     }
 
     async fn make_burn_transaction(
@@ -509,7 +529,7 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
     }
 
     async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), SolanaRpcError> {
-        *self.lock().await.get_mut(&txn.payer).unwrap() -= txn.amount;
+        *self.inner.lock().await.get_mut(&txn.payer).unwrap() -= txn.amount;
         Ok(())
     }
 

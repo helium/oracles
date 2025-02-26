@@ -37,7 +37,8 @@ pub async fn accumulate_sessions(
             continue;
         }
 
-        pending_burns::save_data_transfer_session_req(&mut *txn, &report.report, curr_file_ts).await?;
+        pending_burns::save_data_transfer_session_req(&mut *txn, &report.report, curr_file_ts)
+            .await?;
     }
 
     Ok(())

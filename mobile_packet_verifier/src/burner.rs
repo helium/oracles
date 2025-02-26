@@ -1,19 +1,19 @@
-use std::time::Duration;
-
+use anyhow::Context;
+use chrono::{Duration, Utc};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::{burn::SolanaNetwork, GetSignature, SolanaRpcError};
-use sqlx::{Pool, Postgres};
+use solana::{burn::SolanaNetwork, GetSignature, Signature, SolanaRpcError};
+use sqlx::PgPool;
 use tracing::Instrument;
 
-use crate::pending_burns;
+use crate::{pending_burns, pending_txns};
 
 pub struct Burner<S> {
     valid_sessions: FileSinkClient<ValidDataTransferSession>,
     solana: S,
     failed_retry_attempts: usize,
-    failed_check_interval: Duration,
+    failed_check_interval: std::time::Duration,
 }
 
 impl<S> Burner<S> {
@@ -21,7 +21,7 @@ impl<S> Burner<S> {
         valid_sessions: FileSinkClient<ValidDataTransferSession>,
         solana: S,
         failed_retry_attempts: usize,
-        failed_check_interval: Duration,
+        failed_check_interval: std::time::Duration,
     ) -> Self {
         Self {
             valid_sessions,
@@ -36,7 +36,59 @@ impl<S> Burner<S>
 where
     S: SolanaNetwork,
 {
-    pub async fn burn(&self, pool: &Pool<Postgres>) -> anyhow::Result<()> {
+    pub async fn confirm_and_burn(&self, pool: &PgPool) -> anyhow::Result<()> {
+        self.confirm_pending_txns(pool)
+            .await
+            .context("confirming pending txns")?;
+        self.burn(pool).await.context("burning")?;
+        Ok(())
+    }
+
+    pub async fn confirm_pending_txns(&self, pool: &PgPool) -> anyhow::Result<()> {
+        let pending_txns = pending_txns::fetch_all_pending_txns(pool).await?;
+        tracing::info!(count = pending_txns.len(), "confirming pending txns");
+
+        for pending in pending_txns {
+            // Sleep for at least a minute since the time of submission to
+            // give the transaction plenty of time to be finalized
+            let time_since_submission = Utc::now() - pending.time_of_submission;
+            if Duration::minutes(1) > time_since_submission {
+                let delay = Duration::minutes(1) - time_since_submission;
+                tracing::info!(?pending, %delay, "waiting to confirm pending txn");
+                tokio::time::sleep(delay.to_std()?).await;
+            }
+
+            let signature = pending.signature;
+            let confirmed = self.solana.confirm_transaction(&signature).await?;
+            tracing::info!(?pending, confirmed, "confirming pending txn");
+
+            if confirmed {
+                let sessions =
+                    pending_txns::get_pending_data_sessions_for_signature(pool, &signature).await?;
+                for session in sessions {
+                    let _write = self
+                        .valid_sessions
+                        .write(ValidDataTransferSession::from(session), &[])
+                        .await?;
+                }
+
+                pending_txns::remove_pending_txn_success(pool, &signature).await?;
+            } else {
+                pending_txns::remove_pending_txn_failure(pool, &signature).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn burn(&self, pool: &PgPool) -> anyhow::Result<()> {
+        // TODO: Add test to prevent burning when pending txns exist
+        // let pending_txns = pending_txns::pending_txn_count(pool).await?;
+        // if pending_txns > 0 {
+        //     tracing::error!(pending_txns, "ignoring burn");
+        //     return Ok(());
+        // }
+
         for payer_pending_burn in pending_burns::get_all_payer_burns(pool).await? {
             let payer = payer_pending_burn.payer;
             let total_dcs = payer_pending_burn.total_dcs;
@@ -56,10 +108,14 @@ where
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
             let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
+            pending_txns::add_pending_txn(pool, &payer, total_dcs, txn.get_signature())
+                .await
+                .context("adding pending txns and moving sessions")?;
             match self.solana.submit_transaction(&txn).await {
                 Ok(()) => {
                     handle_transaction_success(
                         pool,
+                        txn.get_signature(),
                         payer,
                         total_dcs,
                         sessions,
@@ -68,6 +124,7 @@ where
                     .await?;
                 }
                 Err(err) => {
+                    // TODO: add test for moving pending sessions back to the main table on failure
                     let span = tracing::info_span!(
                         "txn_confirmation",
                         signature = %txn.get_signature(),
@@ -89,7 +146,7 @@ where
 
     async fn transaction_confirmation_check(
         &self,
-        pool: &Pool<Postgres>,
+        pool: &PgPool,
         err: SolanaRpcError,
         txn: S::Transaction,
         payer: PublicKeyBinary,
@@ -109,6 +166,7 @@ where
                     tracing::debug!("txn confirmed on chain");
                     let txn_success = handle_transaction_success(
                         pool,
+                        signature,
                         payer,
                         total_dcs,
                         sessions,
@@ -147,7 +205,8 @@ where
 }
 
 async fn handle_transaction_success(
-    pool: &Pool<Postgres>,
+    pool: &PgPool,
+    signature: &Signature,
     payer: PublicKeyBinary,
     total_dcs: u64,
     sessions: Vec<pending_burns::DataTransferSession>,
@@ -163,6 +222,7 @@ async fn handle_transaction_success(
 
     // Delete from the data transfer session and write out to S3
     pending_burns::delete_for_payer(pool, &payer, total_dcs).await?;
+    pending_txns::remove_pending_txn_success(pool, signature).await?;
 
     for session in sessions {
         valid_sessions
