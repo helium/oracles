@@ -82,12 +82,11 @@ where
     }
 
     pub async fn burn(&self, pool: &PgPool) -> anyhow::Result<()> {
-        // TODO: Add test to prevent burning when pending txns exist
-        // let pending_txns = pending_txns::pending_txn_count(pool).await?;
-        // if pending_txns > 0 {
-        //     tracing::error!(pending_txns, "ignoring burn");
-        //     return Ok(());
-        // }
+        let pending_txns = pending_txns::pending_txn_count(pool).await?;
+        if pending_txns > 0 {
+            tracing::error!(pending_txns, "ignoring burn");
+            return Ok(());
+        }
 
         for payer_pending_burn in pending_burns::get_all_payer_burns(pool).await? {
             let payer = payer_pending_burn.payer;
@@ -124,7 +123,6 @@ where
                     .await?;
                 }
                 Err(err) => {
-                    // TODO: add test for moving pending sessions back to the main table on failure
                     let span = tracing::info_span!(
                         "txn_confirmation",
                         signature = %txn.get_signature(),
