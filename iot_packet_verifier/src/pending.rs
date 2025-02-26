@@ -11,7 +11,7 @@ use crate::balances::BalanceStore;
 
 /// To avoid excessive burn transaction (which cost us money), we institute a minimum
 /// amount of Data Credits accounted for before we burn from a payer:
-const BURN_THRESHOLD: i64 = 10_000;
+pub const BURN_THRESHOLD: i64 = 10_000;
 
 #[async_trait]
 pub trait AddPendingBurn {
@@ -39,6 +39,17 @@ pub trait PendingTables {
         payer: &PublicKeyBinary,
         amount: u64,
         signature: &Signature,
+    ) -> Result<(), sqlx::Error> {
+        self.do_add_pending_transaction(payer, amount, signature, Utc::now())
+            .await
+    }
+
+    async fn do_add_pending_transaction(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+        signature: &Signature,
+        time_of_submission: DateTime<Utc>,
     ) -> Result<(), sqlx::Error>;
 
     async fn begin<'a>(&'a self) -> Result<Self::Transaction<'a>, sqlx::Error>;
@@ -142,11 +153,12 @@ impl PendingTables for PgPool {
             .await
     }
 
-    async fn add_pending_transaction(
+    async fn do_add_pending_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
         signature: &Signature,
+        time_of_submission: DateTime<Utc>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
@@ -157,7 +169,7 @@ impl PendingTables for PgPool {
         .bind(signature.to_string())
         .bind(payer)
         .bind(amount as i64)
-        .bind(Utc::now())
+        .bind(time_of_submission)
         .execute(self)
         .await?;
         Ok(())
