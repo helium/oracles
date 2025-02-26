@@ -8,24 +8,22 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { workspace = true }
+async-trait = {workspace = true}
 anchor-client = { workspace = true }
-clap = { workspace = true }
-chrono = { workspace = true }
-file-store = { path = "../file_store" }
-futures = { workspace = true }
-helium-anchor-gen = { workspace = true }
-helium-crypto = { workspace = true }
-helium-lib = { workspace = true }
-itertools = { workspace = true }
-metrics = { workspace = true }
-serde = { workspace = true }
-sha2 = { workspace = true }
-solana-client = { workspace = true }
-solana-program = { workspace = true }
-solana-sdk = { workspace = true }
-spl-token = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
-exponential-backoff = "2.0.0"
+clap = {workspace = true}
+chrono = {workspace = true}
+file-store = {path = "../file_store"}
+futures = {workspace = true}
+helium-anchor-gen = {workspace = true}
+helium-crypto = {workspace = true}
+itertools = {workspace = true}
+metrics = {workspace = true}
+serde = {workspace = true}
+sha2 = {workspace = true}
+solana-client = {workspace = true}
+solana-program = {workspace = true}
+solana-sdk = {workspace = true}
+spl-token = {workspace = true}
+thiserror = {workspace = true}
+tokio = {workspace = true}
+tracing = {workspace = true}
