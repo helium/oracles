@@ -123,6 +123,10 @@ where
                     .await?;
                 }
                 Err(err) => {
+                    // NOTE: The next time we burn, pending txns will be
+                    // checked. If this txn is not finalized by that time, th
+                    // txn and pending data sessions will be moved back to the
+                    // pending_burns table in `confirm_pending_txns()`
                     let span = tracing::info_span!(
                         "txn_confirmation",
                         signature = %txn.get_signature(),
