@@ -138,6 +138,21 @@ pub trait Debiter {
     ) -> Result<Option<u64>, SolanaRpcError>;
 }
 
+#[async_trait]
+impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    async fn debit_if_sufficient(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+        _trigger_balance_check_threshold: u64,
+    ) -> Result<Option<u64>, SolanaRpcError> {
+        let map = self.lock().await;
+        let balance = map.get(payer).unwrap();
+        // Don't debit the amount if we're mocking. That is a job for the burner.
+        Ok((*balance >= amount).then(|| balance.saturating_sub(amount)))
+    }
+}
+
 // TODO: Move these to a separate module
 
 pub struct Org {
@@ -209,6 +224,14 @@ pub trait BalanceStore: Send + Sync + 'static {
 impl BalanceStore for crate::balances::BalanceStore {
     async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64) {
         self.lock().await.entry(payer.clone()).or_default().balance = balance;
+    }
+}
+
+#[async_trait]
+// differs from the BalanceStore in the value stored in the contained HashMap; a u64 here instead of a Balance {} struct
+impl BalanceStore for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64) {
+        *self.lock().await.entry(payer.clone()).or_default() = balance;
     }
 }
 
