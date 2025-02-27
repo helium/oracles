@@ -228,7 +228,7 @@ where
             let pubkey = PublicKeyBinary::from(event.pub_key);
             tracing::info!(
                 ?pubkey,
-                "dropping CellHeartbeatReqV1 because cbrs disable time as passed"
+                "dropping CellHeartbeatReqV1 because cbrs disable time has passed"
             );
             return Ok(Response::new(CellHeartbeatRespV1 {
                 id: timestamp.to_string(),
