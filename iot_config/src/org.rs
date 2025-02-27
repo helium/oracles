@@ -1,5 +1,6 @@
 use crate::lora_field::{DevAddrConstraint, NetIdField};
 use futures::stream::StreamExt;
+use helium_crypto::PublicKeyBinary;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::Serialize;
 use solana_sdk::pubkey::Pubkey;
@@ -87,7 +88,7 @@ impl FromRow<'_, PgRow> for Org {
     }
 }
 
-pub type DelegateCache = HashSet<Pubkey>;
+pub type DelegateCache = HashSet<PublicKeyBinary>;
 
 pub async fn delegate_keys_cache(
     db: impl sqlx::PgExecutor<'_>,

@@ -143,7 +143,7 @@ pub async fn create_org(socket_addr: SocketAddr, pool: &Pool<Postgres>) -> proto
     let devaddr_res = create_solana_org_devaddr_constraint(pool, &net_id, &org_id, None, 8).await;
     let _devaddr = devaddr_res.unwrap();
 
-    let response = match client.get(proto::OrgGetReqV2 { oui }).await {
+    let response = match client.get_v2(proto::OrgGetReqV2 { oui }).await {
         Ok(resp) => resp,
         Err(e) => {
             panic!("Failed to get the org: {:?}", e);

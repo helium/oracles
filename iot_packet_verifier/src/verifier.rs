@@ -279,7 +279,7 @@ impl<O> CachedOrgClient<O> {
 impl<O> ConfigServer for Arc<Mutex<CachedOrgClient<O>>>
 where
     O: Orgs,
-    ClientError: From<<O as Orgs>::Error>,
+    ConfigServerError: From<<O as Orgs>::Error>,
 {
     async fn fetch_org(
         &self,
@@ -292,8 +292,7 @@ where
                 .await
                 .orgs
                 .get(oui)
-                .await
-                .map_err(|e| ConfigServerError::OrgError(e.into()))?
+                .await?
                 .org
                 .ok_or(ConfigServerError::NotFound(oui))?
                 .escrow_key;
@@ -306,11 +305,7 @@ where
     async fn disable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         let mut cached_client = self.lock().await;
         if *cached_client.locked_cache.entry(oui).or_insert(true) {
-            cached_client
-                .orgs
-                .disable(oui)
-                .await
-                .map_err(|e| ConfigServerError::OrgError(e.into()))?;
+            cached_client.orgs.disable(oui).await?;
             *cached_client.locked_cache.get_mut(&oui).unwrap() = false;
         }
         Ok(())
@@ -319,11 +314,7 @@ where
     async fn enable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         let mut cached_client = self.lock().await;
         if !*cached_client.locked_cache.entry(oui).or_insert(false) {
-            cached_client
-                .orgs
-                .enable(oui)
-                .await
-                .map_err(|e| ConfigServerError::OrgError(e.into()))?;
+            cached_client.orgs.enable(oui).await?;
             *cached_client.locked_cache.get_mut(&oui).unwrap() = true;
         }
         Ok(())
@@ -335,8 +326,7 @@ where
             .await
             .orgs
             .list()
-            .await
-            .map_err(|e| ConfigServerError::OrgError(e.into()))?
+            .await?
             .into_iter()
             .map(|org| Org {
                 oui: org.oui,
