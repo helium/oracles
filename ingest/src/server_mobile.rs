@@ -291,7 +291,7 @@ where
 
             tracing::info!(
                 ?pubkey,
-                "dropping DataTransferSessionReqV1 because cbrs disable time as passed"
+                "dropping DataTransferSessionReqV1 because cbrs disable time has passed"
             );
 
             return Ok(Response::new(DataTransferSessionRespV1 {
