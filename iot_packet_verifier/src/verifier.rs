@@ -6,7 +6,6 @@ use file_store::{
     traits::{MsgBytes, MsgTimestamp},
 };
 use futures::{Stream, StreamExt};
-use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
     router::packet_router_packet_report_v1::PacketType,
@@ -57,7 +56,7 @@ where
         valid_packets: &mut impl PacketWriter<ValidPacket>,
         invalid_packets: &mut impl PacketWriter<InvalidPacket>,
     ) -> Result<(), VerificationError> {
-        let mut org_cache = HashMap::<u64, PublicKeyBinary>::new();
+        let mut org_cache = HashMap::<u64, String>::new();
 
         tokio::pin!(reports);
 
@@ -72,18 +71,18 @@ where
                 payload_size_to_dc(report.payload_size as u64)
             };
 
-            let payer = self
+            let escrow_key = self
                 .config_server
                 .fetch_org(report.oui, &mut org_cache)
                 .await?;
 
             if let Some(remaining_balance) = self
                 .debiter
-                .debit_if_sufficient(&payer, debit_amount, minimum_allowed_balance)
+                .debit_if_sufficient(&escrow_key, debit_amount, minimum_allowed_balance)
                 .await?
             {
                 pending_burns
-                    .add_burned_amount(&payer, debit_amount)
+                    .add_burned_amount(&escrow_key, debit_amount)
                     .await?;
 
                 valid_packets
@@ -132,22 +131,22 @@ pub trait Debiter {
     /// return the remaining amount.
     async fn debit_if_sufficient(
         &self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
         trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, SolanaRpcError>;
 }
 
 #[async_trait]
-impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+impl Debiter for Arc<Mutex<HashMap<String, u64>>> {
     async fn debit_if_sufficient(
         &self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
         _trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, SolanaRpcError> {
         let map = self.lock().await;
-        let balance = map.get(payer).unwrap();
+        let balance = map.get(escrow_key).unwrap();
         // Don't debit the amount if we're mocking. That is a job for the burner.
         Ok((*balance >= amount).then(|| balance.saturating_sub(amount)))
     }
@@ -157,7 +156,7 @@ impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 
 pub struct Org {
     pub oui: u64,
-    pub payer: PublicKeyBinary,
+    pub escrow_key: String,
     pub locked: bool,
 }
 
@@ -166,8 +165,8 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
     async fn fetch_org(
         &self,
         oui: u64,
-        cache: &mut HashMap<u64, PublicKeyBinary>,
-    ) -> Result<PublicKeyBinary, ConfigServerError>;
+        cache: &mut HashMap<u64, String>,
+    ) -> Result<String, ConfigServerError>;
 
     async fn disable_org(&self, oui: u64) -> Result<(), ConfigServerError>;
 
@@ -191,11 +190,16 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
             loop {
                 tracing::info!("Checking if any orgs need to be re-enabled");
 
-                for Org { locked, payer, oui } in self.list_orgs().await?.into_iter() {
+                for Org {
+                    locked,
+                    escrow_key,
+                    oui,
+                } in self.list_orgs().await?.into_iter()
+                {
                     if locked {
-                        let balance = solana.payer_balance(&payer).await?;
+                        let balance = solana.escrow_account_balance(&escrow_key).await?;
                         if balance >= minimum_allowed_balance {
-                            balances.set_balance(&payer, balance).await;
+                            balances.set_balance(&escrow_key, balance).await;
                             self.enable_org(oui).await?;
                         }
                     }
@@ -217,21 +221,25 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
 
 #[async_trait]
 pub trait BalanceStore: Send + Sync + 'static {
-    async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64);
+    async fn set_balance(&self, escrow_key: &String, balance: u64);
 }
 
 #[async_trait]
 impl BalanceStore for crate::balances::BalanceStore {
-    async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64) {
-        self.lock().await.entry(payer.clone()).or_default().balance = balance;
+    async fn set_balance(&self, escrow_key: &String, balance: u64) {
+        self.lock()
+            .await
+            .entry(escrow_key.clone())
+            .or_default()
+            .balance = balance;
     }
 }
 
 #[async_trait]
 // differs from the BalanceStore in the value stored in the contained HashMap; a u64 here instead of a Balance {} struct
-impl BalanceStore for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
-    async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64) {
-        *self.lock().await.entry(payer.clone()).or_default() = balance;
+impl BalanceStore for Arc<Mutex<HashMap<String, u64>>> {
+    async fn set_balance(&self, escrow_key: &String, balance: u64) {
+        *self.lock().await.entry(escrow_key.clone()).or_default() = balance;
     }
 }
 
@@ -271,24 +279,26 @@ impl<O> CachedOrgClient<O> {
 impl<O> ConfigServer for Arc<Mutex<CachedOrgClient<O>>>
 where
     O: Orgs,
+    ClientError: From<<O as Orgs>::Error>,
 {
     async fn fetch_org(
         &self,
         oui: u64,
-        oui_cache: &mut HashMap<u64, PublicKeyBinary>,
-    ) -> Result<PublicKeyBinary, ConfigServerError> {
+        oui_cache: &mut HashMap<u64, String>,
+    ) -> Result<String, ConfigServerError> {
         if let Entry::Vacant(e) = oui_cache.entry(oui) {
-            let pubkey = PublicKeyBinary::from(
-                self.lock()
-                    .await
-                    .orgs
-                    .get(oui)
-                    .await?
-                    .org
-                    .ok_or(ConfigServerError::NotFound(oui))?
-                    .payer,
-            );
-            e.insert(pubkey);
+            let escrow_key = self
+                .lock()
+                .await
+                .orgs
+                .get(oui)
+                .await
+                .map_err(|e| ConfigServerError::OrgError(e.into()))?
+                .org
+                .ok_or(ConfigServerError::NotFound(oui))?
+                .escrow_key;
+
+            e.insert(escrow_key);
         }
         Ok(oui_cache.get(&oui).unwrap().clone())
     }
@@ -296,7 +306,11 @@ where
     async fn disable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         let mut cached_client = self.lock().await;
         if *cached_client.locked_cache.entry(oui).or_insert(true) {
-            cached_client.orgs.disable(oui).await?;
+            cached_client
+                .orgs
+                .disable(oui)
+                .await
+                .map_err(|e| ConfigServerError::OrgError(e.into()))?;
             *cached_client.locked_cache.get_mut(&oui).unwrap() = false;
         }
         Ok(())
@@ -305,7 +319,11 @@ where
     async fn enable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
         let mut cached_client = self.lock().await;
         if !*cached_client.locked_cache.entry(oui).or_insert(false) {
-            cached_client.orgs.enable(oui).await?;
+            cached_client
+                .orgs
+                .enable(oui)
+                .await
+                .map_err(|e| ConfigServerError::OrgError(e.into()))?;
             *cached_client.locked_cache.get_mut(&oui).unwrap() = true;
         }
         Ok(())
@@ -317,11 +335,12 @@ where
             .await
             .orgs
             .list()
-            .await?
+            .await
+            .map_err(|e| ConfigServerError::OrgError(e.into()))?
             .into_iter()
             .map(|org| Org {
                 oui: org.oui,
-                payer: PublicKeyBinary::from(org.payer),
+                escrow_key: org.escrow_key,
                 locked: org.locked,
             })
             .collect())
