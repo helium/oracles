@@ -23,7 +23,10 @@ use solana_sdk::{
     signer::Signer,
     transaction::Transaction,
 };
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
@@ -488,12 +491,52 @@ impl GetSignature for MockTransaction {
     }
 }
 
+#[derive(Clone)]
+pub struct TestSolanaClientMap {
+    payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+    confirm_all_txns: Arc<Mutex<bool>>,
+    confirmed_txns: Arc<Mutex<HashSet<Signature>>>,
+}
+
+impl Default for TestSolanaClientMap {
+    fn default() -> Self {
+        Self {
+            payer_balances: Default::default(),
+            confirm_all_txns: Arc::new(Mutex::new(true)),
+            confirmed_txns: Default::default(),
+        }
+    }
+}
+
+impl TestSolanaClientMap {
+    pub async fn insert(&self, payer: &PublicKeyBinary, amount: u64) {
+        self.payer_balances
+            .lock()
+            .await
+            .insert(payer.clone(), amount);
+    }
+
+    pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> u64 {
+        self.payer_balances
+            .lock()
+            .await
+            .get(payer)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub async fn add_confirmed(&self, signature: Signature) {
+        *self.confirm_all_txns.lock().await = false;
+        self.confirmed_txns.lock().await.insert(signature);
+    }
+}
+
 #[async_trait]
-impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+impl SolanaNetwork for TestSolanaClientMap {
     type Transaction = MockTransaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        Ok(*self.lock().await.get(payer).unwrap())
+        Ok(*self.payer_balances.lock().await.get(payer).unwrap())
     }
 
     async fn make_burn_transaction(
@@ -509,12 +552,21 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
     }
 
     async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), SolanaRpcError> {
-        *self.lock().await.get_mut(&txn.payer).unwrap() -= txn.amount;
+        *self
+            .payer_balances
+            .lock()
+            .await
+            .get_mut(&txn.payer)
+            .unwrap() -= txn.amount;
         Ok(())
     }
 
-    async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, SolanaRpcError> {
-        Ok(true)
+    async fn confirm_transaction(&self, signature: &Signature) -> Result<bool, SolanaRpcError> {
+        if *self.confirm_all_txns.lock().await {
+            return Ok(true);
+        }
+
+        Ok(self.confirmed_txns.lock().await.contains(signature))
     }
 }
 
