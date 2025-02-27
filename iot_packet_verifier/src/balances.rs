@@ -12,13 +12,12 @@ use tokio::sync::Mutex;
 
 /// Caches balances fetched from the solana chain and debits made by the
 /// packet verifier.
-#[derive(Clone)]
 pub struct BalanceCache<S> {
     payer_accounts: BalanceStore,
     solana: S,
 }
 
-pub type BalanceStore = Arc<Mutex<HashMap<String, PayerAccount>>>;
+pub type BalanceStore = Arc<Mutex<HashMap<PublicKeyBinary, PayerAccount>>>;
 
 impl<S> BalanceCache<S>
 where
@@ -30,14 +29,14 @@ where
         let mut balances = HashMap::new();
 
         for Burn {
-            escrow_key,
+            payer,
             amount: burn_amount,
         } in pending_tables.fetch_all_pending_burns().await?
         {
             // Look up the current balance of the payer
-            let balance = solana.payer_balance(&escrow_key).await?;
+            let balance = solana.payer_balance(&payer).await?;
             balances.insert(
-                escrow_key,
+                payer,
                 PayerAccount {
                     burned: burn_amount,
                     balance,
@@ -56,10 +55,6 @@ impl<S> BalanceCache<S> {
     pub fn balances(&self) -> BalanceStore {
         self.payer_accounts.clone()
     }
-
-    pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> Option<PayerAccount> {
-        self.payer_accounts.lock().await.get(payer).cloned()
-    }
 }
 
 #[async_trait::async_trait]
@@ -71,31 +66,30 @@ where
     /// option if there was enough and none otherwise.
     async fn debit_if_sufficient(
         &self,
-        escrow_key: &String,
+        payer: &PublicKeyBinary,
         amount: u64,
         trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, SolanaRpcError> {
         let mut payer_accounts = self.payer_accounts.lock().await;
 
         // Fetch the balance if we haven't seen the payer before
-        if let Entry::Vacant(payer_account) = payer_accounts.entry(escrow_key.clone()) {
-            let payer_account = payer_account.insert(PayerAccount::new(
-                self.solana.payer_balance(escrow_key).await?,
-            ));
+        if let Entry::Vacant(payer_account) = payer_accounts.entry(payer.clone()) {
+            let payer_account =
+                payer_account.insert(PayerAccount::new(self.solana.payer_balance(payer).await?));
             return Ok((payer_account.balance >= amount).then(|| {
                 payer_account.burned += amount;
                 payer_account.balance - amount
             }));
         }
 
-        let payer_account = payer_accounts.get_mut(escrow_key).unwrap();
+        let payer_account = payer_accounts.get_mut(payer).unwrap();
         match payer_account
             .balance
             .checked_sub(amount + payer_account.burned)
         {
             Some(remaining_balance) => {
                 if remaining_balance < trigger_balance_check_threshold {
-                    payer_account.balance = self.solana.payer_balance(escrow_key).await?;
+                    payer_account.balance = self.solana.payer_balance(payer).await?;
                 }
                 payer_account.burned += amount;
                 Ok(Some(payer_account.balance - payer_account.burned))

@@ -6,6 +6,7 @@ use file_store::{
     traits::{MsgBytes, MsgTimestamp},
 };
 use futures::{Stream, StreamExt};
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
     router::packet_router_packet_report_v1::PacketType,
@@ -71,7 +72,7 @@ where
                 payload_size_to_dc(report.payload_size as u64)
             };
 
-            let escrow_key = self
+            let payer = self
                 .config_server
                 .fetch_org(report.oui, &mut org_cache)
                 .await?;
@@ -131,16 +132,32 @@ pub trait Debiter {
     /// return the remaining amount.
     async fn debit_if_sufficient(
         &self,
-        escrow_key: &String,
+        payer: &PublicKeyBinary,
         amount: u64,
         trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, SolanaRpcError>;
 }
 
+#[async_trait]
+impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    async fn debit_if_sufficient(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+        _trigger_balance_check_threshold: u64,
+    ) -> Result<Option<u64>, SolanaRpcError> {
+        let map = self.lock().await;
+        let balance = map.get(payer).unwrap();
+        // Don't debit the amount if we're mocking. That is a job for the burner.
+        Ok((*balance >= amount).then(|| balance.saturating_sub(amount)))
+    }
+}
+
 // TODO: Move these to a separate module
+
 pub struct Org {
     pub oui: u64,
-    pub escrow_key: String,
+    pub payer: PublicKeyBinary,
     pub locked: bool,
 }
 
@@ -200,17 +217,21 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
 
 #[async_trait]
 pub trait BalanceStore: Send + Sync + 'static {
-    async fn set_balance(&self, escrow_key: &String, balance: u64);
+    async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64);
 }
 
 #[async_trait]
 impl BalanceStore for crate::balances::BalanceStore {
-    async fn set_balance(&self, escrow_key: &String, balance: u64) {
-        self.lock()
-            .await
-            .entry(escrow_key.clone())
-            .or_default()
-            .balance = balance;
+    async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64) {
+        self.lock().await.entry(payer.clone()).or_default().balance = balance;
+    }
+}
+
+#[async_trait]
+// differs from the BalanceStore in the value stored in the contained HashMap; a u64 here instead of a Balance {} struct
+impl BalanceStore for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64) {
+        *self.lock().await.entry(payer.clone()).or_default() = balance;
     }
 }
 
@@ -257,17 +278,17 @@ where
         oui_cache: &mut HashMap<u64, PublicKeyBinary>,
     ) -> Result<PublicKeyBinary, ConfigServerError> {
         if let Entry::Vacant(e) = oui_cache.entry(oui) {
-            let escrow_key = self
-                .lock()
-                .await
-                .orgs
-                .get(oui)
-                .await?
-                .org
-                .ok_or(ConfigServerError::NotFound(oui))?
-                .escrow_key;
-
-            e.insert(escrow_key);
+            let pubkey = PublicKeyBinary::from(
+                self.lock()
+                    .await
+                    .orgs
+                    .get(oui)
+                    .await?
+                    .org
+                    .ok_or(ConfigServerError::NotFound(oui))?
+                    .payer,
+            );
+            e.insert(pubkey);
         }
         Ok(oui_cache.get(&oui).unwrap().clone())
     }
@@ -300,7 +321,7 @@ where
             .into_iter()
             .map(|org| Org {
                 oui: org.oui,
-                escrow_key: org.escrow_key,
+                payer: PublicKeyBinary::from(org.payer),
                 locked: org.locked,
             })
             .collect())

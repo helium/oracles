@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    admin::{AuthCache, KeyType},
-    broadcast_update, org,
-    route::list_routes,
-    telemetry, verify_public_key, GrpcResult,
+    admin::AuthCache, broadcast_update, org, route::list_routes, telemetry, verify_public_key,
+    GrpcResult,
 };
 use anyhow::Result;
 use chrono::Utc;
@@ -12,8 +10,10 @@ use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
-        self, route_stream_res_v1, ActionV1, OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1,
-        OrgEnableResV1, OrgGetReqV2, OrgListReqV2, OrgListResV2, OrgResV2, OrgV2, RouteStreamResV1,
+        self, route_stream_res_v1, ActionV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1,
+        OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1, OrgEnableResV1, OrgGetReqV1, OrgGetReqV2,
+        OrgListReqV1, OrgListReqV2, OrgListResV1, OrgListResV2, OrgResV1, OrgResV2, OrgUpdateReqV1,
+        OrgV2, RouteStreamResV1,
     },
     Message,
 };
@@ -103,8 +103,20 @@ impl OrgService {
 
 #[tonic::async_trait]
 impl iot_config::Org for OrgService {
-    async fn list(&self, _request: Request<OrgListReqV2>) -> GrpcResult<OrgListResV2> {
-        telemetry::count_request("org", "list");
+    async fn list(&self, _request: Request<OrgListReqV1>) -> GrpcResult<OrgListResV1> {
+        telemetry::count_request("org", "list_deprecated_call");
+        tracing::warn!(
+            "Deprecated API endpoint 'org.list' was called. This endpoint is no longer supported."
+        );
+
+        Err(Status::failed_precondition(
+            "This API endpoint (org.list) has been deprecated and is no longer supported. \
+            Please use org.list_v2 instead. Refer to API documentation for migration details.",
+        ))
+    }
+
+    async fn list_v2(&self, _request: Request<OrgListReqV2>) -> GrpcResult<OrgListResV2> {
+        telemetry::count_request("org", "list_v2");
 
         let proto_orgs: Vec<OrgV2> = org::list(&self.pool)
             .await
@@ -124,7 +136,19 @@ impl iot_config::Org for OrgService {
         Ok(Response::new(resp))
     }
 
-    async fn get(&self, request: Request<OrgGetReqV2>) -> GrpcResult<OrgResV2> {
+    async fn get(&self, request: Request<OrgGetReqV1>) -> GrpcResult<OrgResV1> {
+        telemetry::count_request("org", "get_deprecated_call");
+        tracing::warn!(
+            "Deprecated API endpoint 'org.get' was called. This endpoint is no longer supported."
+        );
+
+        Err(Status::failed_precondition(
+            "This API endpoint (org.get) has been deprecated and is no longer supported. \
+            Please use org.get_v2 instead. Refer to API documentation for migration details.",
+        ))
+    }
+
+    async fn get_v2(&self, request: Request<OrgGetReqV2>) -> GrpcResult<OrgResV2> {
         let request = request.into_inner();
         telemetry::count_request("org", "get");
         custom_tracing::record("oui", request.oui);
@@ -166,6 +190,39 @@ impl iot_config::Org for OrgService {
         resp.signature = self.sign_response(&resp.encode_to_vec())?;
         println!("Response: {:?}", resp);
         Ok(Response::new(resp))
+    }
+
+    async fn create_helium(&self, request: Request<OrgCreateHeliumReqV1>) -> GrpcResult<OrgResV1> {
+        telemetry::count_request("org", "create_helium");
+        tracing::warn!(
+            "Deprecated API endpoint 'org.get' was called. This endpoint is no longer supported."
+        );
+
+        Err(Status::failed_precondition(
+            "This API endpoint (org.get) has been deprecated and is no longer supported.",
+        ))
+    }
+
+    async fn create_roamer(&self, request: Request<OrgCreateRoamerReqV1>) -> GrpcResult<OrgResV1> {
+        telemetry::count_request("org", "create_roamer");
+        tracing::warn!(
+            "Deprecated API endpoint 'org.get' was called. This endpoint is no longer supported."
+        );
+
+        Err(Status::failed_precondition(
+            "This API endpoint (org.get) has been deprecated and is no longer supported.",
+        ))
+    }
+
+    async fn update(&self, request: Request<OrgUpdateReqV1>) -> GrpcResult<OrgResV1> {
+        telemetry::count_request("org", "update");
+        tracing::warn!(
+            "Deprecated API endpoint 'org.update' was called. This endpoint is no longer supported."
+        );
+
+        Err(Status::failed_precondition(
+            "This API endpoint (org.update) has been deprecated and is no longer supported.",
+        ))
     }
 
     async fn disable(&self, request: Request<OrgDisableReqV1>) -> GrpcResult<OrgDisableResV1> {

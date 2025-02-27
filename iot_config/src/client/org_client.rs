@@ -48,7 +48,7 @@ impl Orgs for OrgClient {
         tracing::debug!(%oui, "retrieving org");
 
         let req = OrgGetReqV2 { oui };
-        let res = call_with_retry!(self.client.get(req.clone()))?.into_inner();
+        let res = call_with_retry!(self.client.get_v2(req.clone()))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(res)
     }
@@ -56,7 +56,7 @@ impl Orgs for OrgClient {
     async fn list(&mut self) -> Result<Vec<OrgV2>, ClientError> {
         tracing::debug!("retrieving org list");
 
-        let res = call_with_retry!(self.client.list(OrgListReqV2 {}))?.into_inner();
+        let res = call_with_retry!(self.client.list_v2(OrgListReqV2 {}))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(res.orgs)
     }
