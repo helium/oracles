@@ -1,3 +1,8 @@
+//
+// DB functions related to the last_beacon table
+// the last_beacon table is used to record the last time the verifier processed a beacon for any given gateway
+// This timestamp is used in the poc verifications to determine if a gateway is beaconing according to a valid cadence
+//
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use serde::{Deserialize, Serialize};
