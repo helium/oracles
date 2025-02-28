@@ -12,6 +12,11 @@ on:
         description: "Release Version (e.g., 1.0.0)"
         required: false
         type: string
+      release_only:
+          description: "Release Only"
+          required: false
+          type: boolean
+          default: false
 env:
   CARGO_INCREMENTAL: 0 # this setting is automatically applied by rust-cache but documented here for explicitness
   CARGO_NET_RETRY: 10
@@ -28,6 +33,7 @@ jobs:
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-fmt
       cancel-in-progress: true
+    if: github.event.inputs.release_only == false
     steps:
       - name: Install Dependencies
         run: |
@@ -56,6 +62,7 @@ jobs:
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-clippy
       cancel-in-progress: true
+    if: github.event.inputs.release_only == false
     steps:
       - name: Install Dependencies
         run: |
@@ -86,6 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.get-matrix.outputs.matrix }}
+    if: github.event.inputs.release_only == false
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -108,7 +116,7 @@ jobs:
       matrix:
         package: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
     concurrency: 
-      group: ${{ github.workflow }}-${{ github.ref }}-tests-postgres-${{ matrix.package }}
+      group: ${{ github.workflow }}-${{ github.ref }}-tests-${{ matrix.package }}
       cancel-in-progress: true
     services:
       postgres:
@@ -122,6 +130,7 @@ jobs:
           --health-retries 5
         ports:
             - 5432:5432
+    if: github.event.inputs.release_only == false
     steps:
       - name: Install Dependencies
         run: |
