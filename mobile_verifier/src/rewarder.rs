@@ -225,11 +225,6 @@ where
     ) -> anyhow::Result<bool> {
         // Check if we have heartbeats and speedtests and unique connections past the end of the reward period
         if reward_period.end >= self.disable_complete_data_checks_until().await? {
-            if db::no_cbrs_heartbeats(&self.pool, reward_period).await? {
-                tracing::info!("No cbrs heartbeats found past reward period");
-                return Ok(false);
-            }
-
             if db::no_wifi_heartbeats(&self.pool, reward_period).await? {
                 tracing::info!("No wifi heartbeats found past reward period");
                 return Ok(false);
