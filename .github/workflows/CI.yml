@@ -6,7 +6,7 @@ on:
   push:
     branches: ["main"]
     tags: ["*"]
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch: # Allows manual triggering
     inputs:
       release_version:
         description: "Release Version (e.g., 1.0.0)"
@@ -20,6 +20,39 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-build
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust install
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        run: cargo build
 
   fmt:
     runs-on: ubuntu-latest
