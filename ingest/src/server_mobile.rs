@@ -231,7 +231,7 @@ where
                 "dropping CellHeartbeatReqV1 because cbrs disable time has passed"
             );
             return Ok(Response::new(CellHeartbeatRespV1 {
-                id: timestamp.to_string(),
+                id: timestamp.timestamp_millis().to_string(),
             }));
         }
 
@@ -248,7 +248,7 @@ where
 
         _ = self.heartbeat_report_sink.write(report, []).await;
 
-        let id = timestamp.to_string();
+        let id = timestamp.timestamp_millis().to_string();
         Ok(Response::new(CellHeartbeatRespV1 { id }))
     }
 
@@ -295,7 +295,7 @@ where
             );
 
             return Ok(Response::new(DataTransferSessionRespV1 {
-                id: timestamp.to_string(),
+                id: timestamp.timestamp_millis().to_string(),
             }));
         }
 
@@ -313,7 +313,7 @@ where
         _ = self.data_transfer_session_sink.write(report, []).await;
 
         Ok(Response::new(DataTransferSessionRespV1 {
-            id: timestamp.to_string(),
+            id: timestamp.timestamp_millis().to_string(),
         }))
     }
 
