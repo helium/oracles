@@ -170,6 +170,7 @@ mod tests {
             &invalid_data_session_report_sink,
             Utc::now(),
             futures::stream::iter(vec![]),
+            "2025-03-01 00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
         )
         .await?;
 
@@ -204,6 +205,7 @@ mod tests {
             &invalid_data_session_report_sink,
             Utc::now(),
             futures::stream::iter(vec![report]),
+            "2025-03-01 00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
         )
         .await?;
 
@@ -236,6 +238,7 @@ mod tests {
             &invalid_data_session_report_sink,
             Utc::now(),
             futures::stream::iter(vec![report]),
+            "2025-03-01 00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
         )
         .await?;
 
@@ -268,6 +271,7 @@ mod tests {
             &invalid_data_session_report_sink,
             Utc::now(),
             futures::stream::iter(vec![report]),
+            "2025-03-01 00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
         )
         .await?;
 
@@ -300,6 +304,7 @@ mod tests {
             &invalid_data_session_report_sink,
             Utc::now(),
             futures::stream::iter(vec![report]),
+            "2025-03-01 00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
         )
         .await?;
 
