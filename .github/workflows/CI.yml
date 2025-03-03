@@ -191,7 +191,7 @@ jobs:
         run: cargo test -p ${{ matrix.package }}  -- --include-ignored
 
   build-release:
-    needs: [fmt, clippy, tests]
+    needs: [build, fmt, clippy, tests]
     runs-on: ubuntu-latest
     container:
       image: ubuntu:20.04
