@@ -4,6 +4,7 @@ use file_store::mobile_session::{
     DataTransferSessionIngestReport, VerifiedDataTransferIngestReport,
 };
 use futures::{Stream, StreamExt};
+use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
 use helium_proto::services::poc_mobile::{
     verified_data_transfer_ingest_report_v1::ReportStatus, VerifiedDataTransferIngestReportV1,
 };
@@ -17,10 +18,18 @@ pub async fn accumulate_sessions(
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
+    cbrs_disable_time: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     tokio::pin!(reports);
 
     while let Some(report) = reports.next().await {
+        if report.received_timestamp >= cbrs_disable_time
+            && report.report.data_transfer_usage.radio_access_technology
+                == DataTransferRadioAccessTechnology::Eutran
+        {
+            continue;
+        }
+
         let report_validity = verify_report(txn, mobile_config, &report).await?;
         write_verified_report(
             verified_data_session_report_sink,
