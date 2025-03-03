@@ -186,7 +186,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -194,7 +194,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ubuntu:20.04-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ubuntu:20.04-cargo-test-${{ matrix.package }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build Test
         run: cargo test -p ${{ matrix.package }} --no-run
