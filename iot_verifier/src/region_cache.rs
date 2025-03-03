@@ -1,3 +1,8 @@
+//
+// cache to store region parameters for a given region
+// the region params are required by the poc verifications in order to verify a beacon report
+//
+
 use helium_crypto::PublicKeyBinary;
 use helium_proto::Region as ProtoRegion;
 use iot_config::client::{Gateways, RegionParamsInfo};

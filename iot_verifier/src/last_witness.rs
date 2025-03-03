@@ -1,3 +1,10 @@
+//
+// DB functions related to the last_witness_reciprocity table
+// the last_witness_reciprocity table is used to manage the witnessing reciprocity timestamp for a given gateway
+// The last witness reciprocity time is used in the poc verifications to determine if a gateway
+// has valid reciprocity
+//
+
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use serde::{Deserialize, Serialize};
