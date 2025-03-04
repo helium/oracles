@@ -138,21 +138,6 @@ pub trait Debiter {
     ) -> Result<Option<u64>, SolanaRpcError>;
 }
 
-#[async_trait]
-impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
-    async fn debit_if_sufficient(
-        &self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-        _trigger_balance_check_threshold: u64,
-    ) -> Result<Option<u64>, SolanaRpcError> {
-        let map = self.lock().await;
-        let balance = map.get(payer).unwrap();
-        // Don't debit the amount if we're mocking. That is a job for the burner.
-        Ok((*balance >= amount).then(|| balance.saturating_sub(amount)))
-    }
-}
-
 // TODO: Move these to a separate module
 
 pub struct Org {

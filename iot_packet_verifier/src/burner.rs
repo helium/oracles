@@ -46,6 +46,8 @@ pub enum BurnError {
     SolanaError(#[from] SolanaRpcError),
     #[error("Confirm pending transaction error: {0}")]
     ConfirmPendingError(#[from] ConfirmPendingError),
+    #[error("{0} Existing pending transactions")]
+    ExistingPendingTransactions(usize),
 }
 
 impl<P, S> Burner<P, S> {
@@ -76,9 +78,9 @@ where
 
         loop {
             tokio::select! {
-                    biased;
-                    _ = shutdown.clone() => break,
-                    _ = burn_timer.tick() => {
+                biased;
+                _ = shutdown.clone() => break,
+                _ = burn_timer.tick() => {
                     match self.burn().await {
                         Ok(()) => continue,
                         Err(err) => {
@@ -94,9 +96,16 @@ where
     }
 
     pub async fn burn(&mut self) -> Result<(), BurnError> {
+        // There should only be a single pending txn at a time
+        let pending_txns = self.pending_tables.fetch_all_pending_txns().await?;
+        if !pending_txns.is_empty() {
+            return Err(BurnError::ExistingPendingTransactions(pending_txns.len()));
+        }
+
         // Fetch the next payer and amount that should be burn. If no such burn
         // exists, perform no action.
         let Some(Burn { payer, amount }) = self.pending_tables.fetch_next_burn().await? else {
+            tracing::info!("no pending burns");
             return Ok(());
         };
 
