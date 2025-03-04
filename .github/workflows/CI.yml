@@ -33,10 +33,9 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y tzdata
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
           ln -fs /usr/share/zoneinfo/UTC /etc/localtime
           dpkg-reconfigure -f noninteractive tzdata
-          apt-get install -y curl build-essential pkg-config libssl-dev clang lld cmake unzip
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,10 +60,9 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y tzdata
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
           ln -fs /usr/share/zoneinfo/UTC /etc/localtime
           dpkg-reconfigure -f noninteractive tzdata
-          apt-get install -y curl build-essential pkg-config libssl-dev clang lld cmake unzip
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -127,10 +125,9 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y tzdata
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
           ln -fs /usr/share/zoneinfo/UTC /etc/localtime
           dpkg-reconfigure -f noninteractive tzdata
-          apt-get install -y curl build-essential pkg-config libssl-dev clang lld cmake unzip
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -166,10 +163,9 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y tzdata
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
           ln -fs /usr/share/zoneinfo/UTC /etc/localtime
           dpkg-reconfigure -f noninteractive tzdata
-          apt-get install -y curl build-essential pkg-config libssl-dev clang lld cmake unzip
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -216,10 +212,9 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y tzdata
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
           ln -fs /usr/share/zoneinfo/UTC /etc/localtime
           dpkg-reconfigure -f noninteractive tzdata
-          apt-get install -y curl build-essential pkg-config libssl-dev clang lld cmake unzip
 
       - uses: actions/checkout@v4
 
