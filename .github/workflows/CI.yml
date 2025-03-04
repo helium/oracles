@@ -216,9 +216,11 @@ jobs:
           ln -fs /usr/share/zoneinfo/UTC /etc/localtime
           dpkg-reconfigure -f noninteractive tzdata
 
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust install
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
