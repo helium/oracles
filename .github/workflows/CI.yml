@@ -29,6 +29,14 @@ jobs:
       group: ${{ github.workflow }}-${{ github.ref }}-fmt
       cancel-in-progress: true
     steps:
+      - name: Install Dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
+          ln -fs /usr/share/zoneinfo/UTC /etc/localtime
+          dpkg-reconfigure -f noninteractive tzdata
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -48,6 +56,14 @@ jobs:
       group: ${{ github.workflow }}-${{ github.ref }}-clippy
       cancel-in-progress: true
     steps:
+      - name: Install Dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
+          ln -fs /usr/share/zoneinfo/UTC /etc/localtime
+          dpkg-reconfigure -f noninteractive tzdata
+
       - name: Checkout
         uses: actions/checkout@v4
 
