@@ -12,13 +12,13 @@ use helium_proto::{
 };
 use iot_packet_verifier::{
     balances::{BalanceCache, PayerAccount},
-    burner::Burner,
+    burner::{BurnError, Burner},
     pending::{confirm_pending_txns, AddPendingBurn, Burn, PendingTables, BURN_THRESHOLD},
     verifier::{payload_size_to_dc, ConfigServer, ConfigServerError, Org, Verifier, BYTES_PER_DC},
 };
 use solana::{
     burn::{SolanaNetwork, TestSolanaClientMap},
-    GetSignature,
+    GetSignature, Signature,
 };
 use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -655,6 +655,99 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // The unconfirmed burn amount should be what's left
     assert_eq!(pending_burn.amount, UNCONFIRMED_BURN_AMOUNT);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_burn_with_pending_txn_triggers_confirmation(pool: PgPool) -> anyhow::Result<()> {
+    let org_one = PublicKeyBinary::from(vec![0]);
+    let org_two = PublicKeyBinary::from(vec![1]);
+
+    let solana_network = TestSolanaClientMap::default();
+    solana_network.insert(&org_one, 50_000).await;
+    solana_network.insert(&org_two, 50_000).await;
+
+    // Add both burns
+    let mut transaction = pool.begin().await?;
+    transaction.add_burned_amount(&org_one, 10_000).await?;
+    transaction.add_burned_amount(&org_two, 20_000).await?;
+    transaction.commit().await?;
+
+    // Add random signature so nothing can be confirmed automatically
+    solana_network.add_confirmed(Signature::new_unique()).await;
+
+    // Mark the first txn as pending
+    {
+        let txn = solana_network
+            .make_burn_transaction(&org_one, 10_000)
+            .await?;
+
+        pool.do_add_pending_transaction(
+            &org_one,
+            10_000,
+            txn.get_signature(),
+            Utc::now() - chrono::Duration::minutes(2),
+        )
+        .await?;
+        solana_network.submit_transaction(&txn).await?;
+
+        // Add signature after submission so the txn is marked as pending but
+        // can be confirmed later in the test.
+        solana_network.add_confirmed(*txn.get_signature()).await;
+    }
+
+    // Assert initial pending values
+    assert_pending_burns(&pool, &[(&org_one, 10_000), (&org_two, 20_000)]).await?;
+
+    // Create balance cache and burner after adding pending burns so we pick up
+    // correct balance values.
+    let balances = BalanceCache::new(&pool, solana_network.clone()).await?;
+    let mut burner = Burner::new(
+        pool.clone(),
+        &balances,
+        Duration::default(), // Burn period does not matter, we manually burn
+        solana_network.clone(),
+    );
+
+    // No burn should happen, pending values should be the same
+    match burner.burn().await {
+        Err(BurnError::ExistingPendingTransactions(1)) => (),
+        other => panic!("unexpected burn response: {other:?}"),
+    }
+    assert_pending_burns(&pool, &[(&org_one, 10_000), (&org_two, 20_000)]).await?;
+
+    // Confirm existing and assert burn was deducted
+    confirm_pending_txns(&pool, &solana_network, &balances.balances()).await?;
+    assert_pending_burns(&pool, &[(&org_one, 0), (&org_two, 20_000)]).await?;
+
+    // Burn again, and all amounts should be zeroed
+    match burner.burn().await {
+        Ok(()) => (),
+        other => panic!("unexpected burn response: {other:?}"),
+    }
+    assert_pending_burns(&pool, &[(&org_one, 0), (&org_two, 0)]).await?;
+
+    Ok(())
+}
+
+async fn assert_pending_burns(
+    pool: &PgPool,
+    expected: &[(&PublicKeyBinary, u64)],
+) -> anyhow::Result<()> {
+    let burns = sqlx::query_as("SELECT * from pending_burns")
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|burn: Burn| (burn.payer, burn.amount))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    for (key, expected_amount) in expected {
+        let amount = burns
+            .get(key)
+            .unwrap_or_else(|| panic!("{key:?} does not exist in pending burns"));
+        assert_eq!(amount, expected_amount);
+    }
 
     Ok(())
 }

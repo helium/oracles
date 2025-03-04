@@ -46,6 +46,8 @@ pub enum BurnError {
     SolanaError(#[from] SolanaRpcError),
     #[error("Confirm pending transaction error: {0}")]
     ConfirmPendingError(#[from] ConfirmPendingError),
+    #[error("{0} Existing pending transactions")]
+    ExistingPendingTransactions(usize),
 }
 
 impl<P, S> Burner<P, S> {
@@ -97,8 +99,7 @@ where
         // There should only be a single pending txn at a time
         let pending_txns = self.pending_tables.fetch_all_pending_txns().await?;
         if !pending_txns.is_empty() {
-            tracing::info!(pending_txns = pending_txns.len(), "skipping burn");
-            return Ok(());
+            return Err(BurnError::ExistingPendingTransactions(pending_txns.len()));
         }
 
         // Fetch the next payer and amount that should be burn. If no such burn
