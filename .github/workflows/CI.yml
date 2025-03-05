@@ -6,11 +6,11 @@ on:
   push:
     branches: ["main"]
     tags: ["*"]
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch: # Allows manual triggering
     inputs:
       release_version:
         description: "Release Version (e.g., 1.0.0)"
-        required: true
+        required: false
         type: string
 env:
   CARGO_INCREMENTAL: 0 # this setting is automatically applied by rust-cache but documented here for explicitness
@@ -20,79 +20,54 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    concurrency: 
-      group: ${{ github.workflow }}-${{ github.ref }}-build
-      cancel-in-progress: true
-    steps:
-      - name: Free Up Disk Space
-        run: |
-          echo "Freeing up disk space..."
-          echo "Disk space before cleanup:"
-          df -h
-          sudo apt-get clean
-          sudo rm -rf /usr/local/lib/android /usr/lib/jvm /usr/local/share/boost /opt/hostedtoolcache
-          docker system prune -a -f
-          echo "Disk space after cleanup:"
-          df -h
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Rust install
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build
-        run: cargo build --all --tests 
 
   fmt:
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-fmt
       cancel-in-progress: true
     steps:
+      - name: Install Dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
+          ln -fs /usr/share/zoneinfo/UTC /etc/localtime
+          dpkg-reconfigure -f noninteractive tzdata
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Rust install
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      - name: Setup rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Check formatting
         run: cargo fmt  -- --check
 
   clippy:
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-clippy
       cancel-in-progress: true
     steps:
+      - name: Install Dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
+          ln -fs /usr/share/zoneinfo/UTC /etc/localtime
+          dpkg-reconfigure -f noninteractive tzdata
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Rust install
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      
+      - name: Setup rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -101,15 +76,33 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -Dclippy::all -D warnings
 
-  tests-postgres:
-    needs: build
+  generate-matrix:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.get-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Extract Cargo Workspace Members
+        id: get-matrix
+        run: |
+          MATRIX=$(cargo metadata --format-version=1 | jq -c '[.workspace_members[] | split("#")[0] | split("/") | last | gsub("_"; "-") | select(. != "metrics")]')
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo $MATRIX | jq
+        shell: bash
+
+  tests:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
     strategy:
       fail-fast: false
       matrix:
-        package: [boost-manager,file-store,iot-config,iot-packet-verifier,iot-verifier,mobile-config,mobile-packet-verifier,mobile-verifier]
+        package: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
     concurrency: 
-      group: ${{ github.workflow }}-${{ github.ref }}-tests-postgres-${{ matrix.package }}
+      group: ${{ github.workflow }}-${{ github.ref }}-tests-${{ matrix.package }}
       cancel-in-progress: true
     services:
       postgres:
@@ -124,49 +117,57 @@ jobs:
         ports:
             - 5432:5432
     steps:
+      - name: Install Dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
+          ln -fs /usr/share/zoneinfo/UTC /etc/localtime
+          dpkg-reconfigure -f noninteractive tzdata
+
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Rust install
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build Test
+        run: cargo test -p ${{ matrix.package }} --no-run
 
       - name: Run unit and integration tests
         env:
-          DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
+          DATABASE_URL: "postgres://postgres:postgres@postgres:5432/postgres"
         run: cargo test -p ${{ matrix.package }}  -- --include-ignored
-  
-  tests:
-    needs: build
+
+  build-release:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: [coverage-map,coverage-point-calculator,ingest,reward-scheduler,task-manager]
+    container:
+      image: ubuntu:20.04
     concurrency: 
-      group: ${{ github.workflow }}-${{ github.ref }}-tests-${{ matrix.package }}
+      group: ${{ github.workflow }}-${{ github.ref }}-build-release
       cancel-in-progress: true
+    if: > 
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') ||
+      (contains(github.ref, 'refs/tags/'))
     steps:
+      - name: Install Dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
+          ln -fs /usr/share/zoneinfo/UTC /etc/localtime
+          dpkg-reconfigure -f noninteractive tzdata
+
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Rust install
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -182,21 +183,22 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ubuntu:20.04-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Run unit and integration tests
-        run: cargo test -p ${{ matrix.package }}  -- --include-ignored
+      - name: Build Release
+        run: cargo build --all --release
 
-  build-release:
-    needs: [fmt, clippy, tests, tests-postgres]
+  upload-release:
+    needs: [build-release, fmt, clippy, tests]
     runs-on: ubuntu-latest
     container:
       image: ubuntu:20.04
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-build-release
+      group: ${{ github.workflow }}-${{ github.ref }}-upload-release
       cancel-in-progress: true
     if: > 
-      (github.event_name == 'workflow_dispatch') || (contains(github.ref, 'refs/tags/'))
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') ||
+      (contains(github.ref, 'refs/tags/'))
     steps:
       - name: Show Inputs
         run: |
@@ -206,21 +208,21 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y tzdata
+          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
           ln -fs /usr/share/zoneinfo/UTC /etc/localtime
           dpkg-reconfigure -f noninteractive tzdata
-          apt-get install -y curl build-essential pkg-config libssl-dev unzip
 
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust install
+        uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # TODO: update key when we retire 20.04
       - name: Cache
         uses: actions/cache@v4
         with:
@@ -230,7 +232,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ubuntu-20.04-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ubuntu:20.04-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build Release
         run: cargo build --all --release
