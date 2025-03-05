@@ -11,7 +11,7 @@ use crate::balances::BalanceStore;
 
 /// To avoid excessive burn transaction (which cost us money), we institute a minimum
 /// amount of Data Credits accounted for before we burn from a payer:
-const BURN_THRESHOLD: i64 = 10_000;
+pub const BURN_THRESHOLD: i64 = 10_000;
 
 #[async_trait]
 pub trait AddPendingBurn {
@@ -39,6 +39,17 @@ pub trait PendingTables {
         payer: &PublicKeyBinary,
         amount: u64,
         signature: &Signature,
+    ) -> Result<(), sqlx::Error> {
+        self.do_add_pending_transaction(payer, amount, signature, Utc::now())
+            .await
+    }
+
+    async fn do_add_pending_transaction(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+        signature: &Signature,
+        time_of_submission: DateTime<Utc>,
     ) -> Result<(), sqlx::Error>;
 
     async fn begin<'a>(&'a self) -> Result<Self::Transaction<'a>, sqlx::Error>;
@@ -142,11 +153,12 @@ impl PendingTables for PgPool {
             .await
     }
 
-    async fn add_pending_transaction(
+    async fn do_add_pending_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
         signature: &Signature,
+        time_of_submission: DateTime<Utc>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
@@ -157,7 +169,7 @@ impl PendingTables for PgPool {
         .bind(signature.to_string())
         .bind(payer)
         .bind(amount as i64)
-        .bind(Utc::now())
+        .bind(time_of_submission)
         .execute(self)
         .await?;
         Ok(())
@@ -277,218 +289,5 @@ impl AddPendingBurn for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         let mut map = self.lock().await;
         *map.entry(payer.clone()).or_default() += amount;
         Ok(())
-    }
-}
-
-#[derive(Clone)]
-pub struct MockPendingTxn {
-    payer: PublicKeyBinary,
-    amount: u64,
-    time_of_submission: DateTime<Utc>,
-}
-
-#[derive(Default, Clone)]
-pub struct MockPendingTables {
-    pub pending_txns: Arc<Mutex<HashMap<Signature, MockPendingTxn>>>,
-    pub pending_burns: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
-}
-
-#[async_trait]
-impl PendingTables for MockPendingTables {
-    type Transaction<'a> = &'a MockPendingTables;
-
-    async fn fetch_next_burn(&self) -> Result<Option<Burn>, sqlx::Error> {
-        Ok(self
-            .pending_burns
-            .lock()
-            .await
-            .iter()
-            .max_by_key(|(_, amount)| **amount)
-            .map(|(payer, &amount)| Burn {
-                payer: payer.clone(),
-                amount,
-            }))
-    }
-
-    async fn fetch_all_pending_burns(&self) -> Result<Vec<Burn>, sqlx::Error> {
-        Ok(self
-            .pending_burns
-            .lock()
-            .await
-            .clone()
-            .into_iter()
-            .map(|(payer, amount)| Burn { payer, amount })
-            .collect())
-    }
-
-    async fn fetch_all_pending_txns(&self) -> Result<Vec<PendingTxn>, sqlx::Error> {
-        Ok(self
-            .pending_txns
-            .lock()
-            .await
-            .clone()
-            .into_iter()
-            .map(|(signature, mock)| PendingTxn {
-                signature,
-                payer: mock.payer,
-                amount: mock.amount,
-                time_of_submission: mock.time_of_submission,
-            })
-            .collect())
-    }
-
-    async fn add_pending_transaction(
-        &self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-        signature: &Signature,
-    ) -> Result<(), sqlx::Error> {
-        self.pending_txns.lock().await.insert(
-            *signature,
-            MockPendingTxn {
-                payer: payer.clone(),
-                amount,
-                time_of_submission: Utc::now(),
-            },
-        );
-        Ok(())
-    }
-
-    async fn begin<'a>(&'a self) -> Result<Self::Transaction<'a>, sqlx::Error> {
-        Ok(self)
-    }
-}
-
-#[async_trait]
-impl<'a> PendingTablesTransaction<'a> for &'a MockPendingTables {
-    async fn remove_pending_transaction(
-        &mut self,
-        signature: &Signature,
-    ) -> Result<(), sqlx::Error> {
-        self.pending_txns.lock().await.remove(signature);
-        Ok(())
-    }
-
-    async fn subtract_burned_amount(
-        &mut self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-    ) -> Result<(), sqlx::Error> {
-        let mut map = self.pending_burns.lock().await;
-        let balance = map.get_mut(payer).unwrap();
-        *balance -= amount;
-        Ok(())
-    }
-
-    async fn commit(self) -> Result<(), sqlx::Error> {
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-
-    use crate::balances::PayerAccount;
-
-    use super::*;
-    use std::collections::HashSet;
-
-    #[derive(Clone)]
-    struct MockConfirmed(HashSet<Signature>);
-
-    #[async_trait]
-    impl SolanaNetwork for MockConfirmed {
-        type Transaction = Signature;
-
-        #[allow(clippy::diverging_sub_expression)]
-        async fn payer_balance(&self, _payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-            unreachable!()
-        }
-
-        #[allow(clippy::diverging_sub_expression)]
-        async fn make_burn_transaction(
-            &self,
-            _payer: &PublicKeyBinary,
-            _amount: u64,
-        ) -> Result<Self::Transaction, SolanaRpcError> {
-            unreachable!()
-        }
-
-        #[allow(clippy::diverging_sub_expression)]
-        async fn submit_transaction(
-            &self,
-            _transaction: &Self::Transaction,
-        ) -> Result<(), SolanaRpcError> {
-            unreachable!()
-        }
-
-        async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError> {
-            Ok(self.0.contains(txn))
-        }
-    }
-
-    #[tokio::test]
-    async fn test_confirm_pending_txns() {
-        let confirmed = Signature::new_unique();
-        let unconfirmed = Signature::new_unique();
-        let payer: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .unwrap();
-        let mut pending_txns = HashMap::new();
-        const CONFIRMED_BURN_AMOUNT: u64 = 7;
-        const UNCONFIRMED_BURN_AMOUNT: u64 = 11;
-        pending_txns.insert(
-            confirmed,
-            MockPendingTxn {
-                payer: payer.clone(),
-                amount: CONFIRMED_BURN_AMOUNT,
-                time_of_submission: Utc::now() - Duration::minutes(1),
-            },
-        );
-        pending_txns.insert(
-            unconfirmed,
-            MockPendingTxn {
-                payer: payer.clone(),
-                amount: UNCONFIRMED_BURN_AMOUNT,
-                time_of_submission: Utc::now() - Duration::minutes(1),
-            },
-        );
-        let mut balances = HashMap::new();
-        balances.insert(
-            payer.clone(),
-            PayerAccount {
-                balance: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
-                burned: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
-            },
-        );
-        let mut pending_burns = HashMap::new();
-        pending_burns.insert(
-            payer.clone(),
-            CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
-        );
-        let pending_txns = Arc::new(Mutex::new(pending_txns));
-        let pending_burns = Arc::new(Mutex::new(pending_burns));
-        let pending_tables = MockPendingTables {
-            pending_txns,
-            pending_burns,
-        };
-        let mut confirmed_txns = HashSet::new();
-        confirmed_txns.insert(confirmed);
-        let confirmed = MockConfirmed(confirmed_txns);
-        // Confirm and resolve transactions:
-        confirm_pending_txns(&pending_tables, &confirmed, &Arc::new(Mutex::new(balances)))
-            .await
-            .unwrap();
-        // The amount left in the pending burns table should only be the unconfirmed
-        // burn amount:
-        assert_eq!(
-            *pending_tables
-                .pending_burns
-                .lock()
-                .await
-                .get(&payer)
-                .unwrap(),
-            UNCONFIRMED_BURN_AMOUNT,
-        );
     }
 }
