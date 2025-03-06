@@ -42,6 +42,8 @@ jobs:
 
       - name: Setup rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
 
       - name: Check formatting
         run: cargo fmt  -- --check
@@ -130,6 +132,8 @@ jobs:
 
       - name: Rust install
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -168,22 +172,13 @@ jobs:
 
       - name: Rust install
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-shared-key: release
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ubuntu:20.04-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build Release
         run: cargo build --all --release
@@ -217,22 +212,13 @@ jobs:
 
       - name: Rust install
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-shared-key: release
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ubuntu:20.04-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build Release
         run: cargo build --all --release
