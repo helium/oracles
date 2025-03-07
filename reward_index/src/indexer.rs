@@ -283,3 +283,96 @@ impl Indexer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::DateTime;
+    use sqlx::{postgres::PgRow, FromRow};
+
+    use super::*;
+
+    #[sqlx::test]
+    async fn rewards_accumulate_to_rows_with_same_key_and_type(pool: PgPool) -> anyhow::Result<()> {
+        let now = Utc::now();
+        let key = "simple-key".to_string();
+
+        let mut txn = pool.begin().await?;
+        reward_index::insert(&mut txn, key.clone(), 1, RewardType::MobileGateway, &now).await?;
+        reward_index::insert(&mut txn, key.clone(), 2, RewardType::MobileGateway, &now).await?;
+        txn.commit().await?;
+
+        let value = get(&pool, &key, RewardType::MobileGateway).await?;
+        assert_eq!(value.rewards, 3);
+
+        Ok(())
+    }
+
+    #[sqlx::test]
+    async fn zero_amount_rewards_do_not_update_last_rewarded_timestamp(
+        pool: PgPool,
+    ) -> anyhow::Result<()> {
+        let now = Utc::now();
+        let before = now - chrono::Duration::days(1);
+
+        let key = "simple-key".to_string();
+
+        let mut txn = pool.begin().await?;
+        reward_index::insert(&mut txn, key.clone(), 1, RewardType::MobileGateway, &before).await?;
+        reward_index::insert(&mut txn, key.clone(), 0, RewardType::MobileGateway, &now).await?;
+        txn.commit().await?;
+
+        let res = get(&pool, &key, RewardType::MobileGateway).await?;
+        assert_eq!(res.last_reward, before);
+        assert_eq!(res.rewards, 1);
+
+        Ok(())
+    }
+
+    // pub async fn all(pool: &PgPool) -> anyhow::Result<Vec<RewardIndex>> {
+    //     let reward = sqlx::query_as("SELECT * FROM reward_index")
+    //         .fetch_all(pool)
+    //         .await?;
+
+    //     Ok(reward)
+    // }
+
+    pub async fn get(
+        pool: &PgPool,
+        key: &str,
+        reward_type: RewardType,
+    ) -> anyhow::Result<RewardIndex> {
+        let reward: RewardIndex = sqlx::query_as(
+            r#"
+        SELECT *
+        FROM reward_index 
+        WHERE address = $1 AND reward_type = $2
+        "#,
+        )
+        .bind(key)
+        .bind(reward_type)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(reward)
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct RewardIndex {
+        pub address: String,
+        pub rewards: u64,
+        pub last_reward: DateTime<Utc>,
+        pub reward_type: RewardType,
+    }
+
+    // impl From row for Rewardindex
+    impl FromRow<'_, PgRow> for RewardIndex {
+        fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+            Ok(Self {
+                address: row.get("address"),
+                rewards: row.get::<i64, _>("rewards") as u64,
+                last_reward: row.try_get("last_reward")?,
+                reward_type: row.try_get("reward_type")?,
+            })
+        }
+    }
+}
