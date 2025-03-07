@@ -4,10 +4,9 @@ use file_store::{
     file_info_poller::LookbackBehavior, file_source, reward_manifest::RewardManifest, FileStore,
     FileType,
 };
-use futures_util::TryFutureExt;
 use reward_index::{settings::Settings, telemetry, Indexer};
 use std::path::PathBuf;
-use tokio::signal;
+use task_manager::TaskManager;
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -51,16 +50,6 @@ impl Server {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
-        //
-        // Configure shutdown trigger
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
 
         // Create database pool
         let app_name = format!("{}_{}", settings.mode, env!("CARGO_PKG_NAME"));
@@ -72,24 +61,23 @@ impl Server {
         let file_store = FileStore::from_settings(&settings.verifier).await?;
         let (receiver, server) = file_source::continuous_source::<RewardManifest, _>()
             .state(pool.clone())
-            .store(file_store)
+            .store(file_store.clone())
             .prefix(FileType::RewardManifest.to_string())
             .lookback(LookbackBehavior::StartAfter(settings.start_after))
             .poll_duration(settings.interval)
             .offset(settings.interval * 2)
             .create()
             .await?;
-        let source_join_handle = server.start(shutdown_listener.clone()).await?;
 
         // Reward server
-        let mut indexer = Indexer::new(settings, pool).await?;
+        let indexer = Indexer::from_settings(settings, pool, file_store, receiver).await?;
 
-        tokio::try_join!(
-            source_join_handle.map_err(anyhow::Error::from),
-            indexer.run(shutdown_listener, receiver),
-        )?;
-
-        Ok(())
+        TaskManager::builder()
+            .add_task(server)
+            .add_task(indexer)
+            .build()
+            .start()
+            .await
     }
 }
 

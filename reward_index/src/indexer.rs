@@ -7,7 +7,7 @@ use file_store::{
     reward_manifest::RewardManifest,
     FileInfo, FileStore,
 };
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{future::LocalBoxFuture, stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::{
@@ -17,16 +17,17 @@ use helium_proto::{
     IotRewardToken, Message, MobileRewardToken, ServiceProvider,
 };
 use poc_metrics::record_duration;
-use sqlx::{Pool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use std::{collections::HashMap, str::FromStr};
 use tokio::sync::mpsc::Receiver;
 
 pub struct Indexer {
-    pool: Pool<Postgres>,
+    pool: PgPool,
     verifier_store: FileStore,
     mode: settings::Mode,
     op_fund_key: String,
     unallocated_reward_key: String,
+    reward_manifest_rx: Receiver<FileInfoStream<RewardManifest>>,
 }
 
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
@@ -48,39 +49,66 @@ pub struct RewardKey {
     reward_type: RewardType,
 }
 
+impl task_manager::ManagedTask for Indexer {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|res| async move { res }),
+        )
+    }
+}
+
 impl Indexer {
-    pub async fn new(settings: &Settings, pool: Pool<Postgres>) -> Result<Self> {
-        Ok(Self {
-            mode: settings.mode,
-            verifier_store: FileStore::from_settings(&settings.verifier).await?,
+    fn new(
+        pool: PgPool,
+        verifier_store: FileStore,
+        reward_manifest_rx: Receiver<FileInfoStream<RewardManifest>>,
+        mode: settings::Mode,
+        op_fund_key: String,
+        unallocated_reward_key: String,
+    ) -> Self {
+        Self {
             pool,
-            op_fund_key: match settings.mode {
-                settings::Mode::Iot => settings
-                    .operation_fund_key()
-                    .ok_or_else(|| anyhow!("operation fund key is required for IOT mode"))?,
-                settings::Mode::Mobile => String::new(),
-            },
-            unallocated_reward_key: settings
-                .unallocated_reward_entity_key()
-                .ok_or_else(|| anyhow!("missing unallocated reward key"))?,
-        })
+            verifier_store,
+            mode,
+            op_fund_key,
+            unallocated_reward_key,
+            reward_manifest_rx,
+        }
     }
 
-    pub async fn run(
-        &mut self,
-        shutdown: triggered::Listener,
-        mut receiver: Receiver<FileInfoStream<RewardManifest>>,
-    ) -> Result<()> {
+    pub async fn from_settings(
+        settings: &Settings,
+        pool: PgPool,
+        verifier_store: FileStore,
+        reward_manifest_rx: Receiver<FileInfoStream<RewardManifest>>,
+    ) -> Result<Self> {
+        Ok(Self::new(
+            pool,
+            verifier_store,
+            reward_manifest_rx,
+            settings.mode,
+            settings.operation_fund_key()?,
+            settings.unallocated_reward_entity_key.clone(),
+        ))
+    }
+
+    pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         tracing::info!(mode = self.mode.to_string(), "starting index");
 
         loop {
             tokio::select! {
-            biased;
-            _ = shutdown.clone() => {
+                biased;
+                _ = shutdown.clone() => {
                     tracing::info!("Indexer shutting down");
                     return Ok(());
-            }
-            msg = receiver.recv() => if let Some(file_info_stream) = msg {
+                }
+                msg = self.reward_manifest_rx.recv() => if let Some(file_info_stream) = msg {
                     let key = &file_info_stream.file_info.key.clone();
                     tracing::info!(file = %key, "Processing reward file");
                     let mut txn = self.pool.begin().await?;

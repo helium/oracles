@@ -24,9 +24,6 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 prost = { workspace = true }
 once_cell = { workspace = true }
-file-store = { path = "../file_store" }
-db-store = { path = "../db_store" }
-poc-metrics = { path = "../metrics" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -41,4 +38,9 @@ tonic = { workspace = true }
 rand = { workspace = true }
 async-trait = { workspace = true }
 humantime-serde = { workspace = true }
+
 custom-tracing = { path = "../custom_tracing" }
+db-store = { path = "../db_store" }
+file-store = { path = "../file_store" }
+poc-metrics = { path = "../metrics" }
+task-manager = { path = "../task_manager" }

@@ -8,7 +8,16 @@
 # interval = "15 minutes"
 
 # Mode to operate the indexer in. "iot" or "mobile"
+#
 mode = "iot"
+
+# Operation Fund key is required when mode = "iot"
+#
+operation_fund_key = "iot-operation-fund-key"
+
+# Unallocated reward entity key is always required
+#
+unallocated_reward_entity_key = "unallocated-reward-entity-key"
 
 #
 [database]
@@ -36,23 +45,6 @@ max_connections = 10
 # Name of bucket to access verified data. Required
 #
 bucket = "mainnet-verified-bucket"
-
-# Region for bucket. Defaults to below
-#
-# region = "us-west-2"
-
-# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
-# IAM context by default
-#
-# endpoint = "https://aws-s3-bucket.aws.com"
-
-
-[output]
-# Output bucket for indexed reward details
-
-# Name of bucket to write details to. Required
-#
-bucket = "mainnet-mobile-index-bucket"
 
 # Region for bucket. Defaults to below
 #
