@@ -84,7 +84,7 @@ where
                 _ = &mut shutdown => return Ok(()),
                 _ = sleep_until(burn_time) => {
                     // It's time to burn
-                    match self.burner.burn(&self.pool).await {
+                    match self.burner.confirm_and_burn(&self.pool).await {
                         Ok(_) => {
                             burn_time = Instant::now() + self.burn_period;
                         }
