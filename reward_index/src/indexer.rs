@@ -45,8 +45,8 @@ pub enum RewardType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RewardKey {
-    key: String,
-    reward_type: RewardType,
+    pub key: String,
+    pub reward_type: RewardType,
 }
 
 impl task_manager::ManagedTask for Indexer {
@@ -170,94 +170,12 @@ impl Indexer {
     }
 
     fn extract_reward_share(&self, msg: &[u8]) -> Result<Option<(RewardKey, u64)>> {
-        match self.mode {
-            settings::Mode::Mobile => {
-                let share = MobileRewardShare::decode(msg)?;
-                match share.reward {
-                    Some(MobileReward::RadioReward(_r)) => {
-                        // RadioReward has been replaced by RadioRewardV2
-                        Ok(None)
-                    }
-                    Some(MobileReward::RadioRewardV2(r)) => Ok(Some((
-                        RewardKey {
-                            key: PublicKeyBinary::from(r.hotspot_key).to_string(),
-                            reward_type: RewardType::MobileGateway,
-                        },
-                        r.base_poc_reward + r.boosted_poc_reward,
-                    ))),
-
-                    Some(MobileReward::GatewayReward(r)) => Ok(Some((
-                        RewardKey {
-                            key: PublicKeyBinary::from(r.hotspot_key).to_string(),
-                            reward_type: RewardType::MobileGateway,
-                        },
-                        r.dc_transfer_reward,
-                    ))),
-                    Some(MobileReward::SubscriberReward(r)) => Ok(Some((
-                        RewardKey {
-                            key: bs58::encode(&r.subscriber_id).into_string(),
-                            reward_type: RewardType::MobileSubscriber,
-                        },
-                        r.discovery_location_amount + r.verification_mapping_amount,
-                    ))),
-                    Some(MobileReward::ServiceProviderReward(r)) => {
-                        ServiceProvider::try_from(r.service_provider_id)
-                            .map(|sp| {
-                                Ok(Some((
-                                    RewardKey {
-                                        key: sp.to_string(),
-                                        reward_type: RewardType::MobileServiceProvider,
-                                    },
-                                    r.amount,
-                                )))
-                            })
-                            .map_err(|_| anyhow!("failed to decode service provider"))?
-                    }
-                    Some(MobileReward::UnallocatedReward(r)) => Ok(Some((
-                        RewardKey {
-                            key: self.unallocated_reward_key.clone(),
-                            reward_type: RewardType::MobileUnallocated,
-                        },
-                        r.amount,
-                    ))),
-                    Some(MobileReward::PromotionReward(promotion)) => Ok(Some((
-                        RewardKey {
-                            key: promotion.entity,
-                            reward_type: RewardType::MobilePromotion,
-                        },
-                        promotion.service_provider_amount + promotion.matched_amount,
-                    ))),
-                    _ => bail!("got an invalid reward share"),
-                }
-            }
-            settings::Mode::Iot => {
-                let share = IotRewardShare::decode(msg)?;
-                match share.reward {
-                    Some(IotReward::GatewayReward(r)) => Ok(Some((
-                        RewardKey {
-                            key: PublicKeyBinary::from(r.hotspot_key).to_string(),
-                            reward_type: RewardType::IotGateway,
-                        },
-                        r.witness_amount + r.beacon_amount + r.dc_transfer_amount,
-                    ))),
-                    Some(IotReward::OperationalReward(r)) => Ok(Some((
-                        RewardKey {
-                            key: self.op_fund_key.clone(),
-                            reward_type: RewardType::IotOperational,
-                        },
-                        r.amount,
-                    ))),
-                    Some(IotReward::UnallocatedReward(r)) => Ok(Some((
-                        RewardKey {
-                            key: self.unallocated_reward_key.clone(),
-                            reward_type: RewardType::IotUnallocated,
-                        },
-                        r.amount,
-                    ))),
-                    _ => bail!("got an invalid iot reward share"),
-                }
-            }
-        }
+        extract_reward_share(
+            self.mode,
+            msg,
+            &self.op_fund_key,
+            &self.unallocated_reward_key,
+        )
     }
 
     fn verify_token_type(&self, reward_data: &Option<RewardData>) -> Result<()> {
@@ -281,6 +199,120 @@ impl Indexer {
             None => bail!("missing reward data in manifest"),
         }
         Ok(())
+    }
+}
+
+pub fn extract_reward_share(
+    mode: settings::Mode,
+    msg: &[u8],
+    op_fund_key: &str,
+    unallocated_reward_key: &str,
+) -> Result<Option<(RewardKey, u64)>> {
+    match mode {
+        settings::Mode::Mobile => {
+            let share = MobileRewardShare::decode(msg)?;
+            extract_mobile_reward(share, unallocated_reward_key)
+        }
+        settings::Mode::Iot => {
+            let share = IotRewardShare::decode(msg)?;
+            extract_iot_reward(share, op_fund_key, unallocated_reward_key)
+        }
+    }
+}
+
+pub fn extract_mobile_reward(
+    share: MobileRewardShare,
+    unallocated_reward_key: &str,
+) -> anyhow::Result<Option<(RewardKey, u64)>> {
+    let Some(reward) = share.reward else {
+        bail!("got an invalid mobile reward share");
+    };
+
+    match reward {
+        MobileReward::RadioReward(_r) => {
+            // RadioReward has been replaced by RadioRewardV2
+            Ok(None)
+        }
+        MobileReward::RadioRewardV2(r) => Ok(Some((
+            RewardKey {
+                key: PublicKeyBinary::from(r.hotspot_key).to_string(),
+                reward_type: RewardType::MobileGateway,
+            },
+            r.base_poc_reward + r.boosted_poc_reward,
+        ))),
+        MobileReward::GatewayReward(r) => Ok(Some((
+            RewardKey {
+                key: PublicKeyBinary::from(r.hotspot_key).to_string(),
+                reward_type: RewardType::MobileGateway,
+            },
+            r.dc_transfer_reward,
+        ))),
+        MobileReward::SubscriberReward(r) => Ok(Some((
+            RewardKey {
+                key: bs58::encode(&r.subscriber_id).into_string(),
+                reward_type: RewardType::MobileSubscriber,
+            },
+            r.discovery_location_amount + r.verification_mapping_amount,
+        ))),
+        MobileReward::ServiceProviderReward(r) => ServiceProvider::try_from(r.service_provider_id)
+            .map(|sp| {
+                Ok(Some((
+                    RewardKey {
+                        key: sp.to_string(),
+                        reward_type: RewardType::MobileServiceProvider,
+                    },
+                    r.amount,
+                )))
+            })
+            .map_err(|_| anyhow!("failed to decode service provider"))?,
+        MobileReward::UnallocatedReward(r) => Ok(Some((
+            RewardKey {
+                key: unallocated_reward_key.to_string(),
+                reward_type: RewardType::MobileUnallocated,
+            },
+            r.amount,
+        ))),
+        MobileReward::PromotionReward(promotion) => Ok(Some((
+            RewardKey {
+                key: promotion.entity,
+                reward_type: RewardType::MobilePromotion,
+            },
+            promotion.service_provider_amount + promotion.matched_amount,
+        ))),
+    }
+}
+
+pub fn extract_iot_reward(
+    share: IotRewardShare,
+    op_fund_key: &str,
+    unallocated_reward_key: &str,
+) -> anyhow::Result<Option<(RewardKey, u64)>> {
+    let Some(reward) = share.reward else {
+        bail!("got an invalid iot reward share")
+    };
+
+    match reward {
+        IotReward::GatewayReward(r) => Ok(Some((
+            RewardKey {
+                key: PublicKeyBinary::from(r.hotspot_key).to_string(),
+                reward_type: RewardType::IotGateway,
+            },
+            r.witness_amount + r.beacon_amount + r.dc_transfer_amount,
+        ))),
+        IotReward::OperationalReward(r) => Ok(Some((
+            RewardKey {
+                key: op_fund_key.to_string(),
+                reward_type: RewardType::IotOperational,
+            },
+            r.amount,
+        ))),
+        IotReward::UnallocatedReward(r) => Ok(Some((
+            RewardKey {
+                key: unallocated_reward_key.to_string(),
+                reward_type: RewardType::IotUnallocated,
+            },
+            r.amount,
+        ))),
     }
 }
 
