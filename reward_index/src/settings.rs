@@ -35,13 +35,15 @@ pub struct Settings {
     pub interval: Duration,
     /// Mode to run the server in (iot or mobile). Required
     pub mode: Mode,
+    /// Required when running in mode=iot
+    pub operation_fund_key: Option<String>,
+    pub unallocated_reward_entity_key: String,
+    #[serde(default = "default_start_after")]
+    pub start_after: DateTime<Utc>,
+
     pub database: db_store::Settings,
     pub verifier: file_store::Settings,
     pub metrics: poc_metrics::Settings,
-    pub operation_fund_key: Option<String>,
-    pub unallocated_reward_entity_key: Option<String>,
-    #[serde(default = "default_start_after")]
-    pub start_after: DateTime<Utc>,
 }
 
 fn default_interval() -> Duration {
@@ -74,16 +76,16 @@ impl Settings {
         // Add in settings from the environment (with a prefix of APP)
         // Eg.. `MI_DEBUG=1 ./target/app` would set the `debug` key
         builder
-            .add_source(Environment::with_prefix("MI").separator("_"))
+            .add_source(Environment::with_prefix("RI").separator("__"))
             .build()
             .and_then(|config| config.try_deserialize())
     }
 
-    pub fn operation_fund_key(&self) -> Option<String> {
-        self.operation_fund_key.clone()
-    }
-
-    pub fn unallocated_reward_entity_key(&self) -> Option<String> {
-        self.unallocated_reward_entity_key.clone()
+    pub fn operation_fund_key(&self) -> anyhow::Result<String> {
+        match (self.mode, self.operation_fund_key.clone()) {
+            (Mode::Iot, None) => anyhow::bail!("operation fund key is required for IOT mode"),
+            (Mode::Iot, Some(fund_key)) => Ok(fund_key),
+            (Mode::Mobile, _) => Ok("".to_string()),
+        }
     }
 }
