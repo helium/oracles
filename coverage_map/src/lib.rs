@@ -109,10 +109,7 @@ impl CoverageMapBuilder {
                     .push(coverage);
             }
         }
-        CoverageMap {
-            wifi_hotspots,
-            cbrs_radios,
-        }
+        CoverageMap { wifi_hotspots }
     }
 }
 
@@ -120,7 +117,6 @@ impl CoverageMapBuilder {
 #[derive(Clone, Default, Debug)]
 pub struct CoverageMap {
     wifi_hotspots: HashMap<Vec<u8>, Vec<RankedCoverage>>,
-    cbrs_radios: HashMap<String, Vec<RankedCoverage>>,
 }
 
 impl CoverageMap {
@@ -129,16 +125,6 @@ impl CoverageMap {
     pub fn get_wifi_coverage(&self, wifi_hotspot: &[u8]) -> &[RankedCoverage] {
         self.wifi_hotspots
             .get(wifi_hotspot)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
-    }
-
-    // TODO-K remove
-    /// Returns the hexes covered by the CBRS radio. The returned slice can be empty, indicating that
-    /// the radio did not meet the criteria to be ranked in any hex.
-    pub fn get_cbrs_coverage(&self, cbrs_radio: &str) -> &[RankedCoverage] {
-        self.cbrs_radios
-            .get(cbrs_radio)
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
