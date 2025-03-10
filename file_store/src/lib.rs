@@ -2,7 +2,7 @@ pub mod cli;
 pub mod coverage;
 pub mod entropy_report;
 mod error;
-mod file_info;
+pub mod file_info;
 pub mod file_info_poller;
 pub mod file_sink;
 pub mod file_source;

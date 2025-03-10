@@ -4,13 +4,13 @@ use chrono::{DateTime, Utc};
 use file_store::{mobile_session::DataTransferSessionReq, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use sqlx::{FromRow, Pool, Postgres, Row, Transaction};
+use sqlx::{prelude::FromRow, Pool, Postgres, Row, Transaction};
 
 use crate::bytes_to_dc;
 
 const METRIC_NAME: &str = "pending_dc_burn";
 
-#[derive(Debug, FromRow, Clone)]
+#[derive(FromRow)]
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
@@ -44,7 +44,6 @@ impl From<DataTransferSession> for ValidDataTransferSession {
     }
 }
 
-#[derive(Debug)]
 pub struct PendingPayerBurn {
     pub payer: PublicKeyBinary,
     pub total_dcs: u64,
@@ -146,9 +145,9 @@ pub async fn save_data_transfer_session(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
             r#"
-            INSERT INTO data_transfer_sessions 
+            INSERT INTO data_transfer_sessions
                 (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
-            VALUES 
+            VALUES
                 ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (pub_key, payer) DO UPDATE SET
                 uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,

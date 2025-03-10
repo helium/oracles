@@ -36,7 +36,7 @@ pub async fn get_pending_data_sessions_for_signature(
 ) -> anyhow::Result<Vec<DataTransferSession>> {
     let pending = sqlx::query_as(
         r#"
-        SELECT * FROM pending_data_transfer_sessions 
+        SELECT * FROM pending_data_transfer_sessions
         WHERE signature = $1
         "#,
     )
@@ -47,9 +47,6 @@ pub async fn get_pending_data_sessions_for_signature(
 }
 
 pub async fn pending_txn_count(conn: &PgPool) -> anyhow::Result<usize> {
-    // QUESTION: Pending Txns exists across two tables,
-    // `pending_data_transfer_sessions` and `pending_txns`.
-    // Do we want to be checking that both tables are empty?
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pending_txns")
         .fetch_one(conn)
         .await?;
@@ -62,8 +59,7 @@ pub async fn add_pending_txn(
     amount: u64,
     signature: &Signature,
 ) -> Result<(), sqlx::Error> {
-    do_add_pending_txn(conn, payer, amount, signature, Utc::now()).await?;
-    Ok(())
+    do_add_pending_txn(conn, payer, amount, signature, Utc::now()).await
 }
 
 pub async fn do_add_pending_txn(
@@ -95,24 +91,24 @@ pub async fn do_add_pending_txn(
             RETURNING *
         )
         INSERT INTO pending_data_transfer_sessions (
-            pub_key, 
-            payer, 
-            uploaded_bytes, 
-            downloaded_bytes, 
+            pub_key,
+            payer,
+            uploaded_bytes,
+            downloaded_bytes,
             rewardable_bytes,
-            first_timestamp, 
-            last_timestamp, 
+            first_timestamp,
+            last_timestamp,
             signature
         )
-        SELECT 
-            pub_key, 
-            payer, 
-            uploaded_bytes, 
-            downloaded_bytes, 
+        SELECT
+            pub_key,
+            payer,
+            uploaded_bytes,
+            downloaded_bytes,
             rewardable_bytes,
-            first_timestamp, 
-            last_timestamp, 
-            $2 
+            first_timestamp,
+            last_timestamp,
+            $2
         FROM moved_rows;
         "#,
     )

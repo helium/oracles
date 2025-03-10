@@ -3,7 +3,7 @@ use chrono::{Duration, Utc};
 use file_store::file_sink::FileSinkClient;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::{burn::SolanaNetwork, sender};
+use solana::{burn::SolanaNetwork, GetSignature, Signature, SolanaRpcError};
 use sqlx::PgPool;
 use tracing::Instrument;
 
@@ -12,13 +12,22 @@ use crate::{pending_burns, pending_txns};
 pub struct Burner<S> {
     valid_sessions: FileSinkClient<ValidDataTransferSession>,
     solana: S,
+    failed_retry_attempts: usize,
+    failed_check_interval: std::time::Duration,
 }
 
 impl<S> Burner<S> {
-    pub fn new(valid_sessions: FileSinkClient<ValidDataTransferSession>, solana: S) -> Self {
+    pub fn new(
+        valid_sessions: FileSinkClient<ValidDataTransferSession>,
+        solana: S,
+        failed_retry_attempts: usize,
+        failed_check_interval: std::time::Duration,
+    ) -> Self {
         Self {
             valid_sessions,
             solana,
+            failed_retry_attempts,
+            failed_check_interval,
         }
     }
 }
@@ -36,12 +45,12 @@ where
     }
 
     pub async fn confirm_pending_txns(&self, pool: &PgPool) -> anyhow::Result<()> {
-        let pending = pending_txns::fetch_all_pending_txns(pool).await?;
-        tracing::info!(count = pending.len(), "confirming pending txns");
+        let pending_txns = pending_txns::fetch_all_pending_txns(pool).await?;
+        tracing::info!(count = pending_txns.len(), "confirming pending txns");
 
-        for pending in pending {
+        for pending in pending_txns {
             // Sleep for at least a minute since the time of submission to
-            // give the transaction plenty of time to be confirmed:
+            // give the transaction plenty of time to be finalized
             let time_since_submission = Utc::now() - pending.time_of_submission;
             if Duration::minutes(1) > time_since_submission {
                 let delay = Duration::minutes(1) - time_since_submission;
@@ -51,7 +60,8 @@ where
 
             let signature = pending.signature;
             let confirmed = self.solana.confirm_transaction(&signature).await?;
-            tracing::info!(?pending, confirmed, "confirming pending transaction");
+            tracing::info!(?pending, confirmed, "confirming pending txn");
+
             if confirmed {
                 let sessions =
                     pending_txns::get_pending_data_sessions_for_signature(pool, &signature).await?;
@@ -61,6 +71,7 @@ where
                         .write(ValidDataTransferSession::from(session), &[])
                         .await?;
                 }
+
                 pending_txns::remove_pending_txn_success(pool, &signature).await?;
             } else {
                 pending_txns::remove_pending_txn_failure(pool, &signature).await?;
@@ -96,119 +107,130 @@ where
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
             let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
-            let store = BurnTxnStore::new(
-                pool.clone(),
-                payer.clone(),
-                total_dcs,
-                sessions,
-                self.valid_sessions.clone(),
-            );
+            pending_txns::add_pending_txn(pool, &payer, total_dcs, txn.get_signature())
+                .await
+                .context("adding pending txns and moving sessions")?;
+            match self.solana.submit_transaction(&txn).await {
+                Ok(()) => {
+                    handle_transaction_success(
+                        pool,
+                        txn.get_signature(),
+                        payer,
+                        total_dcs,
+                        sessions,
+                        &self.valid_sessions,
+                    )
+                    .await?;
+                }
+                Err(err) => {
+                    // NOTE: The next time we burn, pending txns will be
+                    // checked. If this txn is not finalized by that time, th
+                    // txn and pending data sessions will be moved back to the
+                    // pending_burns table in `confirm_pending_txns()`
+                    let span = tracing::info_span!(
+                        "txn_confirmation",
+                        signature = %txn.get_signature(),
+                        %payer,
+                        total_dcs,
+                        max_attempts = self.failed_retry_attempts
+                    );
 
-            let burn_span = tracing::info_span!("burn_txn", %payer, amount = total_dcs);
-            self.solana
-                .submit_transaction(&txn, &store)
-                .instrument(burn_span)
-                .await?
+                    // block on confirmation
+                    self.transaction_confirmation_check(pool, err, txn, payer, total_dcs, sessions)
+                        .instrument(span)
+                        .await;
+                }
+            }
         }
 
         Ok(())
     }
-}
 
-struct BurnTxnStore {
-    pool: PgPool,
-    payer: PublicKeyBinary,
-    amount: u64,
-    sessions: Vec<pending_burns::DataTransferSession>,
-    valid_sessions: FileSinkClient<ValidDataTransferSession>,
-}
-
-impl BurnTxnStore {
-    fn new(
-        pool: PgPool,
+    async fn transaction_confirmation_check(
+        &self,
+        pool: &PgPool,
+        err: SolanaRpcError,
+        txn: S::Transaction,
         payer: PublicKeyBinary,
-        amount: u64,
+        total_dcs: u64,
         sessions: Vec<pending_burns::DataTransferSession>,
-        valid_sessions: FileSinkClient<ValidDataTransferSession>,
-    ) -> Self {
-        Self {
-            pool,
-            payer,
-            amount,
-            sessions,
-            valid_sessions,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl sender::TxnStore for BurnTxnStore {
-    async fn on_prepared(&self, txn: &solana::Transaction) -> sender::SenderResult<()> {
-        tracing::info!("txn prepared");
+    ) {
+        tracing::warn!(?err, "starting txn confirmation check");
+        // We don't know if the txn actually made it, maybe it did
 
         let signature = txn.get_signature();
-        let add_pending =
-            pending_txns::add_pending_txn(&self.pool, &self.payer, self.amount, signature);
 
-        match add_pending.await {
-            Ok(()) => {}
-            Err(err) => {
-                tracing::error!("failed to add pending transaction");
-                return Err(sender::SenderError::preparation(&format!(
-                    "could not add pending transaction: {err:?}"
-                )));
+        let mut attempt = 0;
+        while attempt <= self.failed_retry_attempts {
+            tokio::time::sleep(self.failed_check_interval).await;
+            match self.solana.confirm_transaction(signature).await {
+                Ok(true) => {
+                    tracing::debug!("txn confirmed on chain");
+                    let txn_success = handle_transaction_success(
+                        pool,
+                        signature,
+                        payer,
+                        total_dcs,
+                        sessions,
+                        &self.valid_sessions,
+                    )
+                    .await;
+                    if let Err(err) = txn_success {
+                        tracing::error!(?err, "txn succeeded, something else failed");
+                    }
+
+                    return;
+                }
+                Ok(false) => {
+                    tracing::info!(attempt, "txn not confirmed, yet...");
+                    attempt += 1;
+                    continue;
+                }
+                Err(err) => {
+                    // Client errors do not count against retry attempts
+                    tracing::error!(?err, attempt, "failed to confirm txn");
+                    continue;
+                }
             }
         }
 
-        Ok(())
-    }
+        tracing::warn!("failed to confirm txn");
 
-    async fn on_finalized(&self, txn: &solana::Transaction) {
-        tracing::info!("txn finalized");
+        // We have failed to burn data credits:
         metrics::counter!(
             "burned",
-            "payer" => self.payer.to_string(),
-            "success" => "true"
-        )
-        .increment(self.amount);
-
-        // Delete from the data transfer session and write out to S3
-        let remove_burn = pending_burns::delete_for_payer(&self.pool, &self.payer, self.amount);
-        if let Err(err) = remove_burn.await {
-            tracing::error!(?err, "failed to deduct finalized burn");
-        }
-
-        let signature = txn.get_signature();
-        let remove_pending = pending_txns::remove_pending_txn_success(&self.pool, signature);
-        if let Err(err) = remove_pending.await {
-            tracing::error!(?err, "failed to remove successful pending txn");
-        }
-
-        for session in self.sessions.iter() {
-            let session = session.to_owned();
-            let write = self
-                .valid_sessions
-                .write(ValidDataTransferSession::from(session), &[]);
-            if let Err(err) = write.await {
-                tracing::error!(?err, "failed to write data session for finalized burn");
-            }
-        }
-    }
-
-    async fn on_error(&self, txn: &solana::Transaction, err: sender::SenderError) {
-        tracing::warn!(?err, "txn failed");
-
-        let signature = txn.get_signature();
-        let remove_pending = pending_txns::remove_pending_txn_failure(&self.pool, signature);
-        if let Err(err) = remove_pending.await {
-            tracing::error!(?err, "failed to remove failed pending txn");
-        }
-
-        metrics::counter!(
-            "burned",
-            "payer" => self.payer.to_string(),
+            "payer" => payer.to_string(),
             "success" => "false"
         )
-        .increment(self.amount);
+        .increment(total_dcs);
     }
+}
+
+async fn handle_transaction_success(
+    pool: &PgPool,
+    signature: &Signature,
+    payer: PublicKeyBinary,
+    total_dcs: u64,
+    sessions: Vec<pending_burns::DataTransferSession>,
+    valid_sessions: &FileSinkClient<ValidDataTransferSession>,
+) -> Result<(), anyhow::Error> {
+    // We succesfully managed to burn data credits:
+    metrics::counter!(
+        "burned",
+        "payer" => payer.to_string(),
+        "success" => "true"
+    )
+    .increment(total_dcs);
+
+    // Delete from the data transfer session and write out to S3
+    pending_burns::delete_for_payer(pool, &payer, total_dcs).await?;
+    pending_txns::remove_pending_txn_success(pool, signature).await?;
+
+    for session in sessions {
+        valid_sessions
+            .write(ValidDataTransferSession::from(session), &[])
+            .await?;
+    }
+
+    Ok(())
 }

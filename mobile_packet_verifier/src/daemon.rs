@@ -3,7 +3,7 @@ use crate::{
     MobileConfigClients, MobileConfigResolverExt,
 };
 use anyhow::{bail, Result};
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
@@ -32,6 +32,7 @@ pub struct Daemon<S, MCR> {
     min_burn_period: Duration,
     mobile_config_resolver: MCR,
     verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
+    cbrs_disable_time: DateTime<Utc>,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
@@ -51,6 +52,7 @@ impl<S, MCR> Daemon<S, MCR> {
             min_burn_period: settings.min_burn_period,
             mobile_config_resolver,
             verified_data_session_report_sink,
+            cbrs_disable_time: settings.cbrs_disable_time,
         }
     }
 }
@@ -81,14 +83,14 @@ where
                 biased;
                 _ = &mut shutdown => return Ok(()),
                 _ = sleep_until(burn_time) => {
+                    // It's time to burn
                     match self.burner.confirm_and_burn(&self.pool).await {
                         Ok(_) => {
                             burn_time = Instant::now() + self.burn_period;
-                            tracing::info!(next_burn = ?self.burn_period, "successful burn")
                         }
-                        Err(err) => {
+                        Err(e) => {
                             burn_time = Instant::now() + self.min_burn_period;
-                            tracing::warn!(?err, next_burn = ?self.min_burn_period, "failed to confirm or burn");
+                            tracing::warn!("failed to burn {e:?}, re running burn in {:?} min", self.min_burn_period);
                         }
                     }
                 }
@@ -100,7 +102,7 @@ where
                     let ts = file.file_info.timestamp;
                     let mut transaction = self.pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.verified_data_session_report_sink, ts, reports).await?;
+                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.verified_data_session_report_sink, ts, reports, self.cbrs_disable_time).await?;
                     transaction.commit().await?;
                     self.verified_data_session_report_sink.commit().await?;
                 }
@@ -128,7 +130,7 @@ impl Cmd {
                 bail!("Missing solana section in settings");
             };
             // Set up the solana RpcClient:
-            Some(SolanaRpc::new(solana_settings, solana::SubDao::Mobile).await?)
+            Some(SolanaRpc::new(solana_settings).await?)
         } else {
             None
         };
@@ -157,7 +159,12 @@ impl Cmd {
             )
             .await?;
 
-        let burner = Burner::new(valid_sessions, solana);
+        let burner = Burner::new(
+            valid_sessions,
+            solana,
+            settings.txn_confirmation_retry_attempts,
+            settings.txn_confirmation_check_interval,
+        );
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 

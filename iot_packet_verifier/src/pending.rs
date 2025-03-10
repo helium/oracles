@@ -4,6 +4,8 @@ use helium_crypto::PublicKeyBinary;
 use solana::{burn::SolanaNetwork, SolanaRpcError};
 use solana_sdk::signature::Signature;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Postgres, Row, Transaction};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::Mutex;
 
 use crate::balances::BalanceStore;
 
@@ -21,7 +23,7 @@ pub trait AddPendingBurn {
 }
 
 #[async_trait]
-pub trait PendingTables: Send + Sync + Clone + 'static {
+pub trait PendingTables {
     type Transaction<'a>: PendingTablesTransaction<'a> + Send + Sync
     where
         Self: 'a;
@@ -274,5 +276,18 @@ impl FromRow<'_, PgRow> for PendingTxn {
                     source: Box::new(e),
                 })?,
         })
+    }
+}
+
+#[async_trait]
+impl AddPendingBurn for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    async fn add_burned_amount(
+        &mut self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<(), sqlx::Error> {
+        let mut map = self.lock().await;
+        *map.entry(payer.clone()).or_default() += amount;
+        Ok(())
     }
 }

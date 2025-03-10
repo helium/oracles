@@ -47,6 +47,16 @@ pub struct Settings {
     pub usa_and_mexico_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
     pub usa_and_mexico_fencing_resolution: u8,
+
+    pub usa_fencing_resolution: u8,
+    #[serde(default = "default_cbrs_disable_time")]
+    pub cbrs_disable_time: DateTime<Utc>,
+}
+
+fn default_cbrs_disable_time() -> DateTime<Utc> {
+    "2025-03-01 00:00:00Z"
+        .parse::<DateTime<Utc>>()
+        .expect("invalid default cbrs disable time")
 }
 
 fn default_fencing_resolution() -> u8 {

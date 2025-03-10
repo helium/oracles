@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use helium_crypto::Network;
 use humantime_serde::re::humantime;
@@ -44,6 +45,14 @@ pub struct Settings {
     // mobile config client settings
     // optional to avoid having to define a client for IOT mode
     pub config_client: Option<mobile_config::ClientSettings>,
+    #[serde(default = "default_cbrs_disable_time")]
+    pub cbrs_disable_time: DateTime<Utc>,
+}
+
+fn default_cbrs_disable_time() -> DateTime<Utc> {
+    "2025-03-01 00:00:00Z"
+        .parse::<DateTime<Utc>>()
+        .expect("invalid default date")
 }
 
 fn default_roll_time() -> Duration {

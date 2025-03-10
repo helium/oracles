@@ -1,3 +1,50 @@
+//
+// the loader is responsible for processing incoming beacon and witness reports from S3
+// its purpose is to validate the reports with basic sanity checks and insert them into the db
+// from where they are subsequently picked up by the runner
+//
+// Some key points to note:
+//
+// ** protect the db **
+// due to the volume of beacon & witness reports, the loader will attempt to drop invalid reports as early as possible
+// this is to 'protect' the db from being overwhelmed with spurious or invalid data
+// to achieve this the loader will first process beacon reports and construct an xor filter based on the beacon packet data
+// the loader will then process witness reports
+// the witness packet data will be checked against the xor filter
+// if the witness packet data is not found in the xor filter, then it suggests a spurious or orphaned report
+// and will be dropped
+// NOTE: any reports dropped at this stage are done so silently, there is no paper trail to S3
+// The deny list check used to be performed here, but it was removed in PR # 588 as we wanted
+// a paper trail of the deny listed reports to hit s3
+
+// ** sliding window **
+// As part of the "protect the db" goal, the loader processes files from s3 via a sliding window
+// it does not use the typical fileinfopoller approach as used elsewhere
+// for any one tick, the loader will process beacon files from s3 that fall within the window
+// the loader will then process witness files from s3 that fall within the window and attempt to match them with the beacon reports
+// however for witnesses we need to accommodate the fact that witnesses and beacons may arrive
+// at the ingestor out of order, ie we can have a witness report for a beacon which arrives before
+// or much later than the beacon
+// as such the window for witness reports needs to be wider than that used for beacon reports
+// so that it looks for witnesses in the roll ups before and after the beacon window
+// the extended width of the witness window needs to be at least equal to the ingestor roll up time plus a buffer
+
+// ** Alternative approach **:
+// the approach with the sliding window is there to protect the db from being overwhelmed
+// by dropping out spurious/orphaned reports as early as possible and before they hit the db
+// the end result is a loader that is much more complicated than our typical consumers/loaders
+// a simpler alternative is to use the regular fileinfopoller approach
+// drop the xor filtering and dump all reports into the db... effectively use the db as a scratch area
+// the runner is already setup to only pull witness reports which have a corresponding beacon report
+// and any spurious or orphaned reports will end up being purged by the purger
+// this approach is simpler and more in line with our other consumers/loaders and will be easier to maintain
+// an earlier version of the loader used this approach but was changed to the current setup
+// as it was thought that the db would be overwhelmed with spurious reports
+// however I am no longer convinced this is a serious concern, especially after we moved the deny list check
+// from the loader to the runner and thus all reports from denied gateways are already hitting the db
+// in addition the volume of reports is significantly less given a much lower active hotspot count
+//
+
 use crate::{
     gateway_cache::GatewayCache,
     meta::Meta,
@@ -102,39 +149,51 @@ impl Loader {
     async fn handle_report_tick(&self) -> anyhow::Result<()> {
         tracing::info!("handling report tick");
         let now = Utc::now();
-        // the loader loads files from s3 via a sliding window
+        // set up the sliding window
         // if there is no last timestamp in the meta db, the window start point will be
         // Now() - (window_width * 4)
         // as such data loading is always behind by a value equal to window_width * 4
         let window_default_lookback = now - (self.window_width * 4);
+
         // cap the starting point of the window at the max below.
         let window_max_lookback = now - self.max_lookback_age;
         tracing::info!(
             "default window: {window_default_lookback}, max window: {window_max_lookback}"
         );
+
+        // *after* is the window start point
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
             .unwrap_or(window_default_lookback)
             .max(window_max_lookback);
+
+        // *before* is the window end point
+        // this can never be later than now - window width * 3
+        // otherwise we have no room to widen the window for witness reports
         let before_max = after + self.window_width;
         let before = (now - (self.window_width * 3)).min(before_max);
+
         let cur_window_width = (before - after).to_std()?;
         tracing::info!(
             "sliding window, after: {after}, before: {before}, cur width: {:?}, required width: {:?}",
             humantime::format_duration(cur_window_width),
             humantime::format_duration(self.window_width)
         );
-        // if the current window width is less than our expected width
-        // then do nothing
-        // this likely means our loader tick interval is set to a value
-        // less than our width
+
+        // if there is no room for our desired window width
+        // eg. if the before time is after now - window width * 3
+        // then do nothing and try again next tick
         if cur_window_width < self.window_width {
             tracing::info!("current window width insufficient. completed handling poc_report tick");
             return Ok(());
         }
+
         self.process_window(after, before).await?;
+
+        // TODO - wrap the db writes in a transaction
         Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
         Report::pending_beacons_to_ready(&self.pool, now).await?;
+
         tracing::info!("completed handling poc_report tick");
         Ok(())
     }
@@ -144,15 +203,11 @@ impl Loader {
         after: DateTime<Utc>,
         before: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        // beacons are processed first
-        // an xor filter is constructed based on the beacon packet data
-        // later when processing witnesses, the witness packet data
-        // is checked against the xor filter
-        // if not found the witness is deemed invalid and dropped
+        // create the inital xor data vec
+        // wrapped in a mutex to allow for concurrent access
         let xor_data = Mutex::new(Vec::<u64>::new());
 
-        // the arc is requried when processing beacons
-        // filter is not required for beacons
+        // process the beacons
         match self
             .process_events(
                 FileType::IotBeaconIngestReport,
@@ -170,36 +225,36 @@ impl Loader {
                 FileType::IotBeaconIngestReport
             ),
         }
-        tracing::info!("creating beacon xor filter");
+
+        // create the xor filter from the vec of beacon data
         let mut beacon_packet_data = xor_data.into_inner();
         beacon_packet_data.sort_unstable();
         beacon_packet_data.dedup();
         let xor_len = beacon_packet_data.len();
-        tracing::info!("xor filter len {:?}", xor_len);
         let filter = Xor16::from(beacon_packet_data);
-        tracing::info!("completed creating beacon xor filter");
-        // if we dont have any beacons, then dont go any further
+        tracing::info!("created beacon xor filter. filter len: {:?}", filter.len());
+
+        // if the xor filter is empty, then dont go any further
         // no point processing witnesses if no beacons to associate with
         if xor_len == 0 {
             return Ok(());
         };
 
         // process the witnesses
-        // widen the window for these over that used for the beacons
-        // this is to allow for a witness being in a rolled up file
-        // from just before or after the beacon files
-        // the width extention needs to be at least equal to that
+        // widen the window over that used for the beacons
+        // this is to allow for a witness being in a roll up file
+        // from before or after the beacon report
+        // the width extension needs to be at least equal to that
         // of the ingestor roll up time plus a buffer
         // to account for the potential of the ingestor write time for
         // witness reports being out of sync with that of beacon files
-        // for witnesses we do need the filter but not the arc
-        let two_minutes = Duration::from_secs(120);
+        let buffer = Duration::from_secs(120);
         match self
             .process_events(
                 FileType::IotWitnessIngestReport,
                 &self.ingest_store,
-                after - (self.ingestor_rollup_time + two_minutes),
-                before + (self.ingestor_rollup_time + two_minutes),
+                after - (self.ingestor_rollup_time + buffer),
+                before + (self.ingestor_rollup_time + buffer),
                 None,
                 Some(&filter),
             )

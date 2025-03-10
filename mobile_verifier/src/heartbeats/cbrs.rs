@@ -5,12 +5,13 @@ use crate::{
     heartbeats::LocationCache,
     GatewayResolver, Settings,
 };
+
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
     file_source,
-    wifi_heartbeat::WifiHeartbeatIngestReport,
+    heartbeat::CbrsHeartbeatIngestReport,
     FileStore, FileType,
 };
 use futures::{stream::StreamExt, TryFutureExt};
@@ -24,17 +25,18 @@ use std::{
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
-pub struct WifiHeartbeatDaemon<GIR, GFV> {
+pub struct CbrsHeartbeatDaemon<GIR, GFV> {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_info_resolver: GIR,
-    heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
+    heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
     max_distance_to_coverage: u32,
     heartbeat_sink: FileSinkClient<proto::Heartbeat>,
     seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
     geofence: GFV,
+    cbrs_disable_time: DateTime<Utc>,
 }
 
-impl<GIR, GFV> WifiHeartbeatDaemon<GIR, GFV>
+impl<GIR, GFV> CbrsHeartbeatDaemon<GIR, GFV>
 where
     GIR: GatewayResolver,
     GFV: GeofenceValidator,
@@ -49,29 +51,31 @@ where
         seniority_updates: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
     ) -> anyhow::Result<impl ManagedTask> {
-        // Wifi Heartbeats
-        let (wifi_heartbeats, wifi_heartbeats_server) =
-            file_source::continuous_source::<WifiHeartbeatIngestReport, _>()
+        // CBRS Heartbeats
+        let (cbrs_heartbeats, cbrs_heartbeats_server) =
+            file_source::continuous_source::<CbrsHeartbeatIngestReport, _>()
                 .state(pool.clone())
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::WifiHeartbeatIngestReport.to_string())
+                .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
+                .queue_size(1)
                 .create()
                 .await?;
 
-        let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
+        let cbrs_heartbeat_daemon = CbrsHeartbeatDaemon::new(
             pool,
             gateway_resolver,
-            wifi_heartbeats,
+            cbrs_heartbeats,
             settings.max_distance_from_coverage,
             valid_heartbeats,
             seniority_updates,
             geofence,
+            settings.cbrs_disable_time,
         );
 
         Ok(TaskManager::builder()
-            .add_task(wifi_heartbeats_server)
-            .add_task(wifi_heartbeat_daemon)
+            .add_task(cbrs_heartbeats_server)
+            .add_task(cbrs_heartbeat_daemon)
             .build())
     }
 
@@ -79,11 +83,12 @@ where
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         gateway_info_resolver: GIR,
-        heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
+        heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
         max_distance_to_coverage: u32,
         heartbeat_sink: FileSinkClient<proto::Heartbeat>,
         seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
+        cbrs_disable_time: DateTime<Utc>,
     ) -> Self {
         Self {
             pool,
@@ -93,11 +98,12 @@ where
             heartbeat_sink,
             seniority_sink,
             geofence,
+            cbrs_disable_time,
         }
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("Starting Wifi HeartbeatDaemon");
+        tracing::info!("Starting CBRS HeartbeatDaemon");
         let heartbeat_cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
 
         let heartbeat_cache_clone = heartbeat_cache.clone();
@@ -109,13 +115,14 @@ where
 
         let coverage_claim_time_cache = CoverageClaimTimeCache::new();
         let coverage_object_cache = CoverageObjectCache::new(&self.pool);
+        // Unused:
         let location_cache = LocationCache::new(&self.pool);
 
         loop {
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
-                    tracing::info!("Wifi HeartbeatDaemon shutting down");
+                    tracing::info!("CBRS HeartbeatDaemon shutting down");
                     break;
                 }
                 Some(file) = self.heartbeats.recv() => {
@@ -125,9 +132,9 @@ where
                         &heartbeat_cache,
                         &coverage_claim_time_cache,
                         &coverage_object_cache,
-                        &location_cache
+                        &location_cache,
                     ).await?;
-                    metrics::histogram!("wifi_heartbeat_processing_time")
+                    metrics::histogram!("cbrs_heartbeat_processing_time")
                         .record(start.elapsed());
                 }
             }
@@ -138,20 +145,31 @@ where
 
     async fn process_file(
         &self,
-        file: FileInfoStream<WifiHeartbeatIngestReport>,
-        heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
+        file: FileInfoStream<CbrsHeartbeatIngestReport>,
+        heartbeat_cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
         coverage_claim_time_cache: &CoverageClaimTimeCache,
         coverage_object_cache: &CoverageObjectCache,
         location_cache: &LocationCache,
     ) -> anyhow::Result<()> {
-        tracing::info!("Processing WIFI heartbeat file {}", file.file_info.key);
+        tracing::info!("Processing CBRS heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
+        let heartbeat_cache_clone = heartbeat_cache.clone();
         let heartbeats = file
             .into_stream(&mut transaction)
             .await?
-            .map(Heartbeat::from);
+            .map(Heartbeat::from)
+            .filter(move |h| {
+                let timestamp = h.timestamp;
+                let cbrs_disable_time = self.cbrs_disable_time;
+                async move { timestamp < cbrs_disable_time }
+            })
+            .filter(move |h| {
+                let hb_cache = heartbeat_cache_clone.clone();
+                let id = h.id().unwrap();
+                async move { hb_cache.get(&id).await.is_none() }
+            });
         process_validated_heartbeats(
             ValidatedHeartbeat::validate_heartbeats(
                 heartbeats,
@@ -176,7 +194,7 @@ where
     }
 }
 
-impl<GIR, GFV> ManagedTask for WifiHeartbeatDaemon<GIR, GFV>
+impl<GIR, GFV> ManagedTask for CbrsHeartbeatDaemon<GIR, GFV>
 where
     GIR: GatewayResolver,
     GFV: GeofenceValidator,
