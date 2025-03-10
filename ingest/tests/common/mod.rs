@@ -70,12 +70,7 @@ pub async fn setup_mobile(
 
     let (trigger, listener) = triggered::trigger();
 
-<<<<<<< HEAD
-||||||| fc57aaab
-    let (cbrs_heartbeat_tx, _rx) = tokio::sync::mpsc::channel(10);
-=======
     let (cbrs_heartbeat_tx, cbrs_hearbeat_rx) = tokio::sync::mpsc::channel(10);
->>>>>>> main
     let (wifi_heartbeat_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (speedtest_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (data_transfer_tx, data_transfer_rx) = tokio::sync::mpsc::channel(10);
