@@ -37,9 +37,9 @@ impl KeyCache {
     {
         let cached_keys = self.cache_receiver.borrow();
         if (cached_keys.contains(&(signer.clone(), KeyRole::Administrator))
-            || cached_keys.contains(&(signer.clone(), KeyRole::Oracle)))
-            || cached_keys.contains(&(signer.clone(), KeyRole::Carrier))
-                && request.verify(signer).is_ok()
+            || cached_keys.contains(&(signer.clone(), KeyRole::Oracle))
+            || cached_keys.contains(&(signer.clone(), KeyRole::Carrier)))
+            && request.verify(signer).is_ok()
         {
             tracing::debug!(pubkey = signer.to_string(), "request authorized");
             Ok(())
@@ -152,5 +152,92 @@ pub(crate) mod db {
                 row.get::<KeyRole, &str>("key_role"),
             )
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use helium_crypto::{KeyTag, Keypair};
+    use rand::rngs::OsRng;
+
+    use super::*;
+
+    struct VerifiedGood;
+
+    impl MsgVerify for VerifiedGood {
+        fn verify(&self, _verifier: &helium_crypto::PublicKey) -> file_store::Result {
+            Ok(())
+        }
+    }
+
+    struct VerifiedBad;
+
+    impl MsgVerify for VerifiedBad {
+        fn verify(&self, _verifier: &helium_crypto::PublicKey) -> file_store::Result {
+            Err(file_store::Error::NotFound("not found".to_string()))
+        }
+    }
+
+    #[test]
+    fn verify_signature_when_key_is_not_in_any_role() {
+        let keypair = generate_keypair();
+
+        let (_, key_cache) = KeyCache::new(HashSet::new());
+
+        let result = key_cache.verify_signature(keypair.public_key(), &VerifiedGood);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_signature_for_administrator() {
+        let keypair = generate_keypair();
+
+        let mut keys = HashSet::new();
+        keys.insert((keypair.public_key().to_owned(), KeyRole::Administrator));
+
+        let (_, key_cache) = KeyCache::new(keys);
+
+        let result = key_cache.verify_signature(keypair.public_key(), &VerifiedGood);
+        assert!(result.is_ok());
+
+        let result = key_cache.verify_signature(keypair.public_key(), &VerifiedBad);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_signature_for_oracle() {
+        let keypair = generate_keypair();
+
+        let mut keys = HashSet::new();
+        keys.insert((keypair.public_key().to_owned(), KeyRole::Oracle));
+
+        let (_, key_cache) = KeyCache::new(keys);
+
+        let result = key_cache.verify_signature(keypair.public_key(), &VerifiedGood);
+        assert!(result.is_ok());
+
+        let result = key_cache.verify_signature(keypair.public_key(), &VerifiedBad);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_signature_for_carrier() {
+        let keypair = generate_keypair();
+
+        let mut keys = HashSet::new();
+        keys.insert((keypair.public_key().to_owned(), KeyRole::Carrier));
+
+        let (_, key_cache) = KeyCache::new(keys);
+
+        let result = key_cache.verify_signature(keypair.public_key(), &VerifiedGood);
+        assert!(result.is_ok());
+
+        let result = key_cache.verify_signature(keypair.public_key(), &VerifiedBad);
+        assert!(result.is_err());
+    }
+
+    fn generate_keypair() -> Keypair {
+        Keypair::generate(KeyTag::default(), &mut OsRng)
     }
 }
