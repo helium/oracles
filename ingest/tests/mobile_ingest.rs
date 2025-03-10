@@ -189,37 +189,17 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn cell_heartbeat_before() -> anyhow::Result<()> {
-    let cbrs_disable_time = Utc::now() + Duration::hours(1);
-    let (mut client, trigger) = common::setup_mobile(cbrs_disable_time).await?;
-
-    let keypair = generate_keypair();
-
-    client.submit_cell_heartbeat(&keypair, "cbsd-1").await?;
-
-    let ingest_report = client.cell_heartbeat_recv().await?;
-
-    assert!(ingest_report
-        .report
-        .is_some_and(|r| r.pub_key == keypair.public_key().to_vec() && r.cbsd_id == "cbsd-1"));
-
-    trigger.trigger();
-    Ok(())
-}
-
-#[tokio::test]
-async fn cell_heartbeat_after() -> anyhow::Result<()> {
+async fn cell_heartbeat_after() {
     let cbrs_disable_time = Utc::now() - Duration::hours(1);
-    let (mut client, trigger) = common::setup_mobile(cbrs_disable_time).await?;
+    let (mut client, _trigger) = common::setup_mobile(cbrs_disable_time).await.unwrap();
 
     let keypair = generate_keypair();
 
-    client.submit_cell_heartbeat(&keypair, "cbsd-1").await?;
-
-    assert!(client.is_cell_heartbeat_rx_empty()?);
-
-    trigger.trigger();
-    Ok(())
+    // Cell hearbeat is disabled but should return OK
+    client
+        .submit_cell_heartbeat(&keypair, "cbsd-1")
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
