@@ -633,7 +633,7 @@ mod tests {
         ) -> RankedCoverage {
             RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: Some("serial".to_string()),
+                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -649,35 +649,43 @@ mod tests {
 
         use Assignment::*;
         let indoor_cbrs = CoveragePoints::new(
-            RadioType::IndoorCbrs,
+            RadioType::OutdoorWifi,
             SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             vec![
                 // yellow - POI ≥ 1 Urbanized, no SP override
-                ranked_coverage(A, A, A, C), // 100
-                ranked_coverage(A, B, A, C), // 100
-                ranked_coverage(A, C, A, C), // 100
+                ranked_coverage(A, A, A, C), // 16
+                ranked_coverage(A, B, A, C), // 16
+                ranked_coverage(A, C, A, C), // 16
+                // 48
                 // orange - POI ≥ 1 Not Urbanized, no SP override
-                ranked_coverage(A, A, B, C), // 100
-                ranked_coverage(A, B, B, C), // 100
-                ranked_coverage(A, C, B, C), // 100
+                ranked_coverage(A, A, B, C), // 16
+                ranked_coverage(A, B, B, C), // 16
+                ranked_coverage(A, C, B, C), // 16
+                // 48
                 // light green - Point of Interest Urbanized, no SP override
-                ranked_coverage(B, A, A, C), // 70
-                ranked_coverage(B, B, A, C), // 70
-                ranked_coverage(B, C, A, C), // 70
+                ranked_coverage(B, A, A, C), // 11.2
+                ranked_coverage(B, B, A, C), // 11.2
+                ranked_coverage(B, C, A, C), // 11.2
+                ranked_coverage(B, C, A, C), // 11.2
+                ranked_coverage(B, C, A, C), // 11.2
+                // 56
                 // dark green - Point of Interest Not Urbanized, no SP override
-                ranked_coverage(B, A, B, C), // 50
-                ranked_coverage(B, B, B, C), // 50
-                ranked_coverage(B, C, B, C), // 50
+                ranked_coverage(B, A, B, C), // 8
+                ranked_coverage(B, B, B, C), // 8
+                ranked_coverage(B, C, B, C), // 8
+                // 24
                 // light blue - No POI Urbanized, no SP override
-                ranked_coverage(C, A, A, C), // 40
-                ranked_coverage(C, B, A, C), // 30
-                ranked_coverage(C, C, A, C), // 5
+                ranked_coverage(C, A, A, C), // 6.4
+                ranked_coverage(C, B, A, C), // 4.8
+                ranked_coverage(C, C, A, C), // 0.8
+                // 12
                 // dark blue - No POI Not Urbanized, no SP override
-                ranked_coverage(C, A, B, C), // 20
-                ranked_coverage(C, B, B, C), // 15
-                ranked_coverage(C, C, B, C), // 3
+                ranked_coverage(C, A, B, C), // 3.2
+                ranked_coverage(C, B, B, C), // 2.4
+                ranked_coverage(C, C, B, C), // 0.48
+                // 6.08
                 // gray - Outside of USA, no SP override
                 ranked_coverage(A, A, C, C), // 0
                 ranked_coverage(A, B, C, C), // 0
@@ -693,7 +701,8 @@ mod tests {
         )
         .expect("indoor cbrs");
 
-        assert_eq!(dec!(1073), indoor_cbrs.coverage_points_v1());
+        // 48 + 48 + 56 + 24 + 12 + 6.08 = 194.08
+        assert_eq!(dec!(194.08), indoor_cbrs.coverage_points_v1());
     }
 
     #[rstest]
