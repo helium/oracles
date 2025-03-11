@@ -167,7 +167,7 @@ impl CoveragePoints {
         ranked_coverage: Vec<coverage_map::RankedCoverage>,
         oracle_boost_status: OracleBoostingStatus,
     ) -> Result<CoveragePoints> {
-        let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
+        let location_trust_multiplier = location::multiplier(&location_trust_scores);
 
         let sp_boost_eligibility = SpBoostedHexStatus::new(
             radio_type,
@@ -284,8 +284,7 @@ impl SpBoostedHexStatus {
                 }
 
                 // hip-119: if the average distance to asserted is beyond 50m, no boosting
-                let average_distance =
-                    location::average_distance(radio_type, location_trust_scores);
+                let average_distance = location::average_distance(location_trust_scores);
                 if average_distance > MAX_AVERAGE_DISTANCE {
                     return Self::AverageAssertedDistanceOverLimit(average_distance);
                 }
@@ -886,7 +885,7 @@ mod tests {
         let wifi_bad_trust_score = |sp_status: SPBoostedRewardEligibility| {
             SpBoostedHexStatus::new(
                 RadioType::IndoorWifi,
-                location::multiplier(RadioType::IndoorWifi, &bad_location),
+                location::multiplier(&bad_location),
                 &bad_location,
                 sp_status,
             )

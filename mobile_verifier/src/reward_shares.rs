@@ -785,7 +785,7 @@ fn eligible_for_coverage_map(
         return false;
     }
 
-    let multiplier = coverage_point_calculator::location::multiplier(radio_type, trust_scores);
+    let multiplier = coverage_point_calculator::location::multiplier(trust_scores);
     if multiplier <= dec!(0.0) {
         return false;
     }
