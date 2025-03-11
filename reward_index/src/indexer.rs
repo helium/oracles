@@ -10,7 +10,6 @@ use file_store::{
     FileInfo, FileStore, Stream,
 };
 use futures::{future::LocalBoxFuture, stream, StreamExt, TryFutureExt, TryStreamExt};
-use helium_crypto::PublicKeyBinary;
 use helium_proto::Message;
 use poc_metrics::record_duration;
 use prost::bytes::BytesMut;
