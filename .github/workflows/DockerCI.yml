@@ -1,0 +1,155 @@
+name: Docker CI
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+    tags: ["*"]
+  workflow_dispatch:
+
+jobs:
+
+  build-base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Restore Cached Base Image
+        id: cache-base
+        uses: actions/cache@v3
+        with:
+          path: oracle-base.tar
+          key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+
+      - name: Build Base Image (if not cached)
+        if: steps.cache-base.outputs.cache-hit != 'true'
+        run: |
+          docker build --target base -t oracle-base -f Dockerfile .
+          docker save oracle-base -o oracle-base.tar
+
+  fmt:
+    needs: build-base
+    runs-on: ubuntu-latest
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-fmt
+      cancel-in-progress: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Restore Cached Base Image
+        uses: actions/cache@v3
+        with:
+          path: oracle-base.tar
+          key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+
+      - name: Load Base Image
+        run: docker load -i oracle-base.tar
+        shell: bash
+
+      - name: Check formatting
+        run: |
+          docker run \
+            --rm \
+            -v $PWD:/app \
+            -w /app \
+            oracle-base \
+            cargo fmt -- --check
+
+  clippy:
+    needs: build-base
+    runs-on: ubuntu-latest
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-clippy
+      cancel-in-progress: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Restore Cached Base Image
+        uses: actions/cache@v3
+        with:
+          path: oracle-base.tar
+          key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+
+      - name: Load Base Image
+        run: docker load -i oracle-base.tar
+        shell: bash
+
+      - name: Clippy
+        run: |
+          docker run \
+            --rm \
+            -v $PWD:/app \
+            -w /app \
+            oracle-base \
+            cargo clippy --all-targets -- -Dclippy::all -D warnings
+
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.get-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Extract Cargo Workspace Members
+        id: get-matrix
+        run: |
+          set -e
+          MATRIX=$(cargo metadata --format-version=1 | jq -c '[.workspace_members[] | split("#")[0] | split("/") | last | gsub("_"; "-") | select(. != "metrics")]')
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo $MATRIX | jq
+        shell: bash
+
+  tests:
+    needs: [generate-matrix, build-base]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-tests-${{ matrix.package }}
+      cancel-in-progress: true
+    services:
+      postgres:
+        image: postgres:14.9-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+            - 5432:5432
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Restore Cached Base Image
+        uses: actions/cache@v3
+        with:
+          path: oracle-base.tar
+          key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+
+      - name: Load Base Image
+        run: docker load -i oracle-base.tar
+        shell: bash
+
+      - name: Run tests
+        run: |
+          docker run \
+            --rm \
+            --network=host \
+            -e DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres" \
+            -v $PWD:/app \
+            -w /app \
+            oracle-base \
+            cargo test -p ${{ matrix.package }} -- --include-ignored
