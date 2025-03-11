@@ -101,8 +101,6 @@ impl CoverageMap {
 pub struct CoverageObject {
     pub indoor: bool,
     pub hotspot_key: Vec<u8>,
-    // TODO-K remove
-    pub cbsd_id: Option<String>,
     pub seniority_timestamp: DateTime<Utc>,
     pub coverage: Vec<UnrankedCoverage>,
 }
@@ -232,7 +230,6 @@ mod test {
             indoor: true,
             hotspot_key: owner.to_vec(),
             seniority_timestamp: Utc::now(),
-            cbsd_id: None,
             coverage: vec![UnrankedCoverage {
                 location: Cell::from_raw(hex).expect("valid h3 cell"),
                 signal_power: 0,
@@ -247,7 +244,6 @@ mod test {
             indoor: false,
             hotspot_key: owner.to_vec(),
             seniority_timestamp: Utc::now(),
-            cbsd_id: None,
             coverage: vec![UnrankedCoverage {
                 location: Cell::from_raw(hex).expect("valid h3 cell"),
                 signal_power,

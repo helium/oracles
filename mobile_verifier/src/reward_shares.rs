@@ -509,7 +509,6 @@ impl CoverageShares {
                 coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
                     indoor: is_indoor,
                     hotspot_key: pubkey.into(),
-                    cbsd_id,
                     seniority_timestamp: seniority.seniority_ts,
                     coverage: covered_hexes,
                 });
@@ -2065,7 +2064,6 @@ mod test {
         coverage_map.insert_coverage_object(coverage_map::CoverageObject {
             indoor: true,
             hotspot_key: gw1.clone().into(),
-            cbsd_id: None,
             seniority_timestamp: now,
             coverage: vec![coverage_map::UnrankedCoverage {
                 location: Cell::from_raw(0x8c2681a3064dbff).expect("valid h3 cell"),
@@ -2077,7 +2075,6 @@ mod test {
         coverage_map.insert_coverage_object(coverage_map::CoverageObject {
             indoor: true,
             hotspot_key: gw2.clone().into(),
-            cbsd_id: None,
             seniority_timestamp: now,
             coverage: vec![coverage_map::UnrankedCoverage {
                 location: Cell::from_raw(0x8c2681a3064ddff).expect("valid h3 cell"),

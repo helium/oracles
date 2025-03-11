@@ -186,7 +186,6 @@ fn outdoor_wifi_with_wholly_overlapping_coverage_and_differing_speedtests() -> R
         coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
             indoor: true,
             hotspot_key,
-            cbsd_id: None,
             seniority_timestamp: timestamp.parse().expect("valid timestamp"),
             coverage: vec![
                 unranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16
@@ -265,7 +264,6 @@ fn wifi_outdoor_with_single_overlapping_coverage() -> Result {
     coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
         indoor: false,
         hotspot_key: vec![1],
-        cbsd_id: None,
         seniority_timestamp: "2022-02-01 00:00:00.000000000 UTC"
             .parse()
             .expect("valid timestamp"),
@@ -278,7 +276,6 @@ fn wifi_outdoor_with_single_overlapping_coverage() -> Result {
     coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
         indoor: false,
         hotspot_key: vec![2],
-        cbsd_id: None,
         seniority_timestamp: "2022-02-02 00:00:01.000000000 UTC"
             .parse()
             .expect("valid timestamp"),
@@ -307,7 +304,6 @@ fn widi_indoor_with_wholly_overlapping_coverage_and_no_failing_speedtests() -> R
         coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
             indoor: true,
             hotspot_key,
-            cbsd_id: None,
             seniority_timestamp: timestamp.parse().expect("valid timestamp"),
             coverage: vec![
                 unranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16

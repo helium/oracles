@@ -248,7 +248,6 @@ mod test {
             indoor: true,
             hotspot_key: hotspot_key.as_bytes().to_vec(),
             seniority_timestamp: Utc::now(),
-            cbsd_id: None,
             coverage: vec![UnrankedCoverage {
                 location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                 signal_power: 0,
@@ -267,7 +266,6 @@ mod test {
             indoor: true,
             hotspot_key: hotspot_key.as_bytes().to_vec(),
             seniority_timestamp,
-            cbsd_id: None,
             coverage: vec![UnrankedCoverage {
                 location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                 signal_power: 0,
@@ -286,7 +284,6 @@ mod test {
             indoor: true,
             hotspot_key: hotspot_key.as_bytes().to_vec(),
             seniority_timestamp,
-            cbsd_id: None,
             coverage: vec![UnrankedCoverage {
                 location,
                 signal_power: 0,
