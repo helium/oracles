@@ -16,14 +16,14 @@ pub fn bytes_mut_stream<T: MsgBytes + Send + 'static>(els: Vec<T>) -> BytesMutSt
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RewardIndex {
+pub struct DbReward {
     pub address: String,
     pub rewards: u64,
     pub last_reward: DateTime<Utc>,
     pub reward_type: RewardType,
 }
 
-impl FromRow<'_, PgRow> for RewardIndex {
+impl FromRow<'_, PgRow> for DbReward {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         Ok(Self {
             address: row.get("address"),
@@ -38,8 +38,8 @@ pub async fn get_reward(
     pool: &PgPool,
     key: &str,
     reward_type: RewardType,
-) -> anyhow::Result<RewardIndex> {
-    let reward: RewardIndex = sqlx::query_as(
+) -> anyhow::Result<DbReward> {
+    let reward: DbReward = sqlx::query_as(
         r#"
             SELECT *
             FROM reward_index 
