@@ -15,7 +15,6 @@ pub type OutdoorCellTree = HashMap<Cell, BinaryHeap<OutdoorCoverageLevel>>;
 #[derive(Eq, Debug, Clone)]
 pub struct OutdoorCoverageLevel {
     hotspot_key: Vec<u8>,
-    cbsd_id: Option<String>,
     seniority_timestamp: DateTime<Utc>,
     signal_power: i32,
     signal_level: SignalLevel,
@@ -52,7 +51,6 @@ pub fn insert_outdoor_coverage_object(
         insert_outdoor_coverage(
             outdoor,
             &coverage_object.hotspot_key,
-            &coverage_object.cbsd_id,
             coverage_object.seniority_timestamp,
             hex_coverage,
         );
@@ -62,7 +60,6 @@ pub fn insert_outdoor_coverage_object(
 pub fn insert_outdoor_coverage(
     outdoor: &mut OutdoorCellTree,
     hotspot: &[u8],
-    cbsd_id: &Option<String>,
     seniority_timestamp: DateTime<Utc>,
     hex_coverage: UnrankedCoverage,
 ) {
@@ -71,7 +68,6 @@ pub fn insert_outdoor_coverage(
         .or_default()
         .push(OutdoorCoverageLevel {
             hotspot_key: hotspot.to_vec(),
-            cbsd_id: cbsd_id.clone(),
             seniority_timestamp,
             signal_level: hex_coverage.signal_level,
             signal_power: hex_coverage.signal_power,
@@ -108,7 +104,7 @@ pub fn into_outdoor_coverage_map(
                 hex,
                 rank: rank + 1,
                 hotspot_key: cov.hotspot_key,
-                cbsd_id: cov.cbsd_id,
+                cbsd_id: None,
                 assignments: cov.assignments,
                 boosted,
                 signal_level: cov.signal_level,
