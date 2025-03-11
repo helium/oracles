@@ -101,17 +101,4 @@ mod tests {
 
         assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &trust_scores));
     }
-
-    #[test]
-    fn cbrs_trust_score_bypassed_for_gps_trust() {
-        // CBRS radios have GPS units in them, they are always trusted,
-        // regardless of their score or distance provided.
-
-        let trust_scores = vec![LocationTrust {
-            meters_to_asserted: 99999,
-            trust_score: dec!(0),
-        }];
-
-        assert_eq!(dec!(1), multiplier(RadioType::IndoorCbrs, &trust_scores));
-    }
 }

@@ -551,7 +551,7 @@ mod tests {
 
     #[test]
     fn speedtests_effect_reward_shares() {
-        let calculate_indoor_cbrs = |speedtests: Vec<Speedtest>| {
+        let calculate_indoor_wifi = |speedtests: Vec<Speedtest>| {
             CoveragePoints::new(
                 RadioType::IndoorWifi,
                 SPBoostedRewardEligibility::Eligible,
@@ -561,59 +561,59 @@ mod tests {
                     hotspot_key: pubkey(),
                     hex: hex_location(),
                     rank: 1,
-                    signal_level: SignalLevel::Low,
+                    signal_level: SignalLevel::High,
                     assignments: assignments_maximum_no_sp_override(),
                     boosted: None,
                 }],
                 OracleBoostingStatus::Eligible,
             )
-            .expect("indoor cbrs with speedtests")
+            .expect("indoor wifi with speedtests")
         };
 
-        let base_coverage_points = RadioType::IndoorCbrs
+        let base_coverage_points = RadioType::IndoorWifi
             .base_coverage_points(&SignalLevel::High)
             .unwrap();
 
-        let indoor_cbrs = calculate_indoor_cbrs(speedtest_maximum());
+        let indoor_wifi = calculate_indoor_wifi(speedtest_maximum());
         assert_eq!(
             base_coverage_points * SpeedtestTier::Good.multiplier(),
-            indoor_cbrs.total_shares()
+            indoor_wifi.total_shares()
         );
 
-        let indoor_cbrs = calculate_indoor_cbrs(vec![
+        let indoor_wifi = calculate_indoor_wifi(vec![
             speedtest_with_download(BytesPs::mbps(88)),
             speedtest_with_download(BytesPs::mbps(88)),
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Acceptable.multiplier(),
-            indoor_cbrs.total_shares()
+            indoor_wifi.total_shares()
         );
 
-        let indoor_cbrs = calculate_indoor_cbrs(vec![
+        let indoor_wifi = calculate_indoor_wifi(vec![
             speedtest_with_download(BytesPs::mbps(62)),
             speedtest_with_download(BytesPs::mbps(62)),
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Degraded.multiplier(),
-            indoor_cbrs.total_shares()
+            indoor_wifi.total_shares()
         );
 
-        let indoor_cbrs = calculate_indoor_cbrs(vec![
+        let indoor_wifi = calculate_indoor_wifi(vec![
             speedtest_with_download(BytesPs::mbps(42)),
             speedtest_with_download(BytesPs::mbps(42)),
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Poor.multiplier(),
-            indoor_cbrs.total_shares()
+            indoor_wifi.total_shares()
         );
 
-        let indoor_cbrs = calculate_indoor_cbrs(vec![
+        let indoor_wifi = calculate_indoor_wifi(vec![
             speedtest_with_download(BytesPs::mbps(25)),
             speedtest_with_download(BytesPs::mbps(25)),
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Fail.multiplier(),
-            indoor_cbrs.total_shares()
+            indoor_wifi.total_shares()
         );
     }
 
@@ -641,7 +641,7 @@ mod tests {
         }
 
         use Assignment::*;
-        let indoor_cbrs = CoveragePoints::new(
+        let outdoor_wifi = CoveragePoints::new(
             RadioType::OutdoorWifi,
             SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
@@ -692,10 +692,10 @@ mod tests {
             ],
             OracleBoostingStatus::Eligible,
         )
-        .expect("indoor cbrs");
+        .expect("outdoor wifi");
 
         // 48 + 48 + 56 + 24 + 12 + 6.08 = 194.08
-        assert_eq!(dec!(194.08), indoor_cbrs.coverage_points_v1());
+        assert_eq!(dec!(194.08), outdoor_wifi.coverage_points_v1());
     }
 
     #[rstest]
@@ -859,7 +859,7 @@ mod tests {
             }],
             OracleBoostingStatus::Eligible,
         )
-        .expect("indoor cbrs");
+        .expect("outdoor wifi");
 
         assert_eq!(expected, outdoor_wifi.coverage_points_v1());
     }
