@@ -322,17 +322,7 @@ impl RadioType {
                 SignalLevel::Low => dec!(4),
                 SignalLevel::None => dec!(0),
             },
-            RadioType::IndoorCbrs => match signal_level {
-                SignalLevel::High => dec!(100),
-                SignalLevel::Low => dec!(25),
-                other => return Err(Error::InvalidSignalLevel(*other, *self)),
-            },
-            RadioType::OutdoorCbrs => match signal_level {
-                SignalLevel::High => dec!(4),
-                SignalLevel::Medium => dec!(2),
-                SignalLevel::Low => dec!(1),
-                SignalLevel::None => dec!(0),
-            },
+            _ => dec!(0),
         };
         Ok(mult)
     }
