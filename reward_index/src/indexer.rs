@@ -242,8 +242,15 @@ pub async fn handle_mobile_rewards(
 
     while let Some(msg) = reward_shares.try_next().await? {
         let share = proto::MobileRewardShare::decode(msg)?;
-        let (key, amount) = extract::mobile_reward(share, unallocated_reward_key)?;
-        *rewards.entry(key).or_default() += amount;
+        match extract::mobile_reward(share, unallocated_reward_key) {
+            Ok((key, amount)) => {
+                *rewards.entry(key).or_default() += amount;
+            }
+            Err(extract::ExtractError::UnsupportedType(unsupported)) => {
+                tracing::debug!("ignoring unsupported: {unsupported}");
+            }
+            Err(err) => bail!(err),
+        }
     }
 
     for (reward_key, amount) in rewards {
