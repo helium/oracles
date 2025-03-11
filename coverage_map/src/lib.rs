@@ -11,23 +11,19 @@ use indoor::*;
 use outdoor::*;
 
 /// Data structure for keeping track of the ranking the coverage in each hex cell for indoor
-/// and outdoor CBRS and WiFi radios.
+/// and outdoor WiFi radios.
 #[derive(Clone, Default, Debug)]
 pub struct CoverageMapBuilder {
-    indoor_cbrs: IndoorCellTree,
     indoor_wifi: IndoorCellTree,
-    outdoor_cbrs: OutdoorCellTree,
     outdoor_wifi: OutdoorCellTree,
 }
 
 impl CoverageMapBuilder {
     /// Inserts a new coverage object into the builder.
     pub fn insert_coverage_object(&mut self, coverage_obj: CoverageObject) {
-        // TODO-K remove cbsd_id from match
-        match (coverage_obj.indoor, coverage_obj.cbsd_id.is_some()) {
-            (true, false) => insert_indoor_coverage_object(&mut self.indoor_wifi, coverage_obj),
-            (false, false) => insert_outdoor_coverage_object(&mut self.outdoor_wifi, coverage_obj),
-            (_, _) => {}
+        match coverage_obj.indoor {
+            true => insert_indoor_coverage_object(&mut self.indoor_wifi, coverage_obj),
+            false => insert_outdoor_coverage_object(&mut self.outdoor_wifi, coverage_obj),
         }
     }
 
@@ -69,35 +65,15 @@ impl CoverageMapBuilder {
         epoch_start: DateTime<Utc>,
     ) -> CoverageMap {
         let mut wifi_hotspots = HashMap::<_, Vec<RankedCoverage>>::new();
-        let mut cbrs_radios = HashMap::<_, Vec<RankedCoverage>>::new();
-        for coverage in into_indoor_coverage_map(self.indoor_cbrs, boosted_hexes, epoch_start)
-            .chain(into_indoor_coverage_map(
-                self.indoor_wifi,
-                boosted_hexes,
-                epoch_start,
-            ))
-            .chain(into_outdoor_coverage_map(
-                self.outdoor_cbrs,
-                boosted_hexes,
-                epoch_start,
-            ))
-            .chain(into_outdoor_coverage_map(
-                self.outdoor_wifi,
-                boosted_hexes,
-                epoch_start,
-            ))
+        for coverage in
+            into_indoor_coverage_map(self.indoor_wifi, boosted_hexes, epoch_start).chain(
+                into_outdoor_coverage_map(self.outdoor_wifi, boosted_hexes, epoch_start),
+            )
         {
-            if let Some(ref cbsd_id) = coverage.cbsd_id {
-                cbrs_radios
-                    .entry(cbsd_id.clone())
-                    .or_default()
-                    .push(coverage);
-            } else {
-                wifi_hotspots
-                    .entry(coverage.hotspot_key.clone())
-                    .or_default()
-                    .push(coverage);
-            }
+            wifi_hotspots
+                .entry(coverage.hotspot_key.clone())
+                .or_default()
+                .push(coverage);
         }
         CoverageMap { wifi_hotspots }
     }
