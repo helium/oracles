@@ -10,10 +10,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
-use file_store::{
-    file_sink::FileSinkClient, heartbeat::CbrsHeartbeatIngestReport,
-    wifi_heartbeat::WifiHeartbeatIngestReport,
-};
+use file_store::{file_sink::FileSinkClient, wifi_heartbeat::WifiHeartbeatIngestReport};
 use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
@@ -236,23 +233,6 @@ impl Heartbeat {
         Ok(LatLng::new(self.lat, self.lon)?
             .to_cell(h3o::Resolution::Twelve)
             .into())
-    }
-}
-
-impl From<CbrsHeartbeatIngestReport> for Heartbeat {
-    fn from(value: CbrsHeartbeatIngestReport) -> Self {
-        Self {
-            hb_type: HbType::Cbrs,
-            coverage_object: value.report.coverage_object(),
-            hotspot_key: value.report.pubkey,
-            cbsd_id: Some(value.report.cbsd_id),
-            operation_mode: value.report.operation_mode,
-            lat: value.report.lat,
-            lon: value.report.lon,
-            location_validation_timestamp: None,
-            location_source: LocationSource::Gps,
-            timestamp: value.received_timestamp,
-        }
     }
 }
 
