@@ -43,23 +43,13 @@ impl CoverageMapBuilder {
         let mut new_submap = Self::default();
         for coverage_obj in coverage_objs {
             // Clone each of the hexes in the current coverage from the old map into the new submap:
-            match (coverage_obj.indoor, coverage_obj.cbsd_id.is_some()) {
-                (true, true) => clone_indoor_coverage_into_submap(
-                    &mut new_submap.indoor_cbrs,
-                    &self.indoor_cbrs,
-                    &coverage_obj,
-                ),
-                (true, false) => clone_indoor_coverage_into_submap(
+            match coverage_obj.indoor {
+                true => clone_indoor_coverage_into_submap(
                     &mut new_submap.indoor_wifi,
                     &self.indoor_wifi,
                     &coverage_obj,
                 ),
-                (false, true) => clone_outdoor_coverage_into_submap(
-                    &mut new_submap.outdoor_cbrs,
-                    &self.outdoor_cbrs,
-                    &coverage_obj,
-                ),
-                (false, false) => clone_outdoor_coverage_into_submap(
+                false => clone_outdoor_coverage_into_submap(
                     &mut new_submap.outdoor_wifi,
                     &self.outdoor_wifi,
                     &coverage_obj,
