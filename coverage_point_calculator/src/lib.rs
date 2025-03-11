@@ -329,17 +329,12 @@ impl RadioType {
 
     fn rank_multiplier(&self, rank: usize) -> Decimal {
         match (self, rank) {
-            // Indoors Radios
+            // Indoor wifi
             (RadioType::IndoorWifi, 1) => dec!(1),
-            (RadioType::IndoorCbrs, 1) => dec!(1),
             // Outdoor Wifi
             (RadioType::OutdoorWifi, 1) => dec!(1),
             (RadioType::OutdoorWifi, 2) => dec!(0.5),
             (RadioType::OutdoorWifi, 3) => dec!(0.25),
-            // Outdoor Cbrs
-            (RadioType::OutdoorCbrs, 1) => dec!(1),
-            (RadioType::OutdoorCbrs, 2) => dec!(0.5),
-            (RadioType::OutdoorCbrs, 3) => dec!(0.25),
             // Radios outside acceptable rank in a hex do not get points for that hex.
             _ => dec!(0),
         }
