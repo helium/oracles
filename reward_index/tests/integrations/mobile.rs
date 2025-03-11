@@ -1,10 +1,9 @@
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_mobile::{
-        mobile_reward_share, GatewayReward as MobileGatewayReward, MobileRewardShare,
-        PromotionReward, RadioRewardV2, ServiceProviderReward, SubscriberReward, UnallocatedReward,
-        UnallocatedRewardType,
+        mobile_reward_share, GatewayReward, MobileRewardShare, PromotionReward, RadioRewardV2,
+        ServiceProviderReward, SubscriberReward, UnallocatedReward, UnallocatedRewardType,
     },
     ServiceProvider,
 };
@@ -19,14 +18,12 @@ async fn accumulates_rewards(pool: PgPool) -> anyhow::Result<()> {
         MobileRewardShare {
             start_period: Utc::now().timestamp_millis() as u64,
             end_period: Utc::now().timestamp_millis() as u64,
-            reward: Some(mobile_reward_share::Reward::GatewayReward(
-                MobileGatewayReward {
-                    hotspot_key,
-                    dc_transfer_reward,
-                    rewardable_bytes: 0,
-                    price: 0,
-                },
-            )),
+            reward: Some(mobile_reward_share::Reward::GatewayReward(GatewayReward {
+                hotspot_key,
+                dc_transfer_reward,
+                rewardable_bytes: 0,
+                price: 0,
+            })),
         }
     }
 
@@ -51,6 +48,47 @@ async fn accumulates_rewards(pool: PgPool) -> anyhow::Result<()> {
     let reward_two =
         common::get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_two.rewards, 4);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result<()> {
+    fn make_gateway_reward(hotspot_key: Vec<u8>, dc_transfer_reward: u64) -> MobileRewardShare {
+        MobileRewardShare {
+            start_period: Utc::now().timestamp_millis() as u64,
+            end_period: Utc::now().timestamp_millis() as u64,
+            reward: Some(mobile_reward_share::Reward::GatewayReward(GatewayReward {
+                hotspot_key,
+                dc_transfer_reward,
+                rewardable_bytes: 0,
+                price: 0,
+            })),
+        }
+    }
+
+    let mut txn = pool.begin().await?;
+    let rewards = common::bytes_mut_stream(vec![make_gateway_reward(vec![1], 1)]);
+    let before_manifest_time = Utc::now() - Duration::days(2);
+    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &before_manifest_time).await?;
+    txn.commit().await?;
+
+    let key = PublicKeyBinary::from(vec![1]).to_string();
+    let reward = common::get_reward(&pool, &key, RewardType::MobileGateway).await?;
+    assert_eq!(reward.rewards, 1);
+    assert_eq!(reward.last_reward, before_manifest_time);
+
+    // Zeroed reward should have no effect
+    let mut txn = pool.begin().await?;
+    let rewards = common::bytes_mut_stream(vec![make_gateway_reward(vec![1], 0)]);
+    let now_manifest_time = Utc::now();
+    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &now_manifest_time).await?;
+    txn.commit().await?;
+
+    let key = PublicKeyBinary::from(vec![1]).to_string();
+    let reward = common::get_reward(&pool, &key, RewardType::MobileGateway).await?;
+    assert_eq!(reward.rewards, 1);
+    assert_eq!(reward.last_reward, before_manifest_time);
 
     Ok(())
 }

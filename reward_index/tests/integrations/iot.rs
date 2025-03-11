@@ -1,6 +1,6 @@
 use crate::common;
 
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use helium_crypto::PublicKeyBinary;
 use reward_index::indexer::{handle_iot_rewards, RewardType};
 use sqlx::PgPool;
@@ -56,6 +56,66 @@ async fn gateway_rewards_accumulate_by_key(pool: PgPool) -> anyhow::Result<()> {
     let key_two = PublicKeyBinary::from(vec![2]).to_string();
     let reward_two = common::get_reward(&pool, &key_two, RewardType::IotGateway).await?;
     assert_eq!(reward_two.rewards, 33);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result<()> {
+    fn make_gateway_reward(
+        hotspot_key: Vec<u8>,
+        beacon_amount: u64,
+        witness_amount: u64,
+        dc_transfer_amount: u64,
+    ) -> IotRewardShare {
+        IotRewardShare {
+            start_period: Utc::now().timestamp_millis() as u64,
+            end_period: Utc::now().timestamp_millis() as u64,
+            reward: Some(iot_reward_share::Reward::GatewayReward(GatewayReward {
+                hotspot_key,
+                beacon_amount,
+                witness_amount,
+                dc_transfer_amount,
+            })),
+        }
+    }
+
+    let mut txn = pool.begin().await?;
+    let rewards = common::bytes_mut_stream(vec![make_gateway_reward(vec![1], 1, 2, 3)]);
+    let before_manifest_time = Utc::now() - Duration::days(2);
+    handle_iot_rewards(
+        &mut txn,
+        rewards,
+        "op-fund",
+        "unallocated-key",
+        &before_manifest_time,
+    )
+    .await?;
+    txn.commit().await?;
+
+    let key = PublicKeyBinary::from(vec![1]).to_string();
+    let reward = common::get_reward(&pool, &key, RewardType::IotGateway).await?;
+    assert_eq!(reward.rewards, 6);
+    assert_eq!(reward.last_reward, before_manifest_time);
+
+    // Zeroed reward should have no effect
+    let mut txn = pool.begin().await?;
+    let rewards = common::bytes_mut_stream(vec![make_gateway_reward(vec![1], 0, 0, 0)]);
+    let now_manifest_time = Utc::now();
+    handle_iot_rewards(
+        &mut txn,
+        rewards,
+        "op-fund",
+        "unallocated-key",
+        &now_manifest_time,
+    )
+    .await?;
+    txn.commit().await?;
+
+    let key = PublicKeyBinary::from(vec![1]).to_string();
+    let reward = common::get_reward(&pool, &key, RewardType::IotGateway).await?;
+    assert_eq!(reward.rewards, 6);
+    assert_eq!(reward.last_reward, before_manifest_time);
 
     Ok(())
 }
