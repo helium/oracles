@@ -394,7 +394,7 @@ fn ranked_coverage(hex: u64, rank: usize, signal_level: SignalLevel) -> RankedCo
         hex: hextree::Cell::from_raw(hex).expect("valid h3 hex"),
         rank,
         hotspot_key: vec![1],
-        cbsd_id: Some("serial".to_string()),
+        cbsd_id: None,
         assignments: HexAssignments {
             footfall: Assignment::A,
             landtype: Assignment::A,

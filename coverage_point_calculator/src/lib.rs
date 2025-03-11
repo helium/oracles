@@ -865,7 +865,7 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: Some("serial".to_string()),
+                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
