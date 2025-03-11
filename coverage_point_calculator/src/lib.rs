@@ -393,7 +393,6 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -425,7 +424,6 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -451,7 +449,6 @@ mod tests {
                 location_trust_maximum(),
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
@@ -488,7 +485,6 @@ mod tests {
                 location_trust_scores,
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
@@ -527,7 +523,6 @@ mod tests {
                 location_trust_scores,
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
@@ -564,7 +559,6 @@ mod tests {
                 location_trust_maximum(),
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::Low,
@@ -633,7 +627,6 @@ mod tests {
         ) -> RankedCoverage {
             RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -722,7 +715,6 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank,
                 signal_level: SignalLevel::High,
@@ -753,7 +745,6 @@ mod tests {
             vec![
                 RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank,
                     signal_level: SignalLevel::High,
@@ -762,7 +753,6 @@ mod tests {
                 },
                 RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 2,
                     signal_level: SignalLevel::High,
@@ -771,7 +761,6 @@ mod tests {
                 },
                 RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 42,
                     signal_level: SignalLevel::High,
@@ -796,7 +785,6 @@ mod tests {
             location_trust_with_scores(&[dec!(0.1), dec!(0.2), dec!(0.3), dec!(0.4)]),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -817,7 +805,6 @@ mod tests {
         let covered_hexes = vec![
             RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -826,7 +813,6 @@ mod tests {
             },
             RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::Low,
@@ -865,7 +851,6 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
@@ -893,7 +878,6 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level,

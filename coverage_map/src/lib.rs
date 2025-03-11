@@ -120,7 +120,6 @@ pub struct RankedCoverage {
     pub hex: Cell,
     pub rank: usize,
     pub hotspot_key: Vec<u8>,
-    pub cbsd_id: Option<String>,
     pub assignments: HexAssignments,
     pub boosted: Option<NonZeroU32>,
     pub signal_level: SignalLevel,

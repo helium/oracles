@@ -151,7 +151,6 @@ mod tests {
         // rewards, a boosted hex increases the oracle assignment.
         let unboosted_coverage = RankedCoverage {
             hotspot_key: vec![1],
-            cbsd_id: None,
             hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
             rank: 1,
             signal_level: SignalLevel::High,
@@ -190,7 +189,6 @@ mod tests {
     fn hip131_banned_radio() {
         let unboosted_coverage = RankedCoverage {
             hotspot_key: vec![1],
-            cbsd_id: None,
             hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
             rank: 1,
             signal_level: SignalLevel::High,
@@ -238,7 +236,6 @@ mod tests {
     ) {
         let coverage = RankedCoverage {
             hotspot_key: vec![1],
-            cbsd_id: None,
             hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
             rank: 1,
             signal_level: SignalLevel::High,

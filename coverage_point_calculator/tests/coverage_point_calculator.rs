@@ -33,7 +33,6 @@ fn base_radio_coverage_points() {
 
     let hexes = vec![RankedCoverage {
         hotspot_key: vec![1],
-        cbsd_id: None,
         hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
         rank: 1,
         signal_level: SignalLevel::High,
@@ -74,7 +73,6 @@ fn radios_with_coverage() {
 
     let base_hex = RankedCoverage {
         hotspot_key: vec![1],
-        cbsd_id: None,
         hex: hextree::Cell::from_raw(0x8c2681a3064edff).unwrap(),
         rank: 1,
         signal_level: SignalLevel::High,
@@ -394,7 +392,6 @@ fn ranked_coverage(hex: u64, rank: usize, signal_level: SignalLevel) -> RankedCo
         hex: hextree::Cell::from_raw(hex).expect("valid h3 hex"),
         rank,
         hotspot_key: vec![1],
-        cbsd_id: None,
         assignments: HexAssignments {
             footfall: Assignment::A,
             landtype: Assignment::A,

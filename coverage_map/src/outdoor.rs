@@ -104,7 +104,6 @@ pub fn into_outdoor_coverage_map(
                 hex,
                 rank: rank + 1,
                 hotspot_key: cov.hotspot_key,
-                cbsd_id: None,
                 assignments: cov.assignments,
                 boosted,
                 signal_level: cov.signal_level,
