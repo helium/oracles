@@ -850,34 +850,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(SignalLevel::High, dec!(100))]
-    #[case(SignalLevel::Low, dec!(25))]
-    fn indoor_cbrs_base_coverage_points(
-        #[case] signal_level: SignalLevel,
-        #[case] expected: Decimal,
-    ) {
-        let indoor_cbrs = CoveragePoints::new(
-            RadioType::IndoorCbrs,
-            SPBoostedRewardEligibility::Eligible,
-            speedtest_maximum(),
-            location_trust_maximum(),
-            vec![RankedCoverage {
-                hotspot_key: pubkey(),
-                cbsd_id: Some("serial".to_string()),
-                hex: hex_location(),
-                rank: 1,
-                signal_level,
-                assignments: assignments_maximum_no_sp_override(),
-                boosted: None,
-            }],
-            OracleBoostingStatus::Eligible,
-        )
-        .expect("indoor cbrs");
-
-        assert_eq!(expected, indoor_cbrs.coverage_points_v1());
-    }
-
-    #[rstest]
     #[case(SignalLevel::High, dec!(16))]
     #[case(SignalLevel::Medium, dec!(8))]
     #[case(SignalLevel::Low, dec!(4))]
