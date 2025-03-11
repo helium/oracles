@@ -76,7 +76,10 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
     let key = PublicKeyBinary::from(vec![1]).to_string();
     let reward = common::get_reward(&pool, &key, RewardType::MobileGateway).await?;
     assert_eq!(reward.rewards, 1);
-    assert_eq!(reward.last_reward, before_manifest_time);
+    assert_eq!(
+        reward.last_reward,
+        common::nanos_trunc(before_manifest_time)
+    );
 
     // Zeroed reward should have no effect
     let mut txn = pool.begin().await?;
@@ -88,7 +91,10 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
     let key = PublicKeyBinary::from(vec![1]).to_string();
     let reward = common::get_reward(&pool, &key, RewardType::MobileGateway).await?;
     assert_eq!(reward.rewards, 1);
-    assert_eq!(reward.last_reward, before_manifest_time);
+    assert_eq!(
+        reward.last_reward,
+        common::nanos_trunc(before_manifest_time)
+    );
 
     Ok(())
 }

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, DurationRound, Utc};
 use file_store::{traits::MsgBytes, BytesMutStream};
 use futures::{stream, StreamExt};
 use prost::bytes::BytesMut;
@@ -13,6 +13,13 @@ pub fn bytes_mut_stream<T: MsgBytes + Send + 'static>(els: Vec<T>) -> BytesMutSt
             .map(Ok)
             .boxed(),
     )
+}
+
+// When retreiving a timestamp from DB, depending on the version of postgres
+// the timestamp may be truncated. When comparing datetimes, to ones generated
+// in a test with `Utc::now()`, you should truncate it.
+pub fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
+    ts.duration_trunc(Duration::nanoseconds(1000)).unwrap()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
