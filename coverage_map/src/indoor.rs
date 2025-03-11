@@ -14,7 +14,6 @@ pub type IndoorCellTree = HashMap<Cell, BTreeMap<SignalLevel, BinaryHeap<IndoorC
 #[derive(Eq, Debug, Clone)]
 pub struct IndoorCoverageLevel {
     hotspot_key: Vec<u8>,
-    cbsd_id: Option<String>,
     seniority_timestamp: DateTime<Utc>,
     signal_level: SignalLevel,
     assignments: HexAssignments,
@@ -62,7 +61,6 @@ pub fn insert_indoor_coverage(
         .or_default()
         .push(IndoorCoverageLevel {
             hotspot_key: hotspot.to_vec(),
-            cbsd_id: None,
             seniority_timestamp,
             signal_level: hex_coverage.signal_level,
             assignments: hex_coverage.assignments,
@@ -98,7 +96,7 @@ pub fn into_indoor_coverage_map(
                 hex,
                 rank: rank + 1,
                 hotspot_key: cov.hotspot_key,
-                cbsd_id: cov.cbsd_id,
+                cbsd_id: None,
                 assignments: cov.assignments,
                 boosted,
                 signal_level: cov.signal_level,
