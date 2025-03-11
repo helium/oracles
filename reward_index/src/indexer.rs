@@ -1,25 +1,32 @@
 use crate::{reward_index, settings, telemetry, Settings};
 use anyhow::{anyhow, bail, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream,
-    reward_manifest::RewardData::{self, IotRewardData, MobileRewardData},
-    reward_manifest::RewardManifest,
-    FileInfo, FileStore,
+    reward_manifest::{
+        RewardData::{self, IotRewardData, MobileRewardData},
+        RewardManifest,
+    },
+    FileInfo, FileStore, Stream,
 };
 use futures::{future::LocalBoxFuture, stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::{
-    services::{
-        poc_lora::{iot_reward_share::Reward as IotReward, IotRewardShare},
-        poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
-    },
-    IotRewardToken, Message, MobileRewardToken, ServiceProvider,
-};
+use helium_proto::Message;
 use poc_metrics::record_duration;
+use prost::bytes::BytesMut;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{collections::HashMap, str::FromStr};
 use tokio::sync::mpsc::Receiver;
+
+pub mod proto {
+    pub use helium_proto::{
+        services::{
+            poc_lora::{iot_reward_share::Reward as IotReward, IotRewardShare},
+            poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
+        },
+        IotRewardToken, MobileRewardToken, ServiceProvider,
+    };
+}
 
 pub struct Indexer {
     pool: PgPool,
@@ -146,42 +153,37 @@ impl Indexer {
         // if the token type defined in the reward data is not HNT, then bail
         self.verify_token_type(&manifest.reward_data)?;
 
-        let mut reward_shares = self.verifier_store.source_unordered(5, reward_files);
-        let mut hotspot_rewards: HashMap<RewardKey, u64> = HashMap::new();
+        let reward_shares = self.verifier_store.source_unordered(5, reward_files);
 
-        while let Some(msg) = reward_shares.try_next().await? {
-            if let Some((key, amount)) = self.extract_reward_share(&msg)? {
-                *hotspot_rewards.entry(key).or_default() += amount;
-            };
-        }
-
-        for (reward_key, amount) in hotspot_rewards {
-            reward_index::insert(
-                &mut *txn,
-                reward_key.key,
-                amount,
-                reward_key.reward_type,
-                &manifest_time,
-            )
-            .await?;
-        }
+        match self.mode {
+            settings::Mode::Iot => {
+                handle_iot_rewards(
+                    txn,
+                    reward_shares,
+                    &self.op_fund_key,
+                    &self.unallocated_reward_key,
+                    &manifest_time,
+                )
+                .await?;
+            }
+            settings::Mode::Mobile => {
+                handle_mobile_rewards(
+                    txn,
+                    reward_shares,
+                    &self.unallocated_reward_key,
+                    &manifest_time,
+                )
+                .await?;
+            }
+        };
 
         Ok(())
-    }
-
-    fn extract_reward_share(&self, msg: &[u8]) -> Result<Option<(RewardKey, u64)>> {
-        extract_reward_share(
-            self.mode,
-            msg,
-            &self.op_fund_key,
-            &self.unallocated_reward_key,
-        )
     }
 
     fn verify_token_type(&self, reward_data: &Option<RewardData>) -> Result<()> {
         match reward_data {
             Some(MobileRewardData { token, .. }) => {
-                if *token != MobileRewardToken::Hnt {
+                if *token != proto::MobileRewardToken::Hnt {
                     bail!(
                         "legacy token type defined in manifest: {}",
                         token.as_str_name()
@@ -189,7 +191,7 @@ impl Indexer {
                 }
             }
             Some(IotRewardData { token, .. }) => {
-                if *token != IotRewardToken::Hnt {
+                if *token != proto::IotRewardToken::Hnt {
                     bail!(
                         "legacy token type defined in manifest: {}",
                         token.as_str_name()
@@ -202,6 +204,66 @@ impl Indexer {
     }
 }
 
+pub async fn handle_iot_rewards(
+    txn: &mut Transaction<'_, Postgres>,
+    mut reward_shares: Stream<BytesMut>,
+    op_fund_key: &str,
+    unallocated_reward_key: &str,
+    manifest_time: &DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let mut rewards = HashMap::new();
+
+    while let Some(msg) = reward_shares.try_next().await? {
+        let share = proto::IotRewardShare::decode(msg)?;
+        if let Some((key, amount)) = extract_iot_reward(share, op_fund_key, unallocated_reward_key)?
+        {
+            *rewards.entry(key).or_default() += amount;
+        }
+    }
+
+    for (reward_key, amount) in rewards {
+        reward_index::insert(
+            &mut *txn,
+            reward_key.key,
+            amount,
+            reward_key.reward_type,
+            manifest_time,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+pub async fn handle_mobile_rewards(
+    txn: &mut Transaction<'_, Postgres>,
+    mut reward_shares: Stream<BytesMut>,
+    unallocated_reward_key: &str,
+    manifest_time: &DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let mut rewards = HashMap::new();
+
+    while let Some(msg) = reward_shares.try_next().await? {
+        let share = proto::MobileRewardShare::decode(msg)?;
+        if let Some((key, amount)) = extract_mobile_reward(share, unallocated_reward_key)? {
+            *rewards.entry(key).or_default() += amount;
+        }
+    }
+
+    for (reward_key, amount) in rewards {
+        reward_index::insert(
+            &mut *txn,
+            reward_key.key,
+            amount,
+            reward_key.reward_type,
+            manifest_time,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
 pub fn extract_reward_share(
     mode: settings::Mode,
     msg: &[u8],
@@ -210,23 +272,25 @@ pub fn extract_reward_share(
 ) -> Result<Option<(RewardKey, u64)>> {
     match mode {
         settings::Mode::Mobile => {
-            let share = MobileRewardShare::decode(msg)?;
+            let share = proto::MobileRewardShare::decode(msg)?;
             extract_mobile_reward(share, unallocated_reward_key)
         }
         settings::Mode::Iot => {
-            let share = IotRewardShare::decode(msg)?;
+            let share = proto::IotRewardShare::decode(msg)?;
             extract_iot_reward(share, op_fund_key, unallocated_reward_key)
         }
     }
 }
 
 pub fn extract_mobile_reward(
-    share: MobileRewardShare,
+    share: proto::MobileRewardShare,
     unallocated_reward_key: &str,
 ) -> anyhow::Result<Option<(RewardKey, u64)>> {
     let Some(reward) = share.reward else {
         bail!("got an invalid mobile reward share");
     };
+
+    use proto::{MobileReward, ServiceProvider};
 
     match reward {
         MobileReward::RadioReward(_r) => {
@@ -283,13 +347,15 @@ pub fn extract_mobile_reward(
 }
 
 pub fn extract_iot_reward(
-    share: IotRewardShare,
+    share: proto::IotRewardShare,
     op_fund_key: &str,
     unallocated_reward_key: &str,
 ) -> anyhow::Result<Option<(RewardKey, u64)>> {
     let Some(reward) = share.reward else {
         bail!("got an invalid iot reward share")
     };
+
+    use proto::IotReward;
 
     match reward {
         IotReward::GatewayReward(r) => Ok(Some((
@@ -318,93 +384,98 @@ pub fn extract_iot_reward(
 
 #[cfg(test)]
 mod tests {
-    use chrono::DateTime;
-    use sqlx::{postgres::PgRow, FromRow};
 
     use super::*;
 
-    #[sqlx::test]
-    async fn rewards_accumulate_to_rows_with_same_key_and_type(pool: PgPool) -> anyhow::Result<()> {
-        let now = Utc::now();
-        let key = "simple-key".to_string();
+    use helium_proto::services::poc_lora::GatewayReward as IotGatewayReward;
+    use helium_proto::services::poc_mobile::GatewayReward as MobileGatewayReward;
 
-        let mut txn = pool.begin().await?;
-        reward_index::insert(&mut txn, key.clone(), 1, RewardType::MobileGateway, &now).await?;
-        reward_index::insert(&mut txn, key.clone(), 2, RewardType::MobileGateway, &now).await?;
-        txn.commit().await?;
+    #[test]
+    fn test_extract_mobile_reward() -> anyhow::Result<()> {
+        let mobile_reward = proto::MobileRewardShare {
+            start_period: Utc::now().timestamp_millis() as u64,
+            end_period: Utc::now().timestamp_millis() as u64,
+            reward: Some(proto::MobileReward::GatewayReward(MobileGatewayReward {
+                hotspot_key: vec![1],
+                dc_transfer_reward: 1,
+                rewardable_bytes: 2,
+                price: 3,
+            })),
+        };
 
-        let value = get(&pool, &key, RewardType::MobileGateway).await?;
-        assert_eq!(value.rewards, 3);
-
-        Ok(())
-    }
-
-    #[sqlx::test]
-    async fn zero_amount_rewards_do_not_update_last_rewarded_timestamp(
-        pool: PgPool,
-    ) -> anyhow::Result<()> {
-        let now = Utc::now();
-        let before = now - chrono::Duration::days(1);
-
-        let key = "simple-key".to_string();
-
-        let mut txn = pool.begin().await?;
-        reward_index::insert(&mut txn, key.clone(), 1, RewardType::MobileGateway, &before).await?;
-        reward_index::insert(&mut txn, key.clone(), 0, RewardType::MobileGateway, &now).await?;
-        txn.commit().await?;
-
-        let res = get(&pool, &key, RewardType::MobileGateway).await?;
-        assert_eq!(res.last_reward, before);
-        assert_eq!(res.rewards, 1);
+        let (reward_key, amount) =
+            extract_mobile_reward(mobile_reward, "unallocated-key")?.expect("valid reward share");
+        assert_eq!(reward_key.key, PublicKeyBinary::from(vec![1]).to_string());
+        assert_eq!(reward_key.reward_type, RewardType::MobileGateway);
+        assert_eq!(amount, 1, "only dc_transfer_reward");
 
         Ok(())
     }
 
-    // pub async fn all(pool: &PgPool) -> anyhow::Result<Vec<RewardIndex>> {
-    //     let reward = sqlx::query_as("SELECT * FROM reward_index")
-    //         .fetch_all(pool)
-    //         .await?;
+    #[test]
+    fn test_extract_iot_reward() -> anyhow::Result<()> {
+        let iot_reward = proto::IotRewardShare {
+            start_period: Utc::now().timestamp_millis() as u64,
+            end_period: Utc::now().timestamp_millis() as u64,
+            reward: Some(proto::IotReward::GatewayReward(IotGatewayReward {
+                hotspot_key: vec![1],
+                beacon_amount: 1,
+                witness_amount: 2,
+                dc_transfer_amount: 3,
+            })),
+        };
 
-    //     Ok(reward)
-    // }
+        let (reward_key, amount) =
+            extract_iot_reward(iot_reward, "op-fund-key", "unallocated-key")?
+                .expect("valid reward share");
+        assert_eq!(reward_key.key, PublicKeyBinary::from(vec![1]).to_string());
+        assert_eq!(reward_key.reward_type, RewardType::IotGateway);
+        assert_eq!(amount, 6, "all reward added together");
 
-    pub async fn get(
-        pool: &PgPool,
-        key: &str,
-        reward_type: RewardType,
-    ) -> anyhow::Result<RewardIndex> {
-        let reward: RewardIndex = sqlx::query_as(
-            r#"
-        SELECT *
-        FROM reward_index 
-        WHERE address = $1 AND reward_type = $2
-        "#,
-        )
-        .bind(key)
-        .bind(reward_type)
-        .fetch_one(pool)
-        .await?;
-
-        Ok(reward)
+        Ok(())
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct RewardIndex {
-        pub address: String,
-        pub rewards: u64,
-        pub last_reward: DateTime<Utc>,
-        pub reward_type: RewardType,
-    }
+    #[test]
+    fn test_extract_reward_share() -> anyhow::Result<()> {
+        let mobile_reward = proto::MobileRewardShare {
+            start_period: Utc::now().timestamp_millis() as u64,
+            end_period: Utc::now().timestamp_millis() as u64,
+            reward: Some(proto::MobileReward::GatewayReward(MobileGatewayReward {
+                hotspot_key: vec![1],
+                dc_transfer_reward: 1,
+                rewardable_bytes: 2,
+                price: 3,
+            })),
+        };
+        let iot_reward = proto::IotRewardShare {
+            start_period: Utc::now().timestamp_millis() as u64,
+            end_period: Utc::now().timestamp_millis() as u64,
+            reward: Some(proto::IotReward::GatewayReward(IotGatewayReward {
+                hotspot_key: vec![1],
+                beacon_amount: 1,
+                witness_amount: 2,
+                dc_transfer_amount: 3,
+            })),
+        };
 
-    // impl From row for Rewardindex
-    impl FromRow<'_, PgRow> for RewardIndex {
-        fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-            Ok(Self {
-                address: row.get("address"),
-                rewards: row.get::<i64, _>("rewards") as u64,
-                last_reward: row.try_get("last_reward")?,
-                reward_type: row.try_get("reward_type")?,
-            })
-        }
+        let key = PublicKeyBinary::from(vec![1]).to_string();
+
+        let (mobile_reward_key, mobile_amount) =
+            extract_reward_share(settings::Mode::Mobile, &mobile_reward.as_bytes(), "", "")?
+                .expect("valid mobile share");
+
+        assert_eq!(mobile_reward_key.key, key);
+        assert_eq!(mobile_reward_key.reward_type, RewardType::MobileGateway);
+        assert_eq!(mobile_amount, 1, "only dc_transfer_reward");
+
+        let (iot_reward_key, iot_amount) =
+            extract_reward_share(settings::Mode::Iot, &iot_reward.as_bytes(), "", "")?
+                .expect("valid iot share");
+
+        assert_eq!(iot_reward_key.key, key);
+        assert_eq!(iot_reward_key.reward_type, RewardType::IotGateway);
+        assert_eq!(iot_amount, 6, "all reward added together");
+
+        Ok(())
     }
 }
