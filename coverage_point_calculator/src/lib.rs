@@ -558,16 +558,16 @@ mod tests {
     fn speedtests_effect_reward_shares() {
         let calculate_indoor_cbrs = |speedtests: Vec<Speedtest>| {
             CoveragePoints::new(
-                RadioType::IndoorCbrs,
+                RadioType::IndoorWifi,
                 SPBoostedRewardEligibility::Eligible,
                 speedtests,
                 location_trust_maximum(),
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: Some("serial".to_string()),
+                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 1,
-                    signal_level: SignalLevel::High,
+                    signal_level: SignalLevel::Low,
                     assignments: assignments_maximum_no_sp_override(),
                     boosted: None,
                 }],
