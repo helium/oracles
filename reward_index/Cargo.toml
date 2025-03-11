@@ -31,7 +31,7 @@ chrono = { workspace = true, features = ["serde"] }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 helium-proto = { workspace = true }
-helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
+helium-crypto = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tonic = { workspace = true }
