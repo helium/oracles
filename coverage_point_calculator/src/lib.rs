@@ -342,10 +342,6 @@ impl RadioType {
     pub fn is_wifi(&self) -> bool {
         matches!(self, Self::IndoorWifi | Self::OutdoorWifi)
     }
-
-    pub fn is_cbrs(&self) -> bool {
-        matches!(self, Self::IndoorCbrs | Self::OutdoorCbrs)
-    }
 }
 
 #[cfg(test)]
