@@ -43,7 +43,6 @@ pub fn insert_indoor_coverage_object(indoor: &mut IndoorCellTree, coverage_objec
         insert_indoor_coverage(
             indoor,
             &coverage_object.hotspot_key,
-            &coverage_object.cbsd_id,
             coverage_object.seniority_timestamp,
             hex_coverage,
         );
@@ -53,7 +52,6 @@ pub fn insert_indoor_coverage_object(indoor: &mut IndoorCellTree, coverage_objec
 pub fn insert_indoor_coverage(
     indoor: &mut IndoorCellTree,
     hotspot: &[u8],
-    cbsd_id: &Option<String>,
     seniority_timestamp: DateTime<Utc>,
     hex_coverage: UnrankedCoverage,
 ) {
@@ -64,7 +62,7 @@ pub fn insert_indoor_coverage(
         .or_default()
         .push(IndoorCoverageLevel {
             hotspot_key: hotspot.to_vec(),
-            cbsd_id: cbsd_id.clone(),
+            cbsd_id: None,
             seniority_timestamp,
             signal_level: hex_coverage.signal_level,
             assignments: hex_coverage.assignments,
