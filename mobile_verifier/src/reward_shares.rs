@@ -773,6 +773,9 @@ fn eligible_for_coverage_map(
     radio_type: RadioType,
     trust_scores: &[LocationTrust],
 ) -> bool {
+    if radio_type == RadioType::IndoorCbrs || radio_type == RadioType::OutdoorCbrs {
+        return false;
+    }
     if oracle_boosting_status == OracleBoostingStatus::Banned {
         return false;
     }
