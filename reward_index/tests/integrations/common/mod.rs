@@ -1,14 +1,13 @@
 use chrono::{DateTime, Utc};
 use file_store::{traits::MsgBytes, BytesMutStream};
 use futures::{stream, StreamExt};
-use helium_crypto::PublicKeyBinary;
 use prost::bytes::BytesMut;
 use reward_index::indexer::RewardType;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Row};
 
 pub fn bytes_mut_stream<T: MsgBytes + Send + 'static>(els: Vec<T>) -> BytesMutStream {
     BytesMutStream::from(
-        stream::iter(els.into_iter())
+        stream::iter(els)
             .map(|el| el.as_bytes())
             .map(|el| BytesMut::from(el.as_ref()))
             .map(Ok)
@@ -18,7 +17,7 @@ pub fn bytes_mut_stream<T: MsgBytes + Send + 'static>(els: Vec<T>) -> BytesMutSt
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RewardIndex {
-    pub address: PublicKeyBinary,
+    pub address: String,
     pub rewards: u64,
     pub last_reward: DateTime<Utc>,
     pub reward_type: RewardType,
@@ -37,7 +36,7 @@ impl FromRow<'_, PgRow> for RewardIndex {
 
 pub async fn get_reward(
     pool: &PgPool,
-    key: &PublicKeyBinary,
+    key: &str,
     reward_type: RewardType,
 ) -> anyhow::Result<RewardIndex> {
     let reward: RewardIndex = sqlx::query_as(

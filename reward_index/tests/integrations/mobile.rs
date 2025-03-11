@@ -37,7 +37,7 @@ async fn accumulates_rewards(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
 
     let key = PublicKeyBinary::from(vec![1]);
-    let reward = common::get_reward(&pool, &key, RewardType::MobileGateway).await?;
+    let reward = common::get_reward(&pool, &key.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward.rewards, 6);
 
     Ok(())
