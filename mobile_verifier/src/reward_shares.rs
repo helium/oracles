@@ -1230,7 +1230,6 @@ mod test {
             .expect("failed gw1 parse");
         let mut owners = HashMap::new();
         owners.insert(gw1.clone(), owner1.clone());
-        let c1 = "P27-SCE4255W2107CW5000015".to_string();
         let cov_obj_1 = Uuid::new_v4();
 
         let now = Utc::now();
@@ -1250,7 +1249,7 @@ mod test {
         let mut hex_coverage = HashMap::new();
         hex_coverage.insert(
             (OwnedKeyType::Wifi(gw1.clone()), cov_obj_1),
-            simple_hex_coverage(&c1, 0x8a1fb46622dffff),
+            simple_hex_coverage(&gw1, 0x8a1fb46622dffff),
         );
 
         let st1 = Speedtest {
