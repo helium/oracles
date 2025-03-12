@@ -50,44 +50,6 @@ async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn test_save_cbrs_heartbeat(pool: PgPool) -> anyhow::Result<()> {
-    let coverage_object = Uuid::new_v4();
-    let heartbeat = ValidatedHeartbeat {
-        heartbeat: Heartbeat {
-            hb_type: HbType::Cbrs,
-            hotspot_key: "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
-                .parse()
-                .unwrap(),
-            cbsd_id: Some("P27-SCE4255W120200039521XGB0103".to_string()),
-            operation_mode: true,
-            lat: 0.0,
-            lon: 0.0,
-            coverage_object: Some(coverage_object),
-            location_validation_timestamp: None,
-            timestamp: "2023-08-23 00:00:00.000000000 UTC".parse().unwrap(),
-            location_source: LocationSource::Gps,
-        },
-        cell_type: CellType::SercommIndoor,
-        distance_to_asserted: None,
-        coverage_meta: None,
-        location_trust_score_multiplier: dec!(1.0),
-        validity: HeartbeatValidity::Valid,
-    };
-
-    let mut transaction = pool.begin().await?;
-
-    heartbeat.save(&mut transaction).await?;
-
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cbrs_heartbeats")
-        .fetch_one(&mut transaction)
-        .await?;
-
-    assert_eq!(count, 1);
-
-    Ok(())
-}
-
-#[sqlx::test]
 async fn only_fetch_latest_hotspot(pool: PgPool) -> anyhow::Result<()> {
     let coverage_object = Uuid::new_v4();
     let cell_type = CellType::NovaGenericWifiIndoor;
