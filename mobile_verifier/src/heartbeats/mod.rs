@@ -104,13 +104,6 @@ pub enum OwnedKeyType {
 }
 
 impl OwnedKeyType {
-    pub fn into_cbsd_id(self) -> Option<String> {
-        match self {
-            Self::Cbrs(cbsd_id) => Some(cbsd_id),
-            _ => None,
-        }
-    }
-
     pub fn to_ref(&self) -> KeyType {
         match self {
             OwnedKeyType::Cbrs(cbsd_id) => KeyType::Cbrs(cbsd_id),

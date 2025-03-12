@@ -426,7 +426,8 @@ impl CoverageShares {
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             let pubkey = heartbeat.hotspot_key.clone();
             let heartbeat_key = heartbeat.key();
-            let cbsd_id = heartbeat_key.to_owned().into_cbsd_id();
+            // TODO-K
+            let cbsd_id = None;
             let key = (pubkey.clone(), cbsd_id.clone());
 
             let seniority = hex_streams
