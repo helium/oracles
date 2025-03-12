@@ -377,31 +377,18 @@ impl ValidatedHeartbeat {
         };
 
         let cell_type = match heartbeat.hb_type {
-            HbType::Cbrs => match heartbeat.cbsd_id.as_ref() {
-                Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
-                    Some(ty) => ty,
-                    _ => {
-                        return Ok(Self::new(
-                            heartbeat,
-                            CellType::CellTypeNone,
-                            dec!(0),
-                            None,
-                            Some(coverage_object.meta),
-                            proto::HeartbeatValidity::BadCbsdId,
-                        ));
-                    }
-                },
-                None => {
-                    return Ok(Self::new(
-                        heartbeat,
-                        CellType::CellTypeNone,
-                        dec!(0),
-                        None,
-                        Some(coverage_object.meta),
-                        proto::HeartbeatValidity::BadCbsdId,
-                    ));
-                }
-            },
+            // CBRS is not supported anymore
+            // return invalid (BadCbsdId) hearbeat
+            HbType::Cbrs => {
+                return Ok(Self::new(
+                    heartbeat,
+                    CellType::CellTypeNone,
+                    dec!(0),
+                    None,
+                    Some(coverage_object.meta),
+                    proto::HeartbeatValidity::BadCbsdId,
+                ))
+            }
             HbType::Wifi => {
                 if coverage_object.meta.indoor {
                     CellType::NovaGenericWifiIndoor
