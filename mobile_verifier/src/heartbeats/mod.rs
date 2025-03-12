@@ -629,32 +629,9 @@ impl ValidatedHeartbeat {
         .await?;
         // Save the heartbeat
         match self.heartbeat.hb_type {
-            HbType::Cbrs => self.save_cbrs_hb(exec).await,
             HbType::Wifi => self.save_wifi_hb(exec).await,
+            HbType::Cbrs => Ok(()),
         }
-    }
-
-    async fn save_cbrs_hb(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
-        let truncated_timestamp = self.truncated_timestamp()?;
-        sqlx::query(
-            r#"
-            INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
-            latest_timestamp = EXCLUDED.latest_timestamp,
-            coverage_object = EXCLUDED.coverage_object
-            "#
-        )
-        .bind(self.heartbeat.cbsd_id)
-        .bind(self.heartbeat.hotspot_key)
-        .bind(self.cell_type)
-        .bind(self.heartbeat.timestamp)
-        .bind(truncated_timestamp)
-        .bind(self.heartbeat.coverage_object)
-        .bind(self.location_trust_score_multiplier)
-        .execute(&mut *exec)
-        .await?;
-        Ok(())
     }
 
     async fn save_wifi_hb(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
