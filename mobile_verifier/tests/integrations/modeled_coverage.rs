@@ -122,17 +122,17 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
     let cache = CoverageObjectCache::new(&pool);
     let uuid = Uuid::new_v4();
     let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
-    let key = "P27-SCE4255W120200039521XGB0103";
-    let key = KeyType::from(key);
+    let bkey: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
+        .parse()
+        .unwrap();
+    let key = KeyType::from(&bkey);
 
     assert!(cache.fetch_coverage_object(&uuid, key).await?.is_none());
 
     let co1 = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
         uuid,
-        key_type: file_store::coverage::KeyType::CbsdId(
-            "P27-SCE4255W120200039521XGB0103".to_string(),
-        ),
+        key_type: file_store::coverage::KeyType::HotspotKey(bkey.clone()),
         coverage_claim_time,
         coverage: vec![file_store::coverage::RadioHexSignalLevel {
             location: "8a1fb46622dffff".parse().unwrap(),
@@ -155,9 +155,7 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
     let co2 = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
         uuid,
-        key_type: file_store::coverage::KeyType::CbsdId(
-            "P27-SCE4255W120200039521XGB0103".to_string(),
-        ),
+        key_type: file_store::coverage::KeyType::HotspotKey(bkey),
         coverage_claim_time,
         coverage: vec![file_store::coverage::RadioHexSignalLevel {
             location: "8a1fb46622dffff".parse().unwrap(),

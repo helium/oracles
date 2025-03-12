@@ -73,12 +73,6 @@ impl KeyType<'_> {
     }
 }
 
-impl<'a> From<&'a str> for KeyType<'a> {
-    fn from(cbrs: &'a str) -> Self {
-        Self::Cbrs(cbrs)
-    }
-}
-
 impl<'a> From<&'a PublicKeyBinary> for KeyType<'a> {
     fn from(wifi: &'a PublicKeyBinary) -> Self {
         Self::Wifi(wifi)
