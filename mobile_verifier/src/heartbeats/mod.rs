@@ -116,12 +116,6 @@ impl OwnedKeyType {
     }
 }
 
-impl From<String> for OwnedKeyType {
-    fn from(s: String) -> Self {
-        Self::Cbrs(s)
-    }
-}
-
 impl From<PublicKeyBinary> for OwnedKeyType {
     fn from(w: PublicKeyBinary) -> Self {
         Self::Wifi(w)
