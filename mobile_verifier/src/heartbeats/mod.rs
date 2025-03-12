@@ -261,8 +261,6 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
-    // cell hb only
-    pub cbsd_id: Option<String>,
     pub cell_type: CellType,
     pub distances_to_asserted: Option<Vec<i64>>,
     pub trust_score_multipliers: Vec<Decimal>,
@@ -271,18 +269,11 @@ pub struct HeartbeatReward {
 
 impl HeartbeatReward {
     pub fn key(&self) -> KeyType<'_> {
-        match self.cbsd_id {
-            Some(ref id) => KeyType::Cbrs(id),
-            _ => KeyType::Wifi(&self.hotspot_key),
-        }
+        KeyType::Wifi(&self.hotspot_key)
     }
 
     pub fn id(&self) -> anyhow::Result<String> {
         match self.cell_type.to_label() {
-            CellTypeLabel::CBRS => Ok(self
-                .cbsd_id
-                .clone()
-                .ok_or_else(|| anyhow!("expected cbsd_id, found none"))?),
             CellTypeLabel::Wifi => Ok(self.hotspot_key.to_string()),
             _ => Err(anyhow!("failed to derive label from cell type")),
         }

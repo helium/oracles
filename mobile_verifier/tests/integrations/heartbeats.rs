@@ -104,7 +104,6 @@ VALUES
         vec![HeartbeatReward {
             hotspot_key: hotspot_2,
             cell_type,
-            cbsd_id: None,
             trust_score_multipliers: vec![Decimal::ONE; 13],
             distances_to_asserted: Some(vec![0; 13]),
             coverage_object,
@@ -194,7 +193,6 @@ VALUES
         vec![HeartbeatReward {
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
-            cbsd_id: None,
             trust_score_multipliers: vec![Decimal::ONE; 12],
             distances_to_asserted: Some(vec![0; 12]),
             coverage_object: latest_coverage_object,
@@ -245,7 +243,6 @@ VALUES
         vec![HeartbeatReward {
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
-            cbsd_id: None,
             trust_score_multipliers: vec![
                 dec!(1.0),
                 dec!(1.0),
