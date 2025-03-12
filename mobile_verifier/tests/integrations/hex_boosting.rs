@@ -1391,7 +1391,6 @@ async fn seed_heartbeats_v2(
 
         let cov_obj_1 = create_multi_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key1.clone(),
             vec![0x8a1fb46622dffff_u64, 0x8a1fb46622d7fff_u64],
             true,
@@ -1598,7 +1597,6 @@ async fn seed_heartbeats_v4(
 
         let cov_obj_1 = create_multi_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key1.clone(),
             [0x8a1fb46622dffff_u64, 0x8a1fb46622d7fff_u64].into(),
             false,
@@ -1797,15 +1795,12 @@ fn create_coverage_object(
 
 fn create_multi_coverage_object(
     ts: DateTime<Utc>,
-    cbsd_id: Option<String>,
     pub_key: PublicKeyBinary,
     hex: Vec<u64>,
     indoor: bool,
 ) -> CoverageObject {
-    let key_type = match cbsd_id {
-        Some(s) => KeyType::CbsdId(s),
-        None => KeyType::HotspotKey(pub_key.clone()),
-    };
+    let key_type = KeyType::HotspotKey(pub_key.clone());
+
     let coverage: Vec<RadioHexSignalLevel> = hex
         .iter()
         .map(|h| RadioHexSignalLevel {

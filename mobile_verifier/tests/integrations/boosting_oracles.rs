@@ -103,7 +103,6 @@ fn hex_cell(loc: &str) -> hextree::Cell {
 #[sqlx::test]
 async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<()> {
     let uuid = Uuid::new_v4();
-    let cbsd_id = "P27-SCE4255W120200039521XGB0102".to_string();
 
     fn new_hex_assingment(
         cell: &mut CellIndex,
@@ -170,7 +169,7 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     let coverage_object = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
         uuid,
-        key_type: file_store::coverage::KeyType::CbsdId(cbsd_id.clone()),
+        key_type: file_store::coverage::KeyType::HotspotKey(PublicKeyBinary::from(vec![1])),
         coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
         indoor: true,
         signature: Vec::new(),

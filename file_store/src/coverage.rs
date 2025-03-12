@@ -21,14 +21,12 @@ pub struct RadioHexSignalLevel {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum KeyType {
-    CbsdId(String),
     HotspotKey(PublicKeyBinary),
 }
 
 impl From<KeyType> for coverage_object_req_v1::KeyType {
     fn from(kt: KeyType) -> Self {
         match kt {
-            KeyType::CbsdId(id) => coverage_object_req_v1::KeyType::CbsdId(id),
             KeyType::HotspotKey(key) => coverage_object_req_v1::KeyType::HotspotKey(key.into()),
         }
     }
@@ -87,9 +85,14 @@ impl TryFrom<CoverageObjectReqV1> for CoverageObject {
             pub_key: v.pub_key.into(),
             uuid: Uuid::from_slice(&v.uuid).map_err(DecodeError::from)?,
             key_type: match v.key_type {
-                Some(coverage_object_req_v1::KeyType::CbsdId(id)) => KeyType::CbsdId(id),
                 Some(coverage_object_req_v1::KeyType::HotspotKey(key)) => {
                     KeyType::HotspotKey(key.into())
+                }
+                Some(coverage_object_req_v1::KeyType::CbsdId(_id)) => {
+                    return Err(Error::NotFound(
+                        "coverage objects with KeyType CbsdId are not supported anymore"
+                            .to_string(),
+                    ))
                 }
                 None => return Err(Error::NotFound("key_type".to_string())),
             },

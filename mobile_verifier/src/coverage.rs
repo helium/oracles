@@ -265,7 +265,6 @@ impl CoverageObject {
 
     pub fn key(&self) -> KeyType<'_> {
         match self.coverage_object.key_type {
-            coverage::KeyType::CbsdId(ref cbsd) => KeyType::Cbrs(cbsd.as_str()),
             coverage::KeyType::HotspotKey(ref hotspot_key) => KeyType::Wifi(hotspot_key),
         }
     }
