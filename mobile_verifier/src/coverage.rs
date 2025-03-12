@@ -437,6 +437,7 @@ impl CoveredHexStream for Pool<Postgres> {
             .execute(self)
             .await?;
 
+        // radio_type != 'cbrs' - makes sure CBRS radios will never be selected since deprecation
         Ok(
             sqlx::query_as(
                 r#"
@@ -444,7 +445,7 @@ impl CoveredHexStream for Pool<Postgres> {
                 FROM coverage_objects co
                     INNER JOIN hexes h on co.uuid = h.uuid
                 WHERE co.radio_key = $1
-                    AND co.uuid = $2
+                    AND co.uuid = $2 AND radio_type != 'cbrs'
                 "#,
             )
             .bind(key)

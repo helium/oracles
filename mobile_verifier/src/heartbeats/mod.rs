@@ -181,10 +181,10 @@ impl<'r> Decode<'r, Postgres> for OwnedKeyType {
         value: <Postgres as sqlx::database::HasValueRef<'r>>::ValueRef,
     ) -> Result<Self, sqlx::error::BoxDynError> {
         let text = <&str as Decode<Postgres>>::decode(value)?;
-        // Try decoding to a public key binary, otherwise it's a cbrs string
+        // Try decoding to a public key binary
         match text.parse() {
             Ok(pubkey) => Ok(OwnedKeyType::Wifi(pubkey)),
-            Err(_) => Ok(OwnedKeyType::Cbrs(text.to_string())),
+            Err(e) => Err(e)?,
         }
     }
 }
