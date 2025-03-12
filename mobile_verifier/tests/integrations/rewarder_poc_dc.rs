@@ -269,7 +269,6 @@ async fn seed_heartbeats(
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key1,
-                cbsd_id: None,
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -296,7 +295,6 @@ async fn seed_heartbeats(
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key2,
-                cbsd_id: None,
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -323,7 +321,6 @@ async fn seed_heartbeats(
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key3,
-                cbsd_id: None,
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,

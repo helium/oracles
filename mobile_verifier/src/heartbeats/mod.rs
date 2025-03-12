@@ -193,7 +193,6 @@ impl<'r> Decode<'r, Postgres> for OwnedKeyType {
 pub struct Heartbeat {
     pub hb_type: HbType,
     pub hotspot_key: PublicKeyBinary,
-    pub cbsd_id: Option<String>,
     pub operation_mode: bool,
     pub lat: f64,
     pub lon: f64,
@@ -209,24 +208,12 @@ impl Heartbeat {
     }
 
     pub fn key(&self) -> KeyType<'_> {
-        match self.hb_type {
-            HbType::Cbrs => KeyType::from(self.cbsd_id.as_deref().unwrap()),
-            HbType::Wifi => KeyType::from(&self.hotspot_key),
-        }
+        KeyType::from(&self.hotspot_key)
     }
 
     pub fn id(&self) -> anyhow::Result<(String, DateTime<Utc>)> {
         let ts = self.truncated_timestamp()?;
-        match self.hb_type {
-            HbType::Cbrs => {
-                let cbsd_id = self
-                    .cbsd_id
-                    .clone()
-                    .ok_or_else(|| anyhow!("expected cbsd_id, found none"))?;
-                Ok((cbsd_id, ts))
-            }
-            HbType::Wifi => Ok((self.hotspot_key.to_string(), ts)),
-        }
+        Ok((self.hotspot_key.to_string(), ts))
     }
 
     fn centered_latlng(&self) -> anyhow::Result<LatLng> {
@@ -247,7 +234,6 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
             hb_type: HbType::Wifi,
             coverage_object: value.report.coverage_object(),
             hotspot_key: value.report.pubkey,
-            cbsd_id: None,
             operation_mode: value.report.operation_mode,
             lat: value.report.lat,
             lon: value.report.lon,
@@ -575,7 +561,7 @@ impl ValidatedHeartbeat {
         heartbeats
             .write(
                 proto::Heartbeat {
-                    cbsd_id: self.heartbeat.cbsd_id.clone().unwrap_or_default(),
+                    cbsd_id: String::default(),
                     pub_key: self.heartbeat.hotspot_key.as_ref().into(),
                     cell_type: self.cell_type as i32,
                     validity: self.validity as i32,
@@ -731,7 +717,6 @@ mod test {
                 lon: 0.0,
                 lat: 0.0,
                 operation_mode: false,
-                cbsd_id: None,
                 coverage_object: Some(coverage_object),
                 location_validation_timestamp: None,
                 location_source: LocationSource::Skyhook,
