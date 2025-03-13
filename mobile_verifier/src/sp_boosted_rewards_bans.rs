@@ -50,7 +50,6 @@ pub struct BannedRadioReport {
 impl BannedRadioReport {
     fn radio_type(&self) -> HbType {
         match self.key {
-            OwnedKeyType::Cbrs(_) => HbType::Cbrs,
             OwnedKeyType::Wifi(_) => HbType::Wifi,
         }
     }
@@ -70,7 +69,9 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
         let ban_type = report.ban_type();
 
         let key = match report.key_type {
-            Some(ProtoKeyType::CbsdId(cbsd_id)) => OwnedKeyType::Cbrs(cbsd_id),
+            Some(ProtoKeyType::CbsdId(_cbsd_id)) => {
+                anyhow::bail!("CBRS radio are not supported anymore")
+            }
             Some(ProtoKeyType::HotspotKey(bytes)) => {
                 OwnedKeyType::Wifi(PublicKeyBinary::from(bytes))
             }
@@ -112,6 +113,7 @@ impl BannedRadios {
     }
 
     pub fn contains(&self, pubkey: &PublicKeyBinary, cbsd_id_opt: Option<&str>) -> bool {
+        // TODO-K rework
         match cbsd_id_opt {
             Some(cbsd_id) => self.cbrs.contains(cbsd_id),
             None => self.wifi.contains(pubkey),
@@ -512,90 +514,13 @@ mod tests {
         }
     }
 
-    fn cbrs_ban_report(
-        cbsd_id: String,
-        until: DateTime<Utc>,
-        reason: SpBoostedRewardsBannedRadioReason,
-    ) -> ServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
-        let signer_keypair = generate_keypair();
-
-        ServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
-            received_timestamp: Utc::now().timestamp_millis() as u64,
-            report: Some(ServiceProviderBoostedRewardsBannedRadioReqV1 {
-                pubkey: signer_keypair.public_key().into(),
-                reason: reason as i32,
-                until: until.timestamp() as u64,
-                signature: vec![],
-                key_type: Some(ProtoKeyType::CbsdId(cbsd_id)),
-                ban_type: SpBoostedRewardsBannedRadioBanType::BoostedHex as i32,
-            }),
-        }
-    }
-
     #[sqlx::test]
     async fn wifi_radio_can_get_banned_and_unbanned(pool: PgPool) -> anyhow::Result<()> {
         let setup = TestSetup::create(pool.clone(), AllVerified);
         let keypair = generate_keypair();
-        let cbsd_id = "cbsd-id-1".to_string();
-
-        let report = cbrs_ban_report(
-            cbsd_id.clone(),
-            Utc::now() + Duration::days(7),
-            SpBoostedRewardsBannedRadioReason::NoNetworkCorrelation,
-        );
-
-        let mut transaction = pool.begin().await?;
-        setup
-            .ingestor
-            .process_ingest_report(&mut transaction, report)
-            .await?;
-        transaction.commit().await?;
-
-        let banned_radios = db::get_banned_radios(
-            &pool,
-            SpBoostedRewardsBannedRadioBanType::BoostedHex,
-            Utc::now(),
-        )
-        .await?;
-        let result =
-            banned_radios.contains(&keypair.public_key().to_owned().into(), Some(&cbsd_id));
-
-        assert!(result);
-
-        let report = cbrs_ban_report(
-            cbsd_id.clone(),
-            Utc::now() - Duration::days(7),
-            SpBoostedRewardsBannedRadioReason::Unbanned,
-        );
-
-        let mut transaction = pool.begin().await?;
-        setup
-            .ingestor
-            .process_ingest_report(&mut transaction, report)
-            .await?;
-        transaction.commit().await?;
-
-        let banned_radios = db::get_banned_radios(
-            &pool,
-            SpBoostedRewardsBannedRadioBanType::BoostedHex,
-            Utc::now(),
-        )
-        .await?;
-        let result =
-            banned_radios.contains(&keypair.public_key().to_owned().into(), Some(&cbsd_id));
-
-        assert!(!result);
-
-        Ok(())
-    }
-
-    #[sqlx::test]
-    async fn cbrs_radio_can_get_banned_and_unbanned(pool: PgPool) -> anyhow::Result<()> {
-        let setup = TestSetup::create(pool.clone(), AllVerified);
-        let keypair = generate_keypair();
 
         let report = wifi_ban_report(
-            keypair.public_key(),
+            &keypair.public_key().clone(),
             Utc::now() + Duration::days(7),
             SpBoostedRewardsBannedRadioReason::NoNetworkCorrelation,
         );
@@ -618,7 +543,7 @@ mod tests {
         assert!(result);
 
         let report = wifi_ban_report(
-            keypair.public_key(),
+            &keypair.public_key(),
             Utc::now() - Duration::days(7),
             SpBoostedRewardsBannedRadioReason::Unbanned,
         );

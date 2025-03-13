@@ -37,14 +37,12 @@ pub enum HbType {
 
 #[derive(Debug, Copy, Clone)]
 pub enum KeyType<'a> {
-    Cbrs(&'a str),
     Wifi(&'a PublicKeyBinary),
 }
 
 impl From<KeyType<'_>> for proto::seniority_update::KeyType {
     fn from(kt: KeyType<'_>) -> Self {
         match kt {
-            KeyType::Cbrs(id) => proto::seniority_update::KeyType::CbsdId(id.to_string()),
             KeyType::Wifi(key) => proto::seniority_update::KeyType::HotspotKey(key.clone().into()),
         }
     }
@@ -53,21 +51,18 @@ impl From<KeyType<'_>> for proto::seniority_update::KeyType {
 impl KeyType<'_> {
     pub fn to_owned(self) -> OwnedKeyType {
         match self {
-            Self::Cbrs(cbrs) => OwnedKeyType::Cbrs(cbrs.to_owned()),
             Self::Wifi(key) => OwnedKeyType::Wifi(key.to_owned()),
         }
     }
 
     pub fn to_id(self) -> (String, HbType) {
         match self {
-            Self::Cbrs(cbrs) => (cbrs.to_string(), HbType::Cbrs),
             Self::Wifi(wifi) => (wifi.to_string(), HbType::Wifi),
         }
     }
 
     pub fn hb_type(self) -> HbType {
         match self {
-            Self::Cbrs(_) => HbType::Cbrs,
             Self::Wifi(_) => HbType::Wifi,
         }
     }
@@ -91,7 +86,6 @@ impl<'a> Encode<'a, Postgres> for KeyType<'a> {
         buf: &mut <Postgres as sqlx::database::HasArguments<'a>>::ArgumentBuffer,
     ) -> sqlx::encode::IsNull {
         match self {
-            Self::Cbrs(cbrs) => cbrs.encode_by_ref(buf),
             Self::Wifi(wifi) => wifi.encode_by_ref(buf),
         }
     }
@@ -99,14 +93,12 @@ impl<'a> Encode<'a, Postgres> for KeyType<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum OwnedKeyType {
-    Cbrs(String),
     Wifi(PublicKeyBinary),
 }
 
 impl OwnedKeyType {
     pub fn to_ref(&self) -> KeyType {
         match self {
-            OwnedKeyType::Cbrs(cbsd_id) => KeyType::Cbrs(cbsd_id),
             OwnedKeyType::Wifi(pubkey) => KeyType::Wifi(pubkey),
         }
     }
@@ -125,9 +117,7 @@ impl From<PublicKeyBinary> for OwnedKeyType {
 impl PartialEq<KeyType<'_>> for OwnedKeyType {
     fn eq(&self, rhs: &KeyType<'_>) -> bool {
         match (self, rhs) {
-            (Self::Cbrs(lhs), KeyType::Cbrs(rhs)) => lhs == rhs,
             (Self::Wifi(lhs), KeyType::Wifi(rhs)) => lhs == *rhs,
-            _ => false,
         }
     }
 }
@@ -144,7 +134,6 @@ impl<'a> Encode<'a, Postgres> for OwnedKeyType {
         buf: &mut <Postgres as sqlx::database::HasArguments<'a>>::ArgumentBuffer,
     ) -> sqlx::encode::IsNull {
         match self {
-            Self::Cbrs(cbrs) => cbrs.encode_by_ref(buf),
             Self::Wifi(wifi) => wifi.encode_by_ref(buf),
         }
     }
