@@ -25,12 +25,10 @@ impl BoostedHexEligibility {
         }
     }
 
-    // TODO-K
     pub fn eligibility(
         &self,
         radio_type: RadioType,
         key: PublicKeyBinary,
-        _cbsd_id_opt: Option<String>,
         covered_hexes: &[UnrankedCoverage],
     ) -> SPBoostedRewardEligibility {
         if Self::in_united_states(covered_hexes) {
@@ -91,12 +89,8 @@ mod tests {
 
         let covered_hexes = vec![unranked_coverage(Assignment::A)];
 
-        let eligibility = boosted_hex_eligibility.eligibility(
-            RadioType::OutdoorWifi,
-            pub_key,
-            None,
-            &covered_hexes,
-        );
+        let eligibility =
+            boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key, &covered_hexes);
 
         assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
     }
@@ -116,12 +110,8 @@ mod tests {
 
         let covered_hexes = vec![unranked_coverage(Assignment::C)];
 
-        let eligibility = boosted_hex_eligibility.eligibility(
-            RadioType::OutdoorWifi,
-            pub_key,
-            None,
-            &covered_hexes,
-        );
+        let eligibility =
+            boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key, &covered_hexes);
 
         assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
     }
@@ -140,12 +130,8 @@ mod tests {
 
         let covered_hexes = vec![unranked_coverage(Assignment::C)];
 
-        let eligibility = boosted_hex_eligibility.eligibility(
-            RadioType::OutdoorWifi,
-            pub_key,
-            None,
-            &covered_hexes,
-        );
+        let eligibility =
+            boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key, &covered_hexes);
 
         assert_eq!(
             SPBoostedRewardEligibility::RadioThresholdNotMet,
@@ -167,12 +153,8 @@ mod tests {
 
         let covered_hexes = vec![unranked_coverage(Assignment::A)];
 
-        let eligibility = boosted_hex_eligibility.eligibility(
-            RadioType::OutdoorWifi,
-            pub_key,
-            None,
-            &covered_hexes,
-        );
+        let eligibility =
+            boosted_hex_eligibility.eligibility(RadioType::OutdoorWifi, pub_key, &covered_hexes);
 
         assert_eq!(
             SPBoostedRewardEligibility::NotEnoughConnections,

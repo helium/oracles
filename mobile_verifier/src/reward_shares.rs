@@ -494,12 +494,8 @@ impl CoverageShares {
                     OracleBoostingStatus::Eligible
                 };
 
-            let sp_boosted_reward_eligibility = boosted_hex_eligibility.eligibility(
-                radio_type,
-                pubkey.clone(),
-                cbsd_id.clone(),
-                &covered_hexes,
-            );
+            let sp_boosted_reward_eligibility =
+                boosted_hex_eligibility.eligibility(radio_type, pubkey.clone(), &covered_hexes);
 
             if eligible_for_coverage_map(
                 oracle_boosting_status,
