@@ -255,9 +255,7 @@ where
         &self,
         report: &RadioThresholdReportReq,
     ) -> anyhow::Result<RadioThresholdReportVerificationStatus> {
-        let is_legacy = self
-            .verify_legacy(&report.hotspot_pubkey, &report.cbsd_id)
-            .await?;
+        let is_legacy = self.verify_legacy(&report.hotspot_pubkey, &None).await?;
         let report_validity = self.do_report_verifications(report).await;
         let final_validity = if is_legacy
             && report_validity == RadioThresholdReportVerificationStatus::ThresholdReportStatusValid
@@ -318,6 +316,8 @@ pub async fn save(
     ingest_report: &RadioThresholdIngestReport,
     db: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
+    let cbsd_id: Option<String> = None;
+
     sqlx::query(
         r#"
             INSERT INTO radio_threshold (
@@ -339,7 +339,7 @@ pub async fn save(
             "#,
     )
     .bind(ingest_report.report.hotspot_pubkey.to_string())
-    .bind(ingest_report.report.cbsd_id.clone())
+    .bind(cbsd_id)
     .bind(ingest_report.report.bytes_threshold as i64)
     .bind(ingest_report.report.subscriber_threshold as i32)
     .bind(ingest_report.report.threshold_timestamp)
