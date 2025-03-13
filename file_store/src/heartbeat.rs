@@ -94,7 +94,6 @@ pub mod cli {
 
     #[derive(Serialize, Deserialize, Debug, Clone)]
     pub struct ValidatedHeartbeat {
-        pub cbsd_id: String,
         pub pub_key: PublicKeyBinary,
         pub timestamp: DateTime<Utc>,
         pub cell_type: CellType,
@@ -112,7 +111,6 @@ pub mod cli {
 
         fn try_from(v: Heartbeat) -> Result<Self> {
             Ok(Self {
-                cbsd_id: v.cbsd_id.clone(),
                 pub_key: v.pub_key.clone().into(),
                 timestamp: Utc
                     .timestamp_opt(v.timestamp as i64, 0)
