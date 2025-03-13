@@ -352,21 +352,21 @@ pub async fn save(
 #[derive(FromRow, Debug)]
 pub struct RadioThreshold {
     hotspot_pubkey: PublicKeyBinary,
-    cbsd_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct VerifiedRadioThresholds {
+    // TODO-K Rework to HashSet<PublicKeyBinary>
     gateways: HashSet<(PublicKeyBinary, Option<String>)>,
 }
 
 impl VerifiedRadioThresholds {
-    pub fn insert(&mut self, hotspot_key: PublicKeyBinary, cbsd_id: Option<String>) {
-        self.gateways.insert((hotspot_key, cbsd_id));
+    pub fn insert(&mut self, hotspot_key: PublicKeyBinary) {
+        self.gateways.insert((hotspot_key, None));
     }
 
-    pub fn is_verified(&self, key: PublicKeyBinary, cbsd_id: Option<String>) -> bool {
-        self.gateways.contains(&(key, cbsd_id))
+    pub fn is_verified(&self, key: PublicKeyBinary) -> bool {
+        self.gateways.contains(&(key, None))
     }
 }
 
@@ -376,13 +376,13 @@ pub async fn verified_radio_thresholds(
 ) -> Result<VerifiedRadioThresholds, sqlx::Error> {
     let mut rows = sqlx::query_as::<_, RadioThreshold>(
         "SELECT hotspot_pubkey, cbsd_id
-             FROM radio_threshold WHERE threshold_timestamp < $1",
+             FROM radio_threshold WHERE threshold_timestamp < $1 and cbsd_id IS NULL",
     )
     .bind(reward_period.end)
     .fetch(pool);
     let mut map = VerifiedRadioThresholds::default();
     while let Some(row) = rows.try_next().await? {
-        map.insert(row.hotspot_pubkey, row.cbsd_id.filter(|s| !s.is_empty()));
+        map.insert(row.hotspot_pubkey);
     }
     Ok(map)
 }

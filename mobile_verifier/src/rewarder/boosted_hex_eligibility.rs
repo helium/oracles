@@ -25,17 +25,18 @@ impl BoostedHexEligibility {
         }
     }
 
+    // TODO-K
     pub fn eligibility(
         &self,
         radio_type: RadioType,
         key: PublicKeyBinary,
-        cbsd_id_opt: Option<String>,
+        _cbsd_id_opt: Option<String>,
         covered_hexes: &[UnrankedCoverage],
     ) -> SPBoostedRewardEligibility {
         if Self::in_united_states(covered_hexes) {
             self.check_unique_connections(&key, &radio_type)
         } else {
-            self.check_radio_thresholds(key, cbsd_id_opt)
+            self.check_radio_thresholds(key)
         }
     }
 
@@ -51,12 +52,8 @@ impl BoostedHexEligibility {
         }
     }
 
-    fn check_radio_thresholds(
-        &self,
-        key: PublicKeyBinary,
-        cbsd_id_opt: Option<String>,
-    ) -> SPBoostedRewardEligibility {
-        if self.radio_thresholds.is_verified(key, cbsd_id_opt) {
+    fn check_radio_thresholds(&self, key: PublicKeyBinary) -> SPBoostedRewardEligibility {
+        if self.radio_thresholds.is_verified(key) {
             SPBoostedRewardEligibility::Eligible
         } else {
             SPBoostedRewardEligibility::RadioThresholdNotMet
@@ -112,7 +109,7 @@ mod tests {
 
         let unique_connections = UniqueConnectionCounts::default();
         let mut verified_thresholds = VerifiedRadioThresholds::default();
-        verified_thresholds.insert(pub_key.clone(), None);
+        verified_thresholds.insert(pub_key.clone());
 
         let boosted_hex_eligibility =
             BoostedHexEligibility::new(verified_thresholds, unique_connections);
