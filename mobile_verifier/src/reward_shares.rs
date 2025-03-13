@@ -426,9 +426,7 @@ impl CoverageShares {
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             let pubkey = heartbeat.hotspot_key.clone();
             let heartbeat_key = heartbeat.key();
-            // TODO-K
-            let cbsd_id = None;
-            let key = (pubkey.clone(), cbsd_id.clone());
+            let key = (pubkey.clone(), None);
 
             let seniority = hex_streams
                 .fetch_seniority(heartbeat_key, reward_period.end)
@@ -478,11 +476,9 @@ impl CoverageShares {
             };
 
             use coverage_point_calculator::RadioType;
-            let radio_type = match (is_indoor, cbsd_id.as_ref()) {
-                (true, None) => RadioType::IndoorWifi,
-                (true, Some(_)) => RadioType::IndoorCbrs,
-                (false, None) => RadioType::OutdoorWifi,
-                (false, Some(_)) => RadioType::OutdoorCbrs,
+            let radio_type = match is_indoor {
+                true => RadioType::IndoorWifi,
+                false => RadioType::OutdoorWifi,
             };
 
             let oracle_boosting_status =
