@@ -11,9 +11,7 @@ use helium_proto::services::poc_lora::{
     LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1,
 };
 use helium_proto::{
-    services::poc_mobile::{
-        CellHeartbeatIngestReportV1, CellHeartbeatReqV1, SpeedtestIngestReportV1, SpeedtestReqV1,
-    },
+    services::poc_mobile::{SpeedtestIngestReportV1, SpeedtestReqV1},
     EntropyReportV1, Message, PriceReportV1,
 };
 use serde_json::json;
@@ -74,22 +72,9 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for PriceReportV1 {
 
 fn get_timestamp(file_type: &str, buf: &[u8]) -> Result<DateTime<Utc>> {
     let result = match FileType::from_str(file_type)? {
-        FileType::CbrsHeartbeat => CellHeartbeatReqV1::decode(buf)
-            .map_err(Error::from)
-            .and_then(|entry| entry.timestamp())?,
         FileType::CellSpeedtest => SpeedtestReqV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
-        FileType::CbrsHeartbeatIngestReport => CellHeartbeatIngestReportV1::decode(buf)
-            .map_err(Error::from)
-            .and_then(|ingest_report| {
-                ingest_report.report.ok_or_else(|| {
-                    Error::not_found(
-                        "CellHeartbeatIngestReportV1 does not contain a CellHeartbeatReqV1",
-                    )
-                })
-            })
-            .and_then(|heartbeat_req| heartbeat_req.timestamp())?,
         FileType::CellSpeedtestIngestReport => SpeedtestIngestReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|ingest_report| {
