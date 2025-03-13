@@ -200,7 +200,6 @@ impl IsAuthorized for AllPubKeysAuthed {
     }
 }
 
-// TODO-K move to common
 fn wifi_heartbeats(
     num: usize,
     start: DateTime<Utc>,

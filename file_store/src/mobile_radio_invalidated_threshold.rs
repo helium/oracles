@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct InvalidatedRadioThresholdReportReq {
     pub hotspot_pubkey: PublicKeyBinary,
-    pub cbsd_id: Option<String>,
     pub reason: InvalidatedThresholdReason,
     pub timestamp: DateTime<Utc>,
     pub carrier_pub_key: PublicKeyBinary,
@@ -56,7 +55,6 @@ impl TryFrom<InvalidatedRadioThresholdReportReqV1> for InvalidatedRadioThreshold
             )
         })?;
         Ok(Self {
-            cbsd_id: v.cbsd_id.parse().ok(),
             hotspot_pubkey: v.hotspot_pubkey.into(),
             reason,
             timestamp: v.timestamp.to_timestamp()?,
@@ -69,7 +67,7 @@ impl From<InvalidatedRadioThresholdReportReq> for InvalidatedRadioThresholdRepor
     fn from(v: InvalidatedRadioThresholdReportReq) -> Self {
         let timestamp = v.timestamp.timestamp() as u64;
         Self {
-            cbsd_id: v.cbsd_id.unwrap_or_default(),
+            cbsd_id: String::default(),
             hotspot_pubkey: v.hotspot_pubkey.into(),
             reason: v.reason as i32,
             timestamp,
