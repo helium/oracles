@@ -31,7 +31,6 @@ pub struct HexUsageStatsReq {
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct RadioUsageStatsReq {
     pub hotspot_pubkey: PublicKeyBinary,
-    pub cbsd_id: String,
     pub service_provider_user_count: u64,
     pub disco_mapping_user_count: u64,
     pub offload_user_count: u64,
@@ -129,7 +128,6 @@ impl TryFrom<RadioUsageStatsReqV1> for RadioUsageStatsReq {
         let epoch_end_timestamp = v.epoch_end_timestamp.to_timestamp()?;
         Ok(Self {
             hotspot_pubkey: v.hotspot_pubkey.into(),
-            cbsd_id: v.cbsd_id,
             service_provider_user_count: v.service_provider_user_count,
             disco_mapping_user_count: v.disco_mapping_user_count,
             offload_user_count: v.offload_user_count,
@@ -151,7 +149,7 @@ impl From<RadioUsageStatsReq> for RadioUsageStatsReqV1 {
 
         RadioUsageStatsReqV1 {
             hotspot_pubkey: v.hotspot_pubkey.into(),
-            cbsd_id: v.cbsd_id,
+            cbsd_id: String::default(),
             service_provider_user_count: v.service_provider_user_count,
             disco_mapping_user_count: v.disco_mapping_user_count,
             offload_user_count: v.offload_user_count,

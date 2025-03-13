@@ -1649,7 +1649,6 @@ async fn seed_heartbeats_v4(
         };
 
         let hotspot_key4: PublicKeyBinary = HOTSPOT_4.to_string().parse().unwrap();
-        // let cbsd_id = Some("P27-SCE4255W0002".to_string());
         let cov_obj_3 = create_coverage_object(
             ts + ChronoDuration::hours(n),
             hotspot_key4.clone(),
