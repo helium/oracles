@@ -659,18 +659,6 @@ impl DataTransferAndPocAllocatedRewardBuckets {
         }
     }
 
-    // TODO-K is it test only purposes? If yes move from prod codebase?
-    pub fn new_poc_only(total_emission_pool: Decimal) -> Self {
-        let poc = total_emission_pool * POC_REWARDS_PERCENT;
-        let data_transfer = total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT;
-
-        Self {
-            data_transfer: dec!(0),
-            poc: poc + data_transfer,
-            boosted_poc: total_emission_pool * BOOSTED_POC_REWARDS_PERCENT,
-        }
-    }
-
     pub fn total_poc(&self) -> Decimal {
         self.poc + self.boosted_poc
     }
@@ -796,6 +784,7 @@ fn eligible_for_coverage_map(
 
 #[cfg(test)]
 mod test {
+
     use super::*;
     use hex_assignments::{assignment::HexAssignments, Assignment};
 
@@ -830,6 +819,17 @@ mod test {
 
     const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 82_191_780_821_917;
     const EMISSIONS_POOL_IN_BONES_1_HOUR: u64 = 3_424_657_534_247;
+
+    fn new_poc_only(total_emission_pool: Decimal) -> DataTransferAndPocAllocatedRewardBuckets {
+        let poc = total_emission_pool * POC_REWARDS_PERCENT;
+        let data_transfer = total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT;
+
+        DataTransferAndPocAllocatedRewardBuckets {
+            data_transfer: dec!(0),
+            poc: poc + data_transfer,
+            boosted_poc: total_emission_pool * BOOSTED_POC_REWARDS_PERCENT,
+        }
+    }
 
     fn hex_assignments_mock() -> HexAssignments {
         HexAssignments {
@@ -1285,8 +1285,7 @@ mod test {
         let rewards_info =
             default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
-        let reward_shares =
-            DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
+        let reward_shares = new_poc_only(rewards_info.epoch_emissions);
 
         let (_reward_amount, _mobile_reward_v1, mobile_reward_v2) = CoverageShares::new(
             &hex_coverage,
@@ -1460,8 +1459,7 @@ mod test {
 
         let rewards_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(1));
 
-        let reward_shares =
-            DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
+        let reward_shares = new_poc_only(rewards_info.epoch_emissions);
 
         let mut allocated_poc_rewards = 0_u64;
 
@@ -1606,8 +1604,7 @@ mod test {
         let epoch = (now - duration)..now;
         let rewards_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(1));
 
-        let reward_shares =
-            DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
+        let reward_shares = new_poc_only(rewards_info.epoch_emissions);
         let unique_connection_counts = HashMap::from([(gw1.clone(), 42)]);
         for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in CoverageShares::new(
             &hex_coverage,
@@ -1756,9 +1753,8 @@ mod test {
             radio_infos,
         };
 
-        let reward_shares =
-            DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
-        // gw2 does not have enough speedtests for a mulitplier
+        let reward_shares = new_poc_only(rewards_info.epoch_emissions);
+        // gw2 does not have enough speedtests for a multiplier
         let expected_hotspot = gw1;
         for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in coverage_shares
             .into_rewards(reward_shares, &rewards_info.epoch_period)
@@ -1783,8 +1779,7 @@ mod test {
             radio_infos: HashMap::new(),
         };
 
-        let reward_shares =
-            DataTransferAndPocAllocatedRewardBuckets::new_poc_only(rewards_info.epoch_emissions);
+        let reward_shares = new_poc_only(rewards_info.epoch_emissions);
         assert!(coverage_shares
             .into_rewards(reward_shares, &rewards_info.epoch_period)
             .is_none());
