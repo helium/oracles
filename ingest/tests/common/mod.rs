@@ -362,11 +362,9 @@ impl TestClient {
         Ok(res.into_inner())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn submit_radio_usage_req(
         &mut self,
         hotspot_pubkey: PublicKeyBinary,
-        cbsd_id: String,
         service_provider_user_count: u64,
         disco_mapping_user_count: u64,
         offload_user_count: u64,
@@ -375,7 +373,7 @@ impl TestClient {
     ) -> anyhow::Result<RadioUsageStatsResV1> {
         let mut req = RadioUsageStatsReqV1 {
             hotspot_pubkey: hotspot_pubkey.into(),
-            cbsd_id,
+            cbsd_id: String::default(),
             service_provider_user_count,
             disco_mapping_user_count,
             offload_user_count,

@@ -135,7 +135,6 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
         common::setup_mobile("2025-03-01 00:00:00Z".parse::<DateTime<Utc>>()?).await?;
 
     let hotspot_pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
-    let cbsd_id = "cbsd_id".to_string();
     const SERVICE_PROVIDER_USER_COUNT: u64 = 10;
     const DISCO_MAPPING_USER_COUNT: u64 = 11;
     const OFFLOAD_USER_COUNT: u64 = 12;
@@ -145,7 +144,6 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
     let res = client
         .submit_radio_usage_req(
             hotspot_pubkey.clone(),
-            cbsd_id.clone(),
             SERVICE_PROVIDER_USER_COUNT,
             DISCO_MAPPING_USER_COUNT,
             OFFLOAD_USER_COUNT,
@@ -166,7 +164,6 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
                 None => panic!("No report found"),
                 Some(event) => {
                     assert_eq!(hotspot_pubkey.as_ref(), event.hotspot_pubkey);
-                    assert_eq!(cbsd_id, event.cbsd_id);
                     assert_eq!(
                         SERVICE_PROVIDER_USER_COUNT,
                         event.service_provider_user_count
