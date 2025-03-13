@@ -1100,8 +1100,6 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    // seed HBs where we have multiple coverage reports for one radio and one report for the others
-    // include a cbrs radio alongside 2 wifi radios
     seed_heartbeats_v4(reward_info.epoch_period.start, &mut txn).await?;
     seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
     seed_unique_connections(reward_info.epoch_period.start, &mut txn).await?;
@@ -1655,7 +1653,7 @@ async fn seed_heartbeats_v4(
             0x8c2681a306607ff_u64,
             true,
         );
-        let cbrs_heartbeat1 = ValidatedHeartbeat {
+        let wifi_heartbeat3 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key4,
@@ -1677,11 +1675,11 @@ async fn seed_heartbeats_v4(
 
         save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat1, txn).await?;
         save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat2, txn).await?;
-        save_seniority_object(ts + ChronoDuration::hours(n), &cbrs_heartbeat1, txn).await?;
+        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat3, txn).await?;
 
         wifi_heartbeat1.save(txn).await?;
         wifi_heartbeat2.save(txn).await?;
-        cbrs_heartbeat1.save(txn).await?;
+        wifi_heartbeat3.save(txn).await?;
 
         cov_obj_1.save(txn).await?;
         cov_obj_2.save(txn).await?;
