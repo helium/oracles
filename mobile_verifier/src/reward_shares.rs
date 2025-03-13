@@ -488,7 +488,7 @@ impl CoverageShares {
             let oracle_boosting_status =
                 if unique_connections::is_qualified(unique_connections, &pubkey, &radio_type) {
                     OracleBoostingStatus::Qualified
-                } else if banned_radios.contains(&pubkey, cbsd_id.as_deref()) {
+                } else if banned_radios.contains(&pubkey) {
                     OracleBoostingStatus::Banned
                 } else {
                     OracleBoostingStatus::Eligible

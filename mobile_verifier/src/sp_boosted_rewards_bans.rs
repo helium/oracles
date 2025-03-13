@@ -112,12 +112,8 @@ impl BannedRadios {
         self.cbrs.insert(cbsd_id);
     }
 
-    pub fn contains(&self, pubkey: &PublicKeyBinary, cbsd_id_opt: Option<&str>) -> bool {
-        // TODO-K rework
-        match cbsd_id_opt {
-            Some(cbsd_id) => self.cbrs.contains(cbsd_id),
-            None => self.wifi.contains(pubkey),
-        }
+    pub fn contains(&self, pubkey: &PublicKeyBinary) -> bool {
+        self.wifi.contains(pubkey)
     }
 }
 
@@ -325,6 +321,7 @@ pub mod db {
         ban_type: SpBoostedRewardsBannedRadioBanType,
         date_time: DateTime<Utc>,
     ) -> anyhow::Result<BannedRadios> {
+        // TODO-K add radio_type != 'cbrs'
         sqlx::query(
             r#"
                 SELECT distinct radio_type, radio_key
@@ -344,6 +341,7 @@ pub mod db {
             let radio_key = row.get::<String, &str>("radio_key");
             match radio_type {
                 HbType::Wifi => set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?),
+                // TODO-K Remove
                 HbType::Cbrs => set.insert_cbrs(radio_key),
             };
 
@@ -538,12 +536,12 @@ mod tests {
             Utc::now(),
         )
         .await?;
-        let result = banned_radios.contains(&keypair.public_key().to_owned().into(), None);
+        let result = banned_radios.contains(&keypair.public_key().to_owned().into());
 
         assert!(result);
 
         let report = wifi_ban_report(
-            &keypair.public_key(),
+            keypair.public_key(),
             Utc::now() - Duration::days(7),
             SpBoostedRewardsBannedRadioReason::Unbanned,
         );
@@ -561,7 +559,7 @@ mod tests {
             Utc::now(),
         )
         .await?;
-        let result = banned_radios.contains(&keypair.public_key().to_owned().into(), None);
+        let result = banned_radios.contains(&keypair.public_key().to_owned().into());
 
         assert!(!result);
 
