@@ -21,7 +21,7 @@ jobs:
 
       - name: Restore Cached Base Image
         id: cache-base
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: oracle-base.tar
           key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
@@ -43,7 +43,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore Cached Base Image
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: oracle-base.tar
           key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
@@ -72,7 +72,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore Cached Base Image
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: oracle-base.tar
           key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
@@ -134,7 +134,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore Cached Base Image
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: oracle-base.tar
           key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
