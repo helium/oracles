@@ -100,16 +100,11 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
 #[derive(Debug, Default)]
 pub struct BannedRadios {
     wifi: HashSet<PublicKeyBinary>,
-    cbrs: HashSet<String>,
 }
 
 impl BannedRadios {
     pub fn insert_wifi(&mut self, pubkey: PublicKeyBinary) {
         self.wifi.insert(pubkey);
-    }
-
-    pub fn insert_cbrs(&mut self, cbsd_id: String) {
-        self.cbrs.insert(cbsd_id);
     }
 
     pub fn contains(&self, pubkey: &PublicKeyBinary) -> bool {
@@ -321,7 +316,6 @@ pub mod db {
         ban_type: SpBoostedRewardsBannedRadioBanType,
         date_time: DateTime<Utc>,
     ) -> anyhow::Result<BannedRadios> {
-        // TODO-K add radio_type != 'cbrs'
         sqlx::query(
             r#"
                 SELECT distinct radio_type, radio_key
@@ -330,6 +324,7 @@ pub mod db {
                     AND received_timestamp <= $2
                     AND until > $2 
                     AND COALESCE(invalidated_at > $2, TRUE)
+                    AND radio_type != 'cbrs'
             "#,
         )
         .bind(ban_type.as_str_name())
@@ -341,8 +336,9 @@ pub mod db {
             let radio_key = row.get::<String, &str>("radio_key");
             match radio_type {
                 HbType::Wifi => set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?),
-                // TODO-K Remove
-                HbType::Cbrs => set.insert_cbrs(radio_key),
+                HbType::Cbrs => {
+                    // Shoudn't be here because of condition (AND radio_type != 'cbrs')
+                }
             };
 
             Ok(set)
