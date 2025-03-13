@@ -310,7 +310,7 @@ pub fn coverage_point_to_mobile_reward_share(
     seniority_timestamp: DateTime<Utc>,
     coverage_object_uuid: Uuid,
 ) -> (proto::MobileRewardShare, proto::MobileRewardShare) {
-    let (hotspot_key, cbsd_id) = radio_id.clone();
+    let (hotspot_key, _) = radio_id.clone();
 
     let boosted_hexes = coverage_points
         .covered_hexes
@@ -335,7 +335,7 @@ pub fn coverage_point_to_mobile_reward_share(
 
     let radio_reward_v1 = proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
         hotspot_key: hotspot_key.clone().into(),
-        cbsd_id: cbsd_id.clone().unwrap_or_default(),
+        cbsd_id: String::default(),
         poc_reward,
         coverage_points: coverage_points_v1,
         seniority_timestamp: seniority_timestamp.encode_timestamp(),
@@ -348,7 +348,7 @@ pub fn coverage_point_to_mobile_reward_share(
 
     let radio_reward_v2 = proto::mobile_reward_share::Reward::RadioRewardV2(proto::RadioRewardV2 {
         hotspot_key: hotspot_key.into(),
-        cbsd_id: cbsd_id.unwrap_or_default(),
+        cbsd_id: String::default(),
         base_coverage_points_sum: Some(coverage_points.coverage_points.base.proto_decimal()),
         boosted_coverage_points_sum: Some(coverage_points.coverage_points.boosted.proto_decimal()),
         base_reward_shares: Some(coverage_points.total_base_shares().proto_decimal()),
@@ -387,6 +387,7 @@ pub fn coverage_point_to_mobile_reward_share(
     )
 }
 
+// TODO-K Remove second option parameter (cbsd_id)
 type RadioId = (PublicKeyBinary, Option<String>);
 
 #[derive(Debug, Clone)]
