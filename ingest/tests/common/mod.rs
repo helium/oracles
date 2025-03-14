@@ -52,9 +52,7 @@ impl AuthorizationVerifier for MockAuthorizationClient {
         Ok(true)
     }
 }
-pub async fn setup_mobile(
-    cbrs_disable_time: DateTime<Utc>,
-) -> anyhow::Result<(TestClient, Trigger)> {
+pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let key_pair = generate_keypair();
 
     let socket_addr = {
@@ -103,7 +101,6 @@ pub async fn setup_mobile(
             socket_addr,
             api_token,
             auth_client,
-            cbrs_disable_time,
         );
 
         grpc_server.run(listener).await

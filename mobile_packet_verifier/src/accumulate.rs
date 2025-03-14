@@ -18,14 +18,12 @@ pub async fn accumulate_sessions(
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
-    cbrs_disable_time: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     tokio::pin!(reports);
 
     while let Some(report) = reports.next().await {
-        if report.received_timestamp >= cbrs_disable_time
-            && report.report.data_transfer_usage.radio_access_technology
-                == DataTransferRadioAccessTechnology::Eutran
+        if report.report.data_transfer_usage.radio_access_technology
+            == DataTransferRadioAccessTechnology::Eutran
         {
             continue;
         }
@@ -171,7 +169,6 @@ mod tests {
             &invalid_data_session_report_sink,
             Utc::now(),
             futures::stream::iter(vec![]),
-            "2025-03-01 00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
         )
         .await?;
 
@@ -206,7 +203,6 @@ mod tests {
             &invalid_data_session_report_sink,
             Utc::now(),
             futures::stream::iter(vec![report]),
-            "2025-03-01 00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
         )
         .await?;
 
@@ -239,7 +235,6 @@ mod tests {
             &invalid_data_session_report_sink,
             Utc::now(),
             futures::stream::iter(vec![report]),
-            "2025-03-01 00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
         )
         .await?;
 
@@ -272,7 +267,6 @@ mod tests {
             &invalid_data_session_report_sink,
             Utc::now(),
             futures::stream::iter(vec![report]),
-            "2025-03-01 00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
         )
         .await?;
 
@@ -305,7 +299,6 @@ mod tests {
             &invalid_data_session_report_sink,
             Utc::now(),
             futures::stream::iter(vec![report]),
-            "2025-03-01 00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
         )
         .await?;
 

@@ -1,6 +1,6 @@
 use crate::Settings;
 use anyhow::{bail, Error, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient,
     file_upload,
@@ -59,7 +59,6 @@ pub struct GrpcServer<AV> {
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
     authorization_verifier: AV,
-    cbrs_disable_time: DateTime<Utc>,
 }
 
 impl<AV> ManagedTask for GrpcServer<AV>
@@ -108,7 +107,6 @@ where
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
         authorization_verifier: AV,
-        cbrs_disable_time: DateTime<Utc>,
     ) -> Self {
         GrpcServer {
             wifi_heartbeat_report_sink,
@@ -127,7 +125,6 @@ where
             address,
             api_token,
             authorization_verifier,
-            cbrs_disable_time,
         }
     }
 
@@ -256,7 +253,7 @@ where
         let timestamp = Utc::now();
         let event = request.into_inner();
 
-        if is_data_transfer_for_cbrs(&event) && timestamp > self.cbrs_disable_time {
+        if is_data_transfer_for_cbrs(&event) {
             let pubkey = event
                 .data_transfer_usage
                 .map(|usage| PublicKeyBinary::from(usage.pub_key))
@@ -722,7 +719,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         settings.listen_addr,
         api_token,
         AuthorizationClient::from_settings(config_client)?,
-        settings.cbrs_disable_time,
     );
 
     tracing::info!(

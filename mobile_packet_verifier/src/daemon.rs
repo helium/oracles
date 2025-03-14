@@ -3,7 +3,7 @@ use crate::{
     MobileConfigClients, MobileConfigResolverExt,
 };
 use anyhow::{bail, Result};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
@@ -32,7 +32,6 @@ pub struct Daemon<S, MCR> {
     min_burn_period: Duration,
     mobile_config_resolver: MCR,
     verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    cbrs_disable_time: DateTime<Utc>,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
@@ -52,7 +51,6 @@ impl<S, MCR> Daemon<S, MCR> {
             min_burn_period: settings.min_burn_period,
             mobile_config_resolver,
             verified_data_session_report_sink,
-            cbrs_disable_time: settings.cbrs_disable_time,
         }
     }
 }
@@ -102,7 +100,7 @@ where
                     let ts = file.file_info.timestamp;
                     let mut transaction = self.pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.verified_data_session_report_sink, ts, reports, self.cbrs_disable_time).await?;
+                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.verified_data_session_report_sink, ts, reports).await?;
                     transaction.commit().await?;
                     self.verified_data_session_report_sink.commit().await?;
                 }

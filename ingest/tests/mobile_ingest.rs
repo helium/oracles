@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::Utc;
 use common::generate_keypair;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
@@ -10,8 +10,7 @@ const PUBKEY1: &str = "113HRxtzxFbFUjDEJJpyeMRZRtdAW38LAUnB5mshRwi6jt7uFbt";
 
 #[tokio::test]
 async fn submit_unique_connections() -> anyhow::Result<()> {
-    let (mut client, trigger) =
-        common::setup_mobile("2025-03-01 00:00:00Z".parse::<DateTime<Utc>>()?).await?;
+    let (mut client, trigger) = common::setup_mobile().await?;
 
     let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
     let timestamp = Utc::now();
@@ -40,8 +39,7 @@ async fn submit_unique_connections() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn submit_verified_subscriber_mapping_event() -> anyhow::Result<()> {
-    let (mut client, trigger) =
-        common::setup_mobile("2025-03-01 00:00:00Z".parse::<DateTime<Utc>>()?).await?;
+    let (mut client, trigger) = common::setup_mobile().await?;
 
     let subscriber_id = vec![0];
     let total_reward_points = 100;
@@ -75,8 +73,7 @@ async fn submit_verified_subscriber_mapping_event() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn submit_hex_usage_report() -> anyhow::Result<()> {
-    let (mut client, trigger) =
-        common::setup_mobile("2025-03-01 00:00:00Z".parse::<DateTime<Utc>>()?).await?;
+    let (mut client, trigger) = common::setup_mobile().await?;
 
     const HEX: u64 = 360;
     const SERVICE_PROVIDER_USER_COUNT: u64 = 10;
@@ -131,8 +128,7 @@ async fn submit_hex_usage_report() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn submit_radio_usage_report() -> anyhow::Result<()> {
-    let (mut client, trigger) =
-        common::setup_mobile("2025-03-01 00:00:00Z".parse::<DateTime<Utc>>()?).await?;
+    let (mut client, trigger) = common::setup_mobile().await?;
 
     let hotspot_pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
     const SERVICE_PROVIDER_USER_COUNT: u64 = 10;
@@ -187,12 +183,11 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn cell_heartbeat_after() {
-    let cbrs_disable_time = Utc::now() - Duration::hours(1);
-    let (mut client, _trigger) = common::setup_mobile(cbrs_disable_time).await.unwrap();
+    let (mut client, _trigger) = common::setup_mobile().await.unwrap();
 
     let keypair = generate_keypair();
 
-    // Cell hearbeat is disabled but should return OK
+    // Cell heartbeat is disabled but should return OK
     client
         .submit_cell_heartbeat(&keypair, "cbsd-1")
         .await
@@ -201,8 +196,7 @@ async fn cell_heartbeat_after() {
 
 #[tokio::test]
 async fn wifi_data_transfer() -> anyhow::Result<()> {
-    let cbrs_disable_time = Utc::now() - Duration::hours(1);
-    let (mut client, trigger) = common::setup_mobile(cbrs_disable_time).await?;
+    let (mut client, trigger) = common::setup_mobile().await?;
 
     let keypair = generate_keypair();
 
@@ -226,35 +220,8 @@ async fn wifi_data_transfer() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn cbrs_data_transfer_before() -> anyhow::Result<()> {
-    let cbrs_disable_time = Utc::now() + Duration::hours(1);
-    let (mut client, trigger) = common::setup_mobile(cbrs_disable_time).await?;
-
-    let keypair = generate_keypair();
-
-    client
-        .submit_data_transfer(&keypair, DataTransferRadioAccessTechnology::Eutran)
-        .await?;
-
-    let ingest_report = client.data_transfer_recv().await?;
-
-    let ingest_pubkey = ingest_report
-        .report
-        .unwrap()
-        .data_transfer_usage
-        .unwrap()
-        .pub_key;
-
-    assert_eq!(ingest_pubkey, keypair.public_key().to_vec());
-
-    trigger.trigger();
-    Ok(())
-}
-
-#[tokio::test]
 async fn cbrs_data_transfer_after() -> anyhow::Result<()> {
-    let cbrs_disable_time = Utc::now() - Duration::hours(1);
-    let (mut client, trigger) = common::setup_mobile(cbrs_disable_time).await?;
+    let (mut client, trigger) = common::setup_mobile().await?;
 
     let keypair = generate_keypair();
 

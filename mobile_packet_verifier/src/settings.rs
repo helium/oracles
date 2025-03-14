@@ -45,14 +45,6 @@ pub struct Settings {
         default = "default_txn_confirmation_check_interval"
     )]
     pub txn_confirmation_check_interval: Duration,
-    #[serde(default = "default_cbrs_disable_time")]
-    pub cbrs_disable_time: DateTime<Utc>,
-}
-
-fn default_cbrs_disable_time() -> DateTime<Utc> {
-    "2025-03-01 00:00:00Z"
-        .parse::<DateTime<Utc>>()
-        .expect("invalid default cbrs disable time")
 }
 
 fn default_purger_interval() -> Duration {
