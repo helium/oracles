@@ -8,7 +8,10 @@ use helium_proto::{
     ServiceProvider,
 };
 use prost::bytes::BytesMut;
-use reward_index::indexer::{handle_escrowed_mobile_rewards, EscrowStats, RewardType};
+use reward_index::{
+    db,
+    indexer::{handle_escrowed_mobile_rewards, EscrowStats, RewardType},
+};
 use sqlx::PgPool;
 
 use crate::common::{get_reward, mobile_rewards_stream};
@@ -61,11 +64,14 @@ async fn escrow_duration_of_0_days(pool: PgPool) -> anyhow::Result<()> {
 async fn escrow_duration_of_1_day(pool: PgPool) -> anyhow::Result<()> {
     // Rewards are processed, and held up for 1 day
 
+    let key_one = PublicKeyBinary::from(vec![1]);
+    let key_two = PublicKeyBinary::from(vec![2]);
+
     let day_0_rewards = mobile_rewards_stream(vec![
-        make_gateway_reward(vec![1], 1),
-        make_gateway_reward(vec![1], 2),
-        make_gateway_reward(vec![1], 3),
-        make_gateway_reward(vec![2], 4),
+        make_gateway_reward(&key_one, 1),
+        make_gateway_reward(&key_one, 2),
+        make_gateway_reward(&key_one, 3),
+        make_gateway_reward(&key_two, 4),
     ]);
     // Extra locked reward weill cause test to fail if escrow period is not respected.
     let day_1_rewards = mobile_rewards_stream(vec![make_gateway_reward(vec![1], 1)]);
@@ -73,9 +79,6 @@ async fn escrow_duration_of_1_day(pool: PgPool) -> anyhow::Result<()> {
     let day_0 = Utc::now();
     let day_1 = day_0 + Duration::days(1);
     let escrow_duration = Duration::days(1);
-
-    let key_one = PublicKeyBinary::from(vec![1]);
-    let key_two = PublicKeyBinary::from(vec![2]);
 
     // No rewards are unlocked on day 0
     let stats = process_rewards(&pool, day_0_rewards, day_0, escrow_duration).await?;
@@ -109,7 +112,7 @@ async fn unlocked_rewards_cannot_be_unlocked_again(pool: PgPool) -> anyhow::Resu
         // Use a different key so we can track unlocking without worrying about
         // unlocked amounts combining because of matching keys.
         let one_reward = mobile_rewards_stream(vec![make_gateway_reward(vec![day as u8], 1)]);
-        let escrow = Duration::max_value();
+        let escrow = Duration::days(30);
         let manifest_time = Utc::now() + Duration::days(day);
 
         let stats = process_rewards(&pool, one_reward, manifest_time, escrow).await?;
@@ -147,22 +150,44 @@ async fn unlocked_rewards_cannot_be_unlocked_again(pool: PgPool) -> anyhow::Resu
     Ok(())
 }
 
-// #[sqlx::test]
-// async fn use_address_escrow_duration_override(pool: PgPool) -> anyhow::Result<()> {
-//     Ok(())
-// }
+#[sqlx::test]
+async fn use_address_escrow_duration_override(pool: PgPool) -> anyhow::Result<()> {
+    let key_one = PublicKeyBinary::from(vec![1]);
+    let key_two = PublicKeyBinary::from(vec![2]);
+
+    let rewards = mobile_rewards_stream(vec![
+        make_gateway_reward(&key_one, 1),
+        make_gateway_reward(&key_two, 2),
+    ]);
+
+    let default_duration = Duration::zero().num_days() as u32;
+    db::insert_escrow_duration(&pool, &key_two.to_string(), default_duration).await?;
+
+    let stats = process_rewards(&pool, rewards, Utc::now(), Duration::days(30)).await?;
+    assert_eq!(stats.inserted, 2, "inserted");
+    assert_eq!(stats.unlocked, 1, "unlocked");
+
+    let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await;
+    assert!(reward_one.is_err());
+
+    let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
+    assert_eq!(reward_two.rewards, 2);
+
+    Ok(())
+}
 
 #[sqlx::test]
 async fn only_mobile_gateway_rewards_are_escrowed(pool: PgPool) -> anyhow::Result<()> {
+    let mobile_key = PublicKeyBinary::from(vec![1]);
+
     let rewards = mobile_rewards_stream(vec![
-        make_gateway_reward(vec![1], 99),
+        make_gateway_reward(&mobile_key, 99),
         make_service_provider_reward(1),
     ]);
 
     let stats = process_rewards(&pool, rewards, Utc::now(), Duration::days(30)).await?;
     assert_eq!(stats.inserted, 2);
 
-    let mobile_key = PublicKeyBinary::from(vec![1]);
     let mobile_reward = get_reward(&pool, &mobile_key.to_string(), RewardType::MobileGateway).await;
     assert!(mobile_reward.is_err());
 
@@ -173,12 +198,15 @@ async fn only_mobile_gateway_rewards_are_escrowed(pool: PgPool) -> anyhow::Resul
     Ok(())
 }
 
-fn make_gateway_reward(hotspot_key: Vec<u8>, dc_transfer_reward: u64) -> MobileRewardShare {
+fn make_gateway_reward(
+    hotspot_key: impl AsRef<[u8]>,
+    dc_transfer_reward: u64,
+) -> MobileRewardShare {
     MobileRewardShare {
         start_period: Utc::now().timestamp_millis() as u64,
         end_period: Utc::now().timestamp_millis() as u64,
         reward: Some(mobile_reward_share::Reward::GatewayReward(GatewayReward {
-            hotspot_key,
+            hotspot_key: hotspot_key.as_ref().to_vec(),
             dc_transfer_reward,
             rewardable_bytes: 0,
             price: 0,
