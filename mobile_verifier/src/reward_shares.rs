@@ -310,7 +310,7 @@ pub fn coverage_point_to_mobile_reward_share(
     seniority_timestamp: DateTime<Utc>,
     coverage_object_uuid: Uuid,
 ) -> (proto::MobileRewardShare, proto::MobileRewardShare) {
-    let (hotspot_key, _) = radio_id.clone();
+    let hotspot_key = radio_id.clone();
 
     let boosted_hexes = coverage_points
         .covered_hexes
@@ -387,8 +387,7 @@ pub fn coverage_point_to_mobile_reward_share(
     )
 }
 
-// TODO-K Remove second option parameter (cbsd_id)
-type RadioId = (PublicKeyBinary, Option<String>);
+type RadioId = PublicKeyBinary;
 
 #[derive(Debug, Clone)]
 struct RadioInfo {
@@ -427,7 +426,7 @@ impl CoverageShares {
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             let pubkey = heartbeat.hotspot_key.clone();
             let heartbeat_key = heartbeat.key();
-            let key = (pubkey.clone(), None);
+            let key = pubkey.clone();
 
             let seniority = hex_streams
                 .fetch_seniority(heartbeat_key, reward_period.end)
@@ -537,7 +536,7 @@ impl CoverageShares {
         let radio_info = self.radio_infos.get(radio_id).unwrap();
 
         let hexes = {
-            let (pubkey, _) = radio_id;
+            let pubkey = radio_id;
             let ranked_coverage = self.coverage_map.get_wifi_coverage(pubkey.as_ref());
             ranked_coverage.to_vec()
         };
@@ -575,7 +574,7 @@ impl CoverageShares {
                 Ok(points) => points,
                 Err(err) => {
                     tracing::error!(
-                        pubkey = radio_id.0.to_string(),
+                        pubkey = radio_id.to_string(),
                         ?err,
                         "could not reward radio"
                     );
@@ -1686,7 +1685,7 @@ mod test {
 
         let mut radio_infos = HashMap::new();
         radio_infos.insert(
-            (gw1.clone(), None),
+            gw1.clone(),
             RadioInfo {
                 radio_type: coverage_point_calculator::RadioType::IndoorWifi,
                 coverage_obj_uuid: uuid_1,
@@ -1720,7 +1719,7 @@ mod test {
             },
         );
         radio_infos.insert(
-            (gw2.clone(), None),
+            gw2.clone(),
             RadioInfo {
                 radio_type: coverage_point_calculator::RadioType::IndoorWifi,
                 coverage_obj_uuid: uuid_2,

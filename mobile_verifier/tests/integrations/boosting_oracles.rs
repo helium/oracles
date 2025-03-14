@@ -104,7 +104,7 @@ fn hex_cell(loc: &str) -> hextree::Cell {
 async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<()> {
     let uuid = Uuid::new_v4();
 
-    fn new_hex_assingment(
+    fn new_hex_assignment(
         cell: &mut CellIndex,
         footfall: Assignment,
         landtype: Assignment,
@@ -130,39 +130,39 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
         use hex_assignments::Assignment::*;
         vec![
             // yellow - POI ≥ 1 Urbanized, no service provider override
-            new_hex_assingment(&mut cell, A, A, A, C, 1000),
-            new_hex_assingment(&mut cell, A, B, A, C, 1000),
-            new_hex_assingment(&mut cell, A, C, A, C, 1000),
+            new_hex_assignment(&mut cell, A, A, A, C, 1000),
+            new_hex_assignment(&mut cell, A, B, A, C, 1000),
+            new_hex_assignment(&mut cell, A, C, A, C, 1000),
             // orange - POI ≥ 1 Not Urbanized, no service provider override
-            new_hex_assingment(&mut cell, A, A, B, C, 1000),
-            new_hex_assingment(&mut cell, A, B, B, C, 1000),
-            new_hex_assingment(&mut cell, A, C, B, C, 1000),
+            new_hex_assignment(&mut cell, A, A, B, C, 1000),
+            new_hex_assignment(&mut cell, A, B, B, C, 1000),
+            new_hex_assignment(&mut cell, A, C, B, C, 1000),
             // light green - Point of Interest Urbanized, no service provider override
-            new_hex_assingment(&mut cell, B, A, A, C, 700),
-            new_hex_assingment(&mut cell, B, B, A, C, 700),
-            new_hex_assingment(&mut cell, B, C, A, C, 700),
+            new_hex_assignment(&mut cell, B, A, A, C, 700),
+            new_hex_assignment(&mut cell, B, B, A, C, 700),
+            new_hex_assignment(&mut cell, B, C, A, C, 700),
             // dark green - Point of Interest Not Urbanized, no service provider override
-            new_hex_assingment(&mut cell, B, A, B, C, 500),
-            new_hex_assingment(&mut cell, B, B, B, C, 500),
-            new_hex_assingment(&mut cell, B, C, B, C, 500),
+            new_hex_assignment(&mut cell, B, A, B, C, 500),
+            new_hex_assignment(&mut cell, B, B, B, C, 500),
+            new_hex_assignment(&mut cell, B, C, B, C, 500),
             // light blue - No POI Urbanized, no service provider override
-            new_hex_assingment(&mut cell, C, A, A, C, 400),
-            new_hex_assingment(&mut cell, C, B, A, C, 300),
-            new_hex_assingment(&mut cell, C, C, A, C, 50),
+            new_hex_assignment(&mut cell, C, A, A, C, 400),
+            new_hex_assignment(&mut cell, C, B, A, C, 300),
+            new_hex_assignment(&mut cell, C, C, A, C, 50),
             // dark blue - No POI Not Urbanized, no service provider override
-            new_hex_assingment(&mut cell, C, A, B, C, 200),
-            new_hex_assingment(&mut cell, C, B, B, C, 150),
-            new_hex_assingment(&mut cell, C, C, B, C, 30),
+            new_hex_assignment(&mut cell, C, A, B, C, 200),
+            new_hex_assignment(&mut cell, C, B, B, C, 150),
+            new_hex_assignment(&mut cell, C, C, B, C, 30),
             // gray - Outside of USA, no service provider override
-            new_hex_assingment(&mut cell, A, A, C, C, 0),
-            new_hex_assingment(&mut cell, A, B, C, C, 0),
-            new_hex_assingment(&mut cell, A, C, C, C, 0),
-            new_hex_assingment(&mut cell, B, A, C, C, 0),
-            new_hex_assingment(&mut cell, B, B, C, C, 0),
-            new_hex_assingment(&mut cell, B, C, C, C, 0),
-            new_hex_assingment(&mut cell, C, A, C, C, 0),
-            new_hex_assingment(&mut cell, C, B, C, C, 0),
-            new_hex_assingment(&mut cell, C, C, C, C, 0),
+            new_hex_assignment(&mut cell, A, A, C, C, 0),
+            new_hex_assignment(&mut cell, A, B, C, C, 0),
+            new_hex_assignment(&mut cell, A, C, C, C, 0),
+            new_hex_assignment(&mut cell, B, A, C, C, 0),
+            new_hex_assignment(&mut cell, B, B, C, C, 0),
+            new_hex_assignment(&mut cell, B, C, C, C, 0),
+            new_hex_assignment(&mut cell, C, A, C, C, 0),
+            new_hex_assignment(&mut cell, C, B, C, C, 0),
+            new_hex_assignment(&mut cell, C, C, C, C, 0),
         ]
     };
 
@@ -456,7 +456,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     //                                     = 1,173
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(pub_key, None)),
+        coverage_shares.test_hotspot_reward_shares(&pub_key),
         dec!(1173.0)
     );
 

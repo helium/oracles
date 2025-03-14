@@ -428,7 +428,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(pub_key, None)),
+        coverage_shares.test_hotspot_reward_shares(&pub_key),
         dec!(28)
     );
 
@@ -539,12 +539,12 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(hs_pubkey_1, None)),
+        coverage_shares.test_hotspot_reward_shares(&hs_pubkey_1),
         (dec!(16) + dec!(8) + dec!(4)) * dec!(0.5) // speedtest degraded
     );
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(hs_pubkey_2, None)),
+        coverage_shares.test_hotspot_reward_shares(&hs_pubkey_2),
         (dec!(16) + dec!(8) * dec!(0.5) + dec!(4))
     );
 
@@ -833,24 +833,24 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(hs_pub_key_1, None)),
+        coverage_shares.test_hotspot_reward_shares(&hs_pub_key_1),
         expected_base_cp_co1 * expected_speedtest_mult_co1
     );
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(hs_pub_key_2, None)),
+        coverage_shares.test_hotspot_reward_shares(&hs_pub_key_2),
         expected_base_cp_co2 * expected_speedtest_mult_co2
     );
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(hs_pub_key_3, None)),
+        coverage_shares.test_hotspot_reward_shares(&hs_pub_key_3),
         expected_base_cp_co3 * expected_speedtest_mult_co3
     );
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(hs_pub_key_4, None)),
+        coverage_shares.test_hotspot_reward_shares(&hs_pub_key_4),
         dec!(0)
     );
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(hs_pub_key_5, None)),
+        coverage_shares.test_hotspot_reward_shares(&hs_pub_key_5),
         dec!(0)
     );
 
@@ -954,12 +954,12 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(pub_key_1, None)),
+        coverage_shares.test_hotspot_reward_shares(&pub_key_1),
         dec!(400)
     );
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(pub_key_2, None)),
+        coverage_shares.test_hotspot_reward_shares(&pub_key_2),
         dec!(0)
     );
 
@@ -1163,11 +1163,11 @@ async fn eligible_for_coverage_map_bad_speedtest(pool: PgPool) -> anyhow::Result
     .await?;
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(good_hotspot, None)),
+        coverage_shares.test_hotspot_reward_shares(&good_hotspot),
         dec!(100)
     );
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(bad_speedtest_hotspot, None)),
+        coverage_shares.test_hotspot_reward_shares(&bad_speedtest_hotspot),
         dec!(0)
     );
     Ok(())
@@ -1270,11 +1270,11 @@ async fn eligible_for_coverage_map_bad_trust_score(pool: PgPool) -> anyhow::Resu
     .await?;
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(good_hotspot, None)),
+        coverage_shares.test_hotspot_reward_shares(&good_hotspot),
         dec!(100)
     );
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(bad_location_hotspot, None)),
+        coverage_shares.test_hotspot_reward_shares(&bad_location_hotspot),
         dec!(0)
     );
     Ok(())
@@ -1385,11 +1385,11 @@ async fn eligible_for_coverage_map_banned(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(good_hotspot, None)),
+        coverage_shares.test_hotspot_reward_shares(&good_hotspot),
         dec!(100)
     );
     assert_eq!(
-        coverage_shares.test_hotspot_reward_shares(&(banned_hotspot, None)),
+        coverage_shares.test_hotspot_reward_shares(&banned_hotspot),
         dec!(0)
     );
     Ok(())
