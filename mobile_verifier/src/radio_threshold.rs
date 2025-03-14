@@ -356,17 +356,16 @@ pub struct RadioThreshold {
 
 #[derive(Debug, Clone, Default)]
 pub struct VerifiedRadioThresholds {
-    // TODO-K Rework to HashSet<PublicKeyBinary>
-    gateways: HashSet<(PublicKeyBinary, Option<String>)>,
+    gateways: HashSet<PublicKeyBinary>,
 }
 
 impl VerifiedRadioThresholds {
     pub fn insert(&mut self, hotspot_key: PublicKeyBinary) {
-        self.gateways.insert((hotspot_key, None));
+        self.gateways.insert(hotspot_key);
     }
 
     pub fn is_verified(&self, key: PublicKeyBinary) -> bool {
-        self.gateways.contains(&(key, None))
+        self.gateways.contains(&key)
     }
 }
 
