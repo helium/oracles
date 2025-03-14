@@ -4,16 +4,13 @@ use crate::indexer::RewardType;
 use chrono::{DateTime, Utc};
 use sqlx::Postgres;
 
-pub async fn insert<'c, E>(
-    executor: E,
+pub async fn insert(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     address: String,
     amount: u64,
     reward_type: RewardType,
     timestamp: &DateTime<Utc>,
-) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-{
+) -> Result<(), sqlx::Error> {
     // Safeguard against 0 amount shares updating the last rewarded timestamp
     if amount == 0 {
         return Ok(());
@@ -42,16 +39,13 @@ where
     Ok(())
 }
 
-pub async fn insert_escrowed_reward<'c, E>(
-    executor: E,
+pub async fn insert_escrowed_reward(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     address: String,
     amount: u64,
     reward_type: RewardType,
     timestamp: &DateTime<Utc>,
-) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-{
+) -> Result<(), sqlx::Error> {
     // Safeguard against 0 amount shares updating the last rewarded timestamp
     if amount == 0 {
         return Ok(());
@@ -75,14 +69,11 @@ where
     Ok(())
 }
 
-pub async fn unlock_escrowed_rewards<'c, E>(
-    executor: E,
+pub async fn unlock_escrowed_rewards(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     timestamp: &DateTime<Utc>,
     default_escrow_duration: u32,
-) -> anyhow::Result<usize>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-{
+) -> anyhow::Result<usize> {
     let res = sqlx::query(
         r#"
             WITH unlocked_rewards as (
@@ -95,7 +86,8 @@ where
                 escrow_rewards rew
                 LEFT JOIN escrow_durations dur ON rew.address = dur.address
               WHERE
-                up.inserted_at <= $1 - INTERVAL '1 day' * COALESCE(dur.duration_days, $2)
+                rew.address = up.address
+                AND up.inserted_at <= $1 - INTERVAL '1 day' * COALESCE(dur.duration_days, $2)
                 AND up.unlocked = false
               RETURNING
                 up.*
@@ -126,13 +118,10 @@ where
     Ok(res.rows_affected() as usize)
 }
 
-pub async fn get_escrow_duration<'c, E>(
-    executor: E,
+pub async fn get_escrow_duration(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     address: &str,
-) -> Result<Option<Duration>, sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = Postgres>,
-{
+) -> Result<Option<Duration>, sqlx::Error> {
     let seconds: Option<i64> =
         sqlx::query_scalar("SELECT duration_secs from escrow_durations where address = $1")
             .bind(address)
@@ -143,34 +132,31 @@ where
     Ok(dur)
 }
 
-pub async fn insert_escrow_duration<'c, E>(
-    executor: E,
+pub async fn insert_escrow_duration(
+    executor: impl sqlx::Executor<'_, Database = Postgres>,
     address: &str,
-    duration: Duration,
-) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = Postgres>,
-{
+    duration_days: u32,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         INSERT INTO escrow_durations
-            (address, duration_secs)
+            (address, duration_days)
         VALUES 
             ($1, $2)
         "#,
     )
     .bind(address)
-    .bind(duration.as_secs() as i64)
+    .bind(duration_days as i64)
     .execute(executor)
     .await?;
 
     Ok(())
 }
 
-pub async fn delete_escrow_duration<'c, E>(executor: E, address: &str) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = Postgres>,
-{
+pub async fn delete_escrow_duration(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    address: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM escrow_durations WHERE address = $1")
         .bind(address)
         .execute(executor)
