@@ -239,16 +239,9 @@ pub async fn handle_mobile_rewards(
     manifest_time: &DateTime<Utc>,
 ) -> anyhow::Result<()> {
     let rewards = collect_rewards(reward_shares, unallocated_reward_key).await?;
-    for (reward_key, amount) in rewards {
-        db::insert(
-            &mut *txn,
-            reward_key.key,
-            amount,
-            reward_key.reward_type,
-            manifest_time,
-        )
-        .await?;
-    }
+
+    insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
+    insert_rewards(&mut *txn, rewards.escrowed, manifest_time).await?;
 
     Ok(())
 }
@@ -271,8 +264,11 @@ pub async fn handle_escrowed_mobile_rewards(
 
     // Insert new rewards
     let rewards = collect_rewards(reward_shares, unallocated_reward_key).await?;
-    let inserted = insert_escrowed_rewards(&mut *txn, rewards, manifest_time).await?;
-    tracing::info!(inserted, "inserted escrowed rewards");
+    let escrowed_inserted =
+        insert_escrowed_rewards(&mut *txn, rewards.escrowed, manifest_time).await?;
+    let inserted = insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
+
+    tracing::info!(inserted, escrowed_inserted, "inserted escrowed rewards");
 
     // Move unlocked rewards to index table
     let unlocked =
@@ -282,21 +278,37 @@ pub async fn handle_escrowed_mobile_rewards(
     // Delete old escrow rewards
     // TODO:
 
-    Ok(EscrowStats { inserted, unlocked })
+    Ok(EscrowStats {
+        inserted: escrowed_inserted + inserted,
+        unlocked,
+    })
+}
+
+type RewardMap = HashMap<RewardKey, u64>;
+
+#[derive(Default)]
+struct CollectedRewards {
+    rewards: RewardMap,
+    escrowed: RewardMap,
 }
 
 async fn collect_rewards(
     mut reward_shares: Stream<BytesMut>,
     unallocated_reward_key: &str,
-) -> anyhow::Result<HashMap<RewardKey, u64>> {
-    let mut rewards = HashMap::new();
+) -> anyhow::Result<CollectedRewards> {
+    let mut rewards = CollectedRewards::default();
 
     while let Some(msg) = reward_shares.try_next().await? {
         let share = proto::MobileRewardShare::decode(msg)?;
         match extract::mobile_reward(share, unallocated_reward_key) {
-            Ok((key, amount)) => {
-                *rewards.entry(key).or_default() += amount;
-            }
+            Ok((key, amount)) => match key.reward_type {
+                RewardType::MobileGateway => {
+                    *rewards.escrowed.entry(key).or_default() += amount;
+                }
+                _ => {
+                    *rewards.rewards.entry(key).or_default() += amount;
+                }
+            },
             Err(extract::ExtractError::UnsupportedType(unsupported)) => {
                 tracing::debug!("ignoring unsupported: {unsupported}");
             }
@@ -305,6 +317,25 @@ async fn collect_rewards(
     }
 
     Ok(rewards)
+}
+
+async fn insert_rewards(
+    txn: &mut Transaction<'_, Postgres>,
+    rewards: HashMap<RewardKey, u64>,
+    manifest_time: &DateTime<Utc>,
+) -> anyhow::Result<usize> {
+    let rewards_count = rewards.len();
+    for (reward_key, amount) in rewards {
+        db::insert(
+            &mut *txn,
+            reward_key.key,
+            amount,
+            reward_key.reward_type,
+            manifest_time,
+        )
+        .await?;
+    }
+    Ok(rewards_count)
 }
 
 async fn insert_escrowed_rewards(
