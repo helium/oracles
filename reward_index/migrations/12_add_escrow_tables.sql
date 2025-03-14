@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS escrow_durations (
     address         TEXT            PRIMARY KEY NOT NULL,
     duration_days   BIGINT          NOT NULL,
     inserted_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-    expires_at      TIMESTAMPTZ
+    expires_on      DATE
 );
 
 CREATE TABLE IF NOT EXISTS escrow_rewards (

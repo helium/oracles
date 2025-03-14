@@ -152,6 +152,10 @@ async fn unlocked_rewards_cannot_be_unlocked_again(pool: PgPool) -> anyhow::Resu
 
 #[sqlx::test]
 async fn use_address_escrow_duration_override(pool: PgPool) -> anyhow::Result<()> {
+    // key_two has an escrow duration of 0.
+    // Processing rewards with an escrow duration 30 days, key_two's rewards
+    // should be unlocked immediately.
+
     let key_one = PublicKeyBinary::from(vec![1]);
     let key_two = PublicKeyBinary::from(vec![2]);
 
@@ -161,7 +165,7 @@ async fn use_address_escrow_duration_override(pool: PgPool) -> anyhow::Result<()
     ]);
 
     let default_duration = Duration::zero().num_days() as u32;
-    db::insert_escrow_duration(&pool, &key_two.to_string(), default_duration).await?;
+    db::insert_escrow_duration(&pool, &key_two.to_string(), default_duration, None).await?;
 
     let stats = process_rewards(&pool, rewards, Utc::now(), Duration::days(30)).await?;
     assert_eq!(stats.inserted, 2, "inserted");
@@ -169,6 +173,36 @@ async fn use_address_escrow_duration_override(pool: PgPool) -> anyhow::Result<()
 
     let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await;
     assert!(reward_one.is_err());
+
+    let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
+    assert_eq!(reward_two.rewards, 2);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn expired_escrow_durations_are_not_used(pool: PgPool) -> anyhow::Result<()> {
+    // key_two has a saved escrow duration of 30 days, expiring today.
+    // Processing rewards with no escrow period should insert and unlock both rewards.
+
+    let key_one = PublicKeyBinary::from(vec![1]);
+    let key_two = PublicKeyBinary::from(vec![2]);
+
+    let rewards = mobile_rewards_stream(vec![
+        make_gateway_reward(&key_one, 1),
+        make_gateway_reward(&key_two, 2),
+    ]);
+
+    let today = Utc::now().date_naive();
+    let expiring_duration = 30;
+    db::insert_escrow_duration(&pool, &key_two.to_string(), expiring_duration, Some(today)).await?;
+
+    let stats = process_rewards(&pool, rewards, Utc::now(), Duration::days(0)).await?;
+    assert_eq!(stats.inserted, 2, "inserted");
+    assert_eq!(stats.unlocked, 2, "unlocked");
+
+    let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await?;
+    assert_eq!(reward_one.rewards, 1);
 
     let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_two.rewards, 2);

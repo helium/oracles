@@ -260,7 +260,9 @@ pub async fn handle_escrowed_mobile_rewards(
     default_escrow_days: u32,
 ) -> anyhow::Result<EscrowStats> {
     // Delete old escrow durations
-    // TODO:
+    let today = manifest_time.date_naive();
+    let purged = db::purge_expired_escrow_duration(&mut *txn, today).await?;
+    tracing::info!(purged, "expired escrow durations");
 
     // Insert new rewards
     let rewards = collect_rewards(reward_shares, unallocated_reward_key).await?;

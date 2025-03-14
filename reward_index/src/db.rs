@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::indexer::RewardType;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::Postgres;
 
 pub async fn insert(
@@ -136,21 +136,35 @@ pub async fn insert_escrow_duration(
     executor: impl sqlx::Executor<'_, Database = Postgres>,
     address: &str,
     duration_days: u32,
+    expiration_date: Option<chrono::NaiveDate>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         INSERT INTO escrow_durations
-            (address, duration_days)
+            (address, duration_days, expires_on)
         VALUES 
-            ($1, $2)
+            ($1, $2, $3)
         "#,
     )
     .bind(address)
     .bind(duration_days as i64)
+    .bind(expiration_date)
     .execute(executor)
     .await?;
 
     Ok(())
+}
+
+pub async fn purge_expired_escrow_duration(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    today: NaiveDate,
+) -> anyhow::Result<u64> {
+    let res = sqlx::query("DELETE FROM escrow_durations where expires_on <= $1")
+        .bind(today)
+        .execute(executor)
+        .await?;
+
+    Ok(res.rows_affected())
 }
 
 pub async fn delete_escrow_duration(
