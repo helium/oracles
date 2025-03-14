@@ -158,13 +158,13 @@ pub async fn insert_escrow_duration(
 pub async fn purge_expired_escrow_duration(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     today: NaiveDate,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<usize> {
     let res = sqlx::query("DELETE FROM escrow_durations where expires_on <= $1")
         .bind(today)
         .execute(executor)
         .await?;
 
-    Ok(res.rows_affected())
+    Ok(res.rows_affected() as usize)
 }
 
 pub async fn delete_escrow_duration(

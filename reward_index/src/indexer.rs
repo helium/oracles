@@ -250,6 +250,7 @@ pub async fn handle_mobile_rewards(
 pub struct EscrowStats {
     pub inserted: usize,
     pub unlocked: usize,
+    pub purged_escrow_durations: usize,
 }
 
 pub async fn handle_escrowed_mobile_rewards(
@@ -283,6 +284,7 @@ pub async fn handle_escrowed_mobile_rewards(
     Ok(EscrowStats {
         inserted: escrowed_inserted + inserted,
         unlocked,
+        purged_escrow_durations: purged
     })
 }
 
