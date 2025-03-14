@@ -30,7 +30,7 @@ async fn gateway_rewards_accumulate_by_key(pool: PgPool) -> anyhow::Result<()> {
         }
     }
 
-    let reward_shares = common::bytes_mut_stream(vec![
+    let reward_shares = common::iot_rewards_stream(vec![
         make_gateway_reward(vec![1], 1, 2, 3),
         make_gateway_reward(vec![1], 4, 5, 6),
         make_gateway_reward(vec![1], 7, 8, 9),
@@ -81,7 +81,7 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
     }
 
     let mut txn = pool.begin().await?;
-    let rewards = common::bytes_mut_stream(vec![make_gateway_reward(vec![1], 1, 2, 3)]);
+    let rewards = common::iot_rewards_stream(vec![make_gateway_reward(vec![1], 1, 2, 3)]);
     let before_manifest_time = Utc::now() - Duration::days(2);
     handle_iot_rewards(
         &mut txn,
@@ -103,7 +103,7 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
 
     // Zeroed reward should have no effect
     let mut txn = pool.begin().await?;
-    let rewards = common::bytes_mut_stream(vec![make_gateway_reward(vec![1], 0, 0, 0)]);
+    let rewards = common::iot_rewards_stream(vec![make_gateway_reward(vec![1], 0, 0, 0)]);
     let now_manifest_time = Utc::now();
     handle_iot_rewards(
         &mut txn,
@@ -141,7 +141,7 @@ async fn unallocated_reward_types_are_combined(pool: PgPool) -> anyhow::Result<(
         }
     }
 
-    let rewards = common::bytes_mut_stream(vec![
+    let rewards = common::iot_rewards_stream(vec![
         make_unallocated_reward(1, UnallocatedRewardType::Poc),
         make_unallocated_reward(2, UnallocatedRewardType::Operation),
         make_unallocated_reward(3, UnallocatedRewardType::Oracle),
@@ -179,7 +179,7 @@ async fn operation_rewards_are_combined(pool: PgPool) -> anyhow::Result<()> {
         }
     }
 
-    let rewards = common::bytes_mut_stream(vec![
+    let rewards = common::iot_rewards_stream(vec![
         make_unallocated_reward(1),
         make_unallocated_reward(2),
         make_unallocated_reward(3),

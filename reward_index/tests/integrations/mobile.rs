@@ -10,7 +10,7 @@ use helium_proto::{
 use reward_index::indexer::{handle_mobile_rewards, RewardType};
 use sqlx::PgPool;
 
-use crate::common::{self, bytes_mut_stream};
+use crate::common::{self, mobile_rewards_stream};
 
 #[sqlx::test]
 async fn accumulates_rewards(pool: PgPool) -> anyhow::Result<()> {
@@ -27,7 +27,7 @@ async fn accumulates_rewards(pool: PgPool) -> anyhow::Result<()> {
         }
     }
 
-    let reward_shares = common::bytes_mut_stream(vec![
+    let reward_shares = common::mobile_rewards_stream(vec![
         make_gateway_reward(vec![1], 1),
         make_gateway_reward(vec![1], 2),
         make_gateway_reward(vec![1], 3),
@@ -68,7 +68,7 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
     }
 
     let mut txn = pool.begin().await?;
-    let rewards = common::bytes_mut_stream(vec![make_gateway_reward(vec![1], 1)]);
+    let rewards = common::mobile_rewards_stream(vec![make_gateway_reward(vec![1], 1)]);
     let before_manifest_time = Utc::now() - Duration::days(2);
     handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &before_manifest_time).await?;
     txn.commit().await?;
@@ -83,7 +83,7 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
 
     // Zeroed reward should have no effect
     let mut txn = pool.begin().await?;
-    let rewards = common::bytes_mut_stream(vec![make_gateway_reward(vec![1], 0)]);
+    let rewards = common::mobile_rewards_stream(vec![make_gateway_reward(vec![1], 0)]);
     let now_manifest_time = Utc::now();
     handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &now_manifest_time).await?;
     txn.commit().await?;
@@ -101,7 +101,7 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
 
 #[sqlx::test]
 async fn radio_reward_v1_is_ignored(pool: PgPool) -> anyhow::Result<()> {
-    let reward_shares = common::bytes_mut_stream(vec![
+    let reward_shares = common::mobile_rewards_stream(vec![
         MobileRewardShare {
             start_period: Utc::now().timestamp_millis() as u64,
             end_period: Utc::now().timestamp_millis() as u64,
@@ -142,7 +142,7 @@ async fn radio_reward_v1_is_ignored(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn subscriber_reward(pool: PgPool) -> anyhow::Result<()> {
-    let rewards = bytes_mut_stream(vec![MobileRewardShare {
+    let rewards = mobile_rewards_stream(vec![MobileRewardShare {
         start_period: Utc::now().timestamp_millis() as u64,
         end_period: Utc::now().timestamp_millis() as u64,
         reward: Some(mobile_reward_share::Reward::SubscriberReward(
@@ -172,7 +172,7 @@ async fn subscriber_reward(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn service_provider_reward(pool: PgPool) -> anyhow::Result<()> {
-    let rewards = bytes_mut_stream(vec![MobileRewardShare {
+    let rewards = mobile_rewards_stream(vec![MobileRewardShare {
         start_period: Utc::now().timestamp_millis() as u64,
         end_period: Utc::now().timestamp_millis() as u64,
         reward: Some(mobile_reward_share::Reward::ServiceProviderReward(
@@ -201,7 +201,7 @@ async fn service_provider_reward(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn fails_on_unknown_service_provider(pool: PgPool) -> anyhow::Result<()> {
-    let rewards = bytes_mut_stream(vec![MobileRewardShare {
+    let rewards = mobile_rewards_stream(vec![MobileRewardShare {
         start_period: Utc::now().timestamp_millis() as u64,
         end_period: Utc::now().timestamp_millis() as u64,
         reward: Some(mobile_reward_share::Reward::ServiceProviderReward(
@@ -239,7 +239,7 @@ async fn unallocated_rewards_are_combined(pool: PgPool) -> anyhow::Result<()> {
         }
     }
 
-    let rewards = common::bytes_mut_stream(vec![
+    let rewards = mobile_rewards_stream(vec![
         make_unallocated_reward(1, UnallocatedRewardType::Poc),
         make_unallocated_reward(2, UnallocatedRewardType::DiscoveryLocation),
         make_unallocated_reward(3, UnallocatedRewardType::Mapper),
@@ -262,7 +262,7 @@ async fn unallocated_rewards_are_combined(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn promotion_reward(pool: PgPool) -> anyhow::Result<()> {
-    let rewards = bytes_mut_stream(vec![MobileRewardShare {
+    let rewards = mobile_rewards_stream(vec![MobileRewardShare {
         start_period: Utc::now().timestamp_millis() as u64,
         end_period: Utc::now().timestamp_millis() as u64,
         reward: Some(mobile_reward_share::Reward::PromotionReward(

@@ -1,11 +1,25 @@
 use chrono::{DateTime, Duration, DurationRound, Utc};
 use file_store::{traits::MsgBytes, BytesMutStream};
 use futures::{stream, StreamExt};
+use helium_proto::services::{poc_lora::IotRewardShare, poc_mobile::MobileRewardShare};
 use prost::bytes::BytesMut;
 use reward_index::indexer::RewardType;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Row};
 
-pub fn bytes_mut_stream<T: MsgBytes + Send + 'static>(els: Vec<T>) -> BytesMutStream {
+// mobile and iot reward stream helpers are kept separate so you can create
+// an empty stream without needing to provide the type in the test.
+
+pub fn mobile_rewards_stream(els: Vec<MobileRewardShare>) -> BytesMutStream {
+    BytesMutStream::from(
+        stream::iter(els)
+            .map(|el| el.as_bytes())
+            .map(|el| BytesMut::from(el.as_ref()))
+            .map(Ok)
+            .boxed(),
+    )
+}
+
+pub fn iot_rewards_stream(els: Vec<IotRewardShare>) -> BytesMutStream {
     BytesMutStream::from(
         stream::iter(els)
             .map(|el| el.as_bytes())

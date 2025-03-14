@@ -1,14 +1,17 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::Stream;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{
-    mobile_reward_share, GatewayReward, MobileRewardShare,
+use helium_proto::{
+    services::poc_mobile::{
+        mobile_reward_share, GatewayReward, MobileRewardShare, ServiceProviderReward,
+    },
+    ServiceProvider,
 };
 use prost::bytes::BytesMut;
 use reward_index::indexer::{handle_escrowed_mobile_rewards, EscrowStats, RewardType};
 use sqlx::PgPool;
 
-use crate::common::{bytes_mut_stream, get_reward};
+use crate::common::{get_reward, mobile_rewards_stream};
 
 async fn process_rewards(
     pool: &PgPool,
@@ -34,7 +37,7 @@ async fn process_rewards(
 async fn escrow_duration_of_0_days(pool: PgPool) -> anyhow::Result<()> {
     // Rewards are processed and unlocked immediately
 
-    let rewards = bytes_mut_stream(vec![
+    let rewards = mobile_rewards_stream(vec![
         make_gateway_reward(vec![1], 1),
         make_gateway_reward(vec![1], 2),
         make_gateway_reward(vec![1], 3),
@@ -58,14 +61,14 @@ async fn escrow_duration_of_0_days(pool: PgPool) -> anyhow::Result<()> {
 async fn escrow_duration_of_1_day(pool: PgPool) -> anyhow::Result<()> {
     // Rewards are processed, and held up for 1 day
 
-    let day_0_rewards = bytes_mut_stream(vec![
+    let day_0_rewards = mobile_rewards_stream(vec![
         make_gateway_reward(vec![1], 1),
         make_gateway_reward(vec![1], 2),
         make_gateway_reward(vec![1], 3),
         make_gateway_reward(vec![2], 4),
     ]);
     // Extra locked reward weill cause test to fail if escrow period is not respected.
-    let day_1_rewards = bytes_mut_stream(vec![make_gateway_reward(vec![1], 1)]);
+    let day_1_rewards = mobile_rewards_stream(vec![make_gateway_reward(vec![1], 1)]);
 
     let day_0 = Utc::now();
     let day_1 = day_0 + Duration::days(1);
@@ -105,7 +108,7 @@ async fn unlocked_rewards_cannot_be_unlocked_again(pool: PgPool) -> anyhow::Resu
     for day in 1..=5 {
         // Use a different key so we can track unlocking without worrying about
         // unlocked amounts combining because of matching keys.
-        let one_reward = bytes_mut_stream(vec![make_gateway_reward(vec![day as u8], 1)]);
+        let one_reward = mobile_rewards_stream(vec![make_gateway_reward(vec![day as u8], 1)]);
         let escrow = Duration::max_value();
         let manifest_time = Utc::now() + Duration::days(day);
 
@@ -128,14 +131,44 @@ async fn unlocked_rewards_cannot_be_unlocked_again(pool: PgPool) -> anyhow::Resu
         (Duration::days(0), 1),
     ];
 
-    let no_rewards = || bytes_mut_stream::<MobileRewardShare>(vec![]);
     let manifest_time = Utc::now() + Duration::days(5);
 
     for (escrow_duration, expected_unlocked) in expected {
-        let stats =
-            process_rewards(&pool, no_rewards(), manifest_time, escrow_duration).await?;
+        let stats = process_rewards(
+            &pool,
+            mobile_rewards_stream(vec![]),
+            manifest_time,
+            escrow_duration,
+        )
+        .await?;
         assert_eq!(stats.unlocked, expected_unlocked);
     }
+
+    Ok(())
+}
+
+// #[sqlx::test]
+// async fn use_address_escrow_duration_override(pool: PgPool) -> anyhow::Result<()> {
+//     Ok(())
+// }
+
+#[sqlx::test]
+async fn only_mobile_gateway_rewards_are_escrowed(pool: PgPool) -> anyhow::Result<()> {
+    let rewards = mobile_rewards_stream(vec![
+        make_gateway_reward(vec![1], 99),
+        make_service_provider_reward(1),
+    ]);
+
+    let stats = process_rewards(&pool, rewards, Utc::now(), Duration::days(30)).await?;
+    assert_eq!(stats.inserted, 2);
+
+    let mobile_key = PublicKeyBinary::from(vec![1]);
+    let mobile_reward = get_reward(&pool, &mobile_key.to_string(), RewardType::MobileGateway).await;
+    assert!(mobile_reward.is_err());
+
+    let sp_key = ServiceProvider::HeliumMobile.to_string();
+    let sp_reward = get_reward(&pool, &sp_key, RewardType::MobileServiceProvider).await?;
+    assert_eq!(sp_reward.rewards, 1);
 
     Ok(())
 }
@@ -150,5 +183,18 @@ fn make_gateway_reward(hotspot_key: Vec<u8>, dc_transfer_reward: u64) -> MobileR
             rewardable_bytes: 0,
             price: 0,
         })),
+    }
+}
+
+fn make_service_provider_reward(amount: u64) -> MobileRewardShare {
+    MobileRewardShare {
+        start_period: Utc::now().timestamp_millis() as u64,
+        end_period: Utc::now().timestamp_millis() as u64,
+        reward: Some(mobile_reward_share::Reward::ServiceProviderReward(
+            ServiceProviderReward {
+                service_provider_id: ServiceProvider::HeliumMobile.into(),
+                amount,
+            },
+        )),
     }
 }
