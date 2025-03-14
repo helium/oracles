@@ -234,10 +234,61 @@ pub async fn handle_iot_rewards(
 
 pub async fn handle_mobile_rewards(
     txn: &mut Transaction<'_, Postgres>,
-    mut reward_shares: Stream<BytesMut>,
+    reward_shares: Stream<BytesMut>,
     unallocated_reward_key: &str,
     manifest_time: &DateTime<Utc>,
 ) -> anyhow::Result<()> {
+    let rewards = collect_rewards(reward_shares, unallocated_reward_key).await?;
+    for (reward_key, amount) in rewards {
+        db::insert(
+            &mut *txn,
+            reward_key.key,
+            amount,
+            reward_key.reward_type,
+            manifest_time,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct EscrowStats {
+    pub inserted: usize,
+    pub unlocked: usize,
+}
+
+pub async fn handle_escrowed_mobile_rewards(
+    txn: &mut Transaction<'_, Postgres>,
+    reward_shares: Stream<BytesMut>,
+    unallocated_reward_key: &str,
+    manifest_time: &DateTime<Utc>,
+    default_escrow_days: u32,
+) -> anyhow::Result<EscrowStats> {
+    // Delete old escrow durations
+    // TODO:
+
+    // Insert new rewards
+    let rewards = collect_rewards(reward_shares, unallocated_reward_key).await?;
+    let inserted = insert_escrowed_rewards(&mut *txn, rewards, manifest_time).await?;
+    tracing::info!(inserted, "inserted escrowed rewards");
+
+    // Move unlocked rewards to index table
+    let unlocked =
+        db::unlock_escrowed_rewards(&mut *txn, manifest_time, default_escrow_days).await?;
+    tracing::info!(unlocked, "unlocked rewards");
+
+    // Delete old escrow rewards
+    // TODO:
+
+    Ok(EscrowStats { inserted, unlocked })
+}
+
+async fn collect_rewards(
+    mut reward_shares: Stream<BytesMut>,
+    unallocated_reward_key: &str,
+) -> anyhow::Result<HashMap<RewardKey, u64>> {
     let mut rewards = HashMap::new();
 
     while let Some(msg) = reward_shares.try_next().await? {
@@ -253,8 +304,17 @@ pub async fn handle_mobile_rewards(
         }
     }
 
+    Ok(rewards)
+}
+
+async fn insert_escrowed_rewards(
+    txn: &mut Transaction<'_, Postgres>,
+    rewards: HashMap<RewardKey, u64>,
+    manifest_time: &DateTime<Utc>,
+) -> anyhow::Result<usize> {
+    let rewards_count = rewards.len();
     for (reward_key, amount) in rewards {
-        db::insert(
+        db::insert_escrowed_reward(
             &mut *txn,
             reward_key.key,
             amount,
@@ -263,6 +323,5 @@ pub async fn handle_mobile_rewards(
         )
         .await?;
     }
-
-    Ok(())
+    Ok(rewards_count)
 }
