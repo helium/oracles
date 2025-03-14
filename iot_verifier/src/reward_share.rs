@@ -388,6 +388,9 @@ async fn aggregate_poc_shares(
     db: impl sqlx::PgExecutor<'_> + Copy,
     reward_period: &Range<DateTime<Utc>>,
 ) -> Result<(), sqlx::Error> {
+    // TODO: the reward timespan for iot varies from that of mobile
+    // in that we are inclusive of the reward start timestamp and exclusive of the end
+    // mobile is the reverse of that
     let mut rows = sqlx::query_as::<_, GatewayPocShare>(
         "select * from gateway_shares where reward_timestamp > $1 and reward_timestamp <= $2",
     )
@@ -409,6 +412,9 @@ async fn aggregate_dc_shares(
     db: impl sqlx::PgExecutor<'_> + Copy,
     reward_period: &Range<DateTime<Utc>>,
 ) -> Result<(), sqlx::Error> {
+    // TODO: the reward timespan for iot varies from that of mobile
+    // in that we are inclusive of the reward start timestamp and exclusive of the end
+    // mobile is the reverse of that
     let mut rows = sqlx::query_as::<_, GatewayDCShare>(
         "select hotspot_key, reward_timestamp, num_dcs::numeric, id from gateway_dc_shares where reward_timestamp > $1 and reward_timestamp <= $2",
     )

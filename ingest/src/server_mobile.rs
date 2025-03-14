@@ -222,14 +222,18 @@ where
         request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
         let timestamp = Utc::now();
+        let event = request.into_inner();
 
         if timestamp >= self.cbrs_disable_time {
+            let pubkey = PublicKeyBinary::from(event.pub_key);
+            tracing::info!(
+                ?pubkey,
+                "dropping CellHeartbeatReqV1 because cbrs disable time has passed"
+            );
             return Ok(Response::new(CellHeartbeatRespV1 {
-                id: timestamp.to_string(),
+                id: timestamp.timestamp_millis().to_string(),
             }));
         }
-
-        let event = request.into_inner();
 
         custom_tracing::record_b58("pub_key", &event.pub_key);
 
@@ -244,7 +248,7 @@ where
 
         _ = self.heartbeat_report_sink.write(report, []).await;
 
-        let id = timestamp.to_string();
+        let id = timestamp.timestamp_millis().to_string();
         Ok(Response::new(CellHeartbeatRespV1 { id }))
     }
 
@@ -280,8 +284,18 @@ where
         let event = request.into_inner();
 
         if is_data_transfer_for_cbrs(&event) && timestamp > self.cbrs_disable_time {
+            let pubkey = event
+                .data_transfer_usage
+                .map(|usage| PublicKeyBinary::from(usage.pub_key))
+                .ok_or_else(|| anyhow::anyhow!("No pubkey available"));
+
+            tracing::info!(
+                ?pubkey,
+                "dropping DataTransferSessionReqV1 because cbrs disable time has passed"
+            );
+
             return Ok(Response::new(DataTransferSessionRespV1 {
-                id: timestamp.to_string(),
+                id: timestamp.timestamp_millis().to_string(),
             }));
         }
 
@@ -299,7 +313,7 @@ where
         _ = self.data_transfer_session_sink.write(report, []).await;
 
         Ok(Response::new(DataTransferSessionRespV1 {
-            id: timestamp.to_string(),
+            id: timestamp.timestamp_millis().to_string(),
         }))
     }
 

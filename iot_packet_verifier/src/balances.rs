@@ -11,6 +11,7 @@ use tokio::sync::Mutex;
 
 /// Caches balances fetched from the solana chain and debits made by the
 /// packet verifier.
+#[derive(Clone)]
 pub struct BalanceCache<S> {
     escrow_accounts: BalanceStore,
     solana: S,
@@ -53,6 +54,10 @@ where
 impl<S> BalanceCache<S> {
     pub fn balances(&self) -> BalanceStore {
         self.escrow_accounts.clone()
+    }
+
+    pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> Option<PayerAccount> {
+        self.payer_accounts.lock().await.get(payer).cloned()
     }
 }
 
