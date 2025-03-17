@@ -1,44 +1,45 @@
 use crate::lora_field::{DevAddrConstraint, NetIdField};
 use futures::stream::StreamExt;
-use helium_crypto::PublicKeyBinary;
+use helium_crypto::{PublicKey, PublicKeyBinary};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::Serialize;
-use solana_sdk::pubkey::Pubkey;
 use sqlx::{error::Error as SqlxError, postgres::PgRow, types::Uuid, FromRow, Row};
 use std::collections::HashSet;
 use std::str::FromStr;
 use tokio::sync::watch;
 
 pub mod proto {
-    pub use helium_proto::services::iot_config::{ActionV1, OrgResV2, OrgV2};
+    pub use helium_proto::services::iot_config::OrgV2;
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Org {
     pub oui: u64,
-    pub address: Pubkey,
-    pub owner: Pubkey,
+    pub address: PublicKeyBinary,
+    pub owner: PublicKeyBinary,
     pub escrow_key: String,
     pub approved: bool,
     pub locked: bool,
-    pub delegate_keys: Option<Vec<Pubkey>>,
+    pub delegate_keys: Option<Vec<PublicKeyBinary>>,
     pub constraints: Option<Vec<DevAddrConstraint>>,
 }
 
 impl FromRow<'_, PgRow> for Org {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
         let address_str: String = row.get("address");
-        let address = Pubkey::from_str(&address_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
+        let address =
+            PublicKeyBinary::from_str(&address_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
         let approved = row.get::<bool, _>("approved");
         let oui = row.try_get::<i64, &str>("oui")? as u64;
         let owner_str: String = row.get("authority");
-        let owner = Pubkey::from_str(&owner_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
+        let owner =
+            PublicKeyBinary::from_str(&owner_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
         let escrow_key = row.get::<String, _>("escrow_key");
         let locked = row.get::<bool, _>("locked");
         let raw_delegate_keys: Option<Vec<String>> = row.try_get("delegate_keys")?;
-        let delegate_keys: Option<Vec<Pubkey>> = raw_delegate_keys.map(|keys| {
+        let delegate_keys: Option<Vec<PublicKeyBinary>> = raw_delegate_keys.map(|keys| {
             keys.into_iter()
-                .filter_map(|key| Pubkey::from_str(&key).ok())
+                .filter_map(|key| PublicKeyBinary::from_str(&key).ok())
                 .collect()
         });
 
@@ -93,13 +94,13 @@ pub type DelegateCache = HashSet<PublicKeyBinary>;
 pub async fn delegate_keys_cache(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<(watch::Sender<DelegateCache>, watch::Receiver<DelegateCache>), sqlx::Error> {
-    let key_set: HashSet<Pubkey> = sqlx::query_scalar(
+    let key_set: HashSet<PublicKeyBinary> = sqlx::query_scalar(
         "SELECT delegate FROM solana_organization_delegate_keys WHERE delegate IS NOT NULL",
     )
     .fetch_all(db)
     .await?
     .into_iter()
-    .filter_map(|delegate: String| Pubkey::from_str(&delegate).ok())
+    .filter_map(|delegate: String| PublicKeyBinary::from_str(&delegate).ok())
     .collect();
 
     Ok(watch::channel(key_set))
@@ -290,15 +291,22 @@ pub enum OrgStoreError {
 pub async fn get_org_pubkeys(
     oui: u64,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<Pubkey>, OrgStoreError> {
+) -> Result<Vec<PublicKey>, OrgStoreError> {
     let org = get(oui, db)
         .await?
         .ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
 
-    let mut pubkeys: Vec<Pubkey> = vec![org.owner];
-
-    if let Some(delegate_keys) = org.delegate_keys {
-        pubkeys.extend(delegate_keys);
+    let mut pubkeys: Vec<PublicKey> = vec![PublicKey::try_from(org.owner)?];
+    if let Some(ref mut delegate_pubkeys) = org
+        .delegate_keys
+        .map(|keys| {
+            keys.into_iter()
+                .map(PublicKey::try_from)
+                .collect::<Result<Vec<PublicKey>, helium_crypto::Error>>()
+        })
+        .transpose()?
+    {
+        pubkeys.append(delegate_pubkeys);
     }
 
     Ok(pubkeys)
@@ -307,7 +315,7 @@ pub async fn get_org_pubkeys(
 pub async fn get_org_pubkeys_by_route(
     route_id: &str,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<Pubkey>, OrgStoreError> {
+) -> Result<Vec<PublicKey>, OrgStoreError> {
     let uuid = Uuid::try_parse(route_id)?;
     let org = sqlx::query_as::<_, Org>(
         r#"
@@ -338,9 +346,17 @@ pub async fn get_org_pubkeys_by_route(
     .fetch_one(db)
     .await?;
 
-    let mut pubkeys: Vec<Pubkey> = vec![org.owner];
-    if let Some(delegate_keys) = org.delegate_keys {
-        pubkeys.extend(delegate_keys);
+    let mut pubkeys: Vec<PublicKey> = vec![PublicKey::try_from(org.owner)?];
+    if let Some(ref mut delegate_keys) = org
+        .delegate_keys
+        .map(|keys| {
+            keys.into_iter()
+                .map(PublicKey::try_from)
+                .collect::<Result<Vec<PublicKey>, helium_crypto::Error>>()
+        })
+        .transpose()?
+    {
+        pubkeys.append(delegate_keys);
     }
 
     Ok(pubkeys)
@@ -350,13 +366,13 @@ impl From<Org> for proto::OrgV2 {
     fn from(org: Org) -> Self {
         Self {
             oui: org.oui,
-            address: org.address.to_bytes().to_vec(),
-            owner: org.owner.to_bytes().to_vec(),
+            address: org.address.into(),
+            owner: org.owner.into(),
             escrow_key: org.escrow_key,
             approved: org.approved,
             locked: org.locked,
             delegate_keys: org.delegate_keys.map_or_else(Vec::new, |keys| {
-                keys.iter().map(|key| key.to_bytes().to_vec()).collect()
+                keys.iter().map(|key| key.as_ref().into()).collect()
             }),
         }
     }

@@ -27,7 +27,6 @@ pub use settings::Settings;
 use std::ops::Range;
 
 use helium_crypto::PublicKey;
-use solana_sdk::pubkey::Pubkey;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
@@ -65,16 +64,6 @@ fn enqueue_update(queue_size: usize) -> bool {
 pub fn verify_public_key(bytes: &[u8]) -> Result<PublicKey, Status> {
     PublicKey::try_from(bytes)
         .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
-}
-
-pub fn convert_to_solana_public_key(pubkey: &PublicKey) -> Result<Pubkey, helium_crypto::Error> {
-    Pubkey::try_from(pubkey.clone())
-}
-
-pub fn convert_to_helium_public_key(
-    pubkey: &Pubkey,
-) -> Result<PublicKey, std::convert::Infallible> {
-    PublicKey::try_from(pubkey.clone())
 }
 
 pub struct EpochInfo {

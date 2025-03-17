@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 use crate::balances::BalanceStore;
 
 /// To avoid excessive burn transaction (which cost us money), we institute a minimum
-/// amount of Data Credits accounted for before we burn from a payer:
+/// amount of Data Credits accounted for before we burn from a escrow account:
 pub const BURN_THRESHOLD: i64 = 10_000;
 
 #[async_trait]
@@ -39,13 +39,13 @@ pub trait PendingTables {
         amount: u64,
         signature: &Signature,
     ) -> Result<(), sqlx::Error> {
-        self.do_add_pending_transaction(payer, amount, signature, Utc::now())
+        self.do_add_pending_transaction(escrow_key, amount, signature, Utc::now())
             .await
     }
 
     async fn do_add_pending_transaction(
         &self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
         signature: &Signature,
         time_of_submission: DateTime<Utc>,

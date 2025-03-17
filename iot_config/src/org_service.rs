@@ -136,7 +136,7 @@ impl iot_config::Org for OrgService {
         Ok(Response::new(resp))
     }
 
-    async fn get(&self, request: Request<OrgGetReqV1>) -> GrpcResult<OrgResV1> {
+    async fn get(&self, _request: Request<OrgGetReqV1>) -> GrpcResult<OrgResV1> {
         telemetry::count_request("org", "get_deprecated_call");
         tracing::warn!(
             "Deprecated API endpoint 'org.get' was called. This endpoint is no longer supported."
@@ -188,33 +188,32 @@ impl iot_config::Org for OrgService {
         };
 
         resp.signature = self.sign_response(&resp.encode_to_vec())?;
-        println!("Response: {:?}", resp);
         Ok(Response::new(resp))
     }
 
-    async fn create_helium(&self, request: Request<OrgCreateHeliumReqV1>) -> GrpcResult<OrgResV1> {
+    async fn create_helium(&self, _request: Request<OrgCreateHeliumReqV1>) -> GrpcResult<OrgResV1> {
         telemetry::count_request("org", "create_helium");
         tracing::warn!(
-            "Deprecated API endpoint 'org.get' was called. This endpoint is no longer supported."
+            "Deprecated API endpoint 'org.create_helium' was called. This endpoint is no longer supported."
         );
 
         Err(Status::failed_precondition(
-            "This API endpoint (org.get) has been deprecated and is no longer supported.",
+            "This API endpoint (org.create_helium) has been deprecated and is no longer supported.",
         ))
     }
 
-    async fn create_roamer(&self, request: Request<OrgCreateRoamerReqV1>) -> GrpcResult<OrgResV1> {
+    async fn create_roamer(&self, _request: Request<OrgCreateRoamerReqV1>) -> GrpcResult<OrgResV1> {
         telemetry::count_request("org", "create_roamer");
         tracing::warn!(
-            "Deprecated API endpoint 'org.get' was called. This endpoint is no longer supported."
+            "Deprecated API endpoint 'org.create_roamer' was called. This endpoint is no longer supported."
         );
 
         Err(Status::failed_precondition(
-            "This API endpoint (org.get) has been deprecated and is no longer supported.",
+            "This API endpoint (org.create_roamer) has been deprecated and is no longer supported.",
         ))
     }
 
-    async fn update(&self, request: Request<OrgUpdateReqV1>) -> GrpcResult<OrgResV1> {
+    async fn update(&self, _request: Request<OrgUpdateReqV1>) -> GrpcResult<OrgResV1> {
         telemetry::count_request("org", "update");
         tracing::warn!(
             "Deprecated API endpoint 'org.update' was called. This endpoint is no longer supported."

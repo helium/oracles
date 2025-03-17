@@ -102,9 +102,9 @@ where
             return Err(BurnError::ExistingPendingTransactions(pending_txns.len()));
         }
 
-        // Fetch the next payer and amount that should be burn. If no such burn
+        // Fetch the next escrow and amount that should be burn. If no such burn
         // exists, perform no action.
-        let Some(Burn { payer, amount }) = self.pending_tables.fetch_next_burn().await? else {
+        let Some(Burn { escrow_key, amount }) = self.pending_tables.fetch_next_burn().await? else {
             tracing::info!("no pending burns");
             return Ok(());
         };

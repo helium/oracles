@@ -19,10 +19,10 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     // Initialize payers with balances
     let solana_network = TestSolanaClientMap::default();
     solana_network
-        .insert(&payer_insufficent, ORIGINAL_BALANCE)
+        .insert(&payer_insufficent.to_string(), ORIGINAL_BALANCE)
         .await;
     solana_network
-        .insert(&payer_sufficient, ORIGINAL_BALANCE)
+        .insert(&payer_sufficient.to_string(), ORIGINAL_BALANCE)
         .await;
 
     // Add Data Transfer Session for both payers
@@ -65,12 +65,17 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
 
     // Ensure balance for payers through solana mock
     assert_eq!(
-        solana_network.get_payer_balance(&payer_insufficent).await,
+        solana_network
+            .get_escrow_balance(&payer_insufficent.to_string())
+            .await,
         ORIGINAL_BALANCE,
         "original balance"
     );
     assert!(
-        solana_network.get_payer_balance(&payer_sufficient).await < ORIGINAL_BALANCE,
+        solana_network
+            .get_escrow_balance(&payer_sufficient.to_string())
+            .await
+            < ORIGINAL_BALANCE,
         "reduced balance"
     );
 
@@ -87,7 +92,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let payer_two = PublicKeyBinary::from(vec![2]);
 
     let solana_network = TestSolanaClientMap::default();
-    solana_network.insert(&payer_one, 10_000).await;
+    solana_network.insert(&payer_one.to_string(), 10_000).await;
 
     save_data_transfer_sessions(
         &pool,
@@ -345,7 +350,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
     // Burn does nothing because of pending transactions
     let solana_network = TestSolanaClientMap::default();
-    solana_network.insert(&payer, 10_000).await;
+    solana_network.insert(&payer.to_string(), 10_000).await;
 
     let (valid_sessions_tx, mut valid_sessions_rx) = tokio::sync::mpsc::channel(10);
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");

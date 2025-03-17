@@ -7,6 +7,7 @@ use helium_anchor_gen::{
     data_credits::{self, accounts, instruction},
     helium_sub_daos::{self, DaoV0, SubDaoV0},
 };
+use helium_crypto::PublicKeyBinary;
 use itertools::Itertools;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -22,10 +23,7 @@ use solana_sdk::{
     signer::Signer,
     transaction::Transaction,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-};
+use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
@@ -33,7 +31,7 @@ use tokio::sync::Mutex;
 pub trait SolanaNetwork: Clone + Send + Sync + 'static {
     type Transaction: GetSignature + Send + Sync + 'static;
 
-    async fn escrow_account_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError>;
+    async fn escrow_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError>;
 
     #[allow(clippy::ptr_arg)]
     async fn make_burn_transaction(
@@ -115,7 +113,7 @@ impl SolanaRpc {
 impl SolanaNetwork for SolanaRpc {
     type Transaction = Transaction;
 
-    async fn escrow_account_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError> {
+    async fn escrow_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError> {
         let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, escrow_key);
         let (escrow_account, _) = Pubkey::find_program_address(
             &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
@@ -430,9 +428,9 @@ impl GetSignature for PossibleTransaction {
 impl SolanaNetwork for Option<Arc<SolanaRpc>> {
     type Transaction = PossibleTransaction;
 
-    async fn escrow_account_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError> {
+    async fn escrow_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError> {
         if let Some(ref rpc) = self {
-            rpc.escrow_account_balance(escrow_key).await
+            rpc.escrow_balance(escrow_key).await
         } else {
             Ok(FIXED_BALANCE)
         }
@@ -489,7 +487,7 @@ impl GetSignature for MockTransaction {
 
 #[derive(Clone)]
 pub struct TestSolanaClientMap {
-    payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+    escrow_balances: Arc<Mutex<HashMap<String, u64>>>,
     confirm_all_txns: Arc<Mutex<bool>>,
     confirmed_txns: Arc<Mutex<HashSet<Signature>>>,
 }
@@ -497,7 +495,7 @@ pub struct TestSolanaClientMap {
 impl Default for TestSolanaClientMap {
     fn default() -> Self {
         Self {
-            payer_balances: Default::default(),
+            escrow_balances: Default::default(),
             confirm_all_txns: Arc::new(Mutex::new(true)),
             confirmed_txns: Default::default(),
         }
@@ -505,18 +503,18 @@ impl Default for TestSolanaClientMap {
 }
 
 impl TestSolanaClientMap {
-    pub async fn insert(&self, payer: &PublicKeyBinary, amount: u64) {
-        self.payer_balances
+    pub async fn insert(&self, escrow_key: &String, amount: u64) {
+        self.escrow_balances
             .lock()
             .await
-            .insert(payer.clone(), amount);
+            .insert(escrow_key.clone(), amount);
     }
 
-    pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> u64 {
-        self.payer_balances
+    pub async fn get_escrow_balance(&self, escrow_key: &String) -> u64 {
+        self.escrow_balances
             .lock()
             .await
-            .get(payer)
+            .get(escrow_key)
             .cloned()
             .unwrap_or_default()
     }
@@ -531,8 +529,8 @@ impl TestSolanaClientMap {
 impl SolanaNetwork for TestSolanaClientMap {
     type Transaction = MockTransaction;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        Ok(*self.payer_balances.lock().await.get(payer).unwrap())
+    async fn escrow_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError> {
+        Ok(*self.escrow_balances.lock().await.get(escrow_key).unwrap())
     }
 
     async fn make_burn_transaction(
@@ -549,10 +547,10 @@ impl SolanaNetwork for TestSolanaClientMap {
 
     async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), SolanaRpcError> {
         *self
-            .payer_balances
+            .escrow_balances
             .lock()
             .await
-            .get_mut(&txn.payer)
+            .get_mut(&txn.escrow_key)
             .unwrap() -= txn.amount;
         Ok(())
     }

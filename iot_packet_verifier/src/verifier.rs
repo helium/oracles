@@ -182,7 +182,7 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
                 } in self.list_orgs().await?.into_iter()
                 {
                     if locked {
-                        let balance = solana.escrow_account_balance(&escrow_key).await?;
+                        let balance = solana.escrow_balance(&escrow_key).await?;
                         if balance >= minimum_allowed_balance {
                             balances.set_balance(&escrow_key, balance).await;
                             self.enable_org(oui).await?;

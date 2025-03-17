@@ -34,7 +34,7 @@ where
         } in pending_tables.fetch_all_pending_burns().await?
         {
             // Look up the current balance of the escrow_account
-            let balance = solana.escrow_account_balance(&escrow_key).await?;
+            let balance = solana.escrow_balance(&escrow_key).await?;
             balances.insert(
                 escrow_key,
                 EscrowAccount {
@@ -56,8 +56,8 @@ impl<S> BalanceCache<S> {
         self.escrow_accounts.clone()
     }
 
-    pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> Option<PayerAccount> {
-        self.payer_accounts.lock().await.get(payer).cloned()
+    pub async fn get_escrow_balance(&self, escrow_key: &String) -> Option<EscrowAccount> {
+        self.escrow_accounts.lock().await.get(escrow_key).cloned()
     }
 }
 
@@ -79,7 +79,7 @@ where
         // Fetch the balance if we haven't seen the escrow_account before
         if let Entry::Vacant(escrow_account) = escrow_accounts.entry(escrow_key.clone()) {
             let escrow_account = escrow_account.insert(EscrowAccount::new(
-                self.solana.escrow_account_balance(escrow_key).await?,
+                self.solana.escrow_balance(escrow_key).await?,
             ));
             return Ok((escrow_account.balance >= amount).then(|| {
                 escrow_account.burned += amount;
@@ -94,7 +94,7 @@ where
         {
             Some(remaining_balance) => {
                 if remaining_balance < trigger_balance_check_threshold {
-                    escrow_account.balance = self.solana.escrow_account_balance(escrow_key).await?;
+                    escrow_account.balance = self.solana.escrow_balance(escrow_key).await?;
                 }
                 escrow_account.burned += amount;
                 Ok(Some(escrow_account.balance - escrow_account.burned))
