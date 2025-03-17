@@ -19,7 +19,7 @@ pub struct RadioHexSignalLevel {
     pub signal_power: i32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum KeyType {
     HotspotKey(PublicKeyBinary),
 }
@@ -32,7 +32,7 @@ impl From<KeyType> for coverage_object_req_v1::KeyType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct CoverageObject {
     pub pub_key: PublicKeyBinary,
     pub uuid: Uuid,
@@ -44,7 +44,7 @@ pub struct CoverageObject {
     pub signature: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct CoverageObjectIngestReport {
     pub received_timestamp: DateTime<Utc>,
     pub report: CoverageObject,
