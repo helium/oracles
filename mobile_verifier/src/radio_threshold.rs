@@ -374,7 +374,7 @@ pub async fn verified_radio_thresholds(
     reward_period: &Range<DateTime<Utc>>,
 ) -> Result<VerifiedRadioThresholds, sqlx::Error> {
     let mut rows = sqlx::query_as::<_, RadioThreshold>(
-        "SELECT hotspot_pubkey, cbsd_id
+        "SELECT hotspot_pubkey
              FROM radio_threshold WHERE threshold_timestamp < $1 and cbsd_id IS NULL",
     )
     .bind(reward_period.end)
