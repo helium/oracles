@@ -47,8 +47,6 @@ pub struct Settings {
     pub usa_and_mexico_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
     pub usa_and_mexico_fencing_resolution: u8,
-
-    pub usa_fencing_resolution: u8,
 }
 
 fn default_fencing_resolution() -> u8 {
