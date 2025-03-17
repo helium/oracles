@@ -318,7 +318,7 @@ pub mod db {
     ) -> anyhow::Result<BannedRadios> {
         sqlx::query(
             r#"
-                SELECT distinct radio_type, radio_key
+                SELECT distinct radio_key
                 FROM sp_boosted_rewards_bans
                 WHERE ban_type = $1
                     AND received_timestamp <= $2
@@ -332,12 +332,8 @@ pub mod db {
         .fetch(pool)
         .map_err(anyhow::Error::from)
         .try_fold(BannedRadios::default(), |mut set, row| async move {
-            let radio_type = row.get::<HbType, &str>("radio_type");
             let radio_key = row.get::<String, &str>("radio_key");
-            match radio_type {
-                HbType::Wifi => set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?),
-            };
-
+            set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?);
             Ok(set)
         })
         .await
