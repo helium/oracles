@@ -390,15 +390,13 @@ pub async fn delete(
     ingest_report: &InvalidatedRadioThresholdIngestReport,
     db: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
-    let cbsd_id: Option<String> = None;
     sqlx::query(
         r#"
             DELETE FROM radio_threshold
-            WHERE hotspot_pubkey = $1 AND (cbsd_id is null or cbsd_id = $2)
+            WHERE hotspot_pubkey = $1 AND cbsd_id is null
         "#,
     )
     .bind(ingest_report.report.hotspot_pubkey.to_string())
-    .bind(cbsd_id)
     .execute(&mut *db)
     .await?;
     Ok(())
