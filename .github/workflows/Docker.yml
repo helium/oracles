@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        package: [ingest, iot-config, iot-packet-verifier, iot-verifier, mobile-config, mobile-packet-verifier, mobile-verifier, reward-index]
+        package: [boost-manager, ingest, iot-config, iot-packet-verifier, iot-verifier, mobile-config, mobile-packet-verifier, mobile-verifier, poc-entropy, price, reward-index]
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-build-${{ matrix.package }}
       cancel-in-progress: true
