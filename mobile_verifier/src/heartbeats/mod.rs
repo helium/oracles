@@ -31,7 +31,6 @@ const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 #[sqlx(type_name = "radio_type")]
 #[sqlx(rename_all = "lowercase")]
 pub enum HbType {
-    Cbrs,
     Wifi,
 }
 
@@ -326,18 +325,6 @@ impl ValidatedHeartbeat {
         };
 
         let cell_type = match heartbeat.hb_type {
-            // CBRS is not supported anymore
-            // return invalid (BadCbsdId) hearbeat
-            HbType::Cbrs => {
-                return Ok(Self::new(
-                    heartbeat,
-                    CellType::CellTypeNone,
-                    dec!(0),
-                    None,
-                    Some(coverage_object.meta),
-                    proto::HeartbeatValidity::BadCbsdId,
-                ))
-            }
             HbType::Wifi => {
                 if coverage_object.meta.indoor {
                     CellType::NovaGenericWifiIndoor
@@ -468,8 +455,6 @@ impl ValidatedHeartbeat {
                         asserted_distance_to_trust_multiplier, RadioType,
                     };
                     let radio_type = match (heartbeat.hb_type, coverage_object.meta.indoor) {
-                        (HbType::Cbrs, true) => RadioType::IndoorCbrs,
-                        (HbType::Cbrs, false) => RadioType::OutdoorCbrs,
                         (HbType::Wifi, true) => RadioType::IndoorWifi,
                         (HbType::Wifi, false) => RadioType::OutdoorWifi,
                     };
@@ -566,7 +551,6 @@ impl ValidatedHeartbeat {
         // Save the heartbeat
         match self.heartbeat.hb_type {
             HbType::Wifi => self.save_wifi_hb(exec).await,
-            HbType::Cbrs => Ok(()),
         }
     }
 

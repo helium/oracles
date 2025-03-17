@@ -336,9 +336,6 @@ pub mod db {
             let radio_key = row.get::<String, &str>("radio_key");
             match radio_type {
                 HbType::Wifi => set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?),
-                HbType::Cbrs => {
-                    // Shoudn't be here because of condition (AND radio_type != 'cbrs')
-                }
             };
 
             Ok(set)

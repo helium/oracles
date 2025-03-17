@@ -31,7 +31,6 @@ pub fn asserted_distance_to_trust_multiplier(
             76..=100 => dec!(0.25),
             _ => dec!(0.00),
         },
-        _ => dec!(0),
     }
 }
 

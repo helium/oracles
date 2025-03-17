@@ -303,8 +303,6 @@ impl SpBoostedHexStatus {
 pub enum RadioType {
     IndoorWifi,
     OutdoorWifi,
-    IndoorCbrs,
-    OutdoorCbrs,
 }
 
 impl RadioType {
@@ -321,7 +319,6 @@ impl RadioType {
                 SignalLevel::Low => dec!(4),
                 SignalLevel::None => dec!(0),
             },
-            _ => dec!(0),
         };
         Ok(mult)
     }

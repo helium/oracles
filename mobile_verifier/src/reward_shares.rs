@@ -13,7 +13,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use coverage_point_calculator::{
-    BytesPs, LocationTrust, OracleBoostingStatus, RadioType, SPBoostedRewardEligibility, Speedtest,
+    BytesPs, LocationTrust, OracleBoostingStatus, SPBoostedRewardEligibility, Speedtest,
     SpeedtestTier,
 };
 use file_store::traits::TimestampEncode;
@@ -493,12 +493,7 @@ impl CoverageShares {
             let sp_boosted_reward_eligibility =
                 boosted_hex_eligibility.eligibility(radio_type, pubkey.clone(), &covered_hexes);
 
-            if eligible_for_coverage_map(
-                oracle_boosting_status,
-                &speedtests,
-                radio_type,
-                &trust_scores,
-            ) {
+            if eligible_for_coverage_map(oracle_boosting_status, &speedtests, &trust_scores) {
                 coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
                     indoor: is_indoor,
                     hotspot_key: pubkey.into(),
@@ -751,12 +746,8 @@ pub fn get_scheduled_tokens_for_oracles(total_emission_pool: Decimal) -> Decimal
 fn eligible_for_coverage_map(
     oracle_boosting_status: OracleBoostingStatus,
     speedtests: &[Speedtest],
-    radio_type: RadioType,
     trust_scores: &[LocationTrust],
 ) -> bool {
-    if radio_type == RadioType::IndoorCbrs || radio_type == RadioType::OutdoorCbrs {
-        return false;
-    }
     if oracle_boosting_status == OracleBoostingStatus::Banned {
         return false;
     }

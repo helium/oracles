@@ -226,13 +226,7 @@ mod tests {
             OracleBoostingStatus::Banned
         )]
         boost_status: OracleBoostingStatus,
-        #[values(
-            RadioType::IndoorCbrs,
-            RadioType::OutdoorCbrs,
-            RadioType::IndoorWifi,
-            RadioType::OutdoorWifi
-        )]
-        radio_type: RadioType,
+        #[values(RadioType::IndoorWifi, RadioType::OutdoorWifi)] radio_type: RadioType,
     ) {
         let coverage = RankedCoverage {
             hotspot_key: vec![1],
