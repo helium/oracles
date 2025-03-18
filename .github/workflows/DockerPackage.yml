@@ -1,4 +1,4 @@
-name: Docker
+name: DockerPackage
 
 on:
   workflow_run:
