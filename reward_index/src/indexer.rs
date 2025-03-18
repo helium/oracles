@@ -189,9 +189,9 @@ impl Indexer {
                 handle_iot_rewards(
                     txn,
                     reward_shares,
+                    &manifest_time,
                     &self.op_fund_key,
                     &self.unallocated_reward_key,
-                    &manifest_time,
                 )
                 .await?;
             }
@@ -199,8 +199,8 @@ impl Indexer {
                 handle_mobile_rewards(
                     txn,
                     reward_shares,
-                    &self.unallocated_reward_key,
                     &manifest_time,
+                    &self.unallocated_reward_key,
                 )
                 .await?;
             }
@@ -208,8 +208,8 @@ impl Indexer {
                 handle_escrowed_mobile_rewards(
                     txn,
                     reward_shares,
-                    &self.unallocated_reward_key,
                     &manifest_time,
+                    &self.unallocated_reward_key,
                     self.escrow_settings.default_days,
                 )
                 .await?;
@@ -246,9 +246,9 @@ impl Indexer {
 pub async fn handle_iot_rewards(
     txn: &mut Transaction<'_, Postgres>,
     mut reward_shares: Stream<BytesMut>,
+    manifest_time: &DateTime<Utc>,
     op_fund_key: &str,
     unallocated_reward_key: &str,
-    manifest_time: &DateTime<Utc>,
 ) -> anyhow::Result<()> {
     let mut rewards = HashMap::new();
 
@@ -275,8 +275,8 @@ pub async fn handle_iot_rewards(
 pub async fn handle_mobile_rewards(
     txn: &mut Transaction<'_, Postgres>,
     reward_shares: Stream<BytesMut>,
-    unallocated_reward_key: &str,
     manifest_time: &DateTime<Utc>,
+    unallocated_reward_key: &str,
 ) -> anyhow::Result<()> {
     let rewards = collect_rewards(reward_shares, unallocated_reward_key, &[]).await?;
     insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
@@ -294,8 +294,8 @@ pub struct EscrowStats {
 pub async fn handle_escrowed_mobile_rewards(
     txn: &mut Transaction<'_, Postgres>,
     reward_shares: Stream<BytesMut>,
-    unallocated_reward_key: &str,
     manifest_time: &DateTime<Utc>,
+    unallocated_reward_key: &str,
     default_escrow_days: u32,
 ) -> anyhow::Result<EscrowStats> {
     // Delete old escrow durations
