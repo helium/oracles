@@ -30,12 +30,16 @@ jobs:
         id: compute-img-hash
         run: echo "IMAGE_TAG=${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}" >> $GITHUB_OUTPUT
 
-      - name: Pull Cached Base Image
-        id: cache-base
+      - name: Check If Base Image Exists
+        id: check-image
         env:
           IMAGE_TAG: ${{ steps.compute-img-hash.outputs.IMAGE_TAG }}
         run: |
-          if docker pull ghcr.io/${{ github.repository }}/base:$IMAGE_TAG; then
+          IMAGE_NAME="ghcr.io/${{ github.repository }}/base"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://ghcr.io/v2/${{ github.repository }}/base/manifests/$IMAGE_TAG)
+      
+          if [ "$STATUS" -eq 200 ]; then
             echo "CACHE_HIT=true" >> $GITHUB_ENV
           else
             echo "CACHE_HIT=false" >> $GITHUB_ENV
