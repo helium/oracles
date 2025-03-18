@@ -34,6 +34,7 @@ pub struct Indexer {
     op_fund_key: String,
     unallocated_reward_key: String,
     reward_manifest_rx: Receiver<FileInfoStream<RewardManifest>>,
+    escrow_settings: settings::EscrowSettings,
 }
 
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
@@ -77,6 +78,7 @@ impl Indexer {
         mode: settings::Mode,
         op_fund_key: String,
         unallocated_reward_key: String,
+        escrow_settings: settings::EscrowSettings,
     ) -> Self {
         Self {
             pool,
@@ -85,6 +87,7 @@ impl Indexer {
             op_fund_key,
             unallocated_reward_key,
             reward_manifest_rx,
+            escrow_settings,
         }
     }
 
@@ -101,11 +104,13 @@ impl Indexer {
             settings.mode,
             settings.operation_fund_key()?,
             settings.unallocated_reward_entity_key.clone(),
+            settings.escrow.clone(),
         ))
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         tracing::info!(mode = self.mode.to_string(), "starting index");
+        let mut cleanup_trigger = tokio::time::interval(self.escrow_settings.cleanup_interval);
 
         loop {
             tokio::select! {
@@ -114,27 +119,52 @@ impl Indexer {
                     tracing::info!("Indexer shutting down");
                     return Ok(());
                 }
-                msg = self.reward_manifest_rx.recv() => if let Some(file_info_stream) = msg {
-                    let key = &file_info_stream.file_info.key.clone();
-                    tracing::info!(file = %key, "Processing reward file");
-                    let mut txn = self.pool.begin().await?;
-                    let mut stream = file_info_stream.into_stream(&mut txn).await?;
-
-                    while let Some(reward_manifest) = stream.next().await {
-                        record_duration!(
-                            "reward_index_duration",
-                            self.handle_rewards(&mut txn, reward_manifest).await?
-                        )
-                    }
-                    txn.commit().await?;
-                    tracing::info!(file = %key, "Completed processing reward file");
-                    telemetry::last_reward_processed_time(&self.pool, Utc::now()).await?;
+                _ = cleanup_trigger.tick() => {
+                    self.handle_cleanup().await?;
+                }
+                msg = self.reward_manifest_rx.recv() => match msg {
+                    Some(file_info_stream) => self.handle_file_stream(file_info_stream).await?,
+                    None => bail!("reward manifest channel dropped")
                 }
             }
         }
     }
 
-    async fn handle_rewards(
+    async fn handle_cleanup(&self) -> anyhow::Result<()> {
+        db::purge_historical_escrowed_rewards(
+            &self.pool,
+            Utc::now(),
+            self.escrow_settings.history_duration,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    async fn handle_file_stream(
+        &mut self,
+        file_info_stream: FileInfoStream<RewardManifest>,
+    ) -> anyhow::Result<()> {
+        let key = &file_info_stream.file_info.key.clone();
+        tracing::info!(file = %key, "Processing reward file");
+        let mut txn = self.pool.begin().await?;
+        let mut stream = file_info_stream.into_stream(&mut txn).await?;
+
+        while let Some(reward_manifest) = stream.next().await {
+            record_duration!(
+                "reward_index_duration",
+                self.handle_reward_manifest(&mut txn, reward_manifest)
+                    .await?
+            )
+        }
+        txn.commit().await?;
+        tracing::info!(file = %key, "Completed processing reward file");
+        telemetry::last_reward_processed_time(&self.pool, Utc::now()).await?;
+
+        Ok(())
+    }
+
+    async fn handle_reward_manifest(
         &mut self,
         txn: &mut Transaction<'_, Postgres>,
         manifest: RewardManifest,
@@ -171,6 +201,16 @@ impl Indexer {
                     reward_shares,
                     &self.unallocated_reward_key,
                     &manifest_time,
+                )
+                .await?;
+            }
+            settings::Mode::MobileEscrowed => {
+                handle_escrowed_mobile_rewards(
+                    txn,
+                    reward_shares,
+                    &self.unallocated_reward_key,
+                    &manifest_time,
+                    self.escrow_settings.default_days,
                 )
                 .await?;
             }

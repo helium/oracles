@@ -7,8 +7,10 @@
 #
 # interval = "15 minutes"
 
-# Mode to operate the indexer in. "iot" or "mobile"
+# Mode to operate the indexer in.
+# "iot", "mobile", or "mobile_escrowed"
 #
+# [escrow] section is required when operating in "mobile_escrowed" mode.
 mode = "iot"
 
 # Operation Fund key is required when mode = "iot"
@@ -18,6 +20,25 @@ operation_fund_key = "iot-operation-fund-key"
 # Unallocated reward entity key is always required
 #
 unallocated_reward_entity_key = "unallocated-reward-entity-key"
+
+# Escrow related settings
+# (Required when running with mode="mobile_escrowed")
+[escrow]
+
+# Number of days to use for escrow period when an address does not define a
+# custom escrow duration using the `escrow_durations` table.
+#
+default_days = 30
+
+# How often to run the task that cleans up the `escrow_rewards` table.
+#
+cleanup_interval = "1 day"
+
+# When cleaning the `escrow_rewards` table, how long a reward has been
+# "unlocked" before being removed. This settings helps keep data around for
+# debugging purposes.
+#
+history_duration = "2 weeks"
 
 #
 [database]

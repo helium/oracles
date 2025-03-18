@@ -1,16 +1,17 @@
 use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{fmt, path::Path, time::Duration};
 
 /// Mode to start the indexer in. Each mode uses different files from
 /// the verifier
-#[derive(Debug, Deserialize, Clone, Copy)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
 pub enum Mode {
     Iot,
     Mobile,
+    MobileEscrowed,
 }
 
 impl fmt::Display for Mode {
@@ -18,6 +19,7 @@ impl fmt::Display for Mode {
         match self {
             Self::Iot => f.write_str("iot"),
             Self::Mobile => f.write_str("mobile"),
+            Self::MobileEscrowed => f.write_str("mobile_escrowed"),
         }
     }
 }
@@ -38,12 +40,30 @@ pub struct Settings {
     /// Required when running in mode=iot
     pub operation_fund_key: Option<String>,
     pub unallocated_reward_entity_key: String,
+    /// Used with `mode=mobile_escrowed`, see `EscrowSettings`.
+    #[serde(default)]
+    pub escrow: EscrowSettings,
     #[serde(default = "default_start_after")]
     pub start_after: DateTime<Utc>,
 
     pub database: db_store::Settings,
     pub verifier: file_store::Settings,
     pub metrics: poc_metrics::Settings,
+}
+
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct EscrowSettings {
+    /// Number of days to keep rewards in escrow when address is not present
+    /// in the `escrow_durations` toable.
+    #[serde(default = "default_escrow_days")]
+    pub default_days: u32,
+    /// How often to cleanup the `escrow_rewards` table.
+    #[serde(with = "humantime_serde", default = "default_purge_interval")]
+    pub cleanup_interval: Duration,
+    /// When cleaning `escrow_rewards`, remove rows older then this duration
+    /// from the cleanup time.
+    #[serde(with = "humantime_serde", default = "default_history_duration")]
+    pub history_duration: Duration,
 }
 
 fn default_interval() -> Duration {
@@ -56,6 +76,18 @@ fn default_start_after() -> DateTime<Utc> {
 
 fn default_log() -> String {
     "reward_index=debug,poc_store=info".to_string()
+}
+
+fn default_escrow_days() -> u32 {
+    30
+}
+
+fn default_purge_interval() -> Duration {
+    humantime::parse_duration("1 day").unwrap()
+}
+
+fn default_history_duration() -> Duration {
+    humantime::parse_duration("2 weeks").unwrap()
 }
 
 impl Settings {
@@ -85,7 +117,7 @@ impl Settings {
         match (self.mode, self.operation_fund_key.clone()) {
             (Mode::Iot, None) => anyhow::bail!("operation fund key is required for IOT mode"),
             (Mode::Iot, Some(fund_key)) => Ok(fund_key),
-            (Mode::Mobile, _) => Ok("".to_string()),
+            (_, _) => Ok("".to_string()),
         }
     }
 }
