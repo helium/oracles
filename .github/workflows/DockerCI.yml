@@ -166,6 +166,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Cache Cargo Target Directory
+        if: contains('["boost-manager", "ingest", "iot-config", "iot-config", "iot-packet-verifier", "iot-verifier", "mobile-packet-verifier", "mobile-verifier", "price", "solana"]', matrix.package)
+        uses: actions/cache@v4
+        env:
+            IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        with:
+          path: target
+          key: tests-${{ matrix.package }}-${{ env.TARGET }}-${{ env.IMAGE_TAG }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            tests-${{ matrix.package }}-${{ env.TARGET }}-${{ env.IMAGE_TAG }}-
+
       - name: Pull Base Image
         env:
           IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
@@ -183,3 +194,6 @@ jobs:
             -w /app \
             ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG \
             cargo test -p ${{ matrix.package }} -- --include-ignored
+
+      - name: Fix Permissions for Caching
+        run: sudo chown -R $(whoami):$(whoami) target
