@@ -37,7 +37,7 @@ pub struct Indexer {
     escrow_settings: settings::EscrowSettings,
 }
 
-#[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[sqlx(type_name = "reward_type", rename_all = "snake_case")]
 pub enum RewardType {
     MobileGateway,
@@ -48,6 +48,12 @@ pub enum RewardType {
     MobileUnallocated,
     IotUnallocated,
     MobilePromotion,
+}
+
+impl sqlx::postgres::PgHasArrayType for RewardType {
+    fn array_type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("_reward_type")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -259,16 +265,7 @@ pub async fn handle_iot_rewards(
         *rewards.entry(key).or_default() += amount;
     }
 
-    for (reward_key, amount) in rewards {
-        db::insert(
-            &mut *txn,
-            reward_key.key,
-            amount,
-            reward_key.reward_type,
-            manifest_time,
-        )
-        .await?;
-    }
+    db::insert_rewards(txn, rewards, manifest_time).await?;
 
     Ok(())
 }
@@ -279,8 +276,8 @@ pub async fn handle_mobile_rewards(
     manifest_time: &DateTime<Utc>,
     unallocated_reward_key: &str,
 ) -> anyhow::Result<()> {
-    let rewards = collect_rewards(reward_shares, unallocated_reward_key, &[]).await?;
-    insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
+    let rewards = collect_mobile_rewards(reward_shares, unallocated_reward_key, &[]).await?;
+    db::insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
 
     Ok(())
 }
@@ -305,16 +302,16 @@ pub async fn handle_escrowed_mobile_rewards(
     tracing::info!(purged, "expired escrow durations");
 
     // Insert new rewards
-    let rewards = collect_rewards(
+    let rewards = collect_mobile_rewards(
         reward_shares,
         unallocated_reward_key,
         &[RewardType::MobileGateway],
     )
     .await?;
-    let escrowed_inserted =
-        insert_escrowed_rewards(&mut *txn, rewards.escrowed, manifest_time).await?;
-    let inserted = insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
 
+    let escrowed_inserted =
+        db::insert_escrowed_rewards(&mut *txn, rewards.escrowed, manifest_time).await?;
+    let inserted = db::insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
     tracing::info!(inserted, escrowed_inserted, "inserted escrowed rewards");
 
     // Move unlocked rewards to index table
@@ -337,7 +334,7 @@ struct CollectedRewards {
     escrowed: RewardMap,
 }
 
-async fn collect_rewards(
+async fn collect_mobile_rewards(
     mut reward_shares: Stream<BytesMut>,
     unallocated_reward_key: &str,
     escrowed_reward_types: &[RewardType],
@@ -362,42 +359,4 @@ async fn collect_rewards(
     }
 
     Ok(rewards)
-}
-
-async fn insert_rewards(
-    txn: &mut Transaction<'_, Postgres>,
-    rewards: HashMap<RewardKey, u64>,
-    manifest_time: &DateTime<Utc>,
-) -> anyhow::Result<usize> {
-    let rewards_count = rewards.len();
-    for (reward_key, amount) in rewards {
-        db::insert(
-            &mut *txn,
-            reward_key.key,
-            amount,
-            reward_key.reward_type,
-            manifest_time,
-        )
-        .await?;
-    }
-    Ok(rewards_count)
-}
-
-async fn insert_escrowed_rewards(
-    txn: &mut Transaction<'_, Postgres>,
-    rewards: HashMap<RewardKey, u64>,
-    manifest_time: &DateTime<Utc>,
-) -> anyhow::Result<usize> {
-    let rewards_count = rewards.len();
-    for (reward_key, amount) in rewards {
-        db::insert_escrowed_reward(
-            &mut *txn,
-            reward_key.key,
-            amount,
-            reward_key.reward_type,
-            manifest_time,
-        )
-        .await?;
-    }
-    Ok(rewards_count)
 }

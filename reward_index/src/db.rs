@@ -1,72 +1,110 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
-use crate::indexer::RewardType;
+use crate::indexer::RewardKey;
 use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::Postgres;
 
-pub async fn insert(
+pub async fn insert_rewards(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    address: String,
-    amount: u64,
-    reward_type: RewardType,
+    mut rewards: HashMap<RewardKey, u64>,
     timestamp: &DateTime<Utc>,
-) -> Result<(), sqlx::Error> {
-    // Safeguard against 0 amount shares updating the last rewarded timestamp
-    if amount == 0 {
-        return Ok(());
+) -> Result<usize, sqlx::Error> {
+    // Remove rewards with 0 amount
+    rewards.retain(|_key, amount| *amount > 0);
+
+    if rewards.is_empty() {
+        return Ok(0);
     }
 
-    sqlx::query(
+    let rewards_count = rewards.len();
+
+    // Pre-allocate vectors for efficient insertion
+    let mut addresses = Vec::with_capacity(rewards_count);
+    let mut amounts = Vec::with_capacity(rewards_count);
+    let mut reward_types = Vec::with_capacity(rewards_count);
+
+    for (key, amount) in rewards.iter() {
+        addresses.push(key.key.as_str());
+        amounts.push(*amount as i64);
+        reward_types.push(key.reward_type);
+    }
+
+    let res = sqlx::query(
         r#"
-        insert into reward_index (
-                address,
-                rewards,
-                last_reward,
-                reward_type
-            ) values ($1, $2, $3, $4)
-            on conflict(address) do update set
-                rewards = reward_index.rewards + EXCLUDED.rewards,
-                last_reward = EXCLUDED.last_reward
+        INSERT INTO reward_index (
+            address,
+            rewards,
+            reward_type,
+            last_reward
+        )
+        SELECT
+            unnest($1::text[]),
+            unnest($2::bigint[]),
+            unnest($3::reward_type[]) ,
+            $4  -- Single timestamp for all rows
+        ON CONFLICT (address) DO UPDATE SET
+            rewards = reward_index.rewards + EXCLUDED.rewards,
+            last_reward = EXCLUDED.last_reward
         "#,
     )
-    .bind(address)
-    .bind(amount as i64)
-    .bind(timestamp)
-    .bind(reward_type)
+    .bind(&addresses)
+    .bind(&amounts)
+    .bind(&reward_types)
+    .bind(timestamp) // Single timestamp for all records
     .execute(executor)
     .await?;
 
-    Ok(())
+    Ok(res.rows_affected() as usize)
 }
 
-pub async fn insert_escrowed_reward(
+pub async fn insert_escrowed_rewards(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    address: String,
-    amount: u64,
-    reward_type: RewardType,
+    mut rewards: HashMap<RewardKey, u64>,
     timestamp: &DateTime<Utc>,
-) -> Result<(), sqlx::Error> {
-    // Safeguard against 0 amount shares updating the last rewarded timestamp
-    if amount == 0 {
-        return Ok(());
+) -> Result<usize, sqlx::Error> {
+    // Remove rewards with 0 amount
+    rewards.retain(|_key, amount| *amount > 0);
+
+    if rewards.is_empty() {
+        return Ok(0);
     }
 
-    sqlx::query(
+    let rewards_count = rewards.len();
+
+    // Pre-allocate vectors for efficient insertion
+    let mut addresses = Vec::with_capacity(rewards_count);
+    let mut amounts = Vec::with_capacity(rewards_count);
+    let mut reward_types = Vec::with_capacity(rewards_count);
+
+    for (key, amount) in rewards.iter() {
+        addresses.push(key.key.as_str());
+        amounts.push(*amount as i64);
+        reward_types.push(key.reward_type);
+    }
+
+    let res = sqlx::query(
         r#"
-        INSERT INTO escrow_rewards
-            (address, amount, reward_type, inserted_at)
-        VALUES
-            ($1, $2, $3, $4)
+        INSERT INTO escrow_rewards (
+            address,
+            amount,
+            reward_type,
+            inserted_at
+        )
+        SELECT
+            unnest($1::text[]),
+            unnest($2::bigint[]),
+            unnest($3::reward_type[]),
+            $4  -- Single timestamp for all rows
         "#,
     )
-    .bind(address)
-    .bind(amount as i64)
-    .bind(reward_type)
-    .bind(timestamp)
+    .bind(&addresses)
+    .bind(&amounts)
+    .bind(&reward_types)
+    .bind(timestamp) // Single timestamp for all records
     .execute(executor)
     .await?;
 
-    Ok(())
+    Ok(res.rows_affected() as usize)
 }
 
 pub async fn unlock_escrowed_rewards(

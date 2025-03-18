@@ -232,9 +232,47 @@ async fn only_mobile_gateway_rewards_are_escrowed(pool: PgPool) -> anyhow::Resul
     Ok(())
 }
 
-// TODO: maybe write a small load test for the unlocking database query. Make
-// sure it can handle 50k radios and 250k rewards coming in with all different
-// amount. And unlocking at least 50k rewards per day.
+#[sqlx::test]
+async fn rewards_load_test(pool: PgPool) -> anyhow::Result<()> {
+    /**
+     * Values in this test are low to keep it from bogging down CI.
+     * Increase the values when changing queries to test performance.
+     *
+     * # Performance Tracking
+     *
+     * | Method              |  Rewards | Days | Time Taken |
+     * |---------------------|----------|------|------------|
+     * | Per-row Insertion   |  20,000  |  1   | 2.58s      |
+     * | Bulk Insert         |  20,000  |  1   | 300ms      |
+     *
+     * NOTE: Running with more days sees a gradual increase for both methods
+     * as duplicate keys hit the ON CONFLICT branch of the insert queries.
+     */
+    const NUM_REWARDS: usize = 20_000;
+    const NUM_DAYS: i64 = 5;
+
+    let mut rewards = vec![];
+
+    for idx in 0..NUM_REWARDS {
+        let key = idx.to_le_bytes().to_vec();
+        rewards.push(make_gateway_reward(key, 10_000))
+    }
+
+    for day in 1..=NUM_DAYS {
+        let manifest_time = Utc::now() + Duration::days(day);
+        let now = std::time::Instant::now();
+        let stats = process_rewards(
+            &pool,
+            mobile_rewards_stream(rewards.clone()),
+            manifest_time,
+            Duration::days(3),
+        )
+        .await?;
+        println!("day: {day} time: {:?} stats: {stats:?}", now.elapsed());
+    }
+
+    Ok(())
+}
 
 #[sqlx::test]
 async fn purge_historical_escrow_records_past_escrow_duration(pool: PgPool) -> anyhow::Result<()> {
