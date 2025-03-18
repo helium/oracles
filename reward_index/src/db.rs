@@ -1,8 +1,9 @@
 use std::{collections::HashMap, time::Duration};
 
 use crate::indexer::RewardKey;
-use chrono::{DateTime, NaiveDate, Utc};
-use sqlx::{PgPool, Postgres};
+use chrono::{DateTime, Utc};
+
+pub use escrow_duration::purge_expired_escrow_duration;
 
 pub async fn insert_rewards(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
@@ -156,76 +157,6 @@ pub async fn unlock_escrowed_rewards(
     Ok(res.rows_affected() as usize)
 }
 
-pub async fn get_escrow_duration(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    address: &str,
-) -> Result<Option<(u32, Option<chrono::NaiveDate>)>, sqlx::Error> {
-    #[derive(sqlx::FromRow)]
-    struct Escrow {
-        #[sqlx(try_from = "i64")]
-        duration_days: u32,
-        expires_on: Option<chrono::NaiveDate>,
-    }
-
-    let escrow: Option<Escrow> =
-        sqlx::query_as("SELECT duration_days, expires_on from escrow_durations where address = $1")
-            .bind(address)
-            .fetch_optional(executor)
-            .await?;
-
-    Ok(escrow.map(|e| (e.duration_days, e.expires_on)))
-}
-
-pub async fn insert_escrow_duration(
-    executor: impl sqlx::Executor<'_, Database = Postgres>,
-    address: &str,
-    duration_days: u32,
-    expiration_date: Option<chrono::NaiveDate>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO escrow_durations
-            (address, duration_days, expires_on)
-        VALUES 
-            ($1, $2, $3)
-        ON CONFLICT (address) DO UPDATE SET
-            duration_days = EXCLUDED.duration_days,
-            expires_on = EXCLUDED.expires_on
-        "#,
-    )
-    .bind(address)
-    .bind(duration_days as i64)
-    .bind(expiration_date)
-    .execute(executor)
-    .await?;
-
-    Ok(())
-}
-
-pub async fn purge_expired_escrow_duration(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    today: NaiveDate,
-) -> anyhow::Result<usize> {
-    let res = sqlx::query("DELETE FROM escrow_durations where expires_on <= $1")
-        .bind(today)
-        .execute(executor)
-        .await?;
-
-    Ok(res.rows_affected() as usize)
-}
-
-pub async fn delete_escrow_duration(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    address: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM escrow_durations WHERE address = $1")
-        .bind(address)
-        .execute(executor)
-        .await?;
-
-    Ok(())
-}
-
 pub async fn purge_historical_escrowed_rewards(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     today: DateTime<Utc>,
@@ -244,26 +175,102 @@ pub async fn purge_historical_escrowed_rewards(
     Ok(res.rows_affected() as usize)
 }
 
-pub async fn migrate_known_radios(
-    pool: &PgPool,
-    expires_on: chrono::NaiveDate,
-) -> anyhow::Result<usize> {
-    let res = sqlx::query(
-        r#"
-        INSERT INTO 
-            escrow_durations (address, duration_days, inserted_at, expires_on)
-        SELECT 
-            DISTINCT address, 
-            0 as duration_days, 
-            NOW() as inserted_at, 
-            $1 as expires_on
-        FROM reward_index
-        ON CONFLICT (address) DO NOTHING
-        "#,
-    )
-    .bind(expires_on)
-    .execute(pool)
-    .await?;
+pub mod escrow_duration {
+    use chrono::NaiveDate;
+    use sqlx::{Executor, PgPool, Postgres};
 
-    Ok(res.rows_affected() as usize)
+    pub async fn purge_expired_escrow_duration(
+        executor: impl Executor<'_, Database = Postgres>,
+        today: NaiveDate,
+    ) -> anyhow::Result<usize> {
+        let res = sqlx::query("DELETE FROM escrow_durations where expires_on <= $1")
+            .bind(today)
+            .execute(executor)
+            .await?;
+
+        Ok(res.rows_affected() as usize)
+    }
+
+    pub async fn get(
+        executor: impl Executor<'_, Database = Postgres>,
+        address: &str,
+    ) -> Result<Option<(u32, Option<chrono::NaiveDate>)>, sqlx::Error> {
+        #[derive(sqlx::FromRow)]
+        struct Escrow {
+            #[sqlx(try_from = "i64")]
+            duration_days: u32,
+            expires_on: Option<chrono::NaiveDate>,
+        }
+
+        let escrow: Option<Escrow> = sqlx::query_as(
+            "SELECT duration_days, expires_on from escrow_durations where address = $1",
+        )
+        .bind(address)
+        .fetch_optional(executor)
+        .await?;
+
+        Ok(escrow.map(|e| (e.duration_days, e.expires_on)))
+    }
+
+    pub async fn insert(
+        executor: impl Executor<'_, Database = Postgres>,
+        address: &str,
+        duration_days: u32,
+        expiration_date: Option<chrono::NaiveDate>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+        INSERT INTO escrow_durations
+            (address, duration_days, expires_on)
+        VALUES 
+            ($1, $2, $3)
+        ON CONFLICT (address) DO UPDATE SET
+            duration_days = EXCLUDED.duration_days,
+            expires_on = EXCLUDED.expires_on
+        "#,
+        )
+        .bind(address)
+        .bind(duration_days as i64)
+        .bind(expiration_date)
+        .execute(executor)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete(
+        executor: impl Executor<'_, Database = Postgres>,
+        address: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM escrow_durations WHERE address = $1")
+            .bind(address)
+            .execute(executor)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn migrate_known_radios(
+        pool: &PgPool,
+        expires_on: chrono::NaiveDate,
+    ) -> anyhow::Result<usize> {
+        let res = sqlx::query(
+            r#"
+            INSERT INTO 
+                escrow_durations (address, duration_days, inserted_at, expires_on)
+            SELECT 
+                DISTINCT address, 
+                0 as duration_days, 
+                NOW() as inserted_at, 
+                $1 as expires_on
+            FROM reward_index
+            ON CONFLICT (address) DO NOTHING
+        "#,
+        )
+        .bind(expires_on)
+        .execute(pool)
+        .await?;
+
+        Ok(res.rows_affected() as usize)
+    }
 }

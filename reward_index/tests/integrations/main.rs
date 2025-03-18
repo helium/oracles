@@ -31,17 +31,17 @@ mod escrow_durations {
 
         for key in keys.iter() {
             let k = PublicKeyBinary::from(key.clone()).to_string();
-            let dur = db::get_escrow_duration(&pool, &k).await?;
+            let dur = db::escrow_duration::get(&pool, &k).await?;
             assert_eq!(None, dur);
         }
 
         let expires_on = Utc::now() + Duration::days(90);
 
-        db::migrate_known_radios(&pool, expires_on.date_naive()).await?;
+        db::escrow_duration::migrate_known_radios(&pool, expires_on.date_naive()).await?;
 
         for key in keys {
             let k = PublicKeyBinary::from(key.clone()).to_string();
-            let days = db::get_escrow_duration(&pool, &k).await?;
+            let days = db::escrow_duration::get(&pool, &k).await?;
             assert_eq!(Some((0, Some(expires_on.date_naive()))), days);
         }
 
@@ -52,12 +52,13 @@ mod escrow_durations {
     async fn get_escrow_duration(pool: PgPool) -> anyhow::Result<()> {
         let today = Utc::now().date_naive();
 
-        let _ = db::insert_escrow_duration(&pool, "one", 42, Some(Utc::now().date_naive())).await?;
-        let dur = db::get_escrow_duration(&pool, "one").await?;
+        let _ =
+            db::escrow_duration::insert(&pool, "one", 42, Some(Utc::now().date_naive())).await?;
+        let dur = db::escrow_duration::get(&pool, "one").await?;
         assert_eq!(Some((42, Some(today))), dur);
 
-        let _ = db::insert_escrow_duration(&pool, "two", 42, None).await?;
-        let dur = db::get_escrow_duration(&pool, "two").await?;
+        let _ = db::escrow_duration::insert(&pool, "two", 42, None).await?;
+        let dur = db::escrow_duration::get(&pool, "two").await?;
         assert_eq!(Some((42, None)), dur);
 
         Ok(())
@@ -68,12 +69,12 @@ mod escrow_durations {
         let today = Utc::now().date_naive();
         let key = "one";
 
-        let _ = db::insert_escrow_duration(&pool, key, 42, Some(Utc::now().date_naive())).await?;
-        let dur = db::get_escrow_duration(&pool, key).await?;
+        let _ = db::escrow_duration::insert(&pool, key, 42, Some(Utc::now().date_naive())).await?;
+        let dur = db::escrow_duration::get(&pool, key).await?;
         assert_eq!(Some((42, Some(today))), dur);
 
-        let _ = db::insert_escrow_duration(&pool, key, 42, None).await?;
-        let dur = db::get_escrow_duration(&pool, key).await?;
+        let _ = db::escrow_duration::insert(&pool, key, 42, None).await?;
+        let dur = db::escrow_duration::get(&pool, key).await?;
         assert_eq!(Some((42, None)), dur);
 
         Ok(())
@@ -83,12 +84,12 @@ mod escrow_durations {
     async fn delete_escrow_duration(pool: PgPool) -> anyhow::Result<()> {
         let key = "one";
 
-        let _ = db::insert_escrow_duration(&pool, key, 42, Some(Utc::now().date_naive())).await?;
-        let dur = db::get_escrow_duration(&pool, key).await?;
+        let _ = db::escrow_duration::insert(&pool, key, 42, Some(Utc::now().date_naive())).await?;
+        let dur = db::escrow_duration::get(&pool, key).await?;
         assert_eq!(Some((42, Some(Utc::now().date_naive()))), dur);
 
-        db::delete_escrow_duration(&pool, key).await?;
-        let dur = db::get_escrow_duration(&pool, key).await?;
+        db::escrow_duration::delete(&pool, key).await?;
+        let dur = db::escrow_duration::get(&pool, key).await?;
         assert_eq!(None, dur);
 
         Ok(())

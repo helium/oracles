@@ -75,11 +75,12 @@ impl EscrowCmds {
 
         match self {
             EscrowCmds::Migrate { expires_on } => {
-                let migrated_addresses = db::migrate_known_radios(&pool, expires_on).await?;
+                let migrated_addresses =
+                    db::escrow_duration::migrate_known_radios(&pool, expires_on).await?;
                 tracing::info!(migrated_addresses, "done");
             }
             EscrowCmds::Get { address } => {
-                let duration = db::get_escrow_duration(&pool, &address).await?;
+                let duration = db::escrow_duration::get(&pool, &address).await?;
                 match duration {
                     Some((days, Some(expiration))) => {
                         println!("{address} has an escrow period of {days} days, expring on {expiration}");
@@ -101,7 +102,7 @@ impl EscrowCmds {
                 expires_on,
             } => {
                 let _inserted =
-                    db::insert_escrow_duration(&pool, &address, days, expires_on).await?;
+                    db::escrow_duration::insert(&pool, &address, days, expires_on).await?;
 
                 match expires_on {
                     Some(expiration) => {

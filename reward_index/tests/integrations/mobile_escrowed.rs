@@ -165,7 +165,7 @@ async fn use_address_escrow_duration_override(pool: PgPool) -> anyhow::Result<()
     ]);
 
     let default_duration = Duration::zero().num_days() as u32;
-    db::insert_escrow_duration(&pool, &key_two.to_string(), default_duration, None).await?;
+    db::escrow_duration::insert(&pool, &key_two.to_string(), default_duration, None).await?;
 
     let stats = process_rewards(&pool, rewards, Utc::now(), Duration::days(30)).await?;
     assert_eq!(stats.inserted, 2, "inserted");
@@ -195,7 +195,8 @@ async fn expired_escrow_durations_are_not_used(pool: PgPool) -> anyhow::Result<(
 
     let today = Utc::now().date_naive();
     let expiring_duration = 30;
-    db::insert_escrow_duration(&pool, &key_two.to_string(), expiring_duration, Some(today)).await?;
+    db::escrow_duration::insert(&pool, &key_two.to_string(), expiring_duration, Some(today))
+        .await?;
 
     let stats = process_rewards(&pool, rewards, Utc::now(), Duration::days(0)).await?;
     assert_eq!(stats.inserted, 2, "inserted");
