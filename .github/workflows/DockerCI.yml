@@ -26,16 +26,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Restore Cached Base Image
+      - name: Compute Base Image Hash
+        id: compute-img-hash
+        run: echo "IMAGE_TAG=$(echo $(hashFiles 'Dockerfile' 'rust-toolchain.toml'))" >> $GITHUB_ENV
+
+      - name: Pull Cached Base Image
         id: cache-base
         run: |
-          docker pull ghcr.io/${{ github.repository }}/oracle-base:latest || true
+          if docker pull ghcr.io/${{ github.repository }}/base:$IMAGE_TAG; then
+            echo "CACHE_HIT=true" >> $GITHUB_ENV
+          else
+            echo "CACHE_HIT=false" >> $GITHUB_ENV
+          fi
   
       - name: Build and Push Base Image (if not cached)
-        if: steps.cache-base.outputs.cache-hit != 'true'
+        if: env.CACHE_HIT == 'false'
         run: |
-          docker build --target base -t ghcr.io/${{ github.repository }}/oracle-base:latest -f Dockerfile .
-          docker push ghcr.io/${{ github.repository }}/oracle-base:latest
+          docker build --target base -t ghcr.io/${{ github.repository }}/base:$IMAGE_TAG -f Dockerfile .
+          docker push ghcr.io/${{ github.repository }}/base:$IMAGE_TAG
 
   fmt:
     needs: build-base
@@ -47,8 +55,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Compute Base Image Hash
+        id: compute-img-hash
+        run: echo "IMAGE_TAG=$(echo $(hashFiles 'Dockerfile' 'rust-toolchain.toml'))" >> $GITHUB_ENV
+
       - name: Pull Base Image
-        run: docker pull ghcr.io/${{ github.repository }}/oracle-base:latest
+        run: docker pull ghcr.io/${{ github.repository }}/base:$IMAGE_TAG
 
       - name: Check formatting
         run: |
@@ -56,7 +68,7 @@ jobs:
             --rm \
             -v $PWD:/app \
             -w /app \
-            ghcr.io/${{ github.repository }}/oracle-base:latest \
+            ghcr.io/${{ github.repository }}/base:$IMAGE_TAG \
             cargo fmt -- --check
 
   clippy:
@@ -69,8 +81,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Compute Base Image Hash
+        id: compute-img-hash
+        run: echo "IMAGE_TAG=$(echo $(hashFiles 'Dockerfile' 'rust-toolchain.toml'))" >> $GITHUB_ENV
+
       - name: Pull Base Image
-        run: docker pull ghcr.io/${{ github.repository }}/oracle-base:latest
+        run: docker pull ghcr.io/${{ github.repository }}/base:$IMAGE_TAG
 
       - name: Clippy
         run: |
@@ -78,7 +94,7 @@ jobs:
             --rm \
             -v $PWD:/app \
             -w /app \
-            ghcr.io/${{ github.repository }}/oracle-base:latest \
+            ghcr.io/${{ github.repository }}/base:$IMAGE_TAG \
             cargo clippy --all-targets -- -Dclippy::all -D warnings
 
   generate-matrix:
@@ -132,8 +148,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Compute Base Image Hash
+        id: compute-img-hash
+        run: echo "IMAGE_TAG=$(echo $(hashFiles 'Dockerfile' 'rust-toolchain.toml'))" >> $GITHUB_ENV
+
       - name: Pull Base Image
-        run: docker pull ghcr.io/${{ github.repository }}/oracle-base:latest
+        run: docker pull ghcr.io/${{ github.repository }}/base:$IMAGE_TAG
 
       - name: Run tests
         run: |
@@ -143,5 +163,5 @@ jobs:
             -e DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres" \
             -v $PWD:/app \
             -w /app \
-            ghcr.io/${{ github.repository }}/oracle-base:latest \
+            ghcr.io/${{ github.repository }}/base:$IMAGE_TAG \
             cargo test -p ${{ matrix.package }} -- --include-ignored
