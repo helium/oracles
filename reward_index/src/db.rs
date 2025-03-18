@@ -80,7 +80,7 @@ pub async fn unlock_escrowed_rewards(
               UPDATE
                 escrow_rewards up
               SET
-                unlocked = true
+                unlocked_at = $1
               -- requerying from escrow_rewards is needed to LEFT JOIN on escrow_durations
               FROM
                 escrow_rewards rew
@@ -88,7 +88,7 @@ pub async fn unlock_escrowed_rewards(
               WHERE
                 rew.address = up.address
                 AND up.inserted_at <= $1 - INTERVAL '1 day' * COALESCE(dur.duration_days, $2)
-                AND up.unlocked = false
+                AND up.unlocked_at IS NULL
               RETURNING
                 up.*
             )
@@ -177,4 +177,22 @@ pub async fn delete_escrow_duration(
         .await?;
 
     Ok(())
+}
+
+pub async fn purge_historical_escrowed_rewards(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    today: DateTime<Utc>,
+    keep_duration: Duration,
+) -> anyhow::Result<usize> {
+    let res = sqlx::query(
+        r#"
+            DELETE FROM escrow_rewards
+            WHERE unlocked_at <= $1
+        "#,
+    )
+    .bind(today - keep_duration)
+    .execute(executor)
+    .await?;
+
+    Ok(res.rows_affected() as usize)
 }

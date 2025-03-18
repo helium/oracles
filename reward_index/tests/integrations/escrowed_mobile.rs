@@ -232,6 +232,57 @@ async fn only_mobile_gateway_rewards_are_escrowed(pool: PgPool) -> anyhow::Resul
     Ok(())
 }
 
+// TODO: maybe write a small load test for the unlocking database query. Make
+// sure it can handle 50k radios and 250k rewards coming in with all different
+// amount. And unlocking at least 50k rewards per day.
+
+#[sqlx::test]
+async fn purge_historical_escrow_records_past_escrow_duration(pool: PgPool) -> anyhow::Result<()> {
+    // - 7 days keep duration
+    // - 45 days worth of queued rewards
+    // - 30 day current
+    //
+    // -- 15 days locked
+    // -- 23 days purgeable
+    let keep_duration = Duration::days(7).to_std()?;
+    let queued_rewards = 45;
+    let current_day = Utc::now() + Duration::days(30);
+
+    let expected_purged = 30 - 7 - 1; // purge duration minus today
+
+    // Add rewards with a default escrow duration that will keep all of them locked.
+    for day in 1..=queued_rewards {
+        // Use a different key so we can track unlocking without worrying about
+        // unlocked amounts combining because of matching keys.
+        let one_reward = mobile_rewards_stream(vec![make_gateway_reward(vec![day as u8], 1)]);
+        let escrow = Duration::days(999);
+        let manifest_time = Utc::now() + Duration::days(day);
+
+        let stats = process_rewards(&pool, one_reward, manifest_time, escrow).await?;
+        assert_eq!(stats.inserted, 1);
+        assert_eq!(stats.unlocked, 0);
+    }
+
+    // Ensure locked rewards are not cleaned up
+    let purged = db::purge_historical_escrowed_rewards(&pool, current_day, keep_duration).await?;
+    assert_eq!(purged, 0, "all locked rewards are not purged");
+
+    // Unlock rewards 1 day at a time so they have a staggered unlock time.
+    for day in 1..=30 {
+        let day = Utc::now() + Duration::days(day);
+        let no_rewards = mobile_rewards_stream(vec![]);
+        let stats = process_rewards(&pool, no_rewards, day, Duration::zero()).await?;
+        assert_eq!(stats.inserted, 0, "nothing inserted");
+        assert_eq!(stats.unlocked, 1, "rewards unlocked for today");
+    }
+
+    // Purge rewards that are 7 days older than the current 30 days
+    let purged = db::purge_historical_escrowed_rewards(&pool, current_day, keep_duration).await?;
+    assert_eq!(purged, expected_purged, "old rows purged");
+
+    Ok(())
+}
+
 fn make_gateway_reward(
     hotspot_key: impl AsRef<[u8]>,
     dc_transfer_reward: u64,

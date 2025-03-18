@@ -10,5 +10,5 @@ CREATE TABLE IF NOT EXISTS escrow_rewards (
     amount          BIGINT          NOT NULL DEFAULT 0,
     inserted_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     reward_type     reward_type     NOT NULL,
-    unlocked        BOOLEAN         NOT NULL DEFAULT FALSE
+    unlocked_at     TIMESTAMPTZ     DEFAULT NULL
 );
