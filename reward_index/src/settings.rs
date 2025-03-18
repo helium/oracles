@@ -1,12 +1,12 @@
 use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{fmt, path::Path, time::Duration};
 
 /// Mode to start the indexer in. Each mode uses different files from
 /// the verifier
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     Iot,
