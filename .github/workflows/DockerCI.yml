@@ -85,6 +85,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Cache Cargo Target Directory
+        uses: actions/cache@v4
+        env:
+            IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        with:
+          path: target
+          key: clippy-${{ env.TARGET }}-${{ env.IMAGE_TAG }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            clippy-${{ env.TARGET }}-${{ env.IMAGE_TAG }}-
+
       - name: Pull Base Image
         env:
             IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
@@ -97,6 +107,7 @@ jobs:
           docker run \
             --rm \
             -v $PWD:/app \
+            -v $PWD/target:/app/target \
             -w /app \
             ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG \
             cargo clippy --all-targets -- -Dclippy::all -D warnings
