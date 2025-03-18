@@ -28,7 +28,7 @@ jobs:
 
       - name: Compute Base Image Hash
         id: compute-img-hash
-        run: echo "IMAGE_TAG=$(hashFiles 'Dockerfile' 'rust-toolchain.toml')" >> $GITHUB_OUTPUT
+        run: echo "IMAGE_TAG=$(${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }})" >> $GITHUB_OUTPUT
 
       - name: Pull Cached Base Image
         id: cache-base
