@@ -1,4 +1,5 @@
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
+use file_store::Stream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_mobile::{
@@ -7,10 +8,25 @@ use helium_proto::{
     },
     ServiceProvider,
 };
+use prost::bytes::BytesMut;
 use reward_index::indexer::{handle_mobile_rewards, RewardType};
 use sqlx::PgPool;
 
-use crate::common::{self, mobile_rewards_stream};
+use crate::common::{get_reward, mobile_rewards_stream, nanos_trunc};
+
+async fn process_rewards(
+    pool: &PgPool,
+    rewards: Stream<BytesMut>,
+    manifest_time: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let mut txn = pool.begin().await?;
+
+    handle_mobile_rewards(&mut txn, rewards, &manifest_time, "unallocated-key").await?;
+
+    txn.commit().await?;
+
+    Ok(())
+}
 
 #[sqlx::test]
 async fn accumulates_rewards(pool: PgPool) -> anyhow::Result<()> {
@@ -27,26 +43,21 @@ async fn accumulates_rewards(pool: PgPool) -> anyhow::Result<()> {
         }
     }
 
-    let reward_shares = common::mobile_rewards_stream(vec![
+    let rewards = mobile_rewards_stream(vec![
         make_gateway_reward(vec![1], 1),
         make_gateway_reward(vec![1], 2),
         make_gateway_reward(vec![1], 3),
         make_gateway_reward(vec![2], 4),
     ]);
 
-    let mut txn = pool.begin().await?;
-    let manifest_time = Utc::now();
-    handle_mobile_rewards(&mut txn, reward_shares, "unallocated-key", &manifest_time).await?;
-    txn.commit().await?;
+    process_rewards(&pool, rewards, Utc::now()).await?;
 
     let key_one = PublicKeyBinary::from(vec![1]);
-    let reward_one =
-        common::get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await?;
+    let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_one.rewards, 6);
 
     let key_two = PublicKeyBinary::from(vec![2]);
-    let reward_two =
-        common::get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
+    let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_two.rewards, 4);
 
     Ok(())
@@ -67,41 +78,31 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
         }
     }
 
-    let mut txn = pool.begin().await?;
-    let rewards = common::mobile_rewards_stream(vec![make_gateway_reward(vec![1], 1)]);
+    let rewards = mobile_rewards_stream(vec![make_gateway_reward(vec![1], 1)]);
     let before_manifest_time = Utc::now() - Duration::days(2);
-    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &before_manifest_time).await?;
-    txn.commit().await?;
+    process_rewards(&pool, rewards, before_manifest_time).await?;
 
     let key = PublicKeyBinary::from(vec![1]).to_string();
-    let reward = common::get_reward(&pool, &key, RewardType::MobileGateway).await?;
+    let reward = get_reward(&pool, &key, RewardType::MobileGateway).await?;
     assert_eq!(reward.rewards, 1);
-    assert_eq!(
-        reward.last_reward,
-        common::nanos_trunc(before_manifest_time)
-    );
+    assert_eq!(reward.last_reward, nanos_trunc(before_manifest_time));
 
     // Zeroed reward should have no effect
-    let mut txn = pool.begin().await?;
-    let rewards = common::mobile_rewards_stream(vec![make_gateway_reward(vec![1], 0)]);
+    let rewards = mobile_rewards_stream(vec![make_gateway_reward(vec![1], 0)]);
     let now_manifest_time = Utc::now();
-    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &now_manifest_time).await?;
-    txn.commit().await?;
+    process_rewards(&pool, rewards, now_manifest_time).await?;
 
     let key = PublicKeyBinary::from(vec![1]).to_string();
-    let reward = common::get_reward(&pool, &key, RewardType::MobileGateway).await?;
+    let reward = get_reward(&pool, &key, RewardType::MobileGateway).await?;
     assert_eq!(reward.rewards, 1);
-    assert_eq!(
-        reward.last_reward,
-        common::nanos_trunc(before_manifest_time)
-    );
+    assert_eq!(reward.last_reward, nanos_trunc(before_manifest_time));
 
     Ok(())
 }
 
 #[sqlx::test]
 async fn radio_reward_v1_is_ignored(pool: PgPool) -> anyhow::Result<()> {
-    let reward_shares = common::mobile_rewards_stream(vec![
+    let rewards = mobile_rewards_stream(vec![
         MobileRewardShare {
             start_period: Utc::now().timestamp_millis() as u64,
             end_period: Utc::now().timestamp_millis() as u64,
@@ -128,13 +129,10 @@ async fn radio_reward_v1_is_ignored(pool: PgPool) -> anyhow::Result<()> {
         },
     ]);
 
-    let mut txn = pool.begin().await?;
-    let manifest_time = Utc::now();
-    handle_mobile_rewards(&mut txn, reward_shares, "unallocated-key", &manifest_time).await?;
-    txn.commit().await?;
+    process_rewards(&pool, rewards, Utc::now()).await?;
 
     let key = PublicKeyBinary::from(vec![1]);
-    let reward = common::get_reward(&pool, &key.to_string(), RewardType::MobileGateway).await?;
+    let reward = get_reward(&pool, &key.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward.rewards, 9);
 
     Ok(())
@@ -154,12 +152,9 @@ async fn subscriber_reward(pool: PgPool) -> anyhow::Result<()> {
         )),
     }]);
 
-    let mut txn = pool.begin().await?;
-    let manifest_time = Utc::now();
-    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &manifest_time).await?;
-    txn.commit().await?;
+    process_rewards(&pool, rewards, Utc::now()).await?;
 
-    let reward = common::get_reward(
+    let reward = get_reward(
         &pool,
         &bs58::encode(vec![1]).into_string(),
         RewardType::MobileSubscriber,
@@ -183,12 +178,9 @@ async fn service_provider_reward(pool: PgPool) -> anyhow::Result<()> {
         )),
     }]);
 
-    let mut txn = pool.begin().await?;
-    let manifest_time = Utc::now();
-    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &manifest_time).await?;
-    txn.commit().await?;
+    process_rewards(&pool, rewards, Utc::now()).await?;
 
-    let reward = common::get_reward(
+    let reward = get_reward(
         &pool,
         &ServiceProvider::HeliumMobile.to_string(),
         RewardType::MobileServiceProvider,
@@ -212,10 +204,7 @@ async fn fails_on_unknown_service_provider(pool: PgPool) -> anyhow::Result<()> {
         )),
     }]);
 
-    let mut txn = pool.begin().await?;
-    let manifest_time = Utc::now();
-    let res = handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &manifest_time).await;
-
+    let res = process_rewards(&pool, rewards, Utc::now()).await;
     assert!(res.is_err());
 
     Ok(())
@@ -248,13 +237,9 @@ async fn unallocated_rewards_are_combined(pool: PgPool) -> anyhow::Result<()> {
         make_unallocated_reward(6, UnallocatedRewardType::Data),
     ]);
 
-    let mut txn = pool.begin().await?;
-    let manifest_time = Utc::now();
-    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &manifest_time).await?;
-    txn.commit().await?;
+    process_rewards(&pool, rewards, Utc::now()).await?;
 
-    let reward =
-        common::get_reward(&pool, "unallocated-key", RewardType::MobileUnallocated).await?;
+    let reward = get_reward(&pool, "unallocated-key", RewardType::MobileUnallocated).await?;
     assert_eq!(reward.rewards, 21);
 
     Ok(())
@@ -274,13 +259,10 @@ async fn promotion_reward(pool: PgPool) -> anyhow::Result<()> {
         )),
     }]);
 
-    let mut txn = pool.begin().await?;
-    let manifest_time = Utc::now();
-    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &manifest_time).await?;
-    txn.commit().await?;
+    process_rewards(&pool, rewards, Utc::now()).await?;
 
     let key = PublicKeyBinary::from(vec![1]).to_string();
-    let reward = common::get_reward(&pool, &key, RewardType::MobilePromotion).await?;
+    let reward = get_reward(&pool, &key, RewardType::MobilePromotion).await?;
     assert_eq!(reward.rewards, 3);
 
     Ok(())

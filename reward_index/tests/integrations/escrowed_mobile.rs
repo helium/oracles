@@ -26,8 +26,8 @@ async fn process_rewards(
     let stats = handle_escrowed_mobile_rewards(
         &mut txn,
         rewards,
-        "unallocated-key",
         &manifest_time,
+        "unallocated-key",
         default_escrow_duration.num_days() as u32,
     )
     .await?;
