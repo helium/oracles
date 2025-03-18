@@ -238,10 +238,8 @@ pub async fn handle_mobile_rewards(
     unallocated_reward_key: &str,
     manifest_time: &DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    let rewards = collect_rewards(reward_shares, unallocated_reward_key).await?;
-
+    let rewards = collect_rewards(reward_shares, unallocated_reward_key, &[]).await?;
     insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
-    insert_rewards(&mut *txn, rewards.escrowed, manifest_time).await?;
 
     Ok(())
 }
@@ -266,7 +264,12 @@ pub async fn handle_escrowed_mobile_rewards(
     tracing::info!(purged, "expired escrow durations");
 
     // Insert new rewards
-    let rewards = collect_rewards(reward_shares, unallocated_reward_key).await?;
+    let rewards = collect_rewards(
+        reward_shares,
+        unallocated_reward_key,
+        &[RewardType::MobileGateway],
+    )
+    .await?;
     let escrowed_inserted =
         insert_escrowed_rewards(&mut *txn, rewards.escrowed, manifest_time).await?;
     let inserted = insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
@@ -278,13 +281,10 @@ pub async fn handle_escrowed_mobile_rewards(
         db::unlock_escrowed_rewards(&mut *txn, manifest_time, default_escrow_days).await?;
     tracing::info!(unlocked, "unlocked rewards");
 
-    // Delete old escrow rewards
-    // TODO:
-
     Ok(EscrowStats {
         inserted: escrowed_inserted + inserted,
         unlocked,
-        purged_escrow_durations: purged
+        purged_escrow_durations: purged,
     })
 }
 
@@ -299,20 +299,20 @@ struct CollectedRewards {
 async fn collect_rewards(
     mut reward_shares: Stream<BytesMut>,
     unallocated_reward_key: &str,
+    escrowed_reward_types: &[RewardType],
 ) -> anyhow::Result<CollectedRewards> {
     let mut rewards = CollectedRewards::default();
 
     while let Some(msg) = reward_shares.try_next().await? {
         let share = proto::MobileRewardShare::decode(msg)?;
         match extract::mobile_reward(share, unallocated_reward_key) {
-            Ok((key, amount)) => match key.reward_type {
-                RewardType::MobileGateway => {
+            Ok((key, amount)) => {
+                if escrowed_reward_types.contains(&key.reward_type) {
                     *rewards.escrowed.entry(key).or_default() += amount;
-                }
-                _ => {
+                } else {
                     *rewards.rewards.entry(key).or_default() += amount;
                 }
-            },
+            }
             Err(extract::ExtractError::UnsupportedType(unsupported)) => {
                 tracing::debug!("ignoring unsupported: {unsupported}");
             }
