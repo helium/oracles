@@ -137,12 +137,13 @@ impl Indexer {
     }
 
     async fn handle_cleanup(&self) -> anyhow::Result<()> {
-        db::purge_historical_escrowed_rewards(
+        let purged = db::purge_historical_escrowed_rewards(
             &self.pool,
             Utc::now(),
             self.escrow_settings.history_duration,
         )
         .await?;
+        tracing::info!(purged, "removing historical escrow rewards");
 
         Ok(())
     }
