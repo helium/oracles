@@ -112,6 +112,9 @@ jobs:
             ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG \
             cargo clippy --all-targets -- -Dclippy::all -D warnings
 
+      - name: Fix Permissions for Caching
+        run: sudo chown -R $(whoami):$(whoami) target
+
   generate-matrix:
     runs-on: ubuntu-latest
     outputs:
