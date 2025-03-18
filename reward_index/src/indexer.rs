@@ -157,6 +157,7 @@ impl Indexer {
                     .await?
             )
         }
+
         txn.commit().await?;
         tracing::info!(file = %key, "Completed processing reward file");
         telemetry::last_reward_processed_time(&self.pool, Utc::now()).await?;
@@ -180,7 +181,7 @@ impl Indexer {
         .boxed();
 
         // if the token type defined in the reward data is not HNT, then bail
-        self.verify_token_type(&manifest.reward_data)?;
+        verify_token_type(&manifest.reward_data)?;
 
         let reward_shares = self.verifier_store.source_unordered(5, reward_files);
 
@@ -218,29 +219,29 @@ impl Indexer {
 
         Ok(())
     }
+}
 
-    fn verify_token_type(&self, reward_data: &Option<RewardData>) -> Result<()> {
-        match reward_data {
-            Some(MobileRewardData { token, .. }) => {
-                if *token != proto::MobileRewardToken::Hnt {
-                    bail!(
-                        "legacy token type defined in manifest: {}",
-                        token.as_str_name()
-                    );
-                }
+fn verify_token_type(reward_data: &Option<RewardData>) -> Result<()> {
+    match reward_data {
+        Some(MobileRewardData { token, .. }) => {
+            if *token != proto::MobileRewardToken::Hnt {
+                bail!(
+                    "legacy token type defined in manifest: {}",
+                    token.as_str_name()
+                );
             }
-            Some(IotRewardData { token, .. }) => {
-                if *token != proto::IotRewardToken::Hnt {
-                    bail!(
-                        "legacy token type defined in manifest: {}",
-                        token.as_str_name()
-                    );
-                }
-            }
-            None => bail!("missing reward data in manifest"),
         }
-        Ok(())
+        Some(IotRewardData { token, .. }) => {
+            if *token != proto::IotRewardToken::Hnt {
+                bail!(
+                    "legacy token type defined in manifest: {}",
+                    token.as_str_name()
+                );
+            }
+        }
+        None => bail!("missing reward data in manifest"),
     }
+    Ok(())
 }
 
 pub async fn handle_iot_rewards(
