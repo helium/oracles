@@ -1,5 +1,5 @@
 # BASE
-FROM debian:12.9 AS base
+FROM debian:bookworm AS base
 
 RUN apt-get update && apt-get install -y \
     gcc \
@@ -28,7 +28,7 @@ RUN cargo build --release -p ${PACKAGE}
 
 
 # RUNNER
-FROM debian:12.9-slim AS runner
+FROM debian:bookworm-slim AS runner
 
 RUN apt-get update && apt-get install -y \
     libssl-dev \
