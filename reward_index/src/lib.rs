@@ -1,3 +1,4 @@
+pub mod cli;
 pub mod db;
 pub mod extract;
 pub mod indexer;
