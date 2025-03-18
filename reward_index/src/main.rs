@@ -4,7 +4,7 @@ use file_store::{
     file_info_poller::LookbackBehavior, file_source, reward_manifest::RewardManifest, FileStore,
     FileType,
 };
-use reward_index::{settings::Settings, telemetry, Indexer};
+use reward_index::{db, settings::Settings, telemetry, Indexer};
 use std::path::PathBuf;
 use task_manager::TaskManager;
 
@@ -33,12 +33,96 @@ impl Cli {
 #[derive(Debug, clap::Subcommand)]
 pub enum Cmd {
     Server(Server),
+    /// Escrow Duration related commands
+    Escrow {
+        #[clap(subcommand)]
+        cmd: EscrowCmds,
+    },
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum EscrowCmds {
+    /// Take all known radios in the rewards table and give them an escrow duration of 0 (zero) days.
+    Migrate {
+        /// Date on which to expire the grandfathered escrow_duration of 0 days.
+        #[arg(long)]
+        expires_on: chrono::NaiveDate,
+    },
+    Get {
+        #[arg(short, long)]
+        address: String,
+    },
+    Set {
+        #[arg(long)]
+        address: String,
+        #[arg(long)]
+        days: u32,
+        #[arg(long)]
+        expires_on: Option<chrono::NaiveDate>,
+    },
+}
+
+impl EscrowCmds {
+    async fn run(self, settings: &Settings) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            matches!(settings.mode, reward_index::settings::Mode::Iot),
+            "migration not available for iot"
+        );
+
+        let app_name = format!("{}_{}", settings.mode, env!("CARGO_PKG_NAME"));
+        let pool = settings.database.connect(&app_name).await?;
+        sqlx::migrate!().run(&pool).await?;
+
+        match self {
+            EscrowCmds::Migrate { expires_on } => {
+                let migrated_addresses = db::migrate_known_radios(&pool, expires_on).await?;
+                tracing::info!(migrated_addresses, "done");
+            }
+            EscrowCmds::Get { address } => {
+                let duration = db::get_escrow_duration(&pool, &address).await?;
+                match duration {
+                    Some((days, Some(expiration))) => {
+                        println!("{address} has an escrow period of {days} days, expring on {expiration}");
+                    }
+                    Some((days, None)) => {
+                        println!("{address} has an escrow period of {days} days, forever");
+                    }
+                    None => {
+                        println!(
+                            "{address} uses the default expiration date: {} days",
+                            settings.escrow.default_days
+                        );
+                    }
+                }
+            }
+            EscrowCmds::Set {
+                address,
+                days,
+                expires_on,
+            } => {
+                let _inserted =
+                    db::insert_escrow_duration(&pool, &address, days, expires_on).await?;
+
+                match expires_on {
+                    Some(expiration) => {
+                        println!("{address} now has escrow period of {days} days, expiring on {expiration}");
+                    }
+                    None => {
+                        println!("{address} now has escrow period of {days} days, forever");
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: Settings) -> Result<()> {
+    pub async fn run(self, settings: Settings) -> Result<()> {
         match self {
             Self::Server(cmd) => cmd.run(&settings).await,
+            Self::Escrow { cmd } => cmd.run(&settings).await,
         }
     }
 }

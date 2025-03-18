@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Duration};
 
 use crate::indexer::RewardKey;
 use chrono::{DateTime, NaiveDate, Utc};
-use sqlx::Postgres;
+use sqlx::{PgPool, Postgres};
 
 pub async fn insert_rewards(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
@@ -159,15 +159,21 @@ pub async fn unlock_escrowed_rewards(
 pub async fn get_escrow_duration(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     address: &str,
-) -> Result<Option<Duration>, sqlx::Error> {
-    let seconds: Option<i64> =
-        sqlx::query_scalar("SELECT duration_secs from escrow_durations where address = $1")
+) -> Result<Option<(u32, Option<chrono::NaiveDate>)>, sqlx::Error> {
+    #[derive(sqlx::FromRow)]
+    struct Escrow {
+        #[sqlx(try_from = "i64")]
+        duration_days: u32,
+        expires_on: Option<chrono::NaiveDate>,
+    }
+
+    let escrow: Option<Escrow> =
+        sqlx::query_as("SELECT duration_days, expires_on from escrow_durations where address = $1")
             .bind(address)
             .fetch_optional(executor)
             .await?;
 
-    let dur = seconds.map(|s| Duration::from_secs(s as u64));
-    Ok(dur)
+    Ok(escrow.map(|e| (e.duration_days, e.expires_on)))
 }
 
 pub async fn insert_escrow_duration(
@@ -182,6 +188,9 @@ pub async fn insert_escrow_duration(
             (address, duration_days, expires_on)
         VALUES 
             ($1, $2, $3)
+        ON CONFLICT (address) DO UPDATE SET
+            duration_days = EXCLUDED.duration_days,
+            expires_on = EXCLUDED.expires_on
         "#,
     )
     .bind(address)
@@ -230,6 +239,30 @@ pub async fn purge_historical_escrowed_rewards(
     )
     .bind(today - keep_duration)
     .execute(executor)
+    .await?;
+
+    Ok(res.rows_affected() as usize)
+}
+
+pub async fn migrate_known_radios(
+    pool: &PgPool,
+    expires_on: chrono::NaiveDate,
+) -> anyhow::Result<usize> {
+    let res = sqlx::query(
+        r#"
+        INSERT INTO 
+            escrow_durations (address, duration_days, inserted_at, expires_on)
+        SELECT 
+            DISTINCT address, 
+            0 as duration_days, 
+            NOW() as inserted_at, 
+            $1 as expires_on
+        FROM reward_index
+        ON CONFLICT (address) DO NOTHING
+        "#,
+    )
+    .bind(expires_on)
+    .execute(pool)
     .await?;
 
     Ok(res.rows_affected() as usize)
