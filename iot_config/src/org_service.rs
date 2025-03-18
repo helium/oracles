@@ -26,7 +26,7 @@ pub struct OrgService {
     pool: Pool<Postgres>,
     route_update_tx: broadcast::Sender<RouteStreamResV1>,
     signing_key: Arc<Keypair>,
-    delegate_updater: watch::Sender<org::DelegateCache>,
+    delegate_updater: Arc<watch::Sender<org::DelegateCache>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -41,7 +41,7 @@ impl OrgService {
         auth_cache: AuthCache,
         pool: Pool<Postgres>,
         route_update_tx: broadcast::Sender<RouteStreamResV1>,
-        delegate_updater: watch::Sender<org::DelegateCache>,
+        delegate_updater: Arc<watch::Sender<org::DelegateCache>>,
     ) -> Result<Self> {
         Ok(Self {
             auth_cache,

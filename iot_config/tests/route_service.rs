@@ -503,6 +503,8 @@ async fn start_server(
         .await
         .expect("delete keys cache");
 
+    let delegate_key_updater = Arc::new(delegate_key_updater);
+
     let route_service =
         RouteService::new(signing_keypair.clone(), auth_cache.clone(), pool.clone());
 
@@ -511,7 +513,7 @@ async fn start_server(
         auth_cache.clone(),
         pool.clone(),
         route_service.clone_update_channel(),
-        delegate_key_updater,
+        delegate_key_updater.clone(),
     )
     .expect("org service");
 

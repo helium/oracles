@@ -3,9 +3,11 @@ use futures::stream::StreamExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::Serialize;
-use sqlx::{error::Error as SqlxError, postgres::PgRow, types::Uuid, FromRow, Row};
+use sqlx::{error::Error as SqlxError, postgres::PgRow, types::Uuid, FromRow, Pool, Postgres, Row};
 use std::collections::HashSet;
 use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::watch;
 
 pub mod proto {
@@ -91,9 +93,9 @@ impl FromRow<'_, PgRow> for Org {
 
 pub type DelegateCache = HashSet<PublicKeyBinary>;
 
-pub async fn delegate_keys_cache(
+async fn fetch_delegate_keys(
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<(watch::Sender<DelegateCache>, watch::Receiver<DelegateCache>), sqlx::Error> {
+) -> Result<HashSet<PublicKeyBinary>, sqlx::Error> {
     let key_set: HashSet<PublicKeyBinary> = sqlx::query_scalar(
         "SELECT delegate FROM solana_organization_delegate_keys WHERE delegate IS NOT NULL",
     )
@@ -103,7 +105,55 @@ pub async fn delegate_keys_cache(
     .filter_map(|delegate: String| PublicKeyBinary::from_str(&delegate).ok())
     .collect();
 
+    Ok(key_set)
+}
+
+pub async fn is_delegate_key(
+    db: impl sqlx::PgExecutor<'_>,
+    key: &PublicKeyBinary,
+) -> Result<bool, sqlx::Error> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM solana_organization_delegate_keys WHERE delegate = $1",
+    )
+    .bind(key.to_string())
+    .fetch_one(db)
+    .await?;
+
+    Ok(count > 0)
+}
+
+pub async fn delegate_keys_cache(
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(watch::Sender<DelegateCache>, watch::Receiver<DelegateCache>), sqlx::Error> {
+    let key_set = fetch_delegate_keys(db).await?;
     Ok(watch::channel(key_set))
+}
+
+pub async fn refresh_delegate_keys_cache(
+    db: impl sqlx::PgExecutor<'_>,
+    cache_sender: &Arc<watch::Sender<DelegateCache>>,
+) -> Result<(), sqlx::Error> {
+    let key_set = fetch_delegate_keys(db).await?;
+    cache_sender.send_replace(key_set);
+    Ok(())
+}
+
+pub fn spawn_delegate_cache_updater(
+    pool: Pool<Postgres>,
+    delegate_updater: Arc<watch::Sender<DelegateCache>>,
+    interval: Duration,
+) {
+    tokio::spawn(async move {
+        let mut interval_timer = tokio::time::interval(interval);
+        loop {
+            interval_timer.tick().await;
+            if let Err(err) = refresh_delegate_keys_cache(&pool, &delegate_updater).await {
+                tracing::error!(reason = ?err, "Failed to refresh delegate cache");
+            } else {
+                tracing::debug!("Delegate cache refreshed successfully");
+            }
+        }
+    });
 }
 
 pub async fn get_org_netid(
