@@ -19,18 +19,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Restore Cached Base Image
         id: cache-base
-        uses: actions/cache@v4
-        with:
-          path: oracle-base.tar
-          key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
-
-      - name: Build Base Image (if not cached)
+        run: |
+          docker pull ghcr.io/${{ github.repository }}/oracle-base:latest || true
+  
+      - name: Build and Push Base Image (if not cached)
         if: steps.cache-base.outputs.cache-hit != 'true'
         run: |
-          docker build --target base -t oracle-base -f Dockerfile .
-          docker save oracle-base -o oracle-base.tar
+          docker build --target base -t ghcr.io/${{ github.repository }}/oracle-base:latest -f Dockerfile .
+          docker push ghcr.io/${{ github.repository }}/oracle-base:latest
 
   fmt:
     needs: build-base
@@ -42,15 +47,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Restore Cached Base Image
-        uses: actions/cache/restore@v4
-        with:
-          path: oracle-base.tar
-          key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
-
-      - name: Load Base Image
-        run: docker load -i oracle-base.tar
-        shell: bash
+      - name: Pull Base Image
+        run: docker pull ghcr.io/${{ github.repository }}/oracle-base:latest
 
       - name: Check formatting
         run: |
@@ -71,15 +69,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Restore Cached Base Image
-        uses: actions/cache/restore@v4
-        with:
-          path: oracle-base.tar
-          key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
-
-      - name: Load Base Image
-        run: docker load -i oracle-base.tar
-        shell: bash
+      - name: Pull Base Image
+        run: docker pull ghcr.io/${{ github.repository }}/oracle-base:latest
 
       - name: Clippy
         run: |
@@ -98,14 +89,22 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Extract Cargo Workspace Members
-        id: get-matrix
+      - name: Restore Cached Matrix
+        id: cache-matrix
+        uses: actions/cache@v4
+        with:
+          path: matrix.json
+          key: matrix-${{ hashFiles('Cargo.toml', 'Cargo.lock') }}
+
+      - name: Extract Cargo Workspace Members (if not cached)
+        if: steps.cache-matrix.outputs.cache-hit != 'true'
         run: |
           set -e
-          MATRIX=$(cargo metadata --format-version=1 | jq -c '[.workspace_members[] | split("#")[0] | split("/") | last | gsub("_"; "-") | select(. != "metrics")]')
-          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-          echo $MATRIX | jq
-        shell: bash
+          cargo metadata --format-version=1 | jq -c '[.workspace_members[] | split("#")[0] | split("/") | last | gsub("_"; "-") | select(. != "metrics")]' > matrix.json
+
+      - name: Save Matrix to Output
+        id: get-matrix
+        run: echo "matrix=$(cat matrix.json)" >> $GITHUB_OUTPUT
 
   tests:
     needs: [generate-matrix, build-base]
@@ -133,15 +132,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Restore Cached Base Image
-        uses: actions/cache/restore@v4
-        with:
-          path: oracle-base.tar
-          key: oracle-base-${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
-
-      - name: Load Base Image
-        run: docker load -i oracle-base.tar
-        shell: bash
+      - name: Pull Base Image
+        run: docker pull ghcr.io/${{ github.repository }}/oracle-base:latest
 
       - name: Run tests
         run: |
