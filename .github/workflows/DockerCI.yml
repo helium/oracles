@@ -64,9 +64,13 @@ jobs:
         run: echo "IMAGE_TAG=${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}" >> $GITHUB_OUTPUT
 
       - name: Pull Base Image
+        env:
+          IMAGE_TAG: ${{ steps.compute-img-hash.outputs.IMAGE_TAG }}
         run: docker pull ghcr.io/${{ github.repository }}/base:$IMAGE_TAG
 
       - name: Check formatting
+        env:
+          IMAGE_TAG: ${{ steps.compute-img-hash.outputs.IMAGE_TAG }}
         run: |
           docker run \
             --rm \
