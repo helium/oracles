@@ -23,13 +23,13 @@ impl MsgDecode for VerifiedSubscriberVerifiedMappingEventIngestReport {
 
 impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedSubscriberVerifiedMappingEventIngestReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
-        self.timestamp.to_timestamp()
+        self.timestamp.to_timestamp_millis()
     }
 }
 
 impl MsgTimestamp<u64> for VerifiedSubscriberVerifiedMappingEventIngestReport {
     fn timestamp(&self) -> u64 {
-        self.timestamp.encode_timestamp()
+        self.timestamp.encode_timestamp_millis()
     }
 }
 

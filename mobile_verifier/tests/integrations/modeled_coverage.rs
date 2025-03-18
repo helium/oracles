@@ -1476,7 +1476,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
             lon: latlng.lng(),
             lat: latlng.lat(),
             timestamp: DateTime::<Utc>::MIN_UTC,
-            location_validation_timestamp: Some(DateTime::<Utc>::MIN_UTC),
+            location_validation_timestamp: Some(Utc::now() - Duration::hours(23)),
             operation_mode: true,
             coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
             location_source: LocationSource::Skyhook,

@@ -1,6 +1,6 @@
 use crate::Settings;
 use anyhow::{bail, Error, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use file_store::{
     file_sink::FileSinkClient,
     file_upload,
@@ -12,8 +12,8 @@ use helium_crypto::{Network, PublicKey, PublicKeyBinary};
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
-    DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
-    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
+    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
+    DataTransferSessionRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
     RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
@@ -60,6 +60,7 @@ pub struct GrpcServer<AV> {
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
     authorization_verifier: AV,
+    cbrs_disable_time: DateTime<Utc>,
 }
 
 impl<AV> ManagedTask for GrpcServer<AV>
@@ -109,6 +110,7 @@ where
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
         authorization_verifier: AV,
+        cbrs_disable_time: DateTime<Utc>,
     ) -> Self {
         GrpcServer {
             heartbeat_report_sink,
@@ -128,6 +130,7 @@ where
             address,
             api_token,
             authorization_verifier,
+            cbrs_disable_time,
         }
     }
 
@@ -218,8 +221,19 @@ where
         &self,
         request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
-        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+        let timestamp = Utc::now();
         let event = request.into_inner();
+
+        if timestamp >= self.cbrs_disable_time {
+            let pubkey = PublicKeyBinary::from(event.pub_key);
+            tracing::info!(
+                ?pubkey,
+                "dropping CellHeartbeatReqV1 because cbrs disable time has passed"
+            );
+            return Ok(Response::new(CellHeartbeatRespV1 {
+                id: timestamp.timestamp_millis().to_string(),
+            }));
+        }
 
         custom_tracing::record_b58("pub_key", &event.pub_key);
 
@@ -228,13 +242,13 @@ where
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))
             .map(|(_, event)| CellHeartbeatIngestReportV1 {
-                received_timestamp: timestamp,
+                received_timestamp: timestamp.timestamp_millis() as u64,
                 report: Some(event),
             })?;
 
         _ = self.heartbeat_report_sink.write(report, []).await;
 
-        let id = timestamp.to_string();
+        let id = timestamp.timestamp_millis().to_string();
         Ok(Response::new(CellHeartbeatRespV1 { id }))
     }
 
@@ -266,8 +280,24 @@ where
         &self,
         request: Request<DataTransferSessionReqV1>,
     ) -> GrpcResult<DataTransferSessionRespV1> {
-        let timestamp = Utc::now().timestamp_millis() as u64;
+        let timestamp = Utc::now();
         let event = request.into_inner();
+
+        if is_data_transfer_for_cbrs(&event) && timestamp > self.cbrs_disable_time {
+            let pubkey = event
+                .data_transfer_usage
+                .map(|usage| PublicKeyBinary::from(usage.pub_key))
+                .ok_or_else(|| anyhow::anyhow!("No pubkey available"));
+
+            tracing::info!(
+                ?pubkey,
+                "dropping DataTransferSessionReqV1 because cbrs disable time has passed"
+            );
+
+            return Ok(Response::new(DataTransferSessionRespV1 {
+                id: timestamp.timestamp_millis().to_string(),
+            }));
+        }
 
         custom_tracing::record_b58("pub_key", &event.pub_key);
 
@@ -276,14 +306,14 @@ where
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))
             .map(|(_, event)| DataTransferSessionIngestReportV1 {
-                received_timestamp: timestamp,
+                received_timestamp: timestamp.timestamp_millis() as u64,
                 report: Some(event),
             })?;
 
         _ = self.data_transfer_session_sink.write(report, []).await;
 
         Ok(Response::new(DataTransferSessionRespV1 {
-            id: timestamp.to_string(),
+            id: timestamp.timestamp_millis().to_string(),
         }))
     }
 
@@ -556,6 +586,13 @@ where
     }
 }
 
+fn is_data_transfer_for_cbrs(event: &DataTransferSessionReqV1) -> bool {
+    event
+        .data_transfer_usage
+        .as_ref()
+        .is_some_and(|u| u.radio_access_technology() == DataTransferRadioAccessTechnology::Eutran)
+}
+
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
     // Initialize uploader
     let (file_upload, file_upload_server) =
@@ -723,6 +760,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         settings.listen_addr,
         api_token,
         AuthorizationClient::from_settings(config_client)?,
+        settings.cbrs_disable_time,
     );
 
     tracing::info!(

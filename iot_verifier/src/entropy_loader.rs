@@ -1,3 +1,9 @@
+//
+// consumes entropy reports from S3 and inserts them into the database
+// entropy reports are generated and pushed to s3 by the entropy service
+// entropy report data is required by the runner in order to validate a POC
+//
+
 use crate::entropy::Entropy;
 use blake3::hash;
 use file_store::{entropy_report::EntropyReport, file_info_poller::FileInfoStream};

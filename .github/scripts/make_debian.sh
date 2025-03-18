@@ -4,13 +4,17 @@ set -euo pipefail
 
 cd $GITHUB_WORKSPACE
 
-if [ -z "$GITHUB_REF" ]; then
+# If a release version is provided via workflow_dispatch, use it
+if [ -n "$RELEASE_VERSION" ]; then
+    VERSION="$RELEASE_VERSION"
+elif [ -z "$GITHUB_REF" ]; then
     git config --global --add safe.directory "$GITHUB_WORKSPACE"
     VERSION=$(git describe)
 else
     VERSION=$(echo "$GITHUB_REF" | sed 's|refs/tags/||')
 fi
 
+echo "Building Debian package with version: $VERSION"
 
 write_unit_template()
 {
@@ -96,10 +100,12 @@ run_fpm()
 }
 
 # install fpm
-sudo apt update
-sudo apt install --yes ruby
-sudo gem install rchardet -v 1.8.0
-sudo gem install fpm -v 1.14.2 # current as of 2022-11-08
+apt update
+apt install --yes ruby
+gem install public_suffix -v 5.1.1
+gem install rchardet -v 1.8.0
+gem install dotenv -v 2.8.1
+gem install fpm -v 1.14.2 # current as of 2022-11-08
 echo "ruby deps installed" 
 
 for config_path in $( find . -name 'settings-template.toml' )

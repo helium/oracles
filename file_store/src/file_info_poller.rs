@@ -556,8 +556,8 @@ mod tests {
                 .0
                 .clone()
                 .into_iter()
-                .filter(|file_info| after.map_or(true, |v| file_info.timestamp > v))
-                .filter(|file_info| before.map_or(true, |v| file_info.timestamp <= v))
+                .filter(|file_info| after.is_none_or(|v| file_info.timestamp > v))
+                .filter(|file_info| before.is_none_or(|v| file_info.timestamp <= v))
                 .collect())
         }
 

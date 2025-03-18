@@ -1,3 +1,10 @@
+//
+// Responsible for purging stale beacons, witnesses & entropy data from the database
+// Purged beacon and witness reports will result in a corresponding invalid report being written to S3
+// providing an audit trail
+// Entropy data is purged without writing an invalid report as this data has no downstream value
+//
+
 use crate::{entropy::Entropy, poc_report::Report, telemetry};
 use file_store::{
     file_sink::FileSinkClient,

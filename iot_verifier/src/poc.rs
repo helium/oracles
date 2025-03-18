@@ -122,14 +122,15 @@ impl Poc {
     {
         let beacon = &self.beacon_report.report;
         let beaconer_pub_key = beacon.pub_key.clone();
-        // get the beaconer info from our follower
-        // it not available then declare beacon invalid
+
+        // if no gateway info for the gateway available then render beacon invalid
         let beaconer_info = match gateway_cache.resolve_gateway_info(&beaconer_pub_key).await {
             Ok(res) => res,
             Err(GatewayCacheError::GatewayNotFound(_)) => {
                 return Ok(VerifyBeaconResult::gateway_not_found())
             }
         };
+        // if the beaconing gateway is not asserted then render beacon invalid
         let beaconer_metadata = match beaconer_info.metadata {
             Some(ref metadata) => metadata,
             None => {
@@ -140,6 +141,7 @@ impl Poc {
                 ))
             }
         };
+        // if region params are not available then render beacon invalid
         let beaconer_region_info = match region_cache
             .resolve_region_info(beaconer_metadata.region)
             .await
@@ -147,7 +149,8 @@ impl Poc {
             Ok(res) => res,
             Err(err) => return Err(anyhow::Error::from(err)),
         };
-        // we have beaconer info, proceed to verifications
+
+        // sanity checks are good, now run the beacon verifications
         let last_beacon = LastBeacon::get(&self.pool, &beaconer_pub_key).await?;
         let result = match do_beacon_verifications(
             deny_list,
@@ -282,7 +285,7 @@ impl Poc {
     ) -> anyhow::Result<IotVerifiedWitnessReport> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
-        // pull the witness info from our follower
+        // get the witness gateway info
         let witness_info = match gateway_cache.resolve_gateway_info(&witness_pub_key).await {
             Ok(res) => res,
             Err(GatewayCacheError::GatewayNotFound(_)) => {
@@ -300,6 +303,7 @@ impl Poc {
             }
         };
 
+        // if the witness gateway is not asserted then render witness invalid
         let witness_metadata = match witness_info.metadata {
             Some(ref metadata) => metadata,
             None => {
@@ -486,6 +490,8 @@ pub fn do_witness_verifications(
 }
 
 /// verify beaconer is permitted to beacon at this time
+/// beacons should be sent with regular windows
+/// and only 1 beacon per window is permitted
 fn verify_beacon_schedule(
     last_beacon: &Option<LastBeacon>,
     beacon_received_ts: DateTime<Utc>,
@@ -587,7 +593,7 @@ fn verify_edge_denylist(
 }
 
 /// verify remote entropy
-/// if received timestamp is outside of entopy start/end then return invalid
+/// if report's received timestamp is outside of entopy start/end then return invalid
 fn verify_entropy(
     entropy_start: DateTime<Utc>,
     entropy_end: DateTime<Utc>,
@@ -615,6 +621,8 @@ fn verify_entropy(
 }
 
 /// verify beacon construction
+/// generate a beacon from the beaconers region data and the current entropy
+/// compare the generated beacon with the received beacon
 fn verify_beacon_payload(
     beacon_report: &IotBeaconReport,
     region: ProtoRegion,
@@ -687,6 +695,7 @@ fn verify_beacon_payload(
 }
 
 /// verify gateway is permitted to participate in POC
+/// A gateway has to be a full hotspot to participate in POC
 fn verify_gw_capability(is_full_hotspot: bool) -> GenericVerifyResult {
     if !is_full_hotspot {
         tracing::debug!(
@@ -734,7 +743,8 @@ fn verify_witness_lag(
     Ok(())
 }
 
-/// verify witness report is not in response to its own beacon
+/// verify the witness report is not a self witness
+/// ie the gateway is not witnessing its own beacon
 fn verify_self_witness(
     beacon_pub_key: &PublicKeyBinary,
     witness_pub_key: &PublicKeyBinary,
@@ -881,6 +891,7 @@ fn verify_witness_rssi(
     Ok(())
 }
 
+/// verify the witness payload matches the payload broadcast by the beaconer
 fn verify_witness_data(beacon_data: &Vec<u8>, witness_data: &Vec<u8>) -> GenericVerifyResult {
     if witness_data != beacon_data {
         tracing::debug!(

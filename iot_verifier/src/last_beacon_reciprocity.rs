@@ -1,3 +1,11 @@
+//
+// DB functions related to the last_beacon_reciprocity table
+// the last_beacon_reciprocity table is used to manage the beacon reciprocity timestamp for a given gateway
+// This data in this table is similar to that last_beacon table, but
+// is used for a different purpose and is updated according to differing rules
+// This timestamp is used as part of the poc verifications to determine if a gateway
+// has valid reciprocity
+//
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use serde::{Deserialize, Serialize};

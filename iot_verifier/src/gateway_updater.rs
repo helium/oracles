@@ -1,3 +1,7 @@
+//
+// responsible for updating the gateway info cache at a set interval
+//
+
 use futures::{future::LocalBoxFuture, stream::StreamExt, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
 use iot_config::{client::Gateways, gateway_info::GatewayInfo};
@@ -36,7 +40,7 @@ where
         Box::pin(
             handle
                 .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+                .and_then(|result| async move { result }),
         )
     }
 }

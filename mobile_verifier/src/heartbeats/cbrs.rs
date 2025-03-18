@@ -33,6 +33,7 @@ pub struct CbrsHeartbeatDaemon<GIR, GFV> {
     heartbeat_sink: FileSinkClient<proto::Heartbeat>,
     seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
     geofence: GFV,
+    cbrs_disable_time: DateTime<Utc>,
 }
 
 impl<GIR, GFV> CbrsHeartbeatDaemon<GIR, GFV>
@@ -69,6 +70,7 @@ where
             valid_heartbeats,
             seniority_updates,
             geofence,
+            settings.cbrs_disable_time,
         );
 
         Ok(TaskManager::builder()
@@ -86,6 +88,7 @@ where
         heartbeat_sink: FileSinkClient<proto::Heartbeat>,
         seniority_sink: FileSinkClient<proto::SeniorityUpdate>,
         geofence: GFV,
+        cbrs_disable_time: DateTime<Utc>,
     ) -> Self {
         Self {
             pool,
@@ -95,6 +98,7 @@ where
             heartbeat_sink,
             seniority_sink,
             geofence,
+            cbrs_disable_time,
         }
     }
 
@@ -157,6 +161,11 @@ where
             .await?
             .map(Heartbeat::from)
             .filter(move |h| {
+                let timestamp = h.timestamp;
+                let cbrs_disable_time = self.cbrs_disable_time;
+                async move { timestamp < cbrs_disable_time }
+            })
+            .filter(move |h| {
                 let hb_cache = heartbeat_cache_clone.clone();
                 let id = h.id().unwrap();
                 async move { hb_cache.get(&id).await.is_none() }
@@ -198,7 +207,7 @@ where
         Box::pin(
             handle
                 .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+                .and_then(|result| async move { result }),
         )
     }
 }
