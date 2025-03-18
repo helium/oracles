@@ -28,10 +28,12 @@ jobs:
 
       - name: Compute Base Image Hash
         id: compute-img-hash
-        run: echo "IMAGE_TAG=$(echo $(hashFiles 'Dockerfile' 'rust-toolchain.toml'))" >> $GITHUB_ENV
+        run: echo "IMAGE_TAG=$(hashFiles 'Dockerfile' 'rust-toolchain.toml')" >> $GITHUB_OUTPUT
 
       - name: Pull Cached Base Image
         id: cache-base
+        env:
+          IMAGE_TAG: ${{ steps.compute-img-hash.outputs.IMAGE_TAG }}
         run: |
           if docker pull ghcr.io/${{ github.repository }}/base:$IMAGE_TAG; then
             echo "CACHE_HIT=true" >> $GITHUB_ENV
@@ -41,6 +43,8 @@ jobs:
   
       - name: Build and Push Base Image (if not cached)
         if: env.CACHE_HIT == 'false'
+        env:
+          IMAGE_TAG: ${{ steps.compute-img-hash.outputs.IMAGE_TAG }}
         run: |
           docker build --target base -t ghcr.io/${{ github.repository }}/base:$IMAGE_TAG -f Dockerfile .
           docker push ghcr.io/${{ github.repository }}/base:$IMAGE_TAG
@@ -57,7 +61,7 @@ jobs:
 
       - name: Compute Base Image Hash
         id: compute-img-hash
-        run: echo "IMAGE_TAG=$(echo $(hashFiles 'Dockerfile' 'rust-toolchain.toml'))" >> $GITHUB_ENV
+        run: echo "IMAGE_TAG=$(hashFiles 'Dockerfile' 'rust-toolchain.toml')" >> $GITHUB_OUTPUT
 
       - name: Pull Base Image
         run: docker pull ghcr.io/${{ github.repository }}/base:$IMAGE_TAG
@@ -83,12 +87,16 @@ jobs:
 
       - name: Compute Base Image Hash
         id: compute-img-hash
-        run: echo "IMAGE_TAG=$(echo $(hashFiles 'Dockerfile' 'rust-toolchain.toml'))" >> $GITHUB_ENV
+        run: echo "IMAGE_TAG=$(hashFiles 'Dockerfile' 'rust-toolchain.toml')" >> $GITHUB_OUTPUT
 
       - name: Pull Base Image
+        env:
+            IMAGE_TAG: ${{ steps.compute-img-hash.outputs.IMAGE_TAG }}
         run: docker pull ghcr.io/${{ github.repository }}/base:$IMAGE_TAG
 
       - name: Clippy
+        env:
+          IMAGE_TAG: ${{ steps.compute-img-hash.outputs.IMAGE_TAG }}
         run: |
           docker run \
             --rm \
@@ -150,12 +158,16 @@ jobs:
 
       - name: Compute Base Image Hash
         id: compute-img-hash
-        run: echo "IMAGE_TAG=$(echo $(hashFiles 'Dockerfile' 'rust-toolchain.toml'))" >> $GITHUB_ENV
+        run: echo "IMAGE_TAG=$(hashFiles 'Dockerfile' 'rust-toolchain.toml')" >> $GITHUB_OUTPUT
 
       - name: Pull Base Image
+        env:
+          IMAGE_TAG: ${{ steps.compute-img-hash.outputs.IMAGE_TAG }}
         run: docker pull ghcr.io/${{ github.repository }}/base:$IMAGE_TAG
 
       - name: Run tests
+        env:
+          IMAGE_TAG: ${{ steps.compute-img-hash.outputs.IMAGE_TAG }}
         run: |
           docker run \
             --rm \
