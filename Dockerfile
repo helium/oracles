@@ -1,19 +1,8 @@
 # BASE
-FROM debian:bookworm AS base
+FROM rust:bookworm AS base
 
 RUN apt-get update && apt-get install -y \
-    gcc \
-    curl \
-    build-essential \
-    protobuf-compiler \
-    pkg-config \
-    openssl \
-    libssl-dev
-
-COPY rust-toolchain.toml .
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
-
+    protobuf-compiler
 
 # BUILDER
 FROM base AS builder

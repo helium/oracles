@@ -168,7 +168,7 @@ jobs:
 
       - name: Cache Cargo Target Directory
         # Anything above 4min run
-        if: contains('["boost-manager", "ingest", "iot-config", "iot-config", "iot-packet-verifier", "iot-verifier", "mobile-packet-verifier", "mobile-verifier", "price", "solana"]', matrix.package)
+        if: contains('["boost-manager", "ingest", "iot-config", "iot-packet-verifier", "iot-verifier", "mobile-packet-verifier", "mobile-verifier", "price", "solana"]', matrix.package)
         uses: actions/cache@v4
         env:
             IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
