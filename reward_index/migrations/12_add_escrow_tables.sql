@@ -14,5 +14,8 @@ CREATE TABLE IF NOT EXISTS escrow_rewards (
 );
 
 -- Add the column claimable to reward_index and default it to the rewards column value
+--
+-- `reward_index.rewards` tracks the total lifetime earned rewards
+-- `reward_index.claimable` tracks the total rewards allowed to be claimed
 ALTER TABLE reward_index ADD COLUMN IF NOT EXISTS claimable BIGINT DEFAULT 0;
 UPDATE reward_index SET claimable = rewards;

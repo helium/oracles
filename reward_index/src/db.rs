@@ -2,11 +2,14 @@ use std::{collections::HashMap, time::Duration};
 
 use crate::indexer::RewardKey;
 use chrono::{DateTime, Utc};
+use sqlx::{PgConnection, PgExecutor};
 
 pub use escrow_duration::purge_expired_escrow_duration;
 
+// Use this query when you want to keep `rewards` and `claimable` aligned with each other.
+// Otherwise see `insert_escrowed_rewards`.
 pub async fn insert_rewards(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    executor: impl PgExecutor<'_>,
     mut rewards: HashMap<RewardKey, u64>,
     timestamp: &DateTime<Utc>,
 ) -> Result<usize, sqlx::Error> {
@@ -18,8 +21,6 @@ pub async fn insert_rewards(
     }
 
     let rewards_count = rewards.len();
-
-    // Pre-allocate vectors for efficient insertion
     let mut addresses = Vec::with_capacity(rewards_count);
     let mut amounts = Vec::with_capacity(rewards_count);
     let mut reward_types = Vec::with_capacity(rewards_count);
@@ -61,8 +62,23 @@ pub async fn insert_rewards(
     Ok(res.rows_affected() as usize)
 }
 
+// Use this query for escrowed rewards.
+//
+// It does 2 things:
+//
+//   1. Update `reward_index.rewards` to track the total lifetime earned rewards.
+//
+//      If an address does not exist, it will be created with the `reward_index.last_reward` field
+//      being `timestamp`. When the address already exists, the `reward_index.last_reward` column
+//      will remain unchanged.
+//
+//  2. Insert rewards into the `escrow_rewards` table.
+//
+//     This queues rewards until they are unlocked with a call to `unlock_escrowed_rewards`
+//     where the reward is moved into the `reward_index.claimable` column.
+//
 pub async fn insert_escrowed_rewards(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    executor: &mut PgConnection,
     mut rewards: HashMap<RewardKey, u64>,
     timestamp: &DateTime<Utc>,
 ) -> Result<usize, sqlx::Error> {
@@ -74,8 +90,6 @@ pub async fn insert_escrowed_rewards(
     }
 
     let rewards_count = rewards.len();
-
-    // Pre-allocate vectors for efficient insertion
     let mut addresses = Vec::with_capacity(rewards_count);
     let mut amounts = Vec::with_capacity(rewards_count);
     let mut reward_types = Vec::with_capacity(rewards_count);
@@ -85,6 +99,30 @@ pub async fn insert_escrowed_rewards(
         amounts.push(*amount as i64);
         reward_types.push(key.reward_type);
     }
+
+    sqlx::query(
+        r#"
+        INSERT INTO reward_index (
+            address,
+            rewards,
+            reward_type,
+            last_reward
+        )
+        SELECT
+            unnest($1::text[]),
+            unnest($2::bigint[]),
+            unnest($3::reward_type[]),
+            $4
+        ON CONFLICT (address) DO UPDATE SET
+            rewards = reward_index.rewards + EXCLUDED.rewards
+        "#,
+    )
+    .bind(&addresses)
+    .bind(&amounts)
+    .bind(&reward_types)
+    .bind(timestamp)
+    .execute(&mut *executor)
+    .await?;
 
     let res = sqlx::query(
         r#"
@@ -105,14 +143,14 @@ pub async fn insert_escrowed_rewards(
     .bind(&amounts)
     .bind(&reward_types)
     .bind(timestamp) // Single timestamp for all records
-    .execute(executor)
+    .execute(&mut *executor)
     .await?;
 
     Ok(res.rows_affected() as usize)
 }
 
 pub async fn unlock_escrowed_rewards(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    executor: impl PgExecutor<'_>,
     timestamp: &DateTime<Utc>,
     default_escrow_duration: u32,
 ) -> anyhow::Result<usize> {
@@ -135,10 +173,10 @@ pub async fn unlock_escrowed_rewards(
                 up.*
             )
             INSERT INTO
-              reward_index (address, rewards, last_reward, reward_type)
+              reward_index (address, claimable, last_reward, reward_type)
             SELECT
               address,
-              sum(amount) as rewards,
+              sum(amount) as claimable,
               max(inserted_at) as last_reward,
               reward_type
             FROM
@@ -148,7 +186,7 @@ pub async fn unlock_escrowed_rewards(
               reward_type
             ON CONFLICT (address)
             DO UPDATE SET
-              rewards = reward_index.rewards + EXCLUDED.rewards,
+              claimable = reward_index.claimable + EXCLUDED.claimable,
               last_reward = EXCLUDED.last_reward;
         "#,
     )
@@ -161,7 +199,7 @@ pub async fn unlock_escrowed_rewards(
 }
 
 pub async fn purge_historical_escrowed_rewards(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    executor: impl PgExecutor<'_>,
     today: DateTime<Utc>,
     keep_duration: Duration,
 ) -> anyhow::Result<usize> {
@@ -180,10 +218,10 @@ pub async fn purge_historical_escrowed_rewards(
 
 pub mod escrow_duration {
     use chrono::NaiveDate;
-    use sqlx::{Executor, PgPool, Postgres};
+    use sqlx::{PgExecutor, PgPool};
 
     pub async fn purge_expired_escrow_duration(
-        executor: impl Executor<'_, Database = Postgres>,
+        executor: impl PgExecutor<'_>,
         today: NaiveDate,
     ) -> anyhow::Result<usize> {
         let res = sqlx::query("DELETE FROM escrow_durations where expires_on <= $1")
@@ -195,7 +233,7 @@ pub mod escrow_duration {
     }
 
     pub async fn get(
-        executor: impl Executor<'_, Database = Postgres>,
+        executor: impl PgExecutor<'_>,
         address: &str,
     ) -> Result<Option<(u32, Option<chrono::NaiveDate>)>, sqlx::Error> {
         #[derive(sqlx::FromRow)]
@@ -216,21 +254,21 @@ pub mod escrow_duration {
     }
 
     pub async fn insert(
-        executor: impl Executor<'_, Database = Postgres>,
+        executor: impl PgExecutor<'_>,
         address: &str,
         duration_days: u32,
         expiration_date: Option<chrono::NaiveDate>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
-        INSERT INTO escrow_durations
-            (address, duration_days, expires_on)
-        VALUES 
-            ($1, $2, $3)
-        ON CONFLICT (address) DO UPDATE SET
-            duration_days = EXCLUDED.duration_days,
-            expires_on = EXCLUDED.expires_on
-        "#,
+            INSERT INTO escrow_durations
+                (address, duration_days, expires_on)
+            VALUES
+                ($1, $2, $3)
+            ON CONFLICT (address) DO UPDATE SET
+                duration_days = EXCLUDED.duration_days,
+                expires_on = EXCLUDED.expires_on
+            "#,
         )
         .bind(address)
         .bind(duration_days as i64)
@@ -241,10 +279,7 @@ pub mod escrow_duration {
         Ok(())
     }
 
-    pub async fn delete(
-        executor: impl Executor<'_, Database = Postgres>,
-        address: &str,
-    ) -> Result<(), sqlx::Error> {
+    pub async fn delete(executor: impl PgExecutor<'_>, address: &str) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM escrow_durations WHERE address = $1")
             .bind(address)
             .execute(executor)

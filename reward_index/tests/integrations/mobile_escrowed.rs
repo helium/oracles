@@ -51,11 +51,13 @@ async fn escrow_duration_of_0_days(pool: PgPool) -> anyhow::Result<()> {
 
     let key_one = PublicKeyBinary::from(vec![1]);
     let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await?;
-    assert_eq!(reward_one.rewards, 6);
+    assert_eq!(reward_one.rewards, 6, "rewards");
+    assert_eq!(reward_one.claimable, 6, "claimable");
 
     let key_two = PublicKeyBinary::from(vec![2]);
     let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_two.rewards, 4);
+    assert_eq!(reward_two.claimable, 4);
 
     Ok(())
 }
@@ -85,11 +87,13 @@ async fn escrow_duration_of_1_day(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(stats.inserted, 2);
     assert_eq!(stats.unlocked, 0);
 
-    let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await;
-    assert!(reward_one.is_err());
+    let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await?;
+    assert_eq!(reward_one.rewards, 6);
+    assert_eq!(reward_one.claimable, 0);
 
-    let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await;
-    assert!(reward_two.is_err());
+    let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
+    assert_eq!(reward_two.rewards, 4);
+    assert_eq!(reward_two.claimable, 0);
 
     // Process the next days worth of rewards to unlock day 0
     let stats = process_rewards(&pool, day_1_rewards, day_1, escrow_duration).await?;
@@ -97,10 +101,12 @@ async fn escrow_duration_of_1_day(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(stats.unlocked, 2);
 
     let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await?;
-    assert_eq!(reward_one.rewards, 6);
+    assert_eq!(reward_one.rewards, 7);
+    assert_eq!(reward_one.claimable, 6);
 
     let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_two.rewards, 4);
+    assert_eq!(reward_two.claimable, 4);
 
     Ok(())
 }
@@ -171,11 +177,13 @@ async fn use_address_escrow_duration_override(pool: PgPool) -> anyhow::Result<()
     assert_eq!(stats.inserted, 2, "inserted");
     assert_eq!(stats.unlocked, 1, "unlocked");
 
-    let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await;
-    assert!(reward_one.is_err());
+    let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await?;
+    assert_eq!(reward_one.rewards, 1);
+    assert_eq!(reward_one.claimable, 0);
 
     let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_two.rewards, 2);
+    assert_eq!(reward_two.claimable, 2);
 
     Ok(())
 }
@@ -204,9 +212,11 @@ async fn expired_escrow_durations_are_not_used(pool: PgPool) -> anyhow::Result<(
 
     let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_one.rewards, 1);
+    assert_eq!(reward_one.claimable, 1);
 
     let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_two.rewards, 2);
+    assert_eq!(reward_two.claimable, 2);
 
     Ok(())
 }
@@ -223,8 +233,10 @@ async fn only_mobile_gateway_rewards_are_escrowed(pool: PgPool) -> anyhow::Resul
     let stats = process_rewards(&pool, rewards, Utc::now(), Duration::days(30)).await?;
     assert_eq!(stats.inserted, 2);
 
-    let mobile_reward = get_reward(&pool, &mobile_key.to_string(), RewardType::MobileGateway).await;
-    assert!(mobile_reward.is_err());
+    let mobile_reward =
+        get_reward(&pool, &mobile_key.to_string(), RewardType::MobileGateway).await?;
+    assert_eq!(mobile_reward.rewards, 99);
+    assert_eq!(mobile_reward.claimable, 0);
 
     let sp_key = ServiceProvider::HeliumMobile.to_string();
     let sp_reward = get_reward(&pool, &sp_key, RewardType::MobileServiceProvider).await?;
