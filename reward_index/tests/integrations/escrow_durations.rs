@@ -44,11 +44,11 @@ async fn migrate_known_radios(pool: PgPool) -> anyhow::Result<()> {
 async fn get_escrow_duration(pool: PgPool) -> anyhow::Result<()> {
     let today = Utc::now().date_naive();
 
-    let _ = db::escrow_duration::insert(&pool, "one", 42, Some(Utc::now().date_naive())).await?;
+    db::escrow_duration::insert(&pool, "one", 42, Some(Utc::now().date_naive())).await?;
     let dur = db::escrow_duration::get(&pool, "one").await?;
     assert_eq!(Some((42, Some(today))), dur);
 
-    let _ = db::escrow_duration::insert(&pool, "two", 42, None).await?;
+    db::escrow_duration::insert(&pool, "two", 42, None).await?;
     let dur = db::escrow_duration::get(&pool, "two").await?;
     assert_eq!(Some((42, None)), dur);
 
@@ -60,11 +60,11 @@ async fn update_escrow_duration(pool: PgPool) -> anyhow::Result<()> {
     let today = Utc::now().date_naive();
     let key = "one";
 
-    let _ = db::escrow_duration::insert(&pool, key, 42, Some(Utc::now().date_naive())).await?;
+    db::escrow_duration::insert(&pool, key, 42, Some(Utc::now().date_naive())).await?;
     let dur = db::escrow_duration::get(&pool, key).await?;
     assert_eq!(Some((42, Some(today))), dur);
 
-    let _ = db::escrow_duration::insert(&pool, key, 42, None).await?;
+    db::escrow_duration::insert(&pool, key, 42, None).await?;
     let dur = db::escrow_duration::get(&pool, key).await?;
     assert_eq!(Some((42, None)), dur);
 
@@ -75,7 +75,7 @@ async fn update_escrow_duration(pool: PgPool) -> anyhow::Result<()> {
 async fn delete_escrow_duration(pool: PgPool) -> anyhow::Result<()> {
     let key = "one";
 
-    let _ = db::escrow_duration::insert(&pool, key, 42, Some(Utc::now().date_naive())).await?;
+    db::escrow_duration::insert(&pool, key, 42, Some(Utc::now().date_naive())).await?;
     let dur = db::escrow_duration::get(&pool, key).await?;
     assert_eq!(Some((42, Some(Utc::now().date_naive()))), dur);
 

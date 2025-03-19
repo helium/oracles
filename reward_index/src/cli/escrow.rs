@@ -114,7 +114,7 @@ impl EscrowSet {
             expires_on,
         } = self;
 
-        let _inserted = db::escrow_duration::insert(&pool, &address, days, expires_on).await?;
+        db::escrow_duration::insert(&pool, &address, days, expires_on).await?;
 
         match expires_on {
             Some(expiration) => {
