@@ -202,7 +202,7 @@ pub async fn get_tracked_radios(
             hash,
             last_changed_at,
             last_checked_at,
-            asserted_location::bigint,
+            asserted_location,
             asserted_location_changed_at
         FROM mobile_radio_tracker
         "#,
