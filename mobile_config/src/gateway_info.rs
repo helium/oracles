@@ -386,9 +386,38 @@ pub(crate) mod db {
     const GET_UPDATED_AT: &str =
         "SELECT last_changed_at FROM mobile_radio_tracker WHERE entity_key = $1";
 
+    const GET_TRACKED_RADIOS_SQL: &str =
+        "SELECT entity_key, last_changed_at FROM mobile_radio_tracker where entity_key = any($1::bytea[])";
+
     lazy_static::lazy_static! {
         static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
         static ref DEVICE_TYPES_METADATA_SQL: String = format!("{GET_METADATA_SQL} {DEVICE_TYPES_WHERE_SNIPPET}");
+    }
+
+    pub async fn get_batch_tracked_radios(
+        db: impl PgExecutor<'_>,
+        addresses: &[PublicKeyBinary],
+    ) -> anyhow::Result<HashMap<PublicKeyBinary, DateTime<Utc>>> {
+        let entity_keys = addresses
+            .iter()
+            .map(|address| bs58::decode(address.to_string()).into_vec())
+            .collect::<Result<Vec<_>, bs58::decode::Error>>()?;
+
+        sqlx::query(GET_TRACKED_RADIOS_SQL)
+            .bind(entity_keys)
+            .fetch(db)
+            .map_err(anyhow::Error::from)
+            .try_fold(
+                HashMap::new(),
+                |mut map: HashMap<PublicKeyBinary, DateTime<Utc>>, row| async move {
+                    let entity_key_b = row.get::<&[u8], &str>("entity_key");
+                    let entity_key = bs58::encode(entity_key_b).into_string();
+                    let updated_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
+                    map.insert(PublicKeyBinary::from_str(&entity_key)?, updated_at);
+                    Ok(map)
+                },
+            )
+            .await
     }
 
     pub async fn get_updated_radios(
