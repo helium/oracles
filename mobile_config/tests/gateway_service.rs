@@ -1,4 +1,4 @@
-use std::{str::FromStr, vec};
+use std::vec;
 
 use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
@@ -14,10 +14,7 @@ use mobile_config::{
     KeyRole,
 };
 use prost::Message;
-use sqlx::{
-    postgres::{PgConnectOptions, PgPoolOptions},
-    PgPool,
-};
+use sqlx::PgPool;
 use tokio::net::TcpListener;
 use tonic::{transport, Code};
 
@@ -114,62 +111,6 @@ async fn spawn_gateway_service(
     );
 
     (format!("http://{addr}"), handle)
-}
-
-#[ignore]
-#[tokio::test]
-async fn manual_info_batch_v2_optimization() {
-    // This manual test is used to evaluate the performance of info_batch_v2 request
-    // Edit (db) connection_options to setup it
-    let connection_options =
-        PgConnectOptions::from_str("EDIT_ME").expect("Failed to construct connection options");
-
-    let mc_pool = PgPoolOptions::new()
-        .max_connections(10)
-        .connect_with(connection_options)
-        .await
-        .expect("DB connection error");
-
-    let connection_options =
-        PgConnectOptions::from_str("EDIT_ME").expect("Failed to construct connection options");
-
-    let meta_pool = PgPoolOptions::new()
-        .max_connections(10)
-        .connect_with(connection_options)
-        .await
-        .expect("DB connection error");
-
-    let admin_key = make_keypair();
-
-    let server_key = make_keypair();
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-
-    // Start the gateway server
-    let keys = CacheKeys::from_iter([(admin_key.public_key().clone(), KeyRole::Administrator)]);
-    let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let gws = GatewayService::new(key_cache, meta_pool.clone(), server_key, mc_pool.clone());
-    let _handle = tokio::spawn(
-        transport::Server::builder()
-            .add_service(proto::GatewayServer::new(gws))
-            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)),
-    );
-    let addr = format!("http://{addr}");
-    let mut client = GatewayClient::connect(addr).await.unwrap();
-
-    let asset1_pubkey = PublicKey::from_str("1trSusegvW8rDR3c6FU3CedngDBz2WYHDDYn6WyWuhogVgK4YqgKWhKLiukMnj2ZdKsZCoyYRvEQuJTq92cBRbZA6Zm4cacuJJenZBAp6SSYcCwiVqEoFWDRFZ1vcbFUYbe8vq7b3XDcDAkcL81uKbVfBt3bPwwPjtUM1j3XE3WZdfW1AfHmMst7FZa5GZbKg6hTtvZqKQYSDYJDD7sFsjnXFxo5Zbx98kymnRcQg26UN4Zy6bXkpnhsTXDmcUYda74nvk2A9B5RqH2LXEgvDajDxGjEcSyoCXYMN9Qr1XJkcYNjUJazP6LARgKhmmvsiF82fcogjGbSoWHkUEwxcCvqQsJSKNTj8B8k6fkoHM3WcF").unwrap();
-    let asset2_pubkey = PublicKey::from_str("1trSusf1U5CA11ysKuR8TsrasWrm48sTsK7aiZkkyMtQh6eSKhw7GuJxFAnaZY7KYQnLWVXfYAD72xGWBUDE1zbGTJwKFrSQTtz1BDh8hXWjbUe8EYbADZgvyeEC1Bie6vmFNDRh6gMKhp3aXVkJXd8pmt7xsz5RfMoM7tUnPRb5jU59q6SnbXnZF4PexUd1iFM9xRKgbg4R67vLzjKgLxeTN3bFX6Kn4cgkJKg3d6XD6gXWsPiv9zrQraCKoN8JwJYjfHFETgD9pA4ucuEYt5BUmmVf4bmi7s8TvpumrFJ1Ms57DiQuRhLrD8aS5tkiaHyGRRmSc6rgEZ2iFyUuJhNdEZ1cBf59QhpBiHdPL1H3UV").unwrap();
-    let req = make_signed_info_batch_request(
-        &vec![asset1_pubkey.clone(), asset2_pubkey.clone()],
-        &admin_key,
-    );
-    let stream = client.info_batch_v2(req).await.unwrap().into_inner();
-    let resp = stream
-        .filter_map(|result| async { result.ok() })
-        .collect::<Vec<GatewayInfoStreamResV2>>()
-        .await;
-
-    assert_eq!(resp.first().unwrap().gateways.len(), 2);
 }
 
 #[sqlx::test]
@@ -917,3 +858,59 @@ fn make_signed_info_batch_request(
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
     req
 }
+
+// This manual test is used to evaluate the performance of info_batch_v2 request
+// Edit (db) connection_options to setup it
+// #[ignore]
+// #[tokio::test]
+// async fn manual_info_batch_v2_optimization() {
+//     let connection_options =
+//         PgConnectOptions::from_str("EDIT_ME").expect("Failed to construct connection options");
+//
+//     let mc_pool = PgPoolOptions::new()
+//         .max_connections(10)
+//         .connect_with(connection_options)
+//         .await
+//         .expect("DB connection error");
+//
+//     let connection_options =
+//         PgConnectOptions::from_str("EDIT_ME").expect("Failed to construct connection options");
+//
+//     let meta_pool = PgPoolOptions::new()
+//         .max_connections(10)
+//         .connect_with(connection_options)
+//         .await
+//         .expect("DB connection error");
+//
+//     let admin_key = make_keypair();
+//
+//     let server_key = make_keypair();
+//     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+//     let addr = listener.local_addr().unwrap();
+//
+//     // Start the gateway server
+//     let keys = CacheKeys::from_iter([(admin_key.public_key().clone(), KeyRole::Administrator)]);
+//     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
+//     let gws = GatewayService::new(key_cache, meta_pool.clone(), server_key, mc_pool.clone());
+//     let _handle = tokio::spawn(
+//         transport::Server::builder()
+//             .add_service(proto::GatewayServer::new(gws))
+//             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)),
+//     );
+//     let addr = format!("http://{addr}");
+//     let mut client = GatewayClient::connect(addr).await.unwrap();
+//
+//     let asset1_pubkey = PublicKey::from_str("1trSusegvW8rDR3c6FU3CedngDBz2WYHDDYn6WyWuhogVgK4YqgKWhKLiukMnj2ZdKsZCoyYRvEQuJTq92cBRbZA6Zm4cacuJJenZBAp6SSYcCwiVqEoFWDRFZ1vcbFUYbe8vq7b3XDcDAkcL81uKbVfBt3bPwwPjtUM1j3XE3WZdfW1AfHmMst7FZa5GZbKg6hTtvZqKQYSDYJDD7sFsjnXFxo5Zbx98kymnRcQg26UN4Zy6bXkpnhsTXDmcUYda74nvk2A9B5RqH2LXEgvDajDxGjEcSyoCXYMN9Qr1XJkcYNjUJazP6LARgKhmmvsiF82fcogjGbSoWHkUEwxcCvqQsJSKNTj8B8k6fkoHM3WcF").unwrap();
+//     let asset2_pubkey = PublicKey::from_str("1trSusf1U5CA11ysKuR8TsrasWrm48sTsK7aiZkkyMtQh6eSKhw7GuJxFAnaZY7KYQnLWVXfYAD72xGWBUDE1zbGTJwKFrSQTtz1BDh8hXWjbUe8EYbADZgvyeEC1Bie6vmFNDRh6gMKhp3aXVkJXd8pmt7xsz5RfMoM7tUnPRb5jU59q6SnbXnZF4PexUd1iFM9xRKgbg4R67vLzjKgLxeTN3bFX6Kn4cgkJKg3d6XD6gXWsPiv9zrQraCKoN8JwJYjfHFETgD9pA4ucuEYt5BUmmVf4bmi7s8TvpumrFJ1Ms57DiQuRhLrD8aS5tkiaHyGRRmSc6rgEZ2iFyUuJhNdEZ1cBf59QhpBiHdPL1H3UV").unwrap();
+//     let req = make_signed_info_batch_request(
+//         &vec![asset1_pubkey.clone(), asset2_pubkey.clone()],
+//         &admin_key,
+//     );
+//     let stream = client.info_batch_v2(req).await.unwrap().into_inner();
+//     let resp = stream
+//         .filter_map(|result| async { result.ok() })
+//         .collect::<Vec<GatewayInfoStreamResV2>>()
+//         .await;
+//
+//     assert_eq!(resp.first().unwrap().gateways.len(), 2);
+// }
