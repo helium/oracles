@@ -12,3 +12,7 @@ CREATE TABLE IF NOT EXISTS escrow_rewards (
     reward_type     reward_type     NOT NULL,
     unlocked_at     TIMESTAMPTZ     DEFAULT NULL
 );
+
+-- Add the column claimable to reward_index and default it to the rewards column value
+ALTER TABLE reward_index ADD COLUMN IF NOT EXISTS claimable BIGINT DEFAULT 0;
+UPDATE reward_index SET claimable = rewards;

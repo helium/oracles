@@ -40,6 +40,7 @@ pub fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
 pub struct DbReward {
     pub address: String,
     pub rewards: u64,
+    pub claimable: u64,
     pub last_reward: DateTime<Utc>,
     pub reward_type: RewardType,
 }
@@ -49,6 +50,7 @@ impl FromRow<'_, PgRow> for DbReward {
         Ok(Self {
             address: row.get("address"),
             rewards: row.get::<i64, _>("rewards") as u64,
+            claimable: row.get::<i64, _>("claimable") as u64,
             last_reward: row.try_get("last_reward")?,
             reward_type: row.try_get("reward_type")?,
         })

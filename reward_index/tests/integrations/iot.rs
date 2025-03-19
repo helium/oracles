@@ -65,10 +65,12 @@ async fn gateway_rewards_accumulate_by_key(pool: PgPool) -> anyhow::Result<()> {
     let key_one = PublicKeyBinary::from(vec![1]).to_string();
     let reward_one = get_reward(&pool, &key_one, RewardType::IotGateway).await?;
     assert_eq!(reward_one.rewards, 45);
+    assert_eq!(reward_one.claimable, 45);
 
     let key_two = PublicKeyBinary::from(vec![2]).to_string();
     let reward_two = get_reward(&pool, &key_two, RewardType::IotGateway).await?;
     assert_eq!(reward_two.rewards, 33);
+    assert_eq!(reward_two.claimable, 33);
 
     Ok(())
 }
@@ -100,6 +102,7 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
     let key = PublicKeyBinary::from(vec![1]).to_string();
     let reward = get_reward(&pool, &key, RewardType::IotGateway).await?;
     assert_eq!(reward.rewards, 6);
+    assert_eq!(reward.claimable, 6);
     assert_eq!(reward.last_reward, nanos_trunc(before_manifest_time));
 
     // Zeroed reward should have no effect
@@ -110,6 +113,7 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
     let key = PublicKeyBinary::from(vec![1]).to_string();
     let reward = get_reward(&pool, &key, RewardType::IotGateway).await?;
     assert_eq!(reward.rewards, 6);
+    assert_eq!(reward.claimable, 6);
     assert_eq!(reward.last_reward, nanos_trunc(before_manifest_time));
 
     Ok(())
@@ -141,6 +145,7 @@ async fn unallocated_reward_types_are_combined(pool: PgPool) -> anyhow::Result<(
 
     let gateway_reward = get_reward(&pool, "unallocated-key", RewardType::IotUnallocated).await?;
     assert_eq!(gateway_reward.rewards, 10);
+    assert_eq!(gateway_reward.claimable, 10);
 
     Ok(())
 }
@@ -168,6 +173,7 @@ async fn operation_rewards_are_combined(pool: PgPool) -> anyhow::Result<()> {
 
     let gateway_reward = get_reward(&pool, "op-fund", RewardType::IotOperational).await?;
     assert_eq!(gateway_reward.rewards, 10);
+    assert_eq!(gateway_reward.claimable, 10);
 
     Ok(())
 }

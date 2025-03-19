@@ -35,16 +35,19 @@ pub async fn insert_rewards(
         INSERT INTO reward_index (
             address,
             rewards,
+            claimable,
             reward_type,
             last_reward
         )
         SELECT
             unnest($1::text[]),
             unnest($2::bigint[]),
+            unnest($2::bigint[]),
             unnest($3::reward_type[]) ,
             $4  -- Single timestamp for all rows
         ON CONFLICT (address) DO UPDATE SET
             rewards = reward_index.rewards + EXCLUDED.rewards,
+            claimable = reward_index.claimable + EXCLUDED.claimable,
             last_reward = EXCLUDED.last_reward
         "#,
     )

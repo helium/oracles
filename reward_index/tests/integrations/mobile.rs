@@ -55,10 +55,12 @@ async fn accumulates_rewards(pool: PgPool) -> anyhow::Result<()> {
     let key_one = PublicKeyBinary::from(vec![1]);
     let reward_one = get_reward(&pool, &key_one.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_one.rewards, 6);
+    assert_eq!(reward_one.claimable, 6);
 
     let key_two = PublicKeyBinary::from(vec![2]);
     let reward_two = get_reward(&pool, &key_two.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward_two.rewards, 4);
+    assert_eq!(reward_two.claimable, 4);
 
     Ok(())
 }
@@ -85,6 +87,7 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
     let key = PublicKeyBinary::from(vec![1]).to_string();
     let reward = get_reward(&pool, &key, RewardType::MobileGateway).await?;
     assert_eq!(reward.rewards, 1);
+    assert_eq!(reward.claimable, 1);
     assert_eq!(reward.last_reward, nanos_trunc(before_manifest_time));
 
     // Zeroed reward should have no effect
@@ -95,6 +98,7 @@ async fn zero_rewards_do_not_update_db_timestamp(pool: PgPool) -> anyhow::Result
     let key = PublicKeyBinary::from(vec![1]).to_string();
     let reward = get_reward(&pool, &key, RewardType::MobileGateway).await?;
     assert_eq!(reward.rewards, 1);
+    assert_eq!(reward.claimable, 1);
     assert_eq!(reward.last_reward, nanos_trunc(before_manifest_time));
 
     Ok(())
@@ -134,6 +138,7 @@ async fn radio_reward_v1_is_ignored(pool: PgPool) -> anyhow::Result<()> {
     let key = PublicKeyBinary::from(vec![1]);
     let reward = get_reward(&pool, &key.to_string(), RewardType::MobileGateway).await?;
     assert_eq!(reward.rewards, 9);
+    assert_eq!(reward.claimable, 9);
 
     Ok(())
 }
@@ -161,6 +166,7 @@ async fn subscriber_reward(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
     assert_eq!(reward.rewards, 3);
+    assert_eq!(reward.claimable, 3);
 
     Ok(())
 }
@@ -187,6 +193,7 @@ async fn service_provider_reward(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
     assert_eq!(reward.rewards, 1);
+    assert_eq!(reward.claimable, 1);
 
     Ok(())
 }
@@ -241,6 +248,7 @@ async fn unallocated_rewards_are_combined(pool: PgPool) -> anyhow::Result<()> {
 
     let reward = get_reward(&pool, "unallocated-key", RewardType::MobileUnallocated).await?;
     assert_eq!(reward.rewards, 21);
+    assert_eq!(reward.claimable, 21);
 
     Ok(())
 }
@@ -264,6 +272,7 @@ async fn promotion_reward(pool: PgPool) -> anyhow::Result<()> {
     let key = PublicKeyBinary::from(vec![1]).to_string();
     let reward = get_reward(&pool, &key, RewardType::MobilePromotion).await?;
     assert_eq!(reward.rewards, 3);
+    assert_eq!(reward.claimable, 3);
 
     Ok(())
 }
