@@ -1,11 +1,25 @@
 use chrono::{DateTime, Duration, DurationRound, Utc};
 use file_store::{traits::MsgBytes, BytesMutStream};
 use futures::{stream, StreamExt};
+use helium_proto::services::{poc_lora::IotRewardShare, poc_mobile::MobileRewardShare};
 use prost::bytes::BytesMut;
 use reward_index::indexer::RewardType;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Row};
 
-pub fn bytes_mut_stream<T: MsgBytes + Send + 'static>(els: Vec<T>) -> BytesMutStream {
+// mobile and iot reward stream helpers are kept separate so you can create
+// an empty stream without needing to provide the type in the test.
+
+pub fn mobile_rewards_stream(els: Vec<MobileRewardShare>) -> BytesMutStream {
+    BytesMutStream::from(
+        stream::iter(els)
+            .map(|el| el.as_bytes())
+            .map(|el| BytesMut::from(el.as_ref()))
+            .map(Ok)
+            .boxed(),
+    )
+}
+
+pub fn iot_rewards_stream(els: Vec<IotRewardShare>) -> BytesMutStream {
     BytesMutStream::from(
         stream::iter(els)
             .map(|el| el.as_bytes())
@@ -26,6 +40,7 @@ pub fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
 pub struct DbReward {
     pub address: String,
     pub rewards: u64,
+    pub claimable: u64,
     pub last_reward: DateTime<Utc>,
     pub reward_type: RewardType,
 }
@@ -35,6 +50,7 @@ impl FromRow<'_, PgRow> for DbReward {
         Ok(Self {
             address: row.get("address"),
             rewards: row.get::<i64, _>("rewards") as u64,
+            claimable: row.get::<i64, _>("claimable") as u64,
             last_reward: row.try_get("last_reward")?,
             reward_type: row.try_get("reward_type")?,
         })

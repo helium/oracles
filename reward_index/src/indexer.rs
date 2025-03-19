@@ -34,9 +34,10 @@ pub struct Indexer {
     op_fund_key: String,
     unallocated_reward_key: String,
     reward_manifest_rx: Receiver<FileInfoStream<RewardManifest>>,
+    escrow_settings: settings::EscrowSettings,
 }
 
-#[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[sqlx(type_name = "reward_type", rename_all = "snake_case")]
 pub enum RewardType {
     MobileGateway,
@@ -47,6 +48,12 @@ pub enum RewardType {
     MobileUnallocated,
     IotUnallocated,
     MobilePromotion,
+}
+
+impl sqlx::postgres::PgHasArrayType for RewardType {
+    fn array_type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("_reward_type")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -77,6 +84,7 @@ impl Indexer {
         mode: settings::Mode,
         op_fund_key: String,
         unallocated_reward_key: String,
+        escrow_settings: settings::EscrowSettings,
     ) -> Self {
         Self {
             pool,
@@ -85,6 +93,7 @@ impl Indexer {
             op_fund_key,
             unallocated_reward_key,
             reward_manifest_rx,
+            escrow_settings,
         }
     }
 
@@ -101,11 +110,13 @@ impl Indexer {
             settings.mode,
             settings.operation_fund_key()?,
             settings.unallocated_reward_entity_key.clone(),
+            settings.escrow.clone(),
         ))
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         tracing::info!(mode = self.mode.to_string(), "starting index");
+        let mut cleanup_trigger = tokio::time::interval(self.escrow_settings.cleanup_interval);
 
         loop {
             tokio::select! {
@@ -114,27 +125,54 @@ impl Indexer {
                     tracing::info!("Indexer shutting down");
                     return Ok(());
                 }
-                msg = self.reward_manifest_rx.recv() => if let Some(file_info_stream) = msg {
-                    let key = &file_info_stream.file_info.key.clone();
-                    tracing::info!(file = %key, "Processing reward file");
-                    let mut txn = self.pool.begin().await?;
-                    let mut stream = file_info_stream.into_stream(&mut txn).await?;
-
-                    while let Some(reward_manifest) = stream.next().await {
-                        record_duration!(
-                            "reward_index_duration",
-                            self.handle_rewards(&mut txn, reward_manifest).await?
-                        )
-                    }
-                    txn.commit().await?;
-                    tracing::info!(file = %key, "Completed processing reward file");
-                    telemetry::last_reward_processed_time(&self.pool, Utc::now()).await?;
+                _ = cleanup_trigger.tick() => {
+                    self.handle_cleanup().await?;
+                }
+                msg = self.reward_manifest_rx.recv() => match msg {
+                    Some(file_info_stream) => self.handle_file_stream(file_info_stream).await?,
+                    None => bail!("reward manifest channel dropped")
                 }
             }
         }
     }
 
-    async fn handle_rewards(
+    async fn handle_cleanup(&self) -> anyhow::Result<()> {
+        let purged = db::purge_historical_escrowed_rewards(
+            &self.pool,
+            Utc::now(),
+            self.escrow_settings.history_duration,
+        )
+        .await?;
+        tracing::info!(purged, "removing historical escrow rewards");
+
+        Ok(())
+    }
+
+    async fn handle_file_stream(
+        &mut self,
+        file_info_stream: FileInfoStream<RewardManifest>,
+    ) -> anyhow::Result<()> {
+        let key = &file_info_stream.file_info.key.clone();
+        tracing::info!(file = %key, "Processing reward file");
+        let mut txn = self.pool.begin().await?;
+        let mut stream = file_info_stream.into_stream(&mut txn).await?;
+
+        while let Some(reward_manifest) = stream.next().await {
+            record_duration!(
+                "reward_index_duration",
+                self.handle_reward_manifest(&mut txn, reward_manifest)
+                    .await?
+            )
+        }
+
+        txn.commit().await?;
+        tracing::info!(file = %key, "Completed processing reward file");
+        telemetry::last_reward_processed_time(&self.pool, Utc::now()).await?;
+
+        Ok(())
+    }
+
+    async fn handle_reward_manifest(
         &mut self,
         txn: &mut Transaction<'_, Postgres>,
         manifest: RewardManifest,
@@ -150,7 +188,7 @@ impl Indexer {
         .boxed();
 
         // if the token type defined in the reward data is not HNT, then bail
-        self.verify_token_type(&manifest.reward_data)?;
+        verify_token_type(&manifest.reward_data)?;
 
         let reward_shares = self.verifier_store.source_unordered(5, reward_files);
 
@@ -159,9 +197,9 @@ impl Indexer {
                 handle_iot_rewards(
                     txn,
                     reward_shares,
+                    &manifest_time,
                     &self.op_fund_key,
                     &self.unallocated_reward_key,
-                    &manifest_time,
                 )
                 .await?;
             }
@@ -169,8 +207,18 @@ impl Indexer {
                 handle_mobile_rewards(
                     txn,
                     reward_shares,
-                    &self.unallocated_reward_key,
                     &manifest_time,
+                    &self.unallocated_reward_key,
+                )
+                .await?;
+            }
+            settings::Mode::MobileEscrowed => {
+                handle_escrowed_mobile_rewards(
+                    txn,
+                    reward_shares,
+                    &manifest_time,
+                    &self.unallocated_reward_key,
+                    self.escrow_settings.default_days,
                 )
                 .await?;
             }
@@ -178,37 +226,37 @@ impl Indexer {
 
         Ok(())
     }
+}
 
-    fn verify_token_type(&self, reward_data: &Option<RewardData>) -> Result<()> {
-        match reward_data {
-            Some(MobileRewardData { token, .. }) => {
-                if *token != proto::MobileRewardToken::Hnt {
-                    bail!(
-                        "legacy token type defined in manifest: {}",
-                        token.as_str_name()
-                    );
-                }
+fn verify_token_type(reward_data: &Option<RewardData>) -> Result<()> {
+    match reward_data {
+        Some(MobileRewardData { token, .. }) => {
+            if *token != proto::MobileRewardToken::Hnt {
+                bail!(
+                    "legacy token type defined in manifest: {}",
+                    token.as_str_name()
+                );
             }
-            Some(IotRewardData { token, .. }) => {
-                if *token != proto::IotRewardToken::Hnt {
-                    bail!(
-                        "legacy token type defined in manifest: {}",
-                        token.as_str_name()
-                    );
-                }
-            }
-            None => bail!("missing reward data in manifest"),
         }
-        Ok(())
+        Some(IotRewardData { token, .. }) => {
+            if *token != proto::IotRewardToken::Hnt {
+                bail!(
+                    "legacy token type defined in manifest: {}",
+                    token.as_str_name()
+                );
+            }
+        }
+        None => bail!("missing reward data in manifest"),
     }
+    Ok(())
 }
 
 pub async fn handle_iot_rewards(
     txn: &mut Transaction<'_, Postgres>,
     mut reward_shares: Stream<BytesMut>,
+    manifest_time: &DateTime<Utc>,
     op_fund_key: &str,
     unallocated_reward_key: &str,
-    manifest_time: &DateTime<Utc>,
 ) -> anyhow::Result<()> {
     let mut rewards = HashMap::new();
 
@@ -218,33 +266,91 @@ pub async fn handle_iot_rewards(
         *rewards.entry(key).or_default() += amount;
     }
 
-    for (reward_key, amount) in rewards {
-        db::insert(
-            &mut *txn,
-            reward_key.key,
-            amount,
-            reward_key.reward_type,
-            manifest_time,
-        )
-        .await?;
-    }
+    db::insert_rewards(txn, rewards, manifest_time).await?;
 
     Ok(())
 }
 
 pub async fn handle_mobile_rewards(
     txn: &mut Transaction<'_, Postgres>,
+    reward_shares: Stream<BytesMut>,
+    manifest_time: &DateTime<Utc>,
+    unallocated_reward_key: &str,
+) -> anyhow::Result<()> {
+    let rewards = collect_mobile_rewards(reward_shares, unallocated_reward_key, &[]).await?;
+    db::insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
+
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct EscrowStats {
+    pub inserted: usize,
+    pub unlocked: usize,
+    pub purged_escrow_durations: usize,
+}
+
+pub async fn handle_escrowed_mobile_rewards(
+    txn: &mut Transaction<'_, Postgres>,
+    reward_shares: Stream<BytesMut>,
+    manifest_time: &DateTime<Utc>,
+    unallocated_reward_key: &str,
+    default_escrow_days: u32,
+) -> anyhow::Result<EscrowStats> {
+    // Delete old escrow durations
+    let today = manifest_time.date_naive();
+    let purged = db::purge_expired_escrow_duration(&mut *txn, today).await?;
+    tracing::info!(purged, "expired escrow durations");
+
+    // Insert new rewards
+    let rewards = collect_mobile_rewards(
+        reward_shares,
+        unallocated_reward_key,
+        &[RewardType::MobileGateway],
+    )
+    .await?;
+
+    let escrowed_inserted =
+        db::insert_escrowed_rewards(&mut *txn, rewards.escrowed, manifest_time).await?;
+    let inserted = db::insert_rewards(&mut *txn, rewards.rewards, manifest_time).await?;
+    tracing::info!(inserted, escrowed_inserted, "inserted escrowed rewards");
+
+    // Move unlocked rewards to index table
+    let unlocked =
+        db::unlock_escrowed_rewards(&mut *txn, manifest_time, default_escrow_days).await?;
+    tracing::info!(unlocked, "unlocked rewards");
+
+    Ok(EscrowStats {
+        inserted: escrowed_inserted + inserted,
+        unlocked,
+        purged_escrow_durations: purged,
+    })
+}
+
+type RewardMap = HashMap<RewardKey, u64>;
+
+#[derive(Default)]
+struct CollectedRewards {
+    rewards: RewardMap,
+    escrowed: RewardMap,
+}
+
+async fn collect_mobile_rewards(
     mut reward_shares: Stream<BytesMut>,
     unallocated_reward_key: &str,
-    manifest_time: &DateTime<Utc>,
-) -> anyhow::Result<()> {
-    let mut rewards = HashMap::new();
+    escrowed_reward_types: &[RewardType],
+) -> anyhow::Result<CollectedRewards> {
+    let mut rewards = CollectedRewards::default();
 
     while let Some(msg) = reward_shares.try_next().await? {
         let share = proto::MobileRewardShare::decode(msg)?;
         match extract::mobile_reward(share, unallocated_reward_key) {
             Ok((key, amount)) => {
-                *rewards.entry(key).or_default() += amount;
+                if escrowed_reward_types.contains(&key.reward_type) {
+                    *rewards.escrowed.entry(key).or_default() += amount;
+                } else {
+                    *rewards.rewards.entry(key).or_default() += amount;
+                }
             }
             Err(extract::ExtractError::UnsupportedType(unsupported)) => {
                 tracing::debug!("ignoring unsupported: {unsupported}");
@@ -253,16 +359,5 @@ pub async fn handle_mobile_rewards(
         }
     }
 
-    for (reward_key, amount) in rewards {
-        db::insert(
-            &mut *txn,
-            reward_key.key,
-            amount,
-            reward_key.reward_type,
-            manifest_time,
-        )
-        .await?;
-    }
-
-    Ok(())
+    Ok(rewards)
 }
