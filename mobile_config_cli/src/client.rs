@@ -255,7 +255,10 @@ impl GatewayClient {
             .filter_map(|(res, pubkey)| async move {
                 match res.verify(&pubkey) {
                     Ok(()) => Some(res),
-                    Err(_) => None,
+                    Err(e) => {
+                        eprintln!("Response verification failed. {e}");
+                        None
+                    }
                 }
             })
             .flat_map(|res| stream::iter(res.gateways.into_iter()))
