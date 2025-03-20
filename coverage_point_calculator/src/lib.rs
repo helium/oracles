@@ -170,7 +170,6 @@ impl CoveragePoints {
         let location_trust_multiplier = location::multiplier(&location_trust_scores);
 
         let sp_boost_eligibility = SpBoostedHexStatus::new(
-            radio_type,
             location_trust_multiplier,
             &location_trust_scores,
             service_provider_boosted_reward_eligibility,
@@ -267,7 +266,6 @@ pub enum SpBoostedHexStatus {
 
 impl SpBoostedHexStatus {
     fn new(
-        radio_type: RadioType,
         location_trust_multiplier: Decimal,
         location_trust_scores: &[LocationTrust],
         service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
@@ -279,7 +277,7 @@ impl SpBoostedHexStatus {
             SPBoostedRewardEligibility::NotEnoughConnections => Self::NotEnoughConnections,
             SPBoostedRewardEligibility::Eligible => {
                 // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
-                if radio_type.is_wifi() && location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
+                if location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
                     return Self::WifiLocationScoreBelowThreshold(location_trust_multiplier);
                 }
 
@@ -334,10 +332,6 @@ impl RadioType {
             // Radios outside acceptable rank in a hex do not get points for that hex.
             _ => dec!(0),
         }
-    }
-
-    pub fn is_wifi(&self) -> bool {
-        matches!(self, Self::IndoorWifi | Self::OutdoorWifi)
     }
 }
 
@@ -877,7 +871,6 @@ mod tests {
 
         let wifi_bad_trust_score = |sp_status: SPBoostedRewardEligibility| {
             SpBoostedHexStatus::new(
-                RadioType::IndoorWifi,
                 location::multiplier(&bad_location),
                 &bad_location,
                 sp_status,

@@ -80,9 +80,9 @@ pub(crate) fn clean_covered_hexes(
             //   multiplier will automatically be 1x, regardless of boosted_hex_status.
             // hip-134: qualified radios earn full Oracle Boosting rewards
             let assignment_multiplier = match oracle_boosting_status {
-                OracleBoostingStatus::Qualified if radio_type.is_wifi() => dec!(1),
+                OracleBoostingStatus::Qualified => dec!(1),
                 OracleBoostingStatus::Banned => dec!(0),
-                OracleBoostingStatus::Qualified | OracleBoostingStatus::Eligible => {
+                OracleBoostingStatus::Eligible => {
                     if ranked.boosted.is_some() {
                         dec!(1)
                     } else {
@@ -252,7 +252,7 @@ mod tests {
 
         // Only Qualified WIFI radios should bypass bad assignment multiplier
         let expected_multiplier = match boost_status {
-            OracleBoostingStatus::Qualified if radio_type.is_wifi() => dec!(1),
+            OracleBoostingStatus::Qualified => dec!(1),
             _ => dec!(0),
         };
 
