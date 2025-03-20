@@ -101,10 +101,6 @@ impl OwnedKeyType {
             OwnedKeyType::Wifi(pubkey) => KeyType::Wifi(pubkey),
         }
     }
-
-    pub fn is_wifi(&self) -> bool {
-        matches!(self, Self::Wifi(_))
-    }
 }
 
 impl From<PublicKeyBinary> for OwnedKeyType {
