@@ -23,6 +23,7 @@ pub async fn accumulate_sessions(
 
     while let Some(report) = reports.next().await {
         if report.report.data_transfer_usage.radio_access_technology
+        // Eutran means CBRS radio
             == DataTransferRadioAccessTechnology::Eutran
         {
             continue;
