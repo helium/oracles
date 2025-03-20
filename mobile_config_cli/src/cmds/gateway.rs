@@ -4,7 +4,7 @@ use angry_purple_tiger::AnimalName;
 use futures::StreamExt;
 use helium_crypto::PublicKey;
 use helium_proto::services::mobile_config::{
-    GatewayInfo as GatewayInfoProto, GatewayMetadata as GatewayMetadataProto,
+    GatewayInfoV2 as GatewayInfoProto, GatewayMetadataV2 as GatewayMetadataProto,
 };
 use mobile_config::gateway_info::DeviceType;
 use serde::Serialize;

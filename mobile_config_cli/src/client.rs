@@ -12,8 +12,8 @@ use helium_proto::{
         AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1, AuthorizationListReqV1,
         AuthorizationListResV1, AuthorizationVerifyReqV1, AuthorizationVerifyResV1,
         CarrierIncentivePromotionListReqV1, CarrierIncentivePromotionListResV1, EntityVerifyReqV1,
-        EntityVerifyResV1, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1,
-        GatewayInfoStreamResV1,
+        EntityVerifyResV1, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV2,
+        GatewayInfoStreamResV2,
     },
     Message,
 };
@@ -223,7 +223,7 @@ impl GatewayClient {
             signature: vec![],
         };
         request.signature = request.sign(keypair)?;
-        let response = self.client.info(request).await?.into_inner();
+        let response = self.client.info_v2(request).await?.into_inner();
         response.verify(&self.server_pubkey)?;
         let info = response
             .info
@@ -247,7 +247,7 @@ impl GatewayClient {
         let config_pubkey = self.server_pubkey.clone();
         let stream = self
             .client
-            .info_batch(request)
+            .info_batch_v2(request)
             .await?
             .into_inner()
             .filter_map(|res| async move { res.ok() })
@@ -323,6 +323,6 @@ impl_verify!(AdminKeyResV1, signature);
 impl_verify!(AuthorizationVerifyResV1, signature);
 impl_verify!(AuthorizationListResV1, signature);
 impl_verify!(EntityVerifyResV1, signature);
-impl_verify!(GatewayInfoResV1, signature);
-impl_verify!(GatewayInfoStreamResV1, signature);
+impl_verify!(GatewayInfoResV2, signature);
+impl_verify!(GatewayInfoStreamResV2, signature);
 impl_verify!(CarrierIncentivePromotionListResV1, signature);
