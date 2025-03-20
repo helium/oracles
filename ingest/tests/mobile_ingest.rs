@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 use common::generate_keypair;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
@@ -188,10 +188,19 @@ async fn cell_heartbeat_after() {
     let keypair = generate_keypair();
 
     // Cell heartbeat is disabled but should return OK
-    client
+    let res = client
         .submit_cell_heartbeat(&keypair, "cbsd-1")
         .await
         .unwrap();
+    // Make sure response is parseable to a timestamp
+    // And it is close to the request time
+    let resp_sec = Utc
+        .timestamp_millis_opt(res.id.parse::<i64>().unwrap())
+        .unwrap();
+    let now_sec = Utc::now();
+
+    let diff = now_sec - resp_sec;
+    assert!(diff.num_seconds() < 100);
 }
 
 #[tokio::test]
