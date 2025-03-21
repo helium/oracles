@@ -1487,11 +1487,11 @@ mod test {
 
         let owner_2_reward = *owner_rewards
             .get(&owner2)
-            .expect("Could not fetch owner1 rewards");
+            .expect("Could not fetch owner2 rewards");
 
         let owner_3_reward = *owner_rewards
             .get(&owner3)
-            .expect("Could not fetch owner1 rewards");
+            .expect("Could not fetch owner3 rewards");
 
         assert_eq!((owner_1_reward as f64 * 1.5) as u64, owner_2_reward);
         assert_eq!((owner_1_reward as f64 * 0.75) as u64, owner_3_reward);
