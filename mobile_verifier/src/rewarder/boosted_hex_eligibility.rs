@@ -1,5 +1,5 @@
 use coverage_map::UnrankedCoverage;
-use coverage_point_calculator::{RadioType, SPBoostedRewardEligibility};
+use coverage_point_calculator::SPBoostedRewardEligibility;
 use helium_crypto::PublicKeyBinary;
 use hex_assignments::Assignment;
 
@@ -27,36 +27,26 @@ impl BoostedHexEligibility {
 
     pub fn eligibility(
         &self,
-        radio_type: RadioType,
         key: PublicKeyBinary,
-        cbsd_id_opt: Option<String>,
         covered_hexes: &[UnrankedCoverage],
     ) -> SPBoostedRewardEligibility {
         if Self::in_united_states(covered_hexes) {
-            self.check_unique_connections(&key, &radio_type)
+            self.check_unique_connections(&key)
         } else {
-            self.check_radio_thresholds(key, cbsd_id_opt)
+            self.check_radio_thresholds(key)
         }
     }
 
-    fn check_unique_connections(
-        &self,
-        key: &PublicKeyBinary,
-        radio_type: &RadioType,
-    ) -> SPBoostedRewardEligibility {
-        if unique_connections::is_qualified(&self.unique_connections, key, radio_type) {
+    fn check_unique_connections(&self, key: &PublicKeyBinary) -> SPBoostedRewardEligibility {
+        if unique_connections::is_qualified(&self.unique_connections, key) {
             SPBoostedRewardEligibility::Eligible
         } else {
             SPBoostedRewardEligibility::NotEnoughConnections
         }
     }
 
-    fn check_radio_thresholds(
-        &self,
-        key: PublicKeyBinary,
-        cbsd_id_opt: Option<String>,
-    ) -> SPBoostedRewardEligibility {
-        if self.radio_thresholds.is_verified(key, cbsd_id_opt) {
+    fn check_radio_thresholds(&self, key: PublicKeyBinary) -> SPBoostedRewardEligibility {
+        if self.radio_thresholds.is_verified(key) {
             SPBoostedRewardEligibility::Eligible
         } else {
             SPBoostedRewardEligibility::RadioThresholdNotMet
@@ -94,12 +84,7 @@ mod tests {
 
         let covered_hexes = vec![unranked_coverage(Assignment::A)];
 
-        let eligibility = boosted_hex_eligibility.eligibility(
-            RadioType::OutdoorWifi,
-            pub_key,
-            None,
-            &covered_hexes,
-        );
+        let eligibility = boosted_hex_eligibility.eligibility(pub_key, &covered_hexes);
 
         assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
     }
@@ -112,19 +97,14 @@ mod tests {
 
         let unique_connections = UniqueConnectionCounts::default();
         let mut verified_thresholds = VerifiedRadioThresholds::default();
-        verified_thresholds.insert(pub_key.clone(), None);
+        verified_thresholds.insert(pub_key.clone());
 
         let boosted_hex_eligibility =
             BoostedHexEligibility::new(verified_thresholds, unique_connections);
 
         let covered_hexes = vec![unranked_coverage(Assignment::C)];
 
-        let eligibility = boosted_hex_eligibility.eligibility(
-            RadioType::OutdoorWifi,
-            pub_key,
-            None,
-            &covered_hexes,
-        );
+        let eligibility = boosted_hex_eligibility.eligibility(pub_key, &covered_hexes);
 
         assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
     }
@@ -143,12 +123,7 @@ mod tests {
 
         let covered_hexes = vec![unranked_coverage(Assignment::C)];
 
-        let eligibility = boosted_hex_eligibility.eligibility(
-            RadioType::OutdoorWifi,
-            pub_key,
-            None,
-            &covered_hexes,
-        );
+        let eligibility = boosted_hex_eligibility.eligibility(pub_key, &covered_hexes);
 
         assert_eq!(
             SPBoostedRewardEligibility::RadioThresholdNotMet,
@@ -170,12 +145,7 @@ mod tests {
 
         let covered_hexes = vec![unranked_coverage(Assignment::A)];
 
-        let eligibility = boosted_hex_eligibility.eligibility(
-            RadioType::OutdoorWifi,
-            pub_key,
-            None,
-            &covered_hexes,
-        );
+        let eligibility = boosted_hex_eligibility.eligibility(pub_key, &covered_hexes);
 
         assert_eq!(
             SPBoostedRewardEligibility::NotEnoughConnections,

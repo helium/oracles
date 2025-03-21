@@ -148,7 +148,6 @@ mod tests {
             heartbeat: heartbeats::Heartbeat {
                 hb_type: heartbeats::HbType::Wifi,
                 hotspot_key: wifi_pubkey_bin.clone(),
-                cbsd_id: None,
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,

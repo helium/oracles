@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RadioThresholdReportReq {
     pub hotspot_pubkey: PublicKeyBinary,
-    pub cbsd_id: Option<String>,
     pub bytes_threshold: u64,
     pub subscriber_threshold: u32,
     pub threshold_timestamp: DateTime<Utc>,
@@ -50,7 +49,6 @@ impl TryFrom<RadioThresholdReportReqV1> for RadioThresholdReportReq {
     type Error = Error;
     fn try_from(v: RadioThresholdReportReqV1) -> Result<Self> {
         Ok(Self {
-            cbsd_id: Some(v.cbsd_id).filter(|s| !s.is_empty()),
             hotspot_pubkey: v.hotspot_pubkey.into(),
             bytes_threshold: v.bytes_threshold,
             subscriber_threshold: v.subscriber_threshold,
@@ -64,7 +62,7 @@ impl From<RadioThresholdReportReq> for RadioThresholdReportReqV1 {
     fn from(v: RadioThresholdReportReq) -> Self {
         let threshold_timestamp = v.threshold_timestamp.timestamp() as u64;
         Self {
-            cbsd_id: v.cbsd_id.unwrap_or_default(),
+            cbsd_id: String::default(),
             hotspot_pubkey: v.hotspot_pubkey.into(),
             bytes_threshold: v.bytes_threshold,
             subscriber_threshold: v.subscriber_threshold,
@@ -198,7 +196,6 @@ mod tests {
         let report = RadioThresholdIngestReport::try_from(proto)?;
         assert_eq!(parse_dt("2024-04-09 01:00:00"), report.received_timestamp);
         assert_eq!(pubkey, report.report.hotspot_pubkey);
-        assert_eq!(None, report.report.cbsd_id);
         assert_eq!(1000, report.report.bytes_threshold);
         assert_eq!(3, report.report.subscriber_threshold);
         assert_eq!(
@@ -212,6 +209,8 @@ mod tests {
 
     #[test]
     fn radio_threshold_from_proto_cbrs() -> anyhow::Result<()> {
+        // UPD: Since cbrs is not supported anymore this test
+        // assures that cbsd_id field just is ignored (try_from not fails)
         let pubkey =
             PublicKeyBinary::from_str("112HqsSX9Ft4ehxQCAcdb4cDSYX2ntsBZ7rtooioz3d3VXcF7MRr")?;
 
@@ -234,10 +233,6 @@ mod tests {
         let report = RadioThresholdIngestReport::try_from(proto)?;
         assert_eq!(parse_dt("2024-04-09 01:00:00"), report.received_timestamp);
         assert_eq!(pubkey, report.report.hotspot_pubkey);
-        assert_eq!(
-            Some("P27-SCE4255W2112CW5003971".to_string()),
-            report.report.cbsd_id
-        );
         assert_eq!(1000, report.report.bytes_threshold);
         assert_eq!(3, report.report.subscriber_threshold);
         assert_eq!(

@@ -1,4 +1,3 @@
-pub mod cbrs;
 pub mod last_location;
 pub mod wifi;
 
@@ -11,10 +10,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
-use file_store::{
-    file_sink::FileSinkClient, heartbeat::CbrsHeartbeatIngestReport,
-    wifi_heartbeat::WifiHeartbeatIngestReport,
-};
+use file_store::{file_sink::FileSinkClient, wifi_heartbeat::WifiHeartbeatIngestReport};
 use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
@@ -35,20 +31,17 @@ const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 #[sqlx(type_name = "radio_type")]
 #[sqlx(rename_all = "lowercase")]
 pub enum HbType {
-    Cbrs,
     Wifi,
 }
 
 #[derive(Debug, Copy, Clone)]
 pub enum KeyType<'a> {
-    Cbrs(&'a str),
     Wifi(&'a PublicKeyBinary),
 }
 
 impl From<KeyType<'_>> for proto::seniority_update::KeyType {
     fn from(kt: KeyType<'_>) -> Self {
         match kt {
-            KeyType::Cbrs(id) => proto::seniority_update::KeyType::CbsdId(id.to_string()),
             KeyType::Wifi(key) => proto::seniority_update::KeyType::HotspotKey(key.clone().into()),
         }
     }
@@ -57,36 +50,20 @@ impl From<KeyType<'_>> for proto::seniority_update::KeyType {
 impl KeyType<'_> {
     pub fn to_owned(self) -> OwnedKeyType {
         match self {
-            Self::Cbrs(cbrs) => OwnedKeyType::Cbrs(cbrs.to_owned()),
             Self::Wifi(key) => OwnedKeyType::Wifi(key.to_owned()),
         }
     }
 
     pub fn to_id(self) -> (String, HbType) {
         match self {
-            Self::Cbrs(cbrs) => (cbrs.to_string(), HbType::Cbrs),
             Self::Wifi(wifi) => (wifi.to_string(), HbType::Wifi),
         }
     }
 
     pub fn hb_type(self) -> HbType {
         match self {
-            Self::Cbrs(_) => HbType::Cbrs,
             Self::Wifi(_) => HbType::Wifi,
         }
-    }
-}
-
-impl<'a> From<&'a str> for KeyType<'a> {
-    fn from(cbrs: &'a str) -> Self {
-        Self::Cbrs(cbrs)
-    }
-}
-
-// This sucks, but it makes our life easier
-impl<'a> From<&'a String> for KeyType<'a> {
-    fn from(cbrs: &'a String) -> Self {
-        Self::Cbrs(cbrs.as_str())
     }
 }
 
@@ -108,7 +85,6 @@ impl<'a> Encode<'a, Postgres> for KeyType<'a> {
         buf: &mut <Postgres as sqlx::database::HasArguments<'a>>::ArgumentBuffer,
     ) -> sqlx::encode::IsNull {
         match self {
-            Self::Cbrs(cbrs) => cbrs.encode_by_ref(buf),
             Self::Wifi(wifi) => wifi.encode_by_ref(buf),
         }
     }
@@ -116,37 +92,14 @@ impl<'a> Encode<'a, Postgres> for KeyType<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum OwnedKeyType {
-    Cbrs(String),
     Wifi(PublicKeyBinary),
 }
 
 impl OwnedKeyType {
-    pub fn into_cbsd_id(self) -> Option<String> {
-        match self {
-            Self::Cbrs(cbsd_id) => Some(cbsd_id),
-            _ => None,
-        }
-    }
-
     pub fn to_ref(&self) -> KeyType {
         match self {
-            OwnedKeyType::Cbrs(cbsd_id) => KeyType::Cbrs(cbsd_id),
             OwnedKeyType::Wifi(pubkey) => KeyType::Wifi(pubkey),
         }
-    }
-
-    pub fn is_cbrs(&self) -> bool {
-        matches!(self, Self::Cbrs(_))
-    }
-
-    pub fn is_wifi(&self) -> bool {
-        matches!(self, Self::Wifi(_))
-    }
-}
-
-impl From<String> for OwnedKeyType {
-    fn from(s: String) -> Self {
-        Self::Cbrs(s)
     }
 }
 
@@ -159,9 +112,7 @@ impl From<PublicKeyBinary> for OwnedKeyType {
 impl PartialEq<KeyType<'_>> for OwnedKeyType {
     fn eq(&self, rhs: &KeyType<'_>) -> bool {
         match (self, rhs) {
-            (Self::Cbrs(lhs), KeyType::Cbrs(rhs)) => lhs == rhs,
             (Self::Wifi(lhs), KeyType::Wifi(rhs)) => lhs == *rhs,
-            _ => false,
         }
     }
 }
@@ -178,7 +129,6 @@ impl<'a> Encode<'a, Postgres> for OwnedKeyType {
         buf: &mut <Postgres as sqlx::database::HasArguments<'a>>::ArgumentBuffer,
     ) -> sqlx::encode::IsNull {
         match self {
-            Self::Cbrs(cbrs) => cbrs.encode_by_ref(buf),
             Self::Wifi(wifi) => wifi.encode_by_ref(buf),
         }
     }
@@ -189,10 +139,10 @@ impl<'r> Decode<'r, Postgres> for OwnedKeyType {
         value: <Postgres as sqlx::database::HasValueRef<'r>>::ValueRef,
     ) -> Result<Self, sqlx::error::BoxDynError> {
         let text = <&str as Decode<Postgres>>::decode(value)?;
-        // Try decoding to a public key binary, otherwise it's a cbrs string
+        // Try decoding to a public key binary
         match text.parse() {
             Ok(pubkey) => Ok(OwnedKeyType::Wifi(pubkey)),
-            Err(_) => Ok(OwnedKeyType::Cbrs(text.to_string())),
+            Err(e) => Err(e)?,
         }
     }
 }
@@ -201,7 +151,6 @@ impl<'r> Decode<'r, Postgres> for OwnedKeyType {
 pub struct Heartbeat {
     pub hb_type: HbType,
     pub hotspot_key: PublicKeyBinary,
-    pub cbsd_id: Option<String>,
     pub operation_mode: bool,
     pub lat: f64,
     pub lon: f64,
@@ -217,47 +166,18 @@ impl Heartbeat {
     }
 
     pub fn key(&self) -> KeyType<'_> {
-        match self.hb_type {
-            HbType::Cbrs => KeyType::from(self.cbsd_id.as_deref().unwrap()),
-            HbType::Wifi => KeyType::from(&self.hotspot_key),
-        }
+        KeyType::from(&self.hotspot_key)
     }
 
     pub fn id(&self) -> anyhow::Result<(String, DateTime<Utc>)> {
         let ts = self.truncated_timestamp()?;
-        match self.hb_type {
-            HbType::Cbrs => {
-                let cbsd_id = self
-                    .cbsd_id
-                    .clone()
-                    .ok_or_else(|| anyhow!("expected cbsd_id, found none"))?;
-                Ok((cbsd_id, ts))
-            }
-            HbType::Wifi => Ok((self.hotspot_key.to_string(), ts)),
-        }
+        Ok((self.hotspot_key.to_string(), ts))
     }
 
     fn centered_latlng(&self) -> anyhow::Result<LatLng> {
         Ok(LatLng::new(self.lat, self.lon)?
             .to_cell(h3o::Resolution::Twelve)
             .into())
-    }
-}
-
-impl From<CbrsHeartbeatIngestReport> for Heartbeat {
-    fn from(value: CbrsHeartbeatIngestReport) -> Self {
-        Self {
-            hb_type: HbType::Cbrs,
-            coverage_object: value.report.coverage_object(),
-            hotspot_key: value.report.pubkey,
-            cbsd_id: Some(value.report.cbsd_id),
-            operation_mode: value.report.operation_mode,
-            lat: value.report.lat,
-            lon: value.report.lon,
-            location_validation_timestamp: None,
-            location_source: LocationSource::Gps,
-            timestamp: value.received_timestamp,
-        }
     }
 }
 
@@ -272,7 +192,6 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
             hb_type: HbType::Wifi,
             coverage_object: value.report.coverage_object(),
             hotspot_key: value.report.pubkey,
-            cbsd_id: None,
             operation_mode: value.report.operation_mode,
             lat: value.report.lat,
             lon: value.report.lon,
@@ -286,8 +205,6 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
-    // cell hb only
-    pub cbsd_id: Option<String>,
     pub cell_type: CellType,
     pub distances_to_asserted: Option<Vec<i64>>,
     pub trust_score_multipliers: Vec<Decimal>,
@@ -296,18 +213,11 @@ pub struct HeartbeatReward {
 
 impl HeartbeatReward {
     pub fn key(&self) -> KeyType<'_> {
-        match self.cbsd_id {
-            Some(ref id) => KeyType::Cbrs(id),
-            _ => KeyType::Wifi(&self.hotspot_key),
-        }
+        KeyType::Wifi(&self.hotspot_key)
     }
 
     pub fn id(&self) -> anyhow::Result<String> {
         match self.cell_type.to_label() {
-            CellTypeLabel::CBRS => Ok(self
-                .cbsd_id
-                .clone()
-                .ok_or_else(|| anyhow!("expected cbsd_id, found none"))?),
             CellTypeLabel::Wifi => Ok(self.hotspot_key.to_string()),
             _ => Err(anyhow!("failed to derive label from cell type")),
         }
@@ -411,31 +321,6 @@ impl ValidatedHeartbeat {
         };
 
         let cell_type = match heartbeat.hb_type {
-            HbType::Cbrs => match heartbeat.cbsd_id.as_ref() {
-                Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
-                    Some(ty) => ty,
-                    _ => {
-                        return Ok(Self::new(
-                            heartbeat,
-                            CellType::CellTypeNone,
-                            dec!(0),
-                            None,
-                            Some(coverage_object.meta),
-                            proto::HeartbeatValidity::BadCbsdId,
-                        ));
-                    }
-                },
-                None => {
-                    return Ok(Self::new(
-                        heartbeat,
-                        CellType::CellTypeNone,
-                        dec!(0),
-                        None,
-                        Some(coverage_object.meta),
-                        proto::HeartbeatValidity::BadCbsdId,
-                    ));
-                }
-            },
             HbType::Wifi => {
                 if coverage_object.meta.indoor {
                     CellType::NovaGenericWifiIndoor
@@ -566,8 +451,6 @@ impl ValidatedHeartbeat {
                         asserted_distance_to_trust_multiplier, RadioType,
                     };
                     let radio_type = match (heartbeat.hb_type, coverage_object.meta.indoor) {
-                        (HbType::Cbrs, true) => RadioType::IndoorCbrs,
-                        (HbType::Cbrs, false) => RadioType::OutdoorCbrs,
                         (HbType::Wifi, true) => RadioType::IndoorWifi,
                         (HbType::Wifi, false) => RadioType::OutdoorWifi,
                     };
@@ -622,7 +505,7 @@ impl ValidatedHeartbeat {
         heartbeats
             .write(
                 proto::Heartbeat {
-                    cbsd_id: self.heartbeat.cbsd_id.clone().unwrap_or_default(),
+                    cbsd_id: String::default(),
                     pub_key: self.heartbeat.hotspot_key.as_ref().into(),
                     cell_type: self.cell_type as i32,
                     validity: self.validity as i32,
@@ -663,32 +546,8 @@ impl ValidatedHeartbeat {
         .await?;
         // Save the heartbeat
         match self.heartbeat.hb_type {
-            HbType::Cbrs => self.save_cbrs_hb(exec).await,
             HbType::Wifi => self.save_wifi_hb(exec).await,
         }
-    }
-
-    async fn save_cbrs_hb(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
-        let truncated_timestamp = self.truncated_timestamp()?;
-        sqlx::query(
-            r#"
-            INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
-            latest_timestamp = EXCLUDED.latest_timestamp,
-            coverage_object = EXCLUDED.coverage_object
-            "#
-        )
-        .bind(self.heartbeat.cbsd_id)
-        .bind(self.heartbeat.hotspot_key)
-        .bind(self.cell_type)
-        .bind(self.heartbeat.timestamp)
-        .bind(truncated_timestamp)
-        .bind(self.heartbeat.coverage_object)
-        .bind(self.location_trust_score_multiplier)
-        .execute(&mut *exec)
-        .await?;
-        Ok(())
     }
 
     async fn save_wifi_hb(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
@@ -801,7 +660,6 @@ mod test {
                 lon: 0.0,
                 lat: 0.0,
                 operation_mode: false,
-                cbsd_id: None,
                 coverage_object: Some(coverage_object),
                 location_validation_timestamp: None,
                 location_source: LocationSource::Skyhook,

@@ -269,7 +269,6 @@ impl HeartbeatBuilder {
         Heartbeat {
             hb_type: HbType::Wifi,
             hotspot_key: self.hotspot,
-            cbsd_id: None,
             operation_mode: true,
             lat,
             lon,

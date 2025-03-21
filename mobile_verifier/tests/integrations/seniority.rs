@@ -18,7 +18,6 @@ async fn test_seniority_updates(pool: PgPool) -> anyhow::Result<()> {
             hotspot_key: "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
                 .parse()
                 .unwrap(),
-            cbsd_id: None,
             operation_mode: true,
             lat: 0.0,
             lon: 0.0,

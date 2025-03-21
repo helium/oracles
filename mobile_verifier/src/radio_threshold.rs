@@ -255,9 +255,7 @@ where
         &self,
         report: &RadioThresholdReportReq,
     ) -> anyhow::Result<RadioThresholdReportVerificationStatus> {
-        let is_legacy = self
-            .verify_legacy(&report.hotspot_pubkey, &report.cbsd_id)
-            .await?;
+        let is_legacy = self.verify_legacy(&report.hotspot_pubkey, &None).await?;
         let report_validity = self.do_report_verifications(report).await;
         let final_validity = if is_legacy
             && report_validity == RadioThresholdReportVerificationStatus::ThresholdReportStatusValid
@@ -318,6 +316,8 @@ pub async fn save(
     ingest_report: &RadioThresholdIngestReport,
     db: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
+    let cbsd_id: Option<String> = None;
+
     sqlx::query(
         r#"
             INSERT INTO radio_threshold (
@@ -339,7 +339,7 @@ pub async fn save(
             "#,
     )
     .bind(ingest_report.report.hotspot_pubkey.to_string())
-    .bind(ingest_report.report.cbsd_id.clone())
+    .bind(cbsd_id)
     .bind(ingest_report.report.bytes_threshold as i64)
     .bind(ingest_report.report.subscriber_threshold as i32)
     .bind(ingest_report.report.threshold_timestamp)
@@ -352,21 +352,20 @@ pub async fn save(
 #[derive(FromRow, Debug)]
 pub struct RadioThreshold {
     hotspot_pubkey: PublicKeyBinary,
-    cbsd_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct VerifiedRadioThresholds {
-    gateways: HashSet<(PublicKeyBinary, Option<String>)>,
+    gateways: HashSet<PublicKeyBinary>,
 }
 
 impl VerifiedRadioThresholds {
-    pub fn insert(&mut self, hotspot_key: PublicKeyBinary, cbsd_id: Option<String>) {
-        self.gateways.insert((hotspot_key, cbsd_id));
+    pub fn insert(&mut self, hotspot_key: PublicKeyBinary) {
+        self.gateways.insert(hotspot_key);
     }
 
-    pub fn is_verified(&self, key: PublicKeyBinary, cbsd_id: Option<String>) -> bool {
-        self.gateways.contains(&(key, cbsd_id))
+    pub fn is_verified(&self, key: PublicKeyBinary) -> bool {
+        self.gateways.contains(&key)
     }
 }
 
@@ -375,14 +374,14 @@ pub async fn verified_radio_thresholds(
     reward_period: &Range<DateTime<Utc>>,
 ) -> Result<VerifiedRadioThresholds, sqlx::Error> {
     let mut rows = sqlx::query_as::<_, RadioThreshold>(
-        "SELECT hotspot_pubkey, cbsd_id
-             FROM radio_threshold WHERE threshold_timestamp < $1",
+        "SELECT hotspot_pubkey
+             FROM radio_threshold WHERE threshold_timestamp < $1 and cbsd_id IS NULL",
     )
     .bind(reward_period.end)
     .fetch(pool);
     let mut map = VerifiedRadioThresholds::default();
     while let Some(row) = rows.try_next().await? {
-        map.insert(row.hotspot_pubkey, row.cbsd_id.filter(|s| !s.is_empty()));
+        map.insert(row.hotspot_pubkey);
     }
     Ok(map)
 }
@@ -394,11 +393,10 @@ pub async fn delete(
     sqlx::query(
         r#"
             DELETE FROM radio_threshold
-            WHERE hotspot_pubkey = $1 AND (cbsd_id is null or cbsd_id = $2)
+            WHERE hotspot_pubkey = $1 AND cbsd_id is null
         "#,
     )
     .bind(ingest_report.report.hotspot_pubkey.to_string())
-    .bind(ingest_report.report.cbsd_id.clone())
     .execute(&mut *db)
     .await?;
     Ok(())

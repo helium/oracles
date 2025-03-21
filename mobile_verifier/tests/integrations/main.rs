@@ -1,6 +1,7 @@
 mod common;
 
 mod boosting_oracles;
+mod coverage;
 mod heartbeats;
 mod hex_boosting;
 mod last_location;

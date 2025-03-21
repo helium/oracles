@@ -14,7 +14,6 @@ pub type IndoorCellTree = HashMap<Cell, BTreeMap<SignalLevel, BinaryHeap<IndoorC
 #[derive(Eq, Debug, Clone)]
 pub struct IndoorCoverageLevel {
     hotspot_key: Vec<u8>,
-    cbsd_id: Option<String>,
     seniority_timestamp: DateTime<Utc>,
     signal_level: SignalLevel,
     assignments: HexAssignments,
@@ -43,7 +42,6 @@ pub fn insert_indoor_coverage_object(indoor: &mut IndoorCellTree, coverage_objec
         insert_indoor_coverage(
             indoor,
             &coverage_object.hotspot_key,
-            &coverage_object.cbsd_id,
             coverage_object.seniority_timestamp,
             hex_coverage,
         );
@@ -53,7 +51,6 @@ pub fn insert_indoor_coverage_object(indoor: &mut IndoorCellTree, coverage_objec
 pub fn insert_indoor_coverage(
     indoor: &mut IndoorCellTree,
     hotspot: &[u8],
-    cbsd_id: &Option<String>,
     seniority_timestamp: DateTime<Utc>,
     hex_coverage: UnrankedCoverage,
 ) {
@@ -64,7 +61,6 @@ pub fn insert_indoor_coverage(
         .or_default()
         .push(IndoorCoverageLevel {
             hotspot_key: hotspot.to_vec(),
-            cbsd_id: cbsd_id.clone(),
             seniority_timestamp,
             signal_level: hex_coverage.signal_level,
             assignments: hex_coverage.assignments,
@@ -100,7 +96,6 @@ pub fn into_indoor_coverage_map(
                 hex,
                 rank: rank + 1,
                 hotspot_key: cov.hotspot_key,
-                cbsd_id: cov.cbsd_id,
                 assignments: cov.assignments,
                 boosted,
                 signal_level: cov.signal_level,
@@ -120,11 +115,11 @@ mod test {
     fn ensure_max_signal_level_selected() {
         let mut indoor_coverage = IndoorCellTree::default();
         for cov_obj in vec![
-            indoor_cbrs_coverage("1", SignalLevel::None),
-            indoor_cbrs_coverage("2", SignalLevel::Low),
-            indoor_cbrs_coverage("3", SignalLevel::High),
-            indoor_cbrs_coverage("4", SignalLevel::Low),
-            indoor_cbrs_coverage("5", SignalLevel::None),
+            indoor_wifi_coverage("1", SignalLevel::None),
+            indoor_wifi_coverage("2", SignalLevel::Low),
+            indoor_wifi_coverage("3", SignalLevel::High),
+            indoor_wifi_coverage("4", SignalLevel::Low),
+            indoor_wifi_coverage("5", SignalLevel::None),
         ]
         .into_iter()
         {
@@ -132,7 +127,14 @@ mod test {
         }
         let ranked: HashMap<_, _> =
             into_indoor_coverage_map(indoor_coverage, &NoBoostedHexes, Utc::now())
-                .map(|x| (x.cbsd_id.clone().unwrap(), x))
+                .map(|x| {
+                    (
+                        std::str::from_utf8(&x.hotspot_key.clone())
+                            .unwrap()
+                            .to_string(),
+                        x,
+                    )
+                })
                 .collect();
         assert_eq!(ranked.get("3").unwrap().rank, 1);
         assert!({
@@ -157,16 +159,16 @@ mod test {
     fn ensure_oldest_radio_selected() {
         let mut indoor_coverage = IndoorCellTree::default();
         for cov_obj in vec![
-            indoor_cbrs_coverage_with_date("1", SignalLevel::High, date(1980, 1, 1)),
-            indoor_cbrs_coverage_with_date("2", SignalLevel::High, date(1970, 1, 5)),
-            indoor_cbrs_coverage_with_date("3", SignalLevel::High, date(1990, 2, 2)),
-            indoor_cbrs_coverage_with_date("4", SignalLevel::High, date(1970, 1, 4)),
-            indoor_cbrs_coverage_with_date("5", SignalLevel::High, date(1975, 3, 3)),
-            indoor_cbrs_coverage_with_date("6", SignalLevel::High, date(1970, 1, 3)),
-            indoor_cbrs_coverage_with_date("7", SignalLevel::High, date(1974, 2, 2)),
-            indoor_cbrs_coverage_with_date("8", SignalLevel::High, date(1970, 1, 2)),
-            indoor_cbrs_coverage_with_date("9", SignalLevel::High, date(1976, 5, 2)),
-            indoor_cbrs_coverage_with_date("10", SignalLevel::High, date(1970, 1, 1)),
+            indoor_wifi_coverage_with_date("1", SignalLevel::High, date(1980, 1, 1)),
+            indoor_wifi_coverage_with_date("2", SignalLevel::High, date(1970, 1, 5)),
+            indoor_wifi_coverage_with_date("3", SignalLevel::High, date(1990, 2, 2)),
+            indoor_wifi_coverage_with_date("4", SignalLevel::High, date(1970, 1, 4)),
+            indoor_wifi_coverage_with_date("5", SignalLevel::High, date(1975, 3, 3)),
+            indoor_wifi_coverage_with_date("6", SignalLevel::High, date(1970, 1, 3)),
+            indoor_wifi_coverage_with_date("7", SignalLevel::High, date(1974, 2, 2)),
+            indoor_wifi_coverage_with_date("8", SignalLevel::High, date(1970, 1, 2)),
+            indoor_wifi_coverage_with_date("9", SignalLevel::High, date(1976, 5, 2)),
+            indoor_wifi_coverage_with_date("10", SignalLevel::High, date(1970, 1, 1)),
         ]
         .into_iter()
         {
@@ -174,7 +176,14 @@ mod test {
         }
         let ranked: HashMap<_, _> =
             into_indoor_coverage_map(indoor_coverage, &NoBoostedHexes, Utc::now())
-                .map(|x| (x.cbsd_id.clone().unwrap(), x))
+                .map(|x| {
+                    (
+                        std::str::from_utf8(&x.hotspot_key.clone())
+                            .unwrap()
+                            .to_string(),
+                        x,
+                    )
+                })
                 .collect();
         assert_eq!(ranked.get("1").unwrap().rank, 9);
         assert_eq!(ranked.get("2").unwrap().rank, 5);
@@ -211,7 +220,7 @@ mod test {
 
         insert_indoor_coverage_object(
             &mut indoor_coverage,
-            indoor_cbrs_coverage_with_loc(
+            indoor_wifi_coverage_with_loc(
                 "1",
                 Cell::from_raw(0x8c2681a3064d9ff).unwrap(),
                 date(2022, 2, 2),
@@ -219,7 +228,7 @@ mod test {
         );
         insert_indoor_coverage_object(
             &mut indoor_coverage,
-            indoor_cbrs_coverage_with_loc(
+            indoor_wifi_coverage_with_loc(
                 "1",
                 Cell::from_raw(0x8c2681a3064dbff).unwrap(),
                 date(2022, 2, 2),
@@ -233,12 +242,11 @@ mod test {
         assert_eq!(coverage[1].rank, 1);
     }
 
-    fn indoor_cbrs_coverage(cbsd_id: &str, signal_level: SignalLevel) -> CoverageObject {
+    fn indoor_wifi_coverage(hotspot_key: &str, signal_level: SignalLevel) -> CoverageObject {
         CoverageObject {
             indoor: true,
-            hotspot_key: vec![1, 0],
+            hotspot_key: hotspot_key.as_bytes().to_vec(),
             seniority_timestamp: Utc::now(),
-            cbsd_id: Some(cbsd_id.to_string()),
             coverage: vec![UnrankedCoverage {
                 location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                 signal_power: 0,
@@ -248,16 +256,15 @@ mod test {
         }
     }
 
-    fn indoor_cbrs_coverage_with_date(
-        cbsd_id: &str,
+    fn indoor_wifi_coverage_with_date(
+        hotspot_key: &str,
         signal_level: SignalLevel,
         seniority_timestamp: DateTime<Utc>,
     ) -> CoverageObject {
         CoverageObject {
             indoor: true,
-            hotspot_key: vec![1, 0],
+            hotspot_key: hotspot_key.as_bytes().to_vec(),
             seniority_timestamp,
-            cbsd_id: Some(cbsd_id.to_string()),
             coverage: vec![UnrankedCoverage {
                 location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                 signal_power: 0,
@@ -267,16 +274,15 @@ mod test {
         }
     }
 
-    fn indoor_cbrs_coverage_with_loc(
-        cbsd_id: &str,
+    fn indoor_wifi_coverage_with_loc(
+        hotspot_key: &str,
         location: Cell,
         seniority_timestamp: DateTime<Utc>,
     ) -> CoverageObject {
         CoverageObject {
             indoor: true,
-            hotspot_key: vec![1, 0],
+            hotspot_key: hotspot_key.as_bytes().to_vec(),
             seniority_timestamp,
-            cbsd_id: Some(cbsd_id.to_string()),
             coverage: vec![UnrankedCoverage {
                 location,
                 signal_power: 0,
