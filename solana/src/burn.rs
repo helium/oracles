@@ -7,7 +7,6 @@ use helium_anchor_gen::{
     data_credits::{self, accounts, instruction},
     helium_sub_daos::{self, DaoV0, SubDaoV0},
 };
-use helium_crypto::PublicKeyBinary;
 use itertools::Itertools;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};

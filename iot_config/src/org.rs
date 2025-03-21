@@ -1,8 +1,10 @@
 use crate::lora_field::{DevAddrConstraint, NetIdField};
 use futures::stream::StreamExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
+use helium_lib::keypair::to_helium_pubkey;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::Serialize;
+use solana_sdk::pubkey::Pubkey;
 use sqlx::{error::Error as SqlxError, postgres::PgRow, types::Uuid, FromRow, Pool, Postgres, Row};
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -26,25 +28,28 @@ pub struct Org {
     pub constraints: Option<Vec<DevAddrConstraint>>,
 }
 
+fn solana_pubkey_to_helium_binary(pubkey_str: &str) -> Result<PublicKeyBinary, SqlxError> {
+    let pubkey = Pubkey::from_str(pubkey_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
+    let helium_pubkey = to_helium_pubkey(&pubkey).map_err(|e| SqlxError::Decode(Box::new(e)))?;
+    Ok(PublicKeyBinary::from(helium_pubkey))
+}
+
 impl FromRow<'_, PgRow> for Org {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
         let address_str: String = row.get("address");
-        let address =
-            PublicKeyBinary::from_str(&address_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
+        let address = solana_pubkey_to_helium_binary(&address_str)?;
         let approved = row.get::<bool, _>("approved");
         let oui = row.try_get::<i64, &str>("oui")? as u64;
         let owner_str: String = row.get("authority");
-        let owner =
-            PublicKeyBinary::from_str(&owner_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
+        let owner = solana_pubkey_to_helium_binary(&owner_str)?;
         let escrow_key = row.get::<String, _>("escrow_key");
         let locked = row.get::<bool, _>("locked");
         let raw_delegate_keys: Option<Vec<String>> = row.try_get("delegate_keys")?;
         let delegate_keys: Option<Vec<PublicKeyBinary>> = raw_delegate_keys.map(|keys| {
             keys.into_iter()
-                .filter_map(|key| PublicKeyBinary::from_str(&key).ok())
+                .filter_map(|key| solana_pubkey_to_helium_binary(&key).ok())
                 .collect()
         });
-
         let raw_constraints: Option<Vec<(Decimal, Decimal)>> = row.try_get("constraints")?;
         let constraints: Option<Vec<DevAddrConstraint>> = if let Some(constraints_data) =
             raw_constraints
@@ -96,13 +101,13 @@ pub type DelegateCache = HashSet<PublicKeyBinary>;
 async fn fetch_delegate_keys(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<HashSet<PublicKeyBinary>, sqlx::Error> {
-    let key_set: HashSet<PublicKeyBinary> = sqlx::query_scalar(
+    let key_set: HashSet<PublicKeyBinary> = sqlx::query_scalar::<_, String>(
         "SELECT delegate FROM solana_organization_delegate_keys WHERE delegate IS NOT NULL",
     )
     .fetch_all(db)
     .await?
     .into_iter()
-    .filter_map(|delegate: String| PublicKeyBinary::from_str(&delegate).ok())
+    .filter_map(|key| solana_pubkey_to_helium_binary(&key).ok())
     .collect();
 
     Ok(key_set)
@@ -149,8 +154,6 @@ pub fn spawn_delegate_cache_updater(
             interval_timer.tick().await;
             if let Err(err) = refresh_delegate_keys_cache(&pool, &delegate_updater).await {
                 tracing::error!(reason = ?err, "Failed to refresh delegate cache");
-            } else {
-                tracing::debug!("Delegate cache refreshed successfully");
             }
         }
     });

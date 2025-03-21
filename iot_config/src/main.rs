@@ -99,7 +99,6 @@ impl Daemon {
             auth_cache.clone(),
             pool.clone(),
             route_svc.clone_update_channel(),
-            delegate_key_updater.clone(),
         )?;
 
         let admin_svc = AdminService::new(

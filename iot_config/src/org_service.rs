@@ -1,9 +1,5 @@
 use std::sync::Arc;
 
-use crate::{
-    admin::AuthCache, broadcast_update, org, route::list_routes, telemetry, verify_public_key,
-    GrpcResult,
-};
 use anyhow::Result;
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
@@ -18,15 +14,19 @@ use helium_proto::{
     Message,
 };
 use sqlx::{Pool, Postgres};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::broadcast;
 use tonic::{Request, Response, Status};
+
+use crate::{
+    admin::AuthCache, broadcast_update, org, route::list_routes, telemetry, verify_public_key,
+    GrpcResult,
+};
 
 pub struct OrgService {
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
     route_update_tx: broadcast::Sender<RouteStreamResV1>,
     signing_key: Arc<Keypair>,
-    delegate_updater: Arc<watch::Sender<org::DelegateCache>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -41,14 +41,12 @@ impl OrgService {
         auth_cache: AuthCache,
         pool: Pool<Postgres>,
         route_update_tx: broadcast::Sender<RouteStreamResV1>,
-        delegate_updater: Arc<watch::Sender<org::DelegateCache>>,
     ) -> Result<Self> {
         Ok(Self {
             auth_cache,
             pool,
             route_update_tx,
             signing_key,
-            delegate_updater,
         })
     }
 

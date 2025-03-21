@@ -13,7 +13,6 @@ use helium_proto::services::iot_config::{
 };
 use iot_config::{
     admin::{AuthCache, KeyType},
-    org::{self},
     OrgService, RouteService,
 };
 use prost::Message;
@@ -499,12 +498,6 @@ async fn start_server(
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
 ) -> JoinHandle<anyhow::Result<()>> {
-    let (delegate_key_updater, _delegate_key_cache) = org::delegate_keys_cache(&pool)
-        .await
-        .expect("delete keys cache");
-
-    let delegate_key_updater = Arc::new(delegate_key_updater);
-
     let route_service =
         RouteService::new(signing_keypair.clone(), auth_cache.clone(), pool.clone());
 
@@ -513,7 +506,6 @@ async fn start_server(
         auth_cache.clone(),
         pool.clone(),
         route_service.clone_update_channel(),
-        delegate_key_updater.clone(),
     )
     .expect("org service");
 
