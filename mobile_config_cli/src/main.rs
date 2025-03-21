@@ -8,6 +8,8 @@ use mobile_config_cli::{
 async fn main() -> Result {
     let cli = Cli::parse();
 
+    custom_tracing::init(cli.log_filter.clone(), custom_tracing::Settings::default()).await?;
+
     if cli.print_command {
         println!("cli:#?");
     }

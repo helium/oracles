@@ -9,11 +9,11 @@ use helium_proto::services::mobile_config::{
     GatewayMetadata as GatewayMetadataProto, GatewayMetadataV2 as GatewayMetadataProtoV2,
     WifiDeploymentInfo as WifiDeploymentInfoProto,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub type GatewayInfoStream = BoxStream<'static, GatewayInfo>;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WifiDeploymentInfo {
     /// Antenna ID
     pub antenna: u32,
@@ -37,7 +37,7 @@ impl From<WifiDeploymentInfoProto> for WifiDeploymentInfo {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CbrsDeploymentInfo {
     pub cbrs_radios_deployment_info: Vec<CbrsRadioDeploymentInfo>,
 }
@@ -63,7 +63,7 @@ impl From<CbrsRadioDeploymentInfoProto> for CbrsRadioDeploymentInfo {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CbrsRadioDeploymentInfo {
     /// CBSD_ID
     pub radio_id: String,
@@ -71,7 +71,7 @@ pub struct CbrsRadioDeploymentInfo {
     pub elevation: u32,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum DeploymentInfo {
     #[serde(rename = "wifiInfoV0")]
     WifiDeploymentInfo(WifiDeploymentInfo),
