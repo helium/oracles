@@ -11,7 +11,7 @@ pub type EuiField = LoraField<16>;
 
 pub mod proto {
     pub use helium_proto::services::iot_config::{
-        DevaddrConstraintV1, DevaddrRangeV1, EuiPairV1, OrgV1, SkfV1,
+        DevaddrConstraintV1, DevaddrRangeV1, EuiPairV1, OrgV2, SkfV1,
     };
 }
 
