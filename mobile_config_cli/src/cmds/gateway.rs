@@ -6,7 +6,7 @@ use helium_crypto::PublicKey;
 use helium_proto::services::mobile_config::{
     GatewayInfoV2 as GatewayInfoProto, GatewayMetadataV2 as GatewayMetadataProto,
 };
-use mobile_config::gateway_info::DeviceType;
+use mobile_config::gateway_info::{DeploymentInfo, DeviceType};
 use serde::Serialize;
 use std::str::FromStr;
 
@@ -23,6 +23,7 @@ pub struct GatewayInfo {
 #[derive(Debug, Serialize)]
 pub struct GatewayMetadata {
     location: String,
+    deployment_info: Option<DeploymentInfo>,
     lat: f64,
     lon: f64,
 }
@@ -89,6 +90,7 @@ impl TryFrom<GatewayMetadataProto> for GatewayMetadata {
             location,
             lat: latlng.lat(),
             lon: latlng.lng(),
+            deployment_info: md.deployment_info.map(DeploymentInfo::from),
         })
     }
 }
