@@ -255,8 +255,8 @@ impl GatewayClient {
             .filter_map(|(res, pubkey)| async move {
                 match res.verify(&pubkey) {
                     Ok(()) => Some(res),
-                    Err(e) => {
-                        eprintln!("Response verification failed. {e}");
+                    Err(err) => {
+                        tracing::error!(?err, "Response verification failed");
                         None
                     }
                 }

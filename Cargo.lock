@@ -5072,6 +5072,7 @@ dependencies = [
  "anyhow",
  "base64 0.21.7",
  "clap 4.4.8",
+ "custom-tracing",
  "dialoguer",
  "futures",
  "h3o",
