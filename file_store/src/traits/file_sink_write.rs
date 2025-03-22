@@ -274,11 +274,6 @@ impl_file_sink!(
     "verified_unique_connections_report"
 );
 impl_file_sink!(
-    poc_mobile::PermaBanIngestReportV1,
-    FileType::PermaBanReport.to_str(),
-    "perma_ban_report"
-);
-impl_file_sink!(
     proto::BoostedHexUpdateV1,
     FileType::BoostedHexUpdate.to_str(),
     "boosted_hex_update"

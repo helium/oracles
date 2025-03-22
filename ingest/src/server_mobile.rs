@@ -15,10 +15,9 @@ use helium_proto::services::poc_mobile::{
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
     HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
-    InvalidatedRadioThresholdReportRespV1, PermaBanIngestReportV1, PermaBanReqV1, PermaBanRespV1,
-    RadioThresholdIngestReportV1, RadioThresholdReportReqV1, RadioThresholdReportRespV1,
-    RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
-    ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
+    RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
+    RadioUsageStatsResV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1, SubscriberMappingActivityIngestReportV1,
@@ -588,30 +587,6 @@ where
         _ = self.unique_connections_sink.write(report, []).await;
 
         Ok(Response::new(UniqueConnectionsRespV1 { timestamp }))
-    }
-
-    async fn submit_perma_ban(
-        &self,
-        request: Request<PermaBanReqV1>,
-    ) -> GrpcResult<PermaBanRespV1> {
-        let received_timestamp_ms = Utc::now().timestamp_millis() as u64;
-        let event = request.into_inner();
-
-        custom_tracing::record_b58("pub_key", &event.hotspot_pubkey);
-
-        let report = self
-            .verify_public_key(&event.carrier_key)
-            .and_then(|public_key| self.verify_network(public_key))
-            .and_then(|public_key| self.verify_signature(public_key, event))
-            .map(|(_, event)| PermaBanIngestReportV1 {
-                received_timestamp_ms,
-                report: Some(event),
-            })?;
-
-        _ = self.perma_ban_sink.write(report, []).await;
-
-        let timestamp_ms = received_timestamp_ms;
-        Ok(Response::new(PermaBanRespV1 { timestamp_ms }))
     }
 }
 

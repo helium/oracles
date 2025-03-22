@@ -7,9 +7,8 @@ use helium_proto::services::poc_mobile::{
     CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1, DataTransferEvent,
     DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
     DataTransferSessionRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
-    PermaBanIngestReportV1, PermaBanReqV1, PermaBanRespV1, RadioUsageStatsIngestReportV1,
-    RadioUsageStatsReqV1, RadioUsageStatsResV1, UniqueConnectionsIngestReportV1,
-    UniqueConnectionsReqV1, UniqueConnectionsRespV1,
+    RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
+    UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
 };
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -25,8 +24,7 @@ use prost::Message;
 use rand::rngs::OsRng;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::mpsc::error::TryRecvError;
-use tokio::sync::mpsc::Receiver;
-use tokio::{net::TcpListener, time::timeout};
+use tokio::{net::TcpListener, sync::mpsc::Receiver, time::timeout};
 use tonic::{
     async_trait,
     metadata::{Ascii, MetadataValue},
@@ -35,13 +33,7 @@ use tonic::{
 };
 use triggered::Trigger;
 
-pub struct MockAuthorizationClient {}
-
-impl MockAuthorizationClient {
-    pub fn new() -> Self {
-        MockAuthorizationClient {}
-    }
-}
+struct MockAuthorizationClient;
 
 #[async_trait]
 impl AuthorizationVerifier for MockAuthorizationClient {
@@ -106,7 +98,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             Network::MainNet,
             socket_addr,
             api_token,
-            auth_client,
+            MockAuthorizationClient,
         );
 
         grpc_server.run(listener).await
@@ -279,46 +271,6 @@ impl TestClient {
             Ok(None) => bail!("got none"),
             Err(reason) => bail!("got error {reason}"),
         }
-    }
-
-    pub async fn perma_ban_recv(mut self) -> anyhow::Result<PermaBanIngestReportV1> {
-        match timeout(Duration::from_secs(2), self.perma_ban_file_sink_rx.recv()).await {
-            Ok(Some(msg)) => match msg {
-                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
-                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
-                file_store::file_sink::Message::Data(_, data) => Ok(data),
-            },
-            Ok(None) => bail!("got none"),
-            Err(reason) => bail!("got error {reason}"),
-        }
-    }
-
-    pub async fn submit_perma_ban(
-        &mut self,
-        hotspot_pubkey: Vec<u8>,
-        hotspot_serial: String,
-    ) -> anyhow::Result<PermaBanRespV1> {
-        use helium_proto::services::poc_mobile::PermaBanType;
-        let mut req = PermaBanReqV1 {
-            hotspot_pubkey,
-            hotspot_serial,
-            ban_reason: "test ban".to_string(),
-            ban_type: PermaBanType::All.into(),
-            sent_timestamp_ms: Utc::now().timestamp_millis() as u64,
-            carrier_key: self.key_pair.public_key().into(),
-            signature: vec![],
-        };
-
-        req.signature = self.key_pair.sign(&req.encode_to_vec()).expect("sign");
-
-        let mut request = Request::new(req);
-        let metadata = request.metadata_mut();
-
-        metadata.insert("authorization", self.authorization.clone());
-
-        let response = self.client.submit_perma_ban(request).await?;
-
-        Ok(response.into_inner())
     }
 
     pub async fn submit_unique_connections(
