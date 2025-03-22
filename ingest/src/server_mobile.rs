@@ -15,9 +15,10 @@ use helium_proto::services::poc_mobile::{
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
     HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
-    InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
-    RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
-    RadioUsageStatsResV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    InvalidatedRadioThresholdReportRespV1, PermaBanIngestReportV1, PermaBanReqV1, PermaBanRespV1,
+    RadioThresholdIngestReportV1, RadioThresholdReportReqV1, RadioThresholdReportRespV1,
+    RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
+    ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1, SubscriberMappingActivityIngestReportV1,
@@ -57,6 +58,7 @@ pub struct GrpcServer<AV> {
     radio_usage_stats_event_sink: FileSinkClient<RadioUsageStatsIngestReportV1>,
     unique_connections_sink: FileSinkClient<UniqueConnectionsIngestReportV1>,
     subscriber_mapping_activity_sink: FileSinkClient<SubscriberMappingActivityIngestReportV1>,
+    perma_ban_sink: FileSinkClient<PermaBanIngestReportV1>,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -106,6 +108,7 @@ where
         radio_usage_stats_event_sink: FileSinkClient<RadioUsageStatsIngestReportV1>,
         unique_connections_sink: FileSinkClient<UniqueConnectionsIngestReportV1>,
         subscriber_mapping_activity_sink: FileSinkClient<SubscriberMappingActivityIngestReportV1>,
+        perma_ban_sink: FileSinkClient<PermaBanIngestReportV1>,
         required_network: Network,
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
@@ -125,6 +128,7 @@ where
             radio_usage_stats_event_sink,
             unique_connections_sink,
             subscriber_mapping_activity_sink,
+            perma_ban_sink,
             required_network,
             address,
             api_token,
@@ -585,6 +589,30 @@ where
 
         Ok(Response::new(UniqueConnectionsRespV1 { timestamp }))
     }
+
+    async fn submit_perma_ban(
+        &self,
+        request: Request<PermaBanReqV1>,
+    ) -> GrpcResult<PermaBanRespV1> {
+        let received_timestamp_ms = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+
+        custom_tracing::record_b58("pub_key", &event.hotspot_pubkey);
+
+        let report = self
+            .verify_public_key(&event.carrier_key)
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| PermaBanIngestReportV1 {
+                received_timestamp_ms,
+                report: Some(event),
+            })?;
+
+        _ = self.perma_ban_sink.write(report, []).await;
+
+        let timestamp_ms = received_timestamp_ms;
+        Ok(Response::new(PermaBanRespV1 { timestamp_ms }))
+    }
 }
 
 fn is_data_transfer_for_cbrs(event: &DataTransferSessionReqV1) -> bool {
@@ -721,6 +749,15 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         )
         .await?;
 
+    let (perma_ban_sink, perma_ban_server) = PermaBanIngestReportV1::file_sink(
+        store_base_path,
+        file_upload.clone(),
+        FileSinkCommitStrategy::Automatic,
+        FileSinkRollTime::Duration(settings.roll_time),
+        env!("CARGO_PKG_NAME"),
+    )
+    .await?;
+
     let (subscriber_mapping_activity_sink, subscriber_mapping_activity_server) =
         SubscriberMappingActivityIngestReportV1::file_sink(
             store_base_path,
@@ -757,6 +794,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         radio_usage_stats_event_sink,
         unique_connections_sink,
         subscriber_mapping_activity_sink,
+        perma_ban_sink,
         settings.network,
         settings.listen_addr,
         api_token,
@@ -784,6 +822,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(radio_usage_stats_event_server)
         .add_task(unique_connections_server)
         .add_task(subscriber_mapping_activity_server)
+        .add_task(perma_ban_server)
         .add_task(grpc_server)
         .build()
         .start()
