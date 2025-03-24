@@ -156,7 +156,7 @@ where
 
             self.verified_unique_connections_sink
                 .write(
-                    verified_report_proto.into(),
+                    verified_report_proto,
                     &[("report_status", verified_report_status.as_str_name())],
                 )
                 .await?;
