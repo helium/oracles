@@ -50,8 +50,10 @@ use std::path::PathBuf;
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
     /// Type of file to be dump
+    #[clap(short = 't')]
     file_type: FileType,
     /// Path to file
+    #[clap(short = 'f')]
     in_path: PathBuf,
 }
 

@@ -2,7 +2,7 @@ use crate::{
     cli::print_json,
     file_source,
     traits::{MsgTimestamp, TimestampDecode},
-    Error, FileInfo, FileType, Result, Settings,
+    Error, FileInfo, FileType, Result,
 };
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
@@ -27,7 +27,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, _settings: &Settings) -> Result {
+    pub async fn run(&self) -> Result {
         let file_info = FileInfo::try_from(self.path.as_path())?;
         let mut file_stream = file_source::source([&self.path]);
 
