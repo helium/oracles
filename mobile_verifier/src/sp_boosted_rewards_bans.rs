@@ -168,19 +168,14 @@ where
             )
             .await?;
 
-        let (receiver, ingest_server) = FileInfoPollerConfigBuilder::<
-            ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
-            _,
-            _,
-            _,
-        >::default()
-        .parser(ProstFileInfoPollerParser)
-        .state(pool.clone())
-        .store(file_store)
-        .lookback(LookbackBehavior::StartAfter(settings.start_after))
-        .prefix(FileType::SPBoostedRewardsBannedRadioIngestReport.to_string())
-        .create()
-        .await?;
+        let (receiver, ingest_server) = FileInfoPollerConfigBuilder::default()
+            .parser(ProstFileInfoPollerParser)
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::SPBoostedRewardsBannedRadioIngestReport.to_string())
+            .create()
+            .await?;
 
         let ingestor = Self {
             pool,

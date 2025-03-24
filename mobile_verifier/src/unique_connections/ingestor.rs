@@ -73,7 +73,7 @@ where
             .await?;
 
         let (unique_connections_ingest, unique_connections_server) =
-            file_source::Continuous::msg_source::<UniqueConnectionsIngestReport, _>()
+            file_source::continuous_source()
                 .state(pool.clone())
                 .store(file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))

@@ -52,15 +52,14 @@ where
         geofence: GFV,
     ) -> anyhow::Result<impl ManagedTask> {
         // CBRS Heartbeats
-        let (cbrs_heartbeats, cbrs_heartbeats_server) =
-            file_source::continuous_source::<CbrsHeartbeatIngestReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
-                .queue_size(1)
-                .create()
-                .await?;
+        let (cbrs_heartbeats, cbrs_heartbeats_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
+            .queue_size(1)
+            .create()
+            .await?;
 
         let cbrs_heartbeat_daemon = CbrsHeartbeatDaemon::new(
             pool,

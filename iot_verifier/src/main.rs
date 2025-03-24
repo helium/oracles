@@ -3,10 +3,8 @@ use crate::entropy_loader::EntropyLoader;
 use anyhow::Result;
 use clap::Parser;
 use file_store::{
-    entropy_report::EntropyReport,
     file_info_poller::LookbackBehavior,
     file_source, file_upload,
-    iot_packet::IotValidPacket,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore, FileType,
 };
@@ -158,16 +156,15 @@ impl Server {
         let max_lookback_age = settings.loader_window_max_lookback_age;
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
         let entropy_interval = settings.entropy_interval;
-        let (entropy_loader_receiver, entropy_loader_server) =
-            file_source::continuous_source::<EntropyReport, _>()
-                .state(pool.clone())
-                .store(entropy_store)
-                .prefix(FileType::EntropyReport.to_string())
-                .lookback(LookbackBehavior::Max(max_lookback_age))
-                .poll_duration(entropy_interval)
-                .offset(entropy_interval * 2)
-                .create()
-                .await?;
+        let (entropy_loader_receiver, entropy_loader_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(entropy_store)
+            .prefix(FileType::EntropyReport.to_string())
+            .lookback(LookbackBehavior::Max(max_lookback_age))
+            .poll_duration(entropy_interval)
+            .offset(entropy_interval * 2)
+            .create()
+            .await?;
 
         let entropy_loader = EntropyLoader {
             pool: pool.clone(),
@@ -190,16 +187,15 @@ impl Server {
 
         let packet_store = FileStore::from_settings(&settings.packet_ingest).await?;
         let packet_interval = settings.packet_interval;
-        let (pk_loader_receiver, pk_loader_server) =
-            file_source::continuous_source::<IotValidPacket, _>()
-                .state(pool.clone())
-                .store(packet_store.clone())
-                .prefix(FileType::IotValidPacket.to_string())
-                .lookback(LookbackBehavior::Max(max_lookback_age))
-                .poll_duration(packet_interval)
-                .offset(packet_interval * 2)
-                .create()
-                .await?;
+        let (pk_loader_receiver, pk_loader_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(packet_store.clone())
+            .prefix(FileType::IotValidPacket.to_string())
+            .lookback(LookbackBehavior::Max(max_lookback_age))
+            .poll_duration(packet_interval)
+            .offset(packet_interval * 2)
+            .create()
+            .await?;
 
         let packet_loader = packet_loader::PacketLoader::from_settings(
             settings,

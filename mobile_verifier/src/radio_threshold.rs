@@ -90,7 +90,7 @@ where
             .await?;
 
         let (radio_threshold_ingest, radio_threshold_ingest_server) =
-            file_source::continuous_source::<RadioThresholdIngestReport, _>()
+            file_source::continuous_source()
                 .state(pool.clone())
                 .store(file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
@@ -100,7 +100,7 @@ where
 
         // invalidated radio threshold reports
         let (invalidated_radio_threshold_ingest, invalidated_radio_threshold_ingest_server) =
-            file_source::continuous_source::<InvalidatedRadioThresholdIngestReport, _>()
+            file_source::continuous_source()
                 .state(pool.clone())
                 .store(file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
