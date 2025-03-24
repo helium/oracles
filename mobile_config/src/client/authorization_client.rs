@@ -10,7 +10,7 @@ use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 
 #[async_trait]
-pub trait AuthorizationVerifier {
+pub trait AuthorizationVerifier: Send + Sync + 'static {
     type Error;
 
     async fn verify_authorized_key(

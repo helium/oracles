@@ -38,7 +38,7 @@ pub struct SubscriberVerifiedMappingEventDaemon<AV, EV> {
 
 impl<AV, EV> SubscriberVerifiedMappingEventDaemon<AV, EV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
     EV: EntityVerifier + Send + Sync + 'static,
 {
     pub fn new(
@@ -205,7 +205,7 @@ where
 
 impl<AV, EV> ManagedTask for SubscriberVerifiedMappingEventDaemon<AV, EV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
     EV: EntityVerifier + Send + Sync + 'static,
 {
     fn start_task(

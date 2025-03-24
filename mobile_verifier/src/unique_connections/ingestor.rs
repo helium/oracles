@@ -36,7 +36,7 @@ pub struct UniqueConnectionsIngestor<AV> {
 
 impl<AV> ManagedTask for UniqueConnectionsIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
 {
     fn start_task(
         self: Box<Self>,
@@ -53,7 +53,7 @@ where
 
 impl<AV> UniqueConnectionsIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
 {
     pub async fn create_managed_task(
         pool: PgPool,

@@ -129,7 +129,7 @@ pub struct ServiceProviderBoostedRewardsBanIngestor<AV> {
 
 impl<AV> ManagedTask for ServiceProviderBoostedRewardsBanIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
     AV::Error: std::error::Error + Send + Sync + 'static,
 {
     fn start_task(
@@ -147,7 +147,7 @@ where
 
 impl<AV> ServiceProviderBoostedRewardsBanIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
     AV::Error: std::error::Error + Send + Sync + 'static,
 {
     pub async fn create_managed_task(
