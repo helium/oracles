@@ -15,7 +15,7 @@ use helium_crypto::PublicKey;
 use serde::{ser::SerializeSeq, Serializer};
 use std::{
     io,
-    path::{self, Path, PathBuf},
+    path::{Path, PathBuf},
     str::FromStr,
 };
 use tokio::fs;
@@ -25,7 +25,7 @@ use tokio::fs;
 pub struct Cmd {
     /// Configuration file to use.
     #[clap(short = 'c')]
-    config: path::PathBuf,
+    config: PathBuf,
     #[clap(subcommand)]
     cmd: BucketCmd,
 }
