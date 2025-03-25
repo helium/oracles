@@ -64,7 +64,7 @@ where
             .await?;
 
         let (subscriber_location_ingest, subscriber_location_ingest_server) =
-            file_source::continuous_source::<SubscriberLocationIngestReport, _>()
+            file_source::continuous_source()
                 .state(pool.clone())
                 .store(file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))

@@ -65,14 +65,13 @@ where
         file_store: FileStore,
         file_upload: FileUpload,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (reports_receiver, reports_receiver_server) =
-            file_source::continuous_source::<SubscriberVerifiedMappingEventIngestReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::SubscriberVerifiedMappingEventIngestReport.to_string())
-                .create()
-                .await?;
+        let (reports_receiver, reports_receiver_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::SubscriberVerifiedMappingEventIngestReport.to_string())
+            .create()
+            .await?;
 
         let (verified_report_sink, verified_report_sink_server) =
             VerifiedSubscriberVerifiedMappingEventIngestReportV1::file_sink(

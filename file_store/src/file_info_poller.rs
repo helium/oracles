@@ -5,6 +5,7 @@ use derive_builder::Builder;
 use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
 use futures_util::TryFutureExt;
 use retainer::Cache;
+use sqlx::PgPool;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -122,7 +123,12 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
 }
 
 #[derive(Clone)]
-pub struct FileInfoPollerServer<Message, State, Store, Parser> {
+pub struct FileInfoPollerServer<
+    Message,
+    State = PgPool,
+    Store = FileStore,
+    Parser = MsgDecodeFileInfoPollerParser,
+> {
     config: FileInfoPollerConfig<Message, State, Store, Parser>,
     sender: Sender<FileInfoStream<Message>>,
     file_queue: VecDeque<FileInfo>,

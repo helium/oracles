@@ -162,14 +162,13 @@ impl Cmd {
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let (report_files, report_files_server) =
-            file_source::continuous_source::<PacketRouterPacketReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::IotPacketReport.to_string())
-                .create()
-                .await?;
+        let (report_files, report_files_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::IotPacketReport.to_string())
+            .create()
+            .await?;
 
         let balance_store = balances.balances();
         let verifier_daemon = Daemon {

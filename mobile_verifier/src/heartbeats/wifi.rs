@@ -50,14 +50,13 @@ where
         geofence: GFV,
     ) -> anyhow::Result<impl ManagedTask> {
         // Wifi Heartbeats
-        let (wifi_heartbeats, wifi_heartbeats_server) =
-            file_source::continuous_source::<WifiHeartbeatIngestReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::WifiHeartbeatIngestReport.to_string())
-                .create()
-                .await?;
+        let (wifi_heartbeats, wifi_heartbeats_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::WifiHeartbeatIngestReport.to_string())
+            .create()
+            .await?;
 
         let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
             pool,
