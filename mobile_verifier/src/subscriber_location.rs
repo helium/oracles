@@ -42,7 +42,7 @@ pub struct SubscriberLocationIngestor<AV, EV> {
 
 impl<AV, EV> SubscriberLocationIngestor<AV, EV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
     EV: EntityVerifier + Send + Sync + 'static,
 {
     pub async fn create_managed_task(
@@ -197,7 +197,7 @@ where
 
 impl<AV, EV> ManagedTask for SubscriberLocationIngestor<AV, EV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
     EV: EntityVerifier + Send + Sync + 'static,
 {
     fn start_task(

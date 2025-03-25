@@ -43,7 +43,7 @@ pub struct RadioThresholdIngestor<AV> {
 
 impl<AV> ManagedTask for RadioThresholdIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
 {
     fn start_task(
         self: Box<Self>,
@@ -60,7 +60,7 @@ where
 
 impl<AV> RadioThresholdIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
 {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
