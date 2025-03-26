@@ -161,7 +161,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let mut txn = pool.clone().begin().await?;
     seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
     seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
-    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
+    let rewardable_total = seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
     txn.commit().await?;
     update_assignments_bad(&pool).await?;
 
@@ -207,9 +207,14 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
         // expecting single radio with poc rewards, no unallocated
         receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 1, false)
     );
+
     let Ok((poc_rewards, dc_rewards, _unallocated_reward)) = rewards else {
         panic!("rewards failed");
     };
+
+    // Check that we used rewardable_bytes for calculation and not upload_bytes + download_bytes anymore
+    let rewardable_sum: u64 = dc_rewards.iter().map(|r| r.rewardable_bytes).sum();
+    assert_eq!(rewardable_total, rewardable_sum);
 
     let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
     let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
@@ -422,38 +427,47 @@ async fn seed_speedtests(
 async fn seed_data_sessions(
     ts: DateTime<Utc>,
     txn: &mut Transaction<'_, Postgres>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<u64> {
+    let rewardable_bytes_1 = 1_024 * 1_000;
     let data_session_1 = data_session::HotspotDataSession {
         pub_key: HOTSPOT_1.parse().unwrap(),
         payer: PAYER_1.parse().unwrap(),
-        upload_bytes: 1024 * 1000,
-        download_bytes: 1024 * 50000,
-        rewardable_bytes: 1024 * 1000 + 1024 * 50000,
-        num_dcs: 5000000,
+        upload_bytes: 1_024 * 1_000,
+        download_bytes: 1_024 * 50_000,
+        // Here to test that rewardable_bytes is the one taken into account we lower it
+        rewardable_bytes: rewardable_bytes_1,
+        num_dcs: 5_000_000,
         received_timestamp: ts + ChronoDuration::hours(1),
     };
+
+    let rewardable_bytes_2 = 1_024 * 1_000 + 1_024 * 50_000;
     let data_session_2 = data_session::HotspotDataSession {
         pub_key: HOTSPOT_2.parse().unwrap(),
         payer: PAYER_1.parse().unwrap(),
-        upload_bytes: 1024 * 1000,
-        download_bytes: 1024 * 50000,
-        rewardable_bytes: 1024 * 1000 + 1024 * 50000,
-        num_dcs: 5000000,
+        upload_bytes: 1_024 * 1_000,
+        download_bytes: 1_024 * 50_000,
+        rewardable_bytes: rewardable_bytes_2,
+        num_dcs: 5_000_000,
         received_timestamp: ts + ChronoDuration::hours(1),
     };
+
+    let rewardable_bytes_3 = 1_024 * 1_000 + 1_024 * 50_000;
     let data_session_3 = data_session::HotspotDataSession {
         pub_key: HOTSPOT_3.parse().unwrap(),
         payer: PAYER_1.parse().unwrap(),
-        upload_bytes: 1024 * 1000,
-        download_bytes: 1024 * 50000,
-        rewardable_bytes: 1024 * 1000 + 1024 * 50000,
-        num_dcs: 5000000,
+        upload_bytes: 1_024 * 1_000,
+        download_bytes: 1_024 * 50_000,
+        rewardable_bytes: rewardable_bytes_3,
+        num_dcs: 5_000_000,
         received_timestamp: ts + ChronoDuration::hours(1),
     };
     data_session_1.save(txn).await?;
     data_session_2.save(txn).await?;
     data_session_3.save(txn).await?;
-    Ok(())
+
+    let rewardable = rewardable_bytes_1 + rewardable_bytes_2 + rewardable_bytes_3;
+
+    Ok(rewardable as u64)
 }
 
 async fn seed_unique_connections(
