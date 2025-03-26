@@ -295,13 +295,13 @@ impl TestClient {
             hotspot_pubkey,
             hotspot_serial,
             sent_timestamp_ms: Utc::now().timestamp_millis() as u64,
-            expiration_timestamp_ms: 0,
             ban_key: self.key_pair.public_key().into(),
             signature: vec![],
             ban_action: Some(BanAction::Ban(BanDetailsV1 {
                 notes: "test ban".to_string(),
                 reason: BanReason::Gaming.into(),
                 ban_type: BanType::All.into(),
+                expiration_timestamp_ms: 0,
             })),
         };
 
