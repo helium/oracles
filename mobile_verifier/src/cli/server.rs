@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::{
+    banning,
     boosting_oracles::DataSetDownloaderDaemon,
     coverage::{new_coverage_object_notification_channel, CoverageDaemon},
     data_session::DataSessionIngestor,
@@ -181,10 +182,20 @@ impl Cmd {
                 ServiceProviderBoostedRewardsBanIngestor::create_managed_task(
                     pool.clone(),
                     file_upload.clone(),
+                    report_ingest.clone(),
+                    auth_client.clone(),
+                    settings,
+                    seniority_updates,
+                )
+                .await?,
+            )
+            .add_task(
+                banning::create_managed_task(
+                    pool.clone(),
+                    file_upload.clone(),
                     report_ingest,
                     auth_client,
                     settings,
-                    seniority_updates,
                 )
                 .await?,
             )
