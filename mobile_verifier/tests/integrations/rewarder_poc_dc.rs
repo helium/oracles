@@ -428,6 +428,7 @@ async fn seed_data_sessions(
         payer: PAYER_1.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 50000,
         num_dcs: 5000000,
         received_timestamp: ts + ChronoDuration::hours(1),
     };
@@ -436,6 +437,7 @@ async fn seed_data_sessions(
         payer: PAYER_1.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 50000,
         num_dcs: 5000000,
         received_timestamp: ts + ChronoDuration::hours(1),
     };
@@ -444,6 +446,7 @@ async fn seed_data_sessions(
         payer: PAYER_1.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 50000,
         num_dcs: 5000000,
         received_timestamp: ts + ChronoDuration::hours(1),
     };
