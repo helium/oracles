@@ -43,7 +43,7 @@ pub struct RadioThresholdIngestor<AV> {
 
 impl<AV> ManagedTask for RadioThresholdIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
 {
     fn start_task(
         self: Box<Self>,
@@ -60,7 +60,7 @@ where
 
 impl<AV> RadioThresholdIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
 {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
@@ -90,7 +90,7 @@ where
             .await?;
 
         let (radio_threshold_ingest, radio_threshold_ingest_server) =
-            file_source::continuous_source::<RadioThresholdIngestReport, _>()
+            file_source::continuous_source()
                 .state(pool.clone())
                 .store(file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
@@ -100,7 +100,7 @@ where
 
         // invalidated radio threshold reports
         let (invalidated_radio_threshold_ingest, invalidated_radio_threshold_ingest_server) =
-            file_source::continuous_source::<InvalidatedRadioThresholdIngestReport, _>()
+            file_source::continuous_source()
                 .state(pool.clone())
                 .store(file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))

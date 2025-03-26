@@ -42,7 +42,7 @@ pub struct SubscriberLocationIngestor<AV, EV> {
 
 impl<AV, EV> SubscriberLocationIngestor<AV, EV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
     EV: EntityVerifier + Send + Sync + 'static,
 {
     pub async fn create_managed_task(
@@ -64,7 +64,7 @@ where
             .await?;
 
         let (subscriber_location_ingest, subscriber_location_ingest_server) =
-            file_source::continuous_source::<SubscriberLocationIngestReport, _>()
+            file_source::continuous_source()
                 .state(pool.clone())
                 .store(file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
@@ -197,7 +197,7 @@ where
 
 impl<AV, EV> ManagedTask for SubscriberLocationIngestor<AV, EV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
     EV: EntityVerifier + Send + Sync + 'static,
 {
     fn start_task(

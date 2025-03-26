@@ -166,17 +166,16 @@ impl Cmd {
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let (reports, reports_server) =
-            file_source::continuous_source::<DataTransferSessionIngestReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(
-                    Utc.timestamp_millis_opt(0).unwrap(),
-                ))
-                .prefix(FileType::DataTransferSessionIngestReport.to_string())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .create()
-                .await?;
+        let (reports, reports_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(
+                Utc.timestamp_millis_opt(0).unwrap(),
+            ))
+            .prefix(FileType::DataTransferSessionIngestReport.to_string())
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .create()
+            .await?;
 
         let resolver = MobileConfigClients::new(&settings.config_client)?;
 

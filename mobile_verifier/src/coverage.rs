@@ -95,14 +95,13 @@ impl CoverageDaemon {
         )
         .await?;
 
-        let (coverage_objs, coverage_objs_server) =
-            file_source::continuous_source::<CoverageObjectIngestReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::CoverageObjectIngestReport.to_string())
-                .create()
-                .await?;
+        let (coverage_objs, coverage_objs_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::CoverageObjectIngestReport.to_string())
+            .create()
+            .await?;
 
         // let hex_boost_data = boosting_oracles::make_hex_boost_data(settings, geofence)?;
         let coverage_daemon = CoverageDaemon::new(

@@ -22,6 +22,9 @@ use tokio::fs;
 /// Commands on remote buckets
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
+    /// Configuration file to use.
+    #[clap(short = 'c')]
+    config: PathBuf,
     #[clap(subcommand)]
     cmd: BucketCmd,
 }
@@ -36,8 +39,9 @@ pub enum BucketCmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        self.cmd.run(settings).await
+    pub async fn run(&self) -> Result {
+        let settings = Settings::new(&self.config)?;
+        self.cmd.run(&settings).await
     }
 }
 

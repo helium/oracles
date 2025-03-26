@@ -37,14 +37,13 @@ impl DataSessionIngestor {
     ) -> anyhow::Result<impl ManagedTask> {
         let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
         // data transfers
-        let (data_session_ingest, data_session_ingest_server) =
-            file_source::continuous_source::<ValidDataTransferSession, _>()
-                .state(pool.clone())
-                .store(data_transfer_ingest)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::ValidDataTransferSession.to_string())
-                .create()
-                .await?;
+        let (data_session_ingest, data_session_ingest_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(data_transfer_ingest)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::ValidDataTransferSession.to_string())
+            .create()
+            .await?;
 
         let data_session_ingestor = DataSessionIngestor::new(pool.clone(), data_session_ingest);
 
