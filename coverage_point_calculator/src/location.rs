@@ -59,6 +59,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn average_distance_should_not_panic() {
+        average_distance(&[]);
+    }
+
+    #[test]
+    fn multiplier_should_not_panic() {
+        multiplier(&[]);
+    }
+
+    #[test]
     fn distance_does_not_effect_multiplier() {
         let trust_scores = vec![
             LocationTrust {
