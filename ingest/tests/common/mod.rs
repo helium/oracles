@@ -5,12 +5,12 @@ use file_store::file_sink::FileSinkClient;
 use file_store::mobile_ban::proto::{BanAction, BanDetailsV1, BanReason};
 use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
-    BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
-    CellHeartbeatRespV1, DataTransferEvent, DataTransferRadioAccessTechnology,
-    DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
-    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
-    RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
-    UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
+    BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
+    DataTransferEvent, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
+    DataTransferSessionReqV1, DataTransferSessionRespV1, HexUsageStatsIngestReportV1,
+    HexUsageStatsReqV1, HexUsageStatsResV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
+    RadioUsageStatsResV1, UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1,
+    UniqueConnectionsRespV1,
 };
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -113,7 +113,6 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
         radio_usage_stat_rx,
         unique_connections_rx,
         ban_rx,
-        cbrs_hearbeat_rx,
         data_transfer_rx,
     )
     .await;
@@ -133,8 +132,7 @@ pub struct TestClient {
         Receiver<file_store::file_sink::Message<RadioUsageStatsIngestReportV1>>,
     unique_connections_file_sink_rx:
         Receiver<file_store::file_sink::Message<UniqueConnectionsIngestReportV1>>,
-    _ban_file_sink_rx: Receiver<file_store::file_sink::Message<BanIngestReportV1>>,
-    cell_heartbeat_rx: Receiver<file_store::file_sink::Message<CellHeartbeatIngestReportV1>>,
+    ban_file_sink_rx: Receiver<file_store::file_sink::Message<BanIngestReportV1>>,
     data_transfer_rx: Receiver<file_store::file_sink::Message<DataTransferSessionIngestReportV1>>,
 }
 
@@ -156,8 +154,7 @@ impl TestClient {
         unique_connections_file_sink_rx: Receiver<
             file_store::file_sink::Message<UniqueConnectionsIngestReportV1>,
         >,
-        _ban_file_sink_rx: Receiver<file_store::file_sink::Message<BanIngestReportV1>>,
-        cell_heartbeat_rx: Receiver<file_store::file_sink::Message<CellHeartbeatIngestReportV1>>,
+        ban_file_sink_rx: Receiver<file_store::file_sink::Message<BanIngestReportV1>>,
         data_transfer_rx: Receiver<
             file_store::file_sink::Message<DataTransferSessionIngestReportV1>,
         >,
@@ -175,8 +172,7 @@ impl TestClient {
             hex_usage_stats_file_sink_rx,
             radio_usage_stats_file_sink_rx,
             unique_connections_file_sink_rx,
-            _ban_file_sink_rx,
-            cell_heartbeat_rx,
+            ban_file_sink_rx,
             data_transfer_rx,
         }
     }
@@ -274,7 +270,7 @@ impl TestClient {
     }
 
     pub async fn ban_recv(mut self) -> anyhow::Result<BanIngestReportV1> {
-        match timeout(Duration::from_secs(2), self._ban_file_sink_rx.recv()).await {
+        match timeout(Duration::from_secs(2), self.ban_file_sink_rx.recv()).await {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
