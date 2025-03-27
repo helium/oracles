@@ -10,8 +10,7 @@ const PUBKEY1: &str = "113HRxtzxFbFUjDEJJpyeMRZRtdAW38LAUnB5mshRwi6jt7uFbt";
 
 #[tokio::test]
 async fn submit_ban() -> anyhow::Result<()> {
-    let (mut client, trigger) =
-        common::setup_mobile("2025-03-01 00:00:00Z".parse::<DateTime<Utc>>()?).await?;
+    let (mut client, trigger) = common::setup_mobile().await?;
 
     let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
     let serial = "test-serial".to_string();

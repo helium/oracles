@@ -10,8 +10,8 @@ use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey, PublicKeyBinary};
 use helium_proto::services::poc_mobile::{
-    self, BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
-    CellHeartbeatRespV1, CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
+    self, BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
+    CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
     DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
     DataTransferSessionRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
