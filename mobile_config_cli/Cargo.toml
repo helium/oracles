@@ -25,3 +25,5 @@ tokio = {workspace = true, features = ["macros", "rt-multi-thread"]}
 tokio-stream = {workspace = true}
 tonic = {workspace = true, features = ["tls", "tls-roots"]}
 tracing = {workspace = true}
+custom-tracing = { path = "../custom_tracing" }
+
