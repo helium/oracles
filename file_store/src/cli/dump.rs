@@ -2,7 +2,6 @@ use crate::{
     cli::print_json,
     coverage::CoverageObject,
     file_source,
-    heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     iot_packet::IotValidPacket,
     mobile_radio_invalidated_threshold::VerifiedInvalidatedRadioThresholdIngestReport,
     mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
@@ -29,11 +28,10 @@ use helium_proto::{
             LoraWitnessIngestReportV1,
         },
         poc_mobile::{
-            mobile_reward_share::Reward as MobileReward, CellHeartbeatIngestReportV1,
-            CellHeartbeatReqV1, CoverageObjectV1, Heartbeat, HexUsageStatsIngestReportV1,
-            InvalidDataTransferIngestReportV1, MobileRewardShare, OracleBoostingReportV1,
-            RadioRewardShare, RadioUsageStatsIngestReportV1, SpeedtestAvg, SpeedtestIngestReportV1,
-            SpeedtestReqV1, UniqueConnectionsIngestReportV1,
+            mobile_reward_share::Reward as MobileReward, CoverageObjectV1, Heartbeat,
+            HexUsageStatsIngestReportV1, InvalidDataTransferIngestReportV1, MobileRewardShare,
+            OracleBoostingReportV1, RadioRewardShare, RadioUsageStatsIngestReportV1, SpeedtestAvg,
+            SpeedtestIngestReportV1, SpeedtestReqV1, UniqueConnectionsIngestReportV1,
             VerifiedInvalidatedRadioThresholdIngestReportV1, VerifiedRadioThresholdIngestReportV1,
             VerifiedUniqueConnectionsIngestReportV1,
         },
@@ -100,10 +98,6 @@ impl Cmd {
                     });
                     print_json(&json)?;
                 }
-                FileType::CbrsHeartbeat => {
-                    let dec_msg = CellHeartbeatReqV1::decode(msg)?;
-                    wtr.serialize(CbrsHeartbeat::try_from(dec_msg)?)?;
-                }
                 FileType::WifiHeartbeatIngestReport => {
                     let msg = WifiHeartbeatIngestReport::decode(msg)?;
                     let json = json!({
@@ -118,11 +112,6 @@ impl Cmd {
                 FileType::CellSpeedtest => {
                     let dec_msg = SpeedtestReqV1::decode(msg)?;
                     wtr.serialize(CellSpeedtest::try_from(dec_msg)?)?;
-                }
-                FileType::CbrsHeartbeatIngestReport => {
-                    let dec_msg = CellHeartbeatIngestReportV1::decode(msg)?;
-                    let ingest_report = CbrsHeartbeatIngestReport::try_from(dec_msg)?;
-                    print_json(&ingest_report)?;
                 }
                 FileType::CellSpeedtestIngestReport => {
                     let dec_msg = SpeedtestIngestReportV1::decode(msg)?;

@@ -32,17 +32,6 @@ pub enum CellTypeLabel {
 }
 
 impl CellType {
-    pub fn from_cbsd_id(s: &str) -> Option<Self> {
-        match s {
-            s if s.starts_with(CELLTYPE_NOVA_436H) => Some(CellType::Nova436H),
-            s if s.starts_with(CELLTYPE_NOVA_430I) => Some(CellType::Nova430I),
-            s if s.starts_with(CELLTYPE_NEUTRINO_430) => Some(CellType::Neutrino430),
-            s if s.starts_with(CELLTYPE_SERCCOMM_INDOOR) => Some(CellType::SercommIndoor),
-            s if s.starts_with(CELLTYPE_SERCCOMM_OUTDOOR) => Some(CellType::SercommOutdoor),
-            &_ => None,
-        }
-    }
-
     pub fn to_label(self) -> CellTypeLabel {
         match self {
             Self::Nova436H => CellTypeLabel::CBRS,

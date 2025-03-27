@@ -235,7 +235,6 @@ mod tests {
                 heartbeat: Heartbeat {
                     hb_type: crate::heartbeats::HbType::Wifi,
                     hotspot_key: PublicKeyBinary::from_str("1trSuseaaeZSW8pqSsYKFkFYTfFVvy8DbPCcne6fYYfry6XqzdN1PwAsqinbGKW2ux9554Dw4ciw1uDTdKjBZfjYeuzCEpd95kmZMPGiHaT5ZwasdPgSzXCSYzqmGeQ97riiqEik9xKKhxU52tjCgLd7HNfpLGT9ceY71FCcKBM3fooUZCSiNNibsVvorBWdWjvetgsHLwjTGuwYMGQ2BpmA15r9t3EGNnrfKMv6E1VmoBcuyPYgi7bBLZYpW16Yua3aHd78Jz8QqBVz51S5xRTwDBmgK41e9tSVSqMcQbcZkXi5W7Jru8QEiUTHWyghHgSYpsvCfcQkVBKkP7fHpM4Jh1YTxY2MEvLaoTzxFLRtrM")?,
-                    cbsd_id: None,
                     operation_mode: true,
                     lat: 0.0,
                     lon: 0.0,

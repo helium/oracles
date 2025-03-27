@@ -1090,7 +1090,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
 }
 
 #[sqlx::test]
-async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
+async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
@@ -1100,8 +1100,6 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    // seed HBs where we have multiple coverage reports for one radio and one report for the others
-    // include a cbrs radio alongside 2 wifi radios
     seed_heartbeats_v4(reward_info.epoch_period.start, &mut txn).await?;
     seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
     seed_unique_connections(reward_info.epoch_period.start, &mut txn).await?;
@@ -1239,25 +1237,25 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     // Here's how we get the regular shares per coverage points
     // | base coverage point | speedtest | location | total |
     // |---------------------|-----------|----------|-------|
-    // | 400 x 2             | 0.75      | 1.00     | 600   |
+    // | 16 x 2              | 0.75      | 1.00     | 24    |
     // | 400                 | 0.75      | 1.00     | 300   |
-    // | 100                 | 0.75      | 1.00     | 75    |
+    // | 400                 | 0.75      | 1.00     | 300   |
     // |---------------------|-----------|----------|-------|
-    //                                              | 975   |
-    let regular_share = regular_poc / dec!(975);
+    //                                              | 624   |
+    let regular_share = regular_poc / dec!(624);
 
-    // Boosted hexes are 2 at 10x and 1 at 20x.
+    // Boosted hexes are 1 at 10x and 1 at 20x.
     // Only wifi is targeted with Boosts.
-    // (300 * (9 * 2)) + (300 * 19) == 11,100
+    // (24 * 9) + (300 * 19) == 5916
     // To get points _only_ from boosting.
-    let boosted_share = boosted_poc / dec!(11_100);
+    let boosted_share = boosted_poc / dec!(5916);
 
-    let exp_reward_1 = rounded(regular_share * dec!(300) * dec!(2))
-        + rounded(boosted_share * dec!(300) * dec!(18));
+    let exp_reward_1 = rounded(regular_share * (dec!(24) * dec!(1)))
+        + rounded(boosted_share * (dec!(24) * dec!(9)));
     let exp_reward_2 = rounded(regular_share * dec!(300) * dec!(1))
         + rounded(boosted_share * dec!(300) * dec!(19));
     let exp_reward_3 =
-        rounded(regular_share * dec!(75) * dec!(1)) + rounded(boosted_share * dec!(75) * dec!(0));
+        rounded(regular_share * dec!(300) * dec!(1)) + rounded(boosted_share * dec!(300) * dec!(0));
 
     assert_eq!(exp_reward_1, hotspot_1.total_poc_reward());
     assert_eq!(exp_reward_2, hotspot_2.total_poc_reward());
@@ -1266,9 +1264,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     // assert the number of boosted hexes for each radio
     assert_eq!(1, hotspot_2.boosted_hexes_len());
     assert_eq!(2, hotspot_1.boosted_hexes_len());
-    // hotspot 3 is CBRS and is no longer eligible for boosted rewards according
-    // to HIP-140
-    assert_eq!(0, hotspot_3.boosted_hexes_len());
+    assert_eq!(1, hotspot_3.boosted_hexes_len());
 
     // assert the hex boost multiplier values
     // as hotspot 3 has 2 covered hexes, it should have 2 boosted hexes
@@ -1277,7 +1273,7 @@ async fn test_poc_with_cbrs_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     hotspot_1_boosted_hexes.sort_by(|a, b| b.location.cmp(&a.location));
 
     assert_eq!(20, hotspot_2.nth_boosted_hex(0).boosted_multiplier);
-    assert_eq!(10, hotspot_1_boosted_hexes[1].boosted_multiplier);
+    assert_eq!(10, hotspot_1_boosted_hexes[0].boosted_multiplier);
     assert_eq!(10, hotspot_1_boosted_hexes[1].boosted_multiplier);
 
     // assert the hex boost location values
@@ -1393,7 +1389,6 @@ async fn seed_heartbeats_v2(
 
         let cov_obj_1 = create_multi_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key1.clone(),
             vec![0x8a1fb46622dffff_u64, 0x8a1fb46622d7fff_u64],
             true,
@@ -1402,7 +1397,6 @@ async fn seed_heartbeats_v2(
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key1,
-                cbsd_id: None,
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -1421,7 +1415,6 @@ async fn seed_heartbeats_v2(
         let hotspot_key2: PublicKeyBinary = HOTSPOT_2.to_string().parse().unwrap();
         let cov_obj_2 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key2.clone(),
             0x8a1fb49642dffff_u64,
             true,
@@ -1430,7 +1423,6 @@ async fn seed_heartbeats_v2(
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key2,
-                cbsd_id: None,
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -1449,7 +1441,6 @@ async fn seed_heartbeats_v2(
         let hotspot_key3: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap();
         let cov_obj_3 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key3.clone(),
             0x8c2681a306607ff_u64,
             true,
@@ -1458,7 +1449,6 @@ async fn seed_heartbeats_v2(
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key3,
-                cbsd_id: None,
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -1505,7 +1495,6 @@ async fn seed_heartbeats_with_location_trust(
         let hotspot_key1: PublicKeyBinary = HOTSPOT_1.to_string().parse().unwrap();
         let cov_obj_1 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key1.clone(),
             0x8a1fb466d2dffff_u64,
             true,
@@ -1514,7 +1503,6 @@ async fn seed_heartbeats_with_location_trust(
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key1,
-                cbsd_id: None,
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -1533,7 +1521,6 @@ async fn seed_heartbeats_with_location_trust(
         let hotspot_key2: PublicKeyBinary = HOTSPOT_2.to_string().parse().unwrap();
         let cov_obj_2 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key2.clone(),
             0x8a1fb49642dffff_u64,
             true,
@@ -1542,7 +1529,6 @@ async fn seed_heartbeats_with_location_trust(
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key2,
-                cbsd_id: None,
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -1561,7 +1547,6 @@ async fn seed_heartbeats_with_location_trust(
         let hotspot_key3: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap();
         let cov_obj_3 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key3.clone(),
             0x8c2681a306607ff_u64,
             true,
@@ -1570,7 +1555,7 @@ async fn seed_heartbeats_with_location_trust(
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key3,
-                cbsd_id: None,
+
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -1610,16 +1595,15 @@ async fn seed_heartbeats_v4(
 
         let cov_obj_1 = create_multi_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key1.clone(),
-            vec![0x8a1fb46622dffff_u64, 0x8a1fb46622d7fff_u64],
-            true,
+            [0x8a1fb46622dffff_u64, 0x8a1fb46622d7fff_u64].into(),
+            false,
         );
         let wifi_heartbeat1 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key1,
-                cbsd_id: None,
+
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -1628,7 +1612,7 @@ async fn seed_heartbeats_v4(
                 timestamp: ts + ChronoDuration::hours(n),
                 location_source: LocationSource::Skyhook,
             },
-            cell_type: CellType::NovaGenericWifiIndoor,
+            cell_type: CellType::NovaGenericWifiOutdoor,
             distance_to_asserted: Some(10),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
@@ -1638,7 +1622,6 @@ async fn seed_heartbeats_v4(
         let hotspot_key2: PublicKeyBinary = HOTSPOT_2.to_string().parse().unwrap();
         let cov_obj_2 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key2.clone(),
             0x8a1fb49642dffff_u64,
             true,
@@ -1647,7 +1630,7 @@ async fn seed_heartbeats_v4(
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key2,
-                cbsd_id: None,
+
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -1664,19 +1647,17 @@ async fn seed_heartbeats_v4(
         };
 
         let hotspot_key4: PublicKeyBinary = HOTSPOT_4.to_string().parse().unwrap();
-        let cbsd_id = Some("P27-SCE4255W0002".to_string());
         let cov_obj_3 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            cbsd_id.clone(),
             hotspot_key4.clone(),
             0x8c2681a306607ff_u64,
             true,
         );
-        let cbrs_heartbeat1 = ValidatedHeartbeat {
+        let wifi_heartbeat3 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Cbrs,
+                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key4,
-                cbsd_id,
+
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -1685,7 +1666,7 @@ async fn seed_heartbeats_v4(
                 timestamp: ts + ChronoDuration::hours(n),
                 location_source: LocationSource::Skyhook,
             },
-            cell_type: CellType::SercommOutdoor,
+            cell_type: CellType::NovaGenericWifiIndoor,
             distance_to_asserted: Some(1),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
@@ -1694,11 +1675,11 @@ async fn seed_heartbeats_v4(
 
         save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat1, txn).await?;
         save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat2, txn).await?;
-        save_seniority_object(ts + ChronoDuration::hours(n), &cbrs_heartbeat1, txn).await?;
+        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat3, txn).await?;
 
         wifi_heartbeat1.save(txn).await?;
         wifi_heartbeat2.save(txn).await?;
-        cbrs_heartbeat1.save(txn).await?;
+        wifi_heartbeat3.save(txn).await?;
 
         cov_obj_1.save(txn).await?;
         cov_obj_2.save(txn).await?;
@@ -1783,16 +1764,12 @@ async fn seed_unique_connections(
 
 fn create_coverage_object(
     ts: DateTime<Utc>,
-    cbsd_id: Option<String>,
     pub_key: PublicKeyBinary,
     hex: u64,
     indoor: bool,
 ) -> CoverageObject {
     let location = h3o::CellIndex::try_from(hex).unwrap();
-    let key_type = match cbsd_id {
-        Some(s) => KeyType::CbsdId(s),
-        None => KeyType::HotspotKey(pub_key.clone()),
-    };
+    let key_type = KeyType::HotspotKey(pub_key.clone());
     let report = FSCoverageObject {
         pub_key,
         uuid: Uuid::new_v4(),
@@ -1815,15 +1792,12 @@ fn create_coverage_object(
 
 fn create_multi_coverage_object(
     ts: DateTime<Utc>,
-    cbsd_id: Option<String>,
     pub_key: PublicKeyBinary,
     hex: Vec<u64>,
     indoor: bool,
 ) -> CoverageObject {
-    let key_type = match cbsd_id {
-        Some(s) => KeyType::CbsdId(s),
-        None => KeyType::HotspotKey(pub_key.clone()),
-    };
+    let key_type = KeyType::HotspotKey(pub_key.clone());
+
     let coverage: Vec<RadioHexSignalLevel> = hex
         .iter()
         .map(|h| RadioHexSignalLevel {

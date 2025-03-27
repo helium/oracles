@@ -31,17 +31,11 @@ pub fn asserted_distance_to_trust_multiplier(
             76..=100 => dec!(0.25),
             _ => dec!(0.00),
         },
-        RadioType::IndoorCbrs => dec!(1.0),
-        RadioType::OutdoorCbrs => dec!(1.0),
     }
 }
 
-pub(crate) fn average_distance(radio_type: RadioType, trust_scores: &[LocationTrust]) -> Decimal {
-    // CBRS radios are always trusted because they have internal GPS
-    if radio_type.is_cbrs() {
-        return dec!(0);
-    }
-
+pub(crate) fn average_distance(trust_scores: &[LocationTrust]) -> Decimal {
+    // FIXME-K: if count = 0, division by zero happens
     let count = Decimal::from(trust_scores.len());
     let sum: Decimal = trust_scores
         .iter()
@@ -51,12 +45,8 @@ pub(crate) fn average_distance(radio_type: RadioType, trust_scores: &[LocationTr
     sum / count
 }
 
-pub fn multiplier(radio_type: RadioType, trust_scores: &[LocationTrust]) -> Decimal {
-    // CBRS radios are always trusted because they have internal GPS
-    if radio_type.is_cbrs() {
-        return dec!(1);
-    }
-
+pub fn multiplier(trust_scores: &[LocationTrust]) -> Decimal {
+    // FIXME-K: if count = 0, division by zero happens
     let count = Decimal::from(trust_scores.len());
     let scores: Decimal = trust_scores.iter().map(|l| l.trust_score).sum();
 
@@ -97,19 +87,6 @@ mod tests {
             },
         ];
 
-        assert_eq!(dec!(0.5), multiplier(RadioType::IndoorWifi, &trust_scores));
-    }
-
-    #[test]
-    fn cbrs_trust_score_bypassed_for_gps_trust() {
-        // CBRS radios have GPS units in them, they are always trusted,
-        // regardless of their score or distance provided.
-
-        let trust_scores = vec![LocationTrust {
-            meters_to_asserted: 99999,
-            trust_score: dec!(0),
-        }];
-
-        assert_eq!(dec!(1), multiplier(RadioType::IndoorCbrs, &trust_scores));
+        assert_eq!(dec!(0.5), multiplier(&trust_scores));
     }
 }

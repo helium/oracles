@@ -1,6 +1,6 @@
 use crate::Settings;
 use anyhow::{bail, Error, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient,
     file_upload,
@@ -10,10 +10,10 @@ use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey, PublicKeyBinary};
 use helium_proto::services::poc_mobile::{
-    self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
-    CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
-    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
-    DataTransferSessionRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
+    self, CellHeartbeatReqV1, CellHeartbeatRespV1, CoverageObjectIngestReportV1,
+    CoverageObjectReqV1, CoverageObjectRespV1, DataTransferRadioAccessTechnology,
+    DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
+    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
     RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
@@ -41,7 +41,6 @@ pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 pub type VerifyResult<T> = std::result::Result<T, Status>;
 
 pub struct GrpcServer<AV> {
-    heartbeat_report_sink: FileSinkClient<CellHeartbeatIngestReportV1>,
     wifi_heartbeat_report_sink: FileSinkClient<WifiHeartbeatIngestReportV1>,
     speedtest_report_sink: FileSinkClient<SpeedtestIngestReportV1>,
     data_transfer_session_sink: FileSinkClient<DataTransferSessionIngestReportV1>,
@@ -60,7 +59,6 @@ pub struct GrpcServer<AV> {
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
     authorization_verifier: AV,
-    cbrs_disable_time: DateTime<Utc>,
 }
 
 impl<AV> ManagedTask for GrpcServer<AV>
@@ -89,7 +87,6 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        heartbeat_report_sink: FileSinkClient<CellHeartbeatIngestReportV1>,
         wifi_heartbeat_report_sink: FileSinkClient<WifiHeartbeatIngestReportV1>,
         speedtest_report_sink: FileSinkClient<SpeedtestIngestReportV1>,
         data_transfer_session_sink: FileSinkClient<DataTransferSessionIngestReportV1>,
@@ -110,10 +107,8 @@ where
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
         authorization_verifier: AV,
-        cbrs_disable_time: DateTime<Utc>,
     ) -> Self {
         GrpcServer {
-            heartbeat_report_sink,
             wifi_heartbeat_report_sink,
             speedtest_report_sink,
             data_transfer_session_sink,
@@ -130,7 +125,6 @@ where
             address,
             api_token,
             authorization_verifier,
-            cbrs_disable_time,
         }
     }
 
@@ -219,37 +213,13 @@ where
 
     async fn submit_cell_heartbeat(
         &self,
-        request: Request<CellHeartbeatReqV1>,
+        _request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
+        // CBRS radios are no longer supported
         let timestamp = Utc::now();
-        let event = request.into_inner();
-
-        if timestamp >= self.cbrs_disable_time {
-            let pubkey = PublicKeyBinary::from(event.pub_key);
-            tracing::info!(
-                ?pubkey,
-                "dropping CellHeartbeatReqV1 because cbrs disable time has passed"
-            );
-            return Ok(Response::new(CellHeartbeatRespV1 {
-                id: timestamp.timestamp_millis().to_string(),
-            }));
-        }
-
-        custom_tracing::record_b58("pub_key", &event.pub_key);
-
-        let report = self
-            .verify_public_key(event.pub_key.as_ref())
-            .and_then(|public_key| self.verify_network(public_key))
-            .and_then(|public_key| self.verify_signature(public_key, event))
-            .map(|(_, event)| CellHeartbeatIngestReportV1 {
-                received_timestamp: timestamp.timestamp_millis() as u64,
-                report: Some(event),
-            })?;
-
-        _ = self.heartbeat_report_sink.write(report, []).await;
-
-        let id = timestamp.timestamp_millis().to_string();
-        Ok(Response::new(CellHeartbeatRespV1 { id }))
+        return Ok(Response::new(CellHeartbeatRespV1 {
+            id: timestamp.timestamp_millis().to_string(),
+        }));
     }
 
     async fn submit_wifi_heartbeat(
@@ -283,7 +253,7 @@ where
         let timestamp = Utc::now();
         let event = request.into_inner();
 
-        if is_data_transfer_for_cbrs(&event) && timestamp > self.cbrs_disable_time {
+        if is_data_transfer_for_cbrs(&event) {
             let pubkey = event
                 .data_transfer_usage
                 .map(|usage| PublicKeyBinary::from(usage.pub_key))
@@ -600,16 +570,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let store_base_path = Path::new(&settings.cache);
 
-    let (heartbeat_report_sink, heartbeat_report_sink_server) =
-        CellHeartbeatIngestReportV1::file_sink(
-            store_base_path,
-            file_upload.clone(),
-            FileSinkCommitStrategy::Automatic,
-            FileSinkRollTime::Duration(settings.roll_time),
-            env!("CARGO_PKG_NAME"),
-        )
-        .await?;
-
     let (wifi_heartbeat_report_sink, wifi_heartbeat_report_sink_server) =
         WifiHeartbeatIngestReportV1::file_sink(
             store_base_path,
@@ -743,7 +703,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     };
 
     let grpc_server = GrpcServer::new(
-        heartbeat_report_sink,
         wifi_heartbeat_report_sink,
         speedtest_report_sink,
         data_transfer_session_sink,
@@ -760,7 +719,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         settings.listen_addr,
         api_token,
         AuthorizationClient::from_settings(config_client)?,
-        settings.cbrs_disable_time,
     );
 
     tracing::info!(
@@ -771,7 +729,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     TaskManager::builder()
         .add_task(file_upload_server)
-        .add_task(heartbeat_report_sink_server)
         .add_task(wifi_heartbeat_report_sink_server)
         .add_task(speedtest_report_sink_server)
         .add_task(data_transfer_session_sink_server)

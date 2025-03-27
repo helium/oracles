@@ -50,7 +50,6 @@ pub struct BannedRadioReport {
 impl BannedRadioReport {
     fn radio_type(&self) -> HbType {
         match self.key {
-            OwnedKeyType::Cbrs(_) => HbType::Cbrs,
             OwnedKeyType::Wifi(_) => HbType::Wifi,
         }
     }
@@ -70,7 +69,9 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
         let ban_type = report.ban_type();
 
         let key = match report.key_type {
-            Some(ProtoKeyType::CbsdId(cbsd_id)) => OwnedKeyType::Cbrs(cbsd_id),
+            Some(ProtoKeyType::CbsdId(_cbsd_id)) => {
+                anyhow::bail!("CBRS radio are not supported anymore")
+            }
             Some(ProtoKeyType::HotspotKey(bytes)) => {
                 OwnedKeyType::Wifi(PublicKeyBinary::from(bytes))
             }
@@ -99,7 +100,6 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
 #[derive(Debug, Default)]
 pub struct BannedRadios {
     wifi: HashSet<PublicKeyBinary>,
-    cbrs: HashSet<String>,
 }
 
 impl BannedRadios {
@@ -107,15 +107,8 @@ impl BannedRadios {
         self.wifi.insert(pubkey);
     }
 
-    pub fn insert_cbrs(&mut self, cbsd_id: String) {
-        self.cbrs.insert(cbsd_id);
-    }
-
-    pub fn contains(&self, pubkey: &PublicKeyBinary, cbsd_id_opt: Option<&str>) -> bool {
-        match cbsd_id_opt {
-            Some(cbsd_id) => self.cbrs.contains(cbsd_id),
-            None => self.wifi.contains(pubkey),
-        }
+    pub fn contains(&self, pubkey: &PublicKeyBinary) -> bool {
+        self.wifi.contains(pubkey)
     }
 }
 
@@ -320,12 +313,13 @@ pub mod db {
     ) -> anyhow::Result<BannedRadios> {
         sqlx::query(
             r#"
-                SELECT distinct radio_type, radio_key
+                SELECT distinct radio_key
                 FROM sp_boosted_rewards_bans
                 WHERE ban_type = $1
                     AND received_timestamp <= $2
                     AND until > $2 
                     AND COALESCE(invalidated_at > $2, TRUE)
+                    AND radio_type != 'cbrs'
             "#,
         )
         .bind(ban_type.as_str_name())
@@ -333,13 +327,8 @@ pub mod db {
         .fetch(pool)
         .map_err(anyhow::Error::from)
         .try_fold(BannedRadios::default(), |mut set, row| async move {
-            let radio_type = row.get::<HbType, &str>("radio_type");
             let radio_key = row.get::<String, &str>("radio_key");
-            match radio_type {
-                HbType::Wifi => set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?),
-                HbType::Cbrs => set.insert_cbrs(radio_key),
-            };
-
+            set.insert_wifi(PublicKeyBinary::from_str(&radio_key)?);
             Ok(set)
         })
         .await
@@ -507,90 +496,13 @@ mod tests {
         }
     }
 
-    fn cbrs_ban_report(
-        cbsd_id: String,
-        until: DateTime<Utc>,
-        reason: SpBoostedRewardsBannedRadioReason,
-    ) -> ServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
-        let signer_keypair = generate_keypair();
-
-        ServiceProviderBoostedRewardsBannedRadioIngestReportV1 {
-            received_timestamp: Utc::now().timestamp_millis() as u64,
-            report: Some(ServiceProviderBoostedRewardsBannedRadioReqV1 {
-                pubkey: signer_keypair.public_key().into(),
-                reason: reason as i32,
-                until: until.timestamp() as u64,
-                signature: vec![],
-                key_type: Some(ProtoKeyType::CbsdId(cbsd_id)),
-                ban_type: SpBoostedRewardsBannedRadioBanType::BoostedHex as i32,
-            }),
-        }
-    }
-
     #[sqlx::test]
     async fn wifi_radio_can_get_banned_and_unbanned(pool: PgPool) -> anyhow::Result<()> {
         let setup = TestSetup::create(pool.clone(), AllVerified);
         let keypair = generate_keypair();
-        let cbsd_id = "cbsd-id-1".to_string();
-
-        let report = cbrs_ban_report(
-            cbsd_id.clone(),
-            Utc::now() + Duration::days(7),
-            SpBoostedRewardsBannedRadioReason::NoNetworkCorrelation,
-        );
-
-        let mut transaction = pool.begin().await?;
-        setup
-            .ingestor
-            .process_ingest_report(&mut transaction, report)
-            .await?;
-        transaction.commit().await?;
-
-        let banned_radios = db::get_banned_radios(
-            &pool,
-            SpBoostedRewardsBannedRadioBanType::BoostedHex,
-            Utc::now(),
-        )
-        .await?;
-        let result =
-            banned_radios.contains(&keypair.public_key().to_owned().into(), Some(&cbsd_id));
-
-        assert!(result);
-
-        let report = cbrs_ban_report(
-            cbsd_id.clone(),
-            Utc::now() - Duration::days(7),
-            SpBoostedRewardsBannedRadioReason::Unbanned,
-        );
-
-        let mut transaction = pool.begin().await?;
-        setup
-            .ingestor
-            .process_ingest_report(&mut transaction, report)
-            .await?;
-        transaction.commit().await?;
-
-        let banned_radios = db::get_banned_radios(
-            &pool,
-            SpBoostedRewardsBannedRadioBanType::BoostedHex,
-            Utc::now(),
-        )
-        .await?;
-        let result =
-            banned_radios.contains(&keypair.public_key().to_owned().into(), Some(&cbsd_id));
-
-        assert!(!result);
-
-        Ok(())
-    }
-
-    #[sqlx::test]
-    async fn cbrs_radio_can_get_banned_and_unbanned(pool: PgPool) -> anyhow::Result<()> {
-        let setup = TestSetup::create(pool.clone(), AllVerified);
-        let keypair = generate_keypair();
 
         let report = wifi_ban_report(
-            keypair.public_key(),
+            &keypair.public_key().clone(),
             Utc::now() + Duration::days(7),
             SpBoostedRewardsBannedRadioReason::NoNetworkCorrelation,
         );
@@ -608,7 +520,7 @@ mod tests {
             Utc::now(),
         )
         .await?;
-        let result = banned_radios.contains(&keypair.public_key().to_owned().into(), None);
+        let result = banned_radios.contains(&keypair.public_key().to_owned().into());
 
         assert!(result);
 
@@ -631,7 +543,7 @@ mod tests {
             Utc::now(),
         )
         .await?;
-        let result = banned_radios.contains(&keypair.public_key().to_owned().into(), None);
+        let result = banned_radios.contains(&keypair.public_key().to_owned().into());
 
         assert!(!result);
 

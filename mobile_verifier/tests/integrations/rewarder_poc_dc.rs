@@ -77,21 +77,19 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, true)
     );
     if let Ok((poc_rewards, dc_rewards, unallocated_reward)) = rewards {
-        // assert poc reward outputs
-        let hotspot_1_reward = 9_784_735_514_513;
-        let hotspot_2_reward = 39_138_942_058_055;
-        let hotspot_3_reward = 391_389_420_580;
-        assert_eq!(hotspot_1_reward, poc_rewards[0].total_poc_reward());
+        let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
+
+        assert_eq!(poc_sum / 3, poc_rewards[0].total_poc_reward());
         assert_eq!(
             HOTSPOT_1.to_string(),
             PublicKeyBinary::from(poc_rewards[0].hotspot_key.clone()).to_string()
         );
-        assert_eq!(hotspot_2_reward, poc_rewards[1].total_poc_reward());
+        assert_eq!(poc_sum / 3, poc_rewards[1].total_poc_reward());
         assert_eq!(
             HOTSPOT_3.to_string(),
             PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
         );
-        assert_eq!(hotspot_3_reward, poc_rewards[2].total_poc_reward());
+        assert_eq!(poc_sum / 3, poc_rewards[2].total_poc_reward());
         assert_eq!(
             HOTSPOT_2.to_string(),
             PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
@@ -99,7 +97,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
         // assert the unallocated reward
         let unallocated_reward = unallocated_reward.unwrap();
-        assert_eq!(unallocated_reward.amount, 2);
+        assert_eq!(unallocated_reward.amount, 1);
 
         // assert the boosted hexes in the radio rewards
         // boosted hexes will contain the used multiplier for each boosted hex
@@ -126,7 +124,6 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         );
 
         // confirm the total rewards allocated matches expectations
-        let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
         let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
         let total = poc_sum + dc_sum + unallocated_reward.amount;
 
@@ -262,19 +259,16 @@ async fn seed_heartbeats(
 ) -> anyhow::Result<()> {
     for n in 0..24 {
         let hotspot_key1: PublicKeyBinary = HOTSPOT_1.to_string().parse().unwrap();
-        let cbsd_id_1 = "P27-SCE4255W0001".to_string();
         let cov_obj_1 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            Some(cbsd_id_1.clone()),
             hotspot_key1.clone(),
             0x8a1fb466d2dffff_u64,
             true,
         );
-        let cbrs_heartbeat_1 = ValidatedHeartbeat {
+        let wifi_heartbeat_1 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Cbrs,
+                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key1,
-                cbsd_id: Some(cbsd_id_1),
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -283,27 +277,24 @@ async fn seed_heartbeats(
                 timestamp: ts + ChronoDuration::hours(n),
                 location_source: proto::LocationSource::Gps,
             },
-            cell_type: CellType::SercommIndoor,
-            distance_to_asserted: None,
+            cell_type: CellType::NovaGenericWifiIndoor,
+            distance_to_asserted: Some(0),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
             validity: proto::HeartbeatValidity::Valid,
         };
 
         let hotspot_key2: PublicKeyBinary = HOTSPOT_2.to_string().parse().unwrap();
-        let cbsd_id_2 = "P27-SCE4255W0002".to_string();
         let cov_obj_2 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            Some(cbsd_id_2.clone()),
             hotspot_key2.clone(),
             0x8a1fb49642dffff_u64,
-            false,
+            true,
         );
-        let cbrs_heartbeat_2 = ValidatedHeartbeat {
+        let wifi_heartbeat_2 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
-                hb_type: HbType::Cbrs,
+                hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key2,
-                cbsd_id: Some(cbsd_id_2),
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -312,8 +303,8 @@ async fn seed_heartbeats(
                 timestamp: ts + ChronoDuration::hours(n),
                 location_source: proto::LocationSource::Gps,
             },
-            cell_type: CellType::SercommOutdoor,
-            distance_to_asserted: None,
+            cell_type: CellType::NovaGenericWifiIndoor,
+            distance_to_asserted: Some(0),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
             validity: proto::HeartbeatValidity::Valid,
@@ -322,16 +313,14 @@ async fn seed_heartbeats(
         let hotspot_key3: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap();
         let cov_obj_3 = create_coverage_object(
             ts + ChronoDuration::hours(n),
-            None,
             hotspot_key3.clone(),
             0x8c2681a306607ff_u64,
             true,
         );
-        let wifi_heartbeat = ValidatedHeartbeat {
+        let wifi_heartbeat_3 = ValidatedHeartbeat {
             heartbeat: Heartbeat {
                 hb_type: HbType::Wifi,
                 hotspot_key: hotspot_key3,
-                cbsd_id: None,
                 operation_mode: true,
                 lat: 0.0,
                 lon: 0.0,
@@ -341,19 +330,19 @@ async fn seed_heartbeats(
                 location_source: proto::LocationSource::Skyhook,
             },
             cell_type: CellType::NovaGenericWifiIndoor,
-            distance_to_asserted: Some(10),
+            distance_to_asserted: Some(0),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
             validity: proto::HeartbeatValidity::Valid,
         };
 
-        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat, txn).await?;
-        save_seniority_object(ts + ChronoDuration::hours(n), &cbrs_heartbeat_1, txn).await?;
-        save_seniority_object(ts + ChronoDuration::hours(n), &cbrs_heartbeat_2, txn).await?;
+        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat_3, txn).await?;
+        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat_1, txn).await?;
+        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat_2, txn).await?;
 
-        cbrs_heartbeat_1.save(txn).await?;
-        cbrs_heartbeat_2.save(txn).await?;
-        wifi_heartbeat.save(txn).await?;
+        wifi_heartbeat_1.save(txn).await?;
+        wifi_heartbeat_2.save(txn).await?;
+        wifi_heartbeat_3.save(txn).await?;
 
         cov_obj_1.save(txn).await?;
         cov_obj_2.save(txn).await?;
@@ -479,16 +468,12 @@ async fn seed_unique_connections(
 
 fn create_coverage_object(
     ts: DateTime<Utc>,
-    cbsd_id: Option<String>,
     pub_key: PublicKeyBinary,
     hex: u64,
     indoor: bool,
 ) -> CoverageObject {
     let location = h3o::CellIndex::try_from(hex).unwrap();
-    let key_type = match cbsd_id {
-        Some(s) => KeyType::CbsdId(s),
-        None => KeyType::HotspotKey(pub_key.clone()),
-    };
+    let key_type = KeyType::HotspotKey(pub_key.clone());
     let report = FSCoverageObject {
         pub_key,
         uuid: Uuid::new_v4(),
