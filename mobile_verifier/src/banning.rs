@@ -174,7 +174,7 @@ mod db {
     use std::str::FromStr;
 
     use chrono::{DateTime, Utc};
-    use file_store::mobile_ban::{BanAction, BanType, VerifiedBanReport};
+    use file_store::mobile_ban::{BanAction, BanDetails, BanType, UnbanDetails, VerifiedBanReport};
     use futures::TryStreamExt;
     use helium_crypto::PublicKeyBinary;
     use sqlx::{PgConnection, PgPool, Postgres, Row, Transaction};
@@ -224,11 +224,11 @@ mod db {
     ) -> anyhow::Result<()> {
         match &ban_report.report.report.ban_action {
             // TODO: ignore `ban_type = Poc` when mobile_packet_verifier is updated
-            BanAction::Ban {
+            BanAction::Ban(BanDetails {
                 ban_type,
                 expiration_timestamp,
                 ..
-            } => {
+            }) => {
                 insert_ban(
                     conn,
                     ban_report.hotspot_pubkey(),
@@ -238,7 +238,9 @@ mod db {
                 )
                 .await?
             }
-            BanAction::UnBan { .. } => remove_ban(conn, ban_report.hotspot_pubkey()).await?,
+            BanAction::Unban(UnbanDetails { .. }) => {
+                remove_ban(conn, ban_report.hotspot_pubkey()).await?
+            }
         }
 
         Ok(())
@@ -290,7 +292,7 @@ mod db {
 mod tests {
     use helium_crypto::PublicKeyBinary;
     use helium_proto::services::mobile_config::NetworkKeyRole;
-    use mobile_ban::{proto::BanReason, BanAction, BanRequest, BanType};
+    use mobile_ban::{proto::BanReason, BanAction, BanDetails, BanRequest, BanType, UnbanDetails};
 
     use super::*;
 
@@ -322,16 +324,16 @@ mod tests {
             received_timestamp: Utc::now(),
             report: BanRequest {
                 hotspot_pubkey: hotspot_pubkey.clone(),
-                hotspot_serial: "test-serial".to_string(),
                 sent_timestamp: Utc::now(),
                 ban_key: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
-                ban_action: BanAction::Ban {
+                ban_action: BanAction::Ban(BanDetails {
+                    hotspot_serial: "test-serial".to_string(),
                     notes: "test-ban".to_string(),
                     reason: BanReason::Gaming,
                     ban_type: BanType::All,
                     expiration_timestamp: None,
-                },
+                }),
             },
         };
 
@@ -339,13 +341,13 @@ mod tests {
             received_timestamp: Utc::now(),
             report: BanRequest {
                 hotspot_pubkey: hotspot_pubkey.clone(),
-                hotspot_serial: "test-serial".to_string(),
                 sent_timestamp: Utc::now(),
                 ban_key: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
-                ban_action: BanAction::UnBan {
+                ban_action: BanAction::Unban(UnbanDetails {
+                    hotspot_serial: "test-serial".to_string(),
                     notes: "test-unban".to_string(),
-                },
+                }),
             },
         };
 
@@ -373,16 +375,16 @@ mod tests {
             received_timestamp: Utc::now(),
             report: BanRequest {
                 hotspot_pubkey: hotspot_pubkey.clone(),
-                hotspot_serial: "test-serial".to_string(),
                 sent_timestamp: Utc::now(),
                 ban_key: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
-                ban_action: BanAction::Ban {
+                ban_action: BanAction::Ban(BanDetails {
+                    hotspot_serial: "test-serial".to_string(),
                     notes: "test-ban".to_string(),
                     reason: BanReason::Gaming,
                     ban_type,
                     expiration_timestamp: None,
-                },
+                }),
             },
         };
 
@@ -409,16 +411,16 @@ mod tests {
             received_timestamp: Utc::now(),
             report: BanRequest {
                 hotspot_pubkey: expired_hotspot_pubkey.clone(),
-                hotspot_serial: "test-serial".to_string(),
                 sent_timestamp: Utc::now() - chrono::Duration::hours(6),
                 ban_key: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
-                ban_action: BanAction::Ban {
+                ban_action: BanAction::Ban(BanDetails {
+                    hotspot_serial: "test-serial".to_string(),
                     notes: "test-ban".to_string(),
                     reason: BanReason::Gaming,
                     ban_type: BanType::All,
                     expiration_timestamp: Some(Utc::now() - chrono::Duration::hours(5)),
-                },
+                }),
             },
         };
 
@@ -426,16 +428,16 @@ mod tests {
             received_timestamp: Utc::now(),
             report: BanRequest {
                 hotspot_pubkey: banned_hotspot_pubkey.clone(),
-                hotspot_serial: "test-serial".to_string(),
                 sent_timestamp: Utc::now(),
                 ban_key: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
-                ban_action: BanAction::Ban {
+                ban_action: BanAction::Ban(BanDetails {
+                    hotspot_serial: "test-serial".to_string(),
                     notes: "test-ban".to_string(),
                     reason: BanReason::Gaming,
                     ban_type: BanType::All,
                     expiration_timestamp: None,
-                },
+                }),
             },
         };
 
@@ -476,16 +478,16 @@ mod tests {
             received_timestamp: Utc::now(),
             report: BanRequest {
                 hotspot_pubkey: hotspot_pubkey.clone(),
-                hotspot_serial: "test-serial".to_string(),
                 sent_timestamp: Utc::now(),
                 ban_key: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
-                ban_action: BanAction::Ban {
+                ban_action: BanAction::Ban(BanDetails {
+                    hotspot_serial: "test-serial".to_string(),
                     notes: "test-ban".to_string(),
                     reason: BanReason::Gaming,
                     ban_type: BanType::All,
                     expiration_timestamp: None,
-                },
+                }),
             },
         };
 

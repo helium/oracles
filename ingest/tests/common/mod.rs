@@ -281,19 +281,15 @@ impl TestClient {
         }
     }
 
-    pub async fn submit_ban(
-        &mut self,
-        hotspot_pubkey: Vec<u8>,
-        hotspot_serial: String,
-    ) -> anyhow::Result<BanRespV1> {
+    pub async fn submit_ban(&mut self, hotspot_pubkey: Vec<u8>) -> anyhow::Result<BanRespV1> {
         use helium_proto::services::poc_mobile::BanType;
         let mut req = BanReqV1 {
             hotspot_pubkey,
-            hotspot_serial,
             sent_timestamp_ms: Utc::now().timestamp_millis() as u64,
             ban_key: self.key_pair.public_key().into(),
             signature: vec![],
             ban_action: Some(BanAction::Ban(BanDetailsV1 {
+                hotspot_serial: "test-serial".to_string(),
                 notes: "test ban".to_string(),
                 reason: BanReason::Gaming.into(),
                 ban_type: BanType::All.into(),
