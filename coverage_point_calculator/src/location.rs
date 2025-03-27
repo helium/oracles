@@ -1,7 +1,7 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::RadioType;
+use crate::{Error, RadioType, Result};
 
 type Meters = u32;
 
@@ -34,23 +34,27 @@ pub fn asserted_distance_to_trust_multiplier(
     }
 }
 
-pub(crate) fn average_distance(trust_scores: &[LocationTrust]) -> Decimal {
-    // FIXME-K: if count = 0, division by zero happens
+pub(crate) fn average_distance(trust_scores: &[LocationTrust]) -> Result<Decimal> {
+    if trust_scores.is_empty() {
+        return Err(Error::ArrayIsEmpty);
+    }
     let count = Decimal::from(trust_scores.len());
     let sum: Decimal = trust_scores
         .iter()
         .map(|l| Decimal::from(l.meters_to_asserted))
         .sum();
 
-    sum / count
+    Ok(sum / count)
 }
 
-pub fn multiplier(trust_scores: &[LocationTrust]) -> Decimal {
-    // FIXME-K: if count = 0, division by zero happens
+pub fn multiplier(trust_scores: &[LocationTrust]) -> Result<Decimal> {
+    if trust_scores.is_empty() {
+        return Err(Error::ArrayIsEmpty);
+    }
     let count = Decimal::from(trust_scores.len());
     let scores: Decimal = trust_scores.iter().map(|l| l.trust_score).sum();
 
-    scores / count
+    Ok(scores / count)
 }
 
 #[cfg(test)]
@@ -60,12 +64,12 @@ mod tests {
 
     #[test]
     fn average_distance_should_not_panic() {
-        average_distance(&[]);
+        assert!(average_distance(&[]).is_err());
     }
 
     #[test]
     fn multiplier_should_not_panic() {
-        multiplier(&[]);
+        assert!(multiplier(&[]).is_err());
     }
 
     #[test]
@@ -97,6 +101,6 @@ mod tests {
             },
         ];
 
-        assert_eq!(dec!(0.5), multiplier(&trust_scores));
+        assert_eq!(dec!(0.5), multiplier(&trust_scores).unwrap());
     }
 }
