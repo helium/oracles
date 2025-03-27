@@ -61,6 +61,10 @@ custom-tracing = { path = "../custom_tracing" }
 hex-assignments = { path = "../hex_assignments" }
 coverage-point-calculator = { path = "../coverage_point_calculator" }
 coverage-map = { path = "../coverage_map" }
+rayon = "1.8"
+tracing = { version = "0.1", features = ["instrument"] }
+anyhow = "1.0"
 
 [dev-dependencies]
 proptest = "1.5.0"
+criterion = "0.5"

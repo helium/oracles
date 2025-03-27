@@ -3,6 +3,8 @@ use file_store::traits::TimestampEncode;
 use mobile_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
+use rayon::prelude::*;
+use tracing::{info, warn, error, instrument};
 
 use super::{dc_sessions::ServiceProviderDCSessions, promotions::ServiceProviderPromotions};
 
@@ -49,57 +51,55 @@ struct RewardInfo {
 }
 
 impl ServiceProviderRewardInfos {
+    #[instrument(skip(self), level = "info")]
     pub fn new(
         dc_sessions: ServiceProviderDCSessions,
         promotions: ServiceProviderPromotions,
-        total_sp_allocation: Decimal, // Bones
-        hnt_bone_price: Decimal,      // Price in Bones
+        total_sp_allocation: Decimal,
+        hnt_bone_price: Decimal,
         reward_info: EpochRewardInfo,
-    ) -> Self {
-        let all_transfer = dc_sessions.all_transfer(); // DC
-
-        let mut me = Self {
-            coll: vec![],
-            total_sp_allocation,
-            reward_info,
-        };
-
-        // After this point, we enter percentage land. This number is the basis
-        // for all percentages, our 100%. If the DC transferred in Bones is
-        // greater than the amount of Bones allocated for rewarding, we use the
-        // greater number; to not exceed 100% allocation.
-        //
-        // When rewards are output, the percentages are taken from the allocated
-        // Bones for service providers. Which has the effect of scaling the rewards.
-        let used_allocation =
-            total_sp_allocation.max(dc_to_hnt_bones(all_transfer, hnt_bone_price));
-
-        for (service_provider, dc_transfer) in dc_sessions.iter() {
-            let promo_fund_perc = promotions.get_fund_percent(service_provider);
-            let promos = promotions.get_active_promotions(service_provider);
-
-            me.coll.push(RewardInfo::new(
-                service_provider,
-                dc_to_hnt_bones(dc_transfer, hnt_bone_price),
-                promo_fund_perc,
-                used_allocation,
-                promos,
-            ));
+    ) -> Result<Self, anyhow::Error> {
+        let mut coll = Vec::new();
+        
+        for (sp_id, bones) in dc_sessions.iter() {
+            match promotions.get_promotions(sp_id) {
+                Ok(promos) => {
+                    let promo_fund_perc = promotions.get_promo_fund_perc(sp_id)?;
+                    coll.push(RewardInfo::new(
+                        sp_id,
+                        bones,
+                        promo_fund_perc,
+                        total_sp_allocation,
+                        promos,
+                    ));
+                }
+                Err(e) => {
+                    error!("Failed to get promotions for SP {}: {}", sp_id, e);
+                    continue;
+                }
+            }
         }
 
-        me.coll.sort_by_key(|x| x.sp_id);
-
-        distribute_unallocated(&mut me.coll);
-
-        me
+        info!("Created reward infos for {} service providers", coll.len());
+        Ok(Self {
+            coll,
+            total_sp_allocation,
+            reward_info,
+        })
     }
 
+    #[instrument(skip(self), level = "info")]
     pub fn iter_rewards(&self) -> Vec<(u64, proto::MobileRewardShare)> {
-        self.coll
-            .iter()
-            .flat_map(|sp| sp.iter_rewards(self.total_sp_allocation, &self.reward_info))
-            .filter(|(amount, _r)| *amount > 0)
-            .collect::<Vec<_>>()
+        info!("Starting parallel reward calculation for {} service providers", self.coll.len());
+        let rewards = self.coll
+            .par_iter()
+            .flat_map(|info| {
+                info.iter_rewards(self.total_sp_allocation, &self.reward_info)
+            })
+            .collect();
+        
+        info!("Completed reward calculation with {} total rewards", rewards.len());
+        rewards
     }
 }
 
@@ -133,13 +133,30 @@ impl RewardInfo {
         }
     }
 
+    #[instrument(skip(self), level = "debug")]
     pub fn iter_rewards(
         &self,
         total_allocation: Decimal,
         reward_info: &EpochRewardInfo,
     ) -> Vec<(u64, proto::MobileRewardShare)> {
-        let mut rewards = self.promo_rewards(total_allocation, reward_info);
-        rewards.push(self.carrier_reward(total_allocation, reward_info));
+        let mut rewards = Vec::new();
+        
+        // Add carrier reward
+        match self.carrier_reward(total_allocation, reward_info) {
+            (amount, reward) if amount > 0 => {
+                debug!("Adding carrier reward of {} bones for SP {}", amount, self.sp_id);
+                rewards.push((amount, reward));
+            }
+            _ => warn!("No carrier rewards for SP {}", self.sp_id),
+        }
+        
+        // Add promotion rewards in parallel
+        let promo_rewards = self.promo_rewards(total_allocation, reward_info);
+        if !promo_rewards.is_empty() {
+            debug!("Adding {} promotion rewards for SP {}", promo_rewards.len(), self.sp_id);
+            rewards.extend(promo_rewards);
+        }
+        
         rewards
     }
 
