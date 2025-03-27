@@ -148,6 +148,7 @@ pub mod tests {
             payer: vec![0].into(),
             upload_bytes: 1_000,
             download_bytes: 1_000,
+            rewardable_bytes: 3_000,
             num_dcs: 2_000,
             received_timestamp: Utc::now(),
         };
@@ -156,6 +157,7 @@ pub mod tests {
             payer: vec![1].into(),
             upload_bytes: 1_000,
             download_bytes: 1_000,
+            rewardable_bytes: 3_000,
             num_dcs: 2_000,
             received_timestamp: Utc::now(),
         };

@@ -987,6 +987,7 @@ mod test {
             payer,
             upload_bytes: 0,   // Unused
             download_bytes: 0, // Unused
+            rewardable_bytes: 0,
             num_dcs: 2,
             received_timestamp: DateTime::default(),
         };
@@ -1053,6 +1054,7 @@ mod test {
                 payer: payer.clone(),
                 upload_bytes: 0,
                 download_bytes: 0,
+                rewardable_bytes: 0,
                 num_dcs: 2222222222222222,
                 received_timestamp: DateTime::default(),
             }));

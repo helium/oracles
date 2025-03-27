@@ -290,6 +290,7 @@ async fn seed_hotspot_data(
         payer: PAYER_1.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 10000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 10000,
         num_dcs: 10_000,
         received_timestamp: ts - Duration::hours(1),
     };
@@ -299,6 +300,7 @@ async fn seed_hotspot_data(
         payer: PAYER_1.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 50000,
         num_dcs: 50_000,
         received_timestamp: ts - Duration::hours(2),
     };
@@ -317,6 +319,7 @@ async fn seed_hotspot_data_invalid_sp(
         payer: PAYER_1.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 10000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 10000,
         num_dcs: 10_000,
         received_timestamp: ts - Duration::hours(2),
     };
@@ -326,6 +329,7 @@ async fn seed_hotspot_data_invalid_sp(
         payer: PAYER_2.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 50000,
         num_dcs: 50_000,
         received_timestamp: ts - Duration::hours(2),
     };
