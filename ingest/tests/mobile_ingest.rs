@@ -13,17 +13,13 @@ async fn submit_ban() -> anyhow::Result<()> {
     let (mut client, trigger) = common::setup_mobile().await?;
 
     let pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
-    let serial = "test-serial".to_string();
-    let response = client
-        .submit_ban(pubkey.clone().into(), serial.clone())
-        .await?;
+    let response = client.submit_ban(pubkey.clone().into()).await?;
 
     let report = client.ban_recv().await?;
     assert_eq!(report.received_timestamp_ms, response.timestamp_ms);
 
     let inner_report = report.report.expect("inner report");
     assert_eq!(PublicKeyBinary::from(inner_report.hotspot_pubkey), pubkey);
-    assert_eq!(inner_report.hotspot_serial, serial);
 
     trigger.trigger();
     Ok(())

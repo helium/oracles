@@ -40,7 +40,6 @@ pub struct BanReport {
 #[derive(Clone)]
 pub struct BanRequest {
     pub hotspot_pubkey: PublicKeyBinary,
-    pub hotspot_serial: String,
     pub sent_timestamp: DateTime<Utc>,
     pub ban_key: PublicKeyBinary,
     pub signature: Vec<u8>,
@@ -48,16 +47,24 @@ pub struct BanRequest {
 }
 
 #[derive(Clone)]
+pub struct BanDetails {
+    pub hotspot_serial: String,
+    pub notes: String,
+    pub reason: proto::BanReason,
+    pub ban_type: BanType,
+    pub expiration_timestamp: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone)]
+pub struct UnbanDetails {
+    pub hotspot_serial: String,
+    pub notes: String,
+}
+
+#[derive(Clone)]
 pub enum BanAction {
-    Ban {
-        notes: String,
-        reason: proto::BanReason,
-        ban_type: BanType,
-        expiration_timestamp: Option<DateTime<Utc>>,
-    },
-    UnBan {
-        notes: String,
-    },
+    Ban(BanDetails),
+    Unban(UnbanDetails),
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -109,7 +116,6 @@ impl TryFrom<proto::BanReqV1> for BanRequest {
     fn try_from(value: proto::BanReqV1) -> Result<Self, Self::Error> {
         Ok(Self {
             hotspot_pubkey: value.hotspot_pubkey.into(),
-            hotspot_serial: value.hotspot_serial,
             sent_timestamp: value.sent_timestamp_ms.to_timestamp_millis()?,
             ban_key: value.ban_key.into(),
             signature: value.signature,
@@ -133,20 +139,39 @@ impl TryFrom<proto::BanAction> for BanAction {
     type Error = Error;
     fn try_from(value: proto::BanAction) -> Result<Self, Self::Error> {
         let action = match value {
-            proto::BanAction::Ban(details) => Self::Ban {
-                reason: details.reason(),
-                ban_type: details.ban_type().into(),
-                notes: details.notes,
-                expiration_timestamp: match details.expiration_timestamp_ms {
-                    0 => None,
-                    val => Some(val.to_timestamp_millis()?),
-                },
-            },
-            proto::BanAction::Unban(details) => Self::UnBan {
-                notes: details.notes,
-            },
+            proto::BanAction::Ban(details) => Self::Ban(details.try_into()?),
+            proto::BanAction::Unban(details) => Self::Unban(details.into()),
         };
         Ok(action)
+    }
+}
+
+impl TryFrom<proto::BanDetailsV1> for BanDetails {
+    type Error = Error;
+
+    fn try_from(value: proto::BanDetailsV1) -> Result<Self, Self::Error> {
+        let reason = value.reason();
+        let ban_type = value.ban_type().into();
+        let expiration_timestamp = match value.expiration_timestamp_ms {
+            0 => None,
+            val => Some(val.to_timestamp_millis()?),
+        };
+        Ok(Self {
+            reason,
+            ban_type,
+            hotspot_serial: value.hotspot_serial,
+            notes: value.notes,
+            expiration_timestamp,
+        })
+    }
+}
+
+impl From<proto::UnbanDetailsV1> for UnbanDetails {
+    fn from(value: proto::UnbanDetailsV1) -> Self {
+        Self {
+            hotspot_serial: value.hotspot_serial,
+            notes: value.notes,
+        }
     }
 }
 
@@ -185,7 +210,6 @@ impl From<BanRequest> for proto::BanReqV1 {
     fn from(value: BanRequest) -> Self {
         Self {
             hotspot_pubkey: value.hotspot_pubkey.into(),
-            hotspot_serial: value.hotspot_serial,
             sent_timestamp_ms: value.sent_timestamp.encode_timestamp_millis(),
             ban_key: value.ban_key.into(),
             signature: value.signature,
@@ -197,21 +221,31 @@ impl From<BanRequest> for proto::BanReqV1 {
 impl From<BanAction> for proto::BanAction {
     fn from(value: BanAction) -> Self {
         match value {
-            BanAction::Ban {
-                notes,
-                reason,
-                ban_type,
-                expiration_timestamp,
-            } => proto::BanAction::Ban(proto::BanDetailsV1 {
-                notes,
-                reason: reason.into(),
-                ban_type: ban_type.into(),
-                expiration_timestamp_ms: match expiration_timestamp {
-                    Some(ts) => ts.encode_timestamp_millis(),
-                    None => 0,
-                },
-            }),
-            BanAction::UnBan { notes } => proto::BanAction::Unban(proto::UnbanDetailsV1 { notes }),
+            BanAction::Ban(details) => proto::BanAction::Ban(details.into()),
+            BanAction::Unban(details) => proto::BanAction::Unban(details.into()),
+        }
+    }
+}
+
+impl From<BanDetails> for proto::BanDetailsV1 {
+    fn from(value: BanDetails) -> Self {
+        Self {
+            hotspot_serial: value.hotspot_serial,
+            notes: value.notes,
+            reason: value.reason.into(),
+            ban_type: value.ban_type.into(),
+            expiration_timestamp_ms: value
+                .expiration_timestamp
+                .map_or(0, |ts| ts.encode_timestamp_millis()),
+        }
+    }
+}
+
+impl From<UnbanDetails> for proto::UnbanDetailsV1 {
+    fn from(value: UnbanDetails) -> Self {
+        Self {
+            hotspot_serial: value.hotspot_serial,
+            notes: value.notes,
         }
     }
 }
