@@ -17,6 +17,7 @@ pub struct ValidDataTransferSession {
     pub num_dcs: u64,
     pub first_timestamp: DateTime<Utc>,
     pub last_timestamp: DateTime<Utc>,
+    pub burn_timestamp: DateTime<Utc>,
 }
 
 impl MsgDecode for ValidDataTransferSession {
@@ -35,6 +36,7 @@ impl TryFrom<proto::ValidDataTransferSession> for ValidDataTransferSession {
             num_dcs: v.num_dcs,
             first_timestamp: v.first_timestamp.to_timestamp_millis()?,
             last_timestamp: v.last_timestamp.to_timestamp_millis()?,
+            burn_timestamp: v.burn_timestamp.to_timestamp_millis()?,
         })
     }
 }

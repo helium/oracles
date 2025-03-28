@@ -151,6 +151,7 @@ pub mod tests {
             rewardable_bytes: 3_000,
             num_dcs: 2_000,
             received_timestamp: Utc::now(),
+            burn_timestamp: Utc::now(),
         };
         let two = HotspotDataSession {
             pub_key: vec![1].into(),
@@ -160,6 +161,7 @@ pub mod tests {
             rewardable_bytes: 3_000,
             num_dcs: 2_000,
             received_timestamp: Utc::now(),
+            burn_timestamp: Utc::now(),
         };
         let mut txn = pool.begin().await?;
         one.save(&mut txn).await?;
