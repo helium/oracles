@@ -5027,6 +5027,7 @@ dependencies = [
  "clap 4.4.8",
  "config",
  "coverage-map",
+ "csv",
  "custom-tracing",
  "db-store",
  "file-store",
