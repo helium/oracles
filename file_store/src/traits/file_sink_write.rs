@@ -293,3 +293,8 @@ impl_file_sink!(
     FileType::RewardManifest.to_str(),
     "reward_manifest"
 );
+impl_file_sink!(
+    poc_mobile::SubscriberMappingActivityIngestReportV1,
+    FileType::SubscriberMappingActivityIngestReport.to_str(),
+    "subscriber_mapping_activity_ingest_report"
+);

@@ -175,6 +175,8 @@ pub const VERIFIED_PROMOTION_REWARD: &str = "verified_promotion_reward";
 pub const SERVICE_PROVIDER_PROMOTION_FUND: &str = "service_provider_promotion_fund";
 pub const UNIQUE_CONNECTIONS_REPORT: &str = "unique_connections_report";
 pub const VERIFIED_UNIQUE_CONNECTIONS_REPORT: &str = "verified_unique_connections_report";
+pub const SUBSCRIBER_MAPPING_ACTIVITY_INGEST_REPORT: &str =
+    "subscriber_mapping_activity_ingest_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -241,6 +243,7 @@ pub enum FileType {
     RadioUsageStatsReq,
     UniqueConnectionsReport,
     VerifiedUniqueConnectionsReport,
+    SubscriberMappingActivityIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -328,6 +331,9 @@ impl FileType {
             Self::RadioUsageStatsReq => RADIO_USAGE_STATS_REQ,
             Self::UniqueConnectionsReport => UNIQUE_CONNECTIONS_REPORT,
             Self::VerifiedUniqueConnectionsReport => VERIFIED_UNIQUE_CONNECTIONS_REPORT,
+            Self::SubscriberMappingActivityIngestReport => {
+                SUBSCRIBER_MAPPING_ACTIVITY_INGEST_REPORT
+            }
         }
     }
 }
@@ -411,6 +417,9 @@ impl FromStr for FileType {
             RADIO_USAGE_STATS_REQ => Self::RadioUsageStatsReq,
             UNIQUE_CONNECTIONS_REPORT => Self::UniqueConnectionsReport,
             VERIFIED_UNIQUE_CONNECTIONS_REPORT => Self::VerifiedUniqueConnectionsReport,
+            SUBSCRIBER_MAPPING_ACTIVITY_INGEST_REPORT => {
+                Self::SubscriberMappingActivityIngestReport
+            }
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
