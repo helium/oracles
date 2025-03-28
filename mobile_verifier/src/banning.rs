@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use file_store::{
@@ -151,18 +151,58 @@ async fn get_verified_status(
 }
 
 #[derive(Debug, Default)]
-pub struct BannedRadios(HashMap<PublicKeyBinary, BanType>);
+pub struct BannedRadios {
+    banned: HashMap<PublicKeyBinary, BanType>,
+    sp_banned: HashSet<PublicKeyBinary>,
+}
 
 impl BannedRadios {
+    pub async fn new(pool: &PgPool, date_time: chrono::DateTime<Utc>) -> anyhow::Result<Self> {
+        let mut me = db::get_banned_radios(pool, date_time).await?;
+
+        use helium_proto::services::poc_mobile::service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType;
+        let poc_banned_radios = crate::sp_boosted_rewards_bans::db::get_banned_radios(
+            pool,
+            SpBoostedRewardsBannedRadioBanType::Poc,
+            date_time,
+        )
+        .await?;
+
+        // let mut me = Self::default();
+        me.sp_banned = poc_banned_radios.wifi;
+
+        Ok(me)
+    }
+
+    pub fn insert_sp_banned(&mut self, hotspot_pubkey: PublicKeyBinary) {
+        self.sp_banned.insert(hotspot_pubkey);
+    }
+
+    pub fn is_sp_banned(&self, hotspot_pubkey: &PublicKeyBinary) -> bool {
+        self.sp_banned.contains(hotspot_pubkey)
+    }
+
     pub fn is_poc_banned(&self, hotspot_pubkey: &PublicKeyBinary) -> bool {
         self.is_banned(hotspot_pubkey, BanType::Poc)
     }
-    pub fn is_data_banned(&self, hotspot_pubkey: &PublicKeyBinary) -> bool {
-        self.is_banned(hotspot_pubkey, BanType::Data)
-    }
+
+    // IMPORTANT:
+    //
+    // This function should not be provided.
+    // DataTransferSessions that are written by the mobile-packet-verifier
+    // must be output in the rewards file. By this time, the DC for those rewards
+    // have already been burnt.
+    //
+    // There is a matching banned radio status in mobile-packet-verifier
+    // that prevents DC from being burnt for banned radios, resulting in
+    // DataTransferSessions not being output for this servive to output them.
+    //
+    // fn is_data_banned(&self, hotspot_pubkey: &PublicKeyBinary) -> bool {
+    //     self.is_banned(hotspot_pubkey, BanType::Data)
+    // }
 
     fn is_banned(&self, hotspot_pubkey: &PublicKeyBinary, ban_type: BanType) -> bool {
-        match self.0.get(hotspot_pubkey) {
+        match self.banned.get(hotspot_pubkey) {
             Some(BanType::All) => true,
             Some(ban) => ban == &ban_type,
             None => false,
@@ -170,7 +210,7 @@ impl BannedRadios {
     }
 }
 
-mod db {
+pub mod db {
     use std::str::FromStr;
 
     use chrono::{DateTime, Utc};
@@ -200,7 +240,7 @@ mod db {
         .try_fold(BannedRadios::default(), |mut set, row| async move {
             let pubkey = PublicKeyBinary::from_str(row.get("hotspot_pubkey"))?;
             let ban_type = BanType::from_str(row.get("ban_type"))?;
-            set.0.insert(pubkey, ban_type);
+            set.banned.insert(pubkey, ban_type);
             Ok(set)
         })
         .await
@@ -355,13 +395,11 @@ mod tests {
         process_ban_report(&mut conn, &AllVerified, ban_report).await?;
         let banned = test_get_current_banned_radios(&pool).await?;
         assert_eq!(true, banned.is_poc_banned(&hotspot_pubkey));
-        assert_eq!(true, banned.is_data_banned(&hotspot_pubkey));
 
         // Unban radio
         process_ban_report(&mut conn, &AllVerified, unban_report).await?;
         let banned = test_get_current_banned_radios(&pool).await?;
         assert_eq!(false, banned.is_poc_banned(&hotspot_pubkey));
-        assert_eq!(false, banned.is_data_banned(&hotspot_pubkey));
 
         Ok(())
     }
@@ -391,12 +429,10 @@ mod tests {
         process_ban_report(&mut conn, &AllVerified, mk_ban_report(BanType::All)).await?;
         let banned = test_get_current_banned_radios(&pool).await?;
         assert_eq!(true, banned.is_poc_banned(&hotspot_pubkey));
-        assert_eq!(true, banned.is_data_banned(&hotspot_pubkey));
 
         process_ban_report(&mut conn, &AllVerified, mk_ban_report(BanType::Data)).await?;
         let banned = test_get_current_banned_radios(&pool).await?;
         assert_eq!(false, banned.is_poc_banned(&hotspot_pubkey));
-        assert_eq!(true, banned.is_data_banned(&hotspot_pubkey));
 
         Ok(())
     }
@@ -446,10 +482,8 @@ mod tests {
 
         let banned = test_get_current_banned_radios(&pool).await?;
         assert_eq!(false, banned.is_poc_banned(&expired_hotspot_pubkey));
-        assert_eq!(false, banned.is_data_banned(&expired_hotspot_pubkey));
 
         assert_eq!(true, banned.is_poc_banned(&banned_hotspot_pubkey));
-        assert_eq!(true, banned.is_data_banned(&banned_hotspot_pubkey));
 
         Ok(())
     }
@@ -495,7 +529,6 @@ mod tests {
         process_ban_report(&mut conn, &NoneVerified, ban_report).await?;
         let banned = test_get_current_banned_radios(&pool).await?;
         assert_eq!(false, banned.is_poc_banned(&hotspot_pubkey));
-        assert_eq!(false, banned.is_data_banned(&hotspot_pubkey));
 
         Ok(())
     }

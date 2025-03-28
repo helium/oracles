@@ -99,7 +99,7 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
 
 #[derive(Debug, Default)]
 pub struct BannedRadios {
-    wifi: HashSet<PublicKeyBinary>,
+    pub wifi: HashSet<PublicKeyBinary>,
 }
 
 impl BannedRadios {

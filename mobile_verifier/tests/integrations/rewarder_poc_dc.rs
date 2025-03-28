@@ -7,11 +7,13 @@ use crate::common::{
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
+    mobile_ban,
     speedtest::CellSpeedtest,
     unique_connections::{UniqueConnectionReq, UniqueConnectionsIngestReport},
 };
 use helium_crypto::PublicKeyBinary;
 use mobile_verifier::{
+    banning,
     cell_type::CellType,
     coverage::CoverageObject,
     data_session,
@@ -22,7 +24,7 @@ use mobile_verifier::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{pool, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 pub mod proto {
@@ -221,6 +223,231 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
         .to_u64()
         .unwrap();
     assert_eq!(expected_sum, total);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
+
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+
+    let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
+
+    // seed all the things
+    let mut txn = pool.clone().begin().await?;
+    seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
+    txn.commit().await?;
+    update_assignments(&pool).await?;
+
+    // Run rewards with no unique connections, no poc rewards, expect unallocated
+    let boosted_hexes = vec![];
+    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+
+    let price_info = default_price_info();
+
+    let (_, rewards) = tokio::join!(
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &hex_boosting_client,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &reward_info,
+            price_info.clone()
+        ),
+        // expecting poc rewards, no unallocated
+        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, true)
+    );
+
+    let Ok((_poc_rewards, _dc_rewards, _unallocated_reward)) = rewards else {
+        panic!("rewards failed");
+    };
+
+    // SP ban radio
+    let mut txn = pool.begin().await?;
+    ban_wifi_radio_for_epoch(&mut txn, pubkey.clone(), &reward_info.epoch_period).await?;
+    txn.commit().await?;
+
+    let (_, rewards) = tokio::join!(
+        // run rewards for poc and dc
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &hex_boosting_client,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &reward_info,
+            price_info
+        ),
+        // expecting single radio with poc rewards, no unallocated
+        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 2, false)
+    );
+    let Ok((poc_rewards, dc_rewards, _unallocated_reward)) = rewards else {
+        panic!("rewards failed");
+    };
+
+    println!("poc_reward count: {}", poc_rewards.len());
+    println!("dc_reward count: {}", dc_rewards.len());
+    println!("unallocated_reward: {:?}", _unallocated_reward);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
+
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+
+    let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
+
+    // seed all the things
+    let mut txn = pool.clone().begin().await?;
+    seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    seed_data_sessions(reward_info.epoch_period.start, &mut txn).await?;
+    txn.commit().await?;
+    update_assignments(&pool).await?;
+
+    // Run rewards with no unique connections, no poc rewards, expect unallocated
+    let boosted_hexes = vec![];
+    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+
+    let price_info = default_price_info();
+
+    let (_, rewards) = tokio::join!(
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &hex_boosting_client,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &reward_info,
+            price_info.clone()
+        ),
+        // expecting poc rewards, no unallocated
+        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, true)
+    );
+
+    let Ok((_poc_rewards, _dc_rewards, _unallocated_reward)) = rewards else {
+        panic!("rewards failed");
+    };
+
+    // SP ban radio
+    let mut txn = pool.begin().await?;
+    ban_radio(&mut txn, pubkey.clone(), mobile_ban::BanType::All).await?;
+    txn.commit().await?;
+
+    println!("=========================");
+
+    let _banned = banning::BannedRadios::new(&pool, reward_info.epoch_period.end).await?;
+    println!("banned: {:?}", _banned);
+
+    let (_, rewards) = tokio::join!(
+        // run rewards for poc and dc
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &hex_boosting_client,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &reward_info,
+            price_info
+        ),
+        // expecting single radio with poc rewards, no unallocated
+        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 2, false)
+    );
+    let Ok((poc_rewards, dc_rewards, _unallocated_reward)) = rewards else {
+        panic!("rewards failed");
+    };
+
+    println!("poc_reward count: {}", poc_rewards.len());
+    println!("dc_reward count: {}", dc_rewards.len());
+    println!("unallocated_reward: {:?}", _unallocated_reward);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Result<()> {
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
+
+    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+
+    let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
+
+    // seed all the things
+    let mut txn = pool.clone().begin().await?;
+    seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    txn.commit().await?;
+    update_assignments(&pool).await?;
+
+    // Run rewards with no unique connections, no poc rewards, expect unallocated
+    let boosted_hexes = vec![];
+    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+
+    let price_info = default_price_info();
+
+    let (_, rewards) = tokio::join!(
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &hex_boosting_client,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &reward_info,
+            price_info.clone()
+        ),
+        // expecting poc rewards, no unallocated
+        receive_expected_rewards_with_counts(&mut mobile_rewards, 0, 3, true)
+    );
+
+    let Ok((_poc_rewards, _dc_rewards, _unallocated_reward)) = rewards else {
+        panic!("rewards failed");
+    };
+
+    // SP ban radio
+    let mut txn = pool.begin().await?;
+    ban_radio(&mut txn, pubkey.clone(), mobile_ban::BanType::Data).await?;
+    txn.commit().await?;
+
+    println!("=========================");
+
+    let _banned = banning::BannedRadios::new(&pool, reward_info.epoch_period.end).await?;
+    println!("banned: {:?}", _banned);
+
+    let (_, rewards) = tokio::join!(
+        // run rewards for poc and dc
+        tokio::time::timeout(
+            Duration::seconds(5).to_std()?,
+            rewarder::reward_poc_and_dc(
+                &pool,
+                &hex_boosting_client,
+                &mobile_rewards_client,
+                &speedtest_avg_client,
+                &reward_info,
+                price_info
+            )
+        ),
+        // expecting single radio with poc rewards, no unallocated
+        tokio::time::timeout(
+            Duration::seconds(5).to_std()?,
+            receive_expected_rewards_with_counts(&mut mobile_rewards, 0, 3, true)
+        )
+    );
+
+    let (poc_rewards, dc_rewards, _unallocated_reward) = match rewards {
+        Ok(Ok(res)) => res,
+        Ok(other) => panic!("somethign else happened: {other:?}"),
+        Err(err) => panic!("something bad happened: {err:?}"),
+    };
+
+    println!("poc_reward count: {}", poc_rewards.len());
+    println!("dc_reward count: {}", dc_rewards.len());
+    println!("unallocated_reward: {:?}", _unallocated_reward);
 
     Ok(())
 }
@@ -558,5 +785,38 @@ async fn ban_wifi_radio_for_epoch(
     };
     let ban_report = BannedRadioReport::try_from(ban_report)?;
     sp_boosted_rewards_bans::db::update_report(txn, &ban_report).await?;
+    Ok(())
+}
+
+async fn ban_radio(
+    txn: &mut Transaction<'_, Postgres>,
+    pubkey: PublicKeyBinary,
+    ban_type: mobile_ban::BanType,
+) -> anyhow::Result<()> {
+    use file_store::mobile_ban;
+    banning::db::update_hotspot_ban(
+        txn,
+        &mobile_ban::VerifiedBanReport {
+            verified_timestamp: Utc::now(),
+            report: mobile_ban::BanReport {
+                received_timestamp: Utc::now(),
+                report: mobile_ban::BanRequest {
+                    hotspot_pubkey: pubkey.clone(),
+                    sent_timestamp: Utc::now(),
+                    ban_key: pubkey,
+                    signature: vec![],
+                    ban_action: mobile_ban::BanAction::Ban(mobile_ban::BanDetails {
+                        hotspot_serial: "test-serial".to_string(),
+                        notes: "test-notes".to_string(),
+                        reason: mobile_ban::BanReason::Gaming,
+                        ban_type,
+                        expiration_timestamp: None,
+                    }),
+                },
+            },
+            status: mobile_ban::VerifiedBanIngestReportStatus::Valid,
+        },
+    )
+    .await?;
     Ok(())
 }
