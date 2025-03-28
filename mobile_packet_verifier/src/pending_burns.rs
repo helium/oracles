@@ -40,6 +40,7 @@ impl From<DataTransferSession> for ValidDataTransferSession {
             num_dcs,
             first_timestamp: session.first_timestamp.encode_timestamp_millis(),
             last_timestamp: session.last_timestamp.encode_timestamp_millis(),
+            burn_timestamp: Utc::now().encode_timestamp_millis(),
         }
     }
 }
