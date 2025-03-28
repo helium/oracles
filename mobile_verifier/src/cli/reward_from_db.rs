@@ -1,11 +1,11 @@
 use crate::{
+    banning::BannedRadios,
     heartbeats::HeartbeatReward,
     resolve_subdao_pubkey,
     reward_shares::{
         get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
     },
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
-    sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
     unique_connections, Settings,
 };

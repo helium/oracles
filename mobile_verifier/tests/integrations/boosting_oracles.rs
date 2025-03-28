@@ -16,13 +16,13 @@ use hex_assignments::{Assignment, HexBoostData};
 use hextree::Cell;
 use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
+    banning::BannedRadios,
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
     heartbeats::{last_location::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
-    sp_boosted_rewards_bans::BannedRadios,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     unique_connections::UniqueConnectionCounts,

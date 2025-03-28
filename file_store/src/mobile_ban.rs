@@ -19,7 +19,8 @@ pub mod proto {
     };
 }
 
-pub use proto::VerifiedBanIngestReportStatus;
+// Re-export proto enums
+pub use proto::{BanReason, VerifiedBanIngestReportStatus};
 
 pub type BanReportStream = FileInfoStream<BanReport>;
 pub type BanReportSource = tokio::sync::mpsc::Receiver<BanReportStream>;

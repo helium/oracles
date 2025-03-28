@@ -15,6 +15,7 @@ use hextree::Cell;
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 
 use mobile_verifier::{
+    banning::BannedRadios,
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
     geofence::GeofenceValidator,
     heartbeats::{
@@ -24,7 +25,6 @@ use mobile_verifier::{
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
-    sp_boosted_rewards_bans::BannedRadios,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     unique_connections::UniqueConnectionCounts,
@@ -1370,7 +1370,7 @@ async fn eligible_for_coverage_map_banned(pool: PgPool) -> anyhow::Result<()> {
 
     // We are banning hotspot2 and therefore should not be in coverage map
     let mut ban_radios = BannedRadios::default();
-    ban_radios.insert_wifi(banned_hotspot.clone());
+    ban_radios.insert_sp_banned(banned_hotspot.clone());
 
     let coverage_shares = CoverageShares::new(
         &pool,

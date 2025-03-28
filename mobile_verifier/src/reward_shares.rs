@@ -1,10 +1,10 @@
 use crate::{
+    banning::BannedRadios,
     coverage::CoveredHexStream,
     data_session::HotspotMap,
     heartbeats::HeartbeatReward,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::Seniority,
-    sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
     subscriber_mapping_activity::SubscriberMappingShares,
     unique_connections::{self, UniqueConnectionCounts},
@@ -371,6 +371,11 @@ impl CoverageShares {
             let heartbeat_key = heartbeat.key();
             let key = pubkey.clone();
 
+            if banned_radios.is_poc_banned(&pubkey) {
+                tracing::trace!(%pubkey, "ignoring POC banned radio");
+                continue;
+            }
+
             let seniority = hex_streams
                 .fetch_seniority(heartbeat_key, reward_period.end)
                 .await?;
@@ -427,7 +432,7 @@ impl CoverageShares {
             let oracle_boosting_status =
                 if unique_connections::is_qualified(unique_connections, &pubkey) {
                     OracleBoostingStatus::Qualified
-                } else if banned_radios.contains(&pubkey) {
+                } else if banned_radios.is_sp_banned(&pubkey) {
                     OracleBoostingStatus::Banned
                 } else {
                     OracleBoostingStatus::Eligible

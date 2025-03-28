@@ -1,4 +1,5 @@
 use crate::{
+    banning,
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
@@ -28,9 +29,8 @@ use helium_lib::token::Token;
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
-        self as proto, mobile_reward_share::Reward as ProtoReward,
-        service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType,
-        MobileRewardShare, UnallocatedReward, UnallocatedRewardType,
+        self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
+        UnallocatedReward, UnallocatedRewardType,
     },
     MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
 };
@@ -478,12 +478,7 @@ async fn reward_poc(
         unique_connections.clone(),
     );
 
-    let poc_banned_radios = sp_boosted_rewards_bans::db::get_banned_radios(
-        pool,
-        SpBoostedRewardsBannedRadioBanType::Poc,
-        reward_info.epoch_period.end,
-    )
-    .await?;
+    let banned_radios = banning::BannedRadios::new(pool, reward_info.epoch_period.end).await?;
 
     let coverage_shares = CoverageShares::new(
         pool,
@@ -491,7 +486,7 @@ async fn reward_poc(
         &speedtest_averages,
         &boosted_hexes,
         &boosted_hex_eligibility,
-        &poc_banned_radios,
+        &banned_radios,
         &unique_connections,
         &reward_info.epoch_period,
     )
