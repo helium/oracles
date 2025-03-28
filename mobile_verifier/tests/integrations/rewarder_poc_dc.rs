@@ -534,6 +534,7 @@ async fn seed_data_sessions(
         rewardable_bytes: rewardable_bytes_1,
         num_dcs: 5_000_000,
         received_timestamp: ts + ChronoDuration::hours(1),
+        burn_timestamp: ts + ChronoDuration::hours(1),
     };
 
     let rewardable_bytes_2 = 1_024 * 1_000 + 1_024 * 50_000;
@@ -545,6 +546,7 @@ async fn seed_data_sessions(
         rewardable_bytes: rewardable_bytes_2,
         num_dcs: 5_000_000,
         received_timestamp: ts + ChronoDuration::hours(1),
+        burn_timestamp: ts + ChronoDuration::hours(1),
     };
 
     let rewardable_bytes_3 = 1_024 * 1_000 + 1_024 * 50_000;
@@ -556,6 +558,7 @@ async fn seed_data_sessions(
         rewardable_bytes: rewardable_bytes_3,
         num_dcs: 5_000_000,
         received_timestamp: ts + ChronoDuration::hours(1),
+        burn_timestamp: ts + ChronoDuration::hours(1),
     };
     data_session_1.save(txn).await?;
     data_session_2.save(txn).await?;
