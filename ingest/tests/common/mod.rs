@@ -40,15 +40,18 @@ impl MockAuthorizationClient {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum MockError {}
+
 #[async_trait]
 impl AuthorizationVerifier for MockAuthorizationClient {
-    type Error = anyhow::Error;
+    type Error = MockError;
 
     async fn verify_authorized_key(
         &self,
         _pubkey: &PublicKeyBinary,
         _role: NetworkKeyRole,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool, MockError> {
         Ok(true)
     }
 }

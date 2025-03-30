@@ -177,6 +177,8 @@ pub const UNIQUE_CONNECTIONS_REPORT: &str = "unique_connections_report";
 pub const VERIFIED_UNIQUE_CONNECTIONS_REPORT: &str = "verified_unique_connections_report";
 pub const SUBSCRIBER_MAPPING_ACTIVITY_INGEST_REPORT: &str =
     "subscriber_mapping_activity_ingest_report";
+pub const VERIFIED_SUBSCRIBER_MAPPING_ACTIVITY_REPORT: &str =
+    "verified_subscriber_mapping_activity_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -244,6 +246,7 @@ pub enum FileType {
     UniqueConnectionsReport,
     VerifiedUniqueConnectionsReport,
     SubscriberMappingActivityIngestReport,
+    VerifiedSubscriberMappingActivityReport,
 }
 
 impl fmt::Display for FileType {
@@ -334,6 +337,9 @@ impl FileType {
             Self::SubscriberMappingActivityIngestReport => {
                 SUBSCRIBER_MAPPING_ACTIVITY_INGEST_REPORT
             }
+            Self::VerifiedSubscriberMappingActivityReport => {
+                VERIFIED_SUBSCRIBER_MAPPING_ACTIVITY_REPORT
+            }
         }
     }
 }
@@ -419,6 +425,9 @@ impl FromStr for FileType {
             VERIFIED_UNIQUE_CONNECTIONS_REPORT => Self::VerifiedUniqueConnectionsReport,
             SUBSCRIBER_MAPPING_ACTIVITY_INGEST_REPORT => {
                 Self::SubscriberMappingActivityIngestReport
+            }
+            VERIFIED_SUBSCRIBER_MAPPING_ACTIVITY_REPORT => {
+                Self::VerifiedSubscriberMappingActivityReport
             }
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };

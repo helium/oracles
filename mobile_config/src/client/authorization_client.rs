@@ -11,7 +11,7 @@ use std::{sync::Arc, time::Duration};
 
 #[async_trait]
 pub trait AuthorizationVerifier: Send + Sync + 'static {
-    type Error;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     async fn verify_authorized_key(
         &self,
