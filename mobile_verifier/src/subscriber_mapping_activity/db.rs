@@ -27,6 +27,7 @@ pub async fn save(
                     .push_bind(activity.received_timestamp)
                     .push_bind(Utc::now());
             })
+            .push("ON CONFLICT (subscriber_id, received_timestamp) DO NOTHING")
             .build()
             .execute(&mut *txn)
             .await?;

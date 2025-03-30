@@ -227,12 +227,12 @@ where
 }
 
 pub struct SubscriberMappingActivity {
-    subscriber_id: Vec<u8>,
-    discovery_reward_shares: u64,
-    verification_reward_shares: u64,
-    received_timestamp: DateTime<Utc>,
-    carrier_pub_key: PublicKeyBinary,
-    original: Option<SubscriberMappingActivityIngestReportV1>,
+    pub subscriber_id: Vec<u8>,
+    pub discovery_reward_shares: u64,
+    pub verification_reward_shares: u64,
+    pub received_timestamp: DateTime<Utc>,
+    pub carrier_pub_key: PublicKeyBinary,
+    pub original: Option<SubscriberMappingActivityIngestReportV1>,
 }
 
 impl SubscriberMappingActivity {

@@ -6,9 +6,7 @@ use crate::{
     seniority::Seniority,
     sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
-    subscriber_location::SubscriberValidatedLocations,
     subscriber_mapping_activity::SubscriberMappingShares,
-    subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
     unique_connections::{self, UniqueConnectionCounts},
     PriceInfo,
 };
@@ -50,9 +48,6 @@ pub const DEFAULT_PREC: u32 = 15;
 
 /// Percent of total emissions allocated for mapper rewards
 const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
-
-/// shares of the mappers pool allocated per eligible subscriber for discovery mapping
-const DISCOVERY_MAPPING_SHARES: Decimal = dec!(30);
 
 // Percent of total emissions allocated for service provider rewards
 const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.1);
@@ -730,8 +725,6 @@ mod test {
         },
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
-        subscriber_location::SubscriberValidatedLocations,
-        subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShare,
     };
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
@@ -853,19 +846,13 @@ mod test {
     async fn subscriber_rewards() {
         const NUM_SUBSCRIBERS: u64 = 10_000;
 
-        // simulate 10k subscriber location shares
-        let mut location_shares = SubscriberValidatedLocations::new();
+        let mut mapping_activity_shares = Vec::new();
         for n in 0..NUM_SUBSCRIBERS {
-            location_shares.push(n.encode_to_vec());
-        }
-
-        // simulate 10k vsme shares
-        let mut vsme_shares = VerifiedSubscriberVerifiedMappingEventShares::new();
-        for n in 0..NUM_SUBSCRIBERS {
-            vsme_shares.push(VerifiedSubscriberVerifiedMappingEventShare {
+            mapping_activity_shares.push(SubscriberMappingShares {
                 subscriber_id: n.encode_to_vec(),
-                total_reward_points: 30,
-            });
+                discovery_reward_shares: 30,
+                verification_reward_shares: 30,
+            })
         }
 
         // set our rewards info
@@ -873,7 +860,7 @@ mod test {
             default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
         // translate location shares into shares
-        let shares = MapperShares::new(location_shares, vsme_shares);
+        let shares = MapperShares::new(mapping_activity_shares);
         let total_mappers_pool =
             reward_shares::get_scheduled_tokens_for_mappers(rewards_info.epoch_emissions);
         let rewards_per_share = shares.rewards_per_share(total_mappers_pool).unwrap();
