@@ -1,8 +1,12 @@
-use chrono::Utc;
+use std::ops::Range;
+
+use chrono::{DateTime, Utc};
 use futures::{Stream, TryStreamExt};
-use sqlx::{Postgres, QueryBuilder, Transaction};
+use sqlx::{Pool, Postgres, QueryBuilder, Transaction};
 
 use crate::subscriber_mapping_activity::SubscriberMappingActivity;
+
+use super::SubscriberMappingShares;
 
 pub async fn save(
     transaction: &mut Transaction<'_, Postgres>,
@@ -32,4 +36,25 @@ pub async fn save(
         .await?;
 
     Ok(())
+}
+
+pub async fn rewardable_mapping_activity(
+    pool: &Pool<Postgres>,
+    epoch_period: &Range<DateTime<Utc>>,
+) -> anyhow::Result<Vec<SubscriberMappingShares>> {
+    sqlx::query_as(
+        r#"
+        SELECT DISTINCT ON (subscriber_id) subscriber_id, discovery_reward_shares, verification_reward_shares
+        FROM subscriber_mapping_activity
+        WHERE received_timestamp >= $1
+            AND received_timestamp < $2
+            AND (discovery_reward_shares > 0 OR verification_reward_shares > 0)
+        ORDER BY subscriber_id, received_timestamp DESC
+        "#,
+    )
+    .bind(epoch_period.start)
+    .bind(epoch_period.end)
+    .fetch_all(pool)
+    .await
+    .map_err(anyhow::Error::from)
 }

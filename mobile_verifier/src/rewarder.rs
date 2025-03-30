@@ -10,7 +10,7 @@ use crate::{
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_location, subscriber_verified_mapping_event, telemetry, unique_connections,
+    subscriber_mapping_activity, subscriber_verified_mapping_event, telemetry, unique_connections,
     PriceInfo, Settings,
 };
 use anyhow::bail;
@@ -563,25 +563,13 @@ pub async fn reward_mappers(
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
-    // Mapper rewards currently include rewards for discovery mapping only.
-    // Verification mapping rewards to be added
-    // get subscriber location shares this epoch
-    let location_shares =
-        subscriber_location::aggregate_location_shares(pool, &reward_info.epoch_period).await?;
-
-    // Verification mappers can only earn rewards if they qualified for disco mapping
-    // rewards during the same reward_period
-    let vsme_shares = subscriber_verified_mapping_event::aggregate_verified_mapping_events(
+    let rewardable_mapping_activity = subscriber_mapping_activity::db::rewardable_mapping_activity(
         pool,
         &reward_info.epoch_period,
     )
-    .await?
-    .into_iter()
-    .filter(|vsme| location_shares.contains(&vsme.subscriber_id))
-    .collect();
+    .await?;
 
-    // determine mapping shares based on location shares and data transferred
-    let mapping_shares = MapperShares::new(location_shares, vsme_shares);
+    let mapping_shares = MapperShares::new(rewardable_mapping_activity);
     let total_mappers_pool =
         reward_shares::get_scheduled_tokens_for_mappers(reward_info.epoch_emissions);
     let rewards_per_share = mapping_shares.rewards_per_share(total_mappers_pool)?;

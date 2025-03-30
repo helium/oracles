@@ -260,3 +260,12 @@ impl TryFrom<SubscriberMappingActivityIngestReportV1> for SubscriberMappingActiv
         })
     }
 }
+
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct SubscriberMappingShares {
+    pub subscriber_id: Vec<u8>,
+    #[sqlx(try_from = "i64")]
+    pub discovery_reward_shares: u64,
+    #[sqlx(try_from = "i64")]
+    pub verification_reward_shares: u64,
+}
