@@ -336,7 +336,6 @@ where
         subscriber_mapping_activity::db::clear(&mut transaction, reward_info.epoch_period.start)
             .await?;
         unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
-        // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
 
