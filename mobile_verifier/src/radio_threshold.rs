@@ -401,3 +401,161 @@ pub async fn delete(
     .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use file_store::mobile_radio_threshold::{RadioThresholdIngestReport, RadioThresholdReportReq};
+    use helium_crypto::{KeyTag, Keypair};
+    use rand::rngs::OsRng;
+    use sqlx::Row;
+
+    fn generate_keypair() -> Keypair {
+        Keypair::generate(KeyTag::default(), &mut OsRng)
+    }
+
+    #[sqlx::test]
+    async fn test_save_radio_threshold(pool: PgPool) {
+        let now = Utc::now();
+        let hotspot_keypair = generate_keypair();
+        let hotspot_pubkey = PublicKeyBinary::from(hotspot_keypair.public_key().to_owned());
+        let carrier_keypair = generate_keypair();
+        let carrier_pubkey = PublicKeyBinary::from(carrier_keypair.public_key().to_owned());
+
+        let report = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            carrier_pub_key: carrier_pubkey,
+            bytes_threshold: 1000,
+            subscriber_threshold: 50,
+            threshold_timestamp: now,
+        };
+
+        let ingest_report = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report,
+        };
+
+        let mut transaction = pool.begin().await.unwrap();
+        save(&ingest_report, &mut transaction).await.unwrap();
+        transaction.commit().await.unwrap();
+
+        let result = sqlx::query(
+            r#"
+            SELECT 
+                hotspot_pubkey, 
+                cbsd_id, 
+                bytes_threshold, 
+                subscriber_threshold,
+                threshold_timestamp,
+                threshold_met
+            FROM radio_threshold
+            WHERE hotspot_pubkey = $1
+            "#,
+        )
+        .bind(hotspot_pubkey.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.get::<String, _>("hotspot_pubkey"),
+            hotspot_pubkey.to_string()
+        );
+        assert_eq!(result.get::<Option<String>, _>("cbsd_id"), None);
+        assert_eq!(result.get::<i64, _>("bytes_threshold"), 1000);
+        assert_eq!(result.get::<i32, _>("subscriber_threshold"), 50);
+        assert!(result.get::<bool, _>("threshold_met"));
+
+        let stored_threshold_timestamp = result.get::<DateTime<Utc>, _>("threshold_timestamp");
+        assert_eq!(
+            stored_threshold_timestamp.timestamp_millis(),
+            now.timestamp_millis()
+        );
+    }
+
+    #[sqlx::test]
+    async fn test_save_radio_threshold_update_existing(pool: PgPool) {
+        let now = Utc::now();
+        let hotspot_keypair = generate_keypair();
+        let hotspot_pubkey = PublicKeyBinary::from(hotspot_keypair.public_key().to_owned());
+        let carrier_keypair = generate_keypair();
+        let carrier_pubkey = PublicKeyBinary::from(carrier_keypair.public_key().to_owned());
+
+        let initial_report = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            carrier_pub_key: carrier_pubkey.clone(),
+            bytes_threshold: 1000,
+            subscriber_threshold: 50,
+            threshold_timestamp: now,
+        };
+
+        let initial_ingest_report = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report: initial_report,
+        };
+
+        // Save initial report
+        let mut transaction = pool.begin().await.unwrap();
+        save(&initial_ingest_report, &mut transaction)
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+
+        // Create an updated report with different values
+        let updated_now = Utc::now();
+        let updated_report = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            carrier_pub_key: carrier_pubkey,
+            bytes_threshold: 2000,     // Changed value
+            subscriber_threshold: 100, // Changed value
+            threshold_timestamp: updated_now,
+        };
+
+        let updated_ingest_report = RadioThresholdIngestReport {
+            received_timestamp: updated_now,
+            report: updated_report,
+        };
+
+        // Save updated report - should update the existing record
+        let mut transaction = pool.begin().await.unwrap();
+        save(&updated_ingest_report, &mut transaction)
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+
+        // Verify - Query the database to confirm the record was updated
+        let result = sqlx::query(
+            r#"
+            SELECT 
+                hotspot_pubkey, 
+                cbsd_id, 
+                bytes_threshold, 
+                subscriber_threshold,
+                threshold_timestamp,
+                threshold_met
+            FROM radio_threshold
+            WHERE hotspot_pubkey = $1
+            "#,
+        )
+        .bind(hotspot_pubkey.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        // Assertions - should have the updated values
+        assert_eq!(
+            result.get::<String, _>("hotspot_pubkey"),
+            hotspot_pubkey.to_string()
+        );
+        assert_eq!(result.get::<Option<String>, _>("cbsd_id"), None);
+        assert_eq!(result.get::<i64, _>("bytes_threshold"), 2000); // Updated value
+        assert_eq!(result.get::<i32, _>("subscriber_threshold"), 100); // Updated value
+        assert!(result.get::<bool, _>("threshold_met"));
+        let stored_threshold_timestamp = result.get::<DateTime<Utc>, _>("threshold_timestamp");
+        assert_eq!(
+            stored_threshold_timestamp.timestamp_millis(),
+            updated_now.timestamp_millis()
+        );
+    }
+}
