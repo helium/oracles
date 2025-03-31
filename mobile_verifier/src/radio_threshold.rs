@@ -742,4 +742,76 @@ mod tests {
         let count = verified_thresholds.gateways.len();
         assert_eq!(count, 1, "Should have exactly 1 verified hotspot");
     }
+
+    #[sqlx::test]
+    async fn test_verify_legacy(pool: PgPool) {
+        // Create a test ingestor with authorization verifier
+        struct MockAuthVerifier;
+
+        #[async_trait::async_trait]
+        impl AuthorizationVerifier for MockAuthVerifier {
+            type Error = std::io::Error;
+
+            async fn verify_authorized_key(
+                &self,
+                _public_key: &PublicKeyBinary,
+                _role: NetworkKeyRole,
+            ) -> Result<bool, Self::Error> {
+                Ok(true)
+            }
+        }
+
+        let ingestor = RadioThresholdIngestor::new(
+            pool.clone(),
+            tokio::sync::mpsc::channel(1).1, // Reports receiver (unused)
+            tokio::sync::mpsc::channel(1).1, // Invalid reports receiver (unused)
+            FileSinkClient::new(tokio::sync::mpsc::channel(1).0, "test"), // Verified sink (unused)
+            FileSinkClient::new(tokio::sync::mpsc::channel(1).0, "test"), // Invalid verified sink (unused)
+            MockAuthVerifier,
+        );
+
+        // Create test hotspot pubkey
+        let hotspot_keypair = generate_keypair();
+        let hotspot_pubkey = PublicKeyBinary::from(hotspot_keypair.public_key().to_owned());
+
+        // Initially the hotspot should not be grandfathered
+        let is_legacy_before = ingestor
+            .verify_legacy(&hotspot_pubkey, &None)
+            .await
+            .unwrap();
+        assert!(
+            !is_legacy_before,
+            "Hotspot should not be legacy before insertion"
+        );
+
+        // Insert a record into grandfathered_radio_threshold
+        sqlx::query(
+            r#"
+        INSERT INTO grandfathered_radio_threshold (hotspot_pubkey, cbsd_id)
+        VALUES ($1, NULL)
+        "#,
+        )
+        .bind(hotspot_pubkey.to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Now the hotspot should be grandfathered
+        let is_legacy_after = ingestor
+            .verify_legacy(&hotspot_pubkey, &None)
+            .await
+            .unwrap();
+        assert!(is_legacy_after, "Hotspot should be legacy after insertion");
+
+        // Test with a different hotspot that isn't grandfathered
+        let other_hotspot_keypair = generate_keypair();
+        let other_hotspot_pubkey =
+            PublicKeyBinary::from(other_hotspot_keypair.public_key().to_owned());
+
+        let other_is_legacy = ingestor
+            .verify_legacy(&other_hotspot_pubkey, &None)
+            .await
+            .unwrap();
+        assert!(!other_is_legacy, "Other hotspot should not be legacy");
+    }
 }
