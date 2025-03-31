@@ -667,4 +667,79 @@ mod tests {
 
         assert_eq!(count_after, 0, "Record (1) should be deleted");
     }
+
+    #[sqlx::test]
+    async fn test_verified_radio_thresholds(pool: PgPool) {
+        // Setup: Create radio thresholds with different timestamps
+        let now = Utc::now();
+
+        // Create two hotspot keypairs
+        let hotspot_keypair1 = generate_keypair();
+        let hotspot_pubkey1 = PublicKeyBinary::from(hotspot_keypair1.public_key().to_owned());
+
+        let hotspot_keypair2 = generate_keypair();
+        let hotspot_pubkey2 = PublicKeyBinary::from(hotspot_keypair2.public_key().to_owned());
+
+        let carrier_keypair = generate_keypair();
+        let carrier_pubkey = PublicKeyBinary::from(carrier_keypair.public_key().to_owned());
+
+        // Create radio threshold reports with different timestamps
+        // Hotspot 1 - before the reward period end (should be verified)
+        let report1 = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey1.clone(),
+            carrier_pub_key: carrier_pubkey.clone(),
+            bytes_threshold: 1000,
+            subscriber_threshold: 50,
+            threshold_timestamp: now - chrono::Duration::hours(5), // Before the reward period end
+        };
+
+        // Hotspot 2 - after the reward period end (should not be verified)
+        let report2 = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey2.clone(),
+            carrier_pub_key: carrier_pubkey.clone(),
+            bytes_threshold: 2000,
+            subscriber_threshold: 100,
+            threshold_timestamp: now + chrono::Duration::hours(2), // After the reward period end
+        };
+
+        // Create and save ingest reports
+        let ingest_report1 = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report: report1,
+        };
+
+        let ingest_report2 = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report: report2,
+        };
+
+        // Save both reports
+        let mut transaction = pool.begin().await.unwrap();
+        save(&ingest_report1, &mut transaction).await.unwrap();
+        save(&ingest_report2, &mut transaction).await.unwrap();
+        transaction.commit().await.unwrap();
+
+        // Define reward period for testing
+        let reward_period = (now - chrono::Duration::hours(24))..now;
+
+        // Call the function under test
+        let verified_thresholds = verified_radio_thresholds(&pool, &reward_period)
+            .await
+            .unwrap();
+
+        // Verify results
+        assert!(
+            verified_thresholds.is_verified(hotspot_pubkey1.clone()),
+            "Hotspot 1 should be verified (threshold timestamp before period end)"
+        );
+
+        assert!(
+            !verified_thresholds.is_verified(hotspot_pubkey2.clone()),
+            "Hotspot 2 should not be verified (threshold timestamp after period end)"
+        );
+
+        // Verify total count
+        let count = verified_thresholds.gateways.len();
+        assert_eq!(count, 1, "Should have exactly 1 verified hotspot");
+    }
 }
