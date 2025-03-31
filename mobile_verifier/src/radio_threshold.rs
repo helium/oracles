@@ -25,7 +25,7 @@ use helium_proto::services::{
     },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
-use sqlx::{FromRow, PgPool, Pool, Postgres, Row, Transaction};
+use sqlx::{FromRow, PgPool, Pool, Postgres, Transaction};
 use std::{collections::HashSet, ops::Range};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
@@ -255,16 +255,8 @@ where
         &self,
         report: &RadioThresholdReportReq,
     ) -> anyhow::Result<RadioThresholdReportVerificationStatus> {
-        let is_legacy = self.verify_legacy(&report.hotspot_pubkey, &None).await?;
         let report_validity = self.do_report_verifications(report).await;
-        let final_validity = if is_legacy
-            && report_validity == RadioThresholdReportVerificationStatus::ThresholdReportStatusValid
-        {
-            RadioThresholdReportVerificationStatus::ThresholdReportStatusLegacyValid
-        } else {
-            report_validity
-        };
-        Ok(final_validity)
+        Ok(report_validity)
     }
 
     async fn verify_invalid_report(
@@ -292,23 +284,6 @@ where
             .verify_authorized_key(public_key, NetworkKeyRole::MobileCarrier)
             .await
             .unwrap_or_default()
-    }
-
-    async fn verify_legacy(
-        &self,
-        hotspot_key: &PublicKeyBinary,
-        cbsd_id: &Option<String>,
-    ) -> Result<bool, sqlx::Error> {
-        // check if the radio has been grandfathered in, meaning a radio which has received
-        // boosted rewards prior to the data component of hip84 going live
-        // if true then it is assigned a status reason of Legacy
-        // TODO: remove this handling after the grandfathering period
-        let row = sqlx::query(" select exists(select 1 from grandfathered_radio_threshold where hotspot_pubkey = $1 and (cbsd_id is null or cbsd_id = $2)) ")
-        .bind(hotspot_key)
-        .bind(cbsd_id)
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(row.get("exists"))
     }
 }
 
@@ -741,77 +716,5 @@ mod tests {
         // Verify total count
         let count = verified_thresholds.gateways.len();
         assert_eq!(count, 1, "Should have exactly 1 verified hotspot");
-    }
-
-    #[sqlx::test]
-    async fn test_verify_legacy(pool: PgPool) {
-        // Create a test ingestor with authorization verifier
-        struct MockAuthVerifier;
-
-        #[async_trait::async_trait]
-        impl AuthorizationVerifier for MockAuthVerifier {
-            type Error = std::io::Error;
-
-            async fn verify_authorized_key(
-                &self,
-                _public_key: &PublicKeyBinary,
-                _role: NetworkKeyRole,
-            ) -> Result<bool, Self::Error> {
-                Ok(true)
-            }
-        }
-
-        let ingestor = RadioThresholdIngestor::new(
-            pool.clone(),
-            tokio::sync::mpsc::channel(1).1, // Reports receiver (unused)
-            tokio::sync::mpsc::channel(1).1, // Invalid reports receiver (unused)
-            FileSinkClient::new(tokio::sync::mpsc::channel(1).0, "test"), // Verified sink (unused)
-            FileSinkClient::new(tokio::sync::mpsc::channel(1).0, "test"), // Invalid verified sink (unused)
-            MockAuthVerifier,
-        );
-
-        // Create test hotspot pubkey
-        let hotspot_keypair = generate_keypair();
-        let hotspot_pubkey = PublicKeyBinary::from(hotspot_keypair.public_key().to_owned());
-
-        // Initially the hotspot should not be grandfathered
-        let is_legacy_before = ingestor
-            .verify_legacy(&hotspot_pubkey, &None)
-            .await
-            .unwrap();
-        assert!(
-            !is_legacy_before,
-            "Hotspot should not be legacy before insertion"
-        );
-
-        // Insert a record into grandfathered_radio_threshold
-        sqlx::query(
-            r#"
-        INSERT INTO grandfathered_radio_threshold (hotspot_pubkey, cbsd_id)
-        VALUES ($1, NULL)
-        "#,
-        )
-        .bind(hotspot_pubkey.to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        // Now the hotspot should be grandfathered
-        let is_legacy_after = ingestor
-            .verify_legacy(&hotspot_pubkey, &None)
-            .await
-            .unwrap();
-        assert!(is_legacy_after, "Hotspot should be legacy after insertion");
-
-        // Test with a different hotspot that isn't grandfathered
-        let other_hotspot_keypair = generate_keypair();
-        let other_hotspot_pubkey =
-            PublicKeyBinary::from(other_hotspot_keypair.public_key().to_owned());
-
-        let other_is_legacy = ingestor
-            .verify_legacy(&other_hotspot_pubkey, &None)
-            .await
-            .unwrap();
-        assert!(!other_is_legacy, "Other hotspot should not be legacy");
     }
 }
