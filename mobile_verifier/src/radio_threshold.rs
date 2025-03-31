@@ -291,20 +291,17 @@ pub async fn save(
     ingest_report: &RadioThresholdIngestReport,
     db: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
-    let cbsd_id: Option<String> = None;
-
     sqlx::query(
         r#"
             INSERT INTO radio_threshold (
             hotspot_pubkey,
-            cbsd_id,
             bytes_threshold,
             subscriber_threshold,
             threshold_timestamp,
             threshold_met,
             recv_timestamp)
-            VALUES ($1, $2, $3, $4, $5, true, $6)
-            ON CONFLICT (hotspot_pubkey, COALESCE(cbsd_id, ''))
+            VALUES ($1, $2, $3, $4, true, $5)
+            ON CONFLICT (hotspot_pubkey)
             DO UPDATE SET
             bytes_threshold = EXCLUDED.bytes_threshold,
             subscriber_threshold = EXCLUDED.subscriber_threshold,
@@ -314,7 +311,6 @@ pub async fn save(
             "#,
     )
     .bind(ingest_report.report.hotspot_pubkey.to_string())
-    .bind(cbsd_id)
     .bind(ingest_report.report.bytes_threshold as i64)
     .bind(ingest_report.report.subscriber_threshold as i32)
     .bind(ingest_report.report.threshold_timestamp)
@@ -349,8 +345,7 @@ pub async fn verified_radio_thresholds(
     reward_period: &Range<DateTime<Utc>>,
 ) -> Result<VerifiedRadioThresholds, sqlx::Error> {
     let mut rows = sqlx::query_as::<_, RadioThreshold>(
-        "SELECT hotspot_pubkey
-             FROM radio_threshold WHERE threshold_timestamp < $1 and cbsd_id IS NULL",
+        "SELECT hotspot_pubkey FROM radio_threshold WHERE threshold_timestamp < $1",
     )
     .bind(reward_period.end)
     .fetch(pool);
@@ -367,8 +362,7 @@ pub async fn delete(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-            DELETE FROM radio_threshold
-            WHERE hotspot_pubkey = $1 AND cbsd_id is null
+            DELETE FROM radio_threshold WHERE hotspot_pubkey = $1
         "#,
     )
     .bind(ingest_report.report.hotspot_pubkey.to_string())
@@ -419,7 +413,6 @@ mod tests {
             r#"
             SELECT 
                 hotspot_pubkey, 
-                cbsd_id, 
                 bytes_threshold, 
                 subscriber_threshold,
                 threshold_timestamp,
@@ -437,7 +430,6 @@ mod tests {
             result.get::<String, _>("hotspot_pubkey"),
             hotspot_pubkey.to_string()
         );
-        assert_eq!(result.get::<Option<String>, _>("cbsd_id"), None);
         assert_eq!(result.get::<i64, _>("bytes_threshold"), 1000);
         assert_eq!(result.get::<i32, _>("subscriber_threshold"), 50);
         assert!(result.get::<bool, _>("threshold_met"));
@@ -504,7 +496,6 @@ mod tests {
             r#"
             SELECT 
                 hotspot_pubkey, 
-                cbsd_id, 
                 bytes_threshold, 
                 subscriber_threshold,
                 threshold_timestamp,
@@ -523,7 +514,6 @@ mod tests {
             result.get::<String, _>("hotspot_pubkey"),
             hotspot_pubkey.to_string()
         );
-        assert_eq!(result.get::<Option<String>, _>("cbsd_id"), None);
         assert_eq!(result.get::<i64, _>("bytes_threshold"), 2000); // Updated value
         assert_eq!(result.get::<i32, _>("subscriber_threshold"), 100); // Updated value
         assert!(result.get::<bool, _>("threshold_met"));
