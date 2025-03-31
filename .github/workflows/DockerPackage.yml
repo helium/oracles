@@ -1,0 +1,59 @@
+name: DockerPackage
+
+on:
+  workflow_run:
+    workflows: ["Docker CI"]  # Run only if "Docker CI" workflow succeeds
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Release Version (e.g., 1.0.0)"
+        required: false
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [boost-manager, ingest, iot-config, iot-packet-verifier, iot-verifier, mobile-config, mobile-packet-verifier, mobile-verifier, poc-entropy, price, reward-index]
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-build-${{ matrix.package }}
+      cancel-in-progress: true
+    if: > 
+      github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '' && github.event.inputs.release_version != null ||
+      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'refs/tags/')
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine Release Version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.release_version }}" ]]; then
+            echo "RELEASE_VERSION=${{ github.event.inputs.release_version }}" >> $GITHUB_ENV
+          elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            TAG_NAME="${{ github.event.workflow_run.head_branch }}"
+            TAG_NAME=${TAG_NAME#refs/tags/}
+            echo "RELEASE_VERSION=$TAG_NAME" >> $GITHUB_ENV
+          fi
+
+      - name: Debug Release Version
+        run: echo "Building Docker image with RELEASE_VERSION=${{ env.RELEASE_VERSION }}"
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false  # Change to `true` if you want to push
+          tags: helium/oracle-${{ matrix.package }}:${{ env.RELEASE_VERSION }}
+          build-args: |
+            PACKAGE=${{ matrix.package }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
