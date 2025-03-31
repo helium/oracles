@@ -12,7 +12,7 @@ use file_store::{
     },
     FileStore, FileType,
 };
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -42,8 +42,8 @@ pub struct SubscriberMappingActivityDaemon<AV, EV> {
 
 impl<AV, EV> SubscriberMappingActivityDaemon<AV, EV>
 where
-    AV: AuthorizationVerifier,
-    EV: EntityVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier + Clone,
+    EV: EntityVerifier + Clone + Send + Sync + 'static,
 {
     pub fn new(
         pool: Pool<Postgres>,
@@ -131,11 +131,18 @@ where
 
         let activity_stream = stream
             .map(SubscriberMappingActivity::try_from)
-            .and_then(|sma| async move {
-                let status = self.verify_activity(&sma).await?;
-                Ok((sma, status))
+            .and_then(|sma| {
+                let av = self.authorization_verifier.clone();
+                let ev = self.entity_verifier.clone();
+                async move {
+                    let status = verify_activity(av, ev, &sma).await?;
+                    Ok((sma, status))
+                }
             })
-            .and_then(|(sma, status)| self.write_verified_report(sma, status))
+            .and_then(|(sma, status)| {
+                let sink = self.verified_sink.clone();
+                async move { write_verified_report(sink, sma, status).await }
+            })
             .try_filter_map(|(sma, status)| is_valid(sma, status));
 
         db::save(&mut transaction, activity_stream).await?;
@@ -143,57 +150,67 @@ where
         transaction.commit().await?;
         Ok(())
     }
+}
 
-    async fn write_verified_report(
-        &self,
-        mut activity: SubscriberMappingActivity,
-        status: SubscriberReportVerificationStatus,
-    ) -> anyhow::Result<(
-        SubscriberMappingActivity,
-        SubscriberReportVerificationStatus,
-    )> {
-        let verified_proto = VerifiedSubscriberMappingActivityReportV1 {
-            report: activity.take_original(),
-            status: status as i32,
-            timestamp: Utc::now().encode_timestamp_millis(),
-        };
+async fn write_verified_report(
+    sink: FileSinkClient<VerifiedSubscriberMappingActivityReportV1>,
+    mut activity: SubscriberMappingActivity,
+    status: SubscriberReportVerificationStatus,
+) -> anyhow::Result<(
+    SubscriberMappingActivity,
+    SubscriberReportVerificationStatus,
+)> {
+    let verified_proto = VerifiedSubscriberMappingActivityReportV1 {
+        report: activity.take_original(),
+        status: status as i32,
+        timestamp: Utc::now().encode_timestamp_millis(),
+    };
 
-        self.verified_sink
-            .write(verified_proto, &[("status", status.as_str_name())])
-            .await?;
+    sink.write(verified_proto, &[("status", status.as_str_name())])
+        .await?;
 
-        Ok((activity, status))
-    }
+    Ok((activity, status))
+}
 
-    async fn verify_activity(
-        &self,
-        activity: &SubscriberMappingActivity,
-    ) -> anyhow::Result<SubscriberReportVerificationStatus> {
-        if !self
-            .verify_known_carrier_key(&activity.carrier_pub_key)
-            .await?
-        {
-            return Ok(SubscriberReportVerificationStatus::InvalidCarrierKey);
-        };
-        if !self.verify_subscriber_id(&activity.subscriber_id).await? {
-            return Ok(SubscriberReportVerificationStatus::InvalidSubscriberId);
-        };
-        Ok(SubscriberReportVerificationStatus::Valid)
-    }
+async fn verify_activity<AV, EV>(
+    authorization_verifier: AV,
+    entity_verifier: EV,
+    activity: &SubscriberMappingActivity,
+) -> anyhow::Result<SubscriberReportVerificationStatus>
+where
+    AV: AuthorizationVerifier,
+    EV: EntityVerifier,
+{
+    if !verify_known_carrier_key(authorization_verifier, &activity.carrier_pub_key).await? {
+        return Ok(SubscriberReportVerificationStatus::InvalidCarrierKey);
+    };
+    if !verify_subscriber_id(entity_verifier, &activity.subscriber_id).await? {
+        return Ok(SubscriberReportVerificationStatus::InvalidSubscriberId);
+    };
+    Ok(SubscriberReportVerificationStatus::Valid)
+}
 
-    async fn verify_known_carrier_key(&self, public_key: &PublicKeyBinary) -> anyhow::Result<bool> {
-        self.authorization_verifier
-            .verify_authorized_key(public_key, NetworkKeyRole::MobileCarrier)
-            .await
-            .map_err(anyhow::Error::from)
-    }
+async fn verify_known_carrier_key<AV>(
+    authorization_verifier: AV,
+    public_key: &PublicKeyBinary,
+) -> anyhow::Result<bool>
+where
+    AV: AuthorizationVerifier,
+{
+    authorization_verifier
+        .verify_authorized_key(public_key, NetworkKeyRole::MobileCarrier)
+        .await
+        .map_err(anyhow::Error::from)
+}
 
-    async fn verify_subscriber_id(&self, subscriber_id: &[u8]) -> anyhow::Result<bool> {
-        self.entity_verifier
-            .verify_rewardable_entity(subscriber_id)
-            .await
-            .map_err(anyhow::Error::from)
-    }
+async fn verify_subscriber_id<EV>(entity_verifier: EV, subscriber_id: &[u8]) -> anyhow::Result<bool>
+where
+    EV: EntityVerifier,
+{
+    entity_verifier
+        .verify_rewardable_entity(subscriber_id)
+        .await
+        .map_err(anyhow::Error::from)
 }
 
 async fn is_valid(
@@ -209,20 +226,19 @@ async fn is_valid(
 
 impl<AV, EV> ManagedTask for SubscriberMappingActivityDaemon<AV, EV>
 where
-    AV: AuthorizationVerifier,
-    EV: EntityVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier + Clone,
+    EV: EntityVerifier + Clone + Send + Sync + 'static,
 {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
-        // let handle = tokio::spawn(async move { self.run(shutdown).await });
-        // Box::pin(
-        //     handle
-        //         .map_err(anyhow::Error::from)
-        //         .and_then(|result| async move { result }),
-        // )
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result }),
+        )
     }
 }
 
