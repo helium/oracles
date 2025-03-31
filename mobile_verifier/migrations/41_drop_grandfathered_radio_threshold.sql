@@ -1,0 +1,1 @@
+DROP TABLE grandfathered_radio_threshold;
