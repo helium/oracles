@@ -558,4 +558,113 @@ mod tests {
             updated_now.timestamp_millis()
         );
     }
+
+    #[sqlx::test]
+    async fn test_delete_radio_threshold(pool: PgPool) {
+        let now = Utc::now();
+        let hotspot_keypair = generate_keypair();
+        let hotspot_pubkey = PublicKeyBinary::from(hotspot_keypair.public_key().to_owned());
+        let hotspot_keypair_2 = generate_keypair();
+        let hotspot_pubkey_2 = PublicKeyBinary::from(hotspot_keypair_2.public_key().to_owned());
+        let carrier_keypair = generate_keypair();
+        let carrier_pubkey = PublicKeyBinary::from(carrier_keypair.public_key().to_owned());
+
+        let report = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            carrier_pub_key: carrier_pubkey.clone(),
+            bytes_threshold: 1000,
+            subscriber_threshold: 50,
+            threshold_timestamp: now,
+        };
+
+        let ingest_report = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report,
+        };
+
+        let report_2 = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey_2.clone(),
+            carrier_pub_key: carrier_pubkey.clone(),
+            bytes_threshold: 1000,
+            subscriber_threshold: 50,
+            threshold_timestamp: now,
+        };
+
+        let ingest_report_2 = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report: report_2,
+        };
+
+        // Save the radio threshold
+        let mut transaction = pool.begin().await.unwrap();
+        save(&ingest_report, &mut transaction).await.unwrap();
+        save(&ingest_report_2, &mut transaction).await.unwrap();
+        transaction.commit().await.unwrap();
+
+        // Verify the record exists
+        let count_before = sqlx::query(
+            r#"
+        SELECT COUNT(*) as count
+        FROM radio_threshold
+        "#,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get::<i64, _>("count");
+
+        assert_eq!(count_before, 2, "Records should exist before deletion");
+
+        // Create an invalidated radio threshold report
+        let invalidation_report = InvalidatedRadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            carrier_pub_key: carrier_pubkey,
+            reason: 0.try_into().unwrap(),
+            timestamp: now,
+        };
+
+        let invalidated_ingest_report = InvalidatedRadioThresholdIngestReport {
+            received_timestamp: Utc::now(),
+            report: invalidation_report,
+        };
+
+        // Delete the radio threshold
+        let mut transaction = pool.begin().await.unwrap();
+        delete(&invalidated_ingest_report, &mut transaction)
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+
+        // Verify the record (2) still exists
+        let count_after = sqlx::query(
+            r#"
+        SELECT COUNT(*) as count
+        FROM radio_threshold
+        WHERE hotspot_pubkey = $1
+        "#,
+        )
+        .bind(hotspot_pubkey_2.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get::<i64, _>("count");
+
+        assert_eq!(count_after, 1, "Record (2) should still exists");
+
+        // Verify the record (1) was deleted
+        let count_after = sqlx::query(
+            r#"
+        SELECT COUNT(*) as count
+        FROM radio_threshold
+        WHERE hotspot_pubkey = $1
+        "#,
+        )
+        .bind(hotspot_pubkey.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get::<i64, _>("count");
+
+        assert_eq!(count_after, 0, "Record (1) should be deleted");
+    }
 }
