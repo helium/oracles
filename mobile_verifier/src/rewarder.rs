@@ -10,8 +10,7 @@ use crate::{
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
     sp_boosted_rewards_bans, speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_mapping_activity, subscriber_verified_mapping_event, telemetry, unique_connections,
-    PriceInfo, Settings,
+    subscriber_mapping_activity, telemetry, unique_connections, PriceInfo, Settings,
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -334,7 +333,7 @@ where
         coverage::clear_coverage_objects(&mut transaction, &reward_info.epoch_period.start).await?;
         sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_info.epoch_period.start)
             .await?;
-        subscriber_verified_mapping_event::clear(&mut transaction, &reward_info.epoch_period.start)
+        subscriber_mapping_activity::db::clear(&mut transaction, reward_info.epoch_period.start)
             .await?;
         unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;

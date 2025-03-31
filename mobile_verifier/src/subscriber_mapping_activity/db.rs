@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use chrono::{DateTime, Utc};
 use futures::{Stream, TryStreamExt};
-use sqlx::{Pool, Postgres, QueryBuilder, Transaction};
+use sqlx::{PgExecutor, Postgres, QueryBuilder, Transaction};
 
 use crate::subscriber_mapping_activity::SubscriberMappingActivity;
 
@@ -40,7 +40,7 @@ pub async fn save(
 }
 
 pub async fn rewardable_mapping_activity(
-    pool: &Pool<Postgres>,
+    db: impl PgExecutor<'_>,
     epoch_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<Vec<SubscriberMappingShares>> {
     sqlx::query_as(
@@ -55,7 +55,21 @@ pub async fn rewardable_mapping_activity(
     )
     .bind(epoch_period.start)
     .bind(epoch_period.end)
-    .fetch_all(pool)
+    .fetch_all(db)
     .await
     .map_err(anyhow::Error::from)
+}
+
+pub async fn clear(db: impl PgExecutor<'_>, timestamp: DateTime<Utc>) -> anyhow::Result<()> {
+    sqlx::query(
+        "
+        DELETE FROM subscriber_mapping_activity
+        WHERE received_timestamp < $1
+    ",
+    )
+    .bind(timestamp)
+    .execute(db)
+    .await?;
+
+    Ok(())
 }
