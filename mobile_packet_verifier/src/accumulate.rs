@@ -10,10 +10,11 @@ use helium_proto::services::poc_mobile::{
 };
 use sqlx::{Postgres, Transaction};
 
-use crate::{event_ids, pending_burns, MobileConfigResolverExt};
+use crate::{banning::BannedRadios, event_ids, pending_burns, MobileConfigResolverExt};
 
 pub async fn accumulate_sessions(
     mobile_config: &impl MobileConfigResolverExt,
+    banned_radios: BannedRadios,
     txn: &mut Transaction<'_, Postgres>,
     verified_data_session_report_sink: &FileSinkClient<VerifiedDataTransferIngestReportV1>,
     curr_file_ts: DateTime<Utc>,
@@ -29,7 +30,7 @@ pub async fn accumulate_sessions(
             continue;
         }
 
-        let report_validity = verify_report(txn, mobile_config, &report).await?;
+        let report_validity = verify_report(txn, mobile_config, &banned_radios, &report).await?;
         write_verified_report(
             verified_data_session_report_sink,
             report_validity,
@@ -55,6 +56,7 @@ pub async fn accumulate_sessions(
 async fn verify_report(
     txn: &mut Transaction<'_, Postgres>,
     mobile_config: &impl MobileConfigResolverExt,
+    banned_radios: &BannedRadios,
     report: &DataTransferSessionIngestReport,
 ) -> anyhow::Result<ReportStatus> {
     if is_duplicate(txn, report).await? {
@@ -63,6 +65,10 @@ async fn verify_report(
 
     let gw_pub_key = &report.report.data_transfer_usage.pub_key;
     let routing_pub_key = &report.report.pub_key;
+
+    if banned_radios.contains(gw_pub_key) {
+        return Ok(ReportStatus::Banned);
+    }
 
     if !mobile_config.is_gateway_known(gw_pub_key).await {
         return Ok(ReportStatus::InvalidGatewayKey);
@@ -166,6 +172,7 @@ mod tests {
 
         accumulate_sessions(
             &MockResolver::new(),
+            BannedRadios::default(),
             &mut txn,
             &invalid_data_session_report_sink,
             Utc::now(),
@@ -200,6 +207,7 @@ mod tests {
 
         accumulate_sessions(
             &MockResolver::new(),
+            BannedRadios::default(),
             &mut txn,
             &invalid_data_session_report_sink,
             Utc::now(),
@@ -232,6 +240,7 @@ mod tests {
 
         accumulate_sessions(
             &MockResolver::new(),
+            BannedRadios::default(),
             &mut txn,
             &invalid_data_session_report_sink,
             Utc::now(),
@@ -264,6 +273,7 @@ mod tests {
 
         accumulate_sessions(
             &MockResolver::new().unknown_gateway(),
+            BannedRadios::default(),
             &mut txn,
             &invalid_data_session_report_sink,
             Utc::now(),
@@ -296,6 +306,7 @@ mod tests {
 
         accumulate_sessions(
             &MockResolver::new().unknown_routing_key(),
+            BannedRadios::default(),
             &mut txn,
             &invalid_data_session_report_sink,
             Utc::now(),

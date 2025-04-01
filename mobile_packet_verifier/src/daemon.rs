@@ -97,19 +97,40 @@ where
                     }
                 }
                 file = self.reports.recv() => {
-                    let Some(file) = file else {
-                        anyhow::bail!("FileInfoPoller sender was dropped unexpectedly");
+                    let Some(file_info_stream) = file else {
+                        anyhow::bail!("data transfer FileInfoPoller sender was dropped unexpectedly");
                     };
-                    tracing::info!("Verifying file: {}", file.file_info);
-                    let ts = file.file_info.timestamp;
-                    let mut transaction = self.pool.begin().await?;
-                    let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.verified_data_session_report_sink, ts, reports).await?;
-                    transaction.commit().await?;
-                    self.verified_data_session_report_sink.commit().await?;
+                    self.handle_data_transfer_session_file(file_info_stream).await?;
                 }
+
             }
         }
+    }
+
+    async fn handle_data_transfer_session_file(
+        &self,
+        file: FileInfoStream<DataTransferSessionIngestReport>,
+    ) -> anyhow::Result<()> {
+        tracing::info!("Verifying file: {}", file.file_info);
+        let ts = file.file_info.timestamp;
+        let mut transaction = self.pool.begin().await?;
+
+        let banned_radios = banning::get_banned_radios(&mut transaction, Utc::now()).await?;
+        let reports = file.into_stream(&mut transaction).await?;
+
+        crate::accumulate::accumulate_sessions(
+            &self.mobile_config_resolver,
+            banned_radios,
+            &mut transaction,
+            &self.verified_data_session_report_sink,
+            ts,
+            reports,
+        )
+        .await?;
+
+        transaction.commit().await?;
+        self.verified_data_session_report_sink.commit().await?;
+        Ok(())
     }
 }
 
