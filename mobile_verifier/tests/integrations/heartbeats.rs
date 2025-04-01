@@ -102,7 +102,7 @@ VALUES
         vec![HeartbeatReward {
             hotspot_key: hotspot_2,
             trust_score_multipliers: vec![Decimal::ONE; 13],
-            distances_to_asserted: Some(vec![0; 13]),
+            distances_to_asserted: vec![0; 13],
             coverage_object,
         }]
     );
@@ -190,7 +190,7 @@ VALUES
         vec![HeartbeatReward {
             hotspot_key: hotspot,
             trust_score_multipliers: vec![Decimal::ONE; 12],
-            distances_to_asserted: Some(vec![0; 12]),
+            distances_to_asserted: vec![0; 12],
             coverage_object: latest_coverage_object,
         }]
     );
@@ -252,7 +252,7 @@ VALUES
                 dec!(0.25),
                 dec!(0.25)
             ],
-            distances_to_asserted: Some(vec![0; 12]),
+            distances_to_asserted: vec![0; 12],
             coverage_object: latest_coverage_object,
         }]
     );
