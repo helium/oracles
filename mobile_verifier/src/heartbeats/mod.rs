@@ -629,11 +629,6 @@ pub async fn clear_heartbeats(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM cbrs_heartbeats WHERE truncated_timestamp < $1;")
-        .bind(timestamp)
-        .execute(&mut *tx)
-        .await?;
-
     sqlx::query("DELETE FROM wifi_heartbeats WHERE truncated_timestamp < $1;")
         .bind(timestamp)
         .execute(&mut *tx)
