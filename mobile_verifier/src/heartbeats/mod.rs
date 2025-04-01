@@ -2,13 +2,12 @@ pub mod last_location;
 pub mod wifi;
 
 use crate::{
-    cell_type::{CellType, CellTypeLabel},
+    cell_type::CellType,
     coverage::{self, CoverageClaimTimeCache, CoverageObjectCache, CoverageObjectMeta},
     geofence::GeofenceValidator,
     seniority::{Seniority, SeniorityUpdate},
     GatewayResolution, GatewayResolver,
 };
-use anyhow::anyhow;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{file_sink::FileSinkClient, wifi_heartbeat::WifiHeartbeatIngestReport};
 use futures::stream::{Stream, StreamExt};
@@ -205,7 +204,6 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
-    pub cell_type: CellType,
     pub distances_to_asserted: Option<Vec<i64>>,
     pub trust_score_multipliers: Vec<Decimal>,
     pub coverage_object: Uuid,
@@ -216,11 +214,8 @@ impl HeartbeatReward {
         KeyType::Wifi(&self.hotspot_key)
     }
 
-    pub fn id(&self) -> anyhow::Result<String> {
-        match self.cell_type.to_label() {
-            CellTypeLabel::Wifi => Ok(self.hotspot_key.to_string()),
-            _ => Err(anyhow!("failed to derive label from cell type")),
-        }
+    pub fn id(&self) -> String {
+        self.hotspot_key.to_string()
     }
 
     pub fn validated<'a>(
