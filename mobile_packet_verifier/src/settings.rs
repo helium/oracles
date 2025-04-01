@@ -4,6 +4,8 @@ use humantime_serde::re::humantime;
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
 
+use crate::banning;
+
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Defsault to
@@ -45,6 +47,9 @@ pub struct Settings {
         default = "default_txn_confirmation_check_interval"
     )]
     pub txn_confirmation_check_interval: Duration,
+
+    /// Settings for Banning
+    pub banning: banning::BanSettings,
 }
 
 fn default_purger_interval() -> Duration {
