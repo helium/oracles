@@ -315,7 +315,7 @@ impl VerifiedBanReport {
 
 impl BanType {
     pub fn as_str_name(&self) -> &'static str {
-        proto::BanType::from(self.clone()).as_str_name()
+        proto::BanType::from(*self).as_str_name()
     }
 }
 
