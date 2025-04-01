@@ -5,6 +5,7 @@ use mobile_config::client::{
 };
 
 pub mod accumulate;
+pub mod banning;
 pub mod burner;
 pub mod daemon;
 pub mod event_ids;
