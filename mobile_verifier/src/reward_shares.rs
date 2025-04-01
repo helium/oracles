@@ -990,6 +990,7 @@ mod test {
             rewardable_bytes: 0,
             num_dcs: 2,
             received_timestamp: DateTime::default(),
+            burn_timestamp: Utc::now(),
         };
 
         let mut data_transfer_map = HotspotMap::new();
@@ -1057,6 +1058,7 @@ mod test {
                 rewardable_bytes: 0,
                 num_dcs: 2222222222222222,
                 received_timestamp: DateTime::default(),
+                burn_timestamp: Utc::now(),
             }));
         }
         let data_transfer_sessions = stream::iter(transfer_sessions);
