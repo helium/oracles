@@ -82,7 +82,6 @@ latest_uuids AS (( SELECT DISTINCT ON (hotspot_key,
             truncated_timestamp DESC))
 SELECT
     hb.hotspot_key,
-    hb.cbsd_id,
     hb.cell_type,
     hb.distances_to_asserted,
     hb.trust_score_multipliers,
