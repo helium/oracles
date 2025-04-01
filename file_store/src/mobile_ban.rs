@@ -26,6 +26,10 @@ pub type BanReportStream = FileInfoStream<BanReport>;
 pub type BanReportSource = tokio::sync::mpsc::Receiver<BanReportStream>;
 pub type VerifiedBanReportSink = FileSinkClient<proto::VerifiedBanIngestReportV1>;
 
+pub type VerifiedBanReportStream = FileInfoStream<VerifiedBanReport>;
+pub type VerifiedBanReportSource = tokio::sync::mpsc::Receiver<VerifiedBanReportStream>;
+
+#[derive(Clone)]
 pub struct VerifiedBanReport {
     pub verified_timestamp: DateTime<Utc>,
     pub report: BanReport,
@@ -77,6 +81,10 @@ pub enum BanType {
 
 impl MsgDecode for BanReport {
     type Msg = proto::BanIngestReportV1;
+}
+
+impl MsgDecode for VerifiedBanReport {
+    type Msg = proto::VerifiedBanIngestReportV1;
 }
 
 // === Conversion :: proto -> struct
@@ -299,6 +307,23 @@ pub async fn report_source(
         .store(file_store)
         .lookback(LookbackBehavior::StartAfter(start_after))
         .prefix(crate::FileType::MobileBanReport.to_string())
+        .create()
+        .await
+}
+
+pub async fn verified_report_source(
+    pool: PgPool,
+    file_store: FileStore,
+    start_after: DateTime<Utc>,
+) -> crate::Result<(
+    VerifiedBanReportSource,
+    FileInfoPollerServer<VerifiedBanReport>,
+)> {
+    crate::file_source::continuous_source()
+        .state(pool)
+        .store(file_store)
+        .lookback(LookbackBehavior::StartAfter(start_after))
+        .prefix(crate::FileType::VerifiedMobileBanReport.to_string())
         .create()
         .await
 }
