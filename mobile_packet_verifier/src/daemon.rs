@@ -1,5 +1,9 @@
 use crate::{
-    burner::Burner, event_ids::EventIdPurger, pending_burns, settings::Settings,
+    banning::{self},
+    burner::Burner,
+    event_ids::EventIdPurger,
+    pending_burns,
+    settings::Settings,
     MobileConfigClients, MobileConfigResolverExt,
 };
 use anyhow::{bail, Result};
@@ -164,11 +168,11 @@ impl Cmd {
             settings.txn_confirmation_check_interval,
         );
 
-        let file_store = FileStore::from_settings(&settings.ingest).await?;
+        let ingest_file_store = FileStore::from_settings(&settings.ingest).await?;
 
         let (reports, reports_server) = file_source::continuous_source()
             .state(pool.clone())
-            .store(file_store)
+            .store(ingest_file_store)
             .lookback(LookbackBehavior::StartAfter(
                 Utc.timestamp_millis_opt(0).unwrap(),
             ))
@@ -188,13 +192,15 @@ impl Cmd {
             invalid_sessions,
         );
 
-        let event_id_purger = EventIdPurger::from_settings(pool, settings);
+        let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
+        let banning = banning::create_managed_task(pool, &settings.banning).await?;
 
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_sessions_server)
             .add_task(invalid_sessions_server)
             .add_task(reports_server)
+            .add_task(banning)
             .add_task(event_id_purger)
             .add_task(daemon)
             .build()
