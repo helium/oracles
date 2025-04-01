@@ -414,8 +414,6 @@ impl BurnProgramCache {
     }
 }
 
-const FIXED_BALANCE: u64 = 1_000_000_000;
-
 pub enum PossibleTransaction {
     NoTransaction(Signature),
     Transaction(Transaction),
@@ -438,7 +436,7 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         if let Some(ref rpc) = self {
             rpc.payer_balance(payer).await
         } else {
-            Ok(FIXED_BALANCE)
+            Ok(u64::MAX)
         }
     }
 
