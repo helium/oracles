@@ -1,7 +1,6 @@
 WITH heartbeats AS (
     SELECT
         hotspot_key,
-        NULL AS cbsd_id,
         cell_type,
         CASE WHEN count(*) >= $3 THEN
             1.0
