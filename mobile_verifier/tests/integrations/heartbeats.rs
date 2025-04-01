@@ -51,7 +51,6 @@ async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 async fn only_fetch_latest_hotspot(pool: PgPool) -> anyhow::Result<()> {
     let coverage_object = Uuid::new_v4();
-    let cell_type = CellType::NovaGenericWifiIndoor;
     let hotspot_1: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     let hotspot_2: PublicKeyBinary =
@@ -102,7 +101,6 @@ VALUES
         heartbeat_reward,
         vec![HeartbeatReward {
             hotspot_key: hotspot_2,
-            cell_type,
             trust_score_multipliers: vec![Decimal::ONE; 13],
             distances_to_asserted: Some(vec![0; 13]),
             coverage_object,
@@ -191,7 +189,6 @@ VALUES
         heartbeat_reward,
         vec![HeartbeatReward {
             hotspot_key: hotspot,
-            cell_type: CellType::NovaGenericWifiIndoor,
             trust_score_multipliers: vec![Decimal::ONE; 12],
             distances_to_asserted: Some(vec![0; 12]),
             coverage_object: latest_coverage_object,
@@ -241,7 +238,6 @@ VALUES
         heartbeat_reward,
         vec![HeartbeatReward {
             hotspot_key: hotspot,
-            cell_type: CellType::NovaGenericWifiIndoor,
             trust_score_multipliers: vec![
                 dec!(1.0),
                 dec!(1.0),
