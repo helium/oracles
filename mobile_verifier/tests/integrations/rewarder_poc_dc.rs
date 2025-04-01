@@ -24,7 +24,7 @@ use mobile_verifier::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use sqlx::{pool, PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 pub mod proto {
@@ -229,7 +229,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
@@ -250,48 +250,45 @@ async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
 
     let price_info = default_price_info();
 
-    let (_, rewards) = tokio::join!(
-        rewarder::reward_poc_and_dc(
-            &pool,
-            &hex_boosting_client,
-            &mobile_rewards_client,
-            &speedtest_avg_client,
-            &reward_info,
-            price_info.clone()
-        ),
-        // expecting poc rewards, no unallocated
-        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 3, true)
-    );
+    let _rewarder = rewarder::reward_poc_and_dc(
+        &pool,
+        &hex_boosting_client,
+        &mobile_rewards_client,
+        &speedtest_avg_client,
+        &reward_info,
+        price_info.clone(),
+    )
+    .await?;
+    drop(mobile_rewards_client);
+    println!("rewarder: {_rewarder:?}");
 
-    let Ok((_poc_rewards, _dc_rewards, _unallocated_reward)) = rewards else {
-        panic!("rewards failed");
-    };
+    let msgs = mobile_rewards.finish().await?;
+    assert_eq!(msgs.gateway_reward.len(), 3);
+    assert_eq!(msgs.radio_reward_v2.len(), 3);
 
-    // SP ban radio
+    // ==============================================================
+    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
+
+    // SP ban radio, zeroed rewards are filtered out
     let mut txn = pool.begin().await?;
     ban_wifi_radio_for_epoch(&mut txn, pubkey.clone(), &reward_info.epoch_period).await?;
     txn.commit().await?;
 
-    let (_, rewards) = tokio::join!(
-        // run rewards for poc and dc
-        rewarder::reward_poc_and_dc(
-            &pool,
-            &hex_boosting_client,
-            &mobile_rewards_client,
-            &speedtest_avg_client,
-            &reward_info,
-            price_info
-        ),
-        // expecting single radio with poc rewards, no unallocated
-        receive_expected_rewards_with_counts(&mut mobile_rewards, 3, 2, false)
-    );
-    let Ok((poc_rewards, dc_rewards, _unallocated_reward)) = rewards else {
-        panic!("rewards failed");
-    };
+    let _rewarder = rewarder::reward_poc_and_dc(
+        &pool,
+        &hex_boosting_client,
+        &mobile_rewards_client,
+        &speedtest_avg_client,
+        &reward_info,
+        price_info,
+    )
+    .await?;
+    drop(mobile_rewards_client);
 
-    println!("poc_reward count: {}", poc_rewards.len());
-    println!("dc_reward count: {}", dc_rewards.len());
-    println!("unallocated_reward: {:?}", _unallocated_reward);
+    let msgs = mobile_rewards.finish().await?;
+    assert_eq!(msgs.gateway_reward.len(), 3);
+    assert_eq!(msgs.radio_reward_v2.len(), 2);
 
     Ok(())
 }

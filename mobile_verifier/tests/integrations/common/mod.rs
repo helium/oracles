@@ -24,8 +24,11 @@ use mobile_verifier::{
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-use std::{collections::HashMap, str::FromStr};
-use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
+use tokio::{
+    sync::{mpsc::error::TryRecvError, RwLock},
+    time::{timeout, Timeout},
+};
 use tonic::async_trait;
 
 pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
@@ -78,6 +81,7 @@ impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
         Ok(self.info.clone())
     }
 }
+
 pub struct MockFileSinkReceiver<T> {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>,
 }
@@ -377,4 +381,117 @@ pub fn default_price_info() -> PriceInfo {
     assert_eq!(price_info.price_per_token, dec!(10000));
     assert_eq!(price_info.price_per_bone, dec!(0.0001));
     price_info
+}
+
+// Non-blocking version is file sink testing.
+// Requires the FileSinkClient to be dropped when all writing is done, or panic!.
+pub fn create_nonblocking_file_sink<T: Send + Sync + 'static>(
+) -> (FileSinkClient<T>, NonBlockingFileSinkReceiver<T>) {
+    let (tx, rx) = tokio::sync::mpsc::channel(999);
+    (
+        FileSinkClient {
+            sender: tx,
+            metric: "metric".into(),
+        },
+        NonBlockingFileSinkReceiver::new(rx),
+    )
+}
+
+#[derive(Debug)]
+pub struct NonBlockingFileSinkReceiver<T> {
+    msgs: Arc<RwLock<Vec<T>>>,
+    channel_closed: Arc<tokio::sync::Notify>,
+}
+
+#[derive(Default, Debug)]
+pub struct MobileRewardShareMessages {
+    pub gateway_reward: Vec<GatewayReward>,
+    pub radio_reward: Vec<RadioReward>,
+    pub subscriber_reward: Vec<SubscriberReward>,
+    pub sp_reward: Vec<ServiceProviderReward>,
+    pub unallocated: Vec<UnallocatedReward>,
+    pub radio_reward_v2: Vec<RadioRewardV2>,
+    pub promotion_reward: Vec<PromotionReward>,
+}
+
+impl MobileRewardShareMessages {
+    fn insert(&mut self, item: MobileReward) {
+        match item {
+            MobileReward::GatewayReward(inner) => self.gateway_reward.push(inner),
+            MobileReward::RadioReward(inner) => self.radio_reward.push(inner),
+            MobileReward::SubscriberReward(inner) => self.subscriber_reward.push(inner),
+            MobileReward::ServiceProviderReward(inner) => self.sp_reward.push(inner),
+            MobileReward::UnallocatedReward(inner) => self.unallocated.push(inner),
+            MobileReward::RadioRewardV2(inner) => self.radio_reward_v2.push(inner),
+            MobileReward::PromotionReward(inner) => self.promotion_reward.push(inner),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+trait TestTimeoutExt<T>
+where
+    Self: Sized,
+{
+    fn timeout_2_secs(self) -> Timeout<Self>;
+}
+
+// Add ability to timeout all Futures after 2 seconds
+impl<F: std::future::Future> TestTimeoutExt<F> for F {
+    fn timeout_2_secs(self) -> Timeout<Self> {
+        tokio::time::timeout(Duration::seconds(2).to_std().unwrap(), self)
+    }
+}
+
+impl NonBlockingFileSinkReceiver<MobileRewardShare> {
+    pub async fn finish(self) -> anyhow::Result<MobileRewardShareMessages> {
+        // make sure channel is closed and done be written to
+        if let Err(err) = self.channel_closed.notified().timeout_2_secs().await {
+            panic!("file sink receiver channel was never closed: {err:?}");
+        }
+
+        let lock = Arc::try_unwrap(self.msgs).expect("no locks on messages");
+        let msgs = lock.into_inner();
+
+        let mut output = MobileRewardShareMessages::default();
+
+        for msg in msgs {
+            match msg.reward {
+                Some(item) => output.insert(item),
+                None => panic!("something went wrong"),
+            };
+        }
+
+        Ok(output)
+    }
+}
+
+impl<T: Send + Sync + 'static> NonBlockingFileSinkReceiver<T> {
+    fn new(mut receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>) -> Self {
+        let channel_closed = Arc::new(tokio::sync::Notify::new());
+        let closer = channel_closed.clone();
+
+        let msgs = Arc::new(RwLock::new(vec![]));
+        let inner_msgs = msgs.clone();
+
+        tokio::spawn(async move {
+            while let Some(msg) = receiver.recv().await {
+                match msg {
+                    SinkMessage::Data(sender, msg) => {
+                        sender.send(Ok(())).unwrap();
+                        inner_msgs.write().await.push(msg);
+                    }
+                    SinkMessage::Commit(_sender) => todo!(),
+                    SinkMessage::Rollback(_sender) => todo!(),
+                }
+            }
+            closer.notify_one();
+            println!("receive channel was dropped");
+        });
+
+        Self {
+            msgs,
+            channel_closed,
+        }
+    }
 }
