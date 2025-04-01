@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use chrono::{DateTime, Utc};
 use file_store::{
@@ -34,16 +34,16 @@ pub mod db;
 
 pub struct SubscriberMappingActivityDaemon<AV, EV> {
     pool: Pool<Postgres>,
-    authorization_verifier: AV,
-    entity_verifier: EV,
+    authorization_verifier: Arc<AV>,
+    entity_verifier: Arc<EV>,
     stream_receiver: Receiver<FileInfoStream<SubscriberMappingActivityIngestReportV1>>,
     verified_sink: FileSinkClient<VerifiedSubscriberMappingActivityReportV1>,
 }
 
 impl<AV, EV> SubscriberMappingActivityDaemon<AV, EV>
 where
-    AV: AuthorizationVerifier + Clone,
-    EV: EntityVerifier + Clone + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
+    EV: EntityVerifier + Send + Sync + 'static,
 {
     pub fn new(
         pool: Pool<Postgres>,
@@ -54,8 +54,8 @@ where
     ) -> Self {
         Self {
             pool,
-            authorization_verifier,
-            entity_verifier,
+            authorization_verifier: Arc::new(authorization_verifier),
+            entity_verifier: Arc::new(entity_verifier),
             stream_receiver,
             verified_sink,
         }
@@ -130,20 +130,28 @@ where
         let stream = file_info_stream.into_stream(&mut transaction).await?;
 
         let activity_stream = stream
-            .map(SubscriberMappingActivity::try_from)
-            .and_then(|sma| {
+            .map(|proto| {
+                let activity = SubscriberMappingActivity::try_from(proto.clone())?;
+                Ok((activity, proto))
+            })
+            .and_then(|(activity, proto)| {
                 let av = self.authorization_verifier.clone();
                 let ev = self.entity_verifier.clone();
                 async move {
-                    let status = verify_activity(av, ev, &sma).await?;
-                    Ok((sma, status))
+                    let status = verify_activity(av, ev, &activity).await?;
+                    Ok((activity, proto, status))
                 }
             })
-            .and_then(|(sma, status)| {
+            .and_then(|(activity, proto, status)| {
                 let sink = self.verified_sink.clone();
-                async move { write_verified_report(sink, sma, status).await }
+                async move {
+                    write_verified_report(sink, proto, status).await?;
+                    Ok((activity, status))
+                }
             })
-            .try_filter_map(|(sma, status)| is_valid(sma, status));
+            .try_filter_map(|(activity, status)| async move {
+                Ok(matches!(status, SubscriberReportVerificationStatus::Valid).then_some(activity))
+            });
 
         db::save(&mut transaction, activity_stream).await?;
         self.verified_sink.commit().await?;
@@ -154,14 +162,11 @@ where
 
 async fn write_verified_report(
     sink: FileSinkClient<VerifiedSubscriberMappingActivityReportV1>,
-    mut activity: SubscriberMappingActivity,
+    proto: SubscriberMappingActivityIngestReportV1,
     status: SubscriberReportVerificationStatus,
-) -> anyhow::Result<(
-    SubscriberMappingActivity,
-    SubscriberReportVerificationStatus,
-)> {
+) -> anyhow::Result<()> {
     let verified_proto = VerifiedSubscriberMappingActivityReportV1 {
-        report: activity.take_original(),
+        report: Some(proto),
         status: status as i32,
         timestamp: Utc::now().encode_timestamp_millis(),
     };
@@ -169,12 +174,12 @@ async fn write_verified_report(
     sink.write(verified_proto, &[("status", status.as_str_name())])
         .await?;
 
-    Ok((activity, status))
+    Ok(())
 }
 
 async fn verify_activity<AV, EV>(
-    authorization_verifier: AV,
-    entity_verifier: EV,
+    authorization_verifier: impl AsRef<AV>,
+    entity_verifier: impl AsRef<EV>,
     activity: &SubscriberMappingActivity,
 ) -> anyhow::Result<SubscriberReportVerificationStatus>
 where
@@ -191,43 +196,37 @@ where
 }
 
 async fn verify_known_carrier_key<AV>(
-    authorization_verifier: AV,
+    authorization_verifier: impl AsRef<AV>,
     public_key: &PublicKeyBinary,
 ) -> anyhow::Result<bool>
 where
     AV: AuthorizationVerifier,
 {
     authorization_verifier
+        .as_ref()
         .verify_authorized_key(public_key, NetworkKeyRole::MobileCarrier)
         .await
         .map_err(anyhow::Error::from)
 }
 
-async fn verify_subscriber_id<EV>(entity_verifier: EV, subscriber_id: &[u8]) -> anyhow::Result<bool>
+async fn verify_subscriber_id<EV>(
+    entity_verifier: impl AsRef<EV>,
+    subscriber_id: &[u8],
+) -> anyhow::Result<bool>
 where
     EV: EntityVerifier,
 {
     entity_verifier
+        .as_ref()
         .verify_rewardable_entity(subscriber_id)
         .await
         .map_err(anyhow::Error::from)
 }
 
-async fn is_valid(
-    activity: SubscriberMappingActivity,
-    status: SubscriberReportVerificationStatus,
-) -> anyhow::Result<Option<SubscriberMappingActivity>> {
-    if status == SubscriberReportVerificationStatus::Valid {
-        Ok(Some(activity))
-    } else {
-        Ok(None)
-    }
-}
-
 impl<AV, EV> ManagedTask for SubscriberMappingActivityDaemon<AV, EV>
 where
-    AV: AuthorizationVerifier + Clone,
-    EV: EntityVerifier + Clone + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
+    EV: EntityVerifier + Send + Sync + 'static,
 {
     fn start_task(
         self: Box<Self>,
@@ -248,20 +247,12 @@ pub struct SubscriberMappingActivity {
     pub verification_reward_shares: u64,
     pub received_timestamp: DateTime<Utc>,
     pub carrier_pub_key: PublicKeyBinary,
-    pub original: Option<SubscriberMappingActivityIngestReportV1>,
-}
-
-impl SubscriberMappingActivity {
-    fn take_original(&mut self) -> Option<SubscriberMappingActivityIngestReportV1> {
-        self.original.take()
-    }
 }
 
 impl TryFrom<SubscriberMappingActivityIngestReportV1> for SubscriberMappingActivity {
     type Error = anyhow::Error;
 
     fn try_from(value: SubscriberMappingActivityIngestReportV1) -> Result<Self, Self::Error> {
-        let original = value.clone();
         let report = value
             .report
             .ok_or_else(|| anyhow::anyhow!("SubscriberMappingActivityReqV1 not found"))?;
@@ -272,7 +263,6 @@ impl TryFrom<SubscriberMappingActivityIngestReportV1> for SubscriberMappingActiv
             verification_reward_shares: report.verification_reward_shares,
             received_timestamp: value.received_timestamp.to_timestamp_millis()?,
             carrier_pub_key: PublicKeyBinary::from(report.carrier_pub_key),
-            original: Some(original),
         })
     }
 }
