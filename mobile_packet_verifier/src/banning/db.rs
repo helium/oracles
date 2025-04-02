@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use chrono::{DateTime, Utc};
 use file_store::mobile_ban::{BanType, VerifiedBanReport};
 use futures::TryStreamExt;
@@ -8,6 +6,8 @@ use sqlx::{PgConnection, Row};
 
 use super::BannedRadios;
 
+// When retreiving banned radios, we exclude Poc bans.
+// They still exist in the db to make updating bans easier.
 pub async fn get_banned_radios(
     pool: &mut PgConnection,
     timestamp: DateTime<Utc>,
@@ -24,8 +24,8 @@ pub async fn get_banned_radios(
     )
     .bind(timestamp)
     .fetch(pool)
-    .map_ok(|row| row.get::<PublicKeyBinary, &str>("hotspot_pubkey"))
-    .try_collect::<HashSet<_>>()
+    .map_ok(|row| row.get("hotspot_pubkey"))
+    .try_collect()
     .await?;
 
     Ok(BannedRadios { banned })
@@ -40,6 +40,9 @@ pub async fn cleanup_bans(conn: &mut PgConnection, before: DateTime<Utc>) -> any
     Ok(res.rows_affected() as usize)
 }
 
+// It's easier to track all of types of bans.
+// This way we don't need to check if a Poc ban is
+// replacing a previous BanType of All or Data.
 pub async fn update_hotspot_ban(
     conn: &mut PgConnection,
     ban_report: VerifiedBanReport,
