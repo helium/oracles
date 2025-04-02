@@ -54,7 +54,7 @@ pub struct BanRequest {
 #[derive(Clone)]
 pub struct BanDetails {
     pub hotspot_serial: String,
-    pub notes: String,
+    pub message: String,
     pub reason: proto::BanReason,
     pub ban_type: BanType,
     pub expiration_timestamp: Option<DateTime<Utc>>,
@@ -63,7 +63,7 @@ pub struct BanDetails {
 #[derive(Clone)]
 pub struct UnbanDetails {
     pub hotspot_serial: String,
-    pub notes: String,
+    pub message: String,
 }
 
 #[derive(Clone)]
@@ -170,7 +170,7 @@ impl TryFrom<proto::BanDetailsV1> for BanDetails {
             reason,
             ban_type,
             hotspot_serial: value.hotspot_serial,
-            notes: value.notes,
+            message: value.message,
             expiration_timestamp,
         })
     }
@@ -180,7 +180,7 @@ impl From<proto::UnbanDetailsV1> for UnbanDetails {
     fn from(value: proto::UnbanDetailsV1) -> Self {
         Self {
             hotspot_serial: value.hotspot_serial,
-            notes: value.notes,
+            message: value.message,
         }
     }
 }
@@ -241,7 +241,7 @@ impl From<BanDetails> for proto::BanDetailsV1 {
     fn from(value: BanDetails) -> Self {
         Self {
             hotspot_serial: value.hotspot_serial,
-            notes: value.notes,
+            message: value.message,
             reason: value.reason.into(),
             ban_type: value.ban_type.into(),
             expiration_timestamp_ms: value
@@ -255,7 +255,7 @@ impl From<UnbanDetails> for proto::UnbanDetailsV1 {
     fn from(value: UnbanDetails) -> Self {
         Self {
             hotspot_serial: value.hotspot_serial,
-            notes: value.notes,
+            message: value.message,
         }
     }
 }

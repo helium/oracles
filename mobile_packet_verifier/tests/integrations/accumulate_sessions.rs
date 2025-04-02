@@ -405,8 +405,8 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
                     signature: vec![],
                     ban_action: BanAction::Ban(BanDetails {
                         hotspot_serial: "serial".to_string(),
-                        notes: "notes".to_string(),
-                        reason: BanReason::Gaming,
+                        message: "notes".to_string(),
+                        reason: BanReason::LocationGaming,
                         ban_type: BanType::Data,
                         expiration_timestamp: Some(Utc::now() - Duration::hours(6)),
                     }),
@@ -473,8 +473,8 @@ async fn ban_hotspot(
                     signature: vec![],
                     ban_action: BanAction::Ban(BanDetails {
                         hotspot_serial: "serial".to_string(),
-                        notes: "notes".to_string(),
-                        reason: BanReason::Gaming,
+                        message: "notes".to_string(),
+                        reason: BanReason::LocationGaming,
                         ban_type,
                         expiration_timestamp: None,
                     }),

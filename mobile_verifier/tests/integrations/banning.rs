@@ -39,8 +39,8 @@ async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
             signature: vec![],
             ban_action: BanAction::Ban(BanDetails {
                 hotspot_serial: "test-serial".to_string(),
-                notes: "test-ban".to_string(),
-                reason: BanReason::Gaming,
+                message: "test-ban".to_string(),
+                reason: BanReason::LocationGaming,
                 ban_type: BanType::All,
                 expiration_timestamp: None,
             }),
@@ -56,7 +56,7 @@ async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
             signature: vec![],
             ban_action: BanAction::Unban(UnbanDetails {
                 hotspot_serial: "test-serial".to_string(),
-                notes: "test-unban".to_string(),
+                message: "test-unban".to_string(),
             }),
         },
     };
@@ -88,8 +88,8 @@ async fn new_ban_replaces_old_ban(pool: PgPool) -> anyhow::Result<()> {
             signature: vec![],
             ban_action: BanAction::Ban(BanDetails {
                 hotspot_serial: "test-serial".to_string(),
-                notes: "test-ban".to_string(),
-                reason: BanReason::Gaming,
+                message: "test-ban".to_string(),
+                reason: BanReason::LocationGaming,
                 ban_type,
                 expiration_timestamp: None,
             }),
@@ -122,8 +122,8 @@ async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
             signature: vec![],
             ban_action: BanAction::Ban(BanDetails {
                 hotspot_serial: "test-serial".to_string(),
-                notes: "test-ban".to_string(),
-                reason: BanReason::Gaming,
+                message: "test-ban".to_string(),
+                reason: BanReason::LocationGaming,
                 ban_type: BanType::All,
                 expiration_timestamp: Some(Utc::now() - chrono::Duration::hours(5)),
             }),
@@ -139,8 +139,8 @@ async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
             signature: vec![],
             ban_action: BanAction::Ban(BanDetails {
                 hotspot_serial: "test-serial".to_string(),
-                notes: "test-ban".to_string(),
-                reason: BanReason::Gaming,
+                message: "test-ban".to_string(),
+                reason: BanReason::LocationGaming,
                 ban_type: BanType::All,
                 expiration_timestamp: None,
             }),
@@ -184,8 +184,8 @@ async fn unverified_requests_are_not_written_to_db(pool: PgPool) -> anyhow::Resu
             signature: vec![],
             ban_action: BanAction::Ban(BanDetails {
                 hotspot_serial: "test-serial".to_string(),
-                notes: "test-ban".to_string(),
-                reason: BanReason::Gaming,
+                message: "test-ban".to_string(),
+                reason: BanReason::LocationGaming,
                 ban_type: BanType::All,
                 expiration_timestamp: None,
             }),

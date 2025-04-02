@@ -678,8 +678,8 @@ async fn ban_radio(
                     signature: vec![],
                     ban_action: mobile_ban::BanAction::Ban(mobile_ban::BanDetails {
                         hotspot_serial: "test-serial".to_string(),
-                        notes: "test-notes".to_string(),
-                        reason: mobile_ban::BanReason::Gaming,
+                        message: "test-notes".to_string(),
+                        reason: mobile_ban::BanReason::LocationGaming,
                         ban_type,
                         expiration_timestamp: None,
                     }),

@@ -290,8 +290,8 @@ impl TestClient {
             signature: vec![],
             ban_action: Some(BanAction::Ban(BanDetailsV1 {
                 hotspot_serial: "test-serial".to_string(),
-                notes: "test ban".to_string(),
-                reason: BanReason::Gaming.into(),
+                message: "test ban".to_string(),
+                reason: BanReason::LocationGaming.into(),
                 ban_type: BanType::All.into(),
                 expiration_timestamp_ms: 0,
             })),
