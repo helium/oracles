@@ -795,14 +795,28 @@ mod test {
         (hnt_value / DC_USD_PRICE).round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
     }
 
-    fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
+    fn rewards_info_1_hour() -> EpochRewardInfo {
         let now = Utc::now();
+        let epoch_duration = Duration::hours(1);
         EpochRewardInfo {
             epoch_day: 1,
             epoch_address: EPOCH_ADDRESS.into(),
             sub_dao_address: SUB_DAO_ADDRESS.into(),
             epoch_period: (now - epoch_duration)..now,
-            epoch_emissions: Decimal::from(total_emissions),
+            epoch_emissions: Decimal::from(EMISSIONS_POOL_IN_BONES_1_HOUR),
+            rewards_issued_at: now,
+        }
+    }
+
+    fn rewards_info_24_hours() -> EpochRewardInfo {
+        let now = Utc::now();
+        let epoch_duration = Duration::hours(1);
+        EpochRewardInfo {
+            epoch_day: 1,
+            epoch_address: EPOCH_ADDRESS.into(),
+            sub_dao_address: SUB_DAO_ADDRESS.into(),
+            epoch_period: (now - epoch_duration)..now,
+            epoch_emissions: Decimal::from(EMISSIONS_POOL_IN_BONES_24_HOURS),
             rewards_issued_at: now,
         }
     }
@@ -813,30 +827,26 @@ mod test {
 
     #[test]
     fn test_poc_scheduled_tokens() {
-        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
-        let v = get_scheduled_tokens_for_poc(rewards_info.epoch_emissions);
-        assert_eq!(dec!(60_000_000_000_000), v);
+        let v = get_scheduled_tokens_for_poc(dec!(100));
+        assert_eq!(dec!(60), v, "poc gets 60%");
     }
 
     #[test]
     fn test_mappers_scheduled_tokens() {
-        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
-        let v = get_scheduled_tokens_for_mappers(rewards_info.epoch_emissions);
-        assert_eq!(dec!(20_000_000_000_000), v);
+        let v = get_scheduled_tokens_for_mappers(dec!(100));
+        assert_eq!(dec!(20), v, "mappers get 20%");
     }
 
     #[test]
     fn test_service_provider_scheduled_tokens() {
-        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
-        let v = get_scheduled_tokens_for_service_providers(rewards_info.epoch_emissions);
-        assert_eq!(dec!(10_000_000_000_000), v);
+        let v = get_scheduled_tokens_for_service_providers(dec!(100));
+        assert_eq!(dec!(10), v, "service providers get 10%");
     }
 
     #[test]
     fn test_oracles_scheduled_tokens() {
-        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
-        let v = get_scheduled_tokens_for_oracles(rewards_info.epoch_emissions);
-        assert_eq!(dec!(4_000_000_000_000), v);
+        let v = get_scheduled_tokens_for_oracles(dec!(100));
+        assert_eq!(dec!(4), v, "oracles get 4%");
     }
 
     #[test]
@@ -867,8 +877,7 @@ mod test {
         }
 
         // set our rewards info
-        let rewards_info =
-            default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+        let rewards_info = rewards_info_24_hours();
 
         // translate location shares into shares
         let shares = MapperShares::new(mapping_activity_shares);
@@ -947,7 +956,7 @@ mod test {
             },
         );
 
-        let rewards_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
 
         let total_rewards = get_scheduled_tokens_for_poc(rewards_info.epoch_emissions);
 
@@ -1012,8 +1021,7 @@ mod test {
                 .unwrap();
 
         // set our rewards info
-        let rewards_info =
-            default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+        let rewards_info = rewards_info_24_hours();
 
         let price_info = default_price_info();
         assert_eq!(price_info.price_per_token, dec!(100000000));
@@ -1213,8 +1221,7 @@ mod test {
 
         let speedtest_avgs = SpeedtestAverages { averages };
 
-        let rewards_info =
-            default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+        let rewards_info = rewards_info_24_hours();
 
         let reward_shares = new_poc_only(rewards_info.epoch_emissions);
 
@@ -1388,7 +1395,7 @@ mod test {
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
 
-        let rewards_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
 
         let reward_shares = new_poc_only(rewards_info.epoch_emissions);
 
@@ -1533,7 +1540,7 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        let rewards_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
 
         let reward_shares = new_poc_only(rewards_info.epoch_emissions);
         let unique_connection_counts = HashMap::from([(gw1.clone(), 42)]);
@@ -1591,7 +1598,7 @@ mod test {
         let now = Utc::now();
         // We should never see any radio shares from owner2, since all of them are
         // less than or equal to zero.
-        let rewards_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
 
         let uuid_1 = Uuid::new_v4();
         let uuid_2 = Uuid::new_v4();
@@ -1703,7 +1710,7 @@ mod test {
 
     #[tokio::test]
     async fn skip_empty_radio_rewards() {
-        let rewards_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
         let coverage_shares = CoverageShares {
             coverage_map: coverage_map::CoverageMapBuilder::default()
                 .build(&BoostedHexes::default(), rewards_info.epoch_period.start),
@@ -1722,7 +1729,7 @@ mod test {
 
         let sp1 = ServiceProvider::HeliumMobile;
 
-        let rewards_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
 
         let total_sp_rewards = service_provider::get_scheduled_tokens(rewards_info.epoch_emissions);
         let sp_reward_infos = ServiceProviderRewardInfos::new(
@@ -1762,7 +1769,7 @@ mod test {
         let hnt_bone_price = dec!(1.0);
         let sp1 = ServiceProvider::HeliumMobile;
 
-        let rewards_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
 
         let total_sp_rewards_in_bones = dec!(1_0000_0000);
         let total_rewards_value_in_dc = hnt_bones_to_dc(total_sp_rewards_in_bones, hnt_bone_price);
@@ -1809,7 +1816,7 @@ mod test {
         let hnt_bone_price = dec!(0.0001) / dec!(1_0000_0000);
         let sp1 = ServiceProvider::HeliumMobile;
 
-        let rewards_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
 
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_0000_0000);
 
@@ -1853,8 +1860,7 @@ mod test {
         let hnt_bone_price = dec!(0.0001) / dec!(1_0000_0000);
         let sp1 = ServiceProvider::HeliumMobile;
 
-        let rewards_info =
-            default_rewards_info(EMISSIONS_POOL_IN_BONES_1_HOUR, Duration::hours(24));
+        let rewards_info = rewards_info_1_hour();
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_0000_0000);
 
         let sp_reward_infos = ServiceProviderRewardInfos::new(

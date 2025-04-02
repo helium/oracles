@@ -278,21 +278,22 @@ mod tests {
     pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
     pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 
-    pub fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
+    pub fn rewards_info_24_hours() -> EpochRewardInfo {
         let now = Utc::now();
+        let epoch_duration = Duration::hours(24);
         EpochRewardInfo {
             epoch_day: 1,
             epoch_address: EPOCH_ADDRESS.into(),
             sub_dao_address: SUB_DAO_ADDRESS.into(),
             epoch_period: (now - epoch_duration)..now,
-            epoch_emissions: Decimal::from(total_emissions),
+            epoch_emissions: dec!(82_191_780_821_917),
             rewards_issued_at: now,
         }
     }
 
     #[test]
     fn no_promotions() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
 
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
@@ -315,7 +316,7 @@ mod tests {
 
     #[test]
     fn unallocated_reward_scaling_1() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
             ServiceProviderPromotions::from(vec![
@@ -340,7 +341,7 @@ mod tests {
 
     #[test]
     fn unallocated_reward_scaling_2() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(12)), (1, dec!(6))]),
             ServiceProviderPromotions::from(vec![
@@ -381,7 +382,7 @@ mod tests {
 
     #[test]
     fn unallocated_reward_scaling_3() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(10)), (1, dec!(1000))]),
             ServiceProviderPromotions::from(vec![
@@ -406,7 +407,7 @@ mod tests {
 
     #[test]
     fn no_rewards_if_none_allocated() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
         let sp_infos = ServiceProviderRewardInfos::new(
             ServiceProviderDCSessions::from([(0, dec!(100))]),
             ServiceProviderPromotions::from(vec![make_test_promotion(0, "promo-0", 5000, 1)]),
@@ -420,7 +421,7 @@ mod tests {
 
     #[test]
     fn no_matched_rewards_if_no_unallocated() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
         let total_rewards = dec!(1000);
 
         let sp_infos = ServiceProviderRewardInfos::new(
@@ -441,7 +442,7 @@ mod tests {
 
     #[test]
     fn single_sp_unallocated_less_than_matched_distributed_by_shares() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
         // 100 unallocated
         let total_rewards = dec!(1100);
         let sp_session = dec!(1000);
@@ -481,7 +482,7 @@ mod tests {
 
     #[test]
     fn single_sp_unallocated_more_than_matched_promotion() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
         // 1,000 unallocated
         let total_rewards = dec!(11_000);
         let sp_session = dec!(1000);
@@ -521,7 +522,7 @@ mod tests {
 
     #[test]
     fn unallocated_matching_does_not_exceed_promotion() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
         // 100 unallocated
         let total_rewards = dec!(1100);
         let sp_session = dec!(1000);
@@ -561,7 +562,7 @@ mod tests {
 
     #[test]
     fn no_matched_promotions_full_bucket_allocation() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
         // The service providers DC session represents _more_ than the
         // available amount of sp_rewards for an epoch.
         // No matching on promotions should occur.
@@ -599,7 +600,7 @@ mod tests {
 
     #[test]
     fn no_matched_promotions_multiple_sp_full_bucket_allocation() {
-        let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+        let reward_info = rewards_info_24_hours();
         // The Service Providers DC sessions far surpass the
         // available amount of sp_rewards for an epoch.
         // No matching on promotions should occur.
@@ -712,7 +713,7 @@ mod tests {
             total_allocation in any::<u64>().prop_map(Decimal::from)
         ) {
 
-            let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+            let reward_info = rewards_info_24_hours();
             let sp_infos = ServiceProviderRewardInfos::new(
                 ServiceProviderDCSessions::from([(0, dc_session)]),
                 ServiceProviderPromotions::from(promotions),
@@ -738,7 +739,7 @@ mod tests {
             promotions in prop::collection::vec(arb_sp_promotion(), 0..10),
             mobile_bone_price in 1..5000
         ) {
-            let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+            let reward_info = rewards_info_24_hours();
             let total_allocation = service_provider::get_scheduled_tokens(reward_info.epoch_emissions);
 
             let sp_infos = ServiceProviderRewardInfos::new(
