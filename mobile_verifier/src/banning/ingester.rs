@@ -111,7 +111,7 @@ async fn get_verified_status(
     pubkey: &helium_crypto::PublicKeyBinary,
 ) -> anyhow::Result<VerifiedBanIngestReportStatus> {
     let is_authorized = auth_verifier
-        .verify_authorized_key(pubkey, NetworkKeyRole::BanKey)
+        .verify_authorized_key(pubkey, NetworkKeyRole::Banning)
         .await?;
     let status = match is_authorized {
         true => VerifiedBanIngestReportStatus::Valid,
