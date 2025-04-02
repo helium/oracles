@@ -128,7 +128,7 @@ async fn process_ban_report(
         status,
     };
 
-    if verified_report.is_verified() {
+    if verified_report.is_valid() {
         db::update_hotspot_ban(conn, &verified_report).await?;
     }
     Ok(verified_report)
