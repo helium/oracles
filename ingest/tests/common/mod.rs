@@ -19,6 +19,7 @@ use helium_proto::services::{
 };
 use ingest::server_mobile::GrpcServer;
 use mobile_config::client::authorization_client::AuthorizationVerifier;
+use mobile_config::client::ClientError;
 use prost::Message;
 use rand::rngs::OsRng;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -42,13 +43,11 @@ impl MockAuthorizationClient {
 
 #[async_trait]
 impl AuthorizationVerifier for MockAuthorizationClient {
-    type Error = anyhow::Error;
-
     async fn verify_authorized_key(
         &self,
         _pubkey: &PublicKeyBinary,
         _role: NetworkKeyRole,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool, ClientError> {
         Ok(true)
     }
 }
@@ -80,6 +79,8 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let (hex_usage_stat_tx, hex_usage_stat_rx) = tokio::sync::mpsc::channel(10);
     let (radio_usage_stat_tx, radio_usage_stat_rx) = tokio::sync::mpsc::channel(10);
     let (unique_connections_tx, unique_connections_rx) = tokio::sync::mpsc::channel(10);
+    let (subscriber_mapping_activity_tx, _subscriber_mapping_activity_rx) =
+        tokio::sync::mpsc::channel(10);
 
     let auth_client = MockAuthorizationClient::new();
 
@@ -97,6 +98,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             FileSinkClient::new(hex_usage_stat_tx, "hex_usage_test_file_sink"),
             FileSinkClient::new(radio_usage_stat_tx, "radio_usage_test_file_sink"),
             FileSinkClient::new(unique_connections_tx, "noop"),
+            FileSinkClient::new(subscriber_mapping_activity_tx, "noop"),
             Network::MainNet,
             socket_addr,
             api_token,

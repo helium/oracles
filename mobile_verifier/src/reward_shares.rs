@@ -6,8 +6,7 @@ use crate::{
     seniority::Seniority,
     sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
-    subscriber_location::SubscriberValidatedLocations,
-    subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShares,
+    subscriber_mapping_activity::SubscriberMappingShares,
     unique_connections::{self, UniqueConnectionCounts},
     PriceInfo,
 };
@@ -49,9 +48,6 @@ pub const DEFAULT_PREC: u32 = 15;
 
 /// Percent of total emissions allocated for mapper rewards
 const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
-
-/// shares of the mappers pool allocated per eligible subscriber for discovery mapping
-const DISCOVERY_MAPPING_SHARES: Decimal = dec!(30);
 
 // Percent of total emissions allocated for service provider rewards
 const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.1);
@@ -183,37 +179,22 @@ impl TransferRewards {
 
 #[derive(Default)]
 pub struct MapperShares {
-    pub discovery_mapping_shares: SubscriberValidatedLocations,
-    pub verified_mapping_event_shares: VerifiedSubscriberVerifiedMappingEventShares,
+    mapping_activity_shares: Vec<SubscriberMappingShares>,
 }
 
 impl MapperShares {
-    pub fn new(
-        discovery_mapping_shares: SubscriberValidatedLocations,
-        verified_mapping_event_shares: VerifiedSubscriberVerifiedMappingEventShares,
-    ) -> Self {
+    pub fn new(mapping_activity_shares: Vec<SubscriberMappingShares>) -> Self {
         Self {
-            discovery_mapping_shares,
-            verified_mapping_event_shares,
+            mapping_activity_shares,
         }
     }
 
     pub fn rewards_per_share(&self, total_mappers_pool: Decimal) -> anyhow::Result<Decimal> {
-        let discovery_mappers_count = Decimal::from(self.discovery_mapping_shares.len());
-
-        // calculate the total eligible mapping shares for the epoch
-        // this could be simplified as every subscriber is awarded the same share
-        // however the function is setup to allow the verification mapper shares to be easily
-        // added without impacting code structure ( the per share value for those will be different )
-        let total_mapper_shares = discovery_mappers_count * DISCOVERY_MAPPING_SHARES;
-
-        let total_verified_mapping_event_shares: Decimal = self
-            .verified_mapping_event_shares
+        let total_shares = self
+            .mapping_activity_shares
             .iter()
-            .map(|share| Decimal::from(share.total_reward_points))
+            .map(|mas| Decimal::from(mas.discovery_reward_shares + mas.verification_reward_shares))
             .sum();
-
-        let total_shares = total_mapper_shares + total_verified_mapping_event_shares;
 
         let res = total_mappers_pool
             .checked_div(total_shares)
@@ -224,73 +205,35 @@ impl MapperShares {
 
     pub fn into_subscriber_rewards(
         self,
-        reward_period: &'_ Range<DateTime<Utc>>,
+        reward_period: &Range<DateTime<Utc>>,
         reward_per_share: Decimal,
     ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
-        let mut subscriber_rewards: HashMap<Vec<u8>, proto::SubscriberReward> = HashMap::new();
-
-        let discovery_location_amount = (DISCOVERY_MAPPING_SHARES * reward_per_share)
-            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or_default();
-
-        if discovery_location_amount > 0 {
-            // Collect rewards from discovery_mapping_shares
-            for subscriber_id in self.discovery_mapping_shares {
-                subscriber_rewards
-                    .entry(subscriber_id.clone())
-                    .and_modify(|reward| {
-                        reward.discovery_location_amount = discovery_location_amount;
-                    })
-                    .or_insert_with(|| proto::SubscriberReward {
-                        subscriber_id: subscriber_id.clone(),
-                        discovery_location_amount,
-                        verification_mapping_amount: 0,
-                    });
-            }
-        }
-
-        // Collect rewards from verified_mapping_event_shares
-        for verified_share in self.verified_mapping_event_shares {
-            let verification_mapping_amount = (Decimal::from(verified_share.total_reward_points)
+        self.mapping_activity_shares.into_iter().map(move |mas| {
+            let discovery_location_amount = (Decimal::from(mas.discovery_reward_shares)
                 * reward_per_share)
                 .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                 .to_u64()
                 .unwrap_or_default();
 
-            if verification_mapping_amount > 0 {
-                subscriber_rewards
-                    .entry(verified_share.subscriber_id.clone())
-                    .and_modify(|reward| {
-                        reward.verification_mapping_amount = verification_mapping_amount;
-                    })
-                    .or_insert_with(|| proto::SubscriberReward {
-                        subscriber_id: verified_share.subscriber_id.clone(),
-                        discovery_location_amount: 0,
+            let verification_mapping_amount = (Decimal::from(mas.verification_reward_shares)
+                * reward_per_share)
+                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                .to_u64()
+                .unwrap_or_default();
+
+            (
+                discovery_location_amount + verification_mapping_amount,
+                proto::MobileRewardShare {
+                    start_period: reward_period.start.encode_timestamp(),
+                    end_period: reward_period.end.encode_timestamp(),
+                    reward: Some(ProtoReward::SubscriberReward(proto::SubscriberReward {
+                        subscriber_id: mas.subscriber_id,
+                        discovery_location_amount,
                         verification_mapping_amount,
-                    });
-            }
-        }
-
-        // Create the MobileRewardShare for each subscriber
-        subscriber_rewards
-            .into_values()
-            .filter(|reward| {
-                reward.discovery_location_amount > 0 || reward.verification_mapping_amount > 0
-            })
-            .map(|subscriber_reward| {
-                let total_reward_amount = subscriber_reward.discovery_location_amount
-                    + subscriber_reward.verification_mapping_amount;
-
-                (
-                    total_reward_amount,
-                    proto::MobileRewardShare {
-                        start_period: reward_period.start.encode_timestamp(),
-                        end_period: reward_period.end.encode_timestamp(),
-                        reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
-                    },
-                )
-            })
+                    })),
+                },
+            )
+        })
     }
 }
 
@@ -782,8 +725,6 @@ mod test {
         },
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
-        subscriber_location::SubscriberValidatedLocations,
-        subscriber_verified_mapping_event::VerifiedSubscriberVerifiedMappingEventShare,
     };
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
@@ -905,19 +846,13 @@ mod test {
     async fn subscriber_rewards() {
         const NUM_SUBSCRIBERS: u64 = 10_000;
 
-        // simulate 10k subscriber location shares
-        let mut location_shares = SubscriberValidatedLocations::new();
+        let mut mapping_activity_shares = Vec::new();
         for n in 0..NUM_SUBSCRIBERS {
-            location_shares.push(n.encode_to_vec());
-        }
-
-        // simulate 10k vsme shares
-        let mut vsme_shares = VerifiedSubscriberVerifiedMappingEventShares::new();
-        for n in 0..NUM_SUBSCRIBERS {
-            vsme_shares.push(VerifiedSubscriberVerifiedMappingEventShare {
+            mapping_activity_shares.push(SubscriberMappingShares {
                 subscriber_id: n.encode_to_vec(),
-                total_reward_points: 30,
-            });
+                discovery_reward_shares: 30,
+                verification_reward_shares: 30,
+            })
         }
 
         // set our rewards info
@@ -925,7 +860,7 @@ mod test {
             default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
 
         // translate location shares into shares
-        let shares = MapperShares::new(location_shares, vsme_shares);
+        let shares = MapperShares::new(mapping_activity_shares);
         let total_mappers_pool =
             reward_shares::get_scheduled_tokens_for_mappers(rewards_info.epoch_emissions);
         let rewards_per_share = shares.rewards_per_share(total_mappers_pool).unwrap();

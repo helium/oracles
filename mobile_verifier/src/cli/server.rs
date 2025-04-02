@@ -10,8 +10,7 @@ use crate::{
     rewarder::Rewarder,
     sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
     speedtests::SpeedtestDaemon,
-    subscriber_location::SubscriberLocationIngestor,
-    subscriber_verified_mapping_event::SubscriberVerifiedMappingEventDaemon,
+    subscriber_mapping_activity::SubscriberMappingActivityDaemon,
     telemetry,
     unique_connections::ingestor::UniqueConnectionsIngestor,
     Settings,
@@ -127,7 +126,7 @@ impl Cmd {
                 .await?,
             )
             .add_task(
-                SubscriberVerifiedMappingEventDaemon::create_managed_task(
+                SubscriberMappingActivityDaemon::create_managed_task(
                     pool.clone(),
                     settings,
                     auth_client.clone(),
@@ -154,17 +153,6 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     new_coverage_obj_notification,
-                )
-                .await?,
-            )
-            .add_task(
-                SubscriberLocationIngestor::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    file_upload.clone(),
-                    report_ingest.clone(),
-                    auth_client.clone(),
-                    entity_client.clone(),
                 )
                 .await?,
             )

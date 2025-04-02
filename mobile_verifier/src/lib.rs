@@ -14,8 +14,7 @@ mod settings;
 pub mod sp_boosted_rewards_bans;
 pub mod speedtests;
 pub mod speedtests_average;
-pub mod subscriber_location;
-pub mod subscriber_verified_mapping_event;
+pub mod subscriber_mapping_activity;
 pub mod telemetry;
 pub mod unique_connections;
 

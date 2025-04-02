@@ -6,23 +6,16 @@ use file_store::{
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_lib::token::Token;
-use helium_proto::services::{
-    mobile_config::NetworkKeyRole,
-    poc_mobile::{
-        mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward,
-        MobileRewardShare, OracleBoostingHexAssignment, OracleBoostingReportV1, PromotionReward,
-        RadioReward, RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward,
-        UnallocatedReward,
-    },
+use helium_proto::services::poc_mobile::{
+    mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward, MobileRewardShare,
+    OracleBoostingHexAssignment, OracleBoostingReportV1, PromotionReward, RadioReward,
+    RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
 };
 use hex_assignments::{Assignment, HexAssignment, HexBoostData};
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
     client::sub_dao_client::SubDaoEpochRewardInfoResolver,
-    client::{
-        authorization_client::AuthorizationVerifier, entity_client::EntityVerifier,
-        hex_boosting_client::HexBoostingInfoResolver, ClientError,
-    },
+    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
     sub_dao_epoch_reward_info::EpochRewardInfo,
 };
 use mobile_verifier::{
@@ -349,46 +342,6 @@ pub async fn set_unassigned_oracle_boosting_assignments(
     }
     assigned_coverage_objs.save(pool).await?;
     Ok(output)
-}
-
-#[derive(Clone)]
-pub struct MockAuthorizationClient {}
-
-impl MockAuthorizationClient {
-    pub fn new() -> MockAuthorizationClient {
-        Self {}
-    }
-}
-
-#[async_trait]
-impl AuthorizationVerifier for MockAuthorizationClient {
-    type Error = ClientError;
-
-    async fn verify_authorized_key(
-        &self,
-        _pubkey: &PublicKeyBinary,
-        _role: NetworkKeyRole,
-    ) -> Result<bool, ClientError> {
-        Ok(true)
-    }
-}
-
-#[derive(Clone)]
-pub struct MockEntityClient {}
-
-impl MockEntityClient {
-    pub fn new() -> MockEntityClient {
-        Self {}
-    }
-}
-
-#[async_trait]
-impl EntityVerifier for MockEntityClient {
-    type Error = ClientError;
-
-    async fn verify_rewardable_entity(&self, _entity_id: &[u8]) -> Result<bool, ClientError> {
-        Ok(true)
-    }
 }
 
 #[derive(Debug, Copy, Clone)]

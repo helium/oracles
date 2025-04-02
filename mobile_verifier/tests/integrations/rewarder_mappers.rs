@@ -2,11 +2,7 @@ use crate::common::{
     self, default_rewards_info, MockFileSinkReceiver, EMISSIONS_POOL_IN_BONES_24_HOURS,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
-use file_store::{
-    mobile_subscriber::{SubscriberLocationIngestReport, SubscriberLocationReq},
-    subscriber_verified_mapping_event::SubscriberVerifiedMappingEvent,
-    subscriber_verified_mapping_event_ingest_report::SubscriberVerifiedMappingEventIngestReport,
-};
+use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_mobile::{
@@ -15,7 +11,8 @@ use helium_proto::{
     Message,
 };
 use mobile_verifier::{
-    reward_shares, rewarder, subscriber_location, subscriber_verified_mapping_event,
+    reward_shares, rewarder,
+    subscriber_mapping_activity::{self, SubscriberMappingActivity},
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -104,54 +101,6 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[sqlx::test]
-async fn test_subscriber_can_only_earn_verification_mapping_if_earned_disco_mapping(
-    pool: PgPool,
-) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
-
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
-
-    let mut txn = pool.begin().await?;
-    let sub_loc_report = SubscriberLocationIngestReport {
-        received_timestamp: reward_info.epoch_period.end - ChronoDuration::hours(1),
-        report: SubscriberLocationReq {
-            subscriber_id: SUBSCRIBER_1.to_string().encode_to_vec(),
-            timestamp: reward_info.epoch_period.end - ChronoDuration::hours(1),
-            carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
-        },
-    };
-    subscriber_location::save(&sub_loc_report, &mut txn).await?;
-
-    let vme_report = SubscriberVerifiedMappingEventIngestReport {
-        received_timestamp: reward_info.epoch_period.end - ChronoDuration::hours(1),
-        report: SubscriberVerifiedMappingEvent {
-            subscriber_id: SUBSCRIBER_2.to_string().encode_to_vec(),
-            total_reward_points: 50,
-            timestamp: reward_info.epoch_period.end - ChronoDuration::hours(1),
-            carrier_mapping_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
-        },
-    };
-    subscriber_verified_mapping_event::save_to_db(&vme_report, &mut txn).await?;
-
-    txn.commit().await?;
-
-    let (_, rewards) = tokio::join!(
-        rewarder::reward_mappers(&pool, &mobile_rewards_client, &reward_info),
-        mobile_rewards.receive_subscriber_reward()
-    );
-
-    mobile_rewards.assert_no_messages();
-
-    let total_pool = reward_shares::get_scheduled_tokens_for_mappers(reward_info.epoch_emissions);
-    assert_eq!(
-        rewards.discovery_location_amount + rewards.verification_mapping_amount,
-        total_pool.to_u64().unwrap()
-    );
-
-    Ok(())
-}
-
 async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
 ) -> anyhow::Result<(Vec<SubscriberReward>, UnallocatedReward)> {
@@ -180,42 +129,39 @@ async fn seed_mapping_data(
     // subscriber 1 has two qualifying mapping criteria reports
     // subscribers 2 and 3 have a single qualifying mapping criteria report
 
-    let report1 = SubscriberLocationIngestReport {
-        received_timestamp: ts - ChronoDuration::hours(1),
-        report: SubscriberLocationReq {
+    let reports = vec![
+        SubscriberMappingActivity {
+            received_timestamp: ts - ChronoDuration::hours(1),
             subscriber_id: SUBSCRIBER_1.to_string().encode_to_vec(),
-            timestamp: ts - ChronoDuration::hours(1),
+            discovery_reward_shares: 30,
+            verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
         },
-    };
-    let report2 = SubscriberLocationIngestReport {
-        received_timestamp: ts - ChronoDuration::hours(1),
-        report: SubscriberLocationReq {
+        SubscriberMappingActivity {
+            received_timestamp: ts - ChronoDuration::hours(2),
             subscriber_id: SUBSCRIBER_1.to_string().encode_to_vec(),
-            timestamp: ts - ChronoDuration::hours(2),
+            discovery_reward_shares: 30,
+            verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
         },
-    };
-    let report3 = SubscriberLocationIngestReport {
-        received_timestamp: ts - ChronoDuration::hours(1),
-        report: SubscriberLocationReq {
+        SubscriberMappingActivity {
+            received_timestamp: ts - ChronoDuration::hours(1),
             subscriber_id: SUBSCRIBER_2.to_string().encode_to_vec(),
-            timestamp: ts - ChronoDuration::hours(3),
+            discovery_reward_shares: 30,
+            verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
         },
-    };
-    let report4 = SubscriberLocationIngestReport {
-        received_timestamp: ts - ChronoDuration::hours(1),
-        report: SubscriberLocationReq {
+        SubscriberMappingActivity {
+            received_timestamp: ts - ChronoDuration::hours(1),
             subscriber_id: SUBSCRIBER_3.to_string().encode_to_vec(),
-            timestamp: ts - ChronoDuration::hours(3),
+            discovery_reward_shares: 30,
+            verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
         },
-    };
-    subscriber_location::save(&report1, txn).await?;
-    subscriber_location::save(&report2, txn).await?;
-    subscriber_location::save(&report3, txn).await?;
-    subscriber_location::save(&report4, txn).await?;
+    ];
+
+    subscriber_mapping_activity::db::save(txn, stream::iter(reports.into_iter()).map(anyhow::Ok))
+        .await?;
 
     Ok(())
 }
