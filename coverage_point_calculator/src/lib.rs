@@ -94,6 +94,8 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("signal level {0:?} not allowed for {1:?}")]
     InvalidSignalLevel(SignalLevel, RadioType),
+    #[error("Input array is empty")]
+    ArrayIsEmpty,
 }
 
 /// Output of calculating coverage points for a Radio.
@@ -167,13 +169,13 @@ impl CoveragePoints {
         ranked_coverage: Vec<coverage_map::RankedCoverage>,
         oracle_boost_status: OracleBoostingStatus,
     ) -> Result<CoveragePoints> {
-        let location_trust_multiplier = location::multiplier(&location_trust_scores);
+        let location_trust_multiplier = location::multiplier(&location_trust_scores)?;
 
         let sp_boost_eligibility = SpBoostedHexStatus::new(
             location_trust_multiplier,
             &location_trust_scores,
             service_provider_boosted_reward_eligibility,
-        );
+        )?;
 
         let covered_hexes = hexes::clean_covered_hexes(
             radio_type,
@@ -269,25 +271,27 @@ impl SpBoostedHexStatus {
         location_trust_multiplier: Decimal,
         location_trust_scores: &[LocationTrust],
         service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
-    ) -> Self {
+    ) -> Result<Self> {
         match service_provider_boosted_reward_eligibility {
             // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
-            SPBoostedRewardEligibility::RadioThresholdNotMet => Self::RadioThresholdNotMet,
+            SPBoostedRewardEligibility::RadioThresholdNotMet => Ok(Self::RadioThresholdNotMet),
             // hip-140: radio must have enough unique connections
-            SPBoostedRewardEligibility::NotEnoughConnections => Self::NotEnoughConnections,
+            SPBoostedRewardEligibility::NotEnoughConnections => Ok(Self::NotEnoughConnections),
             SPBoostedRewardEligibility::Eligible => {
                 // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
                 if location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
-                    return Self::WifiLocationScoreBelowThreshold(location_trust_multiplier);
+                    return Ok(Self::WifiLocationScoreBelowThreshold(
+                        location_trust_multiplier,
+                    ));
                 }
 
                 // hip-119: if the average distance to asserted is beyond 50m, no boosting
-                let average_distance = location::average_distance(location_trust_scores);
+                let average_distance = location::average_distance(location_trust_scores)?;
                 if average_distance > MAX_AVERAGE_DISTANCE {
-                    return Self::AverageAssertedDistanceOverLimit(average_distance);
+                    return Ok(Self::AverageAssertedDistanceOverLimit(average_distance));
                 }
 
-                Self::Eligible
+                Ok(Self::Eligible)
             }
         }
     }
@@ -871,10 +875,11 @@ mod tests {
 
         let wifi_bad_trust_score = |sp_status: SPBoostedRewardEligibility| {
             SpBoostedHexStatus::new(
-                location::multiplier(&bad_location),
+                location::multiplier(&bad_location).unwrap(),
                 &bad_location,
                 sp_status,
             )
+            .unwrap()
         };
 
         assert_eq!(

@@ -700,11 +700,17 @@ fn eligible_for_coverage_map(
         return false;
     }
 
-    let multiplier = coverage_point_calculator::location::multiplier(trust_scores);
-    if multiplier <= dec!(0.0) {
-        return false;
+    match coverage_point_calculator::location::multiplier(trust_scores) {
+        Ok(multiplier) => {
+            if multiplier <= dec!(0.0) {
+                return false;
+            }
+        }
+        Err(e) => {
+            tracing::error!(?e, "multiplier calculation failed");
+            return false;
+        }
     }
-
     true
 }
 
