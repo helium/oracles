@@ -400,7 +400,7 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
                 received_timestamp: Utc::now(),
                 report: BanRequest {
                     hotspot_pubkey: key.clone(),
-                    sent_timestamp: Utc::now(),
+                    timestamp: Utc::now(),
                     ban_key: PublicKeyBinary::from(vec![0]),
                     signature: vec![],
                     ban_action: BanAction::Ban(BanDetails {
@@ -468,7 +468,7 @@ async fn ban_hotspot(
                 received_timestamp: Utc::now(),
                 report: BanRequest {
                     hotspot_pubkey,
-                    sent_timestamp: Utc::now(),
+                    timestamp: Utc::now(),
                     ban_key: PublicKeyBinary::from(vec![0]),
                     signature: vec![],
                     ban_action: BanAction::Ban(BanDetails {

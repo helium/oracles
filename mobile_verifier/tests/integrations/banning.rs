@@ -34,7 +34,7 @@ async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
         received_timestamp: Utc::now(),
         report: BanRequest {
             hotspot_pubkey: hotspot_pubkey.clone(),
-            sent_timestamp: Utc::now(),
+            timestamp: Utc::now(),
             ban_key: PublicKeyBinary::from(vec![1]),
             signature: vec![],
             ban_action: BanAction::Ban(BanDetails {
@@ -51,7 +51,7 @@ async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
         received_timestamp: Utc::now(),
         report: BanRequest {
             hotspot_pubkey: hotspot_pubkey.clone(),
-            sent_timestamp: Utc::now(),
+            timestamp: Utc::now(),
             ban_key: PublicKeyBinary::from(vec![1]),
             signature: vec![],
             ban_action: BanAction::Unban(UnbanDetails {
@@ -83,7 +83,7 @@ async fn new_ban_replaces_old_ban(pool: PgPool) -> anyhow::Result<()> {
         received_timestamp: Utc::now(),
         report: BanRequest {
             hotspot_pubkey: hotspot_pubkey.clone(),
-            sent_timestamp: Utc::now(),
+            timestamp: Utc::now(),
             ban_key: PublicKeyBinary::from(vec![1]),
             signature: vec![],
             ban_action: BanAction::Ban(BanDetails {
@@ -117,7 +117,7 @@ async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
         received_timestamp: Utc::now(),
         report: BanRequest {
             hotspot_pubkey: expired_hotspot_pubkey.clone(),
-            sent_timestamp: Utc::now() - chrono::Duration::hours(6),
+            timestamp: Utc::now() - chrono::Duration::hours(6),
             ban_key: PublicKeyBinary::from(vec![1]),
             signature: vec![],
             ban_action: BanAction::Ban(BanDetails {
@@ -134,7 +134,7 @@ async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
         received_timestamp: Utc::now(),
         report: BanRequest {
             hotspot_pubkey: banned_hotspot_pubkey.clone(),
-            sent_timestamp: Utc::now(),
+            timestamp: Utc::now(),
             ban_key: PublicKeyBinary::from(vec![1]),
             signature: vec![],
             ban_action: BanAction::Ban(BanDetails {
@@ -179,7 +179,7 @@ async fn unverified_requests_are_not_written_to_db(pool: PgPool) -> anyhow::Resu
         received_timestamp: Utc::now(),
         report: BanRequest {
             hotspot_pubkey: hotspot_pubkey.clone(),
-            sent_timestamp: Utc::now(),
+            timestamp: Utc::now(),
             ban_key: PublicKeyBinary::from(vec![1]),
             signature: vec![],
             ban_action: BanAction::Ban(BanDetails {

@@ -673,7 +673,7 @@ async fn ban_radio(
                 received_timestamp: Utc::now(),
                 report: mobile_ban::BanRequest {
                     hotspot_pubkey: pubkey.clone(),
-                    sent_timestamp: Utc::now(),
+                    timestamp: Utc::now(),
                     ban_key: pubkey,
                     signature: vec![],
                     ban_action: mobile_ban::BanAction::Ban(mobile_ban::BanDetails {

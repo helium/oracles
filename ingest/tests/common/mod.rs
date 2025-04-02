@@ -285,7 +285,7 @@ impl TestClient {
         use helium_proto::services::poc_mobile::BanType;
         let mut req = BanReqV1 {
             hotspot_pubkey,
-            sent_timestamp_ms: Utc::now().timestamp_millis() as u64,
+            timestamp_ms: Utc::now().timestamp_millis() as u64,
             ban_key: self.key_pair.public_key().into(),
             signature: vec![],
             ban_action: Some(BanAction::Ban(BanDetailsV1 {
