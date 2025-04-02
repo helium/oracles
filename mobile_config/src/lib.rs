@@ -40,7 +40,7 @@ pub enum KeyRole {
     Oracle,
     Router,
     Pcs,
-    Ban,
+    Banning,
 }
 
 impl KeyRole {
@@ -71,7 +71,7 @@ impl From<&KeyRole> for ProtoKeyRole {
             KeyRole::Oracle => Self::Oracle,
             KeyRole::Router => Self::Router,
             KeyRole::Pcs => Self::Pcs,
-            KeyRole::Ban => Self::Ban,
+            KeyRole::Banning => Self::Banning,
         }
     }
 }
@@ -84,7 +84,7 @@ impl From<ProtoKeyRole> for KeyRole {
             ProtoKeyRole::Oracle => Self::Oracle,
             ProtoKeyRole::Router => Self::Router,
             ProtoKeyRole::Pcs => Self::Pcs,
-            ProtoKeyRole::Ban => Self::Ban,
+            ProtoKeyRole::Banning => Self::Banning,
         }
     }
 }
@@ -97,7 +97,7 @@ impl std::fmt::Display for KeyRole {
             Self::Oracle => "oracle",
             Self::Router => "router",
             Self::Pcs => "pcs",
-            Self::Ban => "ban",
+            Self::Banning => "ban",
         };
         f.write_str(s)
     }
