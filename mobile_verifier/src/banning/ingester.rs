@@ -77,7 +77,10 @@ impl BanIngester {
 
         while let Some(report) = stream.next().await {
             let verified_report = process_ban_report(&mut txn, &self.auth_verifier, report).await?;
-            self.verified_sink.write(verified_report, &[]).await?;
+            let status = verified_report.status.as_str_name();
+            self.verified_sink
+                .write(verified_report, &[("status", status)])
+                .await?;
         }
 
         self.verified_sink.commit().await?;
