@@ -24,8 +24,8 @@ pub use proto::{BanReason, VerifiedBanIngestReportStatus};
 
 pub type BanReportStream = FileInfoStream<BanReport>;
 pub type BanReportSource = tokio::sync::mpsc::Receiver<BanReportStream>;
-pub type VerifiedBanReportSink = FileSinkClient<proto::VerifiedBanIngestReportV1>;
 
+pub type VerifiedBanReportSink = FileSinkClient<proto::VerifiedBanIngestReportV1>;
 pub type VerifiedBanReportStream = FileInfoStream<VerifiedBanReport>;
 pub type VerifiedBanReportSource = tokio::sync::mpsc::Receiver<VerifiedBanReportStream>;
 

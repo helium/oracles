@@ -175,12 +175,12 @@ pub const VERIFIED_PROMOTION_REWARD: &str = "verified_promotion_reward";
 pub const SERVICE_PROVIDER_PROMOTION_FUND: &str = "service_provider_promotion_fund";
 pub const UNIQUE_CONNECTIONS_REPORT: &str = "unique_connections_report";
 pub const VERIFIED_UNIQUE_CONNECTIONS_REPORT: &str = "verified_unique_connections_report";
-pub const MOBILE_BAN_REPORT: &str = "mobile_ban_report";
-pub const VERIFIED_MOBILE_BAN_REPORT: &str = "verified_mobile_ban_report";
 pub const SUBSCRIBER_MAPPING_ACTIVITY_INGEST_REPORT: &str =
     "subscriber_mapping_activity_ingest_report";
 pub const VERIFIED_SUBSCRIBER_MAPPING_ACTIVITY_REPORT: &str =
     "verified_subscriber_mapping_activity_report";
+pub const MOBILE_BAN_REPORT: &str = "mobile_ban_report";
+pub const VERIFIED_MOBILE_BAN_REPORT: &str = "verified_mobile_ban_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
