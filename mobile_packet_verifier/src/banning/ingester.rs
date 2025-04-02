@@ -27,6 +27,7 @@ impl BanIngestor {
 
         loop {
             tokio::select! {
+                biased;
                 _ = &mut shutdown => break,
                 file = self.report_rx.recv() => {
                     let Some(file_info_stream) = file else {
