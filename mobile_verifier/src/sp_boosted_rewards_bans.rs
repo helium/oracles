@@ -123,7 +123,6 @@ pub struct ServiceProviderBoostedRewardsBanIngestor<AV> {
 impl<AV> ManagedTask for ServiceProviderBoostedRewardsBanIngestor<AV>
 where
     AV: AuthorizationVerifier,
-    AV::Error: std::error::Error + Send + Sync + 'static,
 {
     fn start_task(
         self: Box<Self>,
@@ -141,7 +140,6 @@ where
 impl<AV> ServiceProviderBoostedRewardsBanIngestor<AV>
 where
     AV: AuthorizationVerifier,
-    AV::Error: std::error::Error + Send + Sync + 'static,
 {
     pub async fn create_managed_task(
         pool: PgPool,
@@ -420,6 +418,7 @@ mod tests {
     use helium_proto::services::poc_mobile::{
         SeniorityUpdate as SeniorityUpdateProto, ServiceProviderBoostedRewardsBannedRadioReqV1,
     };
+    use mobile_config::client::ClientError;
     use rand::rngs::OsRng;
     use tokio::sync::mpsc;
 
@@ -427,19 +426,15 @@ mod tests {
 
     use super::*;
 
-    #[derive(thiserror::Error, Debug)]
-    enum TestError {}
     struct AllVerified;
 
     #[async_trait::async_trait]
     impl AuthorizationVerifier for AllVerified {
-        type Error = TestError;
-
         async fn verify_authorized_key(
             &self,
             _pubkey: &PublicKeyBinary,
             _role: helium_proto::services::mobile_config::NetworkKeyRole,
-        ) -> Result<bool, Self::Error> {
+        ) -> Result<bool, ClientError> {
             Ok(true)
         }
     }

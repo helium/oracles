@@ -11,9 +11,7 @@ use std::{sync::Arc, time::Duration};
 
 #[async_trait]
 pub trait EntityVerifier: Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    async fn verify_rewardable_entity(&self, entity_id: &[u8]) -> Result<bool, Self::Error>;
+    async fn verify_rewardable_entity(&self, entity_id: &[u8]) -> Result<bool, ClientError>;
 }
 
 #[derive(Clone)]
@@ -27,8 +25,6 @@ pub struct EntityClient {
 
 #[async_trait]
 impl EntityVerifier for EntityClient {
-    type Error = ClientError;
-
     async fn verify_rewardable_entity(&self, entity_id: &[u8]) -> Result<bool, ClientError> {
         let entity_id = entity_id.to_vec();
         if let Some(entity_found) = self.cache.get(&entity_id).await {

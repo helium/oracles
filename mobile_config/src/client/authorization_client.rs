@@ -11,13 +11,11 @@ use std::{sync::Arc, time::Duration};
 
 #[async_trait]
 pub trait AuthorizationVerifier: Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
-
     async fn verify_authorized_key(
         &self,
         pubkey: &PublicKeyBinary,
         role: mobile_config::NetworkKeyRole,
-    ) -> Result<bool, Self::Error>;
+    ) -> Result<bool, ClientError>;
 }
 
 #[derive(Clone)]
@@ -51,8 +49,6 @@ impl AuthorizationClient {
 
 #[async_trait]
 impl AuthorizationVerifier for AuthorizationClient {
-    type Error = ClientError;
-
     async fn verify_authorized_key(
         &self,
         pubkey: &PublicKeyBinary,

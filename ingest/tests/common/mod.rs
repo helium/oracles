@@ -19,6 +19,7 @@ use helium_proto::services::{
 };
 use ingest::server_mobile::GrpcServer;
 use mobile_config::client::authorization_client::AuthorizationVerifier;
+use mobile_config::client::ClientError;
 use prost::Message;
 use rand::rngs::OsRng;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -40,18 +41,13 @@ impl MockAuthorizationClient {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum MockError {}
-
 #[async_trait]
 impl AuthorizationVerifier for MockAuthorizationClient {
-    type Error = MockError;
-
     async fn verify_authorized_key(
         &self,
         _pubkey: &PublicKeyBinary,
         _role: NetworkKeyRole,
-    ) -> Result<bool, MockError> {
+    ) -> Result<bool, ClientError> {
         Ok(true)
     }
 }
