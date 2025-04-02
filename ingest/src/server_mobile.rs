@@ -818,7 +818,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(radio_usage_stats_event_server)
         .add_task(unique_connections_server)
         .add_task(subscriber_mapping_activity_server)
-        .add_task(perma_ban_server)
         .add_task(ban_server)
         .add_task(grpc_server)
         .build()

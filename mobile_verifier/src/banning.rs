@@ -14,9 +14,7 @@ use futures::{StreamExt, TryFutureExt};
 
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
-use mobile_config::client::{
-    authorization_client::AuthorizationVerifier, AuthorizationClient, ClientError,
-};
+use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use sqlx::{PgConnection, PgPool};
 use task_manager::{ManagedTask, TaskManager};
 
@@ -119,7 +117,7 @@ impl BanIngestor {
 
 async fn process_ban_report(
     conn: &mut PgConnection,
-    auth_verifier: &impl AuthorizationVerifier<Error = ClientError>,
+    auth_verifier: &impl AuthorizationVerifier,
     report: BanReport,
 ) -> anyhow::Result<VerifiedBanReport> {
     let status = get_verified_status(auth_verifier, &report.report.ban_key).await?;
@@ -137,7 +135,7 @@ async fn process_ban_report(
 }
 
 async fn get_verified_status(
-    auth_verifier: &impl AuthorizationVerifier<Error = ClientError>,
+    auth_verifier: &impl AuthorizationVerifier,
     pubkey: &helium_crypto::PublicKeyBinary,
 ) -> anyhow::Result<VerifiedBanIngestReportStatus> {
     let is_authorized = auth_verifier
@@ -333,6 +331,7 @@ mod tests {
     use helium_crypto::PublicKeyBinary;
     use helium_proto::services::mobile_config::NetworkKeyRole;
     use mobile_ban::{proto::BanReason, BanAction, BanDetails, BanRequest, BanType, UnbanDetails};
+    use mobile_config::client::ClientError;
 
     use super::*;
 
@@ -340,13 +339,11 @@ mod tests {
 
     #[async_trait::async_trait]
     impl AuthorizationVerifier for AllVerified {
-        type Error = ClientError;
-
         async fn verify_authorized_key(
             &self,
             _pubkey: &PublicKeyBinary,
             _role: NetworkKeyRole,
-        ) -> Result<bool, Self::Error> {
+        ) -> Result<bool, ClientError> {
             Ok(true)
         }
     }
@@ -494,13 +491,11 @@ mod tests {
 
         #[async_trait::async_trait]
         impl AuthorizationVerifier for NoneVerified {
-            type Error = ClientError;
-
             async fn verify_authorized_key(
                 &self,
                 _pubkey: &PublicKeyBinary,
                 _role: NetworkKeyRole,
-            ) -> Result<bool, Self::Error> {
+            ) -> Result<bool, ClientError> {
                 Ok(false)
             }
         }
