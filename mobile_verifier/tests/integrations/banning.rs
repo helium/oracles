@@ -64,12 +64,12 @@ async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
     // Ban radio
     process_ban_report(&mut conn, &AllVerified, ban_report).await?;
     let banned = test_get_current_banned_radios(&pool).await?;
-    assert_eq!(true, banned.is_poc_banned(&hotspot_pubkey));
+    assert!(banned.is_poc_banned(&hotspot_pubkey));
 
     // Unban radio
     process_ban_report(&mut conn, &AllVerified, unban_report).await?;
     let banned = test_get_current_banned_radios(&pool).await?;
-    assert_eq!(false, banned.is_poc_banned(&hotspot_pubkey));
+    assert!(!banned.is_poc_banned(&hotspot_pubkey));
 
     Ok(())
 }
@@ -98,11 +98,11 @@ async fn new_ban_replaces_old_ban(pool: PgPool) -> anyhow::Result<()> {
 
     process_ban_report(&mut conn, &AllVerified, mk_ban_report(BanType::All)).await?;
     let banned = test_get_current_banned_radios(&pool).await?;
-    assert_eq!(true, banned.is_poc_banned(&hotspot_pubkey));
+    assert!(banned.is_poc_banned(&hotspot_pubkey));
 
     process_ban_report(&mut conn, &AllVerified, mk_ban_report(BanType::Data)).await?;
     let banned = test_get_current_banned_radios(&pool).await?;
-    assert_eq!(false, banned.is_poc_banned(&hotspot_pubkey));
+    assert!(!banned.is_poc_banned(&hotspot_pubkey));
 
     Ok(())
 }
@@ -151,8 +151,8 @@ async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
     process_ban_report(&mut conn, &AllVerified, ban_report).await?;
 
     let banned = test_get_current_banned_radios(&pool).await?;
-    assert_eq!(false, banned.is_poc_banned(&expired_hotspot_pubkey));
-    assert_eq!(true, banned.is_poc_banned(&banned_hotspot_pubkey));
+    assert!(!banned.is_poc_banned(&expired_hotspot_pubkey));
+    assert!(banned.is_poc_banned(&banned_hotspot_pubkey));
 
     Ok(())
 }
@@ -195,7 +195,7 @@ async fn unverified_requests_are_not_written_to_db(pool: PgPool) -> anyhow::Resu
     // Unverified Ban radio
     process_ban_report(&mut conn, &NoneVerified, ban_report).await?;
     let banned = test_get_current_banned_radios(&pool).await?;
-    assert_eq!(false, banned.is_poc_banned(&hotspot_pubkey));
+    assert!(!banned.is_poc_banned(&hotspot_pubkey));
 
     Ok(())
 }

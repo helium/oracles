@@ -77,7 +77,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2;
     let dc_rewards = rewards.gateway_reward;
-    let unallocated_reward = rewards.unallocated.get(0);
+    let unallocated_reward = rewards.unallocated.first();
 
     let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
 
