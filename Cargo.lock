@@ -1617,8 +1617,8 @@ dependencies = [
  "byteorder",
  "helium-proto",
  "prost",
- "rand 0.8.5",
- "rand_chacha 0.3.0",
+ "rand 0.7.3",
+ "rand_chacha 0.2.2",
  "rust_decimal",
  "serde",
  "sha2 0.9.9",
@@ -3816,7 +3816,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://www.github.com/helium/proto.git?branch=jg%2Fdisco-shares-v2#f8a26f6727ec310f2f03a0e208267d4775e9203d"
+source = "git+https://github.com/helium/proto?branch=master#5686762b56fb03308cbe13d3f4bec9497982ad59"
 dependencies = [
  "bytes",
  "prost",
@@ -6064,7 +6064,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.5.0",
+ "heck 0.4.0",
  "itertools",
  "log",
  "multimap",
