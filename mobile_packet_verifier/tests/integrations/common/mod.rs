@@ -80,12 +80,11 @@ impl<T: std::fmt::Debug> TestChannelExt for tokio::sync::mpsc::Receiver<T> {
 
     fn assert_num_msgs(&mut self, expected_count: usize) -> anyhow::Result<()> {
         let mut count = 0;
-        loop {
-            match self.try_recv() {
-                Ok(_) => count += 1,
-                Err(_) => break,
-            }
+
+        while self.try_recv().is_ok() {
+            count += 1;
         }
+
         if count == expected_count {
             Ok(())
         } else {
