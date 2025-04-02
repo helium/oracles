@@ -72,6 +72,7 @@ pub enum BanAction {
     Unban(UnbanDetails),
 }
 
+// non proto BanType provided for pulling values out of DB with FromStr
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum BanType {
     All,
@@ -329,7 +330,7 @@ pub async fn verified_report_source(
 }
 
 impl VerifiedBanReport {
-    pub fn is_verified(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         matches!(self.status, proto::VerifiedBanIngestReportStatus::Valid)
     }
 
