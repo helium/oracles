@@ -43,7 +43,7 @@ pub struct SubscriberMappingActivityDaemon<AV, EV> {
 impl<AV, EV> SubscriberMappingActivityDaemon<AV, EV>
 where
     AV: AuthorizationVerifier,
-    EV: EntityVerifier + Send + Sync + 'static,
+    EV: EntityVerifier,
 {
     pub fn new(
         pool: Pool<Postgres>,
@@ -226,7 +226,7 @@ where
 impl<AV, EV> ManagedTask for SubscriberMappingActivityDaemon<AV, EV>
 where
     AV: AuthorizationVerifier,
-    EV: EntityVerifier + Send + Sync + 'static,
+    EV: EntityVerifier,
 {
     fn start_task(
         self: Box<Self>,

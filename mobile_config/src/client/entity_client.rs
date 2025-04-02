@@ -10,7 +10,7 @@ use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 
 #[async_trait]
-pub trait EntityVerifier {
+pub trait EntityVerifier: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn verify_rewardable_entity(&self, entity_id: &[u8]) -> Result<bool, Self::Error>;
