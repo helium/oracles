@@ -1,8 +1,5 @@
-use crate::common::{
-    self, default_price_info, default_rewards_info, MockFileSinkReceiver,
-    EMISSIONS_POOL_IN_BONES_24_HOURS,
-};
-use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
+use crate::common::{self, default_price_info, rewards_info_24_hours, MockFileSinkReceiver};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{
     GatewayReward, IotRewardShare, UnallocatedReward, UnallocatedRewardType,
@@ -27,7 +24,7 @@ const HOTSPOT_4: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (iot_rewards_client, mut iot_rewards) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = rewards_info_24_hours();
 
     let price_info = default_price_info();
 

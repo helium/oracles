@@ -353,14 +353,15 @@ impl GatewayResolver for GatewayClientAllOwnersValid {
     }
 }
 
-pub fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
+pub fn reward_info_24_hours() -> EpochRewardInfo {
     let now = Utc::now();
+    let epoch_duration = Duration::hours(24);
     EpochRewardInfo {
         epoch_day: 1,
         epoch_address: EPOCH_ADDRESS.into(),
         sub_dao_address: SUB_DAO_ADDRESS.into(),
         epoch_period: (now - epoch_duration)..now,
-        epoch_emissions: Decimal::from(total_emissions),
+        epoch_emissions: Decimal::from(EMISSIONS_POOL_IN_BONES_24_HOURS),
         rewards_issued_at: now,
     }
 }
