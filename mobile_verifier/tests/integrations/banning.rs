@@ -1,0 +1,201 @@
+use chrono::Utc;
+use file_store::mobile_ban::{
+    BanAction, BanDetails, BanReason, BanReport, BanRequest, BanType, UnbanDetails,
+};
+use helium_crypto::PublicKeyBinary;
+use helium_proto::services::mobile_config::NetworkKeyRole;
+use mobile_config::client::{authorization_client::AuthorizationVerifier, ClientError};
+use mobile_verifier::banning::{ingester::process_ban_report, BannedRadios};
+use sqlx::PgPool;
+
+struct AllVerified;
+
+#[async_trait::async_trait]
+impl AuthorizationVerifier for AllVerified {
+    async fn verify_authorized_key(
+        &self,
+        _pubkey: &PublicKeyBinary,
+        _role: NetworkKeyRole,
+    ) -> Result<bool, ClientError> {
+        Ok(true)
+    }
+}
+
+async fn test_get_current_banned_radios(pool: &PgPool) -> anyhow::Result<BannedRadios> {
+    BannedRadios::new(pool, Utc::now()).await
+}
+
+#[sqlx::test]
+async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
+    let mut conn = pool.acquire().await?;
+    let hotspot_pubkey = PublicKeyBinary::from(vec![1]);
+
+    let ban_report = BanReport {
+        received_timestamp: Utc::now(),
+        report: BanRequest {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            sent_timestamp: Utc::now(),
+            ban_key: PublicKeyBinary::from(vec![1]),
+            signature: vec![],
+            ban_action: BanAction::Ban(BanDetails {
+                hotspot_serial: "test-serial".to_string(),
+                notes: "test-ban".to_string(),
+                reason: BanReason::Gaming,
+                ban_type: BanType::All,
+                expiration_timestamp: None,
+            }),
+        },
+    };
+
+    let unban_report = BanReport {
+        received_timestamp: Utc::now(),
+        report: BanRequest {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            sent_timestamp: Utc::now(),
+            ban_key: PublicKeyBinary::from(vec![1]),
+            signature: vec![],
+            ban_action: BanAction::Unban(UnbanDetails {
+                hotspot_serial: "test-serial".to_string(),
+                notes: "test-unban".to_string(),
+            }),
+        },
+    };
+
+    // Ban radio
+    process_ban_report(&mut conn, &AllVerified, ban_report).await?;
+    let banned = test_get_current_banned_radios(&pool).await?;
+    assert_eq!(true, banned.is_poc_banned(&hotspot_pubkey));
+
+    // Unban radio
+    process_ban_report(&mut conn, &AllVerified, unban_report).await?;
+    let banned = test_get_current_banned_radios(&pool).await?;
+    assert_eq!(false, banned.is_poc_banned(&hotspot_pubkey));
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn new_ban_replaces_old_ban(pool: PgPool) -> anyhow::Result<()> {
+    let mut conn = pool.acquire().await?;
+    let hotspot_pubkey = PublicKeyBinary::from(vec![1]);
+
+    let mk_ban_report = |ban_type: BanType| BanReport {
+        received_timestamp: Utc::now(),
+        report: BanRequest {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            sent_timestamp: Utc::now(),
+            ban_key: PublicKeyBinary::from(vec![1]),
+            signature: vec![],
+            ban_action: BanAction::Ban(BanDetails {
+                hotspot_serial: "test-serial".to_string(),
+                notes: "test-ban".to_string(),
+                reason: BanReason::Gaming,
+                ban_type,
+                expiration_timestamp: None,
+            }),
+        },
+    };
+
+    process_ban_report(&mut conn, &AllVerified, mk_ban_report(BanType::All)).await?;
+    let banned = test_get_current_banned_radios(&pool).await?;
+    assert_eq!(true, banned.is_poc_banned(&hotspot_pubkey));
+
+    process_ban_report(&mut conn, &AllVerified, mk_ban_report(BanType::Data)).await?;
+    let banned = test_get_current_banned_radios(&pool).await?;
+    assert_eq!(false, banned.is_poc_banned(&hotspot_pubkey));
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
+    let mut conn = pool.acquire().await?;
+    let expired_hotspot_pubkey = PublicKeyBinary::from(vec![1]);
+    let banned_hotspot_pubkey = PublicKeyBinary::from(vec![2]);
+
+    let expired_ban_report = BanReport {
+        received_timestamp: Utc::now(),
+        report: BanRequest {
+            hotspot_pubkey: expired_hotspot_pubkey.clone(),
+            sent_timestamp: Utc::now() - chrono::Duration::hours(6),
+            ban_key: PublicKeyBinary::from(vec![1]),
+            signature: vec![],
+            ban_action: BanAction::Ban(BanDetails {
+                hotspot_serial: "test-serial".to_string(),
+                notes: "test-ban".to_string(),
+                reason: BanReason::Gaming,
+                ban_type: BanType::All,
+                expiration_timestamp: Some(Utc::now() - chrono::Duration::hours(5)),
+            }),
+        },
+    };
+
+    let ban_report = BanReport {
+        received_timestamp: Utc::now(),
+        report: BanRequest {
+            hotspot_pubkey: banned_hotspot_pubkey.clone(),
+            sent_timestamp: Utc::now(),
+            ban_key: PublicKeyBinary::from(vec![1]),
+            signature: vec![],
+            ban_action: BanAction::Ban(BanDetails {
+                hotspot_serial: "test-serial".to_string(),
+                notes: "test-ban".to_string(),
+                reason: BanReason::Gaming,
+                ban_type: BanType::All,
+                expiration_timestamp: None,
+            }),
+        },
+    };
+
+    process_ban_report(&mut conn, &AllVerified, expired_ban_report).await?;
+    process_ban_report(&mut conn, &AllVerified, ban_report).await?;
+
+    let banned = test_get_current_banned_radios(&pool).await?;
+    assert_eq!(false, banned.is_poc_banned(&expired_hotspot_pubkey));
+    assert_eq!(true, banned.is_poc_banned(&banned_hotspot_pubkey));
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn unverified_requests_are_not_written_to_db(pool: PgPool) -> anyhow::Result<()> {
+    struct NoneVerified;
+
+    #[async_trait::async_trait]
+    impl AuthorizationVerifier for NoneVerified {
+        async fn verify_authorized_key(
+            &self,
+            _pubkey: &PublicKeyBinary,
+            _role: NetworkKeyRole,
+        ) -> Result<bool, ClientError> {
+            Ok(false)
+        }
+    }
+
+    let mut conn = pool.acquire().await?;
+    let hotspot_pubkey = PublicKeyBinary::from(vec![1]);
+
+    let ban_report = BanReport {
+        received_timestamp: Utc::now(),
+        report: BanRequest {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            sent_timestamp: Utc::now(),
+            ban_key: PublicKeyBinary::from(vec![1]),
+            signature: vec![],
+            ban_action: BanAction::Ban(BanDetails {
+                hotspot_serial: "test-serial".to_string(),
+                notes: "test-ban".to_string(),
+                reason: BanReason::Gaming,
+                ban_type: BanType::All,
+                expiration_timestamp: None,
+            }),
+        },
+    };
+
+    // Unverified Ban radio
+    process_ban_report(&mut conn, &NoneVerified, ban_report).await?;
+    let banned = test_get_current_banned_radios(&pool).await?;
+    assert_eq!(false, banned.is_poc_banned(&hotspot_pubkey));
+
+    Ok(())
+}

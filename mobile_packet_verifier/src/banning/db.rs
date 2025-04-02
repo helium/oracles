@@ -56,7 +56,7 @@ pub async fn update_hotspot_ban(
                 ban_report.hotspot_pubkey(),
                 ban_report.report.received_timestamp,
                 ban_details.expiration_timestamp,
-                &ban_details.ban_type,
+                ban_details.ban_type,
             )
             .await?
         }
@@ -71,7 +71,7 @@ async fn insert_ban(
     hotspot_pubkey: &PublicKeyBinary,
     received_timestamp: DateTime<Utc>,
     expiration_timestamp: Option<DateTime<Utc>>,
-    ban_type: &BanType,
+    ban_type: BanType,
 ) -> anyhow::Result<()> {
     sqlx::query(
         r#"
