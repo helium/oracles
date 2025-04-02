@@ -1,5 +1,6 @@
 mod common;
 
+mod banning;
 mod boosting_oracles;
 mod coverage;
 mod heartbeats;
