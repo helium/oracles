@@ -9,7 +9,7 @@ use crate::{
         MapperShares, TransferRewards,
     },
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
-    sp_boosted_rewards_bans, speedtests,
+    speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_mapping_activity, telemetry, unique_connections, PriceInfo, Settings,
 };
@@ -331,12 +331,10 @@ where
         )
         .await?;
         coverage::clear_coverage_objects(&mut transaction, &reward_info.epoch_period.start).await?;
-        sp_boosted_rewards_bans::clear_bans(&mut transaction, reward_info.epoch_period.start)
-            .await?;
         subscriber_mapping_activity::db::clear(&mut transaction, reward_info.epoch_period.start)
             .await?;
         unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
-        banning::db::cleanup_bans(&mut transaction, reward_info.epoch_period.start).await?;
+        banning::clear_bans(&mut transaction, reward_info.epoch_period.start).await?;
 
         save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
 

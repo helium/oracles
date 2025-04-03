@@ -9,7 +9,6 @@ use crate::{
     heartbeats::wifi::WifiHeartbeatDaemon,
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
-    sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
     speedtests::SpeedtestDaemon,
     subscriber_mapping_activity::SubscriberMappingActivityDaemon,
     telemetry,
@@ -179,23 +178,13 @@ impl Cmd {
             )
             .add_task(DataSessionIngestor::create_managed_task(pool.clone(), settings).await?)
             .add_task(
-                ServiceProviderBoostedRewardsBanIngestor::create_managed_task(
-                    pool.clone(),
-                    file_upload.clone(),
-                    report_ingest.clone(),
-                    auth_client.clone(),
-                    settings,
-                    seniority_updates,
-                )
-                .await?,
-            )
-            .add_task(
                 banning::create_managed_task(
                     pool.clone(),
                     file_upload.clone(),
                     report_ingest,
                     auth_client,
                     settings,
+                    seniority_updates,
                 )
                 .await?,
             )

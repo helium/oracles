@@ -1,10 +1,12 @@
 use std::collections::HashSet;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::mobile_ban::{BanAction, BanType, VerifiedBanReport};
 use futures::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
-use sqlx::{PgConnection, PgPool, Postgres, Row, Transaction};
+use sqlx::{PgConnection, PgPool, Row};
+
+use super::BAN_CLEANUP_DAYS;
 
 pub async fn get_banned_radios(
     pool: &PgPool,
@@ -30,12 +32,12 @@ pub async fn get_banned_radios(
     Ok(banned)
 }
 
-pub async fn cleanup_bans(
-    txn: &mut Transaction<'_, Postgres>,
+pub(super) async fn clear_bans(
+    txn: &mut PgConnection,
     before: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     sqlx::query("DELETE FROM hotspot_bans WHERE expiration_timestamp < $1")
-        .bind(before)
+        .bind(before - Duration::days(BAN_CLEANUP_DAYS))
         .execute(txn)
         .await?;
 
