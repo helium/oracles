@@ -9,11 +9,11 @@ use sqlx::PgPool;
 use task_manager::{ManagedTask, TaskManager};
 
 pub mod db;
-pub mod ingester;
+pub mod ingestor;
 pub mod purger;
 
 pub use db::get_banned_radios;
-pub use ingester::handle_verified_ban_report;
+pub use ingestor::handle_verified_ban_report;
 
 #[derive(Debug, Deserialize)]
 pub struct BanSettings {
@@ -45,12 +45,12 @@ pub async fn create_managed_task(
         mobile_ban::verified_report_source(pool.clone(), verifier_file_store, settings.start_after)
             .await?;
 
-    let ingester = ingester::BanIngestor::new(pool.clone(), ban_report_rx);
+    let ingestor = ingestor::BanIngestor::new(pool.clone(), ban_report_rx);
     let purger = purger::BanPurger::new(pool, settings.purge_interval);
 
     Ok(TaskManager::builder()
         .add_task(ban_report_server)
-        .add_task(ingester)
+        .add_task(ingestor)
         .add_task(purger)
         .build())
 }
