@@ -22,7 +22,7 @@ const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 
 #[sqlx::test]
 async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
     let reward_info = reward_info_24_hours();
 
     // seed db

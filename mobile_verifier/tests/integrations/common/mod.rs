@@ -264,20 +264,19 @@ pub fn default_price_info() -> PriceInfo {
 
 // Non-blocking version is file sink testing.
 // Requires the FileSinkClient to be dropped when all writing is done, or panic!.
-pub fn create_nonblocking_file_sink<T: Send + Sync + 'static>(
-) -> (FileSinkClient<T>, NonBlockingFileSinkReceiver<T>) {
+pub fn create_file_sink<T: Send + Sync + 'static>() -> (FileSinkClient<T>, FileSinkReceiver<T>) {
     let (tx, rx) = tokio::sync::mpsc::channel(999);
     (
         FileSinkClient {
             sender: tx,
             metric: "metric".into(),
         },
-        NonBlockingFileSinkReceiver::new(rx),
+        FileSinkReceiver::new(rx),
     )
 }
 
 #[derive(Debug)]
-pub struct NonBlockingFileSinkReceiver<T> {
+pub struct FileSinkReceiver<T> {
     msgs: Arc<RwLock<Vec<T>>>,
     channel_closed: Arc<tokio::sync::Notify>,
 }
@@ -343,7 +342,7 @@ impl<F: std::future::Future> TestTimeoutExt<F> for F {
     }
 }
 
-impl NonBlockingFileSinkReceiver<MobileRewardShare> {
+impl FileSinkReceiver<MobileRewardShare> {
     pub async fn finish(self) -> anyhow::Result<MobileRewardShareMessages> {
         // make sure channel is closed and done being written to
         if let Err(err) = self.channel_closed.notified().timeout_2_secs().await {
@@ -366,7 +365,7 @@ impl NonBlockingFileSinkReceiver<MobileRewardShare> {
     }
 }
 
-impl NonBlockingFileSinkReceiver<SpeedtestAvg> {
+impl FileSinkReceiver<SpeedtestAvg> {
     pub async fn finish(self) -> anyhow::Result<Vec<SpeedtestAvg>> {
         // make sure the channel is closed and done being written to
         if let Err(err) = self.channel_closed.notified().timeout_2_secs().await {
@@ -380,7 +379,7 @@ impl NonBlockingFileSinkReceiver<SpeedtestAvg> {
     }
 }
 
-impl<T: Send + Sync + 'static> NonBlockingFileSinkReceiver<T> {
+impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
     fn new(mut receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>) -> Self {
         let channel_closed = Arc::new(tokio::sync::Notify::new());
         let closer = channel_closed.clone();
