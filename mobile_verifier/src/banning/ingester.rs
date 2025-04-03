@@ -48,7 +48,7 @@ impl BanIngester {
     }
 
     async fn run(mut self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!(" ban ingestor starting");
+        tracing::info!("starting ban ingestor");
 
         loop {
             tokio::select! {
@@ -56,15 +56,14 @@ impl BanIngester {
                 _= &mut shutdown => break,
                 msg = self.report_rx.recv() => {
                     let Some(file_info_stream) = msg else {
-                        tracing::warn!(" ban report rx dropped");
-                        break;
+                        anyhow::bail!("hotspot ban FileInfoPoller sender was dropped unexpectedly");
                     };
                     self.process_file(file_info_stream).await?;
                 }
             }
         }
 
-        tracing::info!(" ban ingestor stopping");
+        tracing::info!("stopping ban ingestor");
 
         Ok(())
     }
