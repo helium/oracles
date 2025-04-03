@@ -17,7 +17,7 @@ pub async fn get_banned_radios(
         SELECT hotspot_pubkey
         FROM hotspot_bans
         WHERE 
-            ban_type != 'poc'
+            ban_type in ('all', 'data')
             AND (expiration_timestamp IS NULL 
             OR expiration_timestamp >= $1)
         "#,

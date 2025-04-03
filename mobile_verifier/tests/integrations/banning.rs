@@ -96,7 +96,7 @@ async fn new_ban_replaces_old_ban(pool: PgPool) -> anyhow::Result<()> {
         },
     };
 
-    process_ban_report(&mut conn, &AllVerified, mk_ban_report(BanType::All)).await?;
+    process_ban_report(&mut conn, &AllVerified, mk_ban_report(BanType::Poc)).await?;
     let banned = test_get_current_banned_radios(&pool).await?;
     assert!(banned.is_poc_banned(&hotspot_pubkey));
 
