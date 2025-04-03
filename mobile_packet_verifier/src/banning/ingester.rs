@@ -1,7 +1,9 @@
-use file_store::mobile_ban::{VerifiedBanReportSource, VerifiedBanReportStream};
+use file_store::mobile_ban::{VerifiedBanReport, VerifiedBanReportSource, VerifiedBanReportStream};
 use futures::{FutureExt, StreamExt};
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use task_manager::ManagedTask;
+
+use super::db;
 
 pub struct BanIngestor {
     pool: PgPool,
@@ -54,11 +56,22 @@ impl BanIngestor {
         let mut stream = file_info_stream.into_stream(&mut txn).await?;
 
         while let Some(report) = stream.next().await {
-            crate::banning::db::update_hotspot_ban(&mut txn, report).await?;
+            handle_verified_ban_report(&mut txn, report).await?;
         }
 
         txn.commit().await?;
 
         Ok(())
     }
+}
+
+pub async fn handle_verified_ban_report(
+    conn: &mut PgConnection,
+    report: VerifiedBanReport,
+) -> anyhow::Result<()> {
+    if report.is_valid() {
+        db::update_hotspot_ban(conn, report).await?;
+    }
+
+    Ok(())
 }
