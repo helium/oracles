@@ -371,7 +371,7 @@ impl<F: std::future::Future> TestTimeoutExt<F> for F {
 
 impl NonBlockingFileSinkReceiver<MobileRewardShare> {
     pub async fn finish(self) -> anyhow::Result<MobileRewardShareMessages> {
-        // make sure channel is closed and done be written to
+        // make sure channel is closed and done being written to
         if let Err(err) = self.channel_closed.notified().timeout_2_secs().await {
             panic!("file sink receiver channel was never closed: {err:?}");
         }
@@ -392,6 +392,20 @@ impl NonBlockingFileSinkReceiver<MobileRewardShare> {
     }
 }
 
+impl NonBlockingFileSinkReceiver<SpeedtestAvg> {
+    pub async fn finish(self) -> anyhow::Result<Vec<SpeedtestAvg>> {
+        // make sure the channel is closed and done being written to
+        if let Err(err) = self.channel_closed.notified().timeout_2_secs().await {
+            panic!("file sink receiver channel was never closed: {err:?}");
+        }
+
+        let lock = Arc::try_unwrap(self.msgs).expect("no locks on messages");
+        let msgs = lock.into_inner();
+
+        Ok(msgs)
+    }
+}
+
 impl<T: Send + Sync + 'static> NonBlockingFileSinkReceiver<T> {
     fn new(mut receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>) -> Self {
         let channel_closed = Arc::new(tokio::sync::Notify::new());
@@ -404,10 +418,10 @@ impl<T: Send + Sync + 'static> NonBlockingFileSinkReceiver<T> {
             while let Some(msg) = receiver.recv().await {
                 match msg {
                     SinkMessage::Data(sender, msg) => {
-                        sender.send(Ok(())).unwrap();
+                        sender.send(Ok(())).expect("ack file data");
                         inner_msgs.write().await.push(msg);
                     }
-                    SinkMessage::Commit(_sender) => todo!(),
+                    SinkMessage::Commit(_sender) => (),
                     SinkMessage::Rollback(_sender) => todo!(),
                 }
             }
