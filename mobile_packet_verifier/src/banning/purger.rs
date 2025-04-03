@@ -30,6 +30,7 @@ impl BanPurger {
 
         loop {
             tokio::select! {
+                biased;
                 _ = &mut shutdown => break,
                 _ = timer.tick() => self.purge(Utc::now()).await?
             }
