@@ -34,7 +34,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let rewards = mobile_rewards.finish().await?;
     let subscriber_rewards = rewards
-        .subscriber_reward
+        .subscriber_rewards
         .as_keyed_map(|reward| reward.subscriber_id_string());
 
     // assert the mapper rewards

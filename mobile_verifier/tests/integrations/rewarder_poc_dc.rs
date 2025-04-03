@@ -71,8 +71,8 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
-    let poc_rewards = rewards.radio_reward_v2;
-    let dc_rewards = rewards.gateway_reward;
+    let poc_rewards = rewards.radio_reward_v2s;
+    let dc_rewards = rewards.gateway_rewards;
     let unallocated_reward = rewards.unallocated.first();
 
     let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
@@ -159,8 +159,8 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let msgs = mobile_rewards.finish().await?;
-    let poc_rewards = msgs.radio_reward_v2;
-    let dc_rewards = msgs.gateway_reward;
+    let poc_rewards = msgs.radio_reward_v2s;
+    let dc_rewards = msgs.gateway_rewards;
 
     // expecting single radio with poc rewards, no unallocated
     assert_eq!(poc_rewards.len(), 1);
@@ -221,8 +221,8 @@ async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let msgs = mobile_rewards.finish().await?;
-    assert_eq!(msgs.gateway_reward.len(), 3);
-    assert_eq!(msgs.radio_reward_v2.len(), 3);
+    assert_eq!(msgs.gateway_rewards.len(), 3);
+    assert_eq!(msgs.radio_reward_v2s.len(), 3);
 
     // ==============================================================
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
@@ -244,8 +244,8 @@ async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let msgs = mobile_rewards.finish().await?;
-    assert_eq!(msgs.gateway_reward.len(), 3);
-    assert_eq!(msgs.radio_reward_v2.len(), 2);
+    assert_eq!(msgs.gateway_rewards.len(), 3);
+    assert_eq!(msgs.radio_reward_v2s.len(), 2);
 
     Ok(())
 }
@@ -294,9 +294,9 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
-    let poc_rewards = rewards.radio_reward_v2;
+    let poc_rewards = rewards.radio_reward_v2s;
 
-    let dc_rewards = rewards.gateway_reward;
+    let dc_rewards = rewards.gateway_rewards;
 
     // expecting single radio with poc rewards, no unallocated
     assert_eq!(poc_rewards.len(), 2);
@@ -349,8 +349,8 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
-    let poc_rewards = rewards.radio_reward_v2;
-    let dc_rewards = rewards.gateway_reward;
+    let poc_rewards = rewards.radio_reward_v2s;
+    let dc_rewards = rewards.gateway_rewards;
 
     assert_eq!(poc_rewards.len(), 3);
     assert_eq!(dc_rewards.len(), 0);
