@@ -294,7 +294,7 @@ where
         .await?;
 
         // process rewards for mappers
-        reward_mappers(&self.pool, &self.mobile_rewards, &reward_info).await?;
+        reward_mappers(&self.pool, self.mobile_rewards.clone(), &reward_info).await?;
 
         // process rewards for service providers
         let dc_sessions = service_provider::get_dc_sessions(
@@ -552,7 +552,7 @@ pub async fn reward_dc(
 
 pub async fn reward_mappers(
     pool: &Pool<Postgres>,
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
     let rewardable_mapping_activity = subscriber_mapping_activity::db::rewardable_mapping_activity(
@@ -587,7 +587,7 @@ pub async fn reward_mappers(
         .unwrap_or(0)
         - allocated_mapping_rewards;
     write_unallocated_reward(
-        mobile_rewards,
+        &mobile_rewards,
         UnallocatedRewardType::Mapper,
         unallocated_mapping_reward_amount,
         reward_info,
