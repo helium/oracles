@@ -18,8 +18,9 @@ pub async fn get_banned_radios(
         FROM hotspot_bans
         WHERE 
             ban_type in ('all', 'data')
+            AND received_timestamp <= $1
             AND (expiration_timestamp IS NULL 
-            OR expiration_timestamp >= $1)
+                OR expiration_timestamp >= $1)
         "#,
     )
     .bind(timestamp)

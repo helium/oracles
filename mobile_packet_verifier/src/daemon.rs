@@ -115,7 +115,7 @@ where
         let ts = file.file_info.timestamp;
         let mut transaction = self.pool.begin().await?;
 
-        let banned_radios = banning::get_banned_radios(&mut transaction, Utc::now()).await?;
+        let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
         let reports = file.into_stream(&mut transaction).await?;
 
         crate::accumulate::accumulate_sessions(
