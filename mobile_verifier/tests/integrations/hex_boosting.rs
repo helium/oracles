@@ -1,5 +1,5 @@
 use crate::common::{
-    self, default_price_info, reward_info_24_hours, MockFileSinkReceiver, MockHexBoostingClient,
+    self, default_price_info, reward_info_24_hours, AsStringKeyedMap, MockHexBoostingClient,
     RadioRewardV2Ext,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
@@ -9,15 +9,11 @@ use file_store::{
     unique_connections::{UniqueConnectionReq, UniqueConnectionsIngestReport},
 };
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::{
-    poc_lora::UnallocatedRewardType,
-    poc_mobile::{
-        CoverageObjectValidity, HeartbeatValidity, LocationSource, MobileRewardShare,
-        RadioRewardV2, SeniorityUpdateReason, SignalLevel, UnallocatedReward,
-    },
+use helium_proto::services::poc_mobile::{
+    CoverageObjectValidity, HeartbeatValidity, LocationSource, SeniorityUpdateReason, SignalLevel,
 };
 use hextree::Cell;
-use mobile_config::boosted_hex_info::BoostedHexInfo;
+use mobile_config::{boosted_hex_info::BoostedHexInfo, sub_dao_epoch_reward_info::EpochRewardInfo};
 use mobile_verifier::{
     cell_type::CellType,
     coverage::CoverageObject,
@@ -55,7 +51,7 @@ async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
@@ -137,54 +133,28 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
 
-    let total_poc_emissions =
-        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
-
     let price_info = default_price_info();
 
-    let (_, rewards) = tokio::join!(
-        // run rewards for poc and dc
-        rewarder::reward_poc_and_dc(
-            &pool,
-            &hex_boosting_client,
-            &mobile_rewards_client,
-            &speedtest_avg_client,
-            &reward_info,
-            price_info
-        ),
-        receive_expected_rewards_maybe_unallocated(
-            &mut mobile_rewards,
-            ExpectUnallocated::NoWhenValue(total_poc_emissions)
-        )
-    );
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &hex_boosting_client,
+        mobile_rewards_client,
+        &speedtest_avg_client,
+        &reward_info,
+        price_info,
+    )
+    .await?;
 
-    let Ok((poc_rewards, unallocated_reward)) = rewards else {
-        panic!("no rewards received");
-    };
+    let rewards = mobile_rewards.finish().await?;
 
-    let mut poc_rewards = poc_rewards.iter();
-    let hotspot_2 = poc_rewards.next().unwrap();
-    let hotspot_1 = poc_rewards.next().unwrap();
-    let hotspot_3 = poc_rewards.next().unwrap();
-    assert_eq!(
-        None,
-        poc_rewards.next(),
-        "Received more hotspots than expected in rewards"
-    );
-    assert_eq!(
-        HOTSPOT_2.to_string(),
-        PublicKeyBinary::from(hotspot_2.hotspot_key.clone()).to_string()
-    );
-    assert_eq!(
-        HOTSPOT_1.to_string(),
-        PublicKeyBinary::from(hotspot_1.hotspot_key.clone()).to_string()
-    );
-    assert_eq!(
-        HOTSPOT_3.to_string(),
-        PublicKeyBinary::from(hotspot_3.hotspot_key.clone()).to_string()
-    );
+    let poc_rewards = rewards
+        .radio_reward_v2
+        .as_keyed_map(|v| v.hotspot_key_string());
+    let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
+    let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2");
+    let hotspot_3 = poc_rewards.get(HOTSPOT_3).expect("hotspot 3");
+
+    assert_eq!(poc_rewards.len(), 3);
 
     // Calculating expected rewards
     let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
@@ -227,17 +197,10 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(0x8a1fb49642dffff_u64, hotspot_2.nth_boosted_hex(0).location);
     assert_eq!(0x8a1fb466d2dffff_u64, hotspot_1.nth_boosted_hex(0).location);
 
-    // confirm the total rewards allocated matches expectations
-    let poc_sum =
-        hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
-    let total = poc_sum + unallocated_reward.amount;
-    assert_eq!(total_poc_emissions, total);
-
-    // confirm the rewarded percentage amount matches expectations
-
-    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
-        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    assert_eq!(percent, dec!(0.6));
+    // confirm the total rewards allocated matches emissions
+    // and the rewarded percentage amount matches percentage
+    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
 }
@@ -248,7 +211,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
     // this simulates the case where we have radios in boosted hexes but where the coverage
     // thresholds for the radios have not been met
     // the end result is that no boosting takes place, the radios are awarded non boosted reward values
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
     let now = Utc::now();
     let epoch = (now - ChronoDuration::hours(24))..now;
@@ -331,68 +294,46 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
     let reward_info = reward_info_24_hours();
     let price_info = default_price_info();
 
-    let (_, rewards) = tokio::join!(
-        // run rewards for poc and dc
-        rewarder::reward_poc_and_dc(
-            &pool,
-            &hex_boosting_client,
-            &mobile_rewards_client,
-            &speedtest_avg_client,
-            &reward_info,
-            price_info
-        ),
-        receive_expected_rewards(&mut mobile_rewards)
-    );
-    if let Ok((poc_rewards, unallocated_reward)) = rewards {
-        // assert poc reward outputs
-        let exp_reward_1 = 16438356164383;
-        let exp_reward_2 = 16438356164383;
-        let exp_reward_3 = 16438356164383;
+    // run rewards for poc and dc
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &hex_boosting_client,
+        mobile_rewards_client,
+        &speedtest_avg_client,
+        &reward_info,
+        price_info,
+    )
+    .await?;
 
-        assert_eq!(exp_reward_1, poc_rewards[0].total_poc_reward());
-        assert_eq!(
-            HOTSPOT_2.to_string(),
-            PublicKeyBinary::from(poc_rewards[0].hotspot_key.clone()).to_string()
-        );
-        assert_eq!(exp_reward_2, poc_rewards[1].total_poc_reward());
-        assert_eq!(
-            HOTSPOT_1.to_string(),
-            PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
-        );
-        assert_eq!(exp_reward_3, poc_rewards[2].total_poc_reward());
-        assert_eq!(
-            HOTSPOT_3.to_string(),
-            PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
-        );
+    let rewards = mobile_rewards.finish().await?;
 
-        // assert the number of boosted hexes for each radio
-        assert_eq!(0, poc_rewards[0].boosted_hexes_len());
-        assert_eq!(0, poc_rewards[1].boosted_hexes_len());
-        assert_eq!(0, poc_rewards[2].boosted_hexes_len());
+    let poc_rewards = rewards
+        .radio_reward_v2
+        .as_keyed_map(|v| v.hotspot_key_string());
+    let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
+    let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2");
+    let hotspot_3 = poc_rewards.get(HOTSPOT_3).expect("hotspot 3");
 
-        // confirm the total rewards allocated matches expectations
-        let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
-        let unallocated_sum: u64 = unallocated_reward.amount;
-        let total = poc_sum + unallocated_sum;
+    assert_eq!(16_438_356_164_383, hotspot_1.total_poc_reward());
+    assert_eq!(16_438_356_164_383, hotspot_2.total_poc_reward());
+    assert_eq!(16_438_356_164_383, hotspot_3.total_poc_reward());
 
-        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
-        assert_eq!(expected_sum, total);
+    // assert the number of boosted hexes for each radio
+    assert_eq!(0, hotspot_1.boosted_hexes_len());
+    assert_eq!(0, hotspot_2.boosted_hexes_len());
+    assert_eq!(0, hotspot_3.boosted_hexes_len());
 
-        // confirm the rewarded percentage amount matches expectations
-        let percent = (Decimal::from(total) / reward_info.epoch_emissions)
-            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-        assert_eq!(percent, dec!(0.6));
-    } else {
-        panic!("no rewards received");
-    };
+    // confirm the total rewards allocated matches emissions
+    // and the rewarded percentage amount matches percentage
+    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    assert_total_matches_emissions(total, &reward_info);
+
     Ok(())
 }
 
 #[sqlx::test]
 async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
@@ -486,57 +427,25 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         },
     ];
 
-    let total_poc_emissions =
-        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    // run rewards for poc and dc
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &MockHexBoostingClient::new(boosted_hexes),
+        mobile_rewards_client,
+        &speedtest_avg_client,
+        &reward_info,
+        default_price_info(),
+    )
+    .await?;
 
-    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+    let rewards = mobile_rewards.finish().await?;
 
-    let price_info = default_price_info();
-
-    let (_, rewards) = tokio::join!(
-        // run rewards for poc and dc
-        rewarder::reward_poc_and_dc(
-            &pool,
-            &hex_boosting_client,
-            &mobile_rewards_client,
-            &speedtest_avg_client,
-            &reward_info,
-            price_info
-        ),
-        receive_expected_rewards_maybe_unallocated(
-            &mut mobile_rewards,
-            ExpectUnallocated::NoWhenValue(total_poc_emissions)
-        )
-    );
-
-    let Ok((poc_rewards, unallocated_reward)) = rewards else {
-        panic!("no rewards received");
-    };
-
-    let mut poc_rewards = poc_rewards.iter();
-    let hotspot_2 = poc_rewards.next().unwrap(); // 1 boost at 20x
-    let hotspot_1 = poc_rewards.next().unwrap(); // 2 boost at 10x
-    let hotspot_3 = poc_rewards.next().unwrap(); // no boost
-    assert_eq!(
-        None,
-        poc_rewards.next(),
-        "Received more hotspots than expected in rewards"
-    );
-
-    assert_eq!(
-        HOTSPOT_2.to_string(),
-        PublicKeyBinary::from(hotspot_2.hotspot_key.clone()).to_string()
-    );
-    assert_eq!(
-        HOTSPOT_1.to_string(),
-        PublicKeyBinary::from(hotspot_1.hotspot_key.clone()).to_string()
-    );
-    assert_eq!(
-        HOTSPOT_3.to_string(),
-        PublicKeyBinary::from(hotspot_3.hotspot_key.clone()).to_string()
-    );
+    let poc_rewards = rewards
+        .radio_reward_v2
+        .as_keyed_map(|v| v.hotspot_key_string());
+    let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
+    let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2");
+    let hotspot_3 = poc_rewards.get(HOTSPOT_3).expect("hotspot 3");
 
     // Calculating expected rewards
     // - 2 covered hexes boosted at 10x
@@ -594,23 +503,17 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     assert_eq!(0x8a1fb46622d7fff_u64, hotspot_1_boosted_hexes[1].location);
     assert_eq!(0x8a1fb49642dffff_u64, hotspot_2.nth_boosted_hex(0).location);
 
-    // confirm the total rewards allocated matches expectations
-    let poc_sum =
-        hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
-    let total = poc_sum + unallocated_reward.amount;
-    assert_eq!(total_poc_emissions, total);
-
-    // confirm the rewarded percentage amount matches expectations
-    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
-        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    assert_eq!(percent, dec!(0.6));
+    // confirm the total rewards allocated matches emissions
+    // and the rewarded percentage amount matches percentage
+    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
 }
 
 #[sqlx::test]
 async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
@@ -667,73 +570,50 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
         },
     ];
 
-    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+    // run rewards for poc and dc
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &MockHexBoostingClient::new(boosted_hexes),
+        mobile_rewards_client,
+        &speedtest_avg_client,
+        &reward_info,
+        default_price_info(),
+    )
+    .await?;
 
-    let price_info = default_price_info();
+    let rewards = mobile_rewards.finish().await?;
 
-    let (_, rewards) = tokio::join!(
-        // run rewards for poc and dc
-        rewarder::reward_poc_and_dc(
-            &pool,
-            &hex_boosting_client,
-            &mobile_rewards_client,
-            &speedtest_avg_client,
-            &reward_info,
-            price_info
-        ),
-        receive_expected_rewards(&mut mobile_rewards)
-    );
-    if let Ok((poc_rewards, unallocated_reward)) = rewards {
-        // assert poc reward outputs
-        let exp_reward_1 = 16_438_356_164_383;
-        let exp_reward_2 = 16_438_356_164_383;
-        let exp_reward_3 = 16_438_356_164_383;
+    let poc_rewards = rewards
+        .radio_reward_v2
+        .as_keyed_map(|v| v.hotspot_key_string());
+    let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
+    let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2");
+    let hotspot_3 = poc_rewards.get(HOTSPOT_3).expect("hotspot 3");
 
-        assert_eq!(exp_reward_1, poc_rewards[0].total_poc_reward());
-        assert_eq!(
-            HOTSPOT_2.to_string(),
-            PublicKeyBinary::from(poc_rewards[0].hotspot_key.clone()).to_string()
-        );
-        assert_eq!(exp_reward_2, poc_rewards[1].total_poc_reward());
-        assert_eq!(
-            HOTSPOT_1.to_string(),
-            PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
-        );
-        assert_eq!(exp_reward_3, poc_rewards[2].total_poc_reward());
-        assert_eq!(
-            HOTSPOT_3.to_string(),
-            PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
-        );
+    assert_eq!(poc_rewards.len(), 3);
 
-        // assert the number of boosted hexes for each radio
-        // all will be zero as the boost period has expired for the single boosted hex
-        assert_eq!(0, poc_rewards[0].boosted_hexes_len());
-        assert_eq!(0, poc_rewards[1].boosted_hexes_len());
-        assert_eq!(0, poc_rewards[2].boosted_hexes_len());
+    // assert poc reward outputs
+    assert_eq!(16_438_356_164_383, hotspot_1.total_poc_reward());
+    assert_eq!(16_438_356_164_383, hotspot_2.total_poc_reward());
+    assert_eq!(16_438_356_164_383, hotspot_3.total_poc_reward());
 
-        // confirm the total rewards allocated matches expectations
-        let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
-        let unallocated_sum: u64 = unallocated_reward.amount;
-        let total = poc_sum + unallocated_sum;
+    // assert the number of boosted hexes for each radio
+    // all will be zero as the boost period has expired for the single boosted hex
+    assert_eq!(0, hotspot_1.boosted_hexes_len());
+    assert_eq!(0, hotspot_2.boosted_hexes_len());
+    assert_eq!(0, hotspot_3.boosted_hexes_len());
 
-        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
-        assert_eq!(expected_sum, total);
+    // confirm the total rewards allocated matches emissions
+    // and the rewarded percentage amount matches percentage
+    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    assert_total_matches_emissions(total, &reward_info);
 
-        // confirm the rewarded percentage amount matches expectations
-        let percent = (Decimal::from(total) / reward_info.epoch_emissions)
-            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-        assert_eq!(percent, dec!(0.6));
-    } else {
-        panic!("no rewards received");
-    };
     Ok(())
 }
 
 #[sqlx::test]
 async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
@@ -796,55 +676,27 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         },
     ];
 
-    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let total_poc_emissions =
-        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    // run rewards for poc and dc
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &MockHexBoostingClient::new(boosted_hexes),
+        mobile_rewards_client,
+        &speedtest_avg_client,
+        &reward_info,
+        default_price_info(),
+    )
+    .await?;
 
-    let price_info = default_price_info();
+    let rewards = mobile_rewards.finish().await?;
 
-    let (_, rewards) = tokio::join!(
-        // run rewards for poc and dc
-        rewarder::reward_poc_and_dc(
-            &pool,
-            &hex_boosting_client,
-            &mobile_rewards_client,
-            &speedtest_avg_client,
-            &reward_info,
-            price_info
-        ),
-        receive_expected_rewards_maybe_unallocated(
-            &mut mobile_rewards,
-            ExpectUnallocated::NoWhenValue(total_poc_emissions)
-        )
-    );
+    let poc_rewards = rewards
+        .radio_reward_v2
+        .as_keyed_map(|v| v.hotspot_key_string());
+    let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1"); // full location trust 1 boost
+    let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2"); // full location NO boosts
+    let hotspot_3 = poc_rewards.get(HOTSPOT_3).expect("hotspot 3"); // reduced location trust 1 boost
 
-    let Ok((poc_rewards, unallocated_reward)) = rewards else {
-        panic!("no rewards received");
-    };
-
-    let mut poc_rewards = poc_rewards.iter();
-    let hotspot_2 = poc_rewards.next().unwrap(); // full location trust NO boosts
-    let hotspot_1 = poc_rewards.next().unwrap(); // full location trust 1 boost
-    let hotspot_3 = poc_rewards.next().unwrap(); // reduced location trust 1 boost
-    assert_eq!(
-        None,
-        poc_rewards.next(),
-        "Received more hotspots than expected in rewards"
-    );
-    assert_eq!(
-        HOTSPOT_1.to_string(),
-        PublicKeyBinary::from(hotspot_1.hotspot_key.clone()).to_string()
-    );
-    assert_eq!(
-        HOTSPOT_2.to_string(),
-        PublicKeyBinary::from(hotspot_2.hotspot_key.clone()).to_string()
-    );
-    assert_eq!(
-        HOTSPOT_3.to_string(),
-        PublicKeyBinary::from(hotspot_3.hotspot_key.clone()).to_string()
-    );
+    assert_eq!(poc_rewards.len(), 3);
 
     // Calculating expected rewards
     let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
@@ -889,20 +741,10 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     assert_eq!(2, hotspot_1.nth_boosted_hex(0).boosted_multiplier);
     assert_eq!(0x8a1fb466d2dffff_u64, hotspot_1.nth_boosted_hex(0).location);
 
-    // confirm the total rewards allocated matches expectations
-    let poc_sum =
-        hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
-    let total = poc_sum + unallocated_reward.amount;
-
-    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
-        .to_u64()
-        .unwrap();
-    assert_eq!(expected_sum, total);
-
-    // confirm the rewarded percentage amount matches expectations
-    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
-        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    assert_eq!(percent, dec!(0.6));
+    // confirm the total rewards allocated matches emissions
+    // and the rewarded percentage amount matches percentage
+    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
 }
@@ -911,7 +753,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
 async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     pool: PgPool,
 ) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
@@ -977,55 +819,27 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
         },
     ];
 
-    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let total_poc_emissions =
-        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    // run rewards for poc and dc
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &MockHexBoostingClient::new(boosted_hexes),
+        mobile_rewards_client,
+        &speedtest_avg_client,
+        &reward_info,
+        default_price_info(),
+    )
+    .await?;
 
-    let price_info = default_price_info();
+    let rewards = mobile_rewards.finish().await?;
 
-    let (_, rewards) = tokio::join!(
-        // run rewards for poc and dc
-        rewarder::reward_poc_and_dc(
-            &pool,
-            &hex_boosting_client,
-            &mobile_rewards_client,
-            &speedtest_avg_client,
-            &reward_info,
-            price_info
-        ),
-        receive_expected_rewards_maybe_unallocated(
-            &mut mobile_rewards,
-            ExpectUnallocated::NoWhenValue(total_poc_emissions)
-        )
-    );
+    let poc_rewards = rewards
+        .radio_reward_v2
+        .as_keyed_map(|v| v.hotspot_key_string());
+    let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1"); // full location trust 1 boost
+    let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2"); // full location trust NO boosts
+    let hotspot_3 = poc_rewards.get(HOTSPOT_3).expect("hotspot 3"); // reduced location trust 1 boost
 
-    let Ok((poc_rewards, unallocated_reward)) = rewards else {
-        panic!("no rewards received");
-    };
-
-    let mut poc_rewards = poc_rewards.iter();
-    let hotspot_2 = poc_rewards.next().unwrap(); // full location trust NO boosts
-    let hotspot_1 = poc_rewards.next().unwrap(); // full location trust 1 boost
-    let hotspot_3 = poc_rewards.next().unwrap(); // reduced location trust 1 boost
-    assert_eq!(
-        None,
-        poc_rewards.next(),
-        "Received more hotspots than expected in rewards"
-    );
-    assert_eq!(
-        HOTSPOT_1.to_string(),
-        PublicKeyBinary::from(hotspot_1.hotspot_key.clone()).to_string()
-    );
-    assert_eq!(
-        HOTSPOT_2.to_string(),
-        PublicKeyBinary::from(hotspot_2.hotspot_key.clone()).to_string()
-    );
-    assert_eq!(
-        HOTSPOT_3.to_string(),
-        PublicKeyBinary::from(hotspot_3.hotspot_key.clone()).to_string()
-    );
+    assert_eq!(poc_rewards.len(), 3);
 
     // Calculating expected rewards
     let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
@@ -1070,27 +884,17 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     assert_eq!(2, hotspot_1.nth_boosted_hex(0).boosted_multiplier);
     assert_eq!(0x8a1fb466d2dffff_u64, hotspot_1.nth_boosted_hex(0).location);
 
-    // confirm the total rewards allocated matches expectations
-    let poc_sum =
-        hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
-    let total = poc_sum + unallocated_reward.amount;
-
-    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
-        .to_u64()
-        .unwrap();
-    assert_eq!(expected_sum, total);
-
-    // confirm the rewarded percentage amount matches expectations
-    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
-        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    assert_eq!(percent, dec!(0.6));
+    // confirm the total rewards allocated matches emissions
+    // and the rewarded percentage amount matches percentage
+    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
 }
 
 #[sqlx::test]
 async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
@@ -1181,54 +985,27 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         },
     ];
 
-    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let total_poc_emissions =
-        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
-            .to_u64()
-            .unwrap();
+    // run rewards for poc and dc
+    rewarder::reward_poc_and_dc(
+        &pool,
+        &MockHexBoostingClient::new(boosted_hexes),
+        mobile_rewards_client,
+        &speedtest_avg_client,
+        &reward_info,
+        default_price_info(),
+    )
+    .await?;
 
-    let price_info = default_price_info();
+    let rewards = mobile_rewards.finish().await?;
 
-    let (_, rewards) = tokio::join!(
-        // run rewards for poc and dc
-        rewarder::reward_poc_and_dc(
-            &pool,
-            &hex_boosting_client,
-            &mobile_rewards_client,
-            &speedtest_avg_client,
-            &reward_info,
-            price_info
-        ),
-        receive_expected_rewards_maybe_unallocated(
-            &mut mobile_rewards,
-            ExpectUnallocated::NoWhenValue(total_poc_emissions)
-        )
-    );
-    let Ok((poc_rewards, unallocated_reward)) = rewards else {
-        panic!("no rewards received");
-    };
+    let poc_rewards = rewards
+        .radio_reward_v2
+        .as_keyed_map(|v| v.hotspot_key_string());
+    let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1"); // 2 boosts at 10x
+    let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2"); // 1 boost at 20x
+    let hotspot_4 = poc_rewards.get(HOTSPOT_4).expect("hotspot 4"); // no boosts
 
-    let mut poc_rewards = poc_rewards.iter();
-    let hotspot_2 = poc_rewards.next().unwrap(); // 1 boost at 20x
-    let hotspot_1 = poc_rewards.next().unwrap(); // 2 boosts at 10x
-    let hotspot_3 = poc_rewards.next().unwrap(); // no boosts
-    assert_eq!(
-        None,
-        poc_rewards.next(),
-        "Received more hotspots than expected in rewards"
-    );
-    assert_eq!(
-        HOTSPOT_2.to_string(),
-        PublicKeyBinary::from(hotspot_2.hotspot_key.clone()).to_string()
-    );
-    assert_eq!(
-        HOTSPOT_1.to_string(),
-        PublicKeyBinary::from(hotspot_1.hotspot_key.clone()).to_string()
-    );
-    assert_eq!(
-        HOTSPOT_4.to_string(),
-        PublicKeyBinary::from(hotspot_3.hotspot_key.clone()).to_string()
-    );
+    assert_eq!(poc_rewards.len(), 3);
 
     // Calculating expected rewards
     let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
@@ -1258,12 +1035,12 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
 
     assert_eq!(exp_reward_1, hotspot_1.total_poc_reward());
     assert_eq!(exp_reward_2, hotspot_2.total_poc_reward());
-    assert_eq!(exp_reward_3, hotspot_3.total_poc_reward());
+    assert_eq!(exp_reward_3, hotspot_4.total_poc_reward());
 
     // assert the number of boosted hexes for each radio
     assert_eq!(1, hotspot_2.boosted_hexes_len());
     assert_eq!(2, hotspot_1.boosted_hexes_len());
-    assert_eq!(1, hotspot_3.boosted_hexes_len());
+    assert_eq!(1, hotspot_4.boosted_hexes_len());
 
     // assert the hex boost multiplier values
     // as hotspot 3 has 2 covered hexes, it should have 2 boosted hexes
@@ -1280,78 +1057,16 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     assert_eq!(0x8a1fb46622d7fff_u64, hotspot_1_boosted_hexes[1].location);
     assert_eq!(0x8a1fb49642dffff_u64, hotspot_2.nth_boosted_hex(0).location);
 
-    // confirm the total rewards allocated matches expectations
-    let poc_sum =
-        hotspot_1.total_poc_reward() + hotspot_2.total_poc_reward() + hotspot_3.total_poc_reward();
-    let total = poc_sum + unallocated_reward.amount;
-
-    let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
-        .to_u64()
-        .unwrap();
-    assert_eq!(expected_sum, total);
-
-    // confirm the rewarded percentage amount matches expectations
-    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
-        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    assert_eq!(percent, dec!(0.6));
+    // confirm the total rewards allocated matches emissions
+    // and the rewarded percentage amount matches percentage
+    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default();
+    assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
 }
 
 fn rounded(num: Decimal) -> u64 {
     num.to_u64().unwrap_or_default()
-}
-
-async fn receive_expected_rewards(
-    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
-) -> anyhow::Result<(Vec<RadioRewardV2>, UnallocatedReward)> {
-    receive_expected_rewards_maybe_unallocated(mobile_rewards, ExpectUnallocated::Yes).await
-}
-
-enum ExpectUnallocated {
-    Yes,
-    NoWhenValue(u64),
-}
-
-async fn receive_expected_rewards_maybe_unallocated(
-    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
-    expect_unallocated: ExpectUnallocated,
-) -> anyhow::Result<(Vec<RadioRewardV2>, UnallocatedReward)> {
-    // get the filestore outputs from rewards run
-    let radio_reward1 = mobile_rewards.receive_radio_reward().await;
-    let radio_reward2 = mobile_rewards.receive_radio_reward().await;
-    let radio_reward3 = mobile_rewards.receive_radio_reward().await;
-
-    // ordering is not guaranteed, so stick the rewards into a vec and sort
-    let mut poc_rewards = vec![radio_reward1, radio_reward2, radio_reward3];
-    poc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
-
-    let unallocated_poc_reward = match expect_unallocated {
-        ExpectUnallocated::Yes => mobile_rewards.receive_unallocated_reward().await,
-        ExpectUnallocated::NoWhenValue(max_emission) => {
-            let total: u64 = poc_rewards.iter().map(|p| p.total_poc_reward()).sum();
-            let emitted_is_total = total == max_emission;
-            tracing::info!(
-                emitted_is_total,
-                total,
-                max_emission,
-                "receiving expected rewards unallocated amount"
-            );
-            if emitted_is_total {
-                UnallocatedReward {
-                    reward_type: UnallocatedRewardType::Poc.into(),
-                    amount: 0,
-                }
-            } else {
-                mobile_rewards.receive_unallocated_reward().await
-            }
-        }
-    };
-
-    // should be no further msgs
-    mobile_rewards.assert_no_messages();
-
-    Ok((poc_rewards, unallocated_poc_reward))
 }
 
 async fn seed_heartbeats_v1(
@@ -1859,4 +1574,21 @@ fn get_poc_allocation_buckets(total_emissions: Decimal) -> (Decimal, Decimal) {
     let regular_poc = regular_poc + data_transfer;
 
     (regular_poc, boosted_poc)
+}
+
+fn assert_total_matches_emissions(total: u64, reward_info: &EpochRewardInfo) {
+    // confirm the total rewards allocated matches expectations
+    let total_poc_emissions =
+        reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
+            .to_u64()
+            .unwrap();
+    assert_eq!(
+        total_poc_emissions, total,
+        "total does not match expected emissions"
+    );
+
+    // confirm the rewarded percentage amount matches expectations
+    let percent = (Decimal::from(total) / reward_info.epoch_emissions)
+        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+    assert_eq!(percent, dec!(0.6), "POC and DC is always 60%");
 }
