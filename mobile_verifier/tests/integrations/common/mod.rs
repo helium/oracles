@@ -25,10 +25,7 @@ use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::{collections::HashMap, str::FromStr, sync::Arc};
-use tokio::{
-    sync::{mpsc::error::TryRecvError, RwLock},
-    time::{timeout, Timeout},
-};
+use tokio::{sync::RwLock, time::Timeout};
 use tonic::async_trait;
 
 pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
@@ -86,29 +83,6 @@ pub struct MockFileSinkReceiver<T> {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>,
 }
 
-impl<T: std::fmt::Debug> MockFileSinkReceiver<T> {
-    pub async fn receive(&mut self, caller: &str) -> Option<T> {
-        match timeout(seconds(2), self.receiver.recv()).await {
-            Ok(Some(SinkMessage::Data(on_write_tx, msg))) => {
-                let _ = on_write_tx.send(Ok(()));
-                Some(msg)
-            }
-            Ok(None) => None,
-            Err(e) => panic!("{caller}: timeout while waiting for message1 {:?}", e),
-            Ok(Some(unexpected_msg)) => {
-                println!("{caller}: ignoring unexpected msg {:?}", unexpected_msg);
-                None
-            }
-        }
-    }
-
-    pub fn assert_no_messages(&mut self) {
-        let Err(TryRecvError::Empty) = self.receiver.try_recv() else {
-            panic!("receiver should have been empty")
-        };
-    }
-}
-
 impl MockFileSinkReceiver<SpeedtestAvg> {
     pub async fn get_all_speedtest_avgs(&mut self) -> Vec<SpeedtestAvg> {
         let mut messages = vec![];
@@ -117,38 +91,6 @@ impl MockFileSinkReceiver<SpeedtestAvg> {
             messages.push(msg);
         }
         messages
-    }
-}
-
-impl MockFileSinkReceiver<MobileRewardShare> {
-    pub async fn receive_service_provider_reward(&mut self) -> ServiceProviderReward {
-        match self.receive("receive_service_provider_reward").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::ServiceProviderReward(r)) => r,
-                _ => panic!("failed to get service provider reward"),
-            },
-            None => panic!("failed to receive service provider reward"),
-        }
-    }
-
-    pub async fn receive_promotion_reward(&mut self) -> PromotionReward {
-        match self.receive("receive_promotion_reward").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::PromotionReward(r)) => r,
-                _ => panic!("failed to get promotion reward"),
-            },
-            None => panic!("failed to receive promotion reward"),
-        }
-    }
-
-    pub async fn receive_unallocated_reward(&mut self) -> UnallocatedReward {
-        match self.receive("receive_unallocated_reward").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::UnallocatedReward(r)) => r,
-                _ => panic!("failed to get unallocated reward"),
-            },
-            None => panic!("failed to receive unallocated reward"),
-        }
     }
 }
 
@@ -224,10 +166,6 @@ impl RadioRewardV2Ext for RadioRewardV2 {
 
         (base + boosted).to_u64().unwrap()
     }
-}
-
-pub fn seconds(s: u64) -> std::time::Duration {
-    std::time::Duration::from_secs(s)
 }
 
 pub fn mock_hex_boost_data_default(

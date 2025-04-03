@@ -309,7 +309,7 @@ where
         reward_service_providers(
             dc_sessions,
             sp_promotions.clone(),
-            &self.mobile_rewards,
+            self.mobile_rewards.clone(),
             &reward_info,
             price_info.price_per_bone,
         )
@@ -623,7 +623,7 @@ pub async fn reward_oracles(
 pub async fn reward_service_providers(
     dc_sessions: ServiceProviderDCSessions,
     sp_promotions: ServiceProviderPromotions,
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     hnt_bone_price: Decimal,
 ) -> anyhow::Result<()> {
@@ -651,7 +651,7 @@ pub async fn reward_service_providers(
 
     // write out any unallocated service provider reward
     write_unallocated_reward(
-        mobile_rewards,
+        &mobile_rewards,
         UnallocatedRewardType::ServiceProvider,
         unallocated_sp_rewards,
         reward_info,
