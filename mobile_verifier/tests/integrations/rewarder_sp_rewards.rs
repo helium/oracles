@@ -70,7 +70,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     let mut valid_sps = HashMap::<String, String>::new();
     valid_sps.insert(PAYER_1.to_string(), SP_1.to_string());
     let carrier_client = MockCarrierServiceClient::new(valid_sps);
-    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
@@ -179,7 +179,7 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
 
     let reward_info = reward_info_24_hours();
 
-    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let mut txn = pool.begin().await?;
     seed_hotspot_data(reward_info.epoch_period.end, &mut txn).await?; // DC transferred == 6,000 reward amount
