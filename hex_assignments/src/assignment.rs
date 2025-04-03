@@ -116,16 +116,10 @@ impl HexAssignments {
             (B, A, B, _) => dec!(0.50),
             (B, B, B, _) => dec!(0.50),
             (B, C, B, _) => dec!(0.50),
-            // light blue - No POI Urbanized
-            (C, A, A, _) => dec!(0.40),
-            (C, B, A, _) => dec!(0.30),
-            (C, C, A, _) => dec!(0.05),
-            // dark blue - No POI Not Urbanized
-            (C, A, B, _) => dec!(0.20),
-            (C, B, B, _) => dec!(0.15),
-            (C, C, B, _) => dec!(0.03),
             // gray - Outside of USA
             (_, _, C, _) => dec!(0.00),
+            //HRP-20250409 - all footfall C hexes are 0.03 multiplier
+            (C, _, _, _) => dec!(0.03),
         }
     }
 }

@@ -145,13 +145,12 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
             new_hex_assignment(&mut cell, B, A, B, C, 500),
             new_hex_assignment(&mut cell, B, B, B, C, 500),
             new_hex_assignment(&mut cell, B, C, B, C, 500),
-            // light blue - No POI Urbanized, no service provider override
-            new_hex_assignment(&mut cell, C, A, A, C, 400),
-            new_hex_assignment(&mut cell, C, B, A, C, 300),
-            new_hex_assignment(&mut cell, C, C, A, C, 50),
-            // dark blue - No POI Not Urbanized, no service provider override
-            new_hex_assignment(&mut cell, C, A, B, C, 200),
-            new_hex_assignment(&mut cell, C, B, B, C, 150),
+            // HRP-20250409 footfall C
+            new_hex_assignment(&mut cell, C, A, A, C, 30),
+            new_hex_assignment(&mut cell, C, B, A, C, 30),
+            new_hex_assignment(&mut cell, C, C, A, C, 30),
+            new_hex_assignment(&mut cell, C, A, B, C, 30),
+            new_hex_assignment(&mut cell, C, B, B, C, 30),
             new_hex_assignment(&mut cell, C, C, B, C, 30),
             // gray - Outside of USA, no service provider override
             new_hex_assignment(&mut cell, A, A, C, C, 0),
@@ -431,33 +430,32 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     // hex10 | B, A, B, C    | 100 * 0.50      | 50
     // hex11 | B, B, B, C    | 100 * 0.50      | 50
     // hex12 | B, C, B, C    | 100 * 0.50      | 50
-    // == light blue - No POI Urbanized, no service provider override
-    // hex13 | C, A, A, C    | 100 * 0.40      | 40
-    // hex14 | C, B, A, C    | 100 * 0.30      | 30
-    // hex15 | C, C, A, C    | 100 * 0.05      | 5
-    // == dark blue - No POI Not Urbanized, no service provider override
-    // hex16 | C, A, B, C    | 100 * 0.20      | 20
-    // hex17 | C, B, B, C    | 100 * 0.15      | 15
+    // == HRP-2025049 footfall C
+    // hex13 | C, A, A, C    | 100 * 0.03      | 3
+    // hex14 | C, B, A, C    | 100 * 0.03      | 3
+    // hex15 | C, C, A, C    | 100 * 0.03      | 3
+    // hex16 | C, A, B, C    | 100 * 0.03      | 3
+    // hex17 | C, B, B, C    | 100 * 0.03      | 3
     // hex18 | C, C, B, C    | 100 * 0.03      | 3
     // == gray - Outside of USA, no service provider override
-    // hex19 | A, A, C, C    | 100 * 0.00     | 0
-    // hex20 | A, B, C, C    | 100 * 0.00     | 0
-    // hex21 | A, C, C, C    | 100 * 0.00     | 0
-    // hex22 | B, A, C, C    | 100 * 0.00     | 0
-    // hex23 | B, B, C, C    | 100 * 0.00     | 0
-    // hex24 | B, C, C, C    | 100 * 0.00     | 0
-    // hex25 | C, A, C, C    | 100 * 0.00     | 0
-    // hex26 | C, B, C, C    | 100 * 0.00     | 0
-    // hex27 | C, C, C, C    | 100 * 0.00     | 0
+    // hex19 | A, A, C, C    | 100 * 0.00      | 0
+    // hex20 | A, B, C, C    | 100 * 0.00      | 0
+    // hex21 | A, C, C, C    | 100 * 0.00      | 0
+    // hex22 | B, A, C, C    | 100 * 0.00      | 0
+    // hex23 | B, B, C, C    | 100 * 0.00      | 0
+    // hex24 | B, C, C, C    | 100 * 0.00      | 0
+    // hex25 | C, A, C, C    | 100 * 0.00      | 0
+    // hex26 | C, B, C, C    | 100 * 0.00      | 0
+    // hex27 | C, C, C, C    | 100 * 0.00      | 0
     // == gray - Outside of USA, HAS service provider override
-    // hex28 | A, A, C, A    | 100 * 1.00     | 100
+    // hex28 | A, A, C, A    | 100 * 1.00      | 100
 
     // -----------------------------------------------
-    //                                     = 1,173
+    //                                         = 1,078
 
     assert_eq!(
         coverage_shares.test_hotspot_reward_shares(&pub_key),
-        dec!(1173.0)
+        dec!(1078.0)
     );
 
     Ok(())
