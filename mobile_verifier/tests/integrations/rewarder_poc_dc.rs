@@ -43,8 +43,8 @@ const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 
 #[sqlx::test]
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_nonblocking_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
@@ -116,8 +116,8 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_nonblocking_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
@@ -189,8 +189,8 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_nonblocking_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
@@ -225,8 +225,8 @@ async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(msgs.radio_reward_v2.len(), 3);
 
     // ==============================================================
-    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_nonblocking_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     // SP ban radio, zeroed rewards are filtered out
     let mut txn = pool.begin().await?;
@@ -252,8 +252,8 @@ async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_nonblocking_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
@@ -308,8 +308,8 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_nonblocking_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 

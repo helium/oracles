@@ -7,7 +7,7 @@ use sqlx::PgPool;
 
 #[sqlx::test]
 async fn test_oracle_rewards(_pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
