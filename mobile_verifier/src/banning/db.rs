@@ -15,7 +15,7 @@ pub async fn get_banned_radios(
             SELECT hotspot_pubkey
             FROM hotspot_bans
             WHERE 
-                ban_type != 'data'
+                ban_type in ('all', 'poc')
                 AND (expiration_timestamp IS NULL 
                     OR expiration_timestamp >= $1)
             "#,
@@ -46,7 +46,6 @@ pub async fn update_hotspot_ban(
     ban_report: &VerifiedBanReport,
 ) -> anyhow::Result<()> {
     match &ban_report.report.report.ban_action {
-        // TODO: ignore `ban_type = Poc` when mobile_packet_verifier is updated
         BanAction::Ban(details) => {
             insert_ban(
                 conn,
