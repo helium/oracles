@@ -79,32 +79,6 @@ impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
     }
 }
 
-pub struct MockFileSinkReceiver<T> {
-    pub receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>,
-}
-
-impl MockFileSinkReceiver<SpeedtestAvg> {
-    pub async fn get_all_speedtest_avgs(&mut self) -> Vec<SpeedtestAvg> {
-        let mut messages = vec![];
-        while let Ok(SinkMessage::Data(on_write_tx, msg)) = self.receiver.try_recv() {
-            let _ = on_write_tx.send(Ok(()));
-            messages.push(msg);
-        }
-        messages
-    }
-}
-
-pub fn create_file_sink<T>() -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
-    let (tx, rx) = tokio::sync::mpsc::channel(20);
-    (
-        FileSinkClient {
-            sender: tx,
-            metric: "metric".into(),
-        },
-        MockFileSinkReceiver { receiver: rx },
-    )
-}
-
 pub trait SubscriberRewardExt {
     fn subscriber_id_string(&self) -> String;
 }

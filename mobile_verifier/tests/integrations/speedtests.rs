@@ -55,7 +55,7 @@ async fn speedtests_average_should_only_include_last_48_hours(
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
     let (speedtest_avg_client, speedtest_avg_receiver) = common::create_nonblocking_file_sink();
-    let (verified_client, _verified_receiver) = common::create_file_sink();
+    let (verified_client, _verified_receiver) = common::create_nonblocking_file_sink();
 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
