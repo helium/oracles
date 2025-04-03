@@ -316,7 +316,7 @@ where
         .await?;
 
         // process rewards for oracles
-        reward_oracles(&self.mobile_rewards, &reward_info).await?;
+        reward_oracles(self.mobile_rewards.clone(), &reward_info).await?;
 
         self.speedtest_averages.commit().await?;
         let written_files = self.mobile_rewards.commit().await?.await??;
@@ -598,7 +598,7 @@ pub async fn reward_mappers(
 }
 
 pub async fn reward_oracles(
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
     // atm 100% of oracle rewards are assigned to 'unallocated'
@@ -611,7 +611,7 @@ pub async fn reward_oracles(
         .unwrap_or(0)
         - allocated_oracle_rewards;
     write_unallocated_reward(
-        mobile_rewards,
+        &mobile_rewards,
         UnallocatedRewardType::Oracle,
         unallocated_oracle_reward_amount,
         reward_info,
