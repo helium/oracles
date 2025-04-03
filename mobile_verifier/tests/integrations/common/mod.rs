@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
-    traits::TimestampEncode,
+    traits::{MsgBytes, TimestampEncode},
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -131,16 +131,6 @@ impl MockFileSinkReceiver<MobileRewardShare> {
         }
     }
 
-    pub async fn receive_subscriber_reward(&mut self) -> SubscriberReward {
-        match self.receive("receive_subscriber_reward").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::SubscriberReward(r)) => r,
-                _ => panic!("failed to get subscriber reward"),
-            },
-            None => panic!("failed to receive subscriber reward"),
-        }
-    }
-
     pub async fn receive_promotion_reward(&mut self) -> PromotionReward {
         match self.receive("receive_promotion_reward").await {
             Some(mobile_reward) => match mobile_reward.reward {
@@ -173,7 +163,19 @@ pub fn create_file_sink<T>() -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
     )
 }
 
+pub trait SubscriberRewardExt {
+    fn subscriber_id_string(&self) -> String;
+}
+
+impl SubscriberRewardExt for SubscriberReward {
+    fn subscriber_id_string(&self) -> String {
+        use helium_proto::Message;
+        String::decode(self.subscriber_id.as_bytes()).expect("decode subscriber id")
+    }
+}
+
 pub trait RadioRewardV2Ext {
+    fn hotspot_key_string(&self) -> String;
     fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex>;
     fn nth_boosted_hex(&self, index: usize) -> radio_reward_v2::CoveredHex;
     fn boosted_hexes_len(&self) -> usize;
@@ -403,6 +405,13 @@ impl MobileRewardShareMessages {
         self.radio_reward_v2
             .iter()
             .map(|reward| reward.total_poc_reward())
+            .sum()
+    }
+
+    pub fn total_sub_discovery_amount(&self) -> u64 {
+        self.subscriber_reward
+            .iter()
+            .map(|reward| reward.discovery_location_amount)
             .sum()
     }
 }
