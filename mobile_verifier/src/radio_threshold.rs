@@ -175,7 +175,7 @@ where
             .map(anyhow::Ok)
             .try_fold(transaction, |mut transaction, ingest_report| async move {
                 // verify the report
-                let verified_report_status = self.verify_report(&ingest_report.report).await?;
+                let verified_report_status = self.verify_report(&ingest_report.report).await;
 
                 // if the report is valid then save to the db
                 // and thus available to the rewarder
@@ -254,9 +254,8 @@ where
     async fn verify_report(
         &self,
         report: &RadioThresholdReportReq,
-    ) -> anyhow::Result<RadioThresholdReportVerificationStatus> {
-        let report_validity = self.do_report_verifications(report).await;
-        Ok(report_validity)
+    ) -> RadioThresholdReportVerificationStatus {
+        self.do_report_verifications(report).await
     }
 
     async fn verify_invalid_report(
