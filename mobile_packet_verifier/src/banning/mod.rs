@@ -13,6 +13,7 @@ pub mod ingester;
 pub mod purger;
 
 pub use db::get_banned_radios;
+pub use ingester::handle_verified_ban_report;
 
 #[derive(Debug, Deserialize)]
 pub struct BanSettings {
