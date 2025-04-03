@@ -280,7 +280,13 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
 
     // ban radio
     let mut txn = pool.begin().await?;
-    ban_radio(&mut txn, pubkey.clone(), mobile_ban::BanType::All).await?;
+    ban_radio(
+        &mut txn,
+        pubkey.clone(),
+        mobile_ban::BanType::All,
+        reward_info.rewards_issued_at,
+    )
+    .await?;
     txn.commit().await?;
 
     // run rewards for poc and dc
@@ -330,7 +336,13 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
 
     // ban radio for Data only
     let mut txn = pool.begin().await?;
-    ban_radio(&mut txn, pubkey.clone(), mobile_ban::BanType::Data).await?;
+    ban_radio(
+        &mut txn,
+        pubkey.clone(),
+        mobile_ban::BanType::Data,
+        reward_info.rewards_issued_at,
+    )
+    .await?;
     txn.commit().await?;
 
     // run rewards for poc and dc
@@ -663,17 +675,18 @@ async fn ban_radio(
     txn: &mut Transaction<'_, Postgres>,
     pubkey: PublicKeyBinary,
     ban_type: mobile_ban::BanType,
+    timestamp: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     use file_store::mobile_ban;
     banning::db::update_hotspot_ban(
         txn,
         &mobile_ban::VerifiedBanReport {
-            verified_timestamp: Utc::now(),
+            verified_timestamp: timestamp,
             report: mobile_ban::BanReport {
-                received_timestamp: Utc::now(),
+                received_timestamp: timestamp,
                 report: mobile_ban::BanRequest {
                     hotspot_pubkey: pubkey.clone(),
-                    timestamp: Utc::now(),
+                    timestamp,
                     ban_key: pubkey,
                     signature: vec![],
                     ban_action: mobile_ban::BanAction::Ban(mobile_ban::BanDetails {

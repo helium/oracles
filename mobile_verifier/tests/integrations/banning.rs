@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use file_store::mobile_ban::{
     BanAction, BanDetails, BanReason, BanReport, BanRequest, BanType, UnbanDetails,
 };
@@ -196,6 +196,60 @@ async fn unverified_requests_are_not_written_to_db(pool: PgPool) -> anyhow::Resu
     process_ban_report(&mut conn, &NoneVerified, ban_report).await?;
     let banned = test_get_current_banned_radios(&pool).await?;
     assert!(!banned.is_poc_banned(&hotspot_pubkey));
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn bans_outside_of_rewardable_period_are_not_used(pool: PgPool) -> anyhow::Result<()> {
+    let mut conn = pool.acquire().await?;
+
+    let current_hotspot_pubkey = PublicKeyBinary::from(vec![1]);
+    let future_hotspot_pubkey = PublicKeyBinary::from(vec![2]);
+
+    let current_timestamp = Utc::now();
+    let future_timestamp = current_timestamp + Duration::hours(6);
+
+    let current_ban_report = BanReport {
+        received_timestamp: current_timestamp,
+        report: BanRequest {
+            hotspot_pubkey: current_hotspot_pubkey.clone(),
+            timestamp: current_timestamp - chrono::Duration::hours(6),
+            ban_key: PublicKeyBinary::from(vec![1]),
+            signature: vec![],
+            ban_action: BanAction::Ban(BanDetails {
+                hotspot_serial: "test-serial".to_string(),
+                message: "test-ban".to_string(),
+                reason: BanReason::LocationGaming,
+                ban_type: BanType::All,
+                expiration_timestamp: None,
+            }),
+        },
+    };
+
+    let future_ban_report = BanReport {
+        received_timestamp: future_timestamp,
+        report: BanRequest {
+            hotspot_pubkey: future_hotspot_pubkey.clone(),
+            timestamp: future_timestamp,
+            ban_key: PublicKeyBinary::from(vec![1]),
+            signature: vec![],
+            ban_action: BanAction::Ban(BanDetails {
+                hotspot_serial: "test-serial".to_string(),
+                message: "test-ban".to_string(),
+                reason: BanReason::LocationGaming,
+                ban_type: BanType::All,
+                expiration_timestamp: None,
+            }),
+        },
+    };
+
+    process_ban_report(&mut conn, &AllVerified, current_ban_report).await?;
+    process_ban_report(&mut conn, &AllVerified, future_ban_report).await?;
+
+    let banned = test_get_current_banned_radios(&pool).await?;
+    assert!(banned.is_poc_banned(&current_hotspot_pubkey));
+    assert!(!banned.is_poc_banned(&future_hotspot_pubkey));
 
     Ok(())
 }
