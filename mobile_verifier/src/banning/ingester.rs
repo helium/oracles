@@ -52,6 +52,7 @@ impl BanIngester {
 
         loop {
             tokio::select! {
+                biased;
                 _= &mut shutdown => break,
                 msg = self.report_rx.recv() => {
                     let Some(file_info_stream) = msg else {
