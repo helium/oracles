@@ -99,7 +99,7 @@ impl TryFrom<proto::VerifiedBanIngestReportV1> for VerifiedBanReport {
             verified_timestamp: value.verified_timestamp_ms.to_timestamp_millis()?,
             report: value
                 .report
-                .ok_or_else(|| Error::not_found("verified  ban report missing"))?
+                .ok_or_else(|| Error::not_found("verified ban report missing"))?
                 .try_into()?,
             status,
         })
@@ -114,7 +114,7 @@ impl TryFrom<proto::BanIngestReportV1> for BanReport {
             received_timestamp: value.received_timestamp_ms.to_timestamp_millis()?,
             report: value
                 .report
-                .ok_or_else(|| Error::not_found(" ban report missing"))?
+                .ok_or_else(|| Error::not_found("ban report missing"))?
                 .try_into()?,
         })
     }
