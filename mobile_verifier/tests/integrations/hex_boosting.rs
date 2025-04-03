@@ -148,7 +148,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let rewards = mobile_rewards.finish().await?;
 
     let poc_rewards = rewards
-        .radio_reward_v2
+        .radio_reward_v2s
         .as_keyed_map(|v| v.hotspot_key_string());
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
     let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2");
@@ -308,7 +308,7 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
     let rewards = mobile_rewards.finish().await?;
 
     let poc_rewards = rewards
-        .radio_reward_v2
+        .radio_reward_v2s
         .as_keyed_map(|v| v.hotspot_key_string());
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
     let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2");
@@ -441,7 +441,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     let rewards = mobile_rewards.finish().await?;
 
     let poc_rewards = rewards
-        .radio_reward_v2
+        .radio_reward_v2s
         .as_keyed_map(|v| v.hotspot_key_string());
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
     let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2");
@@ -584,7 +584,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     let rewards = mobile_rewards.finish().await?;
 
     let poc_rewards = rewards
-        .radio_reward_v2
+        .radio_reward_v2s
         .as_keyed_map(|v| v.hotspot_key_string());
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1");
     let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2");
@@ -690,7 +690,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     let rewards = mobile_rewards.finish().await?;
 
     let poc_rewards = rewards
-        .radio_reward_v2
+        .radio_reward_v2s
         .as_keyed_map(|v| v.hotspot_key_string());
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1"); // full location trust 1 boost
     let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2"); // full location NO boosts
@@ -833,7 +833,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     let rewards = mobile_rewards.finish().await?;
 
     let poc_rewards = rewards
-        .radio_reward_v2
+        .radio_reward_v2s
         .as_keyed_map(|v| v.hotspot_key_string());
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1"); // full location trust 1 boost
     let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2"); // full location trust NO boosts
@@ -999,7 +999,7 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     let rewards = mobile_rewards.finish().await?;
 
     let poc_rewards = rewards
-        .radio_reward_v2
+        .radio_reward_v2s
         .as_keyed_map(|v| v.hotspot_key_string());
     let hotspot_1 = poc_rewards.get(HOTSPOT_1).expect("hotspot 1"); // 2 boosts at 10x
     let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2"); // 1 boost at 20x

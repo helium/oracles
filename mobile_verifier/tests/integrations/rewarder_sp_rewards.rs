@@ -97,7 +97,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let rewards = mobile_rewards.finish().await?;
 
-    let sp_reward = rewards.sp_reward.first().expect("sp 1 reward");
+    let sp_reward = rewards.sp_rewards.first().expect("sp 1 reward");
     assert_eq!(5_999, sp_reward.amount);
 
     let unallocated_reward = rewards.unallocated.first().expect("unallocated");
@@ -205,7 +205,7 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     let rewards = mobile_rewards.finish().await?;
 
     let promo_rewards = rewards
-        .promotion_reward
+        .promotion_rewards
         .as_keyed_map(|reward| reward.entity.to_owned());
 
     // 1 share
@@ -224,7 +224,7 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     assert_eq!(promo_reward_3.matched_amount, 4_499);
 
     // dc_percentage * total_sp_allocation rounded down
-    let sp_reward = rewards.sp_reward.first().expect("sp 1 reward");
+    let sp_reward = rewards.sp_rewards.first().expect("sp 1 reward");
     assert_eq!(sp_reward.amount, 50_999);
 
     let unallocated_sp_rewards = get_unallocated_sp_rewards(reward_info.epoch_emissions);
