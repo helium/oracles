@@ -63,13 +63,12 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
-        &mobile_rewards_client,
+        mobile_rewards_client,
         &speedtest_avg_client,
         &reward_info,
         price_info,
     )
     .await?;
-    drop(mobile_rewards_client);
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2;
@@ -152,13 +151,12 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
-        &mobile_rewards_client,
+        mobile_rewards_client,
         &speedtest_avg_client,
         &reward_info,
         price_info,
     )
     .await?;
-    drop(mobile_rewards_client);
 
     let msgs = mobile_rewards.finish().await?;
     let poc_rewards = msgs.radio_reward_v2;
@@ -215,13 +213,12 @@ async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     let _rewarder = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
-        &mobile_rewards_client,
+        mobile_rewards_client,
         &speedtest_avg_client,
         &reward_info,
         price_info.clone(),
     )
     .await?;
-    drop(mobile_rewards_client);
 
     let msgs = mobile_rewards.finish().await?;
     assert_eq!(msgs.gateway_reward.len(), 3);
@@ -239,13 +236,12 @@ async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     let _rewarder = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
-        &mobile_rewards_client,
+        mobile_rewards_client,
         &speedtest_avg_client,
         &reward_info,
         price_info,
     )
     .await?;
-    drop(mobile_rewards_client);
 
     let msgs = mobile_rewards.finish().await?;
     assert_eq!(msgs.gateway_reward.len(), 3);
@@ -290,13 +286,12 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
-        &mobile_rewards_client,
+        mobile_rewards_client,
         &speedtest_avg_client,
         &reward_info,
         price_info,
     )
     .await?;
-    drop(mobile_rewards_client);
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2;
@@ -346,13 +341,12 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
-        &mobile_rewards_client,
+        mobile_rewards_client,
         &speedtest_avg_client,
         &reward_info,
         price_info,
     )
     .await?;
-    drop(mobile_rewards_client);
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2;

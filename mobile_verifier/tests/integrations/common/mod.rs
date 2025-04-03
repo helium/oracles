@@ -121,36 +121,6 @@ impl MockFileSinkReceiver<SpeedtestAvg> {
 }
 
 impl MockFileSinkReceiver<MobileRewardShare> {
-    pub async fn receive_radio_reward_v1(&mut self) -> RadioReward {
-        match self.receive("receive_radio_reward_v1").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::RadioReward(r)) => r,
-                err => panic!("failed to get radio reward: {err:?}"),
-            },
-            None => panic!("failed to receive radio reward"),
-        }
-    }
-
-    pub async fn receive_radio_reward(&mut self) -> RadioRewardV2 {
-        // NOTE(mj): When v1 rewards stop being written, remove this receiver
-        // and the comparison.
-        let radio_reward_v1 = self.receive_radio_reward_v1().await;
-        match self.receive("receive_radio_reward").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::RadioRewardV2(reward)) => {
-                    assert_eq!(
-                        reward.total_poc_reward(),
-                        radio_reward_v1.poc_reward,
-                        "mismatch in poc rewards between v1 and v2"
-                    );
-                    reward
-                }
-                err => panic!("failed to get radio reward: {err:?}"),
-            },
-            None => panic!("failed to receive radio reward"),
-        }
-    }
-
     pub async fn receive_service_provider_reward(&mut self) -> ServiceProviderReward {
         match self.receive("receive_service_provider_reward").await {
             Some(mobile_reward) => match mobile_reward.reward {
@@ -212,6 +182,10 @@ pub trait RadioRewardV2Ext {
 }
 
 impl RadioRewardV2Ext for RadioRewardV2 {
+    fn hotspot_key_string(&self) -> String {
+        PublicKeyBinary::from(self.hotspot_key.to_vec()).to_string()
+    }
+
     fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex> {
         self.covered_hexes.to_vec()
     }
@@ -417,6 +391,20 @@ impl MobileRewardShareMessages {
             MobileReward::PromotionReward(inner) => self.promotion_reward.push(inner),
         }
     }
+
+    pub fn unallocated_amount_or_default(&self) -> u64 {
+        self.unallocated
+            .iter()
+            .map(|reward| reward.amount)
+            .sum::<u64>()
+    }
+
+    pub fn total_poc_rewards(&self) -> u64 {
+        self.radio_reward_v2
+            .iter()
+            .map(|reward| reward.total_poc_reward())
+            .sum()
+    }
 }
 
 #[async_trait::async_trait]
@@ -483,5 +471,32 @@ impl<T: Send + Sync + 'static> NonBlockingFileSinkReceiver<T> {
             msgs,
             channel_closed,
         }
+    }
+}
+
+// Allows converting from a Vec<T> to HashMap<String, T>
+//
+// This trait assumes there will not be multiple entries
+// in the Vec for a given String.
+pub trait AsStringKeyedMap<V> {
+    fn as_keyed_map(&self, key_func: impl Fn(&V) -> String) -> HashMap<String, V>
+    where
+        Self: Sized;
+}
+
+impl<V: Clone> AsStringKeyedMap<V> for Vec<V> {
+    fn as_keyed_map(&self, key_func: impl Fn(&V) -> String) -> HashMap<String, V>
+    where
+        Self: Sized,
+    {
+        let mut map = HashMap::new();
+        for item in self {
+            let key = key_func(item);
+            if map.contains_key(&key) {
+                panic!("Duplicate string key found: {}", key);
+            }
+            map.insert(key, item.clone());
+        }
+        map
     }
 }
