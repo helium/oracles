@@ -18,14 +18,14 @@ use crate::Settings;
 
 use super::db;
 
-pub struct BanIngester {
+pub struct BanIngestor {
     pool: PgPool,
     auth_verifier: AuthorizationClient,
     report_rx: BanReportSource,
     verified_sink: VerifiedBanReportSink,
 }
 
-impl ManagedTask for BanIngester {
+impl ManagedTask for BanIngestor {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -39,7 +39,7 @@ impl ManagedTask for BanIngester {
     }
 }
 
-impl BanIngester {
+impl BanIngestor {
     pub async fn create_managed_task(
         pool: PgPool,
         file_upload: FileUpload,

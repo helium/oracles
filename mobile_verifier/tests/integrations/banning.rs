@@ -5,7 +5,7 @@ use file_store::mobile_ban::{
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use mobile_config::client::{authorization_client::AuthorizationVerifier, ClientError};
-use mobile_verifier::banning::{ingester::process_ban_report, BannedRadios};
+use mobile_verifier::banning::{ingestor::process_ban_report, BannedRadios};
 use sqlx::PgPool;
 
 struct AllVerified;

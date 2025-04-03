@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, FileStore};
 use helium_crypto::PublicKeyBinary;
-use ingester::BanIngester;
+use ingestor::BanIngestor;
 use mobile_config::client::AuthorizationClient;
 use sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor;
 use sqlx::{PgConnection, PgPool};
@@ -16,7 +16,7 @@ mod proto {
 use crate::Settings;
 
 pub mod db;
-pub mod ingester;
+pub mod ingestor;
 pub mod sp_boosted_rewards_bans;
 
 pub const BAN_CLEANUP_DAYS: i64 = 7;
@@ -29,7 +29,7 @@ pub async fn create_managed_task(
     settings: &Settings,
     seniority_update_sink: FileSinkClient<proto::SeniorityUpdate>,
 ) -> anyhow::Result<impl ManagedTask> {
-    let ban_ingestor = BanIngester::create_managed_task(
+    let ban_ingestor = BanIngestor::create_managed_task(
         pool.clone(),
         file_upload.clone(),
         file_store.clone(),
