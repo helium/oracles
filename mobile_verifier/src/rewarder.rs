@@ -286,7 +286,7 @@ where
         let poc_dc_shares = reward_poc_and_dc(
             &self.pool,
             &self.hex_service_client,
-            &self.mobile_rewards,
+            self.mobile_rewards.clone(),
             &self.speedtest_averages,
             &reward_info,
             price_info.clone(),
@@ -394,7 +394,7 @@ where
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
@@ -420,7 +420,7 @@ pub async fn reward_poc_and_dc(
     // reward dc before poc so that we can calculate the unallocated dc reward
     // and carry this into the poc pool
     let dc_unallocated_amount = reward_dc(
-        mobile_rewards,
+        &mobile_rewards,
         reward_info,
         transfer_rewards,
         &reward_shares,
@@ -431,7 +431,7 @@ pub async fn reward_poc_and_dc(
     let (poc_unallocated_amount, calculated_poc_reward_shares) = reward_poc(
         pool,
         hex_service_client,
-        mobile_rewards,
+        &mobile_rewards,
         speedtest_avg_sink,
         reward_info,
         reward_shares,
@@ -444,7 +444,7 @@ pub async fn reward_poc_and_dc(
         .unwrap_or(0);
 
     write_unallocated_reward(
-        mobile_rewards,
+        &mobile_rewards,
         UnallocatedRewardType::Poc,
         poc_unallocated_amount,
         reward_info,
