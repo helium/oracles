@@ -430,7 +430,7 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     // hex10 | B, A, B, C    | 100 * 0.50      | 50
     // hex11 | B, B, B, C    | 100 * 0.50      | 50
     // hex12 | B, C, B, C    | 100 * 0.50      | 50
-    // == HRP-2025049 footfall C
+    // == HRP-20250409 footfall C
     // hex13 | C, A, A, C    | 100 * 0.03      | 3
     // hex14 | C, B, A, C    | 100 * 0.03      | 3
     // hex15 | C, C, A, C    | 100 * 0.03      | 3
