@@ -25,7 +25,7 @@ use helium_proto::services::{
     },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
-use sqlx::{FromRow, PgPool, Pool, Postgres, Transaction};
+use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::{collections::HashSet, ops::Range};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
@@ -319,11 +319,6 @@ pub async fn save(
     Ok(())
 }
 
-#[derive(FromRow, Debug)]
-pub struct RadioThreshold {
-    hotspot_pubkey: PublicKeyBinary,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct VerifiedRadioThresholds {
     gateways: HashSet<PublicKeyBinary>,
@@ -343,16 +338,16 @@ pub async fn verified_radio_thresholds(
     pool: &sqlx::Pool<Postgres>,
     reward_period: &Range<DateTime<Utc>>,
 ) -> Result<VerifiedRadioThresholds, sqlx::Error> {
-    let mut rows = sqlx::query_as::<_, RadioThreshold>(
+    let gateways = sqlx::query_scalar::<_, PublicKeyBinary>(
         "SELECT hotspot_pubkey FROM radio_threshold WHERE threshold_timestamp < $1",
     )
     .bind(reward_period.end)
-    .fetch(pool);
-    let mut map = VerifiedRadioThresholds::default();
-    while let Some(row) = rows.try_next().await? {
-        map.insert(row.hotspot_pubkey);
-    }
-    Ok(map)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect::<HashSet<_>>();
+
+    Ok(VerifiedRadioThresholds { gateways })
 }
 
 pub async fn delete(
