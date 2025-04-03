@@ -283,25 +283,25 @@ pub struct FileSinkReceiver<T> {
 
 #[derive(Default, Debug)]
 pub struct MobileRewardShareMessages {
-    pub gateway_reward: Vec<GatewayReward>,
-    pub radio_reward: Vec<RadioReward>,
-    pub subscriber_reward: Vec<SubscriberReward>,
-    pub sp_reward: Vec<ServiceProviderReward>,
+    pub gateway_rewards: Vec<GatewayReward>,
+    pub radio_rewards: Vec<RadioReward>,
+    pub subscriber_rewards: Vec<SubscriberReward>,
+    pub sp_rewards: Vec<ServiceProviderReward>,
     pub unallocated: Vec<UnallocatedReward>,
-    pub radio_reward_v2: Vec<RadioRewardV2>,
-    pub promotion_reward: Vec<PromotionReward>,
+    pub radio_reward_v2s: Vec<RadioRewardV2>,
+    pub promotion_rewards: Vec<PromotionReward>,
 }
 
 impl MobileRewardShareMessages {
     fn insert(&mut self, item: MobileReward) {
         match item {
-            MobileReward::GatewayReward(inner) => self.gateway_reward.push(inner),
-            MobileReward::RadioReward(inner) => self.radio_reward.push(inner),
-            MobileReward::SubscriberReward(inner) => self.subscriber_reward.push(inner),
-            MobileReward::ServiceProviderReward(inner) => self.sp_reward.push(inner),
+            MobileReward::GatewayReward(inner) => self.gateway_rewards.push(inner),
+            MobileReward::RadioReward(inner) => self.radio_rewards.push(inner),
+            MobileReward::SubscriberReward(inner) => self.subscriber_rewards.push(inner),
+            MobileReward::ServiceProviderReward(inner) => self.sp_rewards.push(inner),
             MobileReward::UnallocatedReward(inner) => self.unallocated.push(inner),
-            MobileReward::RadioRewardV2(inner) => self.radio_reward_v2.push(inner),
-            MobileReward::PromotionReward(inner) => self.promotion_reward.push(inner),
+            MobileReward::RadioRewardV2(inner) => self.radio_reward_v2s.push(inner),
+            MobileReward::PromotionReward(inner) => self.promotion_rewards.push(inner),
         }
     }
 
@@ -313,14 +313,14 @@ impl MobileRewardShareMessages {
     }
 
     pub fn total_poc_rewards(&self) -> u64 {
-        self.radio_reward_v2
+        self.radio_reward_v2s
             .iter()
             .map(|reward| reward.total_poc_reward())
             .sum()
     }
 
     pub fn total_sub_discovery_amount(&self) -> u64 {
-        self.subscriber_reward
+        self.subscriber_rewards
             .iter()
             .map(|reward| reward.discovery_location_amount)
             .sum()
