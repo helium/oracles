@@ -372,7 +372,7 @@ mod tests {
     use file_store::mobile_radio_threshold::{RadioThresholdIngestReport, RadioThresholdReportReq};
     use helium_crypto::{KeyTag, Keypair};
     use rand::rngs::OsRng;
-    use sqlx::Row;
+    use sqlx::{prelude::FromRow, Row};
 
     fn generate_keypair() -> Keypair {
         Keypair::generate(KeyTag::default(), &mut OsRng)
@@ -403,11 +403,20 @@ mod tests {
         save(&ingest_report, &mut transaction).await.unwrap();
         transaction.commit().await.unwrap();
 
-        let result = sqlx::query(
+        #[derive(Debug, FromRow, PartialEq)]
+        struct TestRadioThreshold {
+            hotspot_pubkey: PublicKeyBinary,
+            bytes_threshold: i64,
+            subscriber_threshold: i32,
+            threshold_met: bool,
+            threshold_timestamp: DateTime<Utc>,
+        }
+
+        let result = sqlx::query_as::<_, TestRadioThreshold>(
             r#"
-            SELECT 
-                hotspot_pubkey, 
-                bytes_threshold, 
+            SELECT
+                hotspot_pubkey,
+                bytes_threshold,
                 subscriber_threshold,
                 threshold_timestamp,
                 threshold_met
@@ -415,23 +424,25 @@ mod tests {
             WHERE hotspot_pubkey = $1
             "#,
         )
-        .bind(hotspot_pubkey.to_string())
+        .bind(&hotspot_pubkey)
         .fetch_one(&pool)
         .await
         .unwrap();
 
-        assert_eq!(
-            result.get::<String, _>("hotspot_pubkey"),
-            hotspot_pubkey.to_string()
-        );
-        assert_eq!(result.get::<i64, _>("bytes_threshold"), 1000);
-        assert_eq!(result.get::<i32, _>("subscriber_threshold"), 50);
-        assert!(result.get::<bool, _>("threshold_met"));
+        pub fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
+            use chrono::{Duration, DurationRound};
+            ts.duration_trunc(Duration::nanoseconds(1000)).unwrap()
+        }
 
-        let stored_threshold_timestamp = result.get::<DateTime<Utc>, _>("threshold_timestamp");
         assert_eq!(
-            stored_threshold_timestamp.timestamp_millis(),
-            now.timestamp_millis()
+            result,
+            TestRadioThreshold {
+                hotspot_pubkey,
+                bytes_threshold: 1000,
+                subscriber_threshold: 50,
+                threshold_met: true,
+                threshold_timestamp: nanos_trunc(now)
+            }
         );
     }
 
@@ -485,12 +496,20 @@ mod tests {
             .unwrap();
         transaction.commit().await.unwrap();
 
-        // Verify - Query the database to confirm the record was updated
-        let result = sqlx::query(
+        #[derive(Debug, FromRow, PartialEq)]
+        struct TestRadioThreshold {
+            hotspot_pubkey: PublicKeyBinary,
+            bytes_threshold: i64,
+            subscriber_threshold: i32,
+            threshold_met: bool,
+            threshold_timestamp: DateTime<Utc>,
+        }
+
+        let result = sqlx::query_as::<_, TestRadioThreshold>(
             r#"
-            SELECT 
-                hotspot_pubkey, 
-                bytes_threshold, 
+            SELECT
+                hotspot_pubkey,
+                bytes_threshold,
                 subscriber_threshold,
                 threshold_timestamp,
                 threshold_met
@@ -498,23 +517,25 @@ mod tests {
             WHERE hotspot_pubkey = $1
             "#,
         )
-        .bind(hotspot_pubkey.to_string())
+        .bind(&hotspot_pubkey)
         .fetch_one(&pool)
         .await
         .unwrap();
 
-        // Assertions - should have the updated values
+        pub fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
+            use chrono::{Duration, DurationRound};
+            ts.duration_trunc(Duration::nanoseconds(1000)).unwrap()
+        }
+
         assert_eq!(
-            result.get::<String, _>("hotspot_pubkey"),
-            hotspot_pubkey.to_string()
-        );
-        assert_eq!(result.get::<i64, _>("bytes_threshold"), 2000); // Updated value
-        assert_eq!(result.get::<i32, _>("subscriber_threshold"), 100); // Updated value
-        assert!(result.get::<bool, _>("threshold_met"));
-        let stored_threshold_timestamp = result.get::<DateTime<Utc>, _>("threshold_timestamp");
-        assert_eq!(
-            stored_threshold_timestamp.timestamp_millis(),
-            updated_now.timestamp_millis()
+            result,
+            TestRadioThreshold {
+                hotspot_pubkey,
+                bytes_threshold: 2000,
+                subscriber_threshold: 100,
+                threshold_met: true,
+                threshold_timestamp: nanos_trunc(updated_now)
+            }
         );
     }
 
