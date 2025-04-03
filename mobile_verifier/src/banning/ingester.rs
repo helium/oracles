@@ -1,13 +1,20 @@
 use chrono::Utc;
-use file_store::mobile_ban::{
-    BanReport, BanReportSource, BanReportStream, VerifiedBanIngestReportStatus, VerifiedBanReport,
-    VerifiedBanReportSink,
+use file_store::{
+    file_upload::FileUpload,
+    mobile_ban::{
+        self, BanReport, BanReportSource, BanReportStream, VerifiedBanIngestReportStatus,
+        VerifiedBanReport, VerifiedBanReportSink,
+    },
+    traits::{FileSinkCommitStrategy, FileSinkRollTime},
+    FileStore,
 };
 use futures::{StreamExt, TryFutureExt};
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use sqlx::{PgConnection, PgPool};
-use task_manager::ManagedTask;
+use task_manager::{ManagedTask, TaskManager};
+
+use crate::Settings;
 
 use super::db;
 
@@ -33,6 +40,40 @@ impl ManagedTask for BanIngester {
 }
 
 impl BanIngester {
+    pub async fn create_managed_task(
+        pool: PgPool,
+        file_upload: FileUpload,
+        file_store: FileStore,
+        auth_verifier: AuthorizationClient,
+        settings: &Settings,
+    ) -> anyhow::Result<impl ManagedTask> {
+        let (verified_sink, verified_sink_server) = mobile_ban::verified_report_sink(
+            settings.store_base_path(),
+            file_upload.clone(),
+            FileSinkCommitStrategy::Manual,
+            FileSinkRollTime::Default,
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
+
+        let (report_rx, ingest_server) =
+            mobile_ban::report_source(pool.clone(), file_store.clone(), settings.start_after)
+                .await?;
+
+        let ingestor = Self {
+            pool,
+            auth_verifier,
+            report_rx,
+            verified_sink,
+        };
+
+        Ok(TaskManager::builder()
+            .add_task(verified_sink_server)
+            .add_task(ingest_server)
+            .add_task(ingestor)
+            .build())
+    }
+
     pub fn new(
         pool: PgPool,
         auth_verifier: AuthorizationClient,

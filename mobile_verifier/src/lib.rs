@@ -12,7 +12,6 @@ pub mod rewarder;
 pub mod seniority;
 pub mod service_provider;
 mod settings;
-pub mod sp_boosted_rewards_bans;
 pub mod speedtests;
 pub mod speedtests_average;
 pub mod subscriber_mapping_activity;

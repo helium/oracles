@@ -18,9 +18,7 @@ use mobile_verifier::{
     coverage::CoverageObject,
     data_session,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
-    reward_shares, rewarder,
-    sp_boosted_rewards_bans::{self, BannedRadioReport},
-    speedtests, unique_connections,
+    reward_shares, rewarder, speedtests, unique_connections,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -666,7 +664,10 @@ async fn ban_wifi_radio_for_epoch(
             key_type: Some(proto::KeyType::HotspotKey(pubkey.into())),
         }),
     };
-    let ban_report = BannedRadioReport::try_from(ban_report)?;
+
+    use banning::sp_boosted_rewards_bans;
+
+    let ban_report = sp_boosted_rewards_bans::BannedRadioReport::try_from(ban_report)?;
     sp_boosted_rewards_bans::db::update_report(txn, &ban_report).await?;
     Ok(())
 }

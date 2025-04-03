@@ -1,22 +1,25 @@
 use std::collections::HashSet;
 
-use chrono::Utc;
-use file_store::{
-    file_upload::FileUpload,
-    mobile_ban,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime},
-    FileStore,
-};
+use chrono::{DateTime, Utc};
+use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, FileStore};
 use helium_crypto::PublicKeyBinary;
 use ingester::BanIngester;
 use mobile_config::client::AuthorizationClient;
-use sqlx::PgPool;
+use sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor;
+use sqlx::{PgConnection, PgPool};
 use task_manager::{ManagedTask, TaskManager};
+
+mod proto {
+    pub use helium_proto::services::poc_mobile::SeniorityUpdate;
+}
 
 use crate::Settings;
 
 pub mod db;
 pub mod ingester;
+pub mod sp_boosted_rewards_bans;
+
+pub const BAN_CLEANUP_DAYS: i64 = 7;
 
 pub async fn create_managed_task(
     pool: PgPool,
@@ -24,25 +27,30 @@ pub async fn create_managed_task(
     file_store: FileStore,
     auth_verifier: AuthorizationClient,
     settings: &Settings,
+    seniority_update_sink: FileSinkClient<proto::SeniorityUpdate>,
 ) -> anyhow::Result<impl ManagedTask> {
-    let (verified_sink, verified_sink_server) = mobile_ban::verified_report_sink(
-        settings.store_base_path(),
-        file_upload,
-        FileSinkCommitStrategy::Manual,
-        FileSinkRollTime::Default,
-        env!("CARGO_PKG_NAME"),
+    let ban_ingestor = BanIngester::create_managed_task(
+        pool.clone(),
+        file_upload.clone(),
+        file_store.clone(),
+        auth_verifier.clone(),
+        settings,
     )
     .await?;
 
-    let (report_rx, ingest_server) =
-        mobile_ban::report_source(pool.clone(), file_store, settings.start_after).await?;
-
-    let ingestor = BanIngester::new(pool, auth_verifier, report_rx, verified_sink);
+    let sp_ban_ingestor = ServiceProviderBoostedRewardsBanIngestor::create_managed_task(
+        pool,
+        file_upload,
+        file_store,
+        auth_verifier,
+        settings,
+        seniority_update_sink,
+    )
+    .await?;
 
     Ok(TaskManager::builder()
-        .add_task(verified_sink_server)
-        .add_task(ingest_server)
-        .add_task(ingestor)
+        .add_task(ban_ingestor)
+        .add_task(sp_ban_ingestor)
         .build())
 }
 
@@ -57,7 +65,7 @@ impl BannedRadios {
         let banned = db::get_banned_radios(pool, date_time).await?;
 
         use helium_proto::services::poc_mobile::service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType;
-        let poc_banned_radios = crate::sp_boosted_rewards_bans::db::get_banned_radios(
+        let poc_banned_radios = sp_boosted_rewards_bans::db::get_banned_radios(
             pool,
             SpBoostedRewardsBannedRadioBanType::Poc,
             date_time,
@@ -96,4 +104,11 @@ impl BannedRadios {
     // fn is_data_banned(&self, hotspot_pubkey: &PublicKeyBinary) -> bool {
     //     self.is_banned(hotspot_pubkey, BanType::Data)
     // }
+}
+
+pub async fn clear_bans(conn: &mut PgConnection, before: DateTime<Utc>) -> anyhow::Result<()> {
+    db::clear_bans(conn, before).await?;
+    sp_boosted_rewards_bans::clear_bans(conn, before).await?;
+
+    Ok(())
 }
