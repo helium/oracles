@@ -1,7 +1,4 @@
-use crate::common::{
-    self, default_rewards_info, MockFileSinkReceiver, EMISSIONS_POOL_IN_BONES_24_HOURS,
-};
-use chrono::Duration;
+use crate::common::{self, rewards_info_24_hours, MockFileSinkReceiver};
 use helium_proto::services::poc_lora::{IotRewardShare, OperationalReward};
 use iot_verifier::{reward_share, rewarder};
 use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
@@ -11,7 +8,7 @@ use rust_decimal_macros::dec;
 async fn test_operations() -> anyhow::Result<()> {
     let (iot_rewards_client, mut iot_rewards) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = rewards_info_24_hours();
 
     let (_, rewards) = tokio::join!(
         rewarder::reward_operational(&iot_rewards_client, &reward_info),
