@@ -99,10 +99,10 @@ impl BannedRadios {
     //
     // There is a matching banned radio status in mobile-packet-verifier
     // that prevents DC from being burnt for banned radios, resulting in
-    // DataTransferSessions not being output for this servive to output them.
+    // DataTransferSessions not being output for this servive to reward them.
     //
     // fn is_data_banned(&self, hotspot_pubkey: &PublicKeyBinary) -> bool {
-    //     self.is_banned(hotspot_pubkey, BanType::Data)
+    //     unimplimented!("do not provide this method")
     // }
 }
 
