@@ -15,6 +15,8 @@ pub mod purger;
 pub use db::get_banned_radios;
 pub use ingestor::handle_verified_ban_report;
 
+pub const BAN_CLEANUP_DAYS: i64 = 7;
+
 #[derive(Debug, Deserialize)]
 pub struct BanSettings {
     /// Where do we look in s3 for ban files

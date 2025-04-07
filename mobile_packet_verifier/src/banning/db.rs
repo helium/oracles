@@ -1,10 +1,10 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::mobile_ban::{BanType, VerifiedBanReport};
 use futures::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use sqlx::{PgConnection, Row};
 
-use super::BannedRadios;
+use super::{BannedRadios, BAN_CLEANUP_DAYS};
 
 // When retreiving banned radios, we exclude Poc bans.
 // They still exist in the db to make updating bans easier.
@@ -34,7 +34,7 @@ pub async fn get_banned_radios(
 
 pub async fn cleanup_bans(conn: &mut PgConnection, before: DateTime<Utc>) -> anyhow::Result<usize> {
     let res = sqlx::query("DELETE FROM hotspot_bans WHERE expiration_timestamp < $1")
-        .bind(before)
+        .bind(before - Duration::days(BAN_CLEANUP_DAYS))
         .execute(conn)
         .await?;
 
