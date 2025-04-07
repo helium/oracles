@@ -14,6 +14,8 @@
 //!     - provider boosted hexes increase oracle boosting to 1x
 //!   - [HIP-134][carrier-offload]
 //!     - serving >25 unique connection increase oracle boosting to 1x
+//!   - [HRP-20250409][urban-area-adjustment]
+//!     - all footfall C hexes now have a 0.03 multiplier
 //!
 //! - [CoveredHex::rank]
 //!   - [HIP-105][hex-limits]
@@ -71,6 +73,7 @@
 //! [anti-gaming]:             https://github.com/helium/HIP/blob/main/0131-bridging-gap-between-verification-mappers-and-anti-gaming-measures.md
 //! [carrier-offload]:         https://github.com/helium/HIP/blob/main/0134-reward-mobile-carrier-offload-hotspots.md
 //! [sp-boost-qualifiers]:     https://github.com/helium/HIP/blob/main/0140-adjust-service-provider-boost-qualifiers.md
+//! [urban-area-adjustment]    https://github.com/helium/helium-release-proposals/blob/main/releases/20250409-core-devs.md#1-hip-103-urban-area-multiplier-adjustment
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
@@ -644,16 +647,14 @@ mod tests {
                 ranked_coverage(B, B, B, C), // 8
                 ranked_coverage(B, C, B, C), // 8
                 // 24
-                // light blue - No POI Urbanized, no SP override
-                ranked_coverage(C, A, A, C), // 6.4
-                ranked_coverage(C, B, A, C), // 4.8
-                ranked_coverage(C, C, A, C), // 0.8
-                // 12
-                // dark blue - No POI Not Urbanized, no SP override
-                ranked_coverage(C, A, B, C), // 3.2
-                ranked_coverage(C, B, B, C), // 2.4
+                // HRP-20250409 - footfall C
+                ranked_coverage(C, A, A, C), // 0.48
+                ranked_coverage(C, B, A, C), // 0.48
+                ranked_coverage(C, C, A, C), // 0.48
+                ranked_coverage(C, A, B, C), // 0.48
+                ranked_coverage(C, B, B, C), // 0.48
                 ranked_coverage(C, C, B, C), // 0.48
-                // 6.08
+                // 2.88
                 // gray - Outside of USA, no SP override
                 ranked_coverage(A, A, C, C), // 0
                 ranked_coverage(A, B, C, C), // 0
@@ -669,8 +670,8 @@ mod tests {
         )
         .expect("outdoor wifi");
 
-        // 48 + 48 + 56 + 24 + 12 + 6.08 = 194.08
-        assert_eq!(dec!(194.08), outdoor_wifi.coverage_points_v1());
+        // 48 + 48 + 56 + 24 + 2.88 = 178.88
+        assert_eq!(dec!(178.88), outdoor_wifi.coverage_points_v1());
     }
 
     #[rstest]
