@@ -168,8 +168,6 @@ async fn past_data_ban_future_poc_ban(pool: PgPool) -> anyhow::Result<()> {
         },
     };
 
-
-
     // Ban the radio yesterday, unban today.
     process_ban_report(&mut conn, &AllVerified, data_ban_report).await?;
     process_ban_report(&mut conn, &AllVerified, poc_ban_report).await?;
