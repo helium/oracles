@@ -64,6 +64,131 @@ async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+async fn past_ban_future_unban(pool: PgPool) -> anyhow::Result<()> {
+    let mut conn = pool.acquire().await?;
+    let key = PublicKeyBinary::from(vec![1]);
+
+    let yesterday = Utc::now() - Duration::hours(12);
+    let today = Utc::now();
+
+    let ban_report = VerifiedBanReport {
+        verified_timestamp: yesterday,
+        status: VerifiedBanIngestReportStatus::Valid,
+        report: BanReport {
+            received_timestamp: yesterday,
+            report: BanRequest {
+                hotspot_pubkey: key.clone(),
+                timestamp: yesterday,
+                ban_key: vec![0].into(),
+                signature: vec![],
+                ban_action: BanAction::Ban(BanDetails {
+                    hotspot_serial: "test-serial".to_string(),
+                    message: "test-message".to_string(),
+                    reason: BanReason::LocationGaming,
+                    ban_type: BanType::All,
+                    expiration_timestamp: None,
+                }),
+            },
+        },
+    };
+    let unban_report = VerifiedBanReport {
+        verified_timestamp: today,
+        status: VerifiedBanIngestReportStatus::Valid,
+        report: BanReport {
+            received_timestamp: today,
+            report: BanRequest {
+                hotspot_pubkey: key.clone(),
+                timestamp: today,
+                ban_key: vec![0].into(),
+                signature: vec![],
+                ban_action: BanAction::Unban(UnbanDetails {
+                    hotspot_serial: "test-serial".to_string(),
+                    message: "test-message".to_string(),
+                }),
+            },
+        },
+    };
+
+    // Ban the radio yesterday, unban today.
+    handle_verified_ban_report(&mut conn, ban_report).await?;
+    handle_verified_ban_report(&mut conn, unban_report).await?;
+
+    // Yesterday, radio was banned.
+    let yesterday_banned = get_banned_radios(&mut conn, yesterday).await?;
+    assert!(yesterday_banned.contains(&key));
+
+    // Today, not banned
+    let today_banned = get_banned_radios(&mut conn, today).await?;
+    assert!(!today_banned.contains(&key));
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn past_poc_ban_future_data_ban(pool: PgPool) -> anyhow::Result<()> {
+    let mut conn = pool.acquire().await?;
+    let key = PublicKeyBinary::from(vec![1]);
+
+    let yesterday = Utc::now() - Duration::hours(12);
+    let today = Utc::now();
+
+    let data_ban_report = VerifiedBanReport {
+        verified_timestamp: yesterday,
+        status: VerifiedBanIngestReportStatus::Valid,
+        report: BanReport {
+            received_timestamp: yesterday,
+            report: BanRequest {
+                hotspot_pubkey: key.clone(),
+                timestamp: yesterday,
+                ban_key: vec![0].into(),
+                signature: vec![],
+                ban_action: BanAction::Ban(BanDetails {
+                    hotspot_serial: "test-serial".to_string(),
+                    message: "test-message".to_string(),
+                    reason: BanReason::LocationGaming,
+                    ban_type: BanType::Data,
+                    expiration_timestamp: None,
+                }),
+            },
+        },
+    };
+    let poc_ban_report = VerifiedBanReport {
+        verified_timestamp: today,
+        status: VerifiedBanIngestReportStatus::Valid,
+        report: BanReport {
+            received_timestamp: today,
+            report: BanRequest {
+                hotspot_pubkey: key.clone(),
+                timestamp: today,
+                ban_key: vec![0].into(),
+                signature: vec![],
+                ban_action: BanAction::Ban(BanDetails {
+                    hotspot_serial: "test-serial".to_string(),
+                    message: "test-message".to_string(),
+                    reason: BanReason::LocationGaming,
+                    ban_type: BanType::Poc,
+                    expiration_timestamp: None,
+                }),
+            },
+        },
+    };
+
+    // Ban the radio yesterday, unban today.
+    handle_verified_ban_report(&mut conn, data_ban_report).await?;
+    handle_verified_ban_report(&mut conn, poc_ban_report).await?;
+
+    // Yesterday, radio was banned.
+    let yesterday_banned = get_banned_radios(&mut conn, yesterday).await?;
+    assert!(yesterday_banned.contains(&key));
+
+    // Today, not banned
+    let today_banned = get_banned_radios(&mut conn, today).await?;
+    assert!(!today_banned.contains(&key));
+
+    Ok(())
+}
+
+#[sqlx::test]
 async fn new_ban_replaces_old_ban(pool: PgPool) -> anyhow::Result<()> {
     let mut conn = pool.acquire().await?;
     let key = PublicKeyBinary::from(vec![1]);

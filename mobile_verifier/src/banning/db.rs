@@ -8,20 +8,31 @@ use sqlx::{PgConnection, PgPool, Row};
 
 use super::BAN_CLEANUP_DAYS;
 
+// When retreiving banned radios, we want to get the
+// latest ban for a radio at the given time.
+//
+// If a radio was banned for POC yesterday,
+// and today a ban for DATA comes in.
+// Running files from yesterday, the radio should not be banned.
 pub async fn get_banned_radios(
     pool: &PgPool,
     timestamp: DateTime<Utc>,
 ) -> anyhow::Result<HashSet<PublicKeyBinary>> {
     let banned = sqlx::query(
         r#"
-            SELECT hotspot_pubkey
+        WITH latest AS (
+            SELECT DISTINCT ON (hotspot_pubkey) *
             FROM hotspot_bans
-            WHERE 
-                ban_type in ('all', 'poc')
-                AND received_timestamp <= $1
-                AND (expiration_timestamp IS NULL 
-                    OR expiration_timestamp >= $1)
-            "#,
+            WHERE
+                received_timestamp <= $1
+                AND (expiration_timestamp IS NULL
+                    OR expiration_timestamp > $1)
+            ORDER BY hotspot_pubkey, received_timestamp DESC
+        )
+        SELECT hotspot_pubkey
+        FROM latest
+        WHERE ban_type IN ('all', 'poc')
+        "#,
     )
     .bind(timestamp)
     .fetch(pool)
@@ -59,7 +70,14 @@ pub async fn update_hotspot_ban(
             )
             .await?
         }
-        BanAction::Unban(_details) => remove_ban(conn, ban_report.hotspot_pubkey()).await?,
+        BanAction::Unban(_details) => {
+            expire_previous_bans(
+                conn,
+                ban_report.hotspot_pubkey(),
+                ban_report.report.received_timestamp,
+            )
+            .await?
+        }
     }
 
     Ok(())
@@ -74,15 +92,13 @@ async fn insert_ban(
 ) -> anyhow::Result<()> {
     sqlx::query(
         r#"
-            INSERT INTO hotspot_bans
-                (hotspot_pubkey, received_timestamp, expiration_timestamp, ban_type)
-            VALUES
-                ($1, $2, $3, $4)
-            ON CONFLICT (hotspot_pubkey) DO UPDATE SET
-                received_timestamp = EXCLUDED.received_timestamp,
-                expiration_timestamp = EXCLUDED.expiration_timestamp,
-                ban_type = EXCLUDED.ban_type
-            "#,
+        INSERT INTO hotspot_bans
+            (hotspot_pubkey, received_timestamp, expiration_timestamp, ban_type)
+        VALUES
+            ($1, $2, $3, $4)
+        ON CONFLICT (hotspot_pubkey, received_timestamp)
+        DO NOTHING
+       "#,
     )
     .bind(hotspot_pubkey)
     .bind(received_timestamp)
@@ -94,14 +110,28 @@ async fn insert_ban(
     Ok(())
 }
 
-async fn remove_ban(
+async fn expire_previous_bans(
     conn: &mut PgConnection,
     hotspot_pubkey: &PublicKeyBinary,
+    received_timestamp: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    sqlx::query("DELETE FROM hotspot_bans WHERE hotspot_pubkey = $1")
-        .bind(hotspot_pubkey)
-        .execute(conn)
-        .await?;
+    let res = sqlx::query(
+        r#"
+        UPDATE hotspot_bans
+        SET expiration_timestamp = $1
+        WHERE hotspot_pubkey = $2
+        "#,
+    )
+    .bind(received_timestamp)
+    .bind(hotspot_pubkey)
+    .execute(conn)
+    .await?;
+
+    tracing::info!(
+        %hotspot_pubkey,
+        count = res.rows_affected(),
+        "expired bans"
+    );
 
     Ok(())
 }
