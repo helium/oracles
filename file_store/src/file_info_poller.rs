@@ -91,6 +91,11 @@ where
             "file-type" => self.file_info.prefix.clone(), "process-name" => self.process_name.clone(),
         ).set(latency.num_seconds() as f64);
 
+        metrics::gauge!(
+            "file-info-poller-timestamp",
+            "file-type" => self.file_info.prefix.clone(), "process-name" => self.process_name.clone(),
+        ).set(self.file_info.timestamp.timestamp_millis() as f64);
+
         recorder.record(&self.process_name, &self.file_info).await?;
         Ok(futures::stream::iter(self.data.into_iter()).boxed())
     }
