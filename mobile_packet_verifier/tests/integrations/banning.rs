@@ -1,11 +1,101 @@
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::mobile_ban::{
     BanAction, BanDetails, BanReason, BanReport, BanRequest, BanType, UnbanDetails,
     VerifiedBanIngestReportStatus, VerifiedBanReport,
 };
 use helium_crypto::PublicKeyBinary;
+use mobile_config::EpochInfo;
 use mobile_packet_verifier::banning::{get_banned_radios, handle_verified_ban_report};
 use sqlx::PgPool;
+
+#[sqlx::test]
+async fn extremities_of_banning(pool: PgPool) -> anyhow::Result<()> {
+    const EPOCH_LENGTH: i64 = 60 * 60 * 24;
+    let epoch = chrono::Utc::now().timestamp() / EPOCH_LENGTH;
+    let epoch_info = EpochInfo::from(epoch as u64);
+
+    let banned_before = PublicKeyBinary::from(vec![1]); // banned
+    let banned_on_start = PublicKeyBinary::from(vec![2]); // banned
+    let banned_within = PublicKeyBinary::from(vec![3]); // banned
+    let banned_on_end = PublicKeyBinary::from(vec![4]); // not banned
+    let banned_after = PublicKeyBinary::from(vec![5]); // not banned
+
+    let expired_before = PublicKeyBinary::from(vec![6]); // not banned
+    let expired_on_start = PublicKeyBinary::from(vec![7]); // not banned
+    let expired_within = PublicKeyBinary::from(vec![8]); // not banned
+    let expired_on_end = PublicKeyBinary::from(vec![9]); // banned
+    let expired_after = PublicKeyBinary::from(vec![10]); // banned
+
+    fn mk_ban_report(
+        received_timestamp: DateTime<Utc>,
+        hotspot_pubkey: &PublicKeyBinary,
+        expiration: Option<DateTime<Utc>>,
+    ) -> VerifiedBanReport {
+        VerifiedBanReport {
+            verified_timestamp: received_timestamp,
+            status: VerifiedBanIngestReportStatus::Valid,
+            report: BanReport {
+                received_timestamp,
+                report: BanRequest {
+                    hotspot_pubkey: hotspot_pubkey.clone(),
+                    timestamp: received_timestamp,
+                    ban_key: PublicKeyBinary::from(vec![0]),
+                    signature: vec![],
+                    ban_action: BanAction::Ban(BanDetails {
+                        hotspot_serial: "test-serial".to_string(),
+                        message: "test-ban".to_string(),
+                        reason: BanReason::LocationGaming,
+                        ban_type: BanType::All,
+                        expiration_timestamp: expiration,
+                    }),
+                },
+            },
+        }
+    }
+
+    fn hours(h: i64) -> Duration {
+        Duration::hours(h)
+    }
+    let start = epoch_info.period.start;
+    let end = epoch_info.period.end;
+
+    #[rustfmt::skip]
+    let reports = vec![
+        // Bans
+        mk_ban_report(start - hours(2), &banned_before,   None),
+        mk_ban_report(start           , &banned_on_start, None),
+        mk_ban_report(start + hours(2), &banned_within,   None),
+        mk_ban_report(end             , &banned_on_end,   None),
+        mk_ban_report(end   + hours(2), &banned_after,    None),
+        // Expirations (always start within epoch)
+        mk_ban_report(start + hours(2), &expired_before,    Some(end - hours(1))),
+        mk_ban_report(start + hours(2), &expired_on_start,  Some(start)),
+        mk_ban_report(start + hours(2), &expired_within,    Some(end - hours(2))),
+        mk_ban_report(start + hours(2), &expired_on_end,    Some(end)),
+        mk_ban_report(start + hours(2), &expired_after,     Some(end + hours(2))),
+    ];
+
+    let mut conn = pool.acquire().await?;
+    for report in reports {
+        handle_verified_ban_report(&mut conn, report).await?;
+    }
+
+    let banned = get_banned_radios(&mut conn, end).await?;
+
+    assert!(banned.contains(&banned_before), "banned before");
+    assert!(banned.contains(&banned_on_start), "banned on start");
+    assert!(banned.contains(&banned_within), "banned wthin");
+    assert!(!banned.contains(&banned_on_end), "banned on end");
+    assert!(!banned.contains(&banned_after), "banned after");
+
+    assert!(!banned.contains(&expired_before), "expired before");
+    assert!(!banned.contains(&expired_on_start), "expired on start");
+    assert!(!banned.contains(&expired_within), "expired within");
+    assert!(banned.contains(&expired_on_end), "expired on end");
+    assert!(banned.contains(&expired_after), "expired after");
+
+    Ok(())
+}
 
 #[sqlx::test]
 async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {

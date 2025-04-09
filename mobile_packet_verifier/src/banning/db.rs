@@ -12,6 +12,17 @@ use super::{BannedRadios, BAN_CLEANUP_DAYS};
 // If a radio was banned for POC yesterday,
 // and today a ban for DATA comes in.
 // Running files from yesterday, the radio should not be banned.
+//
+// When dealing with epoch dates
+// 00:00:00 -> 23:59:59
+//
+// `received_timestamp`:
+// The ban must have been received _before_ the start of the epoch.
+// `<` exclusive less than
+//
+// `expiration_timestamp`:
+// Expiration must be throughout the entire duration of the epoch.
+// `>=` inclusive greather than
 pub async fn get_banned_radios(
     pool: &mut PgConnection,
     timestamp: DateTime<Utc>,
@@ -22,9 +33,9 @@ pub async fn get_banned_radios(
             SELECT DISTINCT ON (hotspot_pubkey) *
             FROM hotspot_bans
             WHERE
-                received_timestamp <= $1
+                received_timestamp < $1
                 AND (expiration_timestamp IS NULL
-                    OR expiration_timestamp > $1)
+                    OR expiration_timestamp >= $1)
             ORDER BY hotspot_pubkey, received_timestamp DESC
         )
         SELECT hotspot_pubkey

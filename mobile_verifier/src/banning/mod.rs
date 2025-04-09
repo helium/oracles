@@ -61,14 +61,14 @@ pub struct BannedRadios {
 }
 
 impl BannedRadios {
-    pub async fn new(pool: &PgPool, date_time: chrono::DateTime<Utc>) -> anyhow::Result<Self> {
-        let banned = db::get_banned_radios(pool, date_time).await?;
+    pub async fn new(pool: &PgPool, before: chrono::DateTime<Utc>) -> anyhow::Result<Self> {
+        let banned = db::get_banned_radios(pool, before).await?;
 
         use helium_proto::services::poc_mobile::service_provider_boosted_rewards_banned_radio_req_v1::SpBoostedRewardsBannedRadioBanType;
         let poc_banned_radios = sp_boosted_rewards_bans::db::get_banned_radios(
             pool,
             SpBoostedRewardsBannedRadioBanType::Poc,
-            date_time,
+            before,
         )
         .await?;
 
