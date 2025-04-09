@@ -26,7 +26,7 @@ use helium_proto::services::{
     },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
@@ -35,8 +35,6 @@ use crate::{
     seniority::{Seniority, SeniorityUpdate, SeniorityUpdateAction},
     Settings,
 };
-
-const CLEANUP_DAYS: i64 = 7;
 
 pub struct BannedRadioReport {
     received_timestamp: DateTime<Utc>,
@@ -99,7 +97,7 @@ impl TryFrom<ServiceProviderBoostedRewardsBannedRadioIngestReportV1> for BannedR
 
 #[derive(Debug, Default)]
 pub struct BannedRadios {
-    wifi: HashSet<PublicKeyBinary>,
+    pub wifi: HashSet<PublicKeyBinary>,
 }
 
 impl BannedRadios {
@@ -290,7 +288,7 @@ where
 }
 
 pub async fn clear_bans(
-    transaction: &mut Transaction<'_, Postgres>,
+    transaction: &mut PgConnection,
     before: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     db::cleanup(transaction, before).await
@@ -301,6 +299,8 @@ pub mod db {
 
     use chrono::Duration;
     use sqlx::Row;
+
+    use crate::banning::BAN_CLEANUP_DAYS;
 
     use super::*;
 
@@ -333,7 +333,7 @@ pub mod db {
     }
 
     pub(super) async fn cleanup(
-        transaction: &mut Transaction<'_, Postgres>,
+        transaction: &mut PgConnection,
         before: DateTime<Utc>,
     ) -> anyhow::Result<()> {
         sqlx::query(
@@ -342,7 +342,7 @@ pub mod db {
                 WHERE until < $1 or invalidated_at < $1
             "#,
         )
-        .bind(before - Duration::days(CLEANUP_DAYS))
+        .bind(before - Duration::days(BAN_CLEANUP_DAYS))
         .execute(transaction)
         .await
         .map(|_| ())

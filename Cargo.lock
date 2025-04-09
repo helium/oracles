@@ -1611,7 +1611,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#5686762b56fb03308cbe13d3f4bec9497982ad59"
+source = "git+https://github.com/helium/proto?branch=master#c828e0399f88ebbd6d13c8de39c25d70b9440f5b"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3816,7 +3816,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#5686762b56fb03308cbe13d3f4bec9497982ad59"
+source = "git+https://github.com/helium/proto?branch=master#c828e0399f88ebbd6d13c8de39c25d70b9440f5b"
 dependencies = [
  "bytes",
  "prost",

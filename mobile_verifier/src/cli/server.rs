@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::{
+    banning,
     boosting_oracles::DataSetDownloaderDaemon,
     coverage::{new_coverage_object_notification_channel, CoverageDaemon},
     data_session::DataSessionIngestor,
@@ -8,7 +9,6 @@ use crate::{
     heartbeats::wifi::WifiHeartbeatDaemon,
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
-    sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
     speedtests::SpeedtestDaemon,
     subscriber_mapping_activity::SubscriberMappingActivityDaemon,
     telemetry,
@@ -178,7 +178,7 @@ impl Cmd {
             )
             .add_task(DataSessionIngestor::create_managed_task(pool.clone(), settings).await?)
             .add_task(
-                ServiceProviderBoostedRewardsBanIngestor::create_managed_task(
+                banning::create_managed_task(
                     pool.clone(),
                     file_upload.clone(),
                     report_ingest,

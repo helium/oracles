@@ -107,6 +107,7 @@ impl_msg_verify!(poc_mobile::HexUsageStatsReqV1, signature);
 impl_msg_verify!(poc_mobile::RadioUsageStatsReqV1, signature);
 impl_msg_verify!(poc_mobile::UniqueConnectionsReqV1, signature);
 impl_msg_verify!(poc_mobile::SubscriberMappingActivityReqV1, signature);
+impl_msg_verify!(poc_mobile::BanReqV1, signature);
 
 #[cfg(test)]
 mod test {

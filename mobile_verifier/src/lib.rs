@@ -1,3 +1,4 @@
+pub mod banning;
 pub mod boosting_oracles;
 pub mod cell_type;
 pub mod cli;
@@ -11,7 +12,6 @@ pub mod rewarder;
 pub mod seniority;
 pub mod service_provider;
 mod settings;
-pub mod sp_boosted_rewards_bans;
 pub mod speedtests;
 pub mod speedtests_average;
 pub mod subscriber_mapping_activity;
