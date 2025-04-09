@@ -199,7 +199,6 @@ fn decrement_metric(payer: &PublicKeyBinary, value: u64) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[sqlx::test]
     async fn burn_metric() -> anyhow::Result<()> {

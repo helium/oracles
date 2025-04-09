@@ -1,9 +1,12 @@
+use std::time::Instant;
+
 use anyhow::Context;
 use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient,
-    mobile_session::{DataTransferEvent, DataTransferSessionReq},
+    mobile_session::{DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq},
 };
+use futures::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use mobile_packet_verifier::{
     burner::Burner,
@@ -517,6 +520,55 @@ async fn metric_test(pool: PgPool) -> anyhow::Result<()> {
     goer.go("burned", 0).await?;
 
     // Metric returns to 0
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn read_local_files() -> anyhow::Result<()> {
+    // print the working directory
+    let current_dir = std::env::current_dir()?;
+    println!("Current directory: {:?}", current_dir);
+    // list files in the directory
+    // ../../explore/rewards/data-transfer
+    let path = std::path::Path::new("../../../explore/rewards/data-transfer");
+    let mut paths = std::fs::read_dir(path)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    paths.sort();
+
+    let one = paths.first().expect("at least one file");
+    println!("gonna go get {} for you", one.display());
+
+    let mut files = file_store::file_source::source([one]);
+
+    use helium_proto::services::poc_mobile::DataTransferSessionIngestReportV1;
+    use helium_proto::Message;
+
+    // read whole file
+    let mut items = Vec::with_capacity(64050);
+    let reading = Instant::now();
+    while let Some(result) = files.next().await {
+        let msg = result?;
+        items.push(msg);
+    }
+    let total_reading = reading.elapsed();
+
+    // decode each item
+    let mut decoded = Vec::with_capacity(64050);
+    let decoding = Instant::now();
+    for item in items {
+        decoded.push(DataTransferSessionIngestReportV1::decode(item)?);
+    }
+    let total_decoding = decoding.elapsed();
+
+    println!(
+        "read {} items in {:?} and decoded them in {:?}",
+        decoded.len(),
+        total_reading,
+        total_decoding
+    );
 
     Ok(())
 }
