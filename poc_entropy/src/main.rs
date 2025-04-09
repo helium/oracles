@@ -17,7 +17,7 @@ const ENTROPY_SINK_ROLL_SECS: u64 = 2 * 60;
 #[clap(about = "Helium Entropy Server")]
 pub struct Cli {
     /// Optional configuration file to use. If present the toml file at the
-    /// given path will be loaded. Environemnt variables can override the
+    /// given path will be loaded. Environment variables can override the
     /// settins in the given file.
     #[clap(short = 'c')]
     config: Option<path::PathBuf>,
