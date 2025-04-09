@@ -10,10 +10,7 @@ use mobile_verifier::{
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
-use std::{
-    str::{self, FromStr},
-    string::ToString,
-};
+use std::{str::FromStr, string::ToString};
 
 const SUBSCRIBER_1: &str = "subscriber1";
 const SUBSCRIBER_2: &str = "subscriber2";
