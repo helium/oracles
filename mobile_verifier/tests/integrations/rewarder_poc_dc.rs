@@ -282,7 +282,7 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
         &mut txn,
         pubkey.clone(),
         mobile_ban::BanType::All,
-        reward_info.rewards_issued_at,
+        reward_info.rewards_issued_at - chrono::Duration::hours(1), // ban before epoch
     )
     .await?;
     txn.commit().await?;

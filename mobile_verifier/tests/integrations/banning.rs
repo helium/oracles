@@ -221,7 +221,8 @@ async fn past_data_ban_future_poc_ban(pool: PgPool) -> anyhow::Result<()> {
     let key = PublicKeyBinary::from(vec![1]);
 
     let yesterday = Utc::now() - Duration::hours(12);
-    let today = Utc::now();
+    let today = Utc::now() - Duration::seconds(1);
+    let now = Utc::now();
 
     let poc_ban_report = BanReport {
         received_timestamp: yesterday,
@@ -260,12 +261,12 @@ async fn past_data_ban_future_poc_ban(pool: PgPool) -> anyhow::Result<()> {
     process_ban_report(&mut conn, &AllVerified, data_ban_report).await?;
     process_ban_report(&mut conn, &AllVerified, poc_ban_report).await?;
 
-    // Yesterday, radio was banned.
-    let yesterday_banned = BannedRadios::new(&pool, yesterday).await?;
+    // Yesterday, radio was banned for today
+    let yesterday_banned = BannedRadios::new(&pool, today).await?;
     assert!(yesterday_banned.is_poc_banned(&key));
 
-    // Today, not banned
-    let today_banned = BannedRadios::new(&pool, today).await?;
+    // Now, radio is not banned
+    let today_banned = BannedRadios::new(&pool, now).await?;
     assert!(!today_banned.is_poc_banned(&key));
 
     Ok(())

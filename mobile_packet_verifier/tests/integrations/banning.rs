@@ -159,7 +159,8 @@ async fn past_ban_future_unban(pool: PgPool) -> anyhow::Result<()> {
     let key = PublicKeyBinary::from(vec![1]);
 
     let yesterday = Utc::now() - Duration::hours(12);
-    let today = Utc::now();
+    let today = Utc::now() - Duration::seconds(1);
+    let now = Utc::now();
 
     let ban_report = VerifiedBanReport {
         verified_timestamp: yesterday,
@@ -203,12 +204,12 @@ async fn past_ban_future_unban(pool: PgPool) -> anyhow::Result<()> {
     handle_verified_ban_report(&mut conn, ban_report).await?;
     handle_verified_ban_report(&mut conn, unban_report).await?;
 
-    // Yesterday, radio was banned.
-    let yesterday_banned = get_banned_radios(&mut conn, yesterday).await?;
+    // Yesterday, radio was banned for today.
+    let yesterday_banned = get_banned_radios(&mut conn, today).await?;
     assert!(yesterday_banned.contains(&key));
 
-    // Today, not banned
-    let today_banned = get_banned_radios(&mut conn, today).await?;
+    // Now, not banned
+    let today_banned = get_banned_radios(&mut conn, now).await?;
     assert!(!today_banned.contains(&key));
 
     Ok(())
@@ -220,7 +221,8 @@ async fn past_poc_ban_future_data_ban(pool: PgPool) -> anyhow::Result<()> {
     let key = PublicKeyBinary::from(vec![1]);
 
     let yesterday = Utc::now() - Duration::hours(12);
-    let today = Utc::now();
+    let today = Utc::now() - Duration::seconds(1);
+    let now = Utc::now();
 
     let data_ban_report = VerifiedBanReport {
         verified_timestamp: yesterday,
@@ -267,12 +269,12 @@ async fn past_poc_ban_future_data_ban(pool: PgPool) -> anyhow::Result<()> {
     handle_verified_ban_report(&mut conn, data_ban_report).await?;
     handle_verified_ban_report(&mut conn, poc_ban_report).await?;
 
-    // Yesterday, radio was banned.
-    let yesterday_banned = get_banned_radios(&mut conn, yesterday).await?;
+    // Yesterday, radio was banned for today.
+    let yesterday_banned = get_banned_radios(&mut conn, today).await?;
     assert!(yesterday_banned.contains(&key));
 
-    // Today, not banned
-    let today_banned = get_banned_radios(&mut conn, today).await?;
+    // Now, not banned
+    let today_banned = get_banned_radios(&mut conn, now).await?;
     assert!(!today_banned.contains(&key));
 
     Ok(())
