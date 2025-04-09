@@ -136,7 +136,7 @@ pub async fn process_ban_report(
     auth_verifier: &impl AuthorizationVerifier,
     report: BanReport,
 ) -> anyhow::Result<VerifiedBanReport> {
-    let status = get_verified_status(auth_verifier, &report.report.ban_key).await?;
+    let status = get_verified_status(auth_verifier, &report.report.ban_pubkey).await?;
 
     let verified_report = VerifiedBanReport {
         verified_timestamp: Utc::now(),

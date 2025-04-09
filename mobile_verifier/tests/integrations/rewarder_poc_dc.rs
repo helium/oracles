@@ -688,7 +688,7 @@ async fn ban_radio(
                 report: mobile_ban::BanRequest {
                     hotspot_pubkey: pubkey.clone(),
                     timestamp,
-                    ban_key: pubkey,
+                    ban_pubkey: pubkey,
                     signature: vec![],
                     ban_action: mobile_ban::BanAction::Ban(mobile_ban::BanDetails {
                         hotspot_serial: "test-serial".to_string(),

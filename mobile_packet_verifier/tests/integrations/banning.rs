@@ -39,7 +39,7 @@ async fn extremities_of_banning(pool: PgPool) -> anyhow::Result<()> {
                 report: BanRequest {
                     hotspot_pubkey: hotspot_pubkey.clone(),
                     timestamp: received_timestamp,
-                    ban_key: PublicKeyBinary::from(vec![0]),
+                    ban_pubkey: PublicKeyBinary::from(vec![0]),
                     signature: vec![],
                     ban_action: BanAction::Ban(BanDetails {
                         hotspot_serial: "test-serial".to_string(),
@@ -110,7 +110,7 @@ async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
             report: BanRequest {
                 hotspot_pubkey: key.clone(),
                 timestamp: Utc::now(),
-                ban_key: vec![0].into(),
+                ban_pubkey: vec![0].into(),
                 signature: vec![],
                 ban_action: BanAction::Ban(BanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -130,7 +130,7 @@ async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
             report: BanRequest {
                 hotspot_pubkey: key.clone(),
                 timestamp: Utc::now(),
-                ban_key: vec![0].into(),
+                ban_pubkey: vec![0].into(),
                 signature: vec![],
                 ban_action: BanAction::Unban(UnbanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -170,7 +170,7 @@ async fn past_ban_future_unban(pool: PgPool) -> anyhow::Result<()> {
             report: BanRequest {
                 hotspot_pubkey: key.clone(),
                 timestamp: yesterday,
-                ban_key: vec![0].into(),
+                ban_pubkey: vec![0].into(),
                 signature: vec![],
                 ban_action: BanAction::Ban(BanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -190,7 +190,7 @@ async fn past_ban_future_unban(pool: PgPool) -> anyhow::Result<()> {
             report: BanRequest {
                 hotspot_pubkey: key.clone(),
                 timestamp: today,
-                ban_key: vec![0].into(),
+                ban_pubkey: vec![0].into(),
                 signature: vec![],
                 ban_action: BanAction::Unban(UnbanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -232,7 +232,7 @@ async fn past_poc_ban_future_data_ban(pool: PgPool) -> anyhow::Result<()> {
             report: BanRequest {
                 hotspot_pubkey: key.clone(),
                 timestamp: yesterday,
-                ban_key: vec![0].into(),
+                ban_pubkey: vec![0].into(),
                 signature: vec![],
                 ban_action: BanAction::Ban(BanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -252,7 +252,7 @@ async fn past_poc_ban_future_data_ban(pool: PgPool) -> anyhow::Result<()> {
             report: BanRequest {
                 hotspot_pubkey: key.clone(),
                 timestamp: today,
-                ban_key: vec![0].into(),
+                ban_pubkey: vec![0].into(),
                 signature: vec![],
                 ban_action: BanAction::Ban(BanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -293,7 +293,7 @@ async fn new_ban_replaces_old_ban(pool: PgPool) -> anyhow::Result<()> {
             report: BanRequest {
                 hotspot_pubkey: key.clone(),
                 timestamp: Utc::now(),
-                ban_key: vec![0].into(),
+                ban_pubkey: vec![0].into(),
                 signature: vec![],
                 ban_action: BanAction::Ban(BanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -331,7 +331,7 @@ async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
             report: BanRequest {
                 hotspot_pubkey: expired_hotspot_pubkey.clone(),
                 timestamp: Utc::now() - chrono::Duration::hours(6),
-                ban_key: PublicKeyBinary::from(vec![1]),
+                ban_pubkey: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
                 ban_action: BanAction::Ban(BanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -352,7 +352,7 @@ async fn expired_bans_are_not_used(pool: PgPool) -> anyhow::Result<()> {
             report: BanRequest {
                 hotspot_pubkey: banned_hotspot_pubkey.clone(),
                 timestamp: Utc::now(),
-                ban_key: PublicKeyBinary::from(vec![1]),
+                ban_pubkey: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
                 ban_action: BanAction::Ban(BanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -388,7 +388,7 @@ async fn unverified_requests_are_not_written_to_db(pool: PgPool) -> anyhow::Resu
             report: BanRequest {
                 hotspot_pubkey: hotspot_pubkey.clone(),
                 timestamp: Utc::now(),
-                ban_key: PublicKeyBinary::from(vec![1]),
+                ban_pubkey: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
                 ban_action: BanAction::Ban(BanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -427,7 +427,7 @@ async fn bans_outside_of_rewardable_period_are_not_used(pool: PgPool) -> anyhow:
             report: BanRequest {
                 hotspot_pubkey: current_hotspot_pubkey.clone(),
                 timestamp: current_timestamp - chrono::Duration::hours(6),
-                ban_key: PublicKeyBinary::from(vec![1]),
+                ban_pubkey: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
                 ban_action: BanAction::Ban(BanDetails {
                     hotspot_serial: "test-serial".to_string(),
@@ -448,7 +448,7 @@ async fn bans_outside_of_rewardable_period_are_not_used(pool: PgPool) -> anyhow:
             report: BanRequest {
                 hotspot_pubkey: future_hotspot_pubkey.clone(),
                 timestamp: future_timestamp,
-                ban_key: PublicKeyBinary::from(vec![1]),
+                ban_pubkey: PublicKeyBinary::from(vec![1]),
                 signature: vec![],
                 ban_action: BanAction::Ban(BanDetails {
                     hotspot_serial: "test-serial".to_string(),

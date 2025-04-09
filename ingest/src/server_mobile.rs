@@ -596,7 +596,7 @@ where
         custom_tracing::record_b58("pub_key", &event.hotspot_pubkey);
 
         let report = self
-            .verify_public_key(&event.ban_key)
+            .verify_public_key(&event.ban_pubkey)
             .and_then(|public_key| self.verify_network(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))
             .map(|(_, event)| BanIngestReportV1 {

@@ -286,7 +286,7 @@ impl TestClient {
         let mut req = BanReqV1 {
             hotspot_pubkey,
             timestamp_ms: Utc::now().timestamp_millis() as u64,
-            ban_key: self.key_pair.public_key().into(),
+            ban_pubkey: self.key_pair.public_key().into(),
             signature: vec![],
             ban_action: Some(BanAction::Ban(BanDetailsV1 {
                 hotspot_serial: "test-serial".to_string(),

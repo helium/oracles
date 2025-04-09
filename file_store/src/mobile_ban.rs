@@ -46,7 +46,7 @@ pub struct BanReport {
 pub struct BanRequest {
     pub hotspot_pubkey: PublicKeyBinary,
     pub timestamp: DateTime<Utc>,
-    pub ban_key: PublicKeyBinary,
+    pub ban_pubkey: PublicKeyBinary,
     pub signature: Vec<u8>,
     pub ban_action: BanAction,
 }
@@ -127,7 +127,7 @@ impl TryFrom<proto::BanReqV1> for BanRequest {
         Ok(Self {
             hotspot_pubkey: value.hotspot_pubkey.into(),
             timestamp: value.timestamp_ms.to_timestamp_millis()?,
-            ban_key: value.ban_key.into(),
+            ban_pubkey: value.ban_pubkey.into(),
             signature: value.signature,
             ban_action: value.ban_action.try_into()?,
         })
@@ -221,7 +221,7 @@ impl From<BanRequest> for proto::BanReqV1 {
         Self {
             hotspot_pubkey: value.hotspot_pubkey.into(),
             timestamp_ms: value.timestamp.encode_timestamp_millis(),
-            ban_key: value.ban_key.into(),
+            ban_pubkey: value.ban_pubkey.into(),
             signature: value.signature,
             ban_action: Some(value.ban_action.into()),
         }
