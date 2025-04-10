@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use chrono::{Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, MessageReceiver},
@@ -14,7 +16,7 @@ use helium_proto::services::poc_mobile::{
 use mobile_packet_verifier::{
     accumulate::accumulate_sessions, banning, bytes_to_dc, pending_burns,
 };
-use sqlx::PgPool;
+use sqlx::{types::Uuid, PgPool};
 
 use crate::common::{TestChannelExt, TestMobileConfig};
 
@@ -426,6 +428,112 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
     assert!(!pending.is_empty());
 
     Ok(())
+}
+
+#[sqlx::test]
+async fn small_test(pool: PgPool) -> anyhow::Result<()> {
+    let payer_key =
+        PublicKeyBinary::from_str("112c85vbMr7afNc88QhTginpDEVNC5miouLWJstsX6mCaLxf8WRa")?;
+
+    let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(10);
+    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
+    let solana_network = solana::burn::TestSolanaClientMap::default();
+    solana_network.insert(&payer_key, 900_000_000).await;
+
+    let reports = vec![
+        DataTransferSessionIngestReport {
+            received_timestamp: Utc::now(),
+            report: DataTransferSessionReq {
+                rewardable_bytes: 205600,
+                pub_key: PublicKeyBinary::from(vec![1]),
+                signature: vec![],
+                data_transfer_usage: DataTransferEvent {
+                    pub_key: PublicKeyBinary::from(vec![1]),
+                    upload_bytes: 38924,
+                    download_bytes: 166676,
+                    radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
+                    event_id: Uuid::new_v4().to_string(),
+                    payer: payer_key.clone(),
+                    timestamp: Utc::now(),
+                    signature: vec![],
+                },
+            },
+        },
+        DataTransferSessionIngestReport {
+            received_timestamp: Utc::now(),
+            report: DataTransferSessionReq {
+                rewardable_bytes: 52921,
+                pub_key: PublicKeyBinary::from(vec![2]),
+                signature: vec![],
+                data_transfer_usage: DataTransferEvent {
+                    pub_key: PublicKeyBinary::from(vec![2]),
+                    upload_bytes: 20683,
+                    download_bytes: 32238,
+                    radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
+                    event_id: Uuid::new_v4().to_string(),
+                    payer: payer_key.clone(),
+                    timestamp: Utc::now(),
+                    signature: vec![],
+                },
+            },
+        },
+    ];
+
+    let metrics = TestMetrics::new();
+
+    // accumulate and burn
+    run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    mobile_packet_verifier::burner::Burner::new(
+        valid_sessions,
+        solana_network.clone(),
+        0,
+        std::time::Duration::default(),
+    )
+    .burn(&pool)
+    .await?;
+
+    metrics.assert_pending_dc_burn(&payer_key, 0).await?;
+
+    Ok(())
+}
+
+#[derive(Clone)]
+struct TestMetrics {
+    addr: String,
+}
+
+impl TestMetrics {
+    fn new() -> Self {
+        let addr = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("tcp listener");
+            listener.local_addr().expect("local address")
+        };
+
+        poc_metrics::start_metrics(&poc_metrics::Settings { endpoint: addr })
+            .expect("install prometheus");
+        TestMetrics {
+            addr: format!("http://{addr}"),
+        }
+    }
+
+    async fn assert_pending_dc_burn(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> anyhow::Result<()> {
+        let res = reqwest::get(self.addr.clone()).await?;
+        let body = res.text().await?;
+        if body.is_empty() {
+            anyhow::bail!("metrics body is empty")
+        }
+
+        let expected = format!(r#"pending_dc_burn{{payer="{}"}} {}"#, payer, amount);
+        if !body.contains(&expected) {
+            anyhow::bail!("expected: {expected} in:\n{body}");
+        }
+
+        Ok(())
+    }
 }
 
 async fn run_accumulate_sessions(
