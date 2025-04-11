@@ -203,10 +203,7 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     .await?;
 
     let rewards = mobile_rewards.finish().await?;
-
-    let promo_rewards = rewards
-        .promotion_rewards
-        .as_keyed_map(|reward| reward.entity.to_owned());
+    let promo_rewards = rewards.promotion_rewards.as_keyed_map();
 
     // 1 share
     let promo_reward_1 = promo_rewards.get("one").expect("promo 1");

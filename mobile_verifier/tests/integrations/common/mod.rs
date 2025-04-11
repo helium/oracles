@@ -79,19 +79,7 @@ impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
     }
 }
 
-pub trait SubscriberRewardExt {
-    fn subscriber_id_string(&self) -> String;
-}
-
-impl SubscriberRewardExt for SubscriberReward {
-    fn subscriber_id_string(&self) -> String {
-        use helium_proto::Message;
-        String::decode(self.subscriber_id.as_bytes()).expect("decode subscriber id")
-    }
-}
-
 pub trait RadioRewardV2Ext {
-    fn hotspot_key_string(&self) -> String;
     fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex>;
     fn nth_boosted_hex(&self, index: usize) -> radio_reward_v2::CoveredHex;
     fn boosted_hexes_len(&self) -> usize;
@@ -100,10 +88,6 @@ pub trait RadioRewardV2Ext {
 }
 
 impl RadioRewardV2Ext for RadioRewardV2 {
-    fn hotspot_key_string(&self) -> String {
-        PublicKeyBinary::from(self.hotspot_key.to_vec()).to_string()
-    }
-
     fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex> {
         self.covered_hexes.to_vec()
     }
@@ -327,7 +311,6 @@ impl MobileRewardShareMessages {
     }
 }
 
-#[async_trait::async_trait]
 trait TestTimeoutExt<T>
 where
     Self: Sized,
@@ -413,19 +396,42 @@ impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
 // This trait assumes there will not be multiple entries
 // in the Vec for a given String.
 pub trait AsStringKeyedMap<V> {
-    fn as_keyed_map(&self, key_func: impl Fn(&V) -> String) -> HashMap<String, V>
+    fn as_keyed_map(&self) -> HashMap<String, V>
     where
         Self: Sized;
 }
 
-impl<V: Clone> AsStringKeyedMap<V> for Vec<V> {
-    fn as_keyed_map(&self, key_func: impl Fn(&V) -> String) -> HashMap<String, V>
+pub trait AsStringKeyedMapKey {
+    fn key(&self) -> String;
+}
+
+impl AsStringKeyedMapKey for RadioRewardV2 {
+    fn key(&self) -> String {
+        PublicKeyBinary::from(self.hotspot_key.to_vec()).to_string()
+    }
+}
+
+impl AsStringKeyedMapKey for SubscriberReward {
+    fn key(&self) -> String {
+        use helium_proto::Message;
+        String::decode(self.subscriber_id.as_bytes()).expect("decode subscriber id")
+    }
+}
+
+impl AsStringKeyedMapKey for PromotionReward {
+    fn key(&self) -> String {
+        self.entity.to_owned()
+    }
+}
+
+impl<V: AsStringKeyedMapKey + Clone> AsStringKeyedMap<V> for Vec<V> {
+    fn as_keyed_map(&self) -> HashMap<String, V>
     where
         Self: Sized,
     {
         let mut map = HashMap::new();
         for item in self {
-            let key = key_func(item);
+            let key = item.key();
             if map.contains_key(&key) {
                 panic!("Duplicate string key found: {}", key);
             }

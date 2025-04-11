@@ -69,7 +69,7 @@ async fn speedtests_average_should_only_include_last_48_hours(
         speedtest(&hotspot, "2024-01-06 01:00:00", 10, 100, 10),
     ]);
 
-    // Drop the daemon when it's done running
+    // Drop the daemon when it's done running to close the channel
     {
         let daemon = SpeedtestDaemon::new(
             pool,

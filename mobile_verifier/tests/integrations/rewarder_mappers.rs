@@ -1,4 +1,4 @@
-use crate::common::{self, reward_info_24_hours, AsStringKeyedMap, SubscriberRewardExt};
+use crate::common::{self, reward_info_24_hours, AsStringKeyedMap};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -30,9 +30,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     rewarder::reward_mappers(&pool, mobile_rewards_client, &reward_info).await?;
 
     let rewards = mobile_rewards.finish().await?;
-    let subscriber_rewards = rewards
-        .subscriber_rewards
-        .as_keyed_map(|reward| reward.subscriber_id_string());
+    let subscriber_rewards = rewards.subscriber_rewards.as_keyed_map();
 
     // assert the mapper rewards
     // all 3 subscribers will have an equal share,
