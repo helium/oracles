@@ -1,7 +1,5 @@
-use crate::common::{
-    self, default_rewards_info, MockFileSinkReceiver, EMISSIONS_POOL_IN_BONES_24_HOURS,
-};
-use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
+use crate::common::{self, reward_info_24_hours, MockFileSinkReceiver};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
@@ -28,7 +26,7 @@ const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = reward_info_24_hours();
 
     // seed db
     let mut txn = pool.clone().begin().await?;

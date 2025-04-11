@@ -1,10 +1,9 @@
 use std::ops::Range;
 
 use crate::common::{
-    self, default_price_info, default_rewards_info, MockHexBoostingClient, RadioRewardV2Ext,
-    EMISSIONS_POOL_IN_BONES_24_HOURS,
+    self, default_price_info, reward_info_24_hours, MockHexBoostingClient, RadioRewardV2Ext,
 };
-use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use file_store::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     mobile_ban,
@@ -47,7 +46,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = reward_info_24_hours();
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
@@ -121,7 +120,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = reward_info_24_hours();
 
     let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
 
@@ -195,7 +194,7 @@ async fn test_sp_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = reward_info_24_hours();
 
     let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
 
@@ -260,7 +259,7 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = reward_info_24_hours();
 
     let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
 
@@ -317,7 +316,7 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     let (mobile_rewards_client, mobile_rewards) = common::create_nonblocking_file_sink();
     let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = reward_info_24_hours();
 
     let pubkey: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap(); // wifi hotspot
 

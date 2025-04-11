@@ -1,5 +1,4 @@
-use crate::common::{self, default_rewards_info, MockFileSinkReceiver};
-use chrono::Duration;
+use crate::common::{self, reward_info_24_hours, MockFileSinkReceiver};
 use helium_proto::services::poc_mobile::{
     MobileRewardShare, UnallocatedReward, UnallocatedRewardType,
 };
@@ -12,7 +11,7 @@ use sqlx::PgPool;
 async fn test_oracle_rewards(_pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(82_191_780_821_917, Duration::hours(24));
+    let reward_info = reward_info_24_hours();
 
     let (_, rewards) = tokio::join!(
         // run rewards for oracles
