@@ -1,19 +1,11 @@
-use std::time::Instant;
-
 use anyhow::Context;
 use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient,
-    mobile_session::{DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq},
+    mobile_session::{DataTransferEvent, DataTransferSessionReq},
 };
-use futures::StreamExt;
 use helium_crypto::PublicKeyBinary;
-use mobile_packet_verifier::{
-    burner::Burner,
-    bytes_to_dc,
-    pending_burns::{self, save_data_transfer_session},
-    pending_txns,
-};
+use mobile_packet_verifier::{burner::Burner, bytes_to_dc, pending_burns, pending_txns};
 use solana::{burn::TestSolanaClientMap, Signature};
 use sqlx::PgPool;
 use tokio::sync::mpsc::error::TryRecvError;
@@ -438,137 +430,4 @@ fn get_written_sessions<T>(rx: &mut tokio::sync::mpsc::Receiver<T>) -> Vec<T> {
         written_sessions.push(session);
     }
     written_sessions
-}
-
-struct Goer {
-    addr: String,
-    key: String,
-}
-
-impl Goer {
-    async fn go(&self, label: &str, amount: u64) -> anyhow::Result<()> {
-        let res = reqwest::get(self.addr.clone()).await?;
-        let body = res.text().await?;
-
-        println!("== {label} =====================================");
-        println!("{body}");
-
-        let needle = format!(r#"pending_dc_burn{{payer="{}"}} {amount}"#, self.key);
-        let found = body.contains(&needle);
-        assert!(found, "{needle} not in response");
-        Ok(())
-    }
-}
-
-#[sqlx::test]
-async fn metric_test(pool: PgPool) -> anyhow::Result<()> {
-    let key = PublicKeyBinary::from(vec![1]);
-
-    let addr = {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-        listener.local_addr()?
-    };
-
-    poc_metrics::start_metrics(&poc_metrics::Settings { endpoint: addr })?;
-    let goer = Goer {
-        addr: format!("http://{addr}"),
-        key: key.to_string(),
-    };
-
-    // Save rewardable bytes without hitting the metric
-
-    let mut txn = pool.begin().await?;
-    save_data_transfer_session(
-        &mut txn,
-        &pending_burns::DataTransferSession {
-            pub_key: key.clone(),
-            payer: key.clone(),
-            uploaded_bytes: 1,
-            downloaded_bytes: 1,
-            rewardable_bytes: 100_000,
-            // timestamps are the same upon ingest
-            first_timestamp: Utc::now(),
-            last_timestamp: Utc::now(),
-        },
-    )
-    .await?;
-    txn.commit().await?;
-
-    // goer.go("starting, should see nothing", 0).await?;
-    // Initialize
-    pending_burns::initialize(&pool).await?;
-    goer.go("initialized", 5).await?;
-
-    // Add more data sessions
-    save_data_transfer_sessions(&pool, &[(&key, &key, 100_000)]).await?;
-    goer.go("added more", 10).await?;
-
-    // Burn data sessions
-    let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(10);
-    let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
-
-    let solana_network = TestSolanaClientMap::default();
-    solana_network.insert(&key, 999_999).await;
-
-    let burner = Burner::new(
-        valid_sessions,
-        solana_network,
-        0,
-        std::time::Duration::default(),
-    );
-    burner.burn(&pool).await?;
-    goer.go("burned", 0).await?;
-
-    // Metric returns to 0
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn read_local_files() -> anyhow::Result<()> {
-    // print the working directory
-    let current_dir = std::env::current_dir()?;
-    println!("Current directory: {:?}", current_dir);
-    // list files in the directory
-    // ../../explore/rewards/data-transfer
-    let path = std::path::Path::new("../../../explore/rewards/data-transfer");
-    let mut paths = std::fs::read_dir(path)?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .collect::<Vec<_>>();
-    paths.sort();
-
-    let one = paths.first().expect("at least one file");
-    println!("gonna go get {} for you", one.display());
-
-    let mut files = file_store::file_source::source([one]);
-
-    use helium_proto::services::poc_mobile::DataTransferSessionIngestReportV1;
-    use helium_proto::Message;
-
-    // read whole file
-    let mut items = Vec::with_capacity(64050);
-    let reading = Instant::now();
-    while let Some(result) = files.next().await {
-        let msg = result?;
-        items.push(msg);
-    }
-    let total_reading = reading.elapsed();
-
-    // decode each item
-    let mut decoded = Vec::with_capacity(64050);
-    let decoding = Instant::now();
-    for item in items {
-        decoded.push(DataTransferSessionIngestReportV1::decode(item)?);
-    }
-    let total_decoding = decoding.elapsed();
-
-    println!(
-        "read {} items in {:?} and decoded them in {:?}",
-        decoded.len(),
-        total_reading,
-        total_decoding
-    );
-
-    Ok(())
 }

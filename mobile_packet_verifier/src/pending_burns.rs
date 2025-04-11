@@ -12,13 +12,13 @@ const METRIC_NAME: &str = "pending_dc_burn";
 
 #[derive(FromRow)]
 pub struct DataTransferSession {
-    pub pub_key: PublicKeyBinary,
-    pub payer: PublicKeyBinary,
-    pub uploaded_bytes: i64,
-    pub downloaded_bytes: i64,
-    pub rewardable_bytes: i64,
-    pub first_timestamp: DateTime<Utc>,
-    pub last_timestamp: DateTime<Utc>,
+    pub_key: PublicKeyBinary,
+    payer: PublicKeyBinary,
+    uploaded_bytes: i64,
+    downloaded_bytes: i64,
+    rewardable_bytes: i64,
+    first_timestamp: DateTime<Utc>,
+    last_timestamp: DateTime<Utc>,
 }
 
 impl DataTransferSession {
@@ -133,9 +133,6 @@ pub async fn save_data_transfer_session_req(
     )
     .await?;
 
-    let dc_to_burn = bytes_to_dc(req.rewardable_bytes);
-    increment_metric(&req.data_transfer_usage.payer, dc_to_burn);
-
     Ok(())
 }
 
@@ -173,14 +170,11 @@ pub async fn save_data_transfer_session(
 pub async fn delete_for_payer(
     conn: &Pool<Postgres>,
     payer: &PublicKeyBinary,
-    burnt_dc: u64,
 ) -> anyhow::Result<()> {
     sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
         .bind(payer)
         .execute(conn)
         .await?;
-
-    decrement_metric(payer, burnt_dc);
 
     Ok(())
 }
@@ -189,46 +183,10 @@ fn set_metric(payer: &PublicKeyBinary, value: u64) {
     metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).set(value as f64);
 }
 
-fn increment_metric(payer: &PublicKeyBinary, value: u64) {
+pub fn increment_metric(payer: &PublicKeyBinary, value: u64) {
     metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).increment(value as f64);
 }
 
-fn decrement_metric(payer: &PublicKeyBinary, value: u64) {
+pub fn decrement_metric(payer: &PublicKeyBinary, value: u64) {
     metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).decrement(value as f64);
-}
-
-#[cfg(test)]
-mod tests {
-
-    #[sqlx::test]
-    async fn burn_metric() -> anyhow::Result<()> {
-        let addr = {
-            let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-            listener.local_addr()?
-        };
-
-        poc_metrics::start_metrics(&poc_metrics::Settings { endpoint: addr })?;
-        println!("listening on {addr}");
-        let goer = Goer {
-            addr: format!("http://{addr}"),
-        };
-
-        goer.go().await?;
-
-        Ok(())
-    }
-
-    struct Goer {
-        addr: String,
-    }
-
-    impl Goer {
-        async fn go(&self) -> anyhow::Result<()> {
-            let res = reqwest::get(self.addr.clone()).await?;
-            let body = res.text().await?;
-
-            println!("response:\n{body}");
-            Ok(())
-        }
-    }
 }
