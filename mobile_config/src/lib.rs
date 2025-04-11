@@ -97,7 +97,7 @@ impl std::fmt::Display for KeyRole {
             Self::Oracle => "oracle",
             Self::Router => "router",
             Self::Pcs => "pcs",
-            Self::Banning => "ban",
+            Self::Banning => "banning",
         };
         f.write_str(s)
     }
