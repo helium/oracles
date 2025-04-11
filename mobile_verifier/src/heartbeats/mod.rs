@@ -2,7 +2,7 @@ pub mod last_location;
 pub mod wifi;
 
 use crate::{
-    cell_type::{CellType, CellTypeLabel},
+    cell_type::CellType,
     coverage::{self, CoverageClaimTimeCache, CoverageObjectCache, CoverageObjectMeta},
     geofence::GeofenceValidator,
     seniority::{Seniority, SeniorityUpdate},
@@ -205,8 +205,7 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
-    pub cell_type: CellType,
-    pub distances_to_asserted: Option<Vec<i64>>,
+    pub distances_to_asserted: Vec<i64>,
     pub trust_score_multipliers: Vec<Decimal>,
     pub coverage_object: Uuid,
 }
@@ -216,11 +215,8 @@ impl HeartbeatReward {
         KeyType::Wifi(&self.hotspot_key)
     }
 
-    pub fn id(&self) -> anyhow::Result<String> {
-        match self.cell_type.to_label() {
-            CellTypeLabel::Wifi => Ok(self.hotspot_key.to_string()),
-            _ => Err(anyhow!("failed to derive label from cell type")),
-        }
+    pub fn id(&self) -> String {
+        self.hotspot_key.to_string()
     }
 
     pub fn validated<'a>(
@@ -234,16 +230,21 @@ impl HeartbeatReward {
             .fetch(exec)
     }
 
-    pub fn iter_distances_and_scores(&self) -> impl Iterator<Item = (i64, Decimal)> {
-        let fallback: Vec<i64> = std::iter::repeat(0)
-            .take(self.trust_score_multipliers.len())
-            .collect();
+    pub fn iter_distances_and_scores(
+        &self,
+    ) -> anyhow::Result<impl Iterator<Item = (i64, Decimal)>> {
+        // This should never happen if valid_radio.sql is not touched
+        if self.trust_score_multipliers.len() != self.distances_to_asserted.len() {
+            return Err(anyhow!(
+                "Mismatched lengths between distances_to_asserted and trust_score_multipliers"
+            ));
+        }
 
-        self.distances_to_asserted
+        Ok(self
+            .distances_to_asserted
             .clone()
-            .unwrap_or(fallback)
             .into_iter()
-            .zip(self.trust_score_multipliers.clone())
+            .zip(self.trust_score_multipliers.clone()))
     }
 }
 
@@ -629,11 +630,6 @@ pub async fn clear_heartbeats(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM cbrs_heartbeats WHERE truncated_timestamp < $1;")
-        .bind(timestamp)
-        .execute(&mut *tx)
-        .await?;
-
     sqlx::query("DELETE FROM wifi_heartbeats WHERE truncated_timestamp < $1;")
         .bind(timestamp)
         .execute(&mut *tx)
@@ -649,6 +645,38 @@ mod test {
     use super::*;
     use file_store::wifi_heartbeat::WifiHeartbeat;
     use proto::SeniorityUpdateReason::*;
+
+    #[test]
+    fn test_iter_distances_and_scores_with_matching_lengths() {
+        let reward = HeartbeatReward {
+            hotspot_key: PublicKeyBinary::from(vec![1, 2, 3]),
+            distances_to_asserted: vec![10, 20, 30],
+            trust_score_multipliers: vec![dec!(0.25), dec!(0.5), dec!(1.0)],
+            coverage_object: uuid::Uuid::new_v4(),
+        };
+
+        let result = reward.iter_distances_and_scores();
+        assert!(result.is_ok(), "Expected successful iteration");
+
+        let pairs: Vec<(i64, Decimal)> = result.unwrap().collect();
+        assert_eq!(pairs.len(), 3, "Expected 3 pairs in the iterator");
+        assert_eq!(pairs[0], (10, dec!(0.25)));
+        assert_eq!(pairs[1], (20, dec!(0.5)));
+        assert_eq!(pairs[2], (30, dec!(1.0)));
+    }
+
+    #[test]
+    fn test_iter_distances_and_scores_with_mismatched_lengths() {
+        let reward = HeartbeatReward {
+            hotspot_key: PublicKeyBinary::from(vec![1, 2, 3]),
+            distances_to_asserted: vec![10, 20], // Only 2 elements
+            trust_score_multipliers: vec![dec!(0.25), dec!(0.5), dec!(1.0)], // 3 elements
+            coverage_object: uuid::Uuid::new_v4(),
+        };
+
+        let result = reward.iter_distances_and_scores();
+        assert!(result.is_err(), "Expected error due to mismatched lengths");
+    }
 
     fn heartbeat(timestamp: DateTime<Utc>, coverage_object: Uuid) -> ValidatedHeartbeat {
         ValidatedHeartbeat {
