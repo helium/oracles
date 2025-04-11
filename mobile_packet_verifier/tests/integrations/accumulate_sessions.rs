@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use anyhow::Context;
 use chrono::{Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, MessageReceiver},
@@ -14,7 +15,7 @@ use helium_proto::services::poc_mobile::{
     DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
-    accumulate::accumulate_sessions, banning, bytes_to_dc, pending_burns,
+    accumulate::accumulate_sessions, banning, bytes_to_dc, dc_to_bytes, pending_burns,
 };
 use sqlx::{types::Uuid, PgPool};
 
@@ -435,54 +436,43 @@ async fn small_test(pool: PgPool) -> anyhow::Result<()> {
     let payer_key =
         PublicKeyBinary::from_str("112c85vbMr7afNc88QhTginpDEVNC5miouLWJstsX6mCaLxf8WRa")?;
 
-    let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(10);
+    let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let solana_network = solana::burn::TestSolanaClientMap::default();
     solana_network.insert(&payer_key, 900_000_000).await;
 
-    let reports = vec![
-        DataTransferSessionIngestReport {
-            received_timestamp: Utc::now(),
-            report: DataTransferSessionReq {
-                rewardable_bytes: 205600,
+    let mk_dt = |rewardable_bytes: u64| DataTransferSessionIngestReport {
+        received_timestamp: Utc::now(),
+        report: DataTransferSessionReq {
+            rewardable_bytes,
+            pub_key: PublicKeyBinary::from(vec![1]),
+            signature: vec![],
+            data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![1]),
+                upload_bytes: 0,
+                download_bytes: 0,
+                radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
+                event_id: Uuid::new_v4().to_string(),
+                payer: payer_key.clone(),
+                timestamp: Utc::now(),
                 signature: vec![],
-                data_transfer_usage: DataTransferEvent {
-                    pub_key: PublicKeyBinary::from(vec![1]),
-                    upload_bytes: 38924,
-                    download_bytes: 166676,
-                    radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
-                    event_id: Uuid::new_v4().to_string(),
-                    payer: payer_key.clone(),
-                    timestamp: Utc::now(),
-                    signature: vec![],
-                },
             },
         },
-        DataTransferSessionIngestReport {
-            received_timestamp: Utc::now(),
-            report: DataTransferSessionReq {
-                rewardable_bytes: 52921,
-                pub_key: PublicKeyBinary::from(vec![2]),
-                signature: vec![],
-                data_transfer_usage: DataTransferEvent {
-                    pub_key: PublicKeyBinary::from(vec![2]),
-                    upload_bytes: 20683,
-                    download_bytes: 32238,
-                    radio_access_technology: DataTransferRadioAccessTechnology::Wlan,
-                    event_id: Uuid::new_v4().to_string(),
-                    payer: payer_key.clone(),
-                    timestamp: Utc::now(),
-                    signature: vec![],
-                },
-            },
-        },
-    ];
+    };
+
+    // Fill reports with rewardable_byte values that are just over and under the rounding limit.
+    let mut reports = vec![];
+    for _ in 0..1000 {
+        reports.push(mk_dt(dc_to_bytes(100) + 2));
+        reports.push(mk_dt(dc_to_bytes(150) - 2));
+    }
 
     let metrics = TestMetrics::new();
 
     // accumulate and burn
-    run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid()).await?;
+    run_accumulate_sessions(&pool, reports, TestMobileConfig::all_valid())
+        .await
+        .context("acummulating sessions")?;
     mobile_packet_verifier::burner::Burner::new(
         valid_sessions,
         solana_network.clone(),
@@ -490,7 +480,8 @@ async fn small_test(pool: PgPool) -> anyhow::Result<()> {
         std::time::Duration::default(),
     )
     .burn(&pool)
-    .await?;
+    .await
+    .context("burning")?;
 
     metrics.assert_pending_dc_burn(&payer_key, 0).await?;
 
@@ -543,7 +534,7 @@ async fn run_accumulate_sessions(
 ) -> anyhow::Result<MessageReceiver<VerifiedDataTransferIngestReportV1>> {
     let mut txn = pool.begin().await?;
 
-    let (verified_sessions_tx, verified_sessions_rx) = tokio::sync::mpsc::channel(10);
+    let (verified_sessions_tx, verified_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let verified_sessions = FileSinkClient::new(verified_sessions_tx, "test");
 
     let banned_radios = banning::get_banned_radios(&mut txn, Utc::now()).await?;
