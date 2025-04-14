@@ -1,13 +1,8 @@
-use crate::common::{self, reward_info_24_hours, MockFileSinkReceiver};
+use crate::common::{self, reward_info_24_hours, AsStringKeyedMap};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::{
-    services::poc_mobile::{
-        MobileRewardShare, SubscriberReward, UnallocatedReward, UnallocatedRewardType,
-    },
-    Message,
-};
+use helium_proto::{services::poc_mobile::UnallocatedRewardType, Message};
 use mobile_verifier::{
     reward_shares, rewarder,
     subscriber_mapping_activity::{self, SubscriberMappingActivity},
@@ -24,8 +19,7 @@ const HOTSPOT_1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 
 #[sqlx::test]
 async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
-
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
     let reward_info = reward_info_24_hours();
 
     // seed db
@@ -33,91 +27,47 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     seed_mapping_data(reward_info.epoch_period.end, &mut txn).await?;
     txn.commit().await.expect("db txn failed");
 
-    let (_, rewards) = tokio::join!(
-        rewarder::reward_mappers(&pool, &mobile_rewards_client, &reward_info),
-        receive_expected_rewards(&mut mobile_rewards)
+    rewarder::reward_mappers(&pool, mobile_rewards_client, &reward_info).await?;
+
+    let rewards = mobile_rewards.finish().await?;
+    let subscriber_rewards = rewards.subscriber_rewards.as_keyed_map();
+
+    // assert the mapper rewards
+    // all 3 subscribers will have an equal share,
+    // requirement is 1 qualifying mapping criteria report per epoch
+    // subscriber 1 has two qualifying mapping criteria reports,
+    // other two subscribers one qualifying mapping criteria reports
+    let sub_reward_1 = subscriber_rewards.get(SUBSCRIBER_1).expect("sub 1");
+    assert_eq!(5_479_452_054_794, sub_reward_1.discovery_location_amount);
+
+    let sub_reward_2 = subscriber_rewards.get(SUBSCRIBER_2).expect("sub 2");
+    assert_eq!(5_479_452_054_794, sub_reward_2.discovery_location_amount);
+
+    let sub_reward_3 = subscriber_rewards.get(SUBSCRIBER_3).expect("sub 3");
+    assert_eq!(5_479_452_054_794, sub_reward_3.discovery_location_amount);
+
+    // confirm our unallocated amount
+    let unallocated_reward = rewards.unallocated.first().expect("unallocated");
+    assert_eq!(
+        UnallocatedRewardType::Mapper as i32,
+        unallocated_reward.reward_type
     );
+    assert_eq!(1, unallocated_reward.amount);
 
-    if let Ok((subscriber_rewards, unallocated_reward)) = rewards {
-        // assert the mapper rewards
-        // all 3 subscribers will have an equal share,
-        // requirement is 1 qualifying mapping criteria report per epoch
-        // subscriber 1 has two qualifying mapping criteria reports,
-        // other two subscribers one qualifying mapping criteria reports
-        assert_eq!(
-            SUBSCRIBER_1.to_string().encode_to_vec(),
-            subscriber_rewards[0].subscriber_id
-        );
-        assert_eq!(
-            5_479_452_054_794,
-            subscriber_rewards[0].discovery_location_amount
-        );
+    // confirm the total rewards allocated matches expectations
+    let expected_sum = reward_shares::get_scheduled_tokens_for_mappers(reward_info.epoch_emissions)
+        .to_u64()
+        .unwrap();
+    let subscriber_sum =
+        rewards.total_sub_discovery_amount() + rewards.unallocated_amount_or_default();
+    assert_eq!(expected_sum, subscriber_sum);
 
-        assert_eq!(
-            SUBSCRIBER_2.to_string().encode_to_vec(),
-            subscriber_rewards[1].subscriber_id
-        );
-        assert_eq!(
-            5_479_452_054_794,
-            subscriber_rewards[2].discovery_location_amount
-        );
+    // confirm the rewarded percentage amount matches expectations
+    let percent = (Decimal::from(subscriber_sum) / reward_info.epoch_emissions)
+        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+    assert_eq!(percent, dec!(0.2));
 
-        assert_eq!(
-            SUBSCRIBER_3.to_string().encode_to_vec(),
-            subscriber_rewards[2].subscriber_id
-        );
-        assert_eq!(
-            5_479_452_054_794,
-            subscriber_rewards[2].discovery_location_amount
-        );
-
-        // confirm our unallocated amount
-        assert_eq!(
-            UnallocatedRewardType::Mapper as i32,
-            unallocated_reward.reward_type
-        );
-        assert_eq!(1, unallocated_reward.amount);
-
-        // confirm the total rewards allocated matches expectations
-        let expected_sum =
-            reward_shares::get_scheduled_tokens_for_mappers(reward_info.epoch_emissions)
-                .to_u64()
-                .unwrap();
-        let subscriber_sum = subscriber_rewards[0].discovery_location_amount
-            + subscriber_rewards[1].discovery_location_amount
-            + subscriber_rewards[2].discovery_location_amount
-            + unallocated_reward.amount;
-        assert_eq!(expected_sum, subscriber_sum);
-
-        // confirm the rewarded percentage amount matches expectations
-        let percent = (Decimal::from(subscriber_sum) / reward_info.epoch_emissions)
-            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-        assert_eq!(percent, dec!(0.2));
-    } else {
-        panic!("no rewards received");
-    };
     Ok(())
-}
-
-async fn receive_expected_rewards(
-    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
-) -> anyhow::Result<(Vec<SubscriberReward>, UnallocatedReward)> {
-    // get the filestore outputs from rewards run
-    // we will have 3 radio rewards, 1 wifi radio and 2 cbrs radios
-    let subscriber_reward1 = mobile_rewards.receive_subscriber_reward().await;
-    let subscriber_reward2 = mobile_rewards.receive_subscriber_reward().await;
-    let subscriber_reward3 = mobile_rewards.receive_subscriber_reward().await;
-    let mut subscriber_rewards = vec![subscriber_reward1, subscriber_reward2, subscriber_reward3];
-
-    subscriber_rewards.sort_by(|a, b| a.subscriber_id.cmp(&b.subscriber_id));
-
-    // expect one unallocated reward
-    let unallocated_reward = mobile_rewards.receive_unallocated_reward().await;
-
-    // should be no further msgs
-    mobile_rewards.assert_no_messages();
-
-    Ok((subscriber_rewards, unallocated_reward))
 }
 
 async fn seed_mapping_data(

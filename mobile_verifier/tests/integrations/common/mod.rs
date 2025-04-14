@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
-    traits::TimestampEncode,
+    traits::{MsgBytes, TimestampEncode},
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -25,10 +25,7 @@ use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::{collections::HashMap, str::FromStr, sync::Arc};
-use tokio::{
-    sync::{mpsc::error::TryRecvError, RwLock},
-    time::{timeout, Timeout},
-};
+use tokio::{sync::RwLock, time::Timeout};
 use tonic::async_trait;
 
 pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
@@ -82,127 +79,6 @@ impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
     }
 }
 
-pub struct MockFileSinkReceiver<T> {
-    pub receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>,
-}
-
-impl<T: std::fmt::Debug> MockFileSinkReceiver<T> {
-    pub async fn receive(&mut self, caller: &str) -> Option<T> {
-        match timeout(seconds(2), self.receiver.recv()).await {
-            Ok(Some(SinkMessage::Data(on_write_tx, msg))) => {
-                let _ = on_write_tx.send(Ok(()));
-                Some(msg)
-            }
-            Ok(None) => None,
-            Err(e) => panic!("{caller}: timeout while waiting for message1 {:?}", e),
-            Ok(Some(unexpected_msg)) => {
-                println!("{caller}: ignoring unexpected msg {:?}", unexpected_msg);
-                None
-            }
-        }
-    }
-
-    pub fn assert_no_messages(&mut self) {
-        let Err(TryRecvError::Empty) = self.receiver.try_recv() else {
-            panic!("receiver should have been empty")
-        };
-    }
-}
-
-impl MockFileSinkReceiver<SpeedtestAvg> {
-    pub async fn get_all_speedtest_avgs(&mut self) -> Vec<SpeedtestAvg> {
-        let mut messages = vec![];
-        while let Ok(SinkMessage::Data(on_write_tx, msg)) = self.receiver.try_recv() {
-            let _ = on_write_tx.send(Ok(()));
-            messages.push(msg);
-        }
-        messages
-    }
-}
-
-impl MockFileSinkReceiver<MobileRewardShare> {
-    pub async fn receive_radio_reward_v1(&mut self) -> RadioReward {
-        match self.receive("receive_radio_reward_v1").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::RadioReward(r)) => r,
-                err => panic!("failed to get radio reward: {err:?}"),
-            },
-            None => panic!("failed to receive radio reward"),
-        }
-    }
-
-    pub async fn receive_radio_reward(&mut self) -> RadioRewardV2 {
-        // NOTE(mj): When v1 rewards stop being written, remove this receiver
-        // and the comparison.
-        let radio_reward_v1 = self.receive_radio_reward_v1().await;
-        match self.receive("receive_radio_reward").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::RadioRewardV2(reward)) => {
-                    assert_eq!(
-                        reward.total_poc_reward(),
-                        radio_reward_v1.poc_reward,
-                        "mismatch in poc rewards between v1 and v2"
-                    );
-                    reward
-                }
-                err => panic!("failed to get radio reward: {err:?}"),
-            },
-            None => panic!("failed to receive radio reward"),
-        }
-    }
-
-    pub async fn receive_service_provider_reward(&mut self) -> ServiceProviderReward {
-        match self.receive("receive_service_provider_reward").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::ServiceProviderReward(r)) => r,
-                _ => panic!("failed to get service provider reward"),
-            },
-            None => panic!("failed to receive service provider reward"),
-        }
-    }
-
-    pub async fn receive_subscriber_reward(&mut self) -> SubscriberReward {
-        match self.receive("receive_subscriber_reward").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::SubscriberReward(r)) => r,
-                _ => panic!("failed to get subscriber reward"),
-            },
-            None => panic!("failed to receive subscriber reward"),
-        }
-    }
-
-    pub async fn receive_promotion_reward(&mut self) -> PromotionReward {
-        match self.receive("receive_promotion_reward").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::PromotionReward(r)) => r,
-                _ => panic!("failed to get promotion reward"),
-            },
-            None => panic!("failed to receive promotion reward"),
-        }
-    }
-
-    pub async fn receive_unallocated_reward(&mut self) -> UnallocatedReward {
-        match self.receive("receive_unallocated_reward").await {
-            Some(mobile_reward) => match mobile_reward.reward {
-                Some(MobileReward::UnallocatedReward(r)) => r,
-                _ => panic!("failed to get unallocated reward"),
-            },
-            None => panic!("failed to receive unallocated reward"),
-        }
-    }
-}
-
-pub fn create_file_sink<T>() -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
-    let (tx, rx) = tokio::sync::mpsc::channel(20);
-    (
-        FileSinkClient {
-            sender: tx,
-            metric: "metric".into(),
-        },
-        MockFileSinkReceiver { receiver: rx },
-    )
-}
-
 pub trait RadioRewardV2Ext {
     fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex>;
     fn nth_boosted_hex(&self, index: usize) -> radio_reward_v2::CoveredHex;
@@ -248,10 +124,6 @@ impl RadioRewardV2Ext for RadioRewardV2 {
 
         (base + boosted).to_u64().unwrap()
     }
-}
-
-pub fn seconds(s: u64) -> std::time::Duration {
-    std::time::Duration::from_secs(s)
 }
 
 pub fn mock_hex_boost_data_default(
@@ -376,50 +248,69 @@ pub fn default_price_info() -> PriceInfo {
 
 // Non-blocking version is file sink testing.
 // Requires the FileSinkClient to be dropped when all writing is done, or panic!.
-pub fn create_nonblocking_file_sink<T: Send + Sync + 'static>(
-) -> (FileSinkClient<T>, NonBlockingFileSinkReceiver<T>) {
+pub fn create_file_sink<T: Send + Sync + 'static>() -> (FileSinkClient<T>, FileSinkReceiver<T>) {
     let (tx, rx) = tokio::sync::mpsc::channel(999);
     (
         FileSinkClient {
             sender: tx,
             metric: "metric".into(),
         },
-        NonBlockingFileSinkReceiver::new(rx),
+        FileSinkReceiver::new(rx),
     )
 }
 
 #[derive(Debug)]
-pub struct NonBlockingFileSinkReceiver<T> {
+pub struct FileSinkReceiver<T> {
     msgs: Arc<RwLock<Vec<T>>>,
     channel_closed: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Default, Debug)]
 pub struct MobileRewardShareMessages {
-    pub gateway_reward: Vec<GatewayReward>,
-    pub radio_reward: Vec<RadioReward>,
-    pub subscriber_reward: Vec<SubscriberReward>,
-    pub sp_reward: Vec<ServiceProviderReward>,
+    pub gateway_rewards: Vec<GatewayReward>,
+    pub radio_rewards: Vec<RadioReward>,
+    pub subscriber_rewards: Vec<SubscriberReward>,
+    pub sp_rewards: Vec<ServiceProviderReward>,
     pub unallocated: Vec<UnallocatedReward>,
-    pub radio_reward_v2: Vec<RadioRewardV2>,
-    pub promotion_reward: Vec<PromotionReward>,
+    pub radio_reward_v2s: Vec<RadioRewardV2>,
+    pub promotion_rewards: Vec<PromotionReward>,
 }
 
 impl MobileRewardShareMessages {
     fn insert(&mut self, item: MobileReward) {
         match item {
-            MobileReward::GatewayReward(inner) => self.gateway_reward.push(inner),
-            MobileReward::RadioReward(inner) => self.radio_reward.push(inner),
-            MobileReward::SubscriberReward(inner) => self.subscriber_reward.push(inner),
-            MobileReward::ServiceProviderReward(inner) => self.sp_reward.push(inner),
+            MobileReward::GatewayReward(inner) => self.gateway_rewards.push(inner),
+            MobileReward::RadioReward(inner) => self.radio_rewards.push(inner),
+            MobileReward::SubscriberReward(inner) => self.subscriber_rewards.push(inner),
+            MobileReward::ServiceProviderReward(inner) => self.sp_rewards.push(inner),
             MobileReward::UnallocatedReward(inner) => self.unallocated.push(inner),
-            MobileReward::RadioRewardV2(inner) => self.radio_reward_v2.push(inner),
-            MobileReward::PromotionReward(inner) => self.promotion_reward.push(inner),
+            MobileReward::RadioRewardV2(inner) => self.radio_reward_v2s.push(inner),
+            MobileReward::PromotionReward(inner) => self.promotion_rewards.push(inner),
         }
+    }
+
+    pub fn unallocated_amount_or_default(&self) -> u64 {
+        self.unallocated
+            .iter()
+            .map(|reward| reward.amount)
+            .sum::<u64>()
+    }
+
+    pub fn total_poc_rewards(&self) -> u64 {
+        self.radio_reward_v2s
+            .iter()
+            .map(|reward| reward.total_poc_reward())
+            .sum()
+    }
+
+    pub fn total_sub_discovery_amount(&self) -> u64 {
+        self.subscriber_rewards
+            .iter()
+            .map(|reward| reward.discovery_location_amount)
+            .sum()
     }
 }
 
-#[async_trait::async_trait]
 trait TestTimeoutExt<T>
 where
     Self: Sized,
@@ -434,9 +325,9 @@ impl<F: std::future::Future> TestTimeoutExt<F> for F {
     }
 }
 
-impl NonBlockingFileSinkReceiver<MobileRewardShare> {
+impl FileSinkReceiver<MobileRewardShare> {
     pub async fn finish(self) -> anyhow::Result<MobileRewardShareMessages> {
-        // make sure channel is closed and done be written to
+        // make sure channel is closed and done being written to
         if let Err(err) = self.channel_closed.notified().timeout_2_secs().await {
             panic!("file sink receiver channel was never closed: {err:?}");
         }
@@ -457,7 +348,21 @@ impl NonBlockingFileSinkReceiver<MobileRewardShare> {
     }
 }
 
-impl<T: Send + Sync + 'static> NonBlockingFileSinkReceiver<T> {
+impl FileSinkReceiver<SpeedtestAvg> {
+    pub async fn finish(self) -> anyhow::Result<Vec<SpeedtestAvg>> {
+        // make sure the channel is closed and done being written to
+        if let Err(err) = self.channel_closed.notified().timeout_2_secs().await {
+            panic!("file sink receiver channel was never closed: {err:?}");
+        }
+
+        let lock = Arc::try_unwrap(self.msgs).expect("no locks on messages");
+        let msgs = lock.into_inner();
+
+        Ok(msgs)
+    }
+}
+
+impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
     fn new(mut receiver: tokio::sync::mpsc::Receiver<SinkMessage<T>>) -> Self {
         let channel_closed = Arc::new(tokio::sync::Notify::new());
         let closer = channel_closed.clone();
@@ -469,10 +374,10 @@ impl<T: Send + Sync + 'static> NonBlockingFileSinkReceiver<T> {
             while let Some(msg) = receiver.recv().await {
                 match msg {
                     SinkMessage::Data(sender, msg) => {
-                        sender.send(Ok(())).unwrap();
+                        sender.send(Ok(())).expect("ack file data");
                         inner_msgs.write().await.push(msg);
                     }
-                    SinkMessage::Commit(_sender) => todo!(),
+                    SinkMessage::Commit(_sender) => (),
                     SinkMessage::Rollback(_sender) => todo!(),
                 }
             }
@@ -483,5 +388,55 @@ impl<T: Send + Sync + 'static> NonBlockingFileSinkReceiver<T> {
             msgs,
             channel_closed,
         }
+    }
+}
+
+// Allows converting from a Vec<T> to HashMap<String, T>
+//
+// This trait assumes there will not be multiple entries
+// in the Vec for a given String.
+pub trait AsStringKeyedMap<V> {
+    fn as_keyed_map(&self) -> HashMap<String, V>
+    where
+        Self: Sized;
+}
+
+pub trait AsStringKeyedMapKey {
+    fn key(&self) -> String;
+}
+
+impl AsStringKeyedMapKey for RadioRewardV2 {
+    fn key(&self) -> String {
+        PublicKeyBinary::from(self.hotspot_key.to_vec()).to_string()
+    }
+}
+
+impl AsStringKeyedMapKey for SubscriberReward {
+    fn key(&self) -> String {
+        use helium_proto::Message;
+        String::decode(self.subscriber_id.as_bytes()).expect("decode subscriber id")
+    }
+}
+
+impl AsStringKeyedMapKey for PromotionReward {
+    fn key(&self) -> String {
+        self.entity.to_owned()
+    }
+}
+
+impl<V: AsStringKeyedMapKey + Clone> AsStringKeyedMap<V> for Vec<V> {
+    fn as_keyed_map(&self) -> HashMap<String, V>
+    where
+        Self: Sized,
+    {
+        let mut map = HashMap::new();
+        for item in self {
+            let key = item.key();
+            if map.contains_key(&key) {
+                panic!("Duplicate string key found: {}", key);
+            }
+            map.insert(key, item.clone());
+        }
+        map
     }
 }

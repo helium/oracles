@@ -205,7 +205,8 @@ where
         };
         self.verified_speedtest_file_sink
             .write(proto, &[("result", result.as_str_name())])
-            .await?;
+            .await?
+            .await??;
         Ok(())
     }
 }

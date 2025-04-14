@@ -286,7 +286,7 @@ where
         let poc_dc_shares = reward_poc_and_dc(
             &self.pool,
             &self.hex_service_client,
-            &self.mobile_rewards,
+            self.mobile_rewards.clone(),
             &self.speedtest_averages,
             &reward_info,
             price_info.clone(),
@@ -294,7 +294,7 @@ where
         .await?;
 
         // process rewards for mappers
-        reward_mappers(&self.pool, &self.mobile_rewards, &reward_info).await?;
+        reward_mappers(&self.pool, self.mobile_rewards.clone(), &reward_info).await?;
 
         // process rewards for service providers
         let dc_sessions = service_provider::get_dc_sessions(
@@ -309,14 +309,14 @@ where
         reward_service_providers(
             dc_sessions,
             sp_promotions.clone(),
-            &self.mobile_rewards,
+            self.mobile_rewards.clone(),
             &reward_info,
             price_info.price_per_bone,
         )
         .await?;
 
         // process rewards for oracles
-        reward_oracles(&self.mobile_rewards, &reward_info).await?;
+        reward_oracles(self.mobile_rewards.clone(), &reward_info).await?;
 
         self.speedtest_averages.commit().await?;
         let written_files = self.mobile_rewards.commit().await?.await??;
@@ -394,7 +394,7 @@ where
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
@@ -420,7 +420,7 @@ pub async fn reward_poc_and_dc(
     // reward dc before poc so that we can calculate the unallocated dc reward
     // and carry this into the poc pool
     let dc_unallocated_amount = reward_dc(
-        mobile_rewards,
+        &mobile_rewards,
         reward_info,
         transfer_rewards,
         &reward_shares,
@@ -431,7 +431,7 @@ pub async fn reward_poc_and_dc(
     let (poc_unallocated_amount, calculated_poc_reward_shares) = reward_poc(
         pool,
         hex_service_client,
-        mobile_rewards,
+        &mobile_rewards,
         speedtest_avg_sink,
         reward_info,
         reward_shares,
@@ -444,7 +444,7 @@ pub async fn reward_poc_and_dc(
         .unwrap_or(0);
 
     write_unallocated_reward(
-        mobile_rewards,
+        &mobile_rewards,
         UnallocatedRewardType::Poc,
         poc_unallocated_amount,
         reward_info,
@@ -552,7 +552,7 @@ pub async fn reward_dc(
 
 pub async fn reward_mappers(
     pool: &Pool<Postgres>,
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
     let rewardable_mapping_activity = subscriber_mapping_activity::db::rewardable_mapping_activity(
@@ -587,7 +587,7 @@ pub async fn reward_mappers(
         .unwrap_or(0)
         - allocated_mapping_rewards;
     write_unallocated_reward(
-        mobile_rewards,
+        &mobile_rewards,
         UnallocatedRewardType::Mapper,
         unallocated_mapping_reward_amount,
         reward_info,
@@ -598,7 +598,7 @@ pub async fn reward_mappers(
 }
 
 pub async fn reward_oracles(
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
     // atm 100% of oracle rewards are assigned to 'unallocated'
@@ -611,7 +611,7 @@ pub async fn reward_oracles(
         .unwrap_or(0)
         - allocated_oracle_rewards;
     write_unallocated_reward(
-        mobile_rewards,
+        &mobile_rewards,
         UnallocatedRewardType::Oracle,
         unallocated_oracle_reward_amount,
         reward_info,
@@ -623,7 +623,7 @@ pub async fn reward_oracles(
 pub async fn reward_service_providers(
     dc_sessions: ServiceProviderDCSessions,
     sp_promotions: ServiceProviderPromotions,
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
     hnt_bone_price: Decimal,
 ) -> anyhow::Result<()> {
@@ -651,7 +651,7 @@ pub async fn reward_service_providers(
 
     // write out any unallocated service provider reward
     write_unallocated_reward(
-        mobile_rewards,
+        &mobile_rewards,
         UnallocatedRewardType::ServiceProvider,
         unallocated_sp_rewards,
         reward_info,
