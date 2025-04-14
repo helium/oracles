@@ -249,6 +249,7 @@ async fn seed_hotspot_data(
         rewardable_bytes: 1024 * 1000 + 1024 * 10000,
         num_dcs: 10_000,
         received_timestamp: ts - Duration::hours(1),
+        burn_timestamp: ts - Duration::hours(1),
     };
 
     let data_session_2 = data_session::HotspotDataSession {
@@ -259,6 +260,7 @@ async fn seed_hotspot_data(
         rewardable_bytes: 1024 * 1000 + 1024 * 50000,
         num_dcs: 50_000,
         received_timestamp: ts - Duration::hours(2),
+        burn_timestamp: ts - Duration::hours(2),
     };
 
     data_session_1.save(txn).await?;
@@ -278,6 +280,7 @@ async fn seed_hotspot_data_invalid_sp(
         rewardable_bytes: 1024 * 1000 + 1024 * 10000,
         num_dcs: 10_000,
         received_timestamp: ts - Duration::hours(2),
+        burn_timestamp: ts - Duration::hours(2),
     };
 
     let data_session_2 = data_session::HotspotDataSession {
@@ -288,6 +291,7 @@ async fn seed_hotspot_data_invalid_sp(
         rewardable_bytes: 1024 * 1000 + 1024 * 50000,
         num_dcs: 50_000,
         received_timestamp: ts - Duration::hours(2),
+        burn_timestamp: ts - Duration::hours(2),
     };
 
     data_session_1.save(txn).await?;

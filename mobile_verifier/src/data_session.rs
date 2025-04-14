@@ -137,14 +137,25 @@ pub struct HotspotDataSession {
     pub rewardable_bytes: i64,
     pub num_dcs: i64,
     pub received_timestamp: DateTime<Utc>,
+    pub burn_timestamp: DateTime<Utc>,
 }
 
 impl HotspotDataSession {
     pub async fn save(self, db: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
-            INSERT INTO hotspot_data_transfer_sessions (pub_key, payer, upload_bytes, download_bytes, rewardable_bytes, num_dcs, received_timestamp)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO hotspot_data_transfer_sessions (
+                pub_key,
+                payer,
+                upload_bytes,
+                download_bytes,
+                rewardable_bytes,
+                num_dcs,
+                received_timestamp,
+                burn_timestamp
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (pub_key, payer, burn_timestamp) DO NOTHING;
             "#,
         )
         .bind(self.pub_key)
@@ -154,6 +165,7 @@ impl HotspotDataSession {
         .bind(self.rewardable_bytes)
         .bind(self.num_dcs)
         .bind(self.received_timestamp)
+        .bind(self.burn_timestamp)
         .execute(&mut *db)
         .await?;
         Ok(())
@@ -171,6 +183,7 @@ impl HotspotDataSession {
             rewardable_bytes: v.rewardable_bytes as i64,
             num_dcs: v.num_dcs as i64,
             received_timestamp,
+            burn_timestamp: v.burn_timestamp,
         }
     }
 }
@@ -188,9 +201,10 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
             download_bytes,
             COALESCE(rewardable_bytes, upload_bytes + download_bytes) AS rewardable_bytes,
             num_dcs,
-            received_timestamp
+            received_timestamp,
+            burn_timestamp
         FROM hotspot_data_transfer_sessions
-        WHERE received_timestamp >= $1 AND received_timestamp < $2;
+        WHERE burn_timestamp >= $1 AND burn_timestamp < $2;
         "#,
     )
     .bind(epoch.start)
