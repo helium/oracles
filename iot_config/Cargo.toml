@@ -49,7 +49,6 @@ task-manager = { path = "../task_manager" }
 humantime-serde = { workspace = true }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 solana = { path = "../solana" }
-solana-sdk = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }

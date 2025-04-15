@@ -1,5 +1,6 @@
 use solana_client::client_error::ClientError;
 use solana_sdk::pubkey::ParsePubkeyError;
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction::Transaction;
 use std::time::SystemTimeError;
 
@@ -81,4 +82,10 @@ impl GetSignature for Signature {
     fn get_signature(&self) -> &Signature {
         self
     }
+}
+
+pub fn solana_pubkey_to_helium_binary(pubkey_str: &str) -> Result<PublicKeyBinary, SqlxError> {
+    let pubkey = Pubkey::from_str(pubkey_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
+    let helium_pubkey = to_helium_pubkey(&pubkey).map_err(|e| SqlxError::Decode(Box::new(e)))?;
+    Ok(PublicKeyBinary::from(helium_pubkey))
 }

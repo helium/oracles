@@ -4197,7 +4197,6 @@ dependencies = [
  "serde",
  "serde_json",
  "solana",
- "solana-sdk",
  "sqlx",
  "task-manager",
  "thiserror",

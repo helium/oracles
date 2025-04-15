@@ -65,8 +65,8 @@ fn min_priority_fee() -> u64 {
 }
 
 impl Settings {
-    pub fn escrow_keys_to_monitor(&self) -> Result<Vec<String>, SolanaRpcError> {
-        Ok(self.escrow_keys_to_monitor.clone())
+    pub fn escrow_keys_to_monitor(&self) -> Vec<String> {
+        self.escrow_keys_to_monitor.clone()
     }
 }
 

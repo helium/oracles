@@ -4,7 +4,7 @@ use helium_crypto::{PublicKey, PublicKeyBinary};
 use helium_lib::keypair::to_helium_pubkey;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::Serialize;
-use solana_sdk::pubkey::Pubkey;
+use solana::solana_pubkey_to_helium_binary;
 use sqlx::{error::Error as SqlxError, postgres::PgRow, types::Uuid, FromRow, Pool, Postgres, Row};
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -26,12 +26,6 @@ pub struct Org {
     pub locked: bool,
     pub delegate_keys: Option<Vec<PublicKeyBinary>>,
     pub constraints: Option<Vec<DevAddrConstraint>>,
-}
-
-fn solana_pubkey_to_helium_binary(pubkey_str: &str) -> Result<PublicKeyBinary, SqlxError> {
-    let pubkey = Pubkey::from_str(pubkey_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
-    let helium_pubkey = to_helium_pubkey(&pubkey).map_err(|e| SqlxError::Decode(Box::new(e)))?;
-    Ok(PublicKeyBinary::from(helium_pubkey))
 }
 
 impl FromRow<'_, PgRow> for Org {
