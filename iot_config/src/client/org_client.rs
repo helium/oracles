@@ -11,8 +11,6 @@ use helium_proto::services::iot_config::{
 
 #[async_trait]
 pub trait Orgs: Send + Sync + 'static {
-    type Error: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static;
-
     async fn get(&mut self, oui: u64) -> Result<OrgResV2, Self::Error>;
     async fn list(&mut self) -> Result<Vec<OrgV2>, Self::Error>;
     async fn enable(&mut self, oui: u64) -> Result<(), Self::Error>;
@@ -42,8 +40,6 @@ impl OrgClient {
 
 #[async_trait]
 impl Orgs for OrgClient {
-    type Error = ClientError;
-
     async fn get(&mut self, oui: u64) -> Result<OrgResV2, ClientError> {
         tracing::debug!(%oui, "retrieving org");
 
