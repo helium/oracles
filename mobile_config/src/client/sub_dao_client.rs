@@ -9,7 +9,7 @@ use helium_proto::{
     },
     Message,
 };
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct SubDaoClient {
@@ -30,24 +30,20 @@ impl SubDaoClient {
 
 #[async_trait::async_trait]
 pub trait SubDaoEpochRewardInfoResolver: Clone + Send + Sync + 'static {
-    type Error: Error + Send + Sync + 'static;
-
     async fn resolve_info(
         &self,
         sub_dao: &str,
         epoch: u64,
-    ) -> Result<Option<EpochRewardInfo>, Self::Error>;
+    ) -> Result<Option<EpochRewardInfo>, ClientError>;
 }
 
 #[async_trait::async_trait]
 impl SubDaoEpochRewardInfoResolver for SubDaoClient {
-    type Error = ClientError;
-
     async fn resolve_info(
         &self,
         sub_dao: &str,
         epoch: u64,
-    ) -> Result<Option<EpochRewardInfo>, Self::Error> {
+    ) -> Result<Option<EpochRewardInfo>, ClientError> {
         let mut request = SubDaoEpochRewardInfoReqV1 {
             sub_dao_address: sub_dao.to_string(),
             epoch,

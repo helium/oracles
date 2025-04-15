@@ -8,7 +8,7 @@ use helium_proto::{
     services::{mobile_config, Channel},
     Message,
 };
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct HexBoostingClient {
@@ -31,21 +31,17 @@ impl HexBoostingClient {
 
 #[async_trait::async_trait]
 pub trait HexBoostingInfoResolver: Clone + Send + Sync + 'static {
-    type Error: Error + Send + Sync + 'static;
-
-    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, Self::Error>;
+    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError>;
 
     async fn stream_modified_boosted_hexes_info(
         &mut self,
         timestamp: DateTime<Utc>,
-    ) -> Result<BoostedHexInfoStream, Self::Error>;
+    ) -> Result<BoostedHexInfoStream, ClientError>;
 }
 
 #[async_trait::async_trait]
 impl HexBoostingInfoResolver for HexBoostingClient {
-    type Error = ClientError;
-
-    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, Self::Error> {
+    async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
         let mut req = mobile_config::BoostedHexInfoStreamReqV1 {
             batch_size: self.batch_size,
             signer: self.signing_key.public_key().into(),
@@ -75,7 +71,7 @@ impl HexBoostingInfoResolver for HexBoostingClient {
     async fn stream_modified_boosted_hexes_info(
         &mut self,
         timestamp: DateTime<Utc>,
-    ) -> Result<BoostedHexInfoStream, Self::Error> {
+    ) -> Result<BoostedHexInfoStream, ClientError> {
         let mut req = mobile_config::BoostedHexModifiedInfoStreamReqV1 {
             batch_size: self.batch_size,
             timestamp: timestamp.timestamp() as u64,

@@ -5,7 +5,7 @@
 
 use helium_crypto::PublicKeyBinary;
 use helium_proto::Region as ProtoRegion;
-use iot_config::client::{Gateways, RegionParamsInfo};
+use iot_config::client::{ClientError, Gateways, RegionParamsInfo};
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 
@@ -20,23 +20,20 @@ pub struct RegionCache<G> {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum RegionCacheError<GatewayApiError> {
+pub enum RegionCacheError {
     #[error("gateway not found: {0}")]
     GatewayNotFound(PublicKeyBinary),
     #[error("region not found: {0}")]
     RegionNotFound(ProtoRegion),
     #[error("error querying gateway api")]
-    GatewayApiError(GatewayApiError),
+    GatewayApiError(ClientError),
 }
 
 impl<G> RegionCache<G>
 where
     G: Gateways,
 {
-    pub fn new(
-        refresh_interval: Duration,
-        gateways: G,
-    ) -> Result<Self, RegionCacheError<G::Error>> {
+    pub fn new(refresh_interval: Duration, gateways: G) -> Result<Self, RegionCacheError> {
         let cache = Arc::new(Cache::<ProtoRegion, RegionParamsInfo>::new());
         let clone = cache.clone();
         // monitor cache to handle evictions
@@ -51,7 +48,7 @@ where
     pub async fn resolve_region_info(
         &self,
         region: ProtoRegion,
-    ) -> Result<RegionParamsInfo, RegionCacheError<G::Error>> {
+    ) -> Result<RegionParamsInfo, RegionCacheError> {
         match self.cache.get(&region).await {
             Some(hit) => {
                 metrics::counter!("oracles_iot_verifier_region_params_cache_hit").increment(1);

@@ -12,7 +12,10 @@ use helium_proto::services::{
     poc_mobile::{CoverageObjectValidity, LocationSource, SignalLevel},
 };
 use hextree::Cell;
-use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
+use mobile_config::{
+    boosted_hex_info::{BoostedHexInfo, BoostedHexes},
+    client::ClientError,
+};
 
 use mobile_verifier::{
     banning::BannedRadios,
@@ -189,13 +192,11 @@ struct AllPubKeysAuthed;
 
 #[async_trait::async_trait]
 impl IsAuthorized for AllPubKeysAuthed {
-    type Error = std::convert::Infallible;
-
     async fn is_authorized(
         &self,
         _pub_key: &PublicKeyBinary,
         _role: NetworkKeyRole,
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<bool, ClientError> {
         Ok(true)
     }
 }

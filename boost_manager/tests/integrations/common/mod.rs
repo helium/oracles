@@ -25,8 +25,6 @@ impl MockHexBoostingClient {
 
 #[async_trait]
 impl HexBoostingInfoResolver for MockHexBoostingClient {
-    type Error = ClientError;
-
     async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())
     }

@@ -1,4 +1,4 @@
-use crate::client::{hex_boosting_client::HexBoostingInfoResolver, ClientError};
+use crate::client::hex_boosting_client::HexBoostingInfoResolver;
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampDecode;
 use futures::stream::{BoxStream, StreamExt};
@@ -138,7 +138,7 @@ impl BoostedHexes {
     }
 
     pub async fn get_all(
-        hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
+        hex_service_client: &impl HexBoostingInfoResolver,
     ) -> anyhow::Result<Self> {
         let mut map = HashMap::new();
         let mut stream = hex_service_client
@@ -156,7 +156,7 @@ impl BoostedHexes {
     }
 
     pub async fn get_modified(
-        hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
+        hex_service_client: &impl HexBoostingInfoResolver,
         timestamp: DateTime<Utc>,
     ) -> anyhow::Result<Self> {
         let mut map = HashMap::new();
