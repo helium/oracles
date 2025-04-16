@@ -437,6 +437,7 @@ impl FromStr for FileType {
             }
             MOBILE_BAN_REPORT => Self::MobileBanReport,
             VERIFIED_MOBILE_BAN_REPORT => Self::VerifiedMobileBanReport,
+            VERIFIED_DATA_TRANSFER_SESSION => Self::VerifiedDataTransferSession,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
