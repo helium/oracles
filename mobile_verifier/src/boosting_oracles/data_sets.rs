@@ -34,7 +34,7 @@ use crate::{
 use hex_assignments::{
     assignment::HexAssignments, footfall::Footfall, landtype::Landtype,
     service_provider_override::ServiceProviderOverride, urbanization::Urbanization, HexAssignment,
-    HexBoostData,
+    HexBoostData, HexBoostDataAssignmentsExt,
 };
 
 #[async_trait::async_trait]
@@ -187,24 +187,18 @@ impl DataSet for ServiceProviderOverride {
     }
 }
 
-pub fn is_hex_boost_data_ready<A, B, C, D>(h: &HexBoostData<A, B, C, D>) -> bool
-where
-    A: DataSet,
-    B: DataSet,
-    C: DataSet,
-    D: DataSet,
-{
+pub fn is_hex_boost_data_ready(h: &HexBoostData) -> bool {
     h.urbanization.is_ready()
         && h.footfall.is_ready()
         && h.landtype.is_ready()
         && h.service_provider_override.is_ready()
 }
 
-pub struct DataSetDownloaderDaemon<A, B, C, D, T> {
+pub struct DataSetDownloaderDaemon {
     pool: PgPool,
-    data_sets: HexBoostData<A, B, C, D>,
+    data_sets: HexBoostData,
     store: FileStore,
-    data_set_processor: T,
+    data_set_processor: FileSinkClient<proto::OracleBoostingReportV1>,
     data_set_directory: PathBuf,
     new_coverage_object_notification: NewCoverageObjectNotification,
     poll_duration: Duration,
@@ -244,14 +238,7 @@ impl DataSetStatus {
     }
 }
 
-impl<A, B, C, D, T> ManagedTask for DataSetDownloaderDaemon<A, B, C, D, T>
-where
-    A: DataSet,
-    B: DataSet,
-    C: DataSet,
-    D: DataSet,
-    T: DataSetProcessor,
-{
+impl ManagedTask for DataSetDownloaderDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -272,15 +259,7 @@ where
     }
 }
 
-impl
-    DataSetDownloaderDaemon<
-        Footfall,
-        Landtype,
-        Urbanization,
-        ServiceProviderOverride,
-        FileSinkClient<proto::OracleBoostingReportV1>,
-    >
-{
+impl DataSetDownloaderDaemon {
     pub async fn create_managed_task(
         pool: PgPool,
         settings: &Settings,
@@ -298,20 +277,9 @@ impl
             )
             .await?;
 
-        let urbanization = Urbanization::new(None);
-        let footfall = Footfall::new(None);
-        let landtype = Landtype::new(None);
-        let service_provider_override = ServiceProviderOverride::new(None);
-        let hex_boost_data = HexBoostData::builder()
-            .footfall(footfall)
-            .landtype(landtype)
-            .urbanization(urbanization)
-            .service_provider_override(service_provider_override)
-            .build()?;
-
         let data_set_downloader = Self::new(
             pool,
-            hex_boost_data,
+            HexBoostData::default(),
             FileStore::from_settings(&settings.data_sets).await?,
             oracle_boosting_reports,
             settings.data_sets_directory.clone(),
@@ -326,19 +294,12 @@ impl
     }
 }
 
-impl<A, B, C, D, T> DataSetDownloaderDaemon<A, B, C, D, T>
-where
-    A: DataSet,
-    B: DataSet,
-    C: DataSet,
-    D: DataSet,
-    T: DataSetProcessor,
-{
+impl DataSetDownloaderDaemon {
     pub fn new(
         pool: PgPool,
-        data_sets: HexBoostData<A, B, C, D>,
+        data_sets: HexBoostData,
         store: FileStore,
-        data_set_processor: T,
+        data_set_processor: FileSinkClient<proto::OracleBoostingReportV1>,
         data_set_directory: PathBuf,
         new_coverage_object_notification: NewCoverageObjectNotification,
         poll_duration: Duration,
@@ -578,23 +539,13 @@ pub trait DataSetProcessor: Send + Sync + 'static {
     async fn set_all_oracle_boosting_assignments(
         &self,
         pool: &PgPool,
-        data_sets: &HexBoostData<
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-        >,
+        data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<()>;
 
     async fn set_unassigned_oracle_boosting_assignments(
         &self,
         pool: &PgPool,
-        data_sets: &HexBoostData<
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-        >,
+        data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<()>;
 }
 
@@ -603,12 +554,7 @@ impl DataSetProcessor for FileSinkClient<proto::OracleBoostingReportV1> {
     async fn set_all_oracle_boosting_assignments(
         &self,
         pool: &PgPool,
-        data_sets: &HexBoostData<
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-        >,
+        data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<()> {
         let assigned_coverage_objs =
             AssignedCoverageObjects::assign_hex_stream(db::fetch_all_hexes(pool), data_sets)
@@ -621,12 +567,7 @@ impl DataSetProcessor for FileSinkClient<proto::OracleBoostingReportV1> {
     async fn set_unassigned_oracle_boosting_assignments(
         &self,
         pool: &PgPool,
-        data_sets: &HexBoostData<
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-        >,
+        data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<()> {
         let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
             db::fetch_hexes_with_null_assignments(pool),
@@ -646,12 +587,7 @@ impl DataSetProcessor for NopDataSetProcessor {
     async fn set_all_oracle_boosting_assignments(
         &self,
         _pool: &PgPool,
-        _data_sets: &HexBoostData<
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-        >,
+        _data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -659,12 +595,7 @@ impl DataSetProcessor for NopDataSetProcessor {
     async fn set_unassigned_oracle_boosting_assignments(
         &self,
         _pool: &PgPool,
-        _data_sets: &HexBoostData<
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-        >,
+        _data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -817,12 +748,7 @@ pub struct AssignedCoverageObjects {
 impl AssignedCoverageObjects {
     pub async fn assign_hex_stream(
         stream: impl Stream<Item = sqlx::Result<UnassignedHex>>,
-        data_sets: &HexBoostData<
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-        >,
+        data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<Self> {
         let mut coverage_objs = HashMap::<uuid::Uuid, Vec<AssignedHex>>::new();
         let mut stream = pin!(stream);
@@ -920,28 +846,15 @@ pub struct UnassignedHex {
 }
 
 impl UnassignedHex {
-    fn assign(
-        self,
-        data_sets: &HexBoostData<
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-            impl HexAssignment,
-        >,
-    ) -> anyhow::Result<AssignedHex> {
+    fn assign(self, data_sets: &impl HexBoostDataAssignmentsExt) -> anyhow::Result<AssignedHex> {
         let cell = hextree::Cell::try_from(self.hex)?;
-        let assignments = HexAssignments::builder(cell)
-            .footfall(&data_sets.footfall)
-            .landtype(&data_sets.landtype)
-            .urbanized(&data_sets.urbanization)
-            .service_provider_override(&data_sets.service_provider_override)
-            .build()?;
+
         Ok(AssignedHex {
             uuid: self.uuid,
             hex: self.hex,
             signal_level: self.signal_level,
             signal_power: self.signal_power,
-            assignments,
+            assignments: data_sets.assignments(cell)?,
         })
     }
 }
