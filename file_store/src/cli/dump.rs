@@ -5,7 +5,10 @@ use crate::{
     iot_packet::IotValidPacket,
     mobile_radio_invalidated_threshold::VerifiedInvalidatedRadioThresholdIngestReport,
     mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
-    mobile_session::{DataTransferSessionIngestReport, InvalidDataTransferIngestReport},
+    mobile_session::{
+        DataTransferSessionIngestReport, InvalidDataTransferIngestReport,
+        VerifiedDataTransferIngestReport,
+    },
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     reward_manifest::RewardManifest,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
@@ -32,8 +35,8 @@ use helium_proto::{
             HexUsageStatsIngestReportV1, InvalidDataTransferIngestReportV1, MobileRewardShare,
             OracleBoostingReportV1, RadioRewardShare, RadioUsageStatsIngestReportV1, SpeedtestAvg,
             SpeedtestIngestReportV1, SpeedtestReqV1, UniqueConnectionsIngestReportV1,
-            VerifiedInvalidatedRadioThresholdIngestReportV1, VerifiedRadioThresholdIngestReportV1,
-            VerifiedUniqueConnectionsIngestReportV1,
+            VerifiedDataTransferIngestReportV1, VerifiedInvalidatedRadioThresholdIngestReportV1,
+            VerifiedRadioThresholdIngestReportV1, VerifiedUniqueConnectionsIngestReportV1,
         },
         router::PacketRouterPacketReportV1,
     },
@@ -160,6 +163,27 @@ impl Cmd {
                         "payer": PublicKey::try_from(msg.payer)?,
                         "first_timestamp": msg.first_timestamp,
                         "last_timestamp": msg.last_timestamp,
+                    }))?;
+                }
+                FileType::VerifiedDataTransferSession => {
+                    let report: VerifiedDataTransferIngestReport =
+                        VerifiedDataTransferIngestReportV1::decode(msg)?.try_into()?;
+                    let report = report.report;
+                    let req = report.report;
+                    let data_transfer_usage = json!({
+                        "pub_key": PublicKey::try_from(req.data_transfer_usage.pub_key)?,
+                        "upload_bytes": req.data_transfer_usage.upload_bytes,
+                        "download_bytes": req.data_transfer_usage.download_bytes,
+                        "radio_access_technology": req.data_transfer_usage.radio_access_technology,
+                        "event_id": req.data_transfer_usage.event_id,
+                        "payer": req.data_transfer_usage.payer,
+                        "timestamp": req.data_transfer_usage.timestamp,
+                    });
+                    print_json(&json!({
+                        "rewardable_bytes": req.rewardable_bytes,
+                        "pub_key": PublicKey::try_from(req.pub_key)?,
+                        "received_timestamp": report.received_timestamp,
+                        "data_transfer_usage": data_transfer_usage,
                     }))?;
                 }
                 FileType::IotBeaconIngestReport => {
