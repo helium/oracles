@@ -11,10 +11,10 @@ use helium_proto::services::iot_config::{
 
 #[async_trait]
 pub trait Orgs: Send + Sync + 'static {
-    async fn get(&mut self, oui: u64) -> Result<OrgResV2, Self::Error>;
-    async fn list(&mut self) -> Result<Vec<OrgV2>, Self::Error>;
-    async fn enable(&mut self, oui: u64) -> Result<(), Self::Error>;
-    async fn disable(&mut self, oui: u64) -> Result<(), Self::Error>;
+    async fn get(&mut self, oui: u64) -> Result<OrgResV2, ClientError>;
+    async fn list(&mut self) -> Result<Vec<OrgV2>, ClientError>;
+    async fn enable(&mut self, oui: u64) -> Result<(), ClientError>;
+    async fn disable(&mut self, oui: u64) -> Result<(), ClientError>;
 }
 
 #[derive(Clone)]
