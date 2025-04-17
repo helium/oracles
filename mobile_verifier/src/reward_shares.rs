@@ -381,7 +381,7 @@ impl CoverageShares {
                 .await?;
 
             let trust_scores: Vec<LocationTrust> = heartbeat
-                .iter_distances_and_scores()
+                .iter_distances_and_scores()?
                 .map(|(distance, trust_score)| LocationTrust {
                     meters_to_asserted: distance as u32,
                     trust_score,
@@ -726,7 +726,6 @@ mod test {
     use hex_assignments::{assignment::HexAssignments, Assignment};
 
     use crate::{
-        cell_type::CellType,
         coverage::{CoveredHexStream, HexCoverage},
         data_session::{self, HotspotDataSession, HotspotReward},
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
@@ -1180,8 +1179,7 @@ mod test {
         let heartbeat_rewards = vec![HeartbeatReward {
             hotspot_key: gw1.clone(),
             coverage_object: cov_obj_1,
-            cell_type: CellType::NovaGenericWifiOutdoor,
-            distances_to_asserted: None,
+            distances_to_asserted: vec![1],
             trust_score_multipliers: vec![dec!(1.0)],
         }]
         .into_iter()
@@ -1311,29 +1309,25 @@ mod test {
             HeartbeatReward {
                 hotspot_key: gw10.clone(),
                 coverage_object: cov_obj_10,
-                cell_type: CellType::NovaGenericWifiIndoor,
-                distances_to_asserted: Some(vec![0]),
+                distances_to_asserted: vec![1],
                 trust_score_multipliers: vec![dec!(1.0)],
             },
             HeartbeatReward {
                 hotspot_key: gw20.clone(),
                 coverage_object: cov_obj_20,
-                cell_type: CellType::NovaGenericWifiIndoor,
-                distances_to_asserted: Some(vec![0, 250, 250]),
+                distances_to_asserted: vec![0, 250, 250],
                 trust_score_multipliers: vec![dec!(1.0), dec!(0.25), dec!(0.25)],
             },
             HeartbeatReward {
                 hotspot_key: gw21.clone(),
                 coverage_object: cov_obj_21,
-                cell_type: CellType::NovaGenericWifiIndoor,
-                distances_to_asserted: Some(vec![0]),
+                distances_to_asserted: vec![0],
                 trust_score_multipliers: vec![dec!(1.0)],
             },
             HeartbeatReward {
                 hotspot_key: gw30.clone(),
                 coverage_object: cov_obj_30,
-                cell_type: CellType::NovaGenericWifiIndoor,
-                distances_to_asserted: Some(vec![0]),
+                distances_to_asserted: vec![0],
                 trust_score_multipliers: vec![dec!(1.0)],
             },
         ]
@@ -1492,17 +1486,15 @@ mod test {
             // add qualified wifi indoor HB
             HeartbeatReward {
                 hotspot_key: gw1.clone(),
-                cell_type: CellType::NovaGenericWifiOutdoor,
                 coverage_object: g1_cov_obj,
-                distances_to_asserted: Some(vec![0]),
+                distances_to_asserted: vec![0],
                 trust_score_multipliers: vec![dec!(1.0)],
             },
             // add unqualified wifi indoor HB
             HeartbeatReward {
                 hotspot_key: gw2.clone(),
-                cell_type: CellType::NovaGenericWifiOutdoor,
                 coverage_object: g2_cov_obj,
-                distances_to_asserted: None,
+                distances_to_asserted: vec![0],
                 trust_score_multipliers: vec![dec!(1.0)],
             },
         ]
