@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::Range};
 
 use chrono::{DateTime, Utc};
-use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
+use mobile_config::client::carrier_service_client::CarrierServiceVerifier;
 use rust_decimal::{Decimal, RoundingStrategy};
 use sqlx::PgPool;
 
@@ -14,7 +14,7 @@ use super::ServiceProviderId;
 
 pub async fn get_dc_sessions(
     pool: &PgPool,
-    carrier_client: &impl CarrierServiceVerifier<Error = ClientError>,
+    carrier_client: &impl CarrierServiceVerifier,
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<ServiceProviderDCSessions> {
     let payer_dc_sessions =
@@ -107,6 +107,7 @@ pub mod tests {
 
     use chrono::Duration;
     use helium_proto::{ServiceProvider, ServiceProviderPromotions};
+    use mobile_config::client::ClientError;
 
     use crate::data_session::HotspotDataSession;
 
@@ -125,9 +126,7 @@ pub mod tests {
 
         #[async_trait::async_trait]
         impl CarrierServiceVerifier for MockClient {
-            type Error = ClientError;
-
-            async fn payer_key_to_service_provider<'a>(
+            async fn payer_key_to_service_provider(
                 &self,
                 _pubkey: &str,
             ) -> Result<ServiceProvider, ClientError> {
@@ -137,7 +136,7 @@ pub mod tests {
             async fn list_incentive_promotions(
                 &self,
                 _epoch_start: &DateTime<Utc>,
-            ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
+            ) -> Result<Vec<ServiceProviderPromotions>, ClientError> {
                 Ok(vec![])
             }
         }
@@ -148,16 +147,20 @@ pub mod tests {
             payer: vec![0].into(),
             upload_bytes: 1_000,
             download_bytes: 1_000,
+            rewardable_bytes: 3_000,
             num_dcs: 2_000,
             received_timestamp: Utc::now(),
+            burn_timestamp: Utc::now(),
         };
         let two = HotspotDataSession {
             pub_key: vec![1].into(),
             payer: vec![1].into(),
             upload_bytes: 1_000,
             download_bytes: 1_000,
+            rewardable_bytes: 3_000,
             num_dcs: 2_000,
             received_timestamp: Utc::now(),
+            burn_timestamp: Utc::now(),
         };
         let mut txn = pool.begin().await?;
         one.save(&mut txn).await?;

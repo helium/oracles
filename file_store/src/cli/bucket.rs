@@ -1,5 +1,4 @@
 use crate::{
-    heartbeat::{cli::ValidatedHeartbeat, CbrsHeartbeat},
     iot_beacon_report::IotBeaconIngestReport,
     iot_valid_poc::IotPoc,
     iot_witness_report::IotWitnessIngestReport,
@@ -23,6 +22,9 @@ use tokio::fs;
 /// Commands on remote buckets
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
+    /// Configuration file to use.
+    #[clap(short = 'c')]
+    config: PathBuf,
     #[clap(subcommand)]
     cmd: BucketCmd,
 }
@@ -37,8 +39,9 @@ pub enum BucketCmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: &Settings) -> Result {
-        self.cmd.run(settings).await
+    pub async fn run(&self) -> Result {
+        let settings = Settings::new(&self.config)?;
+        self.cmd.run(&settings).await
     }
 }
 
@@ -211,12 +214,6 @@ impl Locate {
 fn locate(prefix: &str, gateway: &PublicKey, buf: &[u8]) -> Result<Option<serde_json::Value>> {
     let pub_key = gateway.to_vec();
     match FileType::from_str(prefix)? {
-        FileType::CbrsHeartbeat => {
-            CbrsHeartbeat::decode(buf).and_then(|event| event.to_value_if(pub_key))
-        }
-        FileType::ValidatedHeartbeat => {
-            ValidatedHeartbeat::decode(buf).and_then(|event| event.to_value_if(pub_key))
-        }
         FileType::SpeedtestAvg => {
             SpeedtestAverage::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
@@ -276,12 +273,6 @@ where
     }
 }
 
-impl Gateway for CbrsHeartbeat {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
-        self.pubkey.as_ref() == pub_key
-    }
-}
-
 impl Gateway for CellSpeedtest {
     fn has_pubkey(&self, pub_key: &[u8]) -> bool {
         self.pubkey.as_ref() == pub_key
@@ -303,12 +294,6 @@ impl Gateway for IotWitnessIngestReport {
 impl Gateway for IotPoc {
     fn has_pubkey(&self, pub_key: &[u8]) -> bool {
         self.beacon_report.report.pub_key.as_ref() == pub_key
-    }
-}
-
-impl Gateway for ValidatedHeartbeat {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
-        self.pub_key.as_ref() == pub_key
     }
 }
 

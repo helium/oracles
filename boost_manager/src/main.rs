@@ -7,7 +7,6 @@ use clap::Parser;
 use file_store::{
     file_info_poller::LookbackBehavior,
     file_source, file_upload,
-    reward_manifest::RewardManifest,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileStore, FileType,
 };
@@ -91,16 +90,15 @@ impl Server {
 
         // setup the received for the rewards manifest files
         let file_store = FileStore::from_settings(&settings.verifier).await?;
-        let (manifest_receiver, manifest_server) =
-            file_source::continuous_source::<RewardManifest, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .prefix(FileType::RewardManifest.to_string())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .poll_duration(reward_check_interval)
-                .offset(reward_check_interval * 2)
-                .create()
-                .await?;
+        let (manifest_receiver, manifest_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .prefix(FileType::RewardManifest.to_string())
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .poll_duration(reward_check_interval)
+            .offset(reward_check_interval * 2)
+            .create()
+            .await?;
 
         // setup the writer for our updated hexes
         let (updated_hexes_sink, updated_hexes_sink_server) = BoostedHexUpdateV1::file_sink(

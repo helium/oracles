@@ -11,7 +11,7 @@ use helium_proto::{
     Message,
 };
 use retainer::Cache;
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct GatewayClient {
@@ -46,27 +46,23 @@ impl GatewayClient {
 
 #[async_trait::async_trait]
 pub trait GatewayInfoResolver: Clone + Send + Sync + 'static {
-    type Error: Error + Send + Sync + 'static;
-
     async fn resolve_gateway_info(
         &self,
         address: &PublicKeyBinary,
-    ) -> Result<Option<GatewayInfo>, Self::Error>;
+    ) -> Result<Option<GatewayInfo>, ClientError>;
 
     async fn stream_gateways_info(
         &mut self,
         device_types: &[DeviceType],
-    ) -> Result<GatewayInfoStream, Self::Error>;
+    ) -> Result<GatewayInfoStream, ClientError>;
 }
 
 #[async_trait::async_trait]
 impl GatewayInfoResolver for GatewayClient {
-    type Error = ClientError;
-
     async fn resolve_gateway_info(
         &self,
         address: &PublicKeyBinary,
-    ) -> Result<Option<gateway_info::GatewayInfo>, Self::Error> {
+    ) -> Result<Option<gateway_info::GatewayInfo>, ClientError> {
         if let Some(cached_response) = self.cache.get(address).await {
             return Ok(cached_response.value().clone());
         }
@@ -103,7 +99,7 @@ impl GatewayInfoResolver for GatewayClient {
     async fn stream_gateways_info(
         &mut self,
         device_types: &[DeviceType],
-    ) -> Result<gateway_info::GatewayInfoStream, Self::Error> {
+    ) -> Result<gateway_info::GatewayInfoStream, ClientError> {
         let mut req = mobile_config::GatewayInfoStreamReqV1 {
             batch_size: self.batch_size,
             device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),

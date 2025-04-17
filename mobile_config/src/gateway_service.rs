@@ -1,5 +1,9 @@
 use crate::{
-    gateway_info::{self, db::get_updated_radios, DeviceType, GatewayInfo},
+    gateway_info::{
+        self,
+        db::{get_batch_tracked_radios, get_updated_radios},
+        DeviceType, GatewayInfo,
+    },
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -243,7 +247,8 @@ impl mobile_config::Gateway for GatewayService {
 
         tokio::spawn(async move {
             let min_updated_at = DateTime::UNIX_EPOCH;
-            let updated_radios = get_updated_radios(&mobile_config_db_pool, min_updated_at).await?;
+            let updated_radios =
+                get_batch_tracked_radios(&mobile_config_db_pool, &addresses).await?;
 
             let stream = gateway_info::db::batch_info_stream(&metadata_db_pool, &addresses)?;
             let stream = stream

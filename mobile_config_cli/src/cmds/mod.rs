@@ -15,6 +15,7 @@ pub mod gateway;
 pub const ENV_CONFIG_HOST: &str = "HELIUM_CONFIG_HOST";
 pub const ENV_CONFIG_PUBKEY: &str = "HELIUM_CONFIG_PUBKEY";
 pub const ENV_KEYPAIR_BIN: &str = "HELIUM_KEYPAIR_BIN";
+pub const ENV_LOG_FILTER: &str = "HELIUM_LOG_FILTER";
 
 #[derive(Debug, Parser)]
 #[command(name = "mobile-config")]
@@ -49,6 +50,14 @@ pub struct Cli {
 
     #[arg(global = true, long)]
     pub print_command: bool,
+
+    #[arg(
+        global = true,
+        long,
+        env = ENV_LOG_FILTER,
+        default_value = "Error"
+    )]
+    pub log_filter: String,
 }
 
 #[derive(Debug, Subcommand)]

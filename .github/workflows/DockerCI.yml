@@ -1,0 +1,221 @@
+name: Docker CI
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+    tags: ["*"]
+  workflow_dispatch:
+
+env:
+  TARGET: base
+
+jobs:
+
+  build-base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+  
+      - name: Pull Cached Base Image
+        id: check-image
+        env:
+          IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        run: |
+          if docker pull ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG; then
+            echo "CACHE_HIT=true" >> $GITHUB_ENV
+          else
+            echo "CACHE_HIT=false" >> $GITHUB_ENV
+          fi
+
+      - name: Set up Docker Buildx
+        if: env.CACHE_HIT == 'false'
+        uses: docker/setup-buildx-action@v3
+  
+      - name: Build and Push Base Image (if not cached)
+        if: env.CACHE_HIT == 'false'
+        env:
+          IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        run: |
+          docker build --target $TARGET -t ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG -f Dockerfile .
+          docker push ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG
+
+  fmt:
+    needs: build-base
+    runs-on: ubuntu-latest
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-fmt
+      cancel-in-progress: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Base Image
+        env:
+          IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        run: docker pull ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG
+
+      - name: Check formatting
+        env:
+          IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        run: |
+          docker run \
+            --rm \
+            -v $PWD:/app \
+            -w /app \
+            ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG \
+            cargo fmt -- --check
+
+  clippy:
+    needs: build-base
+    runs-on: ubuntu-latest
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-clippy
+      cancel-in-progress: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Cache Cargo Target Directory
+        uses: actions/cache@v4
+        env:
+            IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        with:
+          path: target
+          key: clippy-${{ env.TARGET }}-${{ env.IMAGE_TAG }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            clippy-${{ env.TARGET }}-${{ env.IMAGE_TAG }}-
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Base Image
+        env:
+            IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        run: docker pull ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG
+
+      - name: Clippy
+        env:
+          IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        run: |
+          docker run \
+            --rm \
+            -v $PWD:/app \
+            -v $PWD/target:/app/target \
+            -w /app \
+            ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG \
+            cargo clippy --all-targets -- -Dclippy::all -D warnings
+
+      - name: Fix Permissions for Caching
+        run: sudo chown -R $(whoami):$(whoami) target
+
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.get-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Restore Cached Matrix
+        id: cache-matrix
+        uses: actions/cache@v4
+        with:
+          path: matrix.json
+          key: matrix-${{ hashFiles('Cargo.toml', 'Cargo.lock') }}
+
+      - name: Extract Cargo Workspace Members (if not cached)
+        if: steps.cache-matrix.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          cargo metadata --format-version=1 | jq -c '[.workspace_members[] | split("#")[0] | split("/") | last | gsub("_"; "-") | select(. != "metrics")]' > matrix.json
+
+      - name: Save Matrix to Output
+        id: get-matrix
+        run: echo "matrix=$(cat matrix.json)" >> $GITHUB_OUTPUT
+
+  tests:
+    needs: [generate-matrix, build-base]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-tests-${{ matrix.package }}
+      cancel-in-progress: true
+    services:
+      postgres:
+        image: postgres:14.9-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+            - 5432:5432
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Cache Cargo Target Directory
+        # Anything above 4min run
+        if: contains('["boost-manager", "ingest", "iot-config", "iot-packet-verifier", "iot-verifier", "mobile-packet-verifier", "mobile-verifier", "price", "solana"]', matrix.package)
+        uses: actions/cache@v4
+        env:
+            IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        with:
+          path: target
+          key: tests-${{ matrix.package }}-${{ env.TARGET }}-${{ env.IMAGE_TAG }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            tests-${{ matrix.package }}-${{ env.TARGET }}-${{ env.IMAGE_TAG }}-
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Base Image
+        env:
+          IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        run: docker pull ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG
+
+      - name: Run tests
+        env:
+          IMAGE_TAG: ${{ hashFiles('Dockerfile', 'rust-toolchain.toml') }}
+        run: |
+          docker run \
+            --rm \
+            --network=host \
+            -e DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres" \
+            -v $PWD:/app \
+            -w /app \
+            ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG \
+            cargo test -p ${{ matrix.package }} -- --include-ignored
+
+      - name: Fix Permissions for Caching
+        run: sudo chown -R $(whoami):$(whoami) target

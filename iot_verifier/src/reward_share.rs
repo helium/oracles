@@ -465,14 +465,28 @@ mod test {
         (value / (*DC_USD_PRICE)).round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
     }
 
-    fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
+    fn rewards_info_1_hour() -> EpochRewardInfo {
         let now = Utc::now();
+        let epoch_duration = Duration::hours(1);
         EpochRewardInfo {
             epoch_day: 1,
             epoch_address: EPOCH_ADDRESS.into(),
             sub_dao_address: SUB_DAO_ADDRESS.into(),
             epoch_period: (now - epoch_duration)..now,
-            epoch_emissions: Decimal::from(total_emissions),
+            epoch_emissions: dec!(100_000_000_000_000),
+            rewards_issued_at: now,
+        }
+    }
+
+    fn rewards_info_10_minutes() -> EpochRewardInfo {
+        let now = Utc::now();
+        let epoch_duration = Duration::minutes(10);
+        EpochRewardInfo {
+            epoch_day: 1,
+            epoch_address: EPOCH_ADDRESS.into(),
+            sub_dao_address: SUB_DAO_ADDRESS.into(),
+            epoch_period: (now - epoch_duration)..now,
+            epoch_emissions: Decimal::from(EMISSIONS_POOL_IN_BONES_10_MINUTES),
             rewards_issued_at: now,
         }
     }
@@ -486,7 +500,7 @@ mod test {
     #[test]
     fn test_poc_scheduled_tokens() {
         // set our rewards info
-        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
         let (beacon_v, witness_v) = get_scheduled_poc_tokens(rewards_info.epoch_emissions, dec!(0));
         assert_eq!(dec!(6_000_000_000_000), beacon_v);
         assert_eq!(dec!(24_000_000_000_000), witness_v);
@@ -495,7 +509,7 @@ mod test {
     #[test]
     fn test_poc_scheduled_tokens_with_dc_remainder() {
         // set our rewards info
-        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
         let (beacon_v, witness_v) =
             get_scheduled_poc_tokens(rewards_info.epoch_emissions, dec!(1_000_000_000_000));
         assert_eq!(dec!(6_200_000_000_000), beacon_v);
@@ -505,7 +519,7 @@ mod test {
     #[test]
     fn test_op_fund_scheduled_tokens() {
         // set our rewards info
-        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
         let v = get_scheduled_ops_fund_tokens(rewards_info.epoch_emissions);
         assert_eq!(dec!(7_000_000_000_000), v);
     }
@@ -513,7 +527,7 @@ mod test {
     #[test]
     fn test_oracles_scheduled_tokens() {
         // set our rewards info
-        let rewards_info = default_rewards_info(100_000_000_000_000, Duration::hours(1));
+        let rewards_info = rewards_info_1_hour();
         let v = get_scheduled_oracle_tokens(rewards_info.epoch_emissions);
         assert_eq!(dec!(7_000_000_000_000), v);
     }
@@ -559,8 +573,7 @@ mod test {
             .parse()
             .expect("failed gw6 parse");
 
-        let reward_info =
-            default_rewards_info(EMISSIONS_POOL_IN_BONES_10_MINUTES, Duration::minutes(10));
+        let reward_info = rewards_info_10_minutes();
         let total_data_transfer_tokens_for_period =
             get_scheduled_dc_tokens(reward_info.epoch_emissions);
         println!("total data transfer scheduled tokens: {total_data_transfer_tokens_for_period}");
@@ -774,8 +787,7 @@ mod test {
             .parse()
             .expect("failed gw6 parse");
 
-        let reward_info =
-            default_rewards_info(EMISSIONS_POOL_IN_BONES_10_MINUTES, Duration::minutes(10));
+        let reward_info = rewards_info_10_minutes();
         let total_data_transfer_tokens_for_period =
             get_scheduled_dc_tokens(reward_info.epoch_emissions);
         println!("total data transfer scheduled tokens: {total_data_transfer_tokens_for_period}");
@@ -974,8 +986,7 @@ mod test {
             .parse()
             .expect("failed gw6 parse");
 
-        let reward_info =
-            default_rewards_info(EMISSIONS_POOL_IN_BONES_10_MINUTES, Duration::minutes(10));
+        let reward_info = rewards_info_10_minutes();
         let total_data_transfer_tokens_for_period =
             get_scheduled_dc_tokens(reward_info.epoch_emissions);
         println!("total_data_transfer_tokens_for_period: {total_data_transfer_tokens_for_period}");

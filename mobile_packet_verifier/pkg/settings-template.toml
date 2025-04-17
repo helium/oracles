@@ -41,9 +41,9 @@ url = "postgresql://postgres:password@localhost:5432/postgres"
 #
 # max_connections = 10
 
-[ingest]
-
 # Input bucket details for ingest data 
+# 
+[ingest]
 
 # Name of bucket to access ingest data. Required
 #
@@ -52,6 +52,11 @@ bucket = "helium-mainnet-mobile-ingest"
 # Region for bucket. Defaults to below
 #
 region = "us-west-2"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+# endpoint = "https://aws-s3-bucket.aws.com"
 
 # Optional URL for AWS api endpoint. Inferred from aws config settings or aws
 # IAM context by default
@@ -79,3 +84,28 @@ bucket = ""
 # Endpoint for metrics. Default below
 #
 # endpoint = "127.0.0.1:19000"
+
+# Ban Settings
+#
+[banning]
+# How often do we remove expired bans?
+# Default: 24 hours
+#
+# purge_interval = "24 hour"
+
+# How far back do we read ban files?
+# Default: UNIX_EPOCH
+# 
+# start_after = "2024-12-15 01:00:00Z"
+
+# Verifier bucket details for ban data
+# 
+[banning.input_bucket]
+
+# Name of bucket to access ingest data. Required
+#
+bucket = "helium-mainnet-mobile-verified"
+
+# Region for bucket. Defaults to below
+#
+region = "us-west-2"

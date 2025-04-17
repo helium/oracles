@@ -117,6 +117,7 @@ impl From<NetworkKeyRole> for KeyRole {
             NetworkKeyRole::MobileRouter => KeyRole::Router,
             NetworkKeyRole::MobileCarrier => KeyRole::Carrier,
             NetworkKeyRole::MobilePcs => KeyRole::Pcs,
+            NetworkKeyRole::Banning => KeyRole::Banning,
         }
     }
 }

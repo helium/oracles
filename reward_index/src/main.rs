@@ -1,9 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use file_store::{
-    file_info_poller::LookbackBehavior, file_source, reward_manifest::RewardManifest, FileStore,
-    FileType,
-};
+use file_store::{file_info_poller::LookbackBehavior, file_source, FileStore, FileType};
 use reward_index::{settings::Settings, telemetry, Indexer};
 use std::path::PathBuf;
 use task_manager::TaskManager;
@@ -59,7 +56,7 @@ impl Server {
         telemetry::initialize(&pool).await?;
 
         let file_store = FileStore::from_settings(&settings.verifier).await?;
-        let (receiver, server) = file_source::continuous_source::<RewardManifest, _>()
+        let (receiver, server) = file_source::continuous_source()
             .state(pool.clone())
             .store(file_store.clone())
             .prefix(FileType::RewardManifest.to_string())

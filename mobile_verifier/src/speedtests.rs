@@ -83,14 +83,13 @@ where
         )
         .await?;
 
-        let (speedtests, speedtests_server) =
-            file_source::continuous_source::<CellSpeedtestIngestReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::CellSpeedtestIngestReport.to_string())
-                .create()
-                .await?;
+        let (speedtests, speedtests_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::CellSpeedtestIngestReport.to_string())
+            .create()
+            .await?;
 
         let speedtest_daemon = SpeedtestDaemon::new(
             pool.clone(),
@@ -206,7 +205,8 @@ where
         };
         self.verified_speedtest_file_sink
             .write(proto, &[("result", result.as_str_name())])
-            .await?;
+            .await?
+            .await??;
         Ok(())
     }
 }

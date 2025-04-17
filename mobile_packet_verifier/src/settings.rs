@@ -4,6 +4,8 @@ use humantime_serde::re::humantime;
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
 
+use crate::banning;
+
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Defsault to
@@ -45,14 +47,9 @@ pub struct Settings {
         default = "default_txn_confirmation_check_interval"
     )]
     pub txn_confirmation_check_interval: Duration,
-    #[serde(default = "default_cbrs_disable_time")]
-    pub cbrs_disable_time: DateTime<Utc>,
-}
 
-fn default_cbrs_disable_time() -> DateTime<Utc> {
-    "2025-03-01 00:00:00Z"
-        .parse::<DateTime<Utc>>()
-        .expect("invalid default cbrs disable time")
+    /// Settings for Banning
+    pub banning: banning::BanSettings,
 }
 
 fn default_purger_interval() -> Duration {

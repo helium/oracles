@@ -15,7 +15,6 @@ pub type OutdoorCellTree = HashMap<Cell, BinaryHeap<OutdoorCoverageLevel>>;
 #[derive(Eq, Debug, Clone)]
 pub struct OutdoorCoverageLevel {
     hotspot_key: Vec<u8>,
-    cbsd_id: Option<String>,
     seniority_timestamp: DateTime<Utc>,
     signal_power: i32,
     signal_level: SignalLevel,
@@ -52,7 +51,6 @@ pub fn insert_outdoor_coverage_object(
         insert_outdoor_coverage(
             outdoor,
             &coverage_object.hotspot_key,
-            &coverage_object.cbsd_id,
             coverage_object.seniority_timestamp,
             hex_coverage,
         );
@@ -62,7 +60,6 @@ pub fn insert_outdoor_coverage_object(
 pub fn insert_outdoor_coverage(
     outdoor: &mut OutdoorCellTree,
     hotspot: &[u8],
-    cbsd_id: &Option<String>,
     seniority_timestamp: DateTime<Utc>,
     hex_coverage: UnrankedCoverage,
 ) {
@@ -71,7 +68,6 @@ pub fn insert_outdoor_coverage(
         .or_default()
         .push(OutdoorCoverageLevel {
             hotspot_key: hotspot.to_vec(),
-            cbsd_id: cbsd_id.clone(),
             seniority_timestamp,
             signal_level: hex_coverage.signal_level,
             signal_power: hex_coverage.signal_power,
@@ -108,7 +104,6 @@ pub fn into_outdoor_coverage_map(
                 hex,
                 rank: rank + 1,
                 hotspot_key: cov.hotspot_key,
-                cbsd_id: cov.cbsd_id,
                 assignments: cov.assignments,
                 boosted,
                 signal_level: cov.signal_level,
@@ -128,11 +123,11 @@ mod test {
     fn ensure_outdoor_radios_ranked_by_power() {
         let mut outdoor_coverage = OutdoorCellTree::default();
         for cov_obj in vec![
-            outdoor_cbrs_coverage("1", -946, date(2022, 8, 1)),
-            outdoor_cbrs_coverage("2", -936, date(2022, 12, 5)),
-            outdoor_cbrs_coverage("3", -887, date(2022, 12, 2)),
-            outdoor_cbrs_coverage("4", -887, date(2022, 12, 1)),
-            outdoor_cbrs_coverage("5", -773, date(2023, 5, 1)),
+            outdoor_wifi_coverage("1", -946, date(2022, 8, 1)),
+            outdoor_wifi_coverage("2", -936, date(2022, 12, 5)),
+            outdoor_wifi_coverage("3", -887, date(2022, 12, 2)),
+            outdoor_wifi_coverage("4", -887, date(2022, 12, 1)),
+            outdoor_wifi_coverage("5", -773, date(2023, 5, 1)),
         ]
         .into_iter()
         {
@@ -140,7 +135,14 @@ mod test {
         }
         let ranked: HashMap<_, _> =
             into_outdoor_coverage_map(outdoor_coverage, &NoBoostedHexes, Utc::now())
-                .map(|x| (x.cbsd_id.clone().unwrap(), x))
+                .map(|x| {
+                    (
+                        std::str::from_utf8(&x.hotspot_key.clone())
+                            .unwrap()
+                            .to_string(),
+                        x,
+                    )
+                })
                 .collect();
         assert_eq!(ranked.get("5").unwrap().rank, 1);
         assert_eq!(ranked.get("4").unwrap().rank, 2);
@@ -166,16 +168,15 @@ mod test {
             .and_utc()
     }
 
-    fn outdoor_cbrs_coverage(
-        cbsd_id: &str,
+    fn outdoor_wifi_coverage(
+        hotspot_key: &str,
         signal_power: i32,
         seniority_timestamp: DateTime<Utc>,
     ) -> CoverageObject {
         CoverageObject {
             indoor: false,
-            hotspot_key: vec![0, 0],
+            hotspot_key: hotspot_key.as_bytes().to_vec(),
             seniority_timestamp,
-            cbsd_id: Some(cbsd_id.to_string()),
             coverage: vec![UnrankedCoverage {
                 location: Cell::from_raw(0x8a1fb46622dffff).expect("valid h3 cell"),
                 signal_power,

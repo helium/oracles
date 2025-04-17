@@ -274,6 +274,16 @@ impl_file_sink!(
     "verified_unique_connections_report"
 );
 impl_file_sink!(
+    poc_mobile::BanIngestReportV1,
+    FileType::MobileBanReport.to_str(),
+    "mobile_ban_report"
+);
+impl_file_sink!(
+    poc_mobile::VerifiedBanIngestReportV1,
+    FileType::VerifiedMobileBanReport.to_str(),
+    "verified_mobile_ban_report"
+);
+impl_file_sink!(
     proto::BoostedHexUpdateV1,
     FileType::BoostedHexUpdate.to_str(),
     "boosted_hex_update"
@@ -292,4 +302,14 @@ impl_file_sink!(
     proto::RewardManifest,
     FileType::RewardManifest.to_str(),
     "reward_manifest"
+);
+impl_file_sink!(
+    poc_mobile::SubscriberMappingActivityIngestReportV1,
+    FileType::SubscriberMappingActivityIngestReport.to_str(),
+    "subscriber_mapping_activity_ingest_report"
+);
+impl_file_sink!(
+    poc_mobile::VerifiedSubscriberMappingActivityReportV1,
+    FileType::VerifiedSubscriberMappingActivityReport.to_str(),
+    "verified_subscriber_mapping_activity_report"
 );

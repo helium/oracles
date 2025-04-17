@@ -95,14 +95,13 @@ impl CoverageDaemon {
         )
         .await?;
 
-        let (coverage_objs, coverage_objs_server) =
-            file_source::continuous_source::<CoverageObjectIngestReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::CoverageObjectIngestReport.to_string())
-                .create()
-                .await?;
+        let (coverage_objs, coverage_objs_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::CoverageObjectIngestReport.to_string())
+            .create()
+            .await?;
 
         // let hex_boost_data = boosting_oracles::make_hex_boost_data(settings, geofence)?;
         let coverage_daemon = CoverageDaemon::new(
@@ -265,7 +264,6 @@ impl CoverageObject {
 
     pub fn key(&self) -> KeyType<'_> {
         match self.coverage_object.key_type {
-            coverage::KeyType::CbsdId(ref cbsd) => KeyType::Cbrs(cbsd.as_str()),
             coverage::KeyType::HotspotKey(ref hotspot_key) => KeyType::Wifi(hotspot_key),
         }
     }
@@ -437,6 +435,7 @@ impl CoveredHexStream for Pool<Postgres> {
             .execute(self)
             .await?;
 
+        // radio_type != 'cbrs' - makes sure CBRS radios will never be selected since deprecation
         Ok(
             sqlx::query_as(
                 r#"
@@ -444,7 +443,7 @@ impl CoveredHexStream for Pool<Postgres> {
                 FROM coverage_objects co
                     INNER JOIN hexes h on co.uuid = h.uuid
                 WHERE co.radio_key = $1
-                    AND co.uuid = $2
+                    AND co.uuid = $2 AND radio_type != 'cbrs'
                 "#,
             )
             .bind(key)

@@ -92,7 +92,7 @@ impl SpeedtestAverage {
     pub async fn write(
         &self,
         filesink: &FileSinkClient<proto::SpeedtestAvg>,
-    ) -> file_store::Result {
+    ) -> anyhow::Result<()> {
         filesink
             .write(
                 proto::SpeedtestAvg {
@@ -116,7 +116,10 @@ impl SpeedtestAverage {
                 },
                 &[("validity", self.validity.as_str_name())],
             )
-            .await?;
+            .await?
+            // wait to be written
+            .await??;
+
         Ok(())
     }
 

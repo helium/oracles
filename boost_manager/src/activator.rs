@@ -11,7 +11,7 @@ use helium_proto::{
 };
 use mobile_config::{
     boosted_hex_info::{BoostedHex, BoostedHexes},
-    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
+    client::hex_boosting_client::HexBoostingInfoResolver,
 };
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
@@ -28,7 +28,7 @@ pub struct Activator<A> {
 
 impl<A> ManagedTask for Activator<A>
 where
-    A: HexBoostingInfoResolver<Error = ClientError>,
+    A: HexBoostingInfoResolver,
 {
     fn start_task(
         self: Box<Self>,
@@ -45,7 +45,7 @@ where
 
 impl<A> Activator<A>
 where
-    A: HexBoostingInfoResolver<Error = ClientError>,
+    A: HexBoostingInfoResolver,
 {
     pub async fn new(
         pool: Pool<Postgres>,

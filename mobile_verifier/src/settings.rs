@@ -47,17 +47,6 @@ pub struct Settings {
     pub usa_and_mexico_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
     pub usa_and_mexico_fencing_resolution: u8,
-    pub usa_geofence_regions: String,
-    #[serde(default = "default_fencing_resolution")]
-    pub usa_fencing_resolution: u8,
-    #[serde(default = "default_cbrs_disable_time")]
-    pub cbrs_disable_time: DateTime<Utc>,
-}
-
-fn default_cbrs_disable_time() -> DateTime<Utc> {
-    "2025-03-01 00:00:00Z"
-        .parse::<DateTime<Utc>>()
-        .expect("invalid default cbrs disable time")
 }
 
 fn default_fencing_resolution() -> u8 {
@@ -110,20 +99,6 @@ impl Settings {
             .add_source(Environment::with_prefix("VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn usa_region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {
-        let paths = std::fs::read_dir(&self.usa_geofence_regions)?;
-        Ok(paths
-            .into_iter()
-            .collect::<Result<Vec<std::fs::DirEntry>, std::io::Error>>()?
-            .into_iter()
-            .map(|path| path.path())
-            .collect())
-    }
-
-    pub fn usa_fencing_resolution(&self) -> anyhow::Result<h3o::Resolution> {
-        Ok(h3o::Resolution::try_from(self.usa_fencing_resolution)?)
     }
 
     pub fn usa_and_mexico_region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {
