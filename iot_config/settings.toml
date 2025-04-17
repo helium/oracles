@@ -1,0 +1,33 @@
+# General settings
+log = "iot_config=debug"
+listen = "0.0.0.0:8080"
+keypair = "/Users/bry/Documents/Work/helium-config-service-cli/keypair.bin"
+admin = "14m3uWXag21zDMmLSDNdEy5LFFDN9sZNsbHuuS7zanMwZLnUydQ"
+deleted_entry_retention = "48 hours"
+
+# Optional custom tracing settings (if needed)
+# [custom_tracing]
+# ... custom tracing settings ...
+
+# Database settings
+[database]
+max_connections = 50
+url = "postgres://postgres:postgres@localhost:5432/postgres"
+auth_type = "postgres"
+
+# Metadata database settings (for Solana on-chain data)
+[metadata]
+max_connections = 50
+url = "postgres://postgres:postgres@localhost:5432/postgres"
+auth_type = "postgres"
+
+# Metrics settings
+[metrics]
+endpoint = "127.0.0.1:19000"
+
+# Solana settings
+[solana]
+hnt_mint = "2ZiWvqkZ8DCZwjoJ3HudxnChPrPPk6UVWraouC3GHvRN"
+iot_mint = "2GtqVJo9yKXuJbyZrxr3ouQbU8AXDJQq74DQpFXFrHg7"
+iot_price_key = "8UYEn5Weq7toHwgcmctvcAxaNJo3SJxXEayM57rpoXr9"
+
