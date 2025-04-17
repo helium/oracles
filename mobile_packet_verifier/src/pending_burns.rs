@@ -134,9 +134,6 @@ pub async fn save_data_transfer_session_req(
     )
     .await?;
 
-    let dc_to_burn = bytes_to_dc(req.rewardable_bytes);
-    increment_metric(&req.data_transfer_usage.payer, dc_to_burn);
-
     Ok(())
 }
 
@@ -174,14 +171,11 @@ pub async fn save_data_transfer_session(
 pub async fn delete_for_payer(
     conn: &Pool<Postgres>,
     payer: &PublicKeyBinary,
-    burnt_dc: u64,
 ) -> anyhow::Result<()> {
     sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
         .bind(payer)
         .execute(conn)
         .await?;
-
-    decrement_metric(payer, burnt_dc);
 
     Ok(())
 }
@@ -190,10 +184,10 @@ fn set_metric(payer: &PublicKeyBinary, value: u64) {
     metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).set(value as f64);
 }
 
-fn increment_metric(payer: &PublicKeyBinary, value: u64) {
+pub fn increment_metric(payer: &PublicKeyBinary, value: u64) {
     metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).increment(value as f64);
 }
 
-fn decrement_metric(payer: &PublicKeyBinary, value: u64) {
+pub fn decrement_metric(payer: &PublicKeyBinary, value: u64) {
     metrics::gauge!(METRIC_NAME, "payer" => payer.to_string()).decrement(value as f64);
 }

@@ -20,6 +20,10 @@ pub fn bytes_to_dc(bytes: u64) -> u64 {
     bytes.div_ceil(BYTES_PER_DC)
 }
 
+pub fn dc_to_bytes(dcs: u64) -> u64 {
+    dcs * BYTES_PER_DC
+}
+
 pub struct MobileConfigClients {
     gateway_client: client::GatewayClient,
     auth_client: client::AuthorizationClient,

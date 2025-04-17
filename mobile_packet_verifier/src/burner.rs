@@ -89,8 +89,8 @@ where
         }
 
         for payer_pending_burn in pending_burns::get_all_payer_burns(pool).await? {
-            let payer = payer_pending_burn.payer;
             let total_dcs = payer_pending_burn.total_dcs;
+            let payer = payer_pending_burn.payer;
             let sessions = payer_pending_burn.sessions;
 
             let payer_balance = self.solana.payer_balance(&payer).await?;
@@ -223,7 +223,8 @@ async fn handle_transaction_success(
     .increment(total_dcs);
 
     // Delete from the data transfer session and write out to S3
-    pending_burns::delete_for_payer(pool, &payer, total_dcs).await?;
+    pending_burns::delete_for_payer(pool, &payer).await?;
+    pending_burns::decrement_metric(&payer, total_dcs);
     pending_txns::remove_pending_txn_success(pool, signature).await?;
 
     for session in sessions {

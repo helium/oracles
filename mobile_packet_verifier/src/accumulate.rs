@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
 use file_store::mobile_session::{
@@ -10,7 +12,9 @@ use helium_proto::services::poc_mobile::{
 };
 use sqlx::{Postgres, Transaction};
 
-use crate::{banning::BannedRadios, event_ids, pending_burns, MobileConfigResolverExt};
+use crate::{
+    banning::BannedRadios, bytes_to_dc, event_ids, pending_burns, MobileConfigResolverExt,
+};
 
 pub async fn accumulate_sessions(
     mobile_config: &impl MobileConfigResolverExt,
@@ -21,6 +25,8 @@ pub async fn accumulate_sessions(
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
 ) -> anyhow::Result<()> {
     tokio::pin!(reports);
+
+    let mut metrics = AccumulateMetrics::new();
 
     while let Some(report) = reports.next().await {
         if report.report.data_transfer_usage.radio_access_technology
@@ -46,9 +52,12 @@ pub async fn accumulate_sessions(
             continue;
         }
 
+        metrics.add_report(&report);
         pending_burns::save_data_transfer_session_req(&mut *txn, &report.report, curr_file_ts)
             .await?;
     }
+
+    metrics.flush();
 
     Ok(())
 }
@@ -109,4 +118,26 @@ async fn write_verified_report(
         .write(proto, &[("status", status.as_str_name())])
         .await?;
     Ok(())
+}
+
+struct AccumulateMetrics(HashMap<helium_crypto::PublicKeyBinary, u64>);
+
+impl AccumulateMetrics {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    fn add_report(&mut self, report: &DataTransferSessionIngestReport) {
+        *self
+            .0
+            .entry(report.report.data_transfer_usage.payer.clone())
+            .or_default() += report.report.rewardable_bytes;
+    }
+
+    fn flush(self) {
+        for (payer, rewardable_bytes) in self.0 {
+            let dc_to_burn = bytes_to_dc(rewardable_bytes);
+            pending_burns::increment_metric(&payer, dc_to_burn);
+        }
+    }
 }
