@@ -44,9 +44,7 @@ impl MockCarrierServiceClient {
 
 #[async_trait]
 impl CarrierServiceVerifier for MockCarrierServiceClient {
-    type Error = ClientError;
-
-    async fn payer_key_to_service_provider<'a>(
+    async fn payer_key_to_service_provider(
         &self,
         pubkey: &str,
     ) -> Result<ServiceProvider, ClientError> {
@@ -60,7 +58,7 @@ impl CarrierServiceVerifier for MockCarrierServiceClient {
     async fn list_incentive_promotions(
         &self,
         _epoch_start: &DateTime<Utc>,
-    ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
+    ) -> Result<Vec<ServiceProviderPromotions>, ClientError> {
         Ok(self.promotions.clone())
     }
 }

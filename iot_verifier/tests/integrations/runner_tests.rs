@@ -9,6 +9,7 @@ use helium_proto::services::poc_lora::{
     LoraInvalidWitnessReportV1, LoraPocV1, LoraWitnessReportReqV1, VerificationStatus,
 };
 use helium_proto::Region as ProtoRegion;
+use iot_config::client::ClientError;
 use iot_config::{
     client::{Gateways, RegionParamsInfo},
     gateway_info::{GatewayInfo, GatewayInfoStream},
@@ -36,16 +37,14 @@ pub struct MockIotConfigClient {
 
 #[async_trait]
 impl Gateways for MockIotConfigClient {
-    type Error = anyhow::Error;
-
     async fn resolve_gateway_info(
         &mut self,
         _address: &PublicKeyBinary,
-    ) -> Result<Option<GatewayInfo>, Self::Error> {
+    ) -> Result<Option<GatewayInfo>, ClientError> {
         Ok(Some(self.resolve_gateway.clone()))
     }
 
-    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, Self::Error> {
+    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, ClientError> {
         let stream = stream::iter(self.stream_gateways.clone()).boxed();
         Ok(stream)
     }
@@ -53,7 +52,7 @@ impl Gateways for MockIotConfigClient {
     async fn resolve_region_params(
         &mut self,
         _region: ProtoRegion,
-    ) -> Result<RegionParamsInfo, Self::Error> {
+    ) -> Result<RegionParamsInfo, ClientError> {
         Ok(self.region_params.clone())
     }
 }

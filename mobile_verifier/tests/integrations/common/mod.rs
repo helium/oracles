@@ -52,8 +52,6 @@ impl MockHexBoostingClient {
 
 #[async_trait::async_trait]
 impl HexBoostingInfoResolver for MockHexBoostingClient {
-    type Error = ClientError;
-
     async fn stream_boosted_hexes_info(&mut self) -> Result<BoostedHexInfoStream, ClientError> {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())
     }
@@ -68,13 +66,11 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
 
 #[async_trait::async_trait]
 impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
-    type Error = ClientError;
-
     async fn resolve_info(
         &self,
         _sub_dao: &str,
         _epoch: u64,
-    ) -> Result<Option<EpochRewardInfo>, Self::Error> {
+    ) -> Result<Option<EpochRewardInfo>, ClientError> {
         Ok(self.info.clone())
     }
 }
@@ -215,12 +211,10 @@ pub struct GatewayClientAllOwnersValid;
 
 #[async_trait]
 impl GatewayResolver for GatewayClientAllOwnersValid {
-    type Error = std::convert::Infallible;
-
     async fn resolve_gateway(
         &self,
         _address: &PublicKeyBinary,
-    ) -> Result<GatewayResolution, Self::Error> {
+    ) -> Result<GatewayResolution, ClientError> {
         Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
     }
 }

@@ -10,26 +10,21 @@ use helium_proto::services::{
     mobile_config::DeviceType as MobileDeviceType, poc_mobile::SpeedtestAvgValidity,
 };
 use mobile_config::{
-    client::gateway_client::GatewayInfoResolver,
+    client::{gateway_client::GatewayInfoResolver, ClientError},
     gateway_info::{DeviceType, GatewayInfo, GatewayInfoStream},
 };
 use mobile_verifier::speedtests::SpeedtestDaemon;
 use sqlx::{Pool, Postgres};
-
-#[derive(thiserror::Error, Debug)]
-enum MockError {}
 
 #[derive(Clone)]
 struct MockGatewayInfoResolver {}
 
 #[async_trait::async_trait]
 impl GatewayInfoResolver for MockGatewayInfoResolver {
-    type Error = MockError;
-
     async fn resolve_gateway_info(
         &self,
         address: &PublicKeyBinary,
-    ) -> Result<Option<GatewayInfo>, Self::Error> {
+    ) -> Result<Option<GatewayInfo>, ClientError> {
         Ok(Some(GatewayInfo {
             address: address.clone(),
             metadata: None,
@@ -43,7 +38,7 @@ impl GatewayInfoResolver for MockGatewayInfoResolver {
     async fn stream_gateways_info(
         &mut self,
         _device_types: &[MobileDeviceType],
-    ) -> Result<GatewayInfoStream, Self::Error> {
+    ) -> Result<GatewayInfoStream, ClientError> {
         todo!()
     }
 }

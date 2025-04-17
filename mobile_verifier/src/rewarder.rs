@@ -39,7 +39,7 @@ use mobile_config::{
     client::{
         carrier_service_client::CarrierServiceVerifier,
         hex_boosting_client::HexBoostingInfoResolver,
-        sub_dao_client::SubDaoEpochRewardInfoResolver, ClientError,
+        sub_dao_client::SubDaoEpochRewardInfoResolver,
     },
     sub_dao_epoch_reward_info::EpochRewardInfo,
     EpochInfo,
@@ -73,9 +73,9 @@ pub struct Rewarder<A, B, C> {
 
 impl<A, B, C> Rewarder<A, B, C>
 where
-    A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
-    B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
-    C: SubDaoEpochRewardInfoResolver<Error = ClientError> + Send + Sync + 'static,
+    A: CarrierServiceVerifier + 'static,
+    B: HexBoostingInfoResolver,
+    C: SubDaoEpochRewardInfoResolver,
 {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
@@ -374,9 +374,9 @@ where
 
 impl<A, B, C> ManagedTask for Rewarder<A, B, C>
 where
-    A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
-    B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
-    C: SubDaoEpochRewardInfoResolver<Error = ClientError> + Send + Sync + 'static,
+    A: CarrierServiceVerifier,
+    B: HexBoostingInfoResolver,
+    C: SubDaoEpochRewardInfoResolver,
 {
     fn start_task(
         self: Box<Self>,
@@ -393,7 +393,7 @@ where
 
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
-    hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
+    hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_info: &EpochRewardInfo,
@@ -456,7 +456,7 @@ pub async fn reward_poc_and_dc(
 
 async fn reward_poc(
     pool: &Pool<Postgres>,
-    hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
+    hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
     speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_info: &EpochRewardInfo,
