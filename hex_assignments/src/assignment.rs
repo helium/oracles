@@ -1,5 +1,3 @@
-use super::HexAssignment;
-use anyhow::Result;
 use helium_proto::services::poc_mobile::OracleBoostingAssignment as ProtoAssignment;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -77,16 +75,6 @@ impl fmt::Display for Assignment {
 }
 
 impl HexAssignments {
-    pub fn builder(cell: hextree::Cell) -> HexAssignmentsBuilder {
-        HexAssignmentsBuilder {
-            cell,
-            footfall: None,
-            landtype: None,
-            urbanized: None,
-            service_provider_override: None,
-        }
-    }
-
     pub fn boosting_multiplier(&self) -> Decimal {
         let HexAssignments {
             footfall,
@@ -121,59 +109,5 @@ impl HexAssignments {
             //HRP-20250409 - all footfall C hexes are 0.03 multiplier
             (C, _, _, _) => dec!(0.03),
         }
-    }
-}
-
-pub struct HexAssignmentsBuilder {
-    cell: hextree::Cell,
-    footfall: Option<Result<Assignment>>,
-    landtype: Option<Result<Assignment>>,
-    urbanized: Option<Result<Assignment>>,
-    service_provider_override: Option<Result<Assignment>>,
-}
-
-impl HexAssignmentsBuilder {
-    pub fn footfall(mut self, footfall: &impl HexAssignment) -> Self {
-        self.footfall = Some(footfall.assignment(self.cell));
-        self
-    }
-
-    pub fn landtype(mut self, landtype: &impl HexAssignment) -> Self {
-        self.landtype = Some(landtype.assignment(self.cell));
-        self
-    }
-
-    pub fn urbanized(mut self, urbanized: &impl HexAssignment) -> Self {
-        self.urbanized = Some(urbanized.assignment(self.cell));
-        self
-    }
-
-    pub fn service_provider_override(
-        mut self,
-        service_provider_override: &impl HexAssignment,
-    ) -> Self {
-        self.service_provider_override = Some(service_provider_override.assignment(self.cell));
-        self
-    }
-
-    pub fn build(self) -> anyhow::Result<HexAssignments> {
-        let Some(footfall) = self.footfall else {
-            anyhow::bail!("footfall assignment not set");
-        };
-        let Some(landtype) = self.landtype else {
-            anyhow::bail!("landtype assignment not set");
-        };
-        let Some(urbanized) = self.urbanized else {
-            anyhow::bail!("urbanized assignment not set");
-        };
-        let Some(service_provider_override) = self.service_provider_override else {
-            anyhow::bail!("service_provider_override assignment not set");
-        };
-        Ok(HexAssignments {
-            footfall: footfall?,
-            urbanized: urbanized?,
-            landtype: landtype?,
-            service_provider_override: service_provider_override?,
-        })
     }
 }

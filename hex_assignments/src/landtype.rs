@@ -3,6 +3,7 @@ use hextree::disktree::DiskTreeMap;
 
 use super::{Assignment, HexAssignment};
 
+#[derive(Default)]
 pub struct Landtype {
     pub landtype: Option<DiskTreeMap>,
     pub timestamp: Option<DateTime<Utc>>,
@@ -14,12 +15,6 @@ impl Landtype {
             landtype,
             timestamp: None,
         }
-    }
-}
-
-impl Default for Landtype {
-    fn default() -> Self {
-        Self::new(None)
     }
 }
 

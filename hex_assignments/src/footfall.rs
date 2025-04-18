@@ -3,6 +3,7 @@ use hextree::disktree::DiskTreeMap;
 
 use super::{Assignment, HexAssignment};
 
+#[derive(Default)]
 pub struct Footfall {
     pub footfall: Option<DiskTreeMap>,
     pub timestamp: Option<DateTime<Utc>>,
@@ -14,12 +15,6 @@ impl Footfall {
             footfall,
             timestamp: None,
         }
-    }
-}
-
-impl Default for Footfall {
-    fn default() -> Self {
-        Self::new(None)
     }
 }
 
