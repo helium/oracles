@@ -211,17 +211,6 @@ pub struct SpeedtestAverages {
 }
 
 impl SpeedtestAverages {
-    pub async fn write_all(
-        &self,
-        sink: &FileSinkClient<proto::SpeedtestAvg>,
-    ) -> anyhow::Result<()> {
-        for speedtest in self.averages.values() {
-            speedtest.write(sink).await?;
-        }
-
-        Ok(())
-    }
-
     pub fn get_average(&self, pub_key: &PublicKeyBinary) -> Option<SpeedtestAverage> {
         self.averages.get(pub_key).cloned()
     }
