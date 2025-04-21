@@ -52,7 +52,6 @@ async fn update_assignments(pool: &PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
@@ -139,7 +138,6 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
-        &speedtest_avg_client,
         &reward_info,
         price_info,
     )
@@ -210,7 +208,6 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
     // thresholds for the radios have not been met
     // the end result is that no boosting takes place, the radios are awarded non boosted reward values
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
     let now = Utc::now();
     let epoch = (now - ChronoDuration::hours(24))..now;
     let boost_period_length = Duration::days(30);
@@ -297,7 +294,6 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
-        &speedtest_avg_client,
         &reward_info,
         price_info,
     )
@@ -330,7 +326,6 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
 #[sqlx::test]
 async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
@@ -428,7 +423,6 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
-        &speedtest_avg_client,
         &reward_info,
         default_price_info(),
     )
@@ -508,7 +502,6 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
 #[sqlx::test]
 async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
     let boost_period_length = Duration::days(30);
@@ -569,7 +562,6 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
-        &speedtest_avg_client,
         &reward_info,
         default_price_info(),
     )
@@ -606,7 +598,6 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
     let boost_period_length = Duration::days(30);
@@ -673,7 +664,6 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
-        &speedtest_avg_client,
         &reward_info,
         default_price_info(),
     )
@@ -744,7 +734,6 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
     let boost_period_length = Duration::days(30);
@@ -814,7 +803,6 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
-        &speedtest_avg_client,
         &reward_info,
         default_price_info(),
     )
@@ -883,7 +871,6 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
 #[sqlx::test]
 async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
-    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
 
     let reward_info = reward_info_24_hours();
 
@@ -978,7 +965,6 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
         &pool,
         &MockHexBoostingClient::new(boosted_hexes),
         mobile_rewards_client,
-        &speedtest_avg_client,
         &reward_info,
         default_price_info(),
     )

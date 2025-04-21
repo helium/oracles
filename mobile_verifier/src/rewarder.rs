@@ -287,7 +287,6 @@ where
             &self.pool,
             &self.hex_service_client,
             self.mobile_rewards.clone(),
-            &self.speedtest_averages,
             &reward_info,
             price_info.clone(),
         )
@@ -395,7 +394,6 @@ pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
-    speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
@@ -432,7 +430,6 @@ pub async fn reward_poc_and_dc(
         pool,
         hex_service_client,
         &mobile_rewards,
-        speedtest_avg_sink,
         reward_info,
         reward_shares,
     )
@@ -458,15 +455,12 @@ async fn reward_poc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_info: &EpochRewardInfo,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
     let heartbeats = HeartbeatReward::validated(pool, &reward_info.epoch_period);
     let speedtest_averages =
         SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, pool).await?;
-
-    speedtest_averages.write_all(speedtest_avg_sink).await?;
 
     let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
 
