@@ -498,7 +498,7 @@ async fn reward_poc(
                 mobile_rewards
                     .write(mobile_reward_share_v2, [])
                     .await?
-                    // Await the returned one shot to ensure that we wrote the file
+                    // await the returned one shot to ensure that we wrote the file
                     .await??;
             }
             // calculate any unallocated poc reward
