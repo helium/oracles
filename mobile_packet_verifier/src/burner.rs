@@ -92,8 +92,7 @@ where
             let total_dcs = payer_pending_burn.total_dcs;
             let payer = payer_pending_burn.payer;
             let sessions = payer_pending_burn.sessions;
-
-            let payer_balance = self.solana.payer_balance(&payer).await?;
+            let payer_balance = self.solana.escrow_balance(&payer.to_string()).await?;
 
             if payer_balance < total_dcs {
                 tracing::warn!(
@@ -106,7 +105,10 @@ where
             }
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
-            let txn = self.solana.make_burn_transaction(&payer, total_dcs).await?;
+            let txn = self
+                .solana
+                .make_burn_transaction(&payer.to_string(), total_dcs)
+                .await?;
             pending_txns::add_pending_txn(pool, &payer, total_dcs, txn.get_signature())
                 .await
                 .context("adding pending txns and moving sessions")?;
