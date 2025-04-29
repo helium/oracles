@@ -49,3 +49,4 @@ solana = { path = "../solana" }
 solana-sdk = { workspace = true }
 humantime-serde = { workspace = true }
 custom-tracing = { path = "../custom_tracing" }
+hextree = { workspace = true }

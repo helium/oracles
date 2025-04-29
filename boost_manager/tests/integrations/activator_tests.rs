@@ -1,6 +1,6 @@
 use boost_manager::{activator, db, OnChainStatus};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Timelike, Utc};
-use mobile_config::boosted_hex_info::{BoostedHex, BoostedHexInfo, BoostedHexes};
+use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
@@ -99,10 +99,7 @@ async fn test_activated_hex_insert(pool: PgPool) -> anyhow::Result<()> {
         &mut txn,
         now,
         &boosted_hexes,
-        &BoostedHex {
-            location: 0x8c2681a306607ff_u64.try_into().expect("valid h3 cell"),
-            multiplier: NonZeroU32::new(10).unwrap(),
-        },
+        0x8c2681a306607ff_u64.try_into().expect("valid h3 cell"),
     )
     .await?;
     txn.commit().await?;
@@ -136,10 +133,7 @@ async fn test_activated_hex_no_insert(pool: PgPool) -> anyhow::Result<()> {
         &mut txn,
         now,
         &boosted_hexes,
-        &BoostedHex {
-            location: 0x8a1fb49642dffff_u64.try_into().expect("valid h3 cell"),
-            multiplier: NonZeroU32::new(10).unwrap(),
-        },
+        0x8a1fb49642dffff_u64.try_into().expect("valid h3 cell"),
     )
     .await?;
     txn.commit().await?;
@@ -170,10 +164,7 @@ async fn test_activated_dup_hex_insert(pool: PgPool) -> anyhow::Result<()> {
         &mut txn,
         now,
         &boosted_hexes,
-        &BoostedHex {
-            location: 0x8c2681a306607ff_u64.try_into().expect("valid h3 cell"),
-            multiplier: NonZeroU32::new(10).unwrap(),
-        },
+        0x8c2681a306607ff_u64.try_into().expect("valid h3 cell"),
     )
     .await?;
 
@@ -181,10 +172,7 @@ async fn test_activated_dup_hex_insert(pool: PgPool) -> anyhow::Result<()> {
         &mut txn,
         now - ChronoDuration::days(1),
         &boosted_hexes,
-        &BoostedHex {
-            location: 0x8c2681a306607ff_u64.try_into().expect("valid h3 cell"),
-            multiplier: NonZeroU32::new(5).unwrap(),
-        },
+        0x8c2681a306607ff_u64.try_into().expect("valid h3 cell"),
     )
     .await?;
 

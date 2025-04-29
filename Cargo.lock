@@ -1621,7 +1621,7 @@ dependencies = [
  "rand_chacha 0.2.2",
  "rust_decimal",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -1785,6 +1785,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-proto",
+ "hextree",
  "http 0.2.11",
  "http-serde",
  "humantime-serde",
@@ -3749,7 +3750,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.2.10",
+ "getrandom 0.1.16",
  "k256",
  "lazy_static",
  "multihash",
@@ -3816,7 +3817,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#e50dc72e19c29da9ce668954c8ac4341f936e255"
+source = "git+https://github.com/helium/proto?branch=master#ddc23d5b19b56d4725f94005e6f89bf8fc516043"
 dependencies = [
  "bytes",
  "prost",
@@ -6066,7 +6067,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.5.0",
+ "heck 0.4.0",
  "itertools",
  "log",
  "multimap",
@@ -9322,7 +9323,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 

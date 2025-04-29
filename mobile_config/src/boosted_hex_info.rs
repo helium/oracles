@@ -2,7 +2,6 @@ use crate::client::hex_boosting_client::HexBoostingInfoResolver;
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampDecode;
 use futures::stream::{BoxStream, StreamExt};
-use helium_proto::services::poc_mobile::BoostedHex as BoostedHexProto;
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
 use hextree::Cell;
 use solana_sdk::pubkey::Pubkey;
@@ -111,21 +110,6 @@ pub struct BoostedHexes {
 pub struct BoostedHex {
     pub location: Cell,
     pub multiplier: NonZeroU32,
-}
-
-impl TryFrom<BoostedHexProto> for BoostedHex {
-    type Error = anyhow::Error;
-
-    fn try_from(value: BoostedHexProto) -> Result<Self, Self::Error> {
-        let location = Cell::from_raw(value.location)?;
-        let multiplier = NonZeroU32::new(value.multiplier)
-            .ok_or_else(|| anyhow::anyhow!("multiplier cannot be 0"))?;
-
-        Ok(Self {
-            location,
-            multiplier,
-        })
-    }
 }
 
 impl BoostedHexes {

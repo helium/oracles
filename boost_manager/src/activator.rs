@@ -9,11 +9,12 @@ use helium_proto::{
     services::poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
     Message,
 };
+use hextree::Cell;
 use mobile_config::{
-    boosted_hex_info::{BoostedHex, BoostedHexes},
-    client::hex_boosting_client::HexBoostingInfoResolver,
+    boosted_hex_info::BoostedHexes, client::hex_boosting_client::HexBoostingInfoResolver,
 };
 use poc_metrics::record_duration;
+use rust_decimal::Decimal;
 use sqlx::{Pool, Postgres, Transaction};
 use std::str::FromStr;
 use task_manager::ManagedTask;
@@ -113,10 +114,17 @@ where
 
         while let Some(msg) = reward_shares.try_next().await? {
             let share = MobileRewardShare::decode(msg)?;
-            if let Some(MobileReward::RadioReward(r)) = share.reward {
-                for hex in r.boosted_hexes.into_iter() {
-                    process_boosted_hex(txn, manifest_time, &boosted_hexes, &hex.try_into()?)
-                        .await?
+
+            if let Some(MobileReward::RadioRewardV2(r)) = share.reward {
+                for hex in r.covered_hexes {
+                    if from_proto_decimal(hex.boosted_coverage_points.as_ref())?
+                        .map(|d| d > Decimal::ZERO)
+                        .unwrap_or(false)
+                    {
+                        let hex_location = Cell::from_raw(hex.location)?;
+                        process_boosted_hex(txn, manifest_time, &boosted_hexes, hex_location)
+                            .await?;
+                    }
                 }
             }
         }
@@ -128,14 +136,14 @@ pub async fn process_boosted_hex(
     txn: &mut Transaction<'_, Postgres>,
     manifest_time: DateTime<Utc>,
     boosted_hexes: &BoostedHexes,
-    hex: &BoostedHex,
+    hex_location: Cell,
 ) -> Result<()> {
-    match boosted_hexes.hexes.get(&hex.location) {
+    match boosted_hexes.hexes.get(&hex_location) {
         Some(info) => {
             if info.start_ts.is_none() {
                 db::insert_activated_hex(
                     txn,
-                    hex.location.into_raw(),
+                    hex_location.into_raw(),
                     &info.boosted_hex_pubkey.to_string(),
                     &info.boost_config_pubkey.to_string(),
                     manifest_time,
@@ -144,8 +152,13 @@ pub async fn process_boosted_hex(
             }
         }
         None => {
-            tracing::warn!(hex = %hex.location, "got an invalid boosted hex");
+            tracing::warn!(hex = %hex_location, "got an invalid boosted hex");
         }
     }
     Ok(())
+}
+
+fn from_proto_decimal(opt: Option<&helium_proto::Decimal>) -> Result<Option<Decimal>> {
+    opt.map(|d| Decimal::from_str(&d.value).map_err(anyhow::Error::from))
+        .transpose()
 }
