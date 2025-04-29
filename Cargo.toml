@@ -136,5 +136,5 @@ sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df65
 # helium-proto = { path = "../proto" }
 # beacon = { path = "../proto/beacon" }
 
-[patch.'https://github.com/helium/proto']
-helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "bbalser/deprecate-radio-reward-v1" }
+# [patch.'https://github.com/helium/proto']
+# helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "bbalser/deprecate-radio-reward-v1" }
