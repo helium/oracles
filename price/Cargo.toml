@@ -23,7 +23,6 @@ metrics-exporter-prometheus = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 chrono = { workspace = true }
-helium-anchor-gen = { workspace = true }
 helium-lib = { workspace = true }
 helium-proto = { workspace = true }
 file-store = { path = "../file_store" }
@@ -36,3 +35,5 @@ solana-sdk = { workspace = true }
 task-manager = { path = "../task_manager" }
 humantime-serde = { workspace = true }
 custom-tracing = { path = "../custom_tracing" }
+
+solana = { path = "../solana" }

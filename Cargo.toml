@@ -35,7 +35,6 @@ license = "Apache-2.0"
 edition = "2021"
 
 [workspace.dependencies]
-anchor-client = { version = "0.29.0", features = ["async"] }
 anyhow = { version = "1", features = ["backtrace"] }
 bs58 = { version = "0.5.1", features = ["check"] }
 thiserror = "1"
@@ -64,7 +63,6 @@ sqlx = { version = "0", features = [
   "macros",
   "runtime-tokio-rustls",
 ] }
-helium-anchor-gen = { git = "https://github.com/helium/helium-anchor-gen.git" }
 helium-crypto = { version = "0.8.4", features = ["multisig"] }
 helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = "master" }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
