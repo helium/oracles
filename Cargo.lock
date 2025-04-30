@@ -149,7 +149,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7f2a3e1df4685f18d12a943a9f2a7456305401af21a07c9fe076ef9ecd6e400"
 dependencies = [
  "anchor-syn 0.29.0",
- "bs58 0.5.0",
+ "bs58 0.5.1",
  "proc-macro2",
  "quote",
  "syn 1.0.109",
@@ -162,7 +162,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c288d496168268d198d9b53ee9f4f9d260a55ba4df9877ea1d4486ad6109e0f"
 dependencies = [
  "anchor-syn 0.30.1",
- "bs58 0.5.0",
+ "bs58 0.5.1",
  "proc-macro2",
  "quote",
  "syn 1.0.109",
@@ -256,7 +256,7 @@ dependencies = [
  "anchor-lang-idl",
  "anchor-syn 0.30.1",
  "anyhow",
- "bs58 0.5.0",
+ "bs58 0.5.1",
  "heck 0.3.3",
  "proc-macro2",
  "quote",
@@ -508,7 +508,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9101b84702fed2ea57bd22992f75065da5648017135b844283a2f6d74f27825"
 dependencies = [
  "anyhow",
- "bs58 0.5.0",
+ "bs58 0.5.1",
  "heck 0.3.3",
  "proc-macro2",
  "quote",
@@ -526,7 +526,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f99daacb53b55cfd37ce14d6c9905929721137fd4c67bbab44a19802aecb622f"
 dependencies = [
  "anyhow",
- "bs58 0.5.0",
+ "bs58 0.5.1",
  "heck 0.3.3",
  "proc-macro2",
  "quote",
@@ -1617,11 +1617,11 @@ dependencies = [
  "byteorder",
  "helium-proto",
  "prost",
- "rand 0.7.3",
- "rand_chacha 0.2.2",
+ "rand 0.8.5",
+ "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.8",
  "thiserror",
 ]
 
@@ -1775,7 +1775,7 @@ dependencies = [
  "async-trait",
  "axum 0.7.4",
  "base64 0.21.7",
- "bs58 0.4.0",
+ "bs58 0.5.1",
  "chrono",
  "clap 4.4.8",
  "config",
@@ -1961,15 +1961,12 @@ name = "bs58"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "771fe0050b883fcc3ea2359b1a96bcfbc090b7116eae7c3c512c7a083fdf23d3"
-dependencies = [
- "sha2 0.9.9",
-]
 
 [[package]]
 name = "bs58"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5353f36341f7451062466f0b755b96ac3a9547e4d7f6b70d603fc721a7d7896"
+checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
 dependencies = [
  "sha2 0.10.8",
  "tinyvec",
@@ -2624,7 +2621,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.7.4",
- "bs58 0.4.0",
+ "bs58 0.5.1",
  "helium-crypto",
  "helium-proto",
  "http 0.2.11",
@@ -3747,10 +3744,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3ea5347e981a2d16f06b51d04361a2562cd89b806d765293522f61c5de0ec49"
 dependencies = [
  "base64 0.21.7",
- "bs58 0.5.0",
+ "bs58 0.5.1",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.1.16",
+ "getrandom 0.2.10",
  "k256",
  "lazy_static",
  "multihash",
@@ -4278,7 +4275,7 @@ dependencies = [
  "anyhow",
  "backon",
  "base64 0.21.7",
- "bs58 0.4.0",
+ "bs58 0.5.1",
  "chrono",
  "clap 4.4.8",
  "config",
@@ -4347,7 +4344,7 @@ dependencies = [
  "async-trait",
  "backon",
  "base64 0.21.7",
- "bs58 0.4.0",
+ "bs58 0.5.1",
  "chrono",
  "clap 4.4.8",
  "config",
@@ -5023,7 +5020,7 @@ dependencies = [
  "async-trait",
  "base64 0.21.7",
  "blake3",
- "bs58 0.4.0",
+ "bs58 0.5.1",
  "chrono",
  "clap 4.4.8",
  "config",
@@ -5527,7 +5524,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "681030a937600a36906c185595136d26abfebb4aa9c65701cefcaf8578bb982b"
 dependencies = [
- "proc-macro-crate 1.1.3",
+ "proc-macro-crate 3.1.0",
  "proc-macro2",
  "quote",
  "syn 2.0.58",
@@ -5834,7 +5831,7 @@ dependencies = [
  "anyhow",
  "base64 0.21.7",
  "blake3",
- "bs58 0.5.0",
+ "bs58 0.4.0",
  "chrono",
  "clap 4.4.8",
  "config",
@@ -6067,7 +6064,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80b776a1b2dc779f5ee0641f8ade0125bc1298dd41a9a0c16d8bd57b42d222b1"
 dependencies = [
  "bytes",
- "heck 0.4.0",
+ "heck 0.5.0",
  "itertools",
  "log",
  "multimap",
@@ -6555,7 +6552,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.21.7",
- "bs58 0.4.0",
+ "bs58 0.5.1",
  "chrono",
  "clap 4.4.8",
  "config",
@@ -9323,7 +9320,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 

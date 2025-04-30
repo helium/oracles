@@ -37,7 +37,7 @@ edition = "2021"
 [workspace.dependencies]
 anchor-client = { version = "0.29.0", features = ["async"] }
 anyhow = { version = "1", features = ["backtrace"] }
-bs58 = { version = "0.4", features = ["check"] }
+bs58 = { version = "0.5.1", features = ["check"] }
 thiserror = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
