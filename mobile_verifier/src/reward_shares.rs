@@ -698,12 +698,12 @@ mod test {
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
     use futures::stream::{self, BoxStream};
-    use helium_lib::token::Token;
     use helium_proto::{
         services::poc_mobile::mobile_reward_share::Reward as MobileReward, ServiceProvider,
     };
     use hextree::Cell;
     use prost::Message;
+    use solana::re::helium_lib::token::Token;
     use std::collections::HashMap;
     use uuid::Uuid;
 

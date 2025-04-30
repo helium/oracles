@@ -23,7 +23,6 @@ metrics-exporter-prometheus = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 chrono = { workspace = true }
-helium-lib = { workspace = true }
 helium-proto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }

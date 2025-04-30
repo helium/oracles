@@ -28,3 +28,4 @@ solana-client = "1.18"
 solana-sdk = "1.18"
 solana-program = "1.18"
 spl-token = "3.5.0"
+helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = "master" }

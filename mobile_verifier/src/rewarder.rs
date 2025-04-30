@@ -24,8 +24,6 @@ use file_store::{
 use futures_util::TryFutureExt;
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
-use helium_lib::keypair::Pubkey;
-use helium_lib::token::Token;
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -47,6 +45,7 @@ use mobile_config::{
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
+use solana::re::helium_lib::{keypair::Pubkey, token::Token};
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};

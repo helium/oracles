@@ -7,6 +7,7 @@ pub use solana_sdk::signature::Signature;
 
 pub mod re {
     pub use helium_anchor_gen;
+    pub use helium_lib;
     pub use solana_client;
     pub use solana_sdk;
 }

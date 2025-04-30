@@ -5,7 +5,6 @@ use file_store::{
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_lib::token::Token;
 use helium_proto::services::poc_mobile::{
     mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward, MobileRewardShare,
     OracleBoostingHexAssignment, OracleBoostingReportV1, PromotionReward, RadioReward,
@@ -24,6 +23,7 @@ use mobile_verifier::{
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
+use solana::re::helium_lib::token::Token;
 use sqlx::PgPool;
 use std::{
     collections::{HashMap, HashSet},

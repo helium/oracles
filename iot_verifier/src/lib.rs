@@ -21,9 +21,9 @@ pub mod telemetry;
 pub mod tx_scaler;
 pub mod witness_updater;
 
-use helium_lib::keypair::Pubkey;
 use rust_decimal::Decimal;
 pub use settings::Settings;
+use solana::re::helium_lib::keypair::Pubkey;
 
 #[derive(Clone, Debug)]
 pub struct PriceInfo {
@@ -48,5 +48,5 @@ impl PriceInfo {
 }
 
 pub fn resolve_subdao_pubkey() -> Pubkey {
-    helium_lib::dao::SubDao::Iot.key()
+    solana::re::helium_lib::dao::SubDao::Iot.key()
 }

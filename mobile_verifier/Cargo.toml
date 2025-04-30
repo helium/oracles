@@ -14,7 +14,6 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 h3o = { workspace = true, features = ["geo"] }
-helium-lib = { workspace = true }
 hextree = { workspace = true }
 http-serde = { workspace = true }
 clap = { workspace = true }
@@ -60,7 +59,7 @@ custom-tracing = { path = "../custom_tracing" }
 hex-assignments = { path = "../hex_assignments" }
 coverage-point-calculator = { path = "../coverage_point_calculator" }
 coverage-map = { path = "../coverage_map" }
+solana = { path = "../solana" }
 
 [dev-dependencies]
 proptest = "1.5.0"
-solana = { path = "../solana" }
