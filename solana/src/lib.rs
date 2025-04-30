@@ -5,7 +5,10 @@ use std::time::SystemTimeError;
 
 pub use solana_sdk::signature::Signature;
 
-pub use helium_anchor_gen;
+pub mod re {
+    pub use helium_anchor_gen;
+    pub use solana_client;
+}
 
 pub mod burn;
 pub mod carrier;

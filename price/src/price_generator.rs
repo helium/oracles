@@ -7,7 +7,7 @@ use helium_lib::token::Token;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana::re::solana_client::nonblocking::rpc_client::RpcClient;
 use std::{path::PathBuf, str::FromStr, time::Duration};
 use task_manager::ManagedTask;
 use tokio::{fs, time};

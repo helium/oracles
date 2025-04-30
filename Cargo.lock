@@ -5933,7 +5933,6 @@ dependencies = [
  "serde",
  "serde_json",
  "solana",
- "solana-client",
  "solana-sdk",
  "task-manager",
  "thiserror",

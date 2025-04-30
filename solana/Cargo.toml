@@ -18,7 +18,6 @@ itertools = { workspace = true }
 metrics = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
-solana-client = { workspace = true }
 solana-program = { workspace = true }
 solana-sdk = { workspace = true }
 spl-token = { workspace = true }
@@ -28,3 +27,4 @@ tracing = { workspace = true }
 
 anchor-client = { version = "0.29.0", features = ["async"] }
 helium-anchor-gen = { git = "https://github.com/helium/helium-anchor-gen.git" }
+solana-client = "1.18"

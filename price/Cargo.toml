@@ -30,7 +30,6 @@ poc-metrics = { path = "../metrics" }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 triggered = { workspace = true }
-solana-client = { workspace = true }
 solana-sdk = { workspace = true }
 task-manager = { path = "../task_manager" }
 humantime-serde = { workspace = true }
