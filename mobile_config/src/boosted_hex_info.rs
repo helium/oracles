@@ -4,7 +4,7 @@ use file_store::traits::TimestampDecode;
 use futures::stream::{BoxStream, StreamExt};
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
 use hextree::Cell;
-use solana_sdk::pubkey::Pubkey;
+use solana::re::solana_sdk::pubkey::Pubkey;
 use std::{collections::HashMap, convert::TryFrom, num::NonZeroU32};
 
 pub type BoostedHexInfoStream = BoxStream<'static, BoostedHexInfo>;
@@ -172,7 +172,7 @@ pub(crate) mod db {
     use chrono::{DateTime, Duration, Utc};
     use futures::stream::{Stream, StreamExt};
     use hextree::Cell;
-    use solana_sdk::pubkey::Pubkey;
+    use solana::re::solana_sdk::pubkey::Pubkey;
     use sqlx::{PgExecutor, Row};
     use std::num::NonZeroU32;
     use std::str::FromStr;

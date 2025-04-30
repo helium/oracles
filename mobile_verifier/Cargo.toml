@@ -53,7 +53,6 @@ async-trait = { workspace = true }
 retainer = { workspace = true }
 uuid = { workspace = true }
 task-manager = { path = "../task_manager" }
-solana-sdk = { workspace = true }
 derive_builder = { workspace = true }
 regex = "1"
 humantime-serde = { workspace = true }
@@ -64,3 +63,4 @@ coverage-map = { path = "../coverage_map" }
 
 [dev-dependencies]
 proptest = "1.5.0"
+solana = { path = "../solana" }

@@ -34,7 +34,7 @@ use mobile_verifier::{
     IsAuthorized,
 };
 use rust_decimal_macros::dec;
-use solana_sdk::pubkey::Pubkey;
+use solana::re::solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;

@@ -23,7 +23,7 @@ use mobile_verifier::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use solana_sdk::pubkey::Pubkey;
+use solana::re::solana_sdk::pubkey::Pubkey;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{num::NonZeroU32, str::FromStr};
 use uuid::Uuid;

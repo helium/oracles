@@ -72,7 +72,6 @@ helium-proto = { git = "https://github.com/helium/proto", branch = "master", fea
   "services",
 ] }
 beacon = { git = "https://github.com/helium/proto", branch = "master" }
-solana-sdk = "1.18"
 solana-program = "1.18"
 spl-token = "3.5.0"
 reqwest = { version = "0", default-features = false, features = [

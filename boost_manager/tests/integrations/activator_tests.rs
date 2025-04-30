@@ -1,7 +1,7 @@
 use boost_manager::{activator, db, OnChainStatus};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Timelike, Utc};
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
-use solana_sdk::pubkey::Pubkey;
+use solana::re::solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 
