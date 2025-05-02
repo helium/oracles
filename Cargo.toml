@@ -120,10 +120,7 @@ helium-lib = { path = "../helium-wallet-rs/helium-lib" }
 # https://github.com/launchbadge/sqlx/commit/42dd78fe931df651eac411316ed3eab87c2f79b2
 sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df651eac411316ed3eab87c2f79b2" }
 anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madninja/const_pubkey" }
-helium-crypto = { git = "https://github.com/helium/helium-crypto-rs.git", branch = "main", features = [
-  "sqlx-postgres",
-] }
-# helium-lib = { path = "../helium-wallet-rs/helium-lib" }
+helium-crypto = { path = "../helium-crypto-rs" }
 
 # When attempting to test proto changes without needing to push a branch you can
 # patch the github url to point to your local proto repo.

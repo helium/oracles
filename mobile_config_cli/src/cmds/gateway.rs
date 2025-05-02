@@ -65,7 +65,7 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
     fn try_from(info: GatewayInfoProto) -> Result<Self, Self::Error> {
         let device_type: DeviceType = info.device_type().into();
         let pubkey = PublicKey::try_from(info.address)?;
-        let name: AnimalName = pubkey.into();
+        let name: AnimalName = pubkey.clone().into();
         let metadata = if let Some(md) = info.metadata {
             Some(md.try_into()?)
         } else {
