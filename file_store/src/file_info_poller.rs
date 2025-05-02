@@ -5,7 +5,7 @@ use derive_builder::Builder;
 use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
 use futures_util::TryFutureExt;
 use retainer::Cache;
-use sqlx::{Executor, PgPool};
+use sqlx::PgPool;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Receiver, Sender};
