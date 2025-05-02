@@ -337,7 +337,7 @@ pub async fn inject_last_witness(
     gateway: PublicKeyBinary,
     ts: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    LastWitness::update_last_timestamp(&mut *txn, &gateway, ts).await
+    LastWitness::update_last_timestamp(&mut **txn, &gateway, ts).await
 }
 
 pub fn valid_gateway() -> GatewayInfo {

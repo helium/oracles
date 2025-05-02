@@ -197,7 +197,7 @@ where
         GatewayShares::clear_rewarded_shares(&mut transaction, reward_info.epoch_period.start)
             .await?;
 
-        save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
+        save_next_reward_epoch(&mut *transaction, reward_info.epoch_day + 1).await?;
 
         transaction.commit().await?;
 

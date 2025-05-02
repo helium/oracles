@@ -103,7 +103,7 @@ impl GatewayPocShare {
         .bind(self.hex_scale)
         .bind(self.reward_unit)
         .bind(self.poc_id)
-        .fetch_one(&mut *db)
+        .fetch_one(&mut **db)
         .await?
         .inserted)
     }
@@ -162,7 +162,7 @@ impl GatewayDCShare {
         .bind(self.reward_timestamp)
         .bind(self.num_dcs)
         .bind(self.id)
-        .fetch_one(&mut *db)
+        .fetch_one(&mut **db)
         .await?
         .inserted)
     }
@@ -215,13 +215,13 @@ impl GatewayShares {
     ) -> Result<(), sqlx::Error> {
         sqlx::query("delete from gateway_shares where reward_timestamp <= $1")
             .bind(period_end)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map(|_| ())?;
 
         sqlx::query("delete from gateway_dc_shares where reward_timestamp <= $1")
             .bind(period_end)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map(|_| ())
     }
