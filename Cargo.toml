@@ -63,7 +63,7 @@ sqlx = { version = "0", features = [
   "macros",
   "runtime-tokio-rustls",
 ] }
-helium-crypto = { version = "0.8.4", features = ["multisig"] }
+helium-crypto = { version = "0.9.0", features = ["multisig", "sqlx-postgres"] }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
@@ -113,11 +113,17 @@ tokio-util = "0"
 uuid = { version = "1", features = ["v4", "serde"] }
 tower-http = { version = "0", features = ["trace"] }
 derive_builder = "0"
+helium-lib = { path = "../helium-wallet-rs/helium-lib" }
 
 [patch.crates-io]
 # v0.7.0-alpha.3
 # https://github.com/launchbadge/sqlx/commit/42dd78fe931df651eac411316ed3eab87c2f79b2
 sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df651eac411316ed3eab87c2f79b2" }
+anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madninja/const_pubkey" }
+helium-crypto = { git = "https://github.com/helium/helium-crypto-rs.git", branch = "main", features = [
+  "sqlx-postgres",
+] }
+# helium-lib = { path = "../helium-wallet-rs/helium-lib" }
 
 # When attempting to test proto changes without needing to push a branch you can
 # patch the github url to point to your local proto repo.

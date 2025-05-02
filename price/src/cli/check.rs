@@ -1,9 +1,8 @@
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use solana::re::{
-    helium_anchor_gen::{anchor_lang::AccountDeserialize, price_oracle::PriceOracleV0},
-    solana_client::nonblocking::rpc_client::RpcClient,
-    solana_sdk::pubkey::Pubkey as SolPubkey,
+    anchor_lang::AccountDeserialize, helium_lib::programs::price_oracle::accounts::PriceOracleV0,
+    solana_client::nonblocking::rpc_client::RpcClient, solana_sdk::pubkey::Pubkey as SolPubkey,
 };
 use std::str::FromStr;
 

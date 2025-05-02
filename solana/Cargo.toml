@@ -22,10 +22,9 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
-anchor-client = { version = "0.29.0", features = ["async"] }
-helium-anchor-gen = { git = "https://github.com/helium/helium-anchor-gen.git" }
-solana-client = "1.18"
-solana-sdk = "1.18"
-solana-program = "1.18"
-spl-token = "3.5.0"
-helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = "master" }
+spl-token = { version = "8" }
+# helium-anchor-gen = { git = "https://github.com/helium/helium-anchor-gen.git" }
+# helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = "master" }
+
+helium-lib = { workspace = true }
+sqlx = { workspace = true }

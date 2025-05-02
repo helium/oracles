@@ -1,7 +1,7 @@
 use clap::{Parser, ValueEnum};
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use sha2::{Digest, Sha256};
-use solana_sdk::pubkey::Pubkey;
+use solana::re::{helium_lib::programs::data_credits, solana_sdk::pubkey::Pubkey};
 
 #[derive(Parser)]
 #[clap(about = "Look up the Delegated Data Credit account for a Helium router key")]
@@ -37,7 +37,7 @@ fn main() {
             sub_dao.as_ref(),
             &sha_digest,
         ],
-        &helium_anchor_gen::data_credits::ID,
+        &data_credits::ID,
     );
     println!("https://explorer.solana.com/address/{ddc_key}");
 }
