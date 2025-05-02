@@ -54,10 +54,10 @@ tokio = { version = "1", default-features = false, features = [
   "time",
 ] }
 tokio-stream = "0"
-sqlx = { version = "0", features = [
+sqlx = { version = "0.7", features = [
   "postgres",
   "uuid",
-  "decimal",
+  "rust_decimal",
   "chrono",
   "migrate",
   "macros",
@@ -118,7 +118,7 @@ helium-lib = { path = "../helium-wallet-rs/helium-lib" }
 [patch.crates-io]
 # v0.7.0-alpha.3
 # https://github.com/launchbadge/sqlx/commit/42dd78fe931df651eac411316ed3eab87c2f79b2
-sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df651eac411316ed3eab87c2f79b2" }
+# sqlx = { git = "https://github.com/launchbadge/sqlx.git", rev = "42dd78fe931df651eac411316ed3eab87c2f79b2" }
 anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madninja/const_pubkey" }
 helium-crypto = { path = "../helium-crypto-rs" }
 
