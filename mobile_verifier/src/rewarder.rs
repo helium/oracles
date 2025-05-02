@@ -329,12 +329,12 @@ where
         )
         .await?;
         coverage::clear_coverage_objects(&mut transaction, &reward_info.epoch_period.start).await?;
-        subscriber_mapping_activity::db::clear(&mut transaction, reward_info.epoch_period.start)
+        subscriber_mapping_activity::db::clear(&mut *transaction, reward_info.epoch_period.start)
             .await?;
         unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
         banning::clear_bans(&mut transaction, reward_info.epoch_period.start).await?;
 
-        save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
+        save_next_reward_epoch(&mut *transaction, reward_info.epoch_day + 1).await?;
 
         transaction.commit().await?;
 

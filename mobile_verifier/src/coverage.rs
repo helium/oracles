@@ -326,7 +326,7 @@ impl CoverageObject {
         .bind(self.coverage_object.coverage_claim_time)
         .bind(self.coverage_object.trust_score as i32)
         .bind(insertion_time)
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
         const NUMBER_OF_FIELDS_IN_QUERY: u16 = 4;
@@ -353,7 +353,7 @@ impl CoverageObject {
                     "#,
                 )
                 .build()
-                .execute(&mut *transaction)
+                .execute(&mut **transaction)
                 .await?;
         }
 
@@ -382,7 +382,7 @@ pub async fn set_invalidated_at(
     .bind(inserted_at)
     .bind(radio_key)
     .bind(uuid)
-    .execute(&mut *exec)
+    .execute(&mut **exec)
     .await?;
 
     Ok(())
@@ -488,7 +488,7 @@ pub async fn clear_coverage_objects(
     // Remove all invalidated objects before timestamp
     sqlx::query("DELETE FROM coverage_objects WHERE invalidated_at < $1")
         .bind(timestamp)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
     // Delete all but the last 10 valid coverage_objects entry per radio_key before a given timestamp
@@ -516,7 +516,7 @@ pub async fn clear_coverage_objects(
             "#,
         )
         .bind(timestamp)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())
@@ -563,7 +563,7 @@ impl CoverageClaimTimeCache {
             )
             .bind(radio_key)
             .bind(coverage_object)
-            .fetch_optional(&mut *exec)
+            .fetch_optional(&mut **exec)
             .await?;
             if let Some(coverage_claim_time) = coverage_claim_time {
                 self.cache
