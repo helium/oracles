@@ -1563,7 +1563,7 @@ dependencies = [
  "http-serde",
  "humantime-serde",
  "lazy_static",
- "metrics 0.24.2",
+ "metrics",
  "metrics-exporter-prometheus",
  "mobile-config",
  "once_cell",
@@ -2375,7 +2375,7 @@ dependencies = [
  "aws-smithy-http 0.54.4",
  "aws-types 0.54.1",
  "http 0.2.12",
- "metrics 0.24.2",
+ "metrics",
  "poc-metrics",
  "serde",
  "sqlx",
@@ -2845,7 +2845,7 @@ dependencies = [
  "hex-literal",
  "http 0.2.12",
  "lazy_static",
- "metrics 0.24.2",
+ "metrics",
  "poc-metrics",
  "prost",
  "regex",
@@ -4068,7 +4068,7 @@ dependencies = [
  "helium-proto",
  "http 0.2.12",
  "humantime-serde",
- "metrics 0.24.2",
+ "metrics",
  "metrics-exporter-prometheus",
  "mobile-config",
  "poc-metrics",
@@ -4150,7 +4150,7 @@ dependencies = [
  "http-serde",
  "humantime-serde",
  "libflate",
- "metrics 0.24.2",
+ "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
  "prost",
@@ -4194,7 +4194,7 @@ dependencies = [
  "http-serde",
  "humantime-serde",
  "iot-config",
- "metrics 0.24.2",
+ "metrics",
  "poc-metrics",
  "prost",
  "serde",
@@ -4236,7 +4236,7 @@ dependencies = [
  "iot-config",
  "itertools 0.14.0",
  "lazy_static",
- "metrics 0.24.2",
+ "metrics",
  "once_cell",
  "poc-metrics",
  "price",
@@ -4741,16 +4741,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metrics"
-version = "0.24.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25dea7ac8057892855ec285c440160265225438c3c45072613c25a4b26e98ef5"
-dependencies = [
- "ahash 0.8.11",
- "portable-atomic",
-]
-
-[[package]]
 name = "metrics-exporter-prometheus"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4761,7 +4751,7 @@ dependencies = [
  "hyper-tls",
  "indexmap 1.9.3",
  "ipnet",
- "metrics 0.22.4",
+ "metrics",
  "metrics-util",
  "quanta",
  "thiserror 1.0.69",
@@ -4778,7 +4768,7 @@ dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
  "hashbrown 0.14.5",
- "metrics 0.22.4",
+ "metrics",
  "num_cpus",
  "quanta",
  "sketches-ddsketch",
@@ -4886,7 +4876,7 @@ dependencies = [
  "humantime",
  "humantime-serde",
  "lazy_static",
- "metrics 0.24.2",
+ "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
  "prost",
@@ -4954,7 +4944,7 @@ dependencies = [
  "http 0.2.12",
  "http-serde",
  "humantime-serde",
- "metrics 0.24.2",
+ "metrics",
  "mobile-config",
  "poc-metrics",
  "prost",
@@ -5001,7 +4991,7 @@ dependencies = [
  "humantime",
  "humantime-serde",
  "lazy_static",
- "metrics 0.24.2",
+ "metrics",
  "metrics-exporter-prometheus",
  "mobile-config",
  "once_cell",
@@ -5649,7 +5639,7 @@ dependencies = [
  "http 0.2.12",
  "hyper 0.14.32",
  "jsonrpsee",
- "metrics 0.24.2",
+ "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
  "prost",
@@ -5669,7 +5659,7 @@ name = "poc-metrics"
 version = "0.1.0"
 dependencies = [
  "futures",
- "metrics 0.24.2",
+ "metrics",
  "metrics-exporter-prometheus",
  "reqwest 0.12.15",
  "serde",
@@ -5737,7 +5727,7 @@ dependencies = [
  "futures-util",
  "helium-proto",
  "humantime-serde",
- "metrics 0.24.2",
+ "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
  "prost",
@@ -6391,7 +6381,7 @@ dependencies = [
  "helium-proto",
  "humantime-serde",
  "lazy_static",
- "metrics 0.24.2",
+ "metrics",
  "metrics-exporter-prometheus",
  "once_cell",
  "poc-metrics",
@@ -7206,7 +7196,7 @@ dependencies = [
  "helium-crypto",
  "helium-lib",
  "itertools 0.14.0",
- "metrics 0.24.2",
+ "metrics",
  "serde",
  "sha2 0.10.9",
  "spl-token 8.0.0",
