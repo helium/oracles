@@ -162,7 +162,7 @@ pub async fn save_data_transfer_session(
             .bind(data_transfer_session.rewardable_bytes)
             .bind(data_transfer_session.first_timestamp)
             .bind(data_transfer_session.last_timestamp)
-            .execute(txn)
+            .execute(&mut **txn)
             .await?;
 
     Ok(())
