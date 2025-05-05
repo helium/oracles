@@ -11682,9 +11682,10 @@ dependencies = [
 [[package]]
 name = "xorf-generator"
 version = "0.7.0"
+source = "git+https://github.com/helium/xorf-generator?branch=mj%2Fhelium-crypto-update#7a411c7cb9d6ea45da652da06137d26bca1c8a96"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bincode",
  "bytes",
  "clap",
@@ -11697,7 +11698,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.9.9",
  "thiserror 1.0.69",
  "twox-hash",
  "xorf",
