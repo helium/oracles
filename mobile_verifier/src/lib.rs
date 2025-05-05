@@ -114,5 +114,5 @@ impl PriceInfo {
 }
 
 pub fn resolve_subdao_pubkey() -> SolPubkey {
-    solana::re::helium_lib::dao::SubDao::Mobile.key()
+    solana::SubDao::Mobile.key()
 }

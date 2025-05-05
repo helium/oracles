@@ -195,7 +195,7 @@ impl PriceGenerator {
     }
 
     async fn get_pyth_price(&self) -> Result<Price> {
-        solana::re::helium_lib::token::price::get(self, self.token)
+        solana::token::price::get(self, self.token)
             .await
             .map_err(anyhow::Error::from)
             .and_then(|p| {

@@ -1,7 +1,10 @@
-use crate::re::anchor_client::RequestBuilder;
-use crate::re::{
+use crate::{send_with_retry, GetSignature, SolanaRpcError};
+use async_trait::async_trait;
+use file_store::hex_boost::BoostedHexActivation;
+use helium_lib::{
+    anchor_client::RequestBuilder,
     anchor_lang::{InstructionData, ToAccountMetas},
-    helium_lib::programs::hexboosting,
+    programs::hexboosting,
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_program::instruction::Instruction,
     solana_sdk::{
@@ -12,9 +15,6 @@ use crate::re::{
         transaction::Transaction,
     },
 };
-use crate::{send_with_retry, GetSignature, SolanaRpcError};
-use async_trait::async_trait;
-use file_store::hex_boost::BoostedHexActivation;
 use serde::Deserialize;
 use std::sync::Arc;
 

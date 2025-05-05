@@ -1,24 +1,16 @@
-use re::{
+use helium_lib::{
     solana_client::client_error::ClientError,
     solana_sdk::{program_error, pubkey::ParsePubkeyError, signature, transaction::Transaction},
 };
 use std::time::SystemTimeError;
 
-pub use re::helium_lib::token::Token;
-pub use re::solana_client::nonblocking::rpc_client::RpcClient;
-pub use re::solana_sdk::pubkey::Pubkey as SolPubkey;
-pub use re::solana_sdk::signature::Signature;
-
 pub use helium_lib;
 
-pub mod re {
-    pub use helium_lib;
-    pub use helium_lib::anchor_client;
-    pub use helium_lib::anchor_lang;
-    pub use helium_lib::solana_client;
-    pub use helium_lib::solana_program;
-    pub use helium_lib::solana_sdk;
-}
+pub use helium_lib::dao::SubDao;
+pub use helium_lib::solana_client::nonblocking::rpc_client::RpcClient;
+pub use helium_lib::solana_sdk::pubkey::Pubkey as SolPubkey;
+pub use helium_lib::solana_sdk::signature::Signature;
+pub use helium_lib::token::{self, Token};
 
 pub mod burn;
 pub mod carrier;
@@ -50,7 +42,7 @@ pub enum SolanaRpcError {
     #[error("Solana rpc error: {0}")]
     RpcClientError(Box<ClientError>),
     #[error("Anchor error: {0}")]
-    AnchorError(Box<re::anchor_lang::error::Error>),
+    AnchorError(Box<helium_lib::anchor_lang::error::Error>),
     #[error("Solana program error: {0}")]
     ProgramError(#[from] program_error::ProgramError),
     #[error("Parse pubkey error: {0}")]
@@ -70,8 +62,8 @@ pub enum SolanaRpcError {
     Test(String),
 }
 
-impl From<re::anchor_lang::error::Error> for SolanaRpcError {
-    fn from(err: re::anchor_lang::error::Error) -> Self {
+impl From<helium_lib::anchor_lang::error::Error> for SolanaRpcError {
+    fn from(err: helium_lib::anchor_lang::error::Error) -> Self {
         Self::AnchorError(Box::new(err))
     }
 }
