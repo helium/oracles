@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use helium_crypto::PublicKeyBinary;
-use solana::{burn::SolanaNetwork, re::solana_sdk::signature::Signature, SolanaRpcError};
+use solana::{burn::SolanaNetwork, Signature, SolanaRpcError};
 use sqlx::{postgres::PgRow, FromRow, PgPool, Postgres, Row, Transaction};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
