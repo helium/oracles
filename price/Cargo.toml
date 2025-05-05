@@ -24,13 +24,13 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }
-file-store = { path = "../file_store" }
-poc-metrics = { path = "../metrics" }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 triggered = { workspace = true }
-task-manager = { path = "../task_manager" }
 humantime-serde = { workspace = true }
-custom-tracing = { path = "../custom_tracing" }
 
+custom-tracing = { path = "../custom_tracing" }
+file-store = { path = "../file_store" }
+poc-metrics = { path = "../metrics" }
 solana = { path = "../solana" }
+task-manager = { path = "../task_manager" }

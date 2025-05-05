@@ -6,7 +6,7 @@ use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use solana::re::{helium_lib::token::Token, solana_client::nonblocking::rpc_client::RpcClient};
+use solana::{RpcClient, Token};
 use std::{path::PathBuf, str::FromStr, time::Duration};
 use task_manager::ManagedTask;
 use tokio::{fs, time};

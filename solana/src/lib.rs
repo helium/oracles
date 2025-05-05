@@ -4,11 +4,14 @@ use re::{
 };
 use std::time::SystemTimeError;
 
+pub use re::helium_lib::token::Token;
+pub use re::solana_client::nonblocking::rpc_client::RpcClient;
 pub use re::solana_sdk::pubkey::Pubkey as SolPubkey;
 pub use re::solana_sdk::signature::Signature;
 
-pub mod re {
+pub use helium_lib;
 
+pub mod re {
     pub use helium_lib;
     pub use helium_lib::anchor_client;
     pub use helium_lib::anchor_lang;

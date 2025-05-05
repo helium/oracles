@@ -2,7 +2,7 @@ use anyhow::Result;
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
 use serde::Deserialize;
-use solana::re::helium_lib::token::Token;
+use solana::Token;
 use std::{path::Path, time::Duration};
 
 #[derive(Debug, Deserialize, Clone)]
