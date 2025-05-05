@@ -4,6 +4,7 @@ use re::{
 };
 use std::time::SystemTimeError;
 
+pub use re::solana_sdk::pubkey::Pubkey as SolPubkey;
 pub use re::solana_sdk::signature::Signature;
 
 pub mod re {
