@@ -25,7 +25,7 @@ use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use solana::re::helium_lib::{keypair::Pubkey, token::Token};
+use solana::{SolPubkey, Token};
 use sqlx::{PgExecutor, PgPool, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::ManagedTask;
@@ -34,7 +34,7 @@ use tokio::time::sleep;
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: Duration = Duration::from_secs(5 * 60);
 
 pub struct Rewarder<A> {
-    sub_dao: Pubkey,
+    sub_dao: SolPubkey,
     pub pool: Pool<Postgres>,
     pub rewards_sink: file_sink::FileSinkClient<proto::IotRewardShare>,
     pub reward_manifests_sink: file_sink::FileSinkClient<RewardManifest>,

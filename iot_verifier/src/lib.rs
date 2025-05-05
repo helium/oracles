@@ -23,7 +23,7 @@ pub mod witness_updater;
 
 use rust_decimal::Decimal;
 pub use settings::Settings;
-use solana::re::helium_lib::keypair::Pubkey;
+use solana::SolPubkey;
 
 #[derive(Clone, Debug)]
 pub struct PriceInfo {
@@ -47,6 +47,6 @@ impl PriceInfo {
     }
 }
 
-pub fn resolve_subdao_pubkey() -> Pubkey {
-    solana::re::helium_lib::dao::SubDao::Iot.key()
+pub fn resolve_subdao_pubkey() -> SolPubkey {
+    solana::SubDao::Iot.key()
 }

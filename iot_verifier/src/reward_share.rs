@@ -436,7 +436,7 @@ mod test {
     use crate::{reward_share, PriceInfo};
     use chrono::Duration;
     use iot_config::sub_dao_epoch_reward_info::EpochRewardInfo;
-    use solana::re::helium_lib::token::Token;
+    use solana::Token;
 
     pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
     pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";

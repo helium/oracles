@@ -31,7 +31,7 @@ use iot_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use prost::Message;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use solana::re::helium_lib::token::Token;
+use solana::Token;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{self, ops::DerefMut, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, sync::Mutex, time::timeout};
