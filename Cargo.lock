@@ -1418,11 +1418,11 @@ dependencies = [
  "byteorder",
  "helium-proto",
  "prost",
- "rand 0.7.3",
- "rand_chacha 0.2.2",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
 ]
 
@@ -3365,6 +3365,8 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 [[package]]
 name = "helium-crypto"
 version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "333dfb5467550fdd77fc6f419a725775ef909746250d3519138a2ddcb08a73d7"
 dependencies = [
  "base64 0.22.1",
  "bs58",
@@ -3387,13 +3389,14 @@ dependencies = [
 [[package]]
 name = "helium-lib"
 version = "0.1.1"
+source = "git+https://github.com/helium/helium-wallet-rs?branch=mj%2Foracles-update#3115cad6f0626844287c32197aaecc93f3b14b2a"
 dependencies = [
  "anchor-client",
  "anchor-lang",
  "anchor-spl",
  "angry-purple-tiger",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bincode",
  "bytemuck",
  "chrono",
@@ -10798,7 +10801,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
@@ -11695,7 +11698,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "twox-hash",
  "xorf",

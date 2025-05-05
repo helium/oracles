@@ -21,10 +21,7 @@ sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-
 spl-token = { version = "8" }
-# helium-anchor-gen = { git = "https://github.com/helium/helium-anchor-gen.git" }
-# helium-lib = { git = "https://github.com/helium/helium-wallet-rs.git", branch = "master" }
-
-helium-lib = { workspace = true }
 sqlx = { workspace = true }
+
+helium-lib = { git = "https://github.com/helium/helium-wallet-rs", branch = "mj/oracles-update" }
