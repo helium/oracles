@@ -23,7 +23,7 @@ pub use settings::Settings;
 use async_trait::async_trait;
 use mobile_config::client::ClientError;
 use rust_decimal::Decimal;
-use solana::re::helium_lib::keypair::Pubkey;
+use solana::SolPubkey;
 
 pub enum GatewayResolution {
     GatewayNotFound,
@@ -113,6 +113,6 @@ impl PriceInfo {
     }
 }
 
-pub fn resolve_subdao_pubkey() -> Pubkey {
+pub fn resolve_subdao_pubkey() -> SolPubkey {
     solana::re::helium_lib::dao::SubDao::Mobile.key()
 }

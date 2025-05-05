@@ -45,7 +45,7 @@ use mobile_config::{
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
-use solana::re::helium_lib::{keypair::Pubkey, token::Token};
+use solana::{SolPubkey, Token};
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -57,7 +57,7 @@ mod db;
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
 pub struct Rewarder<A, B, C> {
-    sub_dao: Pubkey,
+    sub_dao: SolPubkey,
     pool: Pool<Postgres>,
     carrier_client: A,
     hex_service_client: B,

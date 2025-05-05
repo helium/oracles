@@ -23,7 +23,7 @@ use mobile_verifier::{
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
-use solana::re::helium_lib::token::Token;
+use solana::Token;
 use sqlx::PgPool;
 use std::{
     collections::{HashMap, HashSet},

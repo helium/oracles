@@ -34,7 +34,7 @@ use mobile_verifier::{
     IsAuthorized,
 };
 use rust_decimal_macros::dec;
-use solana::re::solana_sdk::pubkey::Pubkey;
+use solana::SolPubkey;
 use sqlx::PgPool;
 use std::{collections::HashMap, num::NonZeroU32, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;
@@ -770,8 +770,8 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             end_ts: None,
             period_length: Duration::hours(1),
             multipliers: vec![NonZeroU32::new(1).unwrap()],
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     );
@@ -783,8 +783,8 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             end_ts: None,
             period_length: Duration::hours(1),
             multipliers: vec![NonZeroU32::new(2).unwrap()],
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     );
@@ -796,8 +796,8 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             end_ts: None,
             period_length: Duration::hours(1),
             multipliers: vec![NonZeroU32::new(3).unwrap()],
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     );

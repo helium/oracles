@@ -703,7 +703,7 @@ mod test {
     };
     use hextree::Cell;
     use prost::Message;
-    use solana::re::helium_lib::token::Token;
+    use solana::Token;
     use std::collections::HashMap;
     use uuid::Uuid;
 
