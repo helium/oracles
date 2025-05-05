@@ -4163,7 +4163,6 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "solana",
  "sqlx",
  "task-manager",
  "thiserror 1.0.69",
