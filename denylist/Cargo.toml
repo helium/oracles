@@ -23,4 +23,4 @@ config = { workspace = true }
 chrono = { workspace = true }
 humantime-serde = { workspace = true }
 
-xorf-generator = { git = "https://github.com/helium/xorf-generator", branch = "mj/helium-crypto-update" }
+xorf-generator = { git = "https://github.com/helium/xorf-generator", branch = "main" }

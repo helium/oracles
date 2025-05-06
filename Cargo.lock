@@ -3389,7 +3389,7 @@ dependencies = [
 [[package]]
 name = "helium-lib"
 version = "0.1.1"
-source = "git+https://github.com/helium/helium-wallet-rs?branch=mj%2Foracles-update#3115cad6f0626844287c32197aaecc93f3b14b2a"
+source = "git+https://github.com/helium/helium-wallet-rs?branch=master#9bc55cf089ffff1b50b80b1fcb09536fb3f17c6d"
 dependencies = [
  "anchor-client",
  "anchor-lang",
@@ -11682,7 +11682,7 @@ dependencies = [
 [[package]]
 name = "xorf-generator"
 version = "0.7.0"
-source = "git+https://github.com/helium/xorf-generator?branch=mj%2Fhelium-crypto-update#7a411c7cb9d6ea45da652da06137d26bca1c8a96"
+source = "git+https://github.com/helium/xorf-generator?branch=main#e6ff8ad88a8ce8247b5f923e13f06d04fa4ca3aa"
 dependencies = [
  "anyhow",
  "base64 0.21.7",

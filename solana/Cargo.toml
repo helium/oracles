@@ -24,4 +24,4 @@ tracing = { workspace = true }
 spl-token = { version = "8" }
 sqlx = { workspace = true }
 
-helium-lib = { git = "https://github.com/helium/helium-wallet-rs", branch = "mj/oracles-update" }
+helium-lib = { git = "https://github.com/helium/helium-wallet-rs", branch = "master" }
