@@ -89,7 +89,7 @@ pub async fn create_org(
     )
     .bind(&owner)
     .bind(&payer)
-    .fetch_one(&mut txn)
+    .fetch_one(&mut *txn)
     .await
     .map_err(|_| {
         OrgStoreError::SaveOrg(format!("owner: {owner}, payer: {payer}, net_id: {net_id}"))
@@ -109,7 +109,7 @@ pub async fn create_org(
         });
         query_builder
             .build()
-            .execute(&mut txn)
+            .execute(&mut *txn)
             .await
             .map_err(|_| {
                 OrgStoreError::SaveDelegates(format!(
@@ -120,15 +120,15 @@ pub async fn create_org(
     };
 
     if is_helium_netid(&net_id) {
-        insert_helium_constraints(oui as u64, net_id, devaddr_ranges, &mut txn).await
+        insert_helium_constraints(oui as u64, net_id, devaddr_ranges, &mut *txn).await
     } else {
         let constraint = devaddr_ranges
             .first()
             .ok_or(OrgStoreError::SaveConstraints(
                 "no devaddr constraints supplied".to_string(),
             ))?;
-        if check_roamer_constraint_count(net_id, &mut txn).await? == 0 {
-            insert_roamer_constraint(oui as u64, net_id, constraint, &mut txn).await
+        if check_roamer_constraint_count(net_id, &mut *txn).await? == 0 {
+            insert_roamer_constraint(oui as u64, net_id, constraint, &mut *txn).await
         } else {
             return Err(OrgStoreError::SaveConstraints(format!(
                 "constraint already in use {constraint:?}"
@@ -137,7 +137,7 @@ pub async fn create_org(
     }
     .map_err(|err| OrgStoreError::SaveConstraints(format!("{devaddr_ranges:?}: {err:?}")))?;
 
-    let org = get(oui as u64, &mut txn)
+    let org = get(oui as u64, &mut *txn)
         .await?
         .ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
 
@@ -155,10 +155,10 @@ pub async fn update_org(
 ) -> Result<Org, OrgStoreError> {
     let mut txn = db.begin().await?;
 
-    let current_org = get(oui, &mut txn)
+    let current_org = get(oui, &mut *txn)
         .await?
         .ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
-    let net_id = get_org_netid(oui, &mut txn).await?;
+    let net_id = get_org_netid(oui, &mut *txn).await?;
     let is_helium_org = is_helium_netid(&net_id);
 
     for update in updates.iter() {
@@ -218,7 +218,7 @@ pub async fn update_org(
         };
     }
 
-    let updated_org = get(oui, &mut txn)
+    let updated_org = get(oui, &mut *txn)
         .await?
         .ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
 
@@ -265,7 +265,7 @@ async fn update_owner(
     sqlx::query(" update organizations set owner_pubkey = $1 where oui = $2 ")
         .bind(owner_pubkey)
         .bind(oui as i64)
-        .execute(db)
+        .execute(&mut **db)
         .await
         .map(|_| ())
 }
@@ -278,7 +278,7 @@ async fn update_payer(
     sqlx::query(" update organizations set payer_pubkey = $1 where oui = $2 ")
         .bind(payer_pubkey)
         .bind(oui as i64)
-        .execute(db)
+        .execute(&mut **db)
         .await
         .map(|_| ())
 }
@@ -291,7 +291,7 @@ async fn add_delegate_key(
     sqlx::query(" insert into organization_delegate_keys (delegate_pubkey, oui) values ($1, $2) ")
         .bind(delegate_pubkey)
         .bind(oui as i64)
-        .execute(db)
+        .execute(&mut **db)
         .await
         .map(|_| ())
 }
@@ -304,7 +304,7 @@ async fn remove_delegate_key(
     sqlx::query(" delete from organization_delegate_keys where delegate_pubkey = $1 and oui = $2 ")
         .bind(delegate_pubkey)
         .bind(oui as i64)
-        .execute(db)
+        .execute(&mut **db)
         .await
         .map(|_| ())
 }
@@ -321,7 +321,7 @@ async fn add_constraint_update(
     helium_netids::checkout_specified_devaddr_constraint(db, helium_net_id, &added_constraint)
         .await
         .map_err(|err| OrgStoreError::InvalidUpdate(format!("{err:?}")))?;
-    insert_helium_constraints(oui, net_id, &[added_constraint], db).await?;
+    insert_helium_constraints(oui, net_id, &[added_constraint], &mut **db).await?;
     Ok(())
 }
 
@@ -341,7 +341,7 @@ async fn remove_constraint_update(
                 ..=u32::from(removed_constraint.end_addr))
                 .collect::<Vec<u32>>();
             db.release_addrs(helium_net_id, &remove_range).await?;
-            remove_helium_constraints(oui, &[removed_constraint], db).await?;
+            remove_helium_constraints(oui, &[removed_constraint], &mut **db).await?;
             Ok(())
         } else if org_constraints.len() == 1 {
             return Err(OrgStoreError::InvalidUpdate(
@@ -371,7 +371,7 @@ async fn add_devaddr_slab(
     let constraints = helium_netids::checkout_devaddr_constraints(txn, addr_count, helium_net_id)
         .await
         .map_err(|err| OrgStoreError::SaveConstraints(format!("{err:?}")))?;
-    insert_helium_constraints(oui, net_id, &constraints, txn).await?;
+    insert_helium_constraints(oui, net_id, &constraints, &mut **txn).await?;
     Ok(())
 }
 

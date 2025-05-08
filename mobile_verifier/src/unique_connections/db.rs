@@ -66,7 +66,7 @@ pub async fn save(
             "#,
         )
         .build()
-        .execute(&mut *txn)
+        .execute(&mut **txn)
         .await?;
     }
 
@@ -84,7 +84,7 @@ pub async fn clear(
         "#,
     )
     .bind(timestamp)
-    .execute(txn)
+    .execute(&mut **txn)
     .await?;
     Ok(())
 }

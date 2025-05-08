@@ -14,24 +14,21 @@ bs58 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
-db-store = { path = "../db_store" }
-rust_decimal = { workspace = true, features = ["maths"] }
-rust_decimal_macros = { workspace = true }
-file-store = { path = "../file_store" }
 futures = { workspace = true }
 futures-util = { workspace = true }
 helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
-helium-lib = { workspace = true }
 helium-proto = { workspace = true }
 hextree = { workspace = true }
 http = { workspace = true }
 http-serde = { workspace = true }
+humantime-serde = { workspace = true }
 libflate = "1"
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
-poc-metrics = { path = "../metrics" }
 prost = { workspace = true }
 retainer = { workspace = true }
+rust_decimal = { workspace = true, features = ["maths"] }
+rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
@@ -44,9 +41,12 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 triggered = { workspace = true }
-task-manager = { path = "../task_manager" }
-humantime-serde = { workspace = true }
+
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
+db-store = { path = "../db_store" }
+file-store = { path = "../file_store" }
+poc-metrics = { path = "../metrics" }
+task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
 rand = { workspace = true }

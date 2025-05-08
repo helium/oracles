@@ -166,7 +166,7 @@ impl HotspotDataSession {
         .bind(self.num_dcs)
         .bind(self.received_timestamp)
         .bind(self.burn_timestamp)
-        .execute(&mut *db)
+        .execute(&mut **db)
         .await?;
         Ok(())
     }
@@ -257,7 +257,7 @@ pub async fn clear_hotspot_data_sessions(
 ) -> Result<(), sqlx::Error> {
     sqlx::query("delete from hotspot_data_transfer_sessions where received_timestamp < $1")
         .bind(timestamp)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     Ok(())
 }

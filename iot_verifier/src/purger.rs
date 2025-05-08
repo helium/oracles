@@ -23,7 +23,7 @@ use helium_proto::services::poc_lora::{
 };
 use humantime_serde::re::humantime;
 use sqlx::{PgPool, Postgres};
-use std::{ops::DerefMut, time::Duration};
+use std::time::Duration;
 use task_manager::ManagedTask;
 use tokio::{
     sync::Mutex,
@@ -190,7 +190,7 @@ impl Purger {
             )
             .await?;
         // delete the report from the DB
-        Report::delete_report(tx.lock().await.deref_mut(), &beacon_id).await?;
+        Report::delete_report(&mut **tx.lock().await, &beacon_id).await?;
         telemetry::decrement_num_beacons();
         Ok(())
     }
@@ -221,7 +221,7 @@ impl Purger {
             .await?;
 
         // delete the report from the DB
-        Report::delete_report(tx.lock().await.deref_mut(), &witness_id).await?;
+        Report::delete_report(&mut **tx.lock().await, &witness_id).await?;
         Ok(())
     }
 }

@@ -74,7 +74,7 @@ impl AddressStore for sqlx::Transaction<'_, sqlx::Postgres> {
             " select devaddr from helium_used_devaddrs where net_id = $1 order by devaddr asc ",
         )
         .bind(i32::from(net_id.id()))
-        .fetch_all(self)
+        .fetch_all(&mut **self)
         .await?
         .into_iter()
         .map(|addr| addr as u32)
@@ -93,7 +93,11 @@ impl AddressStore for sqlx::Transaction<'_, sqlx::Postgres> {
                 .push_bind(*addr as i32)
                 .push_bind(i32::from(net_id.id()));
         });
-        Ok(query_builder.build().execute(self).await.map(|_| ())?)
+        Ok(query_builder
+            .build()
+            .execute(&mut **self)
+            .await
+            .map(|_| ())?)
     }
 
     async fn release_addrs(
@@ -112,7 +116,11 @@ impl AddressStore for sqlx::Transaction<'_, sqlx::Postgres> {
         query_builder.push_tuples(released_addrs, |mut builder, (addr, id)| {
             builder.push_bind(addr as i32).push_bind(id);
         });
-        Ok(query_builder.build().execute(self).await.map(|_| ())?)
+        Ok(query_builder
+            .build()
+            .execute(&mut **self)
+            .await
+            .map(|_| ())?)
     }
 }
 

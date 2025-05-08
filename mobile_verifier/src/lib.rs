@@ -21,9 +21,9 @@ pub mod unique_connections;
 pub use settings::Settings;
 
 use async_trait::async_trait;
-use helium_lib::keypair::Pubkey;
 use mobile_config::client::ClientError;
 use rust_decimal::Decimal;
+use solana::SolPubkey;
 
 pub enum GatewayResolution {
     GatewayNotFound,
@@ -113,6 +113,6 @@ impl PriceInfo {
     }
 }
 
-pub fn resolve_subdao_pubkey() -> Pubkey {
-    helium_lib::dao::SubDao::Mobile.key()
+pub fn resolve_subdao_pubkey() -> SolPubkey {
+    solana::SubDao::Mobile.key()
 }

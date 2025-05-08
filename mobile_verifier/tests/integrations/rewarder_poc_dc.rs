@@ -624,7 +624,7 @@ async fn save_seniority_object(
     .bind(ts)
     .bind(proto::SeniorityUpdateReason::NewCoverageClaimTime as i32)
     .bind(hb.heartbeat.hb_type)
-    .execute(&mut *exec)
+    .execute(&mut **exec)
     .await?;
     Ok(())
 }

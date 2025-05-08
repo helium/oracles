@@ -572,7 +572,7 @@ impl ValidatedHeartbeat {
         .bind(self.heartbeat.location_validation_timestamp)
         .bind(self.heartbeat.lat)
         .bind(self.heartbeat.lon)
-        .execute(&mut *exec)
+        .execute(&mut **exec)
         .await?;
         Ok(())
     }
@@ -632,7 +632,7 @@ pub async fn clear_heartbeats(
 ) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM wifi_heartbeats WHERE truncated_timestamp < $1;")
         .bind(timestamp)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())
