@@ -1,0 +1,146 @@
+use anyhow::Result;
+use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_s3::{Client, Endpoint, Region};
+use chrono::Utc;
+use file_store::traits::MsgBytes;
+use file_store::{file_sink, file_upload, FileType, Settings};
+use std::{str::FromStr, sync::Arc};
+use tokio::sync::Mutex;
+use tonic::transport::Uri;
+use uuid::Uuid;
+
+pub const AWS_ENDPOINT: &'static str = "http://127.0.0.1:4566";
+
+pub fn gen_bucket_name() -> String {
+    format!(
+        "mvr-{}-{}",
+        Uuid::new_v4(),
+        Utc::now().timestamp_millis().to_string()
+    )
+}
+
+// Interacts with the locastack.
+// Used to create mocked aws buckets and files.
+pub struct AwsLocal {
+    pub fs_settings: Settings,
+    pub aws_client: aws_sdk_s3::Client,
+}
+
+impl AwsLocal {
+    async fn create_aws_client(settings: &Settings) -> aws_sdk_s3::Client {
+        let endpoint: Option<Endpoint> = match &settings.endpoint {
+            Some(endpoint) => Uri::from_str(endpoint)
+                .map(Endpoint::immutable)
+                .map(Some)
+                .unwrap(),
+            _ => None,
+        };
+        let region = Region::new(settings.region.clone());
+        let region_provider = RegionProviderChain::first_try(region).or_default_provider();
+
+        let mut config = aws_config::from_env().region(region_provider);
+        config = config.endpoint_resolver(endpoint.unwrap());
+
+        let creds = aws_types::credentials::Credentials::from_keys(
+            settings.access_key_id.as_ref().unwrap(),
+            settings.secret_access_key.as_ref().unwrap(),
+            None,
+        );
+        config = config.credentials_provider(creds);
+
+        let config = config.load().await;
+
+        Client::new(&config)
+    }
+
+    pub async fn new(endpoint: &str, bucket: &str) -> AwsLocal {
+        let settings = Settings {
+            bucket: bucket.into(),
+            endpoint: Some(endpoint.into()),
+            region: "us-east-1".into(),
+            access_key_id: Some("random".into()),
+            secret_access_key: Some("random2".into()),
+        };
+        let client = Self::create_aws_client(&settings).await;
+        client.create_bucket().bucket(bucket).send().await.unwrap();
+        AwsLocal {
+            aws_client: client,
+            fs_settings: settings,
+        }
+    }
+    pub async fn put_proto_to_aws<T: prost::Message + MsgBytes>(
+        &self,
+        items: Vec<T>,
+        file_type: FileType,
+        metric_name: &'static str,
+    ) -> Result<String> {
+        // Uuid uses as random to avoid colisions
+        let uuid: Uuid = Uuid::new_v4();
+        let dir_path = format!("/tmp/{}/{}", uuid, self.fs_settings.bucket);
+        let store_base_path = std::path::Path::new(&dir_path);
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings_tm(&self.fs_settings)
+                .await
+                .unwrap();
+
+        let (item_sink, item_server) =
+            file_sink::FileSinkBuilder::new(file_type, store_base_path, file_upload, metric_name)
+                .auto_commit(false)
+                .roll_time(std::time::Duration::new(15, 0))
+                .create::<T>()
+                .await
+                .unwrap();
+
+        for item in items {
+            item_sink.write(item, &[]).await.unwrap();
+        }
+        let item_recv = item_sink.commit().await.unwrap();
+
+        let dir_path_clone = dir_path.clone();
+        let uploaded_file = Arc::new(Mutex::new(String::default()));
+        let up_2 = uploaded_file.clone();
+        let mut timeout = std::time::Duration::new(5, 0);
+
+        tokio::spawn(async move {
+            let uploaded_files = item_recv.await.unwrap().unwrap();
+            assert!(uploaded_files.len() == 1);
+            let mut val = up_2.lock().await;
+            *val = uploaded_files.first().unwrap().to_string();
+
+            // After files uploaded to aws the must be removed.
+            // So we wait when dir will be empty.
+            // It means all files are uploaded to aws
+            loop {
+                if is_dir_has_files(&dir_path_clone) == true {
+                    let dur = std::time::Duration::from_millis(10);
+                    tokio::time::sleep(dur).await;
+                    timeout -= dur;
+                    continue;
+                }
+                break;
+            }
+
+            shutdown_trigger.trigger();
+        });
+
+        tokio::try_join!(
+            file_upload_server.run(shutdown_listener.clone()),
+            item_server.run(shutdown_listener.clone())
+        )
+        .unwrap();
+        std::fs::remove_dir_all(dir_path).unwrap();
+        let res = uploaded_file.lock().await;
+        Ok(res.clone())
+    }
+}
+
+fn is_dir_has_files(dir_path: &str) -> bool {
+    let entries = std::fs::read_dir(&dir_path)
+        .unwrap()
+        .map(|res| res.map(|e| e.path().is_dir()))
+        .collect::<Result<Vec<_>, std::io::Error>>()
+        .unwrap();
+    entries.contains(&false)
+}
