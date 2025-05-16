@@ -5204,6 +5204,7 @@ dependencies = [
  "solana-sdk",
  "sqlx",
  "task-manager",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",

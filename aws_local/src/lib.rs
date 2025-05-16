@@ -10,14 +10,10 @@ use tokio::sync::Mutex;
 use tonic::transport::Uri;
 use uuid::Uuid;
 
-pub const AWS_ENDPOINT: &'static str = "http://127.0.0.1:4566";
+pub const AWS_ENDPOINT: &str = "http://127.0.0.1:4566";
 
 pub fn gen_bucket_name() -> String {
-    format!(
-        "mvr-{}-{}",
-        Uuid::new_v4(),
-        Utc::now().timestamp_millis().to_string()
-    )
+    format!("mvr-{}-{}", Uuid::new_v4(), Utc::now().timestamp_millis())
 }
 
 // Interacts with the locastack.
@@ -118,7 +114,7 @@ impl AwsLocal {
             // So we wait when dir will be empty.
             // It means all files are uploaded to aws
             loop {
-                if is_dir_has_files(&dir_path_clone) == true {
+                if is_dir_has_files(&dir_path_clone) {
                     let dur = std::time::Duration::from_millis(10);
                     tokio::time::sleep(dur).await;
                     timeout -= dur;
@@ -154,7 +150,7 @@ impl AwsLocal {
 }
 
 fn is_dir_has_files(dir_path: &str) -> bool {
-    let entries = std::fs::read_dir(&dir_path)
+    let entries = std::fs::read_dir(dir_path)
         .unwrap()
         .map(|res| res.map(|e| e.path().is_dir()))
         .collect::<Result<Vec<_>, std::io::Error>>()

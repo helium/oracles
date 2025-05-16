@@ -36,7 +36,8 @@ use mobile_verifier::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-use std::{collections::HashMap, path::Path, pin::pin};
+use std::{collections::HashMap, pin::pin};
+use tempfile::TempDir;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -111,10 +112,11 @@ pub async fn create_data_set_downloader(
     pool: PgPool,
     file_paths: Vec<PathBuf>,
     file_upload: FileUpload,
-    poll_duration: Option<std::time::Duration>,
     new_coverage_object_notification: NewCoverageObjectNotification,
+    tmp_dir: &TempDir,
 ) -> (DataSetDownloaderDaemon, PathBuf, String) {
     let bucket_name = gen_bucket_name();
+
     let awsl = AwsLocal::new(AWS_ENDPOINT, &bucket_name).await;
 
     for file_path in file_paths {
@@ -122,16 +124,16 @@ pub async fn create_data_set_downloader(
     }
 
     let uuid: Uuid = Uuid::new_v4();
-    let data_set_directory = PathBuf::from_str(&format!("/tmp/dataset/{}", uuid)).unwrap();
+    let data_set_directory = tmp_dir.path().join(uuid.to_string());
     tokio::fs::create_dir_all(data_set_directory.clone())
         .await
         .unwrap();
 
     let file_store = awsl.file_store.clone();
-    let poll_duration = poll_duration.unwrap_or(std::time::Duration::from_secs(4));
+    let poll_duration = std::time::Duration::from_secs(4);
 
     let (oracle_boosting_reports, _) = OracleBoostingReportV1::file_sink(
-        Path::new("/tmp/dataset/"),
+        tmp_dir.path(),
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(std::time::Duration::from_secs(15 * 60)),
@@ -173,15 +175,18 @@ async fn test_dataset_downloader(pool: PgPool) {
     // 1. DataSetDownloader downloads initial files
     // 2. Upload a new file
     // 3. DataSetDownloader downloads new file
-    let file_paths = vec![
-        PathBuf::from_str("./tests/integrations/fixtures/footfall.1722895200000.gz").unwrap(),
-        PathBuf::from_str("./tests/integrations/fixtures/urbanization.1722895200000.gz").unwrap(),
-        PathBuf::from_str("./tests/integrations/fixtures/landtype.1722895200000.gz").unwrap(),
-        PathBuf::from_str(
-            "./tests/integrations/fixtures/service_provider_override.1739404800000.gz",
-        )
-        .unwrap(),
+
+    let paths = [
+        "footfall.1722895200000.gz",
+        "urbanization.1722895200000.gz",
+        "landtype.1722895200000.gz",
+        "service_provider_override.1739404800000.gz",
     ];
+
+    let file_paths: Vec<PathBuf> = paths
+        .iter()
+        .map(|f| PathBuf::from(format!("./tests/integrations/fixtures/{}", f)))
+        .collect();
 
     let (file_upload_tx, _file_upload_rx) = file_upload::message_channel();
     let file_upload = FileUpload {
@@ -190,12 +195,13 @@ async fn test_dataset_downloader(pool: PgPool) {
 
     let (_, new_coverage_obj_notification) = new_coverage_object_notification_channel();
 
+    let tmp_dir = TempDir::new().expect("Unable to create temp dir");
     let (mut data_set_downloader, _, bucket_name) = create_data_set_downloader(
         pool.clone(),
         file_paths,
         file_upload,
-        None,
         new_coverage_obj_notification,
+        &tmp_dir,
     )
     .await;
     assert!(hex_assignment_file_exist(&pool, "footfall.1722895200000.gz").await);
