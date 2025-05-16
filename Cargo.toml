@@ -26,6 +26,7 @@ members = [
   "solana",
   "task_manager",
   "hex_assignments",
+  "aws_local"
 ]
 resolver = "2"
 
@@ -120,6 +121,9 @@ tokio-util = "0"
 uuid = { version = "1", features = ["v4", "serde"] }
 tower-http = { version = "0", features = ["trace"] }
 derive_builder = "0"
+aws-config = "0.51"
+aws-sdk-s3 = "0.21"
+aws-types = { version = "0.51", features = ["hardcoded-credentials"]}
 
 [patch.crates-io]
 # v0.7.0-alpha.3
