@@ -315,7 +315,7 @@ impl DataSetDownloaderDaemon {
         }
     }
 
-    async fn check_for_new_data_sets(&mut self) -> anyhow::Result<()> {
+    pub async fn check_for_new_data_sets(&mut self) -> anyhow::Result<()> {
         let new_urbanized = self
             .data_sets
             .urbanization
@@ -392,8 +392,7 @@ impl DataSetDownloaderDaemon {
         Ok(())
     }
 
-    pub async fn run(mut self) -> anyhow::Result<()> {
-        tracing::info!("Starting data set downloader task");
+    pub async fn fetch_first_datasets(&mut self) -> anyhow::Result<()> {
         self.data_sets
             .urbanization
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
@@ -410,6 +409,12 @@ impl DataSetDownloaderDaemon {
             .service_provider_override
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
             .await?;
+        Ok(())
+    }
+
+    pub async fn run(mut self) -> anyhow::Result<()> {
+        tracing::info!("Starting data set downloader task");
+        self.fetch_first_datasets().await?;
         // Attempt to fill in any unassigned hexes. This is for the edge case in
         // which we shutdown before a coverage object updates.
         if is_hex_boost_data_ready(&self.data_sets) {

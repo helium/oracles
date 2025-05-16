@@ -5160,6 +5160,7 @@ dependencies = [
  "anyhow",
  "async-compression",
  "async-trait",
+ "aws-local",
  "base64 0.21.7",
  "chrono",
  "clap 4.4.8",

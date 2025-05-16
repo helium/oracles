@@ -64,3 +64,5 @@ coverage-map = { path = "../coverage_map" }
 
 [dev-dependencies]
 proptest = "1.5.0"
+aws-local = { path = "../aws_local" }
+

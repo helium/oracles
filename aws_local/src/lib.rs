@@ -1,9 +1,10 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{Client, Endpoint, Region};
 use chrono::Utc;
 use file_store::traits::MsgBytes;
-use file_store::{file_sink, file_upload, FileType, Settings};
+use file_store::{file_sink, file_upload, FileStore, FileType, Settings};
+use std::path::Path;
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::Mutex;
 use tonic::transport::Uri;
@@ -23,6 +24,7 @@ pub fn gen_bucket_name() -> String {
 // Used to create mocked aws buckets and files.
 pub struct AwsLocal {
     pub fs_settings: Settings,
+    pub file_store: FileStore,
     pub aws_client: aws_sdk_s3::Client,
 }
 
@@ -65,7 +67,10 @@ impl AwsLocal {
         client.create_bucket().bucket(bucket).send().await.unwrap();
         AwsLocal {
             aws_client: client,
-            fs_settings: settings,
+            fs_settings: settings.clone(),
+            file_store: file_store::FileStore::from_settings(&settings)
+                .await
+                .unwrap(),
         }
     }
     pub async fn put_proto_to_aws<T: prost::Message + MsgBytes>(
@@ -133,6 +138,18 @@ impl AwsLocal {
         std::fs::remove_dir_all(dir_path).unwrap();
         let res = uploaded_file.lock().await;
         Ok(res.clone())
+    }
+    pub async fn put_file_to_aws(&self, file_path: &Path) -> Result<()> {
+        let path_str = file_path.display();
+        if !file_path.exists() {
+            return Err(anyhow!("File {path_str} is absent"));
+        }
+        if !file_path.is_file() {
+            return Err(anyhow!("File {path_str} is not a file"));
+        }
+        self.file_store.put(file_path).await?;
+
+        Ok(())
     }
 }
 
