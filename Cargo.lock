@@ -397,16 +397,6 @@ checksum = "7556be6f2b0d82376c1ece1fda4dffd728816ac53bee2c285f3f74269ddc4a97"
 dependencies = [
  "anyhow",
  "clap",
- "md5",
-]
-
-[[package]]
-name = "angry-purple-tiger"
-version = "1.0.0"
-source = "git+https://github.com/helium/angry-purple-tiger-rs?branch=jg%2Fsqlx-update#8abea877e573ad1a0160f909d02d08847ce1b8de"
-dependencies = [
- "anyhow",
- "clap",
  "helium-crypto",
  "md5",
 ]
@@ -3375,8 +3365,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "helium-crypto"
-version = "0.9.0"
-source = "git+https://github.com/helium/helium-crypto-rs?branch=jg%2Fsqlx-update#5ac3d7da52c918da323acf5598cc63753be5dcec"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "688f69ca15100f29ce9ab8ee7c5701afeabf8c8b003b0b85b06249159ffc953b"
 dependencies = [
  "base64 0.22.1",
  "bs58",
@@ -3399,12 +3390,12 @@ dependencies = [
 [[package]]
 name = "helium-lib"
 version = "0.1.1"
-source = "git+https://github.com/helium/helium-wallet-rs?branch=jg%2Fsqlx-update#e2179e4a7cd43410b37fea8f29d196e21329f633"
+source = "git+https://github.com/helium/helium-wallet-rs?branch=jg%2Fsqlx-update#610a26a37d164b9865ff68a9adf6d84f1488b8eb"
 dependencies = [
  "anchor-client",
  "anchor-lang",
  "anchor-spl",
- "angry-purple-tiger 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "angry-purple-tiger",
  "async-trait",
  "base64 0.22.1",
  "bincode",
@@ -4915,7 +4906,7 @@ dependencies = [
 name = "mobile-config-cli"
 version = "0.1.0"
 dependencies = [
- "angry-purple-tiger 1.0.0 (git+https://github.com/helium/angry-purple-tiger-rs?branch=jg%2Fsqlx-update)",
+ "angry-purple-tiger",
  "anyhow",
  "base64 0.22.1",
  "clap",
@@ -11672,10 +11663,10 @@ dependencies = [
 [[package]]
 name = "xorf-generator"
 version = "0.7.0"
-source = "git+https://github.com/helium/xorf-generator?branch=jg%2Fsqlx-update#1b9442a35f65a66ddb79e12094da6256173672fe"
+source = "git+https://github.com/helium/xorf-generator?branch=main#62ec7a28230d45c55613380289f8a6d9d594d046"
 dependencies = [
  "anyhow",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bincode",
  "bytes",
  "clap",
@@ -11688,7 +11679,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "twox-hash",
  "xorf",

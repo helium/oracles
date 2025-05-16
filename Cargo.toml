@@ -63,7 +63,7 @@ sqlx = { version = "0.8", default-features = false, features = [
   "macros",
   "runtime-tokio-rustls",
 ] }
-helium-crypto = { git = "https://github.com/helium/helium-crypto-rs", features = ["multisig", "sqlx-postgres"], branch = "jg/sqlx-update" }
+helium-crypto = { version = "0.9.2", features = ["multisig", "sqlx-postgres"] }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
