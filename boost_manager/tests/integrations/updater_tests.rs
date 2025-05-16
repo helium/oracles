@@ -2,8 +2,7 @@ use async_trait::async_trait;
 use boost_manager::{db, updater::Updater, OnChainStatus};
 use chrono::{DateTime, Utc};
 use file_store::hex_boost::BoostedHexActivation;
-use solana::{start_boost::SolanaNetwork, GetSignature, SolanaRpcError};
-use solana_sdk::signature::Signature;
+use solana::{start_boost::SolanaNetwork, GetSignature, Signature, SolanaRpcError};
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{string::ToString, sync::Mutex, time::Duration};
 

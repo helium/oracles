@@ -23,7 +23,7 @@ use mobile_verifier::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use solana_sdk::pubkey::Pubkey;
+use solana::SolPubkey;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{num::NonZeroU32, str::FromStr};
 use uuid::Uuid;
@@ -102,8 +102,8 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -113,8 +113,8 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -124,8 +124,8 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             end_ts: None,
             period_length: boost_period_length,
             multipliers: multipliers3,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -256,8 +256,8 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -267,8 +267,8 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -278,8 +278,8 @@ async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Resu
             end_ts: None,
             period_length: boost_period_length,
             multipliers: multipliers3,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -379,8 +379,8 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1.clone(),
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -390,8 +390,8 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -401,8 +401,8 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -412,8 +412,8 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             end_ts: Some(end_ts_3),
             period_length: boost_period_length,
             multipliers: multipliers3,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -541,8 +541,8 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -551,8 +551,8 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -642,8 +642,8 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -653,8 +653,8 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             end_ts: None,
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -781,8 +781,8 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -792,8 +792,8 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
             end_ts: None,
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -921,8 +921,8 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1.clone(),
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -932,8 +932,8 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -943,8 +943,8 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -954,8 +954,8 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
             end_ts: Some(end_ts_3),
             period_length: boost_period_length,
             multipliers: multipliers3,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -1528,7 +1528,7 @@ async fn save_seniority_object(
     .bind(ts)
     .bind(SeniorityUpdateReason::NewCoverageClaimTime as i32)
     .bind(hb.heartbeat.hb_type)
-    .execute(&mut *exec)
+    .execute(&mut **exec)
     .await?;
     Ok(())
 }

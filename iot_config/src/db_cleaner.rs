@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
-use sqlx::{Pool, Postgres, Transaction};
+use sqlx::{PgConnection, Pool, Postgres, Transaction};
 use std::time::Duration;
 use task_manager::ManagedTask;
 
@@ -67,7 +67,7 @@ async fn delete_routes(
     "#,
     )
     .bind(timestamp)
-    .execute(tx)
+    .execute(&mut **tx)
     .await?;
 
     Ok(())
@@ -84,7 +84,7 @@ async fn delete_euis(
     "#,
     )
     .bind(timestamp)
-    .execute(tx)
+    .execute(&mut **tx)
     .await?;
 
     Ok(())
@@ -101,16 +101,13 @@ async fn delete_devaddr_ranges(
     "#,
     )
     .bind(timestamp)
-    .execute(tx)
+    .execute(&mut **tx)
     .await?;
 
     Ok(())
 }
 
-async fn delete_skfs(
-    tx: &mut Transaction<'_, Postgres>,
-    timestamp: DateTime<Utc>,
-) -> anyhow::Result<()> {
+async fn delete_skfs(tx: &mut PgConnection, timestamp: DateTime<Utc>) -> anyhow::Result<()> {
     sqlx::query(
         r#"
         delete from route_session_key_filters 

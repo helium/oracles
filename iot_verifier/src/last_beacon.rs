@@ -106,7 +106,7 @@ impl LastBeacon {
         )
         .bind(id.as_ref())
         .bind(timestamp)
-        .execute(txn)
+        .execute(&mut **txn)
         .await?;
         Ok(())
     }

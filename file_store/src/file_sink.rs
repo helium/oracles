@@ -131,7 +131,8 @@ impl FileSinkBuilder {
             metric: self.metric,
         };
 
-        metrics::counter!(client.metric.clone(), vec![OK_LABEL]);
+        // Seed a value for the metric
+        metrics::counter!(client.metric.clone(), vec![OK_LABEL]).increment(1);
 
         let mut sink = FileSink {
             target_path: self.target_path,

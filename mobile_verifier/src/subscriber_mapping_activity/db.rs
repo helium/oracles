@@ -29,7 +29,7 @@ pub async fn save(
             })
             .push("ON CONFLICT (subscriber_id, received_timestamp) DO NOTHING")
             .build()
-            .execute(&mut *txn)
+            .execute(&mut **txn)
             .await?;
 
             Ok(txn)

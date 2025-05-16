@@ -113,7 +113,7 @@ pub async fn insert_data(
     .bind(BOOST_CONFIG_PUBKEY)
     .bind(status)
     .bind(last_updated_at)
-    .execute(txn)
+    .execute(&mut **txn)
     .await?;
     Ok(())
 }

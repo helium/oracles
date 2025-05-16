@@ -9,6 +9,7 @@
 //
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::PgConnection;
 use std::time::Duration;
 
 /// The lifespan duration of a piece of entropy
@@ -38,16 +39,13 @@ pub struct Entropy {
 pub struct EntropyError(#[from] sqlx::Error);
 
 impl Entropy {
-    pub async fn insert_into<'c, E>(
-        executor: E,
+    pub async fn insert_into(
+        executor: &mut PgConnection,
         id: &Vec<u8>,
         data: &Vec<u8>,
         timestamp: &DateTime<Utc>,
         version: i32,
-    ) -> Result<(), EntropyError>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
+    ) -> Result<(), EntropyError> {
         sqlx::query(
             r#"
         insert into entropy (

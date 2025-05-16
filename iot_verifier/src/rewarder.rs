@@ -7,7 +7,6 @@ use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
 use futures::future::LocalBoxFuture;
-use helium_lib::{keypair::Pubkey, token::Token};
 use helium_proto::{
     reward_manifest::RewardData::IotRewardData,
     services::poc_lora::{
@@ -26,6 +25,7 @@ use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+use solana::{SolPubkey, Token};
 use sqlx::{PgExecutor, PgPool, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::ManagedTask;
@@ -34,7 +34,7 @@ use tokio::time::sleep;
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: Duration = Duration::from_secs(5 * 60);
 
 pub struct Rewarder<A> {
-    sub_dao: Pubkey,
+    sub_dao: SolPubkey,
     pub pool: Pool<Postgres>,
     pub rewards_sink: file_sink::FileSinkClient<proto::IotRewardShare>,
     pub reward_manifests_sink: file_sink::FileSinkClient<RewardManifest>,
@@ -197,7 +197,7 @@ where
         GatewayShares::clear_rewarded_shares(&mut transaction, reward_info.epoch_period.start)
             .await?;
 
-        save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
+        save_next_reward_epoch(&mut *transaction, reward_info.epoch_day + 1).await?;
 
         transaction.commit().await?;
 

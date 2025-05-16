@@ -314,7 +314,7 @@ pub async fn save(
     .bind(ingest_report.report.subscriber_threshold as i32)
     .bind(ingest_report.report.threshold_timestamp)
     .bind(ingest_report.received_timestamp)
-    .execute(db)
+    .execute(&mut **db)
     .await?;
     Ok(())
 }
@@ -360,7 +360,7 @@ pub async fn delete(
         "#,
     )
     .bind(ingest_report.report.hotspot_pubkey.to_string())
-    .execute(&mut *db)
+    .execute(&mut **db)
     .await?;
     Ok(())
 }
