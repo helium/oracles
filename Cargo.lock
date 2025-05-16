@@ -3390,7 +3390,7 @@ dependencies = [
 [[package]]
 name = "helium-lib"
 version = "0.1.1"
-source = "git+https://github.com/helium/helium-wallet-rs?branch=jg%2Fsqlx-update#610a26a37d164b9865ff68a9adf6d84f1488b8eb"
+source = "git+https://github.com/helium/helium-wallet-rs?branch=master#82cf951e3fd552c72ad6ab3622658649cd17f50c"
 dependencies = [
  "anchor-client",
  "anchor-lang",
