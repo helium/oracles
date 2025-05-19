@@ -12,7 +12,7 @@ use tokio::{fs::File, io::AsyncWriteExt};
 use file_store::{traits::TimestampDecode, FileStore};
 use hex_assignments::{
     footfall::Footfall, landtype::Landtype, service_provider_override::ServiceProviderOverride,
-    urbanization::Urbanization, HexAssignment, HexBoostData,
+    urbanization::Urbanization, HexAssignment, HexBoostData, HexBoostDataAssignmentsExt,
 };
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
@@ -31,6 +31,18 @@ pub struct UnassignedHex {
     pub hex: u64,
     pub signal_level: SignalLevel,
     pub signal_power: i32,
+}
+
+#[async_trait::async_trait]
+pub trait DataSetProcessor: Send + Sync + 'static {
+    // Calls when new data set arrived but before it marked as processed
+    // If this function fails, new data sets will not be marked as processed.
+    // TODO: make test case for statement above
+    async fn new_data_set_handler(
+        &self,
+        pool: &PgPool,
+        data_sets: &dyn HexBoostDataAssignmentsExt,
+    ) -> anyhow::Result<()>;
 }
 
 #[async_trait::async_trait]
@@ -195,6 +207,7 @@ pub struct DataSetDownloader {
     data_sets: HexBoostData,
     store: FileStore,
     data_set_directory: PathBuf,
+    data_set_processor: Box<dyn DataSetProcessor>,
 }
 
 #[derive(FromRow)]
@@ -237,12 +250,14 @@ impl DataSetDownloader {
         data_sets: HexBoostData,
         store: FileStore,
         data_set_directory: PathBuf,
+        data_set_processor: Box<dyn DataSetProcessor>,
     ) -> Self {
         Self {
             pool,
             data_sets,
             store,
             data_set_directory,
+            data_set_processor,
         }
     }
 
@@ -268,17 +283,16 @@ impl DataSetDownloader {
             .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
             .await?;
 
-        // TODO
-        // let new_data_set = new_urbanized.is_some()
-        //     || new_footfall.is_some()
-        //     || new_landtype.is_some()
-        //     || new_service_provider_override.is_some();
-        // if is_hex_boost_data_ready(&self.data_sets) && new_data_set {
-        //     tracing::info!("Processing new data sets");
-        //     self.data_set_processor
-        //         .set_all_oracle_boosting_assignments(&self.pool, &self.data_sets)
-        //         .await?;
-        // }
+        let new_data_set = new_urbanized.is_some()
+            || new_footfall.is_some()
+            || new_landtype.is_some()
+            || new_service_provider_override.is_some();
+        if is_hex_boost_data_ready(&self.data_sets) && new_data_set {
+            tracing::info!("Processing new data sets");
+            self.data_set_processor
+                .new_data_set_handler(&self.pool, &self.data_sets)
+                .await?;
+        }
 
         // Mark the new data sets as processed and delete the old ones
         if let Some(new_urbanized) = new_urbanized {
