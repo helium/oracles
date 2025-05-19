@@ -17,7 +17,7 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tokio-stream = {workspace = true}
 triggered = {workspace = true}
-async-compression = {version = "0", features = ["tokio", "gzip"]}
+async-compression = { workspace = true } 
 futures = {workspace = true}
 futures-util = {workspace = true}
 prost = {workspace = true}
