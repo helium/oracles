@@ -5189,6 +5189,7 @@ dependencies = [
  "coverage-map",
  "coverage-point-calculator",
  "custom-tracing",
+ "dataset-downloader",
  "db-store",
  "derive_builder",
  "file-store",

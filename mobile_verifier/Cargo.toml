@@ -47,6 +47,7 @@ file-store = { path = "../file_store" }
 db-store = { path = "../db_store" }
 poc-metrics = { path = "../metrics" }
 reward-scheduler = { path = "../reward_scheduler" }
+dataset-downloader = { path = "../dataset_downloader" }
 price = { path = "../price" }
 rand = { workspace = true }
 async-trait = { workspace = true }

@@ -207,7 +207,6 @@ pub struct DataSetDownloader {
     data_sets: HexBoostData,
     store: FileStore,
     data_set_directory: PathBuf,
-    data_set_processor: Box<dyn DataSetProcessor>,
 }
 
 #[derive(FromRow)]
@@ -250,18 +249,19 @@ impl DataSetDownloader {
         data_sets: HexBoostData,
         store: FileStore,
         data_set_directory: PathBuf,
-        data_set_processor: Box<dyn DataSetProcessor>,
     ) -> Self {
         Self {
             pool,
             data_sets,
             store,
             data_set_directory,
-            data_set_processor,
         }
     }
 
-    pub async fn check_for_new_data_sets(&mut self) -> anyhow::Result<()> {
+    pub async fn check_for_new_data_sets(
+        &mut self,
+        data_set_processor: Box<dyn DataSetProcessor>,
+    ) -> anyhow::Result<()> {
         let new_urbanized = self
             .data_sets
             .urbanization
@@ -287,9 +287,11 @@ impl DataSetDownloader {
             || new_footfall.is_some()
             || new_landtype.is_some()
             || new_service_provider_override.is_some();
+
+        // TODO transaction
         if is_hex_boost_data_ready(&self.data_sets) && new_data_set {
             tracing::info!("Processing new data sets");
-            self.data_set_processor
+            data_set_processor
                 .new_data_set_handler(&self.pool, &self.data_sets)
                 .await?;
         }
