@@ -1,9 +1,9 @@
 use std::{collections::HashMap, path::PathBuf, pin::pin, time::Duration};
 
-use chrono::{DateTime, Utc};
-use dataset_downloader::DataSetStatus;
-use dataset_downloader::DataSetType;
-use dataset_downloader::NewDataSet;
+use chrono::Utc;
+use dataset_downloader::db;
+use dataset_downloader::AssignedHex;
+use dataset_downloader::UnassignedHex;
 use dataset_downloader::{DataSetDownloader, NewDataSetHandler};
 use file_store::{
     file_sink::FileSinkClient,
@@ -15,16 +15,13 @@ use futures_util::{Stream, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile::{self as proto, OracleBoostingReportV1};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
-use sqlx::{FromRow, PgPool, QueryBuilder};
+use sqlx::{PgPool, QueryBuilder};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::Instant;
 
-use crate::{
-    coverage::{NewCoverageObjectNotification, SignalLevel},
-    Settings,
-};
+use crate::{coverage::NewCoverageObjectNotification, Settings};
 
-use hex_assignments::{assignment::HexAssignments, HexBoostData, HexBoostDataAssignmentsExt};
+use hex_assignments::{HexBoostData, HexBoostDataAssignmentsExt};
 
 pub struct DataSetDownloaderDaemon {
     data_set_downloader: DataSetDownloader,
@@ -233,146 +230,6 @@ impl DataSetProcessor for NopDataSetProcessor {
     }
 }
 
-pub mod db {
-    use super::*;
-
-    pub async fn fetch_latest_file_date(
-        pool: &PgPool,
-        data_set_type: DataSetType,
-    ) -> sqlx::Result<Option<DateTime<Utc>>> {
-        sqlx::query_scalar("SELECT time_to_use FROM hex_assignment_data_set_status WHERE data_set = $1 ORDER BY time_to_use DESC LIMIT 1")
-            .bind(data_set_type)
-            .fetch_optional(pool)
-            .await
-    }
-
-    pub async fn insert_new_data_set(
-        pool: &PgPool,
-        filename: &str,
-        data_set_type: DataSetType,
-        time_to_use: DateTime<Utc>,
-    ) -> sqlx::Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO hex_assignment_data_set_status (filename, data_set, time_to_use, status)
-            VALUES ($1, $2, $3, 'pending')
-            ON CONFLICT DO NOTHING
-            "#,
-        )
-        .bind(filename)
-        .bind(data_set_type)
-        .bind(time_to_use)
-        .execute(pool)
-        .await?;
-        Ok(())
-    }
-
-    pub async fn fetch_latest_unprocessed_data_set(
-        pool: &PgPool,
-        data_set_type: DataSetType,
-        since: Option<DateTime<Utc>>,
-    ) -> sqlx::Result<Option<NewDataSet>> {
-        sqlx::query_as(
-            "SELECT filename, time_to_use, status FROM hex_assignment_data_set_status WHERE status != 'processed' AND data_set = $1 AND COALESCE(time_to_use > $2, TRUE) AND time_to_use <= $3 ORDER BY time_to_use DESC LIMIT 1"
-        )
-        .bind(data_set_type)
-        .bind(since)
-        .bind(Utc::now())
-        .fetch_optional(pool)
-        .await
-    }
-
-    pub async fn fetch_latest_processed_data_set(
-        pool: &PgPool,
-        data_set_type: DataSetType,
-    ) -> sqlx::Result<Option<NewDataSet>> {
-        sqlx::query_as(
-            "SELECT filename, time_to_use, status FROM hex_assignment_data_set_status WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
-        )
-        .bind(data_set_type)
-        .fetch_optional(pool)
-        .await
-    }
-
-    pub async fn set_data_set_status(
-        pool: &PgPool,
-        filename: &str,
-        status: DataSetStatus,
-    ) -> sqlx::Result<()> {
-        sqlx::query("UPDATE hex_assignment_data_set_status SET status = $1 WHERE filename = $2")
-            .bind(status)
-            .bind(filename)
-            .execute(pool)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn fetch_time_of_latest_processed_data_set(
-        pool: &PgPool,
-        data_set_type: DataSetType,
-    ) -> sqlx::Result<Option<DateTime<Utc>>> {
-        sqlx::query_scalar(
-            "SELECT time_to_use FROM hex_assignment_data_set_status WHERE status = 'processed' AND data_set = $1 ORDER BY time_to_use DESC LIMIT 1"
-        )
-        .bind(data_set_type)
-        .fetch_optional(pool)
-        .await
-    }
-
-    /// Check if there are any pending or downloaded files prior to the given reward period
-    pub async fn check_for_unprocessed_data_sets(
-        pool: &PgPool,
-        period_end: DateTime<Utc>,
-    ) -> sqlx::Result<bool> {
-        Ok(sqlx::query_scalar(
-            "SELECT COUNT(*) > 0 FROM hex_assignment_data_set_status WHERE time_to_use <= $1 AND status != 'processed'",
-        )
-        .bind(period_end)
-        .fetch_one(pool)
-        .await?
-            || sqlx::query_scalar(
-                r#"
-                SELECT COUNT(*) > 0 FROM coverage_objects
-                WHERE inserted_at < $1 AND uuid IN (
-                        SELECT
-                           DISTINCT uuid
-                        FROM
-                           hexes
-                        WHERE
-                           urbanized IS NULL
-                           OR footfall IS NULL
-                           OR landtype IS NULL
-                           OR service_provider_override IS NULL
-                )
-                "#,
-            )
-            .bind(period_end)
-            .fetch_one(pool)
-            .await?)
-    }
-
-    pub fn fetch_all_hexes(pool: &PgPool) -> impl Stream<Item = sqlx::Result<UnassignedHex>> + '_ {
-        sqlx::query_as("SELECT uuid, hex, signal_level, signal_power FROM hexes").fetch(pool)
-    }
-
-    pub fn fetch_hexes_with_null_assignments(
-        pool: &PgPool,
-    ) -> impl Stream<Item = sqlx::Result<UnassignedHex>> + '_ {
-        sqlx::query_as(
-            "SELECT
-                uuid, hex, signal_level, signal_power
-            FROM
-                hexes
-            WHERE
-                urbanized IS NULL
-                OR footfall IS NULL
-                OR landtype IS NULL
-                OR service_provider_override IS NULL",
-        )
-        .fetch(pool)
-    }
-}
-
 pub struct AssignedCoverageObjects {
     pub coverage_objs: HashMap<uuid::Uuid, Vec<AssignedHex>>,
 }
@@ -466,35 +323,4 @@ impl AssignedCoverageObjects {
 
         Ok(())
     }
-}
-
-#[derive(FromRow)]
-pub struct UnassignedHex {
-    uuid: uuid::Uuid,
-    #[sqlx(try_from = "i64")]
-    hex: u64,
-    signal_level: SignalLevel,
-    signal_power: i32,
-}
-
-impl UnassignedHex {
-    fn assign(self, data_sets: &impl HexBoostDataAssignmentsExt) -> anyhow::Result<AssignedHex> {
-        let cell = hextree::Cell::try_from(self.hex)?;
-
-        Ok(AssignedHex {
-            uuid: self.uuid,
-            hex: self.hex,
-            signal_level: self.signal_level,
-            signal_power: self.signal_power,
-            assignments: data_sets.assignments(cell)?,
-        })
-    }
-}
-
-pub struct AssignedHex {
-    pub uuid: uuid::Uuid,
-    pub hex: u64,
-    pub signal_level: SignalLevel,
-    pub signal_power: i32,
-    pub assignments: HexAssignments,
 }

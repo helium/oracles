@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use futures_util::{Stream, StreamExt};
+use hex_assignments::assignment::HexAssignments;
+use hex_assignments::HexBoostDataAssignmentsExt;
 use hextree::disktree::DiskTreeMap;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -31,6 +33,28 @@ pub struct UnassignedHex {
     pub hex: u64,
     pub signal_level: SignalLevel,
     pub signal_power: i32,
+}
+
+pub struct AssignedHex {
+    pub uuid: uuid::Uuid,
+    pub hex: u64,
+    pub signal_level: SignalLevel,
+    pub signal_power: i32,
+    pub assignments: HexAssignments,
+}
+
+impl UnassignedHex {
+    pub fn assign(self, data_sets: &impl HexBoostDataAssignmentsExt) -> anyhow::Result<AssignedHex> {
+        let cell = hextree::Cell::try_from(self.hex)?;
+
+        Ok(AssignedHex {
+            uuid: self.uuid,
+            hex: self.hex,
+            signal_level: self.signal_level,
+            signal_power: self.signal_power,
+            assignments: data_sets.assignments(cell)?,
+        })
+    }
 }
 
 #[async_trait::async_trait]
