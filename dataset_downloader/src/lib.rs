@@ -12,7 +12,7 @@ use tokio::{fs::File, io::AsyncWriteExt};
 use file_store::{traits::TimestampDecode, FileStore};
 use hex_assignments::{
     footfall::Footfall, landtype::Landtype, service_provider_override::ServiceProviderOverride,
-    urbanization::Urbanization, HexAssignment, HexBoostData, HexBoostDataAssignmentsExt,
+    urbanization::Urbanization, HexAssignment, HexBoostData,
 };
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
@@ -34,15 +34,11 @@ pub struct UnassignedHex {
 }
 
 #[async_trait::async_trait]
-pub trait DataSetProcessor: Send + Sync + 'static {
+pub trait NewDataSetHandler: Send + Sync + 'static {
     // Calls when new data set arrived but before it marked as processed
     // If this function fails, new data sets will not be marked as processed.
     // TODO: make test case for statement above
-    async fn new_data_set_handler(
-        &self,
-        pool: &PgPool,
-        data_sets: &dyn HexBoostDataAssignmentsExt,
-    ) -> anyhow::Result<()>;
+    async fn callback(&self, pool: &PgPool, data_sets: &HexBoostData) -> anyhow::Result<()>;
 }
 
 #[async_trait::async_trait]
@@ -195,16 +191,9 @@ impl DataSet for ServiceProviderOverride {
     }
 }
 
-pub fn is_hex_boost_data_ready(h: &HexBoostData) -> bool {
-    h.urbanization.is_ready()
-        && h.footfall.is_ready()
-        && h.landtype.is_ready()
-        && h.service_provider_override.is_ready()
-}
-
 pub struct DataSetDownloader {
-    pool: PgPool,
-    data_sets: HexBoostData,
+    pub pool: PgPool,
+    pub data_sets: HexBoostData,
     store: FileStore,
     data_set_directory: PathBuf,
 }
@@ -258,9 +247,17 @@ impl DataSetDownloader {
         }
     }
 
+    pub fn is_hex_boost_data_ready(&self) -> bool {
+        let h = &self.data_sets;
+        h.urbanization.is_ready()
+            && h.footfall.is_ready()
+            && h.landtype.is_ready()
+            && h.service_provider_override.is_ready()
+    }
+
     pub async fn check_for_new_data_sets(
         &mut self,
-        data_set_processor: Box<dyn DataSetProcessor>,
+        data_set_processor: &dyn NewDataSetHandler,
     ) -> anyhow::Result<()> {
         let new_urbanized = self
             .data_sets
@@ -289,10 +286,10 @@ impl DataSetDownloader {
             || new_service_provider_override.is_some();
 
         // TODO transaction
-        if is_hex_boost_data_ready(&self.data_sets) && new_data_set {
+        if self.is_hex_boost_data_ready() && new_data_set {
             tracing::info!("Processing new data sets");
             data_set_processor
-                .new_data_set_handler(&self.pool, &self.data_sets)
+                .callback(&self.pool, &self.data_sets)
                 .await?;
         }
 
