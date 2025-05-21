@@ -1,8 +1,8 @@
 use anyhow::Result;
 use config::{Config, Environment, File};
-use helium_lib::token::Token;
 use humantime_serde::re::humantime;
 use serde::Deserialize;
+use solana::Token;
 use std::{path::Path, time::Duration};
 
 #[derive(Debug, Deserialize, Clone)]

@@ -25,7 +25,7 @@ impl Seniority {
             "SELECT uuid, seniority_ts, last_heartbeat, inserted_at, update_reason FROM seniority WHERE radio_key = $1 ORDER BY last_heartbeat DESC, seniority_ts DESC LIMIT 1",
         )
         .bind(key)
-        .fetch_optional(&mut *exec)
+        .fetch_optional(&mut **exec)
         .await
     }
 }
@@ -188,7 +188,7 @@ impl SeniorityUpdate<'_> {
                 .bind(Utc::now())
                 .bind(update_reason as i32)
                 .bind(self.key.hb_type())
-                .execute(&mut *exec)
+                .execute(&mut **exec)
                 .await?;
             }
             SeniorityUpdateAction::Update { curr_seniority } => {
@@ -204,7 +204,7 @@ impl SeniorityUpdate<'_> {
                 .bind(self.heartbeat_ts)
                 .bind(self.key)
                 .bind(curr_seniority)
-                .execute(&mut *exec)
+                .execute(&mut **exec)
                 .await?;
             }
         }

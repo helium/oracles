@@ -1,4 +1,4 @@
-use helium_lib::token::Token;
+use solana::Token;
 
 const PRICE_GAUGE: &str = concat!(env!("CARGO_PKG_NAME"), "_", "price_gauge");
 

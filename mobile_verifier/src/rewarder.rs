@@ -24,8 +24,6 @@ use file_store::{
 use futures_util::TryFutureExt;
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
-use helium_lib::keypair::Pubkey;
-use helium_lib::token::Token;
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -47,6 +45,7 @@ use mobile_config::{
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
+use solana::{SolPubkey, Token};
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -58,7 +57,7 @@ mod db;
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
 pub struct Rewarder<A, B, C> {
-    sub_dao: Pubkey,
+    sub_dao: SolPubkey,
     pool: Pool<Postgres>,
     carrier_client: A,
     hex_service_client: B,
@@ -330,12 +329,12 @@ where
         )
         .await?;
         coverage::clear_coverage_objects(&mut transaction, &reward_info.epoch_period.start).await?;
-        subscriber_mapping_activity::db::clear(&mut transaction, reward_info.epoch_period.start)
+        subscriber_mapping_activity::db::clear(&mut *transaction, reward_info.epoch_period.start)
             .await?;
         unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
         banning::clear_bans(&mut transaction, reward_info.epoch_period.start).await?;
 
-        save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
+        save_next_reward_epoch(&mut *transaction, reward_info.epoch_day + 1).await?;
 
         transaction.commit().await?;
 

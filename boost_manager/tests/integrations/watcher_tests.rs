@@ -3,7 +3,7 @@ use boost_manager::watcher::{self, Watcher};
 use chrono::{Duration as ChronoDuration, Duration, Utc};
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
 use mobile_config::boosted_hex_info::BoostedHexInfo;
-use solana_sdk::pubkey::Pubkey;
+use solana::SolPubkey;
 use sqlx::PgPool;
 use std::{num::NonZeroU32, str::FromStr};
 
@@ -42,8 +42,8 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -52,8 +52,8 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: SolPubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -74,13 +74,13 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
 
     if let Ok(boosted_hexes) = boosted_hexes_result {
         let res_boosted_hex_pubkey1 =
-            Pubkey::try_from(boosted_hexes[0].boosted_hex_pubkey.as_slice())?.to_string();
+            SolPubkey::try_from(boosted_hexes[0].boosted_hex_pubkey.as_slice())?.to_string();
         let res_boost_config_pubkey1 =
-            Pubkey::try_from(boosted_hexes[0].boost_config_pubkey.as_slice())?.to_string();
+            SolPubkey::try_from(boosted_hexes[0].boost_config_pubkey.as_slice())?.to_string();
         let res_boosted_hex_pubkey2 =
-            Pubkey::try_from(boosted_hexes[1].boosted_hex_pubkey.as_slice())?.to_string();
+            SolPubkey::try_from(boosted_hexes[1].boosted_hex_pubkey.as_slice())?.to_string();
         let res_boost_config_pubkey2 =
-            Pubkey::try_from(boosted_hexes[1].boost_config_pubkey.as_slice())?.to_string();
+            SolPubkey::try_from(boosted_hexes[1].boost_config_pubkey.as_slice())?.to_string();
 
         // assert the boosted hexes outputted to filestore
         assert_eq!(2, boosted_hexes.len());

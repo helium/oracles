@@ -4,7 +4,7 @@ use file_store::traits::TimestampDecode;
 use futures::stream::{BoxStream, StreamExt};
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
 use hextree::Cell;
-use solana_sdk::pubkey::Pubkey;
+use solana::SolPubkey;
 use std::{collections::HashMap, convert::TryFrom, num::NonZeroU32};
 
 pub type BoostedHexInfoStream = BoxStream<'static, BoostedHexInfo>;
@@ -20,8 +20,8 @@ pub struct BoostedHexInfo {
     pub end_ts: Option<DateTime<Utc>>,
     pub period_length: Duration,
     pub multipliers: Vec<NonZeroU32>,
-    pub boosted_hex_pubkey: Pubkey,
-    pub boost_config_pubkey: Pubkey,
+    pub boosted_hex_pubkey: SolPubkey,
+    pub boost_config_pubkey: SolPubkey,
     pub version: u32,
 }
 
@@ -37,8 +37,8 @@ impl TryFrom<BoostedHexInfoProto> for BoostedHexInfo {
             .ok_or_else(|| anyhow::anyhow!("multipliers cannot contain values of 0"))?;
         let start_ts = to_start_ts(v.start_ts);
         let end_ts = to_end_ts(start_ts, period_length, multipliers.len());
-        let boosted_hex_pubkey: Pubkey = Pubkey::try_from(v.boosted_hex_pubkey.as_slice())?;
-        let boost_config_pubkey: Pubkey = Pubkey::try_from(v.boost_config_pubkey.as_slice())?;
+        let boosted_hex_pubkey: SolPubkey = SolPubkey::try_from(v.boosted_hex_pubkey.as_slice())?;
+        let boost_config_pubkey: SolPubkey = SolPubkey::try_from(v.boost_config_pubkey.as_slice())?;
         Ok(Self {
             location: v.location.try_into()?,
             start_ts,
@@ -172,7 +172,7 @@ pub(crate) mod db {
     use chrono::{DateTime, Duration, Utc};
     use futures::stream::{Stream, StreamExt};
     use hextree::Cell;
-    use solana_sdk::pubkey::Pubkey;
+    use solana::SolPubkey;
     use sqlx::{PgExecutor, Row};
     use std::num::NonZeroU32;
     use std::str::FromStr;
@@ -239,10 +239,11 @@ pub(crate) mod db {
                 })?;
             let end_ts = to_end_ts(start_ts, period_length, multipliers.len());
             let boost_config_pubkey =
-                Pubkey::from_str(row.get::<&str, &str>("boost_config_pubkey"))
+                SolPubkey::from_str(row.get::<&str, &str>("boost_config_pubkey"))
                     .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-            let boosted_hex_pubkey = Pubkey::from_str(row.get::<&str, &str>("boosted_hex_pubkey"))
-                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+            let boosted_hex_pubkey =
+                SolPubkey::from_str(row.get::<&str, &str>("boosted_hex_pubkey"))
+                    .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
             let version = row.get::<i32, &str>("version") as u32;
 
             let location = Cell::try_from(row.get::<i64, &str>("location"))
@@ -296,11 +297,11 @@ mod tests {
             end_ts: 0,
             period_length: 2592000,
             multipliers: vec![2, 10, 15, 35],
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY)
                 .unwrap()
                 .to_bytes()
                 .to_vec(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY)
+            boost_config_pubkey: SolPubkey::from_str(BOOST_HEX_CONFIG_PUBKEY)
                 .unwrap()
                 .to_bytes()
                 .to_vec(),
@@ -318,11 +319,11 @@ mod tests {
         assert_eq!(15, msg.multipliers[2].get());
         assert_eq!(35, msg.multipliers[3].get());
         assert_eq!(
-            Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             msg.boosted_hex_pubkey
         );
         assert_eq!(
-            Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY).unwrap(),
+            SolPubkey::from_str(BOOST_HEX_CONFIG_PUBKEY).unwrap(),
             msg.boost_config_pubkey
         );
         assert_eq!(1, msg.version);
@@ -337,11 +338,11 @@ mod tests {
             end_ts: 1720746000,
             period_length: 2592000,
             multipliers: vec![2, 10, 15, 35],
-            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY)
+            boosted_hex_pubkey: SolPubkey::from_str(BOOST_HEX_PUBKEY)
                 .unwrap()
                 .to_bytes()
                 .to_vec(),
-            boost_config_pubkey: Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY)
+            boost_config_pubkey: SolPubkey::from_str(BOOST_HEX_CONFIG_PUBKEY)
                 .unwrap()
                 .to_bytes()
                 .to_vec(),
@@ -359,11 +360,11 @@ mod tests {
         assert_eq!(15, msg.multipliers[2].get());
         assert_eq!(35, msg.multipliers[3].get());
         assert_eq!(
-            Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            SolPubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
             msg.boosted_hex_pubkey
         );
         assert_eq!(
-            Pubkey::from_str(BOOST_HEX_CONFIG_PUBKEY).unwrap(),
+            SolPubkey::from_str(BOOST_HEX_CONFIG_PUBKEY).unwrap(),
             msg.boost_config_pubkey
         );
         assert_eq!(1, msg.version);
