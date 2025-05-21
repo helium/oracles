@@ -126,7 +126,7 @@ impl Type<Postgres> for OwnedKeyType {
     }
 }
 
-impl<'a> Encode<'a, Postgres> for OwnedKeyType {
+impl Encode<'_, Postgres> for OwnedKeyType {
     fn encode_by_ref(
         &self,
         buf: &mut PgArgumentBuffer,
