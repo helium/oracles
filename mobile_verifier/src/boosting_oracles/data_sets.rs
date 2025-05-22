@@ -1,10 +1,7 @@
 use std::{collections::HashMap, path::PathBuf, pin::pin, time::Duration};
 
 use chrono::Utc;
-use dataset_downloader::db;
-use dataset_downloader::AssignedHex;
-use dataset_downloader::UnassignedHex;
-use dataset_downloader::{DataSetDownloader, NewDataSetHandler};
+use dataset_downloader::{db, AssignedHex, DataSetDownloader, NewDataSetHandler, UnassignedHex};
 use file_store::{
     file_sink::FileSinkClient,
     file_upload::FileUpload,
@@ -15,7 +12,7 @@ use futures_util::{Stream, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile::{self as proto, OracleBoostingReportV1};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
-use sqlx::{PgPool, QueryBuilder};
+use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::Instant;
 
@@ -92,14 +89,17 @@ struct OracleBoostingWriter {
 
 #[async_trait::async_trait]
 impl NewDataSetHandler for OracleBoostingWriter {
-    async fn callback(&self, pool: &PgPool, data_sets: &HexBoostData) -> anyhow::Result<()> {
+    async fn callback(
+        &self,
+        txn: &mut Transaction<'_, Postgres>,
+        data_sets: &HexBoostData,
+    ) -> anyhow::Result<()> {
         let assigned_coverage_objs =
-            AssignedCoverageObjects::assign_hex_stream(db::fetch_all_hexes(pool), data_sets)
-                .await?;
+            AssignedCoverageObjects::assign_hex_stream(db::fetch_all_hexes(txn), data_sets).await?;
         assigned_coverage_objs
             .write(&self.data_set_processor)
             .await?;
-        assigned_coverage_objs.save(pool).await?;
+        assigned_coverage_objs.save(txn).await?;
         Ok(())
     }
 }
@@ -131,13 +131,17 @@ impl DataSetDownloaderDaemon {
         // Attempt to fill in any unassigned hexes. This is for the edge case in
         // which we shutdown before a coverage object updates.
         if self.data_set_downloader.is_hex_boost_data_ready() {
+            let mut txn = self.data_set_downloader.pool.begin().await?;
+
             self.oracle_boostring_writer
                 .data_set_processor
                 .set_unassigned_oracle_boosting_assignments(
-                    &self.data_set_downloader.pool,
+                    &mut txn,
                     &self.data_set_downloader.data_sets,
                 )
                 .await?;
+
+            txn.commit().await?;
         }
 
         let mut wakeup = Instant::now() + self.poll_duration;
@@ -145,14 +149,19 @@ impl DataSetDownloaderDaemon {
             #[rustfmt::skip]
             tokio::select! {
                 _ = self.new_coverage_object_notification.await_new_coverage_object() => {
+                    let mut txn = self.data_set_downloader.pool.begin().await?;
+
                     // If we see a new coverage object, we want to assign only those hexes
                     // that don't have an assignment
                     if self.data_set_downloader.is_hex_boost_data_ready() {
                         self.oracle_boostring_writer.data_set_processor.set_unassigned_oracle_boosting_assignments(
-                            &self.data_set_downloader.pool,
+                            &mut txn,
                             &self.data_set_downloader.data_sets,
                         ).await?;
                     }
+
+                   txn.commit().await?;
+
                 },
                 _ = tokio::time::sleep_until(wakeup) => {
                     self.data_set_downloader.check_for_new_data_sets(&self.oracle_boostring_writer).await?;
@@ -164,71 +173,70 @@ impl DataSetDownloaderDaemon {
 }
 
 #[async_trait::async_trait]
-pub trait DataSetProcessor: Send + Sync + 'static {
+pub trait DataSetProcessor<'a>: Send + Sync + 'static {
     async fn set_all_oracle_boosting_assignments(
         &self,
-        pool: &PgPool,
+        txn: &mut Transaction<'_, Postgres>,
         data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<()>;
 
     async fn set_unassigned_oracle_boosting_assignments(
         &self,
-        pool: &PgPool,
+        txn: &mut Transaction<'_, Postgres>,
         data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<()>;
 }
 
 #[async_trait::async_trait]
-impl DataSetProcessor for FileSinkClient<proto::OracleBoostingReportV1> {
+impl DataSetProcessor<'_> for FileSinkClient<proto::OracleBoostingReportV1> {
     async fn set_all_oracle_boosting_assignments(
         &self,
-        pool: &PgPool,
+        txn: &mut Transaction<'_, Postgres>,
         data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<()> {
         let assigned_coverage_objs =
-            AssignedCoverageObjects::assign_hex_stream(db::fetch_all_hexes(pool), data_sets)
-                .await?;
+            AssignedCoverageObjects::assign_hex_stream(db::fetch_all_hexes(txn), data_sets).await?;
         assigned_coverage_objs.write(self).await?;
-        assigned_coverage_objs.save(pool).await?;
+        assigned_coverage_objs.save(txn).await?;
         Ok(())
     }
 
     async fn set_unassigned_oracle_boosting_assignments(
         &self,
-        pool: &PgPool,
+        txn: &mut Transaction<'_, Postgres>,
         data_sets: &impl HexBoostDataAssignmentsExt,
     ) -> anyhow::Result<()> {
         let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
-            db::fetch_hexes_with_null_assignments(pool),
+            db::fetch_hexes_with_null_assignments(txn),
             data_sets,
         )
         .await?;
         assigned_coverage_objs.write(self).await?;
-        assigned_coverage_objs.save(pool).await?;
+        assigned_coverage_objs.save(txn).await?;
         Ok(())
     }
 }
 
-pub struct NopDataSetProcessor;
-
-#[async_trait::async_trait]
-impl DataSetProcessor for NopDataSetProcessor {
-    async fn set_all_oracle_boosting_assignments(
-        &self,
-        _pool: &PgPool,
-        _data_sets: &impl HexBoostDataAssignmentsExt,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    async fn set_unassigned_oracle_boosting_assignments(
-        &self,
-        _pool: &PgPool,
-        _data_sets: &impl HexBoostDataAssignmentsExt,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
+// pub struct NopDataSetProcessor;
+//
+// #[async_trait::async_trait]
+// impl DataSetProcessor for NopDataSetProcessor {
+//     async fn set_all_oracle_boosting_assignments(
+//         &self,
+//         _pool: &PgPool,
+//         _data_sets: &impl HexBoostDataAssignmentsExt,
+//     ) -> anyhow::Result<()> {
+//         Ok(())
+//     }
+//
+//     async fn set_unassigned_oracle_boosting_assignments(
+//         &self,
+//         _pool: &PgPool,
+//         _data_sets: &impl HexBoostDataAssignmentsExt,
+//     ) -> anyhow::Result<()> {
+//         Ok(())
+//     }
+// }
 
 pub struct AssignedCoverageObjects {
     pub coverage_objs: HashMap<uuid::Uuid, Vec<AssignedHex>>,
@@ -287,7 +295,7 @@ impl AssignedCoverageObjects {
         Ok(())
     }
 
-    pub async fn save(self, pool: &PgPool) -> anyhow::Result<()> {
+    pub async fn save(self, txn: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         const NUMBER_OF_FIELDS_IN_QUERY: u16 = 8;
         const ASSIGNMENTS_MAX_BATCH_ENTRIES: usize =
             (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
@@ -317,7 +325,7 @@ impl AssignedCoverageObjects {
                     "#,
                 )
                 .build()
-                .execute(pool)
+                .execute(&mut **txn)
                 .await?;
         }
 

@@ -7,8 +7,8 @@ use hex_assignments::HexBoostDataAssignmentsExt;
 use hextree::disktree::DiskTreeMap;
 use lazy_static::lazy_static;
 use regex::Regex;
-use sqlx::Type;
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, Type};
 use tokio::{fs::File, io::AsyncWriteExt};
 
 use file_store::{traits::TimestampDecode, FileStore};
@@ -44,7 +44,10 @@ pub struct AssignedHex {
 }
 
 impl UnassignedHex {
-    pub fn assign(self, data_sets: &impl HexBoostDataAssignmentsExt) -> anyhow::Result<AssignedHex> {
+    pub fn assign(
+        self,
+        data_sets: &impl HexBoostDataAssignmentsExt,
+    ) -> anyhow::Result<AssignedHex> {
         let cell = hextree::Cell::try_from(self.hex)?;
 
         Ok(AssignedHex {
@@ -62,7 +65,11 @@ pub trait NewDataSetHandler: Send + Sync + 'static {
     // Calls when new data set arrived but before it marked as processed
     // If this function fails, new data sets will not be marked as processed.
     // TODO: make test case for statement above
-    async fn callback(&self, pool: &PgPool, data_sets: &HexBoostData) -> anyhow::Result<()>;
+    async fn callback(
+        &self,
+        txn: &mut Transaction<'_, Postgres>,
+        data_sets: &HexBoostData,
+    ) -> anyhow::Result<()>;
 }
 
 #[async_trait::async_trait]
@@ -126,7 +133,8 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
 
         if !latest_unprocessed_data_set.status.is_downloaded() {
             download_data_set(store, &latest_unprocessed_data_set.filename, &path).await?;
-            latest_unprocessed_data_set.mark_as_downloaded(pool).await?;
+            let con = &mut pool.acquire().await?;
+            latest_unprocessed_data_set.mark_as_downloaded(con).await?;
             tracing::info!(
                 data_set = latest_unprocessed_data_set.filename,
                 "Data set download complete"
@@ -230,13 +238,13 @@ pub struct NewDataSet {
 }
 
 impl NewDataSet {
-    async fn mark_as_downloaded(&self, pool: &PgPool) -> anyhow::Result<()> {
-        db::set_data_set_status(pool, &self.filename, DataSetStatus::Downloaded).await?;
+    async fn mark_as_downloaded(&self, con: &mut PgConnection) -> anyhow::Result<()> {
+        db::set_data_set_status(con, &self.filename, DataSetStatus::Downloaded).await?;
         Ok(())
     }
 
-    async fn mark_as_processed(&self, pool: &PgPool) -> anyhow::Result<()> {
-        db::set_data_set_status(pool, &self.filename, DataSetStatus::Processed).await?;
+    async fn mark_as_processed(&self, con: &mut PgConnection) -> anyhow::Result<()> {
+        db::set_data_set_status(con, &self.filename, DataSetStatus::Processed).await?;
         Ok(())
     }
 }
@@ -309,17 +317,39 @@ impl DataSetDownloader {
             || new_landtype.is_some()
             || new_service_provider_override.is_some();
 
-        // TODO transaction
+        if !new_data_set {
+            return Ok(());
+        }
+
+        let mut txn = self.pool.begin().await?;
+
         if self.is_hex_boost_data_ready() && new_data_set {
             tracing::info!("Processing new data sets");
             data_set_processor
-                .callback(&self.pool, &self.data_sets)
+                .callback(&mut txn, &self.data_sets)
                 .await?;
         }
 
         // Mark the new data sets as processed and delete the old ones
+        if let Some(ref new_urbanized) = new_urbanized {
+            new_urbanized.mark_as_processed(&mut txn).await?;
+        }
+
+        if let Some(ref new_footfall) = new_footfall {
+            new_footfall.mark_as_processed(&mut txn).await?;
+        }
+        if let Some(ref new_landtype) = new_landtype {
+            new_landtype.mark_as_processed(&mut txn).await?;
+        }
+
+        if let Some(ref new_service_provider_override) = new_service_provider_override {
+            new_service_provider_override
+                .mark_as_processed(&mut txn)
+                .await?;
+        }
+        txn.commit().await?;
+
         if let Some(new_urbanized) = new_urbanized {
-            new_urbanized.mark_as_processed(&self.pool).await?;
             delete_old_data_sets(
                 &self.data_set_directory,
                 DataSetType::Urbanization,
@@ -328,7 +358,6 @@ impl DataSetDownloader {
             .await?;
         }
         if let Some(new_footfall) = new_footfall {
-            new_footfall.mark_as_processed(&self.pool).await?;
             delete_old_data_sets(
                 &self.data_set_directory,
                 DataSetType::Footfall,
@@ -337,7 +366,6 @@ impl DataSetDownloader {
             .await?;
         }
         if let Some(new_landtype) = new_landtype {
-            new_landtype.mark_as_processed(&self.pool).await?;
             delete_old_data_sets(
                 &self.data_set_directory,
                 DataSetType::Landtype,
@@ -346,9 +374,6 @@ impl DataSetDownloader {
             .await?;
         }
         if let Some(new_service_provider_override) = new_service_provider_override {
-            new_service_provider_override
-                .mark_as_processed(&self.pool)
-                .await?;
             delete_old_data_sets(
                 &self.data_set_directory,
                 DataSetType::ServiceProviderOverride,
@@ -356,9 +381,9 @@ impl DataSetDownloader {
             )
             .await?;
         }
+
         Ok(())
     }
-
     pub async fn fetch_first_datasets(&mut self) -> anyhow::Result<()> {
         self.data_sets
             .urbanization
@@ -534,14 +559,14 @@ pub mod db {
     }
 
     pub async fn set_data_set_status(
-        pool: &PgPool,
+        con: &mut PgConnection,
         filename: &str,
         status: DataSetStatus,
     ) -> sqlx::Result<()> {
         sqlx::query("UPDATE hex_assignment_data_set_status SET status = $1 WHERE filename = $2")
             .bind(status)
             .bind(filename)
-            .execute(pool)
+            .execute(con)
             .await?;
         Ok(())
     }
@@ -590,12 +615,14 @@ pub mod db {
             .await?)
     }
 
-    pub fn fetch_all_hexes(pool: &PgPool) -> impl Stream<Item = sqlx::Result<UnassignedHex>> + '_ {
-        sqlx::query_as("SELECT uuid, hex, signal_level, signal_power FROM hexes").fetch(pool)
+    pub fn fetch_all_hexes(
+        con: &mut PgConnection,
+    ) -> impl Stream<Item = sqlx::Result<UnassignedHex>> + '_ {
+        sqlx::query_as("SELECT uuid, hex, signal_level, signal_power FROM hexes").fetch(con)
     }
 
     pub fn fetch_hexes_with_null_assignments(
-        pool: &PgPool,
+        con: &mut PgConnection,
     ) -> impl Stream<Item = sqlx::Result<UnassignedHex>> + '_ {
         sqlx::query_as(
             "SELECT
@@ -608,6 +635,6 @@ pub mod db {
                 OR landtype IS NULL
                 OR service_provider_override IS NULL",
         )
-        .fetch(pool)
+        .fetch(con)
     }
 }
