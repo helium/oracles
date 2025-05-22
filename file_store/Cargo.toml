@@ -58,4 +58,4 @@ tempfile = "3"
 [features]
 default = ["sqlx-postgres"]
 local = ["aws-types"]
-sqlx-postgres = ["sqlx"]
+sqlx-postgres = ["sqlx/postgres"]

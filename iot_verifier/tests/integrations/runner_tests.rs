@@ -933,7 +933,7 @@ async fn invalid_beacon_bad_payload(pool: PgPool) -> anyhow::Result<()> {
     ctx.runner.handle_db_tick().await?;
     tokio::time::sleep(Duration::from_secs(3)).await;
     let mut txn = pool.begin().await?;
-    let beacon_report = Report::get_stale_beacons(&mut txn, Duration::from_secs(1)).await?;
+    let beacon_report = Report::get_stale_beacons(&mut *txn, Duration::from_secs(1)).await?;
     // max attempts is 2, once that is exceeded the report is no longer retried
     // so even tho we called handle_db_tick 5 times above, the report was only retried twice
     assert_eq!(2, beacon_report[0].attempts);

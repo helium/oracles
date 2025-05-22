@@ -40,7 +40,7 @@ async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
     heartbeat.save(&mut transaction).await?;
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM wifi_heartbeats")
-        .fetch_one(&mut transaction)
+        .fetch_one(&mut *transaction)
         .await?;
 
     assert_eq!(count, 1);

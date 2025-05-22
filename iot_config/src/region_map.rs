@@ -155,11 +155,11 @@ pub async fn update_region(
     .bind(region.to_string())
     .bind(params.encode_to_vec())
     .bind(indexes)
-    .execute(&mut transaction)
+    .execute(&mut *transaction)
     .await?;
 
     let updated_region = if indexes.is_some() {
-        Some(build_region_tree(&mut transaction).await?)
+        Some(build_region_tree(&mut *transaction).await?)
     } else {
         tracing::debug!("h3 region index update skipped");
         None

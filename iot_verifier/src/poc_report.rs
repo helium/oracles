@@ -129,7 +129,7 @@ impl Report {
         query_builder.push(" on conflict (id) do nothing ");
         let query = query_builder.build();
         query
-            .execute(&mut *txn)
+            .execute(&mut **txn)
             .await
             .map(|_| ())
             .map_err(ReportError::from)

@@ -27,10 +27,10 @@ impl FromRow<'_, PgRow> for LastBeaconReciprocity {
 }
 
 impl LastBeaconReciprocity {
-    pub async fn get<'c, E>(executor: E, id: &PublicKeyBinary) -> anyhow::Result<Option<Self>>
-    where
-        E: sqlx::Executor<'c, Database = Postgres>,
-    {
+    pub async fn get(
+        executor: impl sqlx::PgExecutor<'_>,
+        id: &PublicKeyBinary,
+    ) -> anyhow::Result<Option<Self>> {
         Ok(sqlx::query_as::<_, LastBeaconReciprocity>(
             r#" select * from last_beacon_recip where id = $1;"#,
         )
@@ -39,13 +39,10 @@ impl LastBeaconReciprocity {
         .await?)
     }
 
-    pub async fn get_all_since<'c, E>(
-        executor: E,
+    pub async fn get_all_since(
+        executor: impl sqlx::PgExecutor<'_>,
         timestamp: DateTime<Utc>,
-    ) -> anyhow::Result<Vec<Self>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres> + 'c,
-    {
+    ) -> anyhow::Result<Vec<Self>> {
         Ok(
             sqlx::query_as::<_, Self>(
                 r#" select * from last_beacon_recip where timestamp >= $1; "#,
@@ -71,7 +68,7 @@ impl LastBeaconReciprocity {
         )
         .bind(id.as_ref())
         .bind(timestamp)
-        .execute(txn)
+        .execute(&mut **txn)
         .await?;
         Ok(())
     }

@@ -379,7 +379,7 @@ pub mod db {
         .bind(&report.key)
         .bind(report.received_timestamp)
         .bind(report.until)
-        .execute(transaction)
+        .execute(&mut **transaction)
         .await
         .map(|_| ())
         .map_err(anyhow::Error::from)
@@ -403,7 +403,7 @@ pub mod db {
         .bind(&report.key)
         .bind(report.ban_type.as_str_name())
         .bind(report.received_timestamp)
-        .execute(transaction)
+        .execute(&mut **transaction)
         .await
         .map(|_| ())
         .map_err(anyhow::Error::from)
