@@ -349,37 +349,70 @@ impl DataSetDownloader {
         }
         txn.commit().await?;
 
+        // Ignoring tracing error messages can be critical if server out of space
         if let Some(new_urbanized) = new_urbanized {
-            delete_old_data_sets(
+            if let Err(err) = delete_old_data_sets(
                 &self.data_set_directory,
                 DataSetType::Urbanization,
                 new_urbanized.time_to_use,
             )
-            .await?;
+            .await
+            {
+                tracing::error!(
+                    error = ?err,
+                    data_set_directory = ?self.data_set_directory,
+                    time_to_use = ?new_urbanized.time_to_use,
+                    "Deleting old urbanized data set file is failed."
+                );
+            }
         }
         if let Some(new_footfall) = new_footfall {
-            delete_old_data_sets(
+            if let Err(err) = delete_old_data_sets(
                 &self.data_set_directory,
                 DataSetType::Footfall,
                 new_footfall.time_to_use,
             )
-            .await?;
+            .await
+            {
+                tracing::error!(
+                    error = ?err,
+                    data_set_directory = ?self.data_set_directory,
+                    time_to_use = ?new_footfall.time_to_use,
+                    "Deleting old fotfall data set file is failed."
+                );
+            }
         }
         if let Some(new_landtype) = new_landtype {
-            delete_old_data_sets(
+            if let Err(err) = delete_old_data_sets(
                 &self.data_set_directory,
                 DataSetType::Landtype,
                 new_landtype.time_to_use,
             )
-            .await?;
+            .await
+            {
+                tracing::error!(
+                    error = ?err,
+                    data_set_directory = ?self.data_set_directory,
+                    time_to_use = ?new_landtype.time_to_use,
+                    "Deleting old landtype data set file is failed."
+                );
+            }
         }
         if let Some(new_service_provider_override) = new_service_provider_override {
-            delete_old_data_sets(
+            if let Err(err) = delete_old_data_sets(
                 &self.data_set_directory,
                 DataSetType::ServiceProviderOverride,
                 new_service_provider_override.time_to_use,
             )
-            .await?;
+            .await
+            {
+                tracing::error!(
+                    error = ?err,
+                    data_set_directory = ?self.data_set_directory,
+                    time_to_use = ?new_service_provider_override.time_to_use,
+                    "Deleting old service_provider_override data set file is failed."
+                );
+            }
         }
 
         Ok(())
