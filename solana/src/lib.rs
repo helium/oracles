@@ -1,9 +1,16 @@
-use solana_client::client_error::ClientError;
-use solana_sdk::pubkey::ParsePubkeyError;
-use solana_sdk::transaction::Transaction;
+use helium_lib::{
+    solana_client::client_error::ClientError,
+    solana_sdk::{program_error, pubkey::ParsePubkeyError, signature, transaction::Transaction},
+};
 use std::time::SystemTimeError;
 
-pub use solana_sdk::signature::Signature;
+pub use helium_lib::{
+    self,
+    dao::SubDao,
+    solana_client::nonblocking::rpc_client::RpcClient,
+    solana_sdk::{pubkey::Pubkey as SolPubkey, signature::Signature},
+    token::{self, Token},
+};
 
 pub mod burn;
 pub mod carrier;
@@ -35,13 +42,13 @@ pub enum SolanaRpcError {
     #[error("Solana rpc error: {0}")]
     RpcClientError(Box<ClientError>),
     #[error("Anchor error: {0}")]
-    AnchorError(Box<helium_anchor_gen::anchor_lang::error::Error>),
+    AnchorError(Box<helium_lib::anchor_lang::error::Error>),
     #[error("Solana program error: {0}")]
-    ProgramError(#[from] solana_sdk::program_error::ProgramError),
+    ProgramError(#[from] program_error::ProgramError),
     #[error("Parse pubkey error: {0}")]
     ParsePubkeyError(#[from] ParsePubkeyError),
     #[error("Parse signature error: {0}")]
-    ParseSignatureError(#[from] solana_sdk::signature::ParseSignatureError),
+    ParseSignatureError(#[from] signature::ParseSignatureError),
     #[error("DC burn authority does not match keypair")]
     InvalidKeypair,
     #[error("System time error: {0}")]
@@ -55,8 +62,8 @@ pub enum SolanaRpcError {
     Test(String),
 }
 
-impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
-    fn from(err: helium_anchor_gen::anchor_lang::error::Error) -> Self {
+impl From<helium_lib::anchor_lang::error::Error> for SolanaRpcError {
+    fn from(err: helium_lib::anchor_lang::error::Error) -> Self {
         Self::AnchorError(Box::new(err))
     }
 }

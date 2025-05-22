@@ -27,11 +27,11 @@ use iot_verifier::{
     PriceInfo,
 };
 
-use helium_lib::token::Token;
 use iot_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use prost::Message;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use solana::Token;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{self, ops::DerefMut, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, sync::Mutex, time::timeout};
@@ -337,7 +337,7 @@ pub async fn inject_last_witness(
     gateway: PublicKeyBinary,
     ts: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    LastWitness::update_last_timestamp(&mut *txn, &gateway, ts).await
+    LastWitness::update_last_timestamp(&mut **txn, &gateway, ts).await
 }
 
 pub fn valid_gateway() -> GatewayInfo {

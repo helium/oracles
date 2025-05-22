@@ -18,7 +18,10 @@ use helium_proto::services::poc_mobile::{self as proto, LocationSource};
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
-use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
+use sqlx::{
+    postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef},
+    Decode, Encode, Postgres, Transaction, Type,
+};
 use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
 
@@ -82,8 +85,8 @@ impl Type<Postgres> for KeyType<'_> {
 impl<'a> Encode<'a, Postgres> for KeyType<'a> {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as sqlx::database::HasArguments<'a>>::ArgumentBuffer,
-    ) -> sqlx::encode::IsNull {
+        buf: &mut PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
         match self {
             Self::Wifi(wifi) => wifi.encode_by_ref(buf),
         }
@@ -123,11 +126,11 @@ impl Type<Postgres> for OwnedKeyType {
     }
 }
 
-impl<'a> Encode<'a, Postgres> for OwnedKeyType {
+impl Encode<'_, Postgres> for OwnedKeyType {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as sqlx::database::HasArguments<'a>>::ArgumentBuffer,
-    ) -> sqlx::encode::IsNull {
+        buf: &mut PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
         match self {
             Self::Wifi(wifi) => wifi.encode_by_ref(buf),
         }
@@ -135,9 +138,7 @@ impl<'a> Encode<'a, Postgres> for OwnedKeyType {
 }
 
 impl<'r> Decode<'r, Postgres> for OwnedKeyType {
-    fn decode(
-        value: <Postgres as sqlx::database::HasValueRef<'r>>::ValueRef,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
         let text = <&str as Decode<Postgres>>::decode(value)?;
         // Try decoding to a public key binary
         match text.parse() {
@@ -572,7 +573,7 @@ impl ValidatedHeartbeat {
         .bind(self.heartbeat.location_validation_timestamp)
         .bind(self.heartbeat.lat)
         .bind(self.heartbeat.lon)
-        .execute(&mut *exec)
+        .execute(&mut **exec)
         .await?;
         Ok(())
     }
@@ -632,7 +633,7 @@ pub async fn clear_heartbeats(
 ) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM wifi_heartbeats WHERE truncated_timestamp < $1;")
         .bind(timestamp)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())

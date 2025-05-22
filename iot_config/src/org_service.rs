@@ -274,7 +274,7 @@ impl iot_config::Org for OrgService {
                 .collect(),
             helium_netid_field,
             &devaddr_constraints,
-            &mut txn,
+            &mut *txn,
         )
         .await
         .map_err(|err| {

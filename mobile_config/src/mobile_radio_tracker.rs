@@ -265,7 +265,7 @@ async fn update_tracked_radios(
             "#,
         )
         .build()
-        .execute(&mut txn)
+        .execute(&mut *txn)
         .await?;
     }
 

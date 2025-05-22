@@ -57,7 +57,7 @@ pub async fn insert_activated_hex(
     .bind(boosted_hex_pubkey)
     .bind(boost_config_pubkey)
     .bind(OnChainStatus::Queued)
-    .execute(txn)
+    .execute(&mut **txn)
     .await?;
 
     Ok(())

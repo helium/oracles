@@ -1,8 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use helium_crypto::PublicKeyBinary;
-use solana::{burn::SolanaNetwork, SolanaRpcError};
-use solana_sdk::signature::Signature;
+use solana::{burn::SolanaNetwork, Signature, SolanaRpcError};
 use sqlx::{postgres::PgRow, FromRow, PgPool, Postgres, Row, Transaction};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -208,7 +207,7 @@ impl<'a> PendingTablesTransaction<'a> for Transaction<'a, Postgres> {
     ) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
             .bind(signature.to_string())
-            .execute(self)
+            .execute(&mut **self)
             .await?;
         Ok(())
     }
@@ -230,7 +229,7 @@ impl<'a> PendingTablesTransaction<'a> for Transaction<'a, Postgres> {
         .bind(amount as i64)
         .bind(Utc::now())
         .bind(payer)
-        .execute(&mut *self)
+        .execute(&mut **self)
         .await?;
         Ok(())
     }
