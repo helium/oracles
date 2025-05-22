@@ -3,6 +3,7 @@ use hextree::disktree::DiskTreeMap;
 
 use super::{Assignment, HexAssignment};
 
+#[derive(Default)]
 pub struct Urbanization {
     pub urbanized: Option<DiskTreeMap>,
     pub timestamp: Option<DateTime<Utc>>,
@@ -14,12 +15,6 @@ impl Urbanization {
             urbanized,
             timestamp: None,
         }
-    }
-}
-
-impl Default for Urbanization {
-    fn default() -> Self {
-        Self::new(None)
     }
 }
 

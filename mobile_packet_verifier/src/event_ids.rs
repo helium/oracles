@@ -13,7 +13,7 @@ pub async fn is_duplicate(
     sqlx::query("INSERT INTO event_ids(event_id, received_timestamp) VALUES($1, $2) ON CONFLICT (event_id) DO NOTHING")
         .bind(event_id)
         .bind(received_timestamp)
-        .execute(txn)
+        .execute(&mut **txn)
         .await
         .map(|result| result.rows_affected() == 0)
         .map_err(anyhow::Error::from)

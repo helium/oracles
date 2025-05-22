@@ -44,7 +44,7 @@ pub trait FileInfoPollerParser<T>: Send + Sync + 'static {
 
 #[async_trait::async_trait]
 pub trait FileInfoPollerStateRecorder {
-    async fn record(self, process_name: &str, file_info: &FileInfo) -> Result;
+    async fn record(&mut self, process_name: &str, file_info: &FileInfo) -> Result;
 }
 
 #[async_trait::async_trait]
@@ -80,7 +80,7 @@ where
 
     pub async fn into_stream(
         self,
-        recorder: impl FileInfoPollerStateRecorder,
+        recorder: &mut impl FileInfoPollerStateRecorder,
     ) -> Result<BoxStream<'static, T>>
     where
         T: 'static,
@@ -433,8 +433,8 @@ use sqlx::postgres::PgQueryResult;
 
 #[cfg(feature = "sqlx-postgres")]
 #[async_trait::async_trait]
-impl FileInfoPollerStateRecorder for &mut sqlx::Transaction<'_, sqlx::Postgres> {
-    async fn record(self, process_name: &str, file_info: &FileInfo) -> Result {
+impl FileInfoPollerStateRecorder for sqlx::Transaction<'_, sqlx::Postgres> {
+    async fn record(&mut self, process_name: &str, file_info: &FileInfo) -> Result {
         sqlx::query(
             r#"
                 INSERT INTO files_processed(process_name, file_name, file_type, file_timestamp, processed_at) VALUES($1, $2, $3, $4, $5)
@@ -444,7 +444,7 @@ impl FileInfoPollerStateRecorder for &mut sqlx::Transaction<'_, sqlx::Postgres> 
             .bind(&file_info.prefix)
             .bind(file_info.timestamp)
             .bind(Utc::now())
-            .execute(self)
+            .execute(&mut **self)
             .await
             .map(|_| ())
             .map_err(Error::from)

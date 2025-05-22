@@ -5,13 +5,13 @@ use file_store::{
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_lib::token::Token;
 use helium_proto::services::poc_mobile::{
     mobile_reward_share::Reward as MobileReward, radio_reward_v2, GatewayReward, MobileRewardShare,
     OracleBoostingHexAssignment, OracleBoostingReportV1, PromotionReward, RadioReward,
     RadioRewardV2, ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
 };
-use hex_assignments::{Assignment, HexAssignment, HexBoostData};
+use hex_assignments::{Assignment, HexAssignment, HexBoostDataAssignmentsExt};
+use hextree::Cell;
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
     client::sub_dao_client::SubDaoEpochRewardInfoResolver,
@@ -23,8 +23,13 @@ use mobile_verifier::{
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
+use solana::Token;
 use sqlx::PgPool;
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+    sync::Arc,
+};
 use tokio::{sync::RwLock, time::Timeout};
 use tonic::async_trait;
 
@@ -122,54 +127,78 @@ impl RadioRewardV2Ext for RadioRewardV2 {
     }
 }
 
-pub fn mock_hex_boost_data_default(
-) -> HexBoostData<Assignment, Assignment, Assignment, impl HexAssignment> {
-    HexBoostData::builder()
-        .urbanization(Assignment::A)
-        .footfall(Assignment::A)
-        .landtype(Assignment::A)
-        .service_provider_override(Assignment::C)
-        .build()
-        .unwrap()
+pub struct MockHexBoostDataAssignment {
+    footfall: Assignment,
+    urbanized: Assignment,
+    landtype: Assignment,
+    service_provider_override: Assignment,
 }
 
-pub fn mock_hex_boost_data_bad(
-) -> HexBoostData<Assignment, Assignment, Assignment, impl HexAssignment> {
-    HexBoostData::builder()
-        .urbanization(Assignment::C)
-        .footfall(Assignment::C)
-        .landtype(Assignment::C)
-        .service_provider_override(Assignment::C)
-        .build()
-        .unwrap()
+pub fn mock_hex_boost_data_default() -> impl HexBoostDataAssignmentsExt {
+    MockHexBoostDataAssignment {
+        footfall: Assignment::A,
+        landtype: Assignment::A,
+        urbanized: Assignment::A,
+        service_provider_override: Assignment::C,
+    }
 }
 
-type MockAssignmentMap = HashMap<hextree::Cell, Assignment>;
+pub fn mock_hex_boost_data_bad() -> impl HexBoostDataAssignmentsExt {
+    MockHexBoostDataAssignment {
+        footfall: Assignment::C,
+        landtype: Assignment::C,
+        urbanized: Assignment::C,
+        service_provider_override: Assignment::C,
+    }
+}
 
-#[allow(dead_code)]
-pub fn mock_hex_boost_data(
-    footfall: MockAssignmentMap,
-    urbanized: MockAssignmentMap,
-    landtype: MockAssignmentMap,
-    service_provider_override: MockAssignmentMap,
-) -> HexBoostData<MockAssignmentMap, MockAssignmentMap, MockAssignmentMap, MockAssignmentMap> {
-    HexBoostData::builder()
-        .footfall(footfall)
-        .urbanization(urbanized)
-        .landtype(landtype)
-        .service_provider_override(service_provider_override)
-        .build()
-        .unwrap()
+impl HexBoostDataAssignmentsExt for MockHexBoostDataAssignment {
+    fn footfall_assignment(&self, _cell: Cell) -> anyhow::Result<Assignment> {
+        Ok(self.footfall)
+    }
+
+    fn landtype_assignment(&self, _cell: Cell) -> anyhow::Result<Assignment> {
+        Ok(self.landtype)
+    }
+
+    fn urbanization_assignment(&self, _cell: Cell) -> anyhow::Result<Assignment> {
+        Ok(self.urbanized)
+    }
+
+    fn service_provider_override_assignment(&self, _cell: Cell) -> anyhow::Result<Assignment> {
+        Ok(self.service_provider_override)
+    }
+}
+
+#[derive(Default)]
+pub struct MockHexBoostDataColl {
+    pub footfall: HashMap<Cell, Assignment>,
+    pub urbanized: HashMap<Cell, Assignment>,
+    pub landtype: HashMap<Cell, Assignment>,
+    pub service_provider_override: HashSet<Cell>,
+}
+
+impl HexBoostDataAssignmentsExt for MockHexBoostDataColl {
+    fn footfall_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
+        self.footfall.assignment(cell)
+    }
+
+    fn landtype_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
+        self.landtype.assignment(cell)
+    }
+
+    fn urbanization_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
+        self.urbanized.assignment(cell)
+    }
+
+    fn service_provider_override_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
+        self.service_provider_override.assignment(cell)
+    }
 }
 
 pub async fn set_unassigned_oracle_boosting_assignments(
     pool: &PgPool,
-    data_sets: &HexBoostData<
-        impl HexAssignment,
-        impl HexAssignment,
-        impl HexAssignment,
-        impl HexAssignment,
-    >,
+    data_sets: &impl HexBoostDataAssignmentsExt,
 ) -> anyhow::Result<Vec<OracleBoostingReportV1>> {
     let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
         mobile_verifier::boosting_oracles::data_sets::db::fetch_hexes_with_null_assignments(pool),

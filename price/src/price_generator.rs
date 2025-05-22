@@ -3,11 +3,10 @@ use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::file_sink;
 use futures::{future::LocalBoxFuture, TryFutureExt};
-use helium_lib::token::Token;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana::{RpcClient, Token};
 use std::{path::PathBuf, str::FromStr, time::Duration};
 use task_manager::ManagedTask;
 use tokio::{fs, time};
@@ -196,7 +195,7 @@ impl PriceGenerator {
     }
 
     async fn get_pyth_price(&self) -> Result<Price> {
-        helium_lib::token::price::get(self, self.token)
+        solana::token::price::get(self, self.token)
             .await
             .map_err(anyhow::Error::from)
             .and_then(|p| {

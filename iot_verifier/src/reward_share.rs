@@ -103,7 +103,7 @@ impl GatewayPocShare {
         .bind(self.hex_scale)
         .bind(self.reward_unit)
         .bind(self.poc_id)
-        .fetch_one(&mut *db)
+        .fetch_one(&mut **db)
         .await?
         .inserted)
     }
@@ -162,7 +162,7 @@ impl GatewayDCShare {
         .bind(self.reward_timestamp)
         .bind(self.num_dcs)
         .bind(self.id)
-        .fetch_one(&mut *db)
+        .fetch_one(&mut **db)
         .await?
         .inserted)
     }
@@ -215,13 +215,13 @@ impl GatewayShares {
     ) -> Result<(), sqlx::Error> {
         sqlx::query("delete from gateway_shares where reward_timestamp <= $1")
             .bind(period_end)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map(|_| ())?;
 
         sqlx::query("delete from gateway_dc_shares where reward_timestamp <= $1")
             .bind(period_end)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map(|_| ())
     }
@@ -435,8 +435,8 @@ mod test {
     use super::*;
     use crate::{reward_share, PriceInfo};
     use chrono::Duration;
-    use helium_lib::token::Token;
     use iot_config::sub_dao_epoch_reward_info::EpochRewardInfo;
+    use solana::Token;
 
     pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
     pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";

@@ -1,4 +1,4 @@
-use crate::common::{self, GatewayClientAllOwnersValid};
+use crate::common::{self, GatewayClientAllOwnersValid, MockHexBoostDataColl};
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
@@ -12,8 +12,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, LocationSource, OracleBoostingHexAssignment, SignalLevel,
 };
-use hex_assignments::{Assignment, HexBoostData};
-use hextree::Cell;
+use hex_assignments::Assignment;
 use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
     banning::BannedRadios,
@@ -30,10 +29,7 @@ use mobile_verifier::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-use std::{
-    collections::{HashMap, HashSet},
-    pin::pin,
-};
+use std::{collections::HashMap, pin::pin};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -179,17 +175,22 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
         trust_score: 1000,
     };
 
-    let mut footfall = HashMap::<hextree::Cell, Assignment>::new();
-    let mut urbanized = HashMap::<hextree::Cell, Assignment>::new();
-    let mut landtype = HashMap::<hextree::Cell, Assignment>::new();
-    let mut service_provider_override = HashSet::<hextree::Cell>::new();
+    let mut hex_boost_data = MockHexBoostDataColl::default();
 
     for hex in hexes.iter() {
-        urbanized.insert(hex_cell(&hex.location), hex.urbanized().into());
-        footfall.insert(hex_cell(&hex.location), hex.footfall().into());
-        landtype.insert(hex_cell(&hex.location), hex.landtype().into());
+        hex_boost_data
+            .urbanized
+            .insert(hex_cell(&hex.location), hex.urbanized().into());
+        hex_boost_data
+            .footfall
+            .insert(hex_cell(&hex.location), hex.footfall().into());
+        hex_boost_data
+            .landtype
+            .insert(hex_cell(&hex.location), hex.landtype().into());
         if hex.service_provider_override {
-            service_provider_override.insert(hex_cell(&hex.location));
+            hex_boost_data
+                .service_provider_override
+                .insert(hex_cell(&hex.location));
         }
     }
 
@@ -202,12 +203,6 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
     .await?;
     transaction.commit().await?;
 
-    let hex_boost_data = HexBoostData::builder()
-        .footfall(footfall)
-        .landtype(landtype)
-        .urbanization(urbanized)
-        .service_provider_override(service_provider_override)
-        .build()?;
     let oba = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
     assert_eq!(oba.len(), 1);
@@ -302,17 +297,22 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     assert_eq!(28, hexes.len());
     assert_eq!(dec!(4392), sum);
 
-    let mut footfall = HashMap::new();
-    let mut landtype = HashMap::new();
-    let mut urbanized = HashMap::new();
-    let mut service_provider_override = HashSet::<Cell>::new();
+    let mut hex_boost_data = MockHexBoostDataColl::default();
 
     for hex in hexes.iter() {
-        footfall.insert(hex_cell(&hex.loc), hex.footfall);
-        urbanized.insert(hex_cell(&hex.loc), hex.urbanized);
-        landtype.insert(hex_cell(&hex.loc), hex.landtype);
+        hex_boost_data
+            .footfall
+            .insert(hex_cell(&hex.loc), hex.footfall);
+        hex_boost_data
+            .urbanized
+            .insert(hex_cell(&hex.loc), hex.urbanized);
+        hex_boost_data
+            .landtype
+            .insert(hex_cell(&hex.loc), hex.landtype);
         if hex.service_provider_override == Assignment::A {
-            service_provider_override.insert(hex_cell(&hex.loc));
+            hex_boost_data
+                .service_provider_override
+                .insert(hex_cell(&hex.loc));
         }
     }
 
@@ -342,12 +342,6 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     .await?;
     transaction.commit().await?;
 
-    let hex_boost_data = HexBoostData::builder()
-        .footfall(footfall)
-        .landtype(landtype)
-        .urbanization(urbanized)
-        .service_provider_override(service_provider_override)
-        .build()?;
     let _ = common::set_unassigned_oracle_boosting_assignments(&pool, &hex_boost_data).await?;
 
     let hb_pubkey = pub_key.clone();

@@ -248,46 +248,13 @@ pub fn coverage_point_to_mobile_reward_share(
     coverage_points: coverage_point_calculator::CoveragePoints,
     reward_period: &Range<DateTime<Utc>>,
     radio_id: &RadioId,
-    poc_reward: u64,
     rewards_per_share: CalculatedPocRewardShares,
     seniority_timestamp: DateTime<Utc>,
     coverage_object_uuid: Uuid,
-) -> (proto::MobileRewardShare, proto::MobileRewardShare) {
+) -> proto::MobileRewardShare {
     let hotspot_key = radio_id.clone();
 
-    let boosted_hexes = coverage_points
-        .covered_hexes
-        .iter()
-        .filter(|hex| hex.boosted_multiplier.is_some_and(|boost| boost > dec!(1)))
-        .map(|covered_hex| proto::BoostedHex {
-            location: covered_hex.hex.into_raw(),
-            multiplier: covered_hex.boosted_multiplier.unwrap().to_u32().unwrap(),
-        })
-        .collect();
-
-    let to_proto_value = |value: Decimal| (value * dec!(1000)).to_u32().unwrap_or_default();
-    let location_trust_score_multiplier = to_proto_value(coverage_points.location_trust_multiplier);
-    let speedtest_multiplier = to_proto_value(coverage_points.speedtest_multiplier);
-
-    let coverage_points_v1 = coverage_points
-        .coverage_points_v1()
-        .to_u64()
-        .unwrap_or_default();
-
     let coverage_object = Vec::from(coverage_object_uuid.into_bytes());
-
-    let radio_reward_v1 = proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
-        hotspot_key: hotspot_key.clone().into(),
-        cbsd_id: String::default(),
-        poc_reward,
-        coverage_points: coverage_points_v1,
-        seniority_timestamp: seniority_timestamp.encode_timestamp(),
-        coverage_object: coverage_object.clone(),
-        location_trust_score_multiplier,
-        speedtest_multiplier,
-        boosted_hexes,
-        ..Default::default()
-    });
 
     let radio_reward_v2 = proto::mobile_reward_share::Reward::RadioRewardV2(proto::RadioRewardV2 {
         hotspot_key: hotspot_key.into(),
@@ -318,16 +285,10 @@ pub fn coverage_point_to_mobile_reward_share(
         reward: None,
     };
 
-    (
-        proto::MobileRewardShare {
-            reward: Some(radio_reward_v1),
-            ..base.clone()
-        },
-        proto::MobileRewardShare {
-            reward: Some(radio_reward_v2),
-            ..base
-        },
-    )
+    proto::MobileRewardShare {
+        reward: Some(radio_reward_v2),
+        ..base
+    }
 }
 
 type RadioId = PublicKeyBinary;
@@ -381,7 +342,7 @@ impl CoverageShares {
                 .await?;
 
             let trust_scores: Vec<LocationTrust> = heartbeat
-                .iter_distances_and_scores()
+                .iter_distances_and_scores()?
                 .map(|(distance, trust_score)| LocationTrust {
                     meters_to_asserted: distance as u32,
                     trust_score,
@@ -502,7 +463,7 @@ impl CoverageShares {
         reward_period: &Range<DateTime<Utc>>,
     ) -> Option<(
         CalculatedPocRewardShares,
-        impl Iterator<Item = (u64, proto::MobileRewardShare, proto::MobileRewardShare)> + '_,
+        impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_,
     )> {
         struct ProcessedRadio {
             radio_id: RadioId,
@@ -554,19 +515,17 @@ impl CoverageShares {
                     } = radio;
 
                     let poc_reward = rewards_per_share.poc_reward(&points);
-                    let (mobile_reward_v1, mobile_reward_v2) =
-                        coverage_point_to_mobile_reward_share(
-                            points,
-                            reward_period,
-                            &radio_id,
-                            poc_reward,
-                            rewards_per_share,
-                            seniority.seniority_ts,
-                            coverage_obj_uuid,
-                        );
-                    (poc_reward, mobile_reward_v1, mobile_reward_v2)
+                    let mobile_reward_v2 = coverage_point_to_mobile_reward_share(
+                        points,
+                        reward_period,
+                        &radio_id,
+                        rewards_per_share,
+                        seniority.seniority_ts,
+                        coverage_obj_uuid,
+                    );
+                    (poc_reward, mobile_reward_v2)
                 })
-                .filter(|(poc_reward, _mobile_reward_v1, _mobile_reward_v2)| *poc_reward > 0),
+                .filter(|(poc_reward, _mobile_reward_v2)| *poc_reward > 0),
         ))
     }
 
@@ -726,7 +685,6 @@ mod test {
     use hex_assignments::{assignment::HexAssignments, Assignment};
 
     use crate::{
-        cell_type::CellType,
         coverage::{CoveredHexStream, HexCoverage},
         data_session::{self, HotspotDataSession, HotspotReward},
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
@@ -740,12 +698,12 @@ mod test {
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
     use futures::stream::{self, BoxStream};
-    use helium_lib::token::Token;
     use helium_proto::{
         services::poc_mobile::mobile_reward_share::Reward as MobileReward, ServiceProvider,
     };
     use hextree::Cell;
     use prost::Message;
+    use solana::Token;
     use std::collections::HashMap;
     use uuid::Uuid;
 
@@ -1180,8 +1138,7 @@ mod test {
         let heartbeat_rewards = vec![HeartbeatReward {
             hotspot_key: gw1.clone(),
             coverage_object: cov_obj_1,
-            cell_type: CellType::NovaGenericWifiOutdoor,
-            distances_to_asserted: None,
+            distances_to_asserted: vec![1],
             trust_score_multipliers: vec![dec!(1.0)],
         }]
         .into_iter()
@@ -1227,7 +1184,7 @@ mod test {
 
         let reward_shares = new_poc_only(rewards_info.epoch_emissions);
 
-        let (_reward_amount, _mobile_reward_v1, mobile_reward_v2) = CoverageShares::new(
+        let (_reward_amount, mobile_reward_v2) = CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1311,29 +1268,25 @@ mod test {
             HeartbeatReward {
                 hotspot_key: gw10.clone(),
                 coverage_object: cov_obj_10,
-                cell_type: CellType::NovaGenericWifiIndoor,
-                distances_to_asserted: Some(vec![0]),
+                distances_to_asserted: vec![1],
                 trust_score_multipliers: vec![dec!(1.0)],
             },
             HeartbeatReward {
                 hotspot_key: gw20.clone(),
                 coverage_object: cov_obj_20,
-                cell_type: CellType::NovaGenericWifiIndoor,
-                distances_to_asserted: Some(vec![0, 250, 250]),
+                distances_to_asserted: vec![0, 250, 250],
                 trust_score_multipliers: vec![dec!(1.0), dec!(0.25), dec!(0.25)],
             },
             HeartbeatReward {
                 hotspot_key: gw21.clone(),
                 coverage_object: cov_obj_21,
-                cell_type: CellType::NovaGenericWifiIndoor,
-                distances_to_asserted: Some(vec![0]),
+                distances_to_asserted: vec![0],
                 trust_score_multipliers: vec![dec!(1.0)],
             },
             HeartbeatReward {
                 hotspot_key: gw30.clone(),
                 coverage_object: cov_obj_30,
-                cell_type: CellType::NovaGenericWifiIndoor,
-                distances_to_asserted: Some(vec![0]),
+                distances_to_asserted: vec![0],
                 trust_score_multipliers: vec![dec!(1.0)],
             },
         ]
@@ -1404,7 +1357,7 @@ mod test {
         let mut allocated_poc_rewards = 0_u64;
 
         let epoch = (now - Duration::hours(1))..now;
-        for (reward_amount, _mobile_reward_v1, mobile_reward_v2) in CoverageShares::new(
+        for (reward_amount, mobile_reward_v2) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1492,17 +1445,15 @@ mod test {
             // add qualified wifi indoor HB
             HeartbeatReward {
                 hotspot_key: gw1.clone(),
-                cell_type: CellType::NovaGenericWifiOutdoor,
                 coverage_object: g1_cov_obj,
-                distances_to_asserted: Some(vec![0]),
+                distances_to_asserted: vec![0],
                 trust_score_multipliers: vec![dec!(1.0)],
             },
             // add unqualified wifi indoor HB
             HeartbeatReward {
                 hotspot_key: gw2.clone(),
-                cell_type: CellType::NovaGenericWifiOutdoor,
                 coverage_object: g2_cov_obj,
-                distances_to_asserted: None,
+                distances_to_asserted: vec![0],
                 trust_score_multipliers: vec![dec!(1.0)],
             },
         ]
@@ -1546,7 +1497,7 @@ mod test {
 
         let reward_shares = new_poc_only(rewards_info.epoch_emissions);
         let unique_connection_counts = HashMap::from([(gw1.clone(), 42)]);
-        for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in CoverageShares::new(
+        for (_reward_amount, mobile_reward_v2) in CoverageShares::new(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1696,7 +1647,7 @@ mod test {
         let reward_shares = new_poc_only(rewards_info.epoch_emissions);
         // gw2 does not have enough speedtests for a multiplier
         let expected_hotspot = gw1;
-        for (_reward_amount, _mobile_reward_v1, mobile_reward_v2) in coverage_shares
+        for (_reward_amount, mobile_reward_v2) in coverage_shares
             .into_rewards(reward_shares, &rewards_info.epoch_period)
             .expect("rewards output")
             .1

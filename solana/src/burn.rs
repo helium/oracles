@@ -1,28 +1,32 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
-use anchor_client::RequestBuilder;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use helium_anchor_gen::{
+use helium_crypto::PublicKeyBinary;
+use helium_lib::{
+    anchor_client::RequestBuilder,
     anchor_lang::{AccountDeserialize, ToAccountMetas},
-    data_credits::{self, accounts, instruction},
-    helium_sub_daos::{self, DaoV0, SubDaoV0},
+    programs::{data_credits, helium_sub_daos},
+    solana_client::{
+        self, client_error::ClientError, nonblocking::rpc_client::RpcClient, rpc_response::Response,
+    },
+    solana_program,
+    solana_sdk::{
+        commitment_config::CommitmentConfig,
+        compute_budget::ComputeBudgetInstruction,
+        program_pack::Pack,
+        pubkey::Pubkey,
+        signature::{read_keypair_file, Keypair, Signature},
+        signer::Signer,
+        transaction::Transaction,
+    },
 };
 use itertools::Itertools;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{
-    client_error::ClientError, nonblocking::rpc_client::RpcClient, rpc_response::Response,
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
 };
-use solana_sdk::{
-    commitment_config::CommitmentConfig,
-    compute_budget::ComputeBudgetInstruction,
-    program_pack::Pack,
-    pubkey::Pubkey,
-    signature::{read_keypair_file, Keypair, Signature},
-    signer::Signer,
-    transaction::Transaction,
-};
-use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
@@ -172,7 +176,7 @@ impl SolanaNetwork for SolanaRpc {
             &data_credits::ID,
         );
 
-        let accounts = accounts::BurnDelegatedDataCreditsV0 {
+        let accounts = data_credits::client::accounts::BurnDelegatedDataCreditsV0 {
             sub_dao_epoch_info,
             dao: self.program_cache.dao,
             sub_dao: self.program_cache.sub_dao,
@@ -180,7 +184,7 @@ impl SolanaNetwork for SolanaRpc {
             data_credits: self.program_cache.data_credits,
             delegated_data_credits: delegated_data_credits(&self.program_cache.sub_dao, escrow_key),
             token_program: spl_token::id(),
-            helium_sub_daos_program: helium_sub_daos::id(),
+            helium_sub_daos_program: helium_sub_daos::ID,
             system_program: solana_program::system_program::id(),
             dc_burn_authority: self.program_cache.dc_burn_authority,
             dc_mint: self.program_cache.dc_mint,
@@ -211,14 +215,15 @@ impl SolanaNetwork for SolanaRpc {
         // This is Sync land: anything async in here will error.
         let instructions = {
             let request = RequestBuilder::from(
-                data_credits::id(),
+                data_credits::ID,
                 &self.cluster,
                 std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
                 Some(CommitmentConfig::finalized()),
+                &self.provider,
             );
 
-            let args = instruction::BurnDelegatedDataCreditsV0 {
-                _args: data_credits::BurnDelegatedDataCreditsArgsV0 { amount },
+            let args = data_credits::client::args::BurnDelegatedDataCreditsV0 {
+                args: data_credits::types::BurnDelegatedDataCreditsArgsV0 { amount },
             };
 
             // As far as I can tell, the instructions function does not actually have any
@@ -316,7 +321,7 @@ impl PriorityFee {
         let time_taken = Utc::now();
         let recent_fees = provider.get_recent_prioritization_fees(accounts).await?;
         let mut max_per_slot = Vec::new();
-        for (slot, fees) in &recent_fees.into_iter().group_by(|x| x.slot) {
+        for (slot, fees) in &recent_fees.into_iter().chunk_by(|x| x.slot) {
             let Some(maximum) = fees.map(|x| x.prioritization_fee).max() else {
                 continue;
             };
@@ -387,13 +392,13 @@ impl BurnProgramCache {
         let (dao, dc_burn_authority) = {
             let account_data = provider.get_account_data(&sub_dao).await?;
             let mut account_data = account_data.as_ref();
-            let sub_dao = SubDaoV0::try_deserialize(&mut account_data)?;
+            let sub_dao = helium_sub_daos::accounts::SubDaoV0::try_deserialize(&mut account_data)?;
             (sub_dao.dao, sub_dao.dc_burn_authority)
         };
         let registrar = {
             let account_data = provider.get_account_data(&dao).await?;
             let mut account_data = account_data.as_ref();
-            DaoV0::try_deserialize(&mut account_data)?.registrar
+            helium_sub_daos::accounts::DaoV0::try_deserialize(&mut account_data)?.registrar
         };
         Ok(Self {
             account_payer,

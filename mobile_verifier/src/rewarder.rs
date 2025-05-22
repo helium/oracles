@@ -24,8 +24,6 @@ use file_store::{
 use futures_util::TryFutureExt;
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
-use helium_lib::keypair::Pubkey;
-use helium_lib::token::Token;
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -47,6 +45,7 @@ use mobile_config::{
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
+use solana::{SolPubkey, Token};
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -58,7 +57,7 @@ mod db;
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
 pub struct Rewarder<A, B, C> {
-    sub_dao: Pubkey,
+    sub_dao: SolPubkey,
     pool: Pool<Postgres>,
     carrier_client: A,
     hex_service_client: B,
@@ -287,7 +286,6 @@ where
             &self.pool,
             &self.hex_service_client,
             self.mobile_rewards.clone(),
-            &self.speedtest_averages,
             &reward_info,
             price_info.clone(),
         )
@@ -331,12 +329,12 @@ where
         )
         .await?;
         coverage::clear_coverage_objects(&mut transaction, &reward_info.epoch_period.start).await?;
-        subscriber_mapping_activity::db::clear(&mut transaction, reward_info.epoch_period.start)
+        subscriber_mapping_activity::db::clear(&mut *transaction, reward_info.epoch_period.start)
             .await?;
         unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
         banning::clear_bans(&mut transaction, reward_info.epoch_period.start).await?;
 
-        save_next_reward_epoch(&mut transaction, reward_info.epoch_day + 1).await?;
+        save_next_reward_epoch(&mut *transaction, reward_info.epoch_day + 1).await?;
 
         transaction.commit().await?;
 
@@ -395,7 +393,6 @@ pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
-    speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_info: &EpochRewardInfo,
     price_info: PriceInfo,
 ) -> anyhow::Result<CalculatedPocRewardShares> {
@@ -432,7 +429,6 @@ pub async fn reward_poc_and_dc(
         pool,
         hex_service_client,
         &mobile_rewards,
-        speedtest_avg_sink,
         reward_info,
         reward_shares,
     )
@@ -458,15 +454,12 @@ async fn reward_poc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
-    speedtest_avg_sink: &FileSinkClient<proto::SpeedtestAvg>,
     reward_info: &EpochRewardInfo,
     reward_shares: DataTransferAndPocAllocatedRewardBuckets,
 ) -> anyhow::Result<(Decimal, CalculatedPocRewardShares)> {
     let heartbeats = HeartbeatReward::validated(pool, &reward_info.epoch_period);
     let speedtest_averages =
         SpeedtestAverages::aggregate_epoch_averages(reward_info.epoch_period.end, pool).await?;
-
-    speedtest_averages.write_all(speedtest_avg_sink).await?;
 
     let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
 
@@ -499,19 +492,12 @@ async fn reward_poc(
         {
             // handle poc reward outputs
             let mut allocated_poc_rewards = 0_u64;
-            for (poc_reward_amount, mobile_reward_share_v1, mobile_reward_share_v2) in
-                mobile_reward_shares
-            {
+            for (poc_reward_amount, mobile_reward_share_v2) in mobile_reward_shares {
                 allocated_poc_rewards += poc_reward_amount;
-                mobile_rewards
-                    .write(mobile_reward_share_v1, [])
-                    .await?
-                    // Await the returned one shot to ensure that we wrote the file
-                    .await??;
                 mobile_rewards
                     .write(mobile_reward_share_v2, [])
                     .await?
-                    // Await the returned one shot ot ensure that we wrote the file
+                    // await the returned one shot to ensure that we wrote the file
                     .await??;
             }
             // calculate any unallocated poc reward
