@@ -118,6 +118,13 @@ jobs:
           --health-retries 5
         ports:
             - 5432:5432
+      localstack:
+        image: localstack/localstack:latest
+        environment:
+          SERVICES: s3
+          EAGER_SERVICE_LOADING: 1
+        ports:
+          - 4566:4566
     steps:
       - name: Install Dependencies
         run: |
@@ -230,3 +237,4 @@ jobs:
         run: |
           chmod +x ./.github/scripts/make_debian.sh
           ./.github/scripts/make_debian.sh
+

@@ -841,6 +841,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-local"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aws-config",
+ "aws-sdk-s3",
+ "aws-types 0.51.0",
+ "chrono",
+ "file-store",
+ "prost",
+ "tokio",
+ "tonic",
+ "triggered",
+ "uuid",
+]
+
+[[package]]
 name = "aws-sdk-s3"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2363,6 +2380,27 @@ name = "data-encoding"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
+
+[[package]]
+name = "dataset-downloader"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-compression",
+ "async-trait",
+ "chrono",
+ "file-store",
+ "futures-util",
+ "hex-assignments",
+ "hextree",
+ "lazy_static",
+ "regex",
+ "sqlx",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
 
 [[package]]
 name = "db-store"
@@ -4971,6 +5009,7 @@ dependencies = [
  "anyhow",
  "async-compression",
  "async-trait",
+ "aws-local",
  "base64 0.22.1",
  "chrono",
  "clap",
@@ -4978,6 +5017,7 @@ dependencies = [
  "coverage-map",
  "coverage-point-calculator",
  "custom-tracing",
+ "dataset-downloader",
  "db-store",
  "derive_builder",
  "file-store",
@@ -5013,6 +5053,7 @@ dependencies = [
  "solana",
  "sqlx",
  "task-manager",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
