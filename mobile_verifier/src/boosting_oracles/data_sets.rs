@@ -168,7 +168,7 @@ impl DataSetDownloaderDaemon {
 
                 },
                 _ = tokio::time::sleep_until(wakeup) => {
-                    self.data_sets = self.data_set_downloader.check_for_new_data_sets(&self.oracle_boostring_writer, self.data_sets).await?;
+                    self.data_sets = self.data_set_downloader.check_for_new_data_sets(Some(&self.oracle_boostring_writer), self.data_sets).await?;
                     wakeup = Instant::now() + self.poll_duration;
                 }
             }

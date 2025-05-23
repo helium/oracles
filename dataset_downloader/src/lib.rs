@@ -282,7 +282,7 @@ impl DataSetDownloader {
 
     pub async fn check_for_new_data_sets(
         &mut self,
-        data_set_processor: &dyn NewDataSetHandler,
+        data_set_processor: Option<&dyn NewDataSetHandler>,
         mut data_sets: HexBoostData,
     ) -> anyhow::Result<HexBoostData> {
         let new_urbanized = data_sets
@@ -313,9 +313,11 @@ impl DataSetDownloader {
 
         let mut txn = self.pool.begin().await?;
 
-        if is_hex_boost_data_ready(&data_sets) && new_data_set {
-            tracing::info!("Processing new data sets");
-            data_set_processor.callback(&mut txn, &data_sets).await?;
+        if let Some(dsp) = data_set_processor {
+            if is_hex_boost_data_ready(&data_sets) {
+                tracing::info!("Processing new data sets");
+                dsp.callback(&mut txn, &data_sets).await?;
+            }
         }
 
         // Mark the new data sets as processed and delete the old ones
