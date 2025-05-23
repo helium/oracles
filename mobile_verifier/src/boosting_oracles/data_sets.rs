@@ -1,7 +1,9 @@
 use std::{collections::HashMap, path::PathBuf, pin::pin, time::Duration};
 
 use chrono::Utc;
-use dataset_downloader::{db, AssignedHex, DataSetDownloader, NewDataSetHandler, UnassignedHex};
+use dataset_downloader::{
+    db, is_hex_boost_data_ready, AssignedHex, DataSetDownloader, NewDataSetHandler, UnassignedHex,
+};
 use file_store::{
     file_sink::FileSinkClient,
     file_upload::FileUpload,
@@ -22,6 +24,7 @@ use hex_assignments::{HexBoostData, HexBoostDataAssignmentsExt};
 
 pub struct DataSetDownloaderDaemon {
     data_set_downloader: DataSetDownloader,
+    data_sets: HexBoostData,
     oracle_boostring_writer: OracleBoostingWriter,
     new_coverage_object_notification: NewCoverageObjectNotification,
     poll_duration: Duration,
@@ -114,31 +117,32 @@ impl DataSetDownloaderDaemon {
         new_coverage_object_notification: NewCoverageObjectNotification,
         poll_duration: Duration,
     ) -> Self {
-        let data_set_downloader =
-            DataSetDownloader::new(pool, data_sets, store, data_set_directory);
+        let data_set_downloader = DataSetDownloader::new(pool, store, data_set_directory);
         let oracle_boostring_writer = OracleBoostingWriter { data_set_processor };
         Self {
             oracle_boostring_writer,
             data_set_downloader,
             new_coverage_object_notification,
             poll_duration,
+            data_sets,
         }
     }
 
     pub async fn run(mut self) -> anyhow::Result<()> {
         tracing::info!("Starting data set downloader task");
-        self.data_set_downloader.fetch_first_datasets().await?;
+        self.data_sets = self
+            .data_set_downloader
+            .fetch_first_datasets(self.data_sets)
+            .await?;
+
         // Attempt to fill in any unassigned hexes. This is for the edge case in
         // which we shutdown before a coverage object updates.
-        if self.data_set_downloader.is_hex_boost_data_ready() {
+        if is_hex_boost_data_ready(&self.data_sets) {
             let mut txn = self.data_set_downloader.pool.begin().await?;
 
             self.oracle_boostring_writer
                 .data_set_processor
-                .set_unassigned_oracle_boosting_assignments(
-                    &mut txn,
-                    &self.data_set_downloader.data_sets,
-                )
+                .set_unassigned_oracle_boosting_assignments(&mut txn, &self.data_sets)
                 .await?;
 
             txn.commit().await?;
@@ -153,10 +157,10 @@ impl DataSetDownloaderDaemon {
 
                     // If we see a new coverage object, we want to assign only those hexes
                     // that don't have an assignment
-                    if self.data_set_downloader.is_hex_boost_data_ready() {
+                    if is_hex_boost_data_ready(&self.data_sets) {
                         self.oracle_boostring_writer.data_set_processor.set_unassigned_oracle_boosting_assignments(
                             &mut txn,
-                            &self.data_set_downloader.data_sets,
+                            &self.data_sets,
                         ).await?;
                     }
 
@@ -164,7 +168,7 @@ impl DataSetDownloaderDaemon {
 
                 },
                 _ = tokio::time::sleep_until(wakeup) => {
-                    self.data_set_downloader.check_for_new_data_sets(&self.oracle_boostring_writer).await?;
+                    self.data_sets = self.data_set_downloader.check_for_new_data_sets(&self.oracle_boostring_writer, self.data_sets).await?;
                     wakeup = Instant::now() + self.poll_duration;
                 }
             }

@@ -225,7 +225,6 @@ impl DataSet for ServiceProviderOverride {
 
 pub struct DataSetDownloader {
     pub pool: PgPool,
-    pub data_sets: HexBoostData,
     store: FileStore,
     data_set_directory: PathBuf,
 }
@@ -264,50 +263,41 @@ impl DataSetStatus {
     }
 }
 
+pub fn is_hex_boost_data_ready(data_sets: &HexBoostData) -> bool {
+    let h = &data_sets;
+    h.urbanization.is_ready()
+        && h.footfall.is_ready()
+        && h.landtype.is_ready()
+        && h.service_provider_override.is_ready()
+}
+
 impl DataSetDownloader {
-    pub fn new(
-        pool: PgPool,
-        data_sets: HexBoostData,
-        store: FileStore,
-        data_set_directory: PathBuf,
-    ) -> Self {
+    pub fn new(pool: PgPool, store: FileStore, data_set_directory: PathBuf) -> Self {
         Self {
             pool,
-            data_sets,
             store,
             data_set_directory,
         }
     }
 
-    pub fn is_hex_boost_data_ready(&self) -> bool {
-        let h = &self.data_sets;
-        h.urbanization.is_ready()
-            && h.footfall.is_ready()
-            && h.landtype.is_ready()
-            && h.service_provider_override.is_ready()
-    }
-
     pub async fn check_for_new_data_sets(
         &mut self,
         data_set_processor: &dyn NewDataSetHandler,
-    ) -> anyhow::Result<()> {
-        let new_urbanized = self
-            .data_sets
+        mut data_sets: HexBoostData,
+    ) -> anyhow::Result<HexBoostData> {
+        let new_urbanized = data_sets
             .urbanization
             .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
             .await?;
-        let new_footfall = self
-            .data_sets
+        let new_footfall = data_sets
             .footfall
             .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
             .await?;
-        let new_landtype = self
-            .data_sets
+        let new_landtype = data_sets
             .landtype
             .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
             .await?;
-        let new_service_provider_override = self
-            .data_sets
+        let new_service_provider_override = data_sets
             .service_provider_override
             .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
             .await?;
@@ -318,16 +308,14 @@ impl DataSetDownloader {
             || new_service_provider_override.is_some();
 
         if !new_data_set {
-            return Ok(());
+            return Ok(data_sets);
         }
 
         let mut txn = self.pool.begin().await?;
 
-        if self.is_hex_boost_data_ready() && new_data_set {
+        if is_hex_boost_data_ready(&data_sets) && new_data_set {
             tracing::info!("Processing new data sets");
-            data_set_processor
-                .callback(&mut txn, &self.data_sets)
-                .await?;
+            data_set_processor.callback(&mut txn, &data_sets).await?;
         }
 
         // Mark the new data sets as processed and delete the old ones
@@ -415,26 +403,29 @@ impl DataSetDownloader {
             }
         }
 
-        Ok(())
+        Ok(data_sets)
     }
-    pub async fn fetch_first_datasets(&mut self) -> anyhow::Result<()> {
-        self.data_sets
+    pub async fn fetch_first_datasets(
+        &self,
+        mut data_sets: HexBoostData,
+    ) -> anyhow::Result<HexBoostData> {
+        data_sets
             .urbanization
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
             .await?;
-        self.data_sets
+        data_sets
             .footfall
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
             .await?;
-        self.data_sets
+        data_sets
             .landtype
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
             .await?;
-        self.data_sets
+        data_sets
             .service_provider_override
             .fetch_first_data_set(&self.pool, &self.data_set_directory)
             .await?;
-        Ok(())
+        Ok(data_sets)
     }
 }
 
