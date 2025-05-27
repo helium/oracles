@@ -223,7 +223,7 @@ async fn test_dataset_downloader_daemon(pool: PgPool) {
                     .await
                     .unwrap();
             });
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
             assert!(hex_assignment_file_exist(&pool, "footfall.1722895200000.gz").await);
             assert!(hex_assignment_file_exist(&pool, "urbanization.1722895200000.gz").await);
@@ -240,7 +240,7 @@ async fn test_dataset_downloader_daemon(pool: PgPool) {
             )
             .await
             .unwrap();
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
             assert!(hex_assignment_file_exist(&pool, "footfall.1732895200000.gz").await);
         })
         .await;
