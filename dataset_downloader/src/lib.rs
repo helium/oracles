@@ -64,7 +64,6 @@ impl UnassignedHex {
 pub trait NewDataSetHandler: Send + Sync + 'static {
     // Calls when new data set arrived but before it marked as processed
     // If this function fails, new data sets will not be marked as processed.
-    // TODO: make test case for statement above
     async fn callback(
         &self,
         txn: &mut Transaction<'_, Postgres>,
@@ -229,7 +228,7 @@ pub struct DataSetDownloader {
     data_set_directory: PathBuf,
 }
 
-#[derive(FromRow)]
+#[derive(FromRow, Debug)]
 pub struct NewDataSet {
     filename: String,
     time_to_use: DateTime<Utc>,
@@ -246,9 +245,13 @@ impl NewDataSet {
         db::set_data_set_status(con, &self.filename, DataSetStatus::Processed).await?;
         Ok(())
     }
+
+    pub fn filename(&self) -> &String {
+        &self.filename
+    }
 }
 
-#[derive(Copy, Clone, sqlx::Type)]
+#[derive(Copy, Clone, sqlx::Type, Debug)]
 #[sqlx(type_name = "data_set_status")]
 #[sqlx(rename_all = "lowercase")]
 pub enum DataSetStatus {

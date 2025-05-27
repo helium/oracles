@@ -25,3 +25,4 @@ hex-assignments = { path = "../hex_assignments" }
 [dev-dependencies]
 aws-local = { path = "../aws_local" }
 tempfile = "3"
+
