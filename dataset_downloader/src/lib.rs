@@ -64,6 +64,7 @@ impl UnassignedHex {
 pub trait NewDataSetHandler: Send + Sync + 'static {
     // Calls when new data set arrived but before it marked as processed
     // If this function fails, new data sets will not be marked as processed.
+    // Don't call txn.commit() inside callback
     async fn callback(
         &self,
         txn: &mut Transaction<'_, Postgres>,

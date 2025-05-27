@@ -37,7 +37,9 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::{collections::HashMap, pin::pin};
+use task_manager::{ManagedTask, TaskManager};
 use tempfile::TempDir;
+use tokio::task::spawn_local;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -114,9 +116,8 @@ pub async fn create_data_set_downloader(
     file_upload: FileUpload,
     new_coverage_object_notification: NewCoverageObjectNotification,
     tmp_dir: &TempDir,
-) -> (DataSetDownloaderDaemon, PathBuf, String) {
-    let bucket_name = gen_bucket_name();
-
+    bucket_name: String,
+) -> impl ManagedTask {
     let awsl = AwsLocal::new(AWSLOCAL_DEFAULT_ENDPOINT, &bucket_name).await;
 
     for file_path in file_paths {
@@ -130,19 +131,20 @@ pub async fn create_data_set_downloader(
         .unwrap();
 
     let file_store = awsl.file_store.clone();
-    let poll_duration = std::time::Duration::from_secs(4);
+    let poll_duration = std::time::Duration::from_millis(25);
 
-    let (oracle_boosting_reports, _) = OracleBoostingReportV1::file_sink(
-        tmp_dir.path(),
-        file_upload.clone(),
-        FileSinkCommitStrategy::Automatic,
-        FileSinkRollTime::Duration(std::time::Duration::from_secs(15 * 60)),
-        env!("CARGO_PKG_NAME"),
-    )
-    .await
-    .unwrap();
+    let (oracle_boosting_reports, oracle_boosting_reports_server) =
+        OracleBoostingReportV1::file_sink(
+            tmp_dir.path(),
+            file_upload.clone(),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(std::time::Duration::from_secs(15 * 60)),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await
+        .unwrap();
 
-    let mut dsdd = DataSetDownloaderDaemon::new(
+    let dsdd = DataSetDownloaderDaemon::new(
         pool,
         HexBoostData::default(),
         file_store,
@@ -152,17 +154,10 @@ pub async fn create_data_set_downloader(
         poll_duration,
     );
 
-    dsdd.data_sets = dsdd
-        .data_set_downloader
-        .fetch_first_datasets(dsdd.data_sets)
-        .await
-        .unwrap();
-    dsdd.data_sets = dsdd
-        .data_set_downloader
-        .check_for_new_data_sets(None, dsdd.data_sets)
-        .await
-        .unwrap();
-    (dsdd, data_set_directory, bucket_name)
+    TaskManager::builder()
+        .add_task(oracle_boosting_reports_server)
+        .add_task(dsdd)
+        .build()
 }
 
 pub async fn hex_assignment_file_exist(pool: &PgPool, filename: &str) -> bool {
@@ -178,11 +173,11 @@ pub async fn hex_assignment_file_exist(pool: &PgPool, filename: &str) -> bool {
 }
 
 #[sqlx::test]
-async fn test_dataset_downloader(pool: PgPool) {
+async fn test_dataset_downloader_daemon(pool: PgPool) {
     // Scenario:
-    // 1. DataSetDownloader downloads initial files
+    // 1. DataSetDownloaderDaemon downloads initial files
     // 2. Upload a new file
-    // 3. DataSetDownloader downloads new file
+    // 3. DataSetDownloaderDaemon downloads new file
 
     let paths = [
         "footfall.1722895200000.gz",
@@ -204,31 +199,51 @@ async fn test_dataset_downloader(pool: PgPool) {
     let (_, new_coverage_obj_notification) = new_coverage_object_notification_channel();
 
     let tmp_dir = TempDir::new().expect("Unable to create temp dir");
-    let (mut data_set_downloader, _, bucket_name) = create_data_set_downloader(
+    let bucket_name = gen_bucket_name();
+
+    let task = create_data_set_downloader(
         pool.clone(),
         file_paths,
         file_upload,
         new_coverage_obj_notification,
         &tmp_dir,
+        bucket_name.clone(),
     )
     .await;
-    assert!(hex_assignment_file_exist(&pool, "footfall.1722895200000.gz").await);
-    assert!(hex_assignment_file_exist(&pool, "urbanization.1722895200000.gz").await);
-    assert!(hex_assignment_file_exist(&pool, "landtype.1722895200000.gz").await);
-    assert!(hex_assignment_file_exist(&pool, "service_provider_override.1739404800000.gz").await);
 
-    let awsl = AwsLocal::new(AWSLOCAL_DEFAULT_ENDPOINT, &bucket_name).await;
-    awsl.put_file_to_aws(
-        &PathBuf::from_str("./tests/integrations/fixtures/footfall.1732895200000.gz").unwrap(),
-    )
-    .await
-    .unwrap();
-    data_set_downloader.data_sets = data_set_downloader
-        .data_set_downloader
-        .check_for_new_data_sets(None, data_set_downloader.data_sets)
-        .await
-        .unwrap();
-    assert!(hex_assignment_file_exist(&pool, "footfall.1732895200000.gz").await);
+    let local = tokio::task::LocalSet::new();
+
+    local
+        .run_until(async move {
+            spawn_local(async {
+                TaskManager::builder()
+                    .add_task(task)
+                    .build()
+                    .start()
+                    .await
+                    .unwrap();
+            });
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+            assert!(hex_assignment_file_exist(&pool, "footfall.1722895200000.gz").await);
+            assert!(hex_assignment_file_exist(&pool, "urbanization.1722895200000.gz").await);
+            assert!(hex_assignment_file_exist(&pool, "landtype.1722895200000.gz").await);
+            assert!(
+                hex_assignment_file_exist(&pool, "service_provider_override.1739404800000.gz")
+                    .await
+            );
+
+            let awsl = AwsLocal::new(AWSLOCAL_DEFAULT_ENDPOINT, &bucket_name).await;
+            awsl.put_file_to_aws(
+                &PathBuf::from_str("./tests/integrations/fixtures/footfall.1732895200000.gz")
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            assert!(hex_assignment_file_exist(&pool, "footfall.1732895200000.gz").await);
+        })
+        .await;
 }
 
 #[sqlx::test]
