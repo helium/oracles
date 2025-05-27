@@ -21,3 +21,7 @@ futures-util = { workspace = true }
 async-compression = { workspace = true } 
 file-store = { path = "../file_store" }
 hex-assignments = { path = "../hex_assignments" }
+
+[dev-dependencies]
+aws-local = { path = "../aws_local" }
+tempfile = "3"
