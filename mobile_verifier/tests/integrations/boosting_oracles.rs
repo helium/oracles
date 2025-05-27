@@ -142,7 +142,7 @@ pub async fn create_data_set_downloader(
     .await
     .unwrap();
 
-    let mut data_set_downloader = DataSetDownloaderDaemon::new(
+    let mut dsdd = DataSetDownloaderDaemon::new(
         pool,
         HexBoostData::default(),
         file_store,
@@ -152,9 +152,17 @@ pub async fn create_data_set_downloader(
         poll_duration,
     );
 
-    data_set_downloader.fetch_first_datasets().await.unwrap();
-    data_set_downloader.check_for_new_data_sets().await.unwrap();
-    (data_set_downloader, data_set_directory, bucket_name)
+    dsdd.data_sets = dsdd
+        .data_set_downloader
+        .fetch_first_datasets(dsdd.data_sets)
+        .await
+        .unwrap();
+    dsdd.data_sets = dsdd
+        .data_set_downloader
+        .check_for_new_data_sets(None, dsdd.data_sets)
+        .await
+        .unwrap();
+    (dsdd, data_set_directory, bucket_name)
 }
 
 pub async fn hex_assignment_file_exist(pool: &PgPool, filename: &str) -> bool {
@@ -215,7 +223,11 @@ async fn test_dataset_downloader(pool: PgPool) {
     )
     .await
     .unwrap();
-    data_set_downloader.check_for_new_data_sets().await.unwrap();
+    data_set_downloader.data_sets = data_set_downloader
+        .data_set_downloader
+        .check_for_new_data_sets(None, data_set_downloader.data_sets)
+        .await
+        .unwrap();
     assert!(hex_assignment_file_exist(&pool, "footfall.1732895200000.gz").await);
 }
 

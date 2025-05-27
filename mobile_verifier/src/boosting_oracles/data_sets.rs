@@ -23,8 +23,10 @@ use crate::{coverage::NewCoverageObjectNotification, Settings};
 use hex_assignments::{HexBoostData, HexBoostDataAssignmentsExt};
 
 pub struct DataSetDownloaderDaemon {
-    data_set_downloader: DataSetDownloader,
-    data_sets: HexBoostData,
+    // Don't use these two fields externally, they are public only for testing purposes
+    pub data_set_downloader: DataSetDownloader,
+    pub data_sets: HexBoostData,
+
     oracle_boostring_writer: OracleBoostingWriter,
     new_coverage_object_notification: NewCoverageObjectNotification,
     poll_duration: Duration,
