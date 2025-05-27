@@ -87,7 +87,9 @@ async fn run_burner(pool: &PgPool, payer_key: &PublicKeyBinary) -> anyhow::Resul
     let (valid_sessions_tx, _valid_sessions_rx) = tokio::sync::mpsc::channel(999_999);
     let valid_sessions = FileSinkClient::new(valid_sessions_tx, "test");
     let solana_network = solana::burn::TestSolanaClientMap::default();
-    solana_network.insert(payer_key, 900_000_000).await;
+    solana_network
+        .insert(&payer_key.to_string(), 900_000_000)
+        .await;
     mobile_packet_verifier::burner::Burner::new(
         valid_sessions,
         solana_network.clone(),

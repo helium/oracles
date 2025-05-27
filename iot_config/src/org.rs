@@ -1,13 +1,11 @@
 use crate::lora_field::{DevAddrConstraint, NetIdField};
 use futures::stream::StreamExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
-use helium_lib::keypair::to_helium_pubkey;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::Serialize;
 use solana::solana_pubkey_to_helium_binary;
 use sqlx::{error::Error as SqlxError, postgres::PgRow, types::Uuid, FromRow, Pool, Postgres, Row};
 use std::collections::HashSet;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;

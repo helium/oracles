@@ -3390,14 +3390,13 @@ dependencies = [
 [[package]]
 name = "helium-lib"
 version = "0.1.1"
-source = "git+https://github.com/helium/helium-wallet-rs?branch=master#82cf951e3fd552c72ad6ab3622658649cd17f50c"
 dependencies = [
  "anchor-client",
  "anchor-lang",
  "anchor-spl",
  "angry-purple-tiger",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bincode",
  "bytemuck",
  "chrono",
@@ -3431,7 +3430,6 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#ddc23d5b19b56d4725f94005e6f89bf8fc516043"
 dependencies = [
  "bytes",
  "prost",

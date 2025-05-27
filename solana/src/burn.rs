@@ -1,7 +1,6 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKeyBinary;
 use helium_lib::{
     anchor_client::RequestBuilder,
     anchor_lang::{AccountDeserialize, ToAccountMetas},
@@ -23,10 +22,7 @@ use helium_lib::{
 use itertools::Itertools;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-};
+use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
@@ -105,7 +101,7 @@ impl SolanaRpc {
             provider: Arc::new(provider),
             program_cache,
             keypair: keypair.to_bytes(),
-            escrow_keys_to_monitor: settings.escrow_keys_to_monitor()?,
+            escrow_keys_to_monitor: settings.escrow_keys_to_monitor(),
             priority_fee: PriorityFee::default(),
             min_priority_fee: settings.min_priority_fee,
         }))

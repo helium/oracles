@@ -3,7 +3,7 @@ use crate::{
     burner::Burner,
     pending::confirm_pending_txns,
     settings::Settings,
-    verifier::{CachedOrgClient, ConfigServer, ConfigServerError, Verifier},
+    verifier::{CachedOrgClient, ConfigServer, Verifier},
 };
 use anyhow::{bail, Result};
 use file_store::{
@@ -37,7 +37,6 @@ struct Daemon<O> {
 impl<O> ManagedTask for Daemon<O>
 where
     O: Orgs,
-    ConfigServerError: From<<O as Orgs>::Error>,
 {
     fn start_task(
         self: Box<Self>,
@@ -50,7 +49,6 @@ where
 impl<O> Daemon<O>
 where
     O: Orgs,
-    ConfigServerError: From<<O as Orgs>::Error>,
 {
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         tracing::info!("Starting verifier daemon");

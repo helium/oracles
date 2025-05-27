@@ -1,12 +1,15 @@
+use helium_crypto::PublicKeyBinary;
 use helium_lib::{
     solana_client::client_error::ClientError,
     solana_sdk::{program_error, pubkey::ParsePubkeyError, signature, transaction::Transaction},
 };
-use std::time::SystemTimeError;
+use sqlx::error::Error as SqlxError;
+use std::{str::FromStr, time::SystemTimeError};
 
 pub use helium_lib::{
     self,
     dao::SubDao,
+    keypair::to_helium_pubkey,
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_sdk::{pubkey::Pubkey as SolPubkey, signature::Signature},
     token::{self, Token},
@@ -91,7 +94,7 @@ impl GetSignature for Signature {
 }
 
 pub fn solana_pubkey_to_helium_binary(pubkey_str: &str) -> Result<PublicKeyBinary, SqlxError> {
-    let pubkey = Pubkey::from_str(pubkey_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
+    let pubkey = SolPubkey::from_str(pubkey_str).map_err(|e| SqlxError::Decode(Box::new(e)))?;
     let helium_pubkey = to_helium_pubkey(&pubkey).map_err(|e| SqlxError::Decode(Box::new(e)))?;
     Ok(PublicKeyBinary::from(helium_pubkey))
 }

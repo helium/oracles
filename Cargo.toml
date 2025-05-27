@@ -121,5 +121,8 @@ anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madnin
 # Patching for beacon must point directly to the crate, it will not look in the
 # repo for sibling crates.
 #
-# [patch.'https://github.com/helium/proto']
-# helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "bbalser/deprecate-radio-reward-v1" }
+[patch.'https://github.com/helium/proto']
+helium-proto = { path = "../proto" }
+
+[patch.'https://github.com/helium/helium-wallet-rs']
+helium-lib = { path = "../helium-wallet-rs/helium-lib" }

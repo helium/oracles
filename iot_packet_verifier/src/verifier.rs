@@ -264,7 +264,6 @@ impl<O> CachedOrgClient<O> {
 impl<O> ConfigServer for Arc<Mutex<CachedOrgClient<O>>>
 where
     O: Orgs,
-    ConfigServerError: From<<O as Orgs>::Error>,
 {
     async fn fetch_org(
         &self,
