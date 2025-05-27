@@ -224,7 +224,7 @@ impl DataSet for ServiceProviderOverride {
 }
 
 pub struct DataSetDownloader {
-    pub pool: PgPool,
+    pool: PgPool,
     store: FileStore,
     data_set_directory: PathBuf,
 }

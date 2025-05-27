@@ -27,6 +27,7 @@ pub struct DataSetDownloaderDaemon {
     pub data_set_downloader: DataSetDownloader,
     pub data_sets: HexBoostData,
 
+    pool: PgPool,
     oracle_boostring_writer: OracleBoostingWriter,
     new_coverage_object_notification: NewCoverageObjectNotification,
     poll_duration: Duration,
@@ -119,7 +120,7 @@ impl DataSetDownloaderDaemon {
         new_coverage_object_notification: NewCoverageObjectNotification,
         poll_duration: Duration,
     ) -> Self {
-        let data_set_downloader = DataSetDownloader::new(pool, store, data_set_directory);
+        let data_set_downloader = DataSetDownloader::new(pool.clone(), store, data_set_directory);
         let oracle_boostring_writer = OracleBoostingWriter { data_set_processor };
         Self {
             oracle_boostring_writer,
@@ -127,6 +128,7 @@ impl DataSetDownloaderDaemon {
             new_coverage_object_notification,
             poll_duration,
             data_sets,
+            pool,
         }
     }
 
@@ -140,7 +142,7 @@ impl DataSetDownloaderDaemon {
         // Attempt to fill in any unassigned hexes. This is for the edge case in
         // which we shutdown before a coverage object updates.
         if is_hex_boost_data_ready(&self.data_sets) {
-            let mut txn = self.data_set_downloader.pool.begin().await?;
+            let mut txn = self.pool.begin().await?;
 
             self.oracle_boostring_writer
                 .data_set_processor
@@ -155,7 +157,7 @@ impl DataSetDownloaderDaemon {
             #[rustfmt::skip]
             tokio::select! {
                 _ = self.new_coverage_object_notification.await_new_coverage_object() => {
-                    let mut txn = self.data_set_downloader.pool.begin().await?;
+                    let mut txn = self.pool.begin().await?;
 
                     // If we see a new coverage object, we want to assign only those hexes
                     // that don't have an assignment
