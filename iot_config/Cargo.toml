@@ -43,6 +43,7 @@ tracing-subscriber = { workspace = true }
 triggered = { workspace = true }
 
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
+solana = { path = "../solana" }
 db-store = { path = "../db_store" }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }

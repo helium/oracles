@@ -1,7 +1,6 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKeyBinary;
 use helium_lib::{
     anchor_client::RequestBuilder,
     anchor_lang::{AccountDeserialize, ToAccountMetas},
@@ -23,10 +22,7 @@ use helium_lib::{
 use itertools::Itertools;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-};
+use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
@@ -34,11 +30,12 @@ use tokio::sync::Mutex;
 pub trait SolanaNetwork: Clone + Send + Sync + 'static {
     type Transaction: GetSignature + Send + Sync + 'static;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError>;
+    async fn escrow_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError>;
 
+    #[allow(clippy::ptr_arg)]
     async fn make_burn_transaction(
         &self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
     ) -> Result<Self::Transaction, SolanaRpcError>;
 
@@ -58,7 +55,7 @@ pub struct Settings {
     dc_mint: String,
     dnt_mint: String,
     #[serde(default)]
-    payers_to_monitor: Vec<String>,
+    escrow_keys_to_monitor: Vec<String>,
     #[serde(default = "min_priority_fee")]
     min_priority_fee: u64,
 }
@@ -68,12 +65,8 @@ fn min_priority_fee() -> u64 {
 }
 
 impl Settings {
-    pub fn payers_to_monitor(&self) -> Result<Vec<PublicKeyBinary>, SolanaRpcError> {
-        self.payers_to_monitor
-            .iter()
-            .map(|payer| PublicKeyBinary::from_str(payer))
-            .collect::<Result<_, _>>()
-            .map_err(SolanaRpcError::from)
+    pub fn escrow_keys_to_monitor(&self) -> Vec<String> {
+        self.escrow_keys_to_monitor.clone()
     }
 }
 
@@ -83,7 +76,7 @@ pub struct SolanaRpc {
     program_cache: BurnProgramCache,
     cluster: String,
     keypair: [u8; 64],
-    payers_to_monitor: Vec<PublicKeyBinary>,
+    escrow_keys_to_monitor: Vec<String>,
     priority_fee: PriorityFee,
     min_priority_fee: u64,
 }
@@ -108,7 +101,7 @@ impl SolanaRpc {
             provider: Arc::new(provider),
             program_cache,
             keypair: keypair.to_bytes(),
-            payers_to_monitor: settings.payers_to_monitor()?,
+            escrow_keys_to_monitor: settings.escrow_keys_to_monitor(),
             priority_fee: PriorityFee::default(),
             min_priority_fee: settings.min_priority_fee,
         }))
@@ -119,8 +112,8 @@ impl SolanaRpc {
 impl SolanaNetwork for SolanaRpc {
     type Transaction = Transaction;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
+    async fn escrow_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError> {
+        let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, escrow_key);
         let (escrow_account, _) = Pubkey::find_program_address(
             &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
             &data_credits::ID,
@@ -131,7 +124,7 @@ impl SolanaNetwork for SolanaRpc {
             .await?
         {
             Response { value: None, .. } => {
-                tracing::info!(%payer, "Account not found, therefore no balance");
+                tracing::info!(%escrow_key, "Account not found, therefore no balance");
                 return Ok(0);
             }
             Response {
@@ -141,10 +134,10 @@ impl SolanaNetwork for SolanaRpc {
         };
         let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
 
-        if self.payers_to_monitor.contains(payer) {
+        if self.escrow_keys_to_monitor.contains(escrow_key) {
             metrics::gauge!(
                 "balance",
-                "payer" => payer.to_string()
+                "escrow_key" => escrow_key.to_string()
             )
             .set(account_layout.amount as f64);
         }
@@ -154,7 +147,7 @@ impl SolanaNetwork for SolanaRpc {
 
     async fn make_burn_transaction(
         &self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
     ) -> Result<Self::Transaction, SolanaRpcError> {
         // Fetch the sub dao epoch info:
@@ -173,7 +166,7 @@ impl SolanaNetwork for SolanaRpc {
         );
 
         // Fetch escrow account
-        let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
+        let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, escrow_key);
         let (escrow_account, _) = Pubkey::find_program_address(
             &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
             &data_credits::ID,
@@ -185,7 +178,7 @@ impl SolanaNetwork for SolanaRpc {
             sub_dao: self.program_cache.sub_dao,
             account_payer: self.program_cache.account_payer,
             data_credits: self.program_cache.data_credits,
-            delegated_data_credits: delegated_data_credits(&self.program_cache.sub_dao, payer),
+            delegated_data_credits: delegated_data_credits(&self.program_cache.sub_dao, escrow_key),
             token_program: spl_token::id(),
             helium_sub_daos_program: helium_sub_daos::ID,
             system_program: solana_program::system_program::id(),
@@ -433,9 +426,9 @@ impl GetSignature for PossibleTransaction {
 impl SolanaNetwork for Option<Arc<SolanaRpc>> {
     type Transaction = PossibleTransaction;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
+    async fn escrow_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError> {
         if let Some(ref rpc) = self {
-            rpc.payer_balance(payer).await
+            rpc.escrow_balance(escrow_key).await
         } else {
             Ok(u64::MAX)
         }
@@ -443,12 +436,12 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
 
     async fn make_burn_transaction(
         &self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
     ) -> Result<Self::Transaction, SolanaRpcError> {
         if let Some(ref rpc) = self {
             Ok(PossibleTransaction::Transaction(
-                rpc.make_burn_transaction(payer, amount).await?,
+                rpc.make_burn_transaction(escrow_key, amount).await?,
             ))
         } else {
             Ok(PossibleTransaction::NoTransaction(Signature::new_unique()))
@@ -480,7 +473,7 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
 
 pub struct MockTransaction {
     pub signature: Signature,
-    pub payer: PublicKeyBinary,
+    pub escrow_key: String,
     pub amount: u64,
 }
 
@@ -492,7 +485,7 @@ impl GetSignature for MockTransaction {
 
 #[derive(Clone)]
 pub struct TestSolanaClientMap {
-    payer_balances: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+    escrow_balances: Arc<Mutex<HashMap<String, u64>>>,
     confirm_all_txns: Arc<Mutex<bool>>,
     confirmed_txns: Arc<Mutex<HashSet<Signature>>>,
 }
@@ -500,7 +493,7 @@ pub struct TestSolanaClientMap {
 impl Default for TestSolanaClientMap {
     fn default() -> Self {
         Self {
-            payer_balances: Default::default(),
+            escrow_balances: Default::default(),
             confirm_all_txns: Arc::new(Mutex::new(true)),
             confirmed_txns: Default::default(),
         }
@@ -508,18 +501,18 @@ impl Default for TestSolanaClientMap {
 }
 
 impl TestSolanaClientMap {
-    pub async fn insert(&self, payer: &PublicKeyBinary, amount: u64) {
-        self.payer_balances
+    pub async fn insert(&self, escrow_key: &String, amount: u64) {
+        self.escrow_balances
             .lock()
             .await
-            .insert(payer.clone(), amount);
+            .insert(escrow_key.clone(), amount);
     }
 
-    pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> u64 {
-        self.payer_balances
+    pub async fn get_escrow_balance(&self, escrow_key: &String) -> u64 {
+        self.escrow_balances
             .lock()
             .await
-            .get(payer)
+            .get(escrow_key)
             .cloned()
             .unwrap_or_default()
     }
@@ -534,28 +527,28 @@ impl TestSolanaClientMap {
 impl SolanaNetwork for TestSolanaClientMap {
     type Transaction = MockTransaction;
 
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, SolanaRpcError> {
-        Ok(*self.payer_balances.lock().await.get(payer).unwrap())
+    async fn escrow_balance(&self, escrow_key: &String) -> Result<u64, SolanaRpcError> {
+        Ok(*self.escrow_balances.lock().await.get(escrow_key).unwrap())
     }
 
     async fn make_burn_transaction(
         &self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
     ) -> Result<MockTransaction, SolanaRpcError> {
         Ok(MockTransaction {
             signature: Signature::new_unique(),
-            payer: payer.clone(),
+            escrow_key: escrow_key.clone(),
             amount,
         })
     }
 
     async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), SolanaRpcError> {
         *self
-            .payer_balances
+            .escrow_balances
             .lock()
             .await
-            .get_mut(&txn.payer)
+            .get_mut(&txn.escrow_key)
             .unwrap() -= txn.amount;
         Ok(())
     }
@@ -569,10 +562,10 @@ impl SolanaNetwork for TestSolanaClientMap {
     }
 }
 
-/// Returns the PDA for the Delegated Data Credits of the given `payer`.
-pub fn delegated_data_credits(sub_dao: &Pubkey, payer: &PublicKeyBinary) -> Pubkey {
+/// Returns the PDA for the Delegated Data Credits of the given `escrow_key`.
+pub fn delegated_data_credits(sub_dao: &Pubkey, escrow_key: &String) -> Pubkey {
     let mut hasher = Sha256::new();
-    hasher.update(payer.to_string());
+    hasher.update(escrow_key);
     let sha_digest = hasher.finalize();
     let (ddc_key, _) = Pubkey::find_program_address(
         &[

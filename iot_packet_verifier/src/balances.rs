@@ -2,7 +2,6 @@ use crate::{
     pending::{Burn, PendingTables},
     verifier::Debiter,
 };
-use helium_crypto::PublicKeyBinary;
 use solana::{burn::SolanaNetwork, SolanaRpcError};
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -14,11 +13,11 @@ use tokio::sync::Mutex;
 /// packet verifier.
 #[derive(Clone)]
 pub struct BalanceCache<S> {
-    payer_accounts: BalanceStore,
+    escrow_accounts: BalanceStore,
     solana: S,
 }
 
-pub type BalanceStore = Arc<Mutex<HashMap<PublicKeyBinary, PayerAccount>>>;
+pub type BalanceStore = Arc<Mutex<HashMap<String, EscrowAccount>>>;
 
 impl<S> BalanceCache<S>
 where
@@ -30,15 +29,15 @@ where
         let mut balances = HashMap::new();
 
         for Burn {
-            payer,
+            escrow_key,
             amount: burn_amount,
         } in pending_tables.fetch_all_pending_burns().await?
         {
-            // Look up the current balance of the payer
-            let balance = solana.payer_balance(&payer).await?;
+            // Look up the current balance of the escrow_account
+            let balance = solana.escrow_balance(&escrow_key).await?;
             balances.insert(
-                payer,
-                PayerAccount {
+                escrow_key,
+                EscrowAccount {
                     burned: burn_amount,
                     balance,
                 },
@@ -46,7 +45,7 @@ where
         }
 
         Ok(Self {
-            payer_accounts: Arc::new(Mutex::new(balances)),
+            escrow_accounts: Arc::new(Mutex::new(balances)),
             solana,
         })
     }
@@ -54,11 +53,11 @@ where
 
 impl<S> BalanceCache<S> {
     pub fn balances(&self) -> BalanceStore {
-        self.payer_accounts.clone()
+        self.escrow_accounts.clone()
     }
 
-    pub async fn get_payer_balance(&self, payer: &PublicKeyBinary) -> Option<PayerAccount> {
-        self.payer_accounts.lock().await.get(payer).cloned()
+    pub async fn get_escrow_balance(&self, escrow_key: &String) -> Option<EscrowAccount> {
+        self.escrow_accounts.lock().await.get(escrow_key).cloned()
     }
 }
 
@@ -71,33 +70,34 @@ where
     /// option if there was enough and none otherwise.
     async fn debit_if_sufficient(
         &self,
-        payer: &PublicKeyBinary,
+        escrow_key: &String,
         amount: u64,
         trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, SolanaRpcError> {
-        let mut payer_accounts = self.payer_accounts.lock().await;
+        let mut escrow_accounts = self.escrow_accounts.lock().await;
 
-        // Fetch the balance if we haven't seen the payer before
-        if let Entry::Vacant(payer_account) = payer_accounts.entry(payer.clone()) {
-            let payer_account =
-                payer_account.insert(PayerAccount::new(self.solana.payer_balance(payer).await?));
-            return Ok((payer_account.balance >= amount).then(|| {
-                payer_account.burned += amount;
-                payer_account.balance - amount
+        // Fetch the balance if we haven't seen the escrow_account before
+        if let Entry::Vacant(escrow_account) = escrow_accounts.entry(escrow_key.clone()) {
+            let escrow_account = escrow_account.insert(EscrowAccount::new(
+                self.solana.escrow_balance(escrow_key).await?,
+            ));
+            return Ok((escrow_account.balance >= amount).then(|| {
+                escrow_account.burned += amount;
+                escrow_account.balance - amount
             }));
         }
 
-        let payer_account = payer_accounts.get_mut(payer).unwrap();
-        match payer_account
+        let escrow_account = escrow_accounts.get_mut(escrow_key).unwrap();
+        match escrow_account
             .balance
-            .checked_sub(amount + payer_account.burned)
+            .checked_sub(amount + escrow_account.burned)
         {
             Some(remaining_balance) => {
                 if remaining_balance < trigger_balance_check_threshold {
-                    payer_account.balance = self.solana.payer_balance(payer).await?;
+                    escrow_account.balance = self.solana.escrow_balance(escrow_key).await?;
                 }
-                payer_account.burned += amount;
-                Ok(Some(payer_account.balance - payer_account.burned))
+                escrow_account.burned += amount;
+                Ok(Some(escrow_account.balance - escrow_account.burned))
             }
             None => Ok(None),
         }
@@ -105,12 +105,12 @@ where
 }
 
 #[derive(Copy, Clone, Debug, Default)]
-pub struct PayerAccount {
+pub struct EscrowAccount {
     pub balance: u64,
     pub burned: u64,
 }
 
-impl PayerAccount {
+impl EscrowAccount {
     pub fn new(balance: u64) -> Self {
         Self { balance, burned: 0 }
     }

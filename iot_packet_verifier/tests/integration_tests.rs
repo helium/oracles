@@ -11,7 +11,7 @@ use helium_proto::{
     DataRate, Region,
 };
 use iot_packet_verifier::{
-    balances::{BalanceCache, PayerAccount},
+    balances::{BalanceCache, EscrowAccount},
     burner::{BurnError, Burner},
     pending::{confirm_pending_txns, AddPendingBurn, Burn, PendingTables, BURN_THRESHOLD},
     verifier::{payload_size_to_dc, ConfigServer, ConfigServerError, Org, Verifier, BYTES_PER_DC},
@@ -25,21 +25,21 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 struct MockConfig {
-    payer: PublicKeyBinary,
+    escrow_key: String,
     enabled: bool,
 }
 
 #[derive(Default, Clone)]
 struct MockConfigServer {
-    payers: Arc<Mutex<HashMap<u64, MockConfig>>>,
+    escrow_keys: Arc<Mutex<HashMap<u64, MockConfig>>>,
 }
 
 impl MockConfigServer {
-    async fn insert(&self, oui: u64, payer: PublicKeyBinary) {
-        self.payers.lock().await.insert(
+    async fn insert(&self, oui: u64, escrow_key: String) {
+        self.escrow_keys.lock().await.insert(
             oui,
             MockConfig {
-                payer,
+                escrow_key,
                 enabled: true,
             },
         );
@@ -51,30 +51,37 @@ impl ConfigServer for MockConfigServer {
     async fn fetch_org(
         &self,
         oui: u64,
-        _cache: &mut HashMap<u64, PublicKeyBinary>,
-    ) -> Result<PublicKeyBinary, ConfigServerError> {
-        Ok(self.payers.lock().await.get(&oui).unwrap().payer.clone())
+        _cache: &mut HashMap<u64, String>,
+    ) -> Result<String, ConfigServerError> {
+        Ok(self
+            .escrow_keys
+            .lock()
+            .await
+            .get(&oui)
+            .unwrap()
+            .escrow_key
+            .clone())
     }
 
     async fn disable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
-        self.payers.lock().await.get_mut(&oui).unwrap().enabled = false;
+        self.escrow_keys.lock().await.get_mut(&oui).unwrap().enabled = false;
         Ok(())
     }
 
     async fn enable_org(&self, oui: u64) -> Result<(), ConfigServerError> {
-        self.payers.lock().await.get_mut(&oui).unwrap().enabled = true;
+        self.escrow_keys.lock().await.get_mut(&oui).unwrap().enabled = true;
         Ok(())
     }
 
     async fn list_orgs(&self) -> Result<Vec<Org>, ConfigServerError> {
         Ok(self
-            .payers
+            .escrow_keys
             .lock()
             .await
             .iter()
             .map(|(oui, config)| Org {
                 oui: *oui,
-                payer: config.payer.clone(),
+                escrow_key: config.escrow_key.clone(),
                 locked: !config.enabled,
             })
             .collect())
@@ -158,18 +165,18 @@ fn invalid_packet(payload_size: u32, payload_hash: Vec<u8>) -> InvalidPacket {
 
 #[sqlx::test]
 async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
-    let payer = PublicKeyBinary::from(vec![0]);
+    let escrow_key = format!("OUI_{}", 0);
 
     // Set up orgs:
     let orgs = MockConfigServer::default();
-    orgs.insert(0_u64, payer.clone()).await;
+    orgs.insert(0_u64, escrow_key.clone()).await;
     // Set up balances:
     let solana_network = TestSolanaClientMap::default();
-    solana_network.insert(&payer, 3).await;
+    solana_network.insert(&escrow_key, 3).await;
 
     // Set up cache:
     let mut txn = pool.begin().await?;
-    txn.add_burned_amount(&payer, 3).await?;
+    txn.add_burned_amount(&escrow_key, 3).await?;
     txn.commit().await?;
     let balances = BalanceCache::new(&pool, solana_network.clone()).await?;
 
@@ -197,10 +204,10 @@ async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
         .unwrap();
     pending_burn_txn.commit().await?;
 
-    assert!(!orgs.payers.lock().await.get(&0).unwrap().enabled);
+    assert!(!orgs.escrow_keys.lock().await.get(&0).unwrap().enabled);
 
     // Update the solana network:
-    solana_network.insert(&payer, 50).await;
+    solana_network.insert(&escrow_key, 50).await;
 
     let (trigger, listener) = triggered::trigger();
 
@@ -224,13 +231,13 @@ async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     // We should be re-enabled
-    assert!(orgs.payers.lock().await.get(&0).unwrap().enabled);
+    assert!(orgs.escrow_keys.lock().await.get(&0).unwrap().enabled);
     assert_eq!(
         balances
             .balances()
             .lock()
             .await
-            .get(&payer)
+            .get(&escrow_key)
             .unwrap()
             .balance,
         50
@@ -256,18 +263,18 @@ async fn test_config_unlocking(pool: PgPool) -> anyhow::Result<()> {
     pending_burn_txn.commit().await?;
 
     // Still enabled:
-    assert!(orgs.payers.lock().await.get(&0).unwrap().enabled);
+    assert!(orgs.escrow_keys.lock().await.get(&0).unwrap().enabled);
 
-    let payer_account = balances
-        .get_payer_balance(&payer)
+    let escrow_account = balances
+        .get_escrow_balance(&escrow_key)
         .await
-        .expect("known payer");
+        .expect("known escrow");
     assert_eq!(
-        payer_account.balance, 50,
+        escrow_account.balance, 50,
         "balance has not been deducted because no solana burn has been sent"
     );
     assert_eq!(
-        payer_account.burned, 7,
+        escrow_account.burned, 7,
         "burned is previous amount plus new sufficient amount"
     );
 
@@ -283,15 +290,15 @@ async fn test_verifier_free_packets(pool: PgPool) -> anyhow::Result<()> {
         packet_report(0, 2, 1, vec![6], true),
     ];
 
-    let org_pubkey = PublicKeyBinary::from(vec![0]);
+    let org_escrow_key = format!("OUI_{}", 0);
 
     // Set up orgs:
     let orgs = MockConfigServer::default();
-    orgs.insert(0_u64, org_pubkey.clone()).await;
+    orgs.insert(0_u64, org_escrow_key.clone()).await;
 
     // Set up balances:
     let solana_network = TestSolanaClientMap::default();
-    solana_network.insert(&org_pubkey, 5).await;
+    solana_network.insert(&org_escrow_key, 5).await;
     let balances = BalanceCache::new(&pool, solana_network).await?;
 
     // Set up output:
@@ -330,15 +337,15 @@ async fn test_verifier_free_packets(pool: PgPool) -> anyhow::Result<()> {
 
     assert!(invalid_packets.is_empty());
 
-    let payers = verifier.config_server.payers.lock().await;
-    assert!(payers.get(&0).unwrap().enabled);
+    let escrow_keys = verifier.config_server.escrow_keys.lock().await;
+    assert!(escrow_keys.get(&0).unwrap().enabled);
 
-    let payer_balance = balances
-        .get_payer_balance(&org_pubkey)
+    let escrow_balance = balances
+        .get_escrow_balance(&org_escrow_key)
         .await
         .expect("known payer");
-    assert_eq!(payer_balance.balance, 5, "balance should not have changed");
-    assert_eq!(payer_balance.burned, 0, "nothing should be burned");
+    assert_eq!(escrow_balance.balance, 5, "balance should not have changed");
+    assert_eq!(escrow_balance.burned, 0, "nothing should be burned");
 
     Ok(())
 }
@@ -362,20 +369,14 @@ async fn test_verifier(pool: PgPool) -> anyhow::Result<()> {
     ];
     // Set up orgs:
     let orgs = MockConfigServer::default();
-    orgs.insert(0_u64, PublicKeyBinary::from(vec![0])).await;
-    orgs.insert(1_u64, PublicKeyBinary::from(vec![1])).await;
-    orgs.insert(2_u64, PublicKeyBinary::from(vec![2])).await;
+    orgs.insert(0_u64, format!("OUI_{}", 0)).await;
+    orgs.insert(1_u64, format!("OUI_{}", 1)).await;
+    orgs.insert(2_u64, format!("OUI_{}", 2)).await;
     // Set up balances:
     let solana_network = TestSolanaClientMap::default();
-    solana_network
-        .insert(&PublicKeyBinary::from(vec![0]), 3)
-        .await;
-    solana_network
-        .insert(&PublicKeyBinary::from(vec![1]), 5)
-        .await;
-    solana_network
-        .insert(&PublicKeyBinary::from(vec![2]), 2)
-        .await;
+    solana_network.insert(&format!("OUI_{}", 0), 3).await;
+    solana_network.insert(&format!("OUI_{}", 1), 5).await;
+    solana_network.insert(&format!("OUI_{}", 2), 2).await;
     let balances = BalanceCache::new(&pool, solana_network.clone()).await?;
 
     // Set up output:
@@ -420,17 +421,17 @@ async fn test_verifier(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(invalid_packets, vec![invalid_packet(1, vec![3]),]);
 
     // Verify that only org #0 is disabled:
-    let payers = verifier.config_server.payers.lock().await;
-    assert!(!payers.get(&0).unwrap().enabled);
-    assert!(payers.get(&1).unwrap().enabled);
-    assert!(payers.get(&2).unwrap().enabled);
+    let escrow_keys = verifier.config_server.escrow_keys.lock().await;
+    assert!(!escrow_keys.get(&0).unwrap().enabled);
+    assert!(escrow_keys.get(&1).unwrap().enabled);
+    assert!(escrow_keys.get(&2).unwrap().enabled);
 
     Ok(())
 }
 
 #[sqlx::test]
 async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
-    let payer = PublicKeyBinary::from(vec![0]);
+    let escrow_key = format!("OUI_{}", 0);
 
     // Our balance and packet size has to surpass BURN_THRESHOLD
     // for burning to consider the verified packets.
@@ -439,7 +440,7 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
 
     // Solana network:
     let solana_network = TestSolanaClientMap::default();
-    solana_network.insert(&payer, STARTING_BALANCE).await; // Start with 3 data credits
+    solana_network.insert(&escrow_key, STARTING_BALANCE).await; // Start with 3 data credits
 
     // Balance cache:
     let balance_cache = BalanceCache::new(&pool, solana_network.clone()).await?;
@@ -454,7 +455,7 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
 
     // Orgs:
     let orgs = MockConfigServer::default();
-    orgs.insert(0_u64, payer.clone()).await;
+    orgs.insert(0_u64, escrow_key.clone()).await;
 
     // Packet output:
     let mut valid_packets = Vec::new();
@@ -489,7 +490,7 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
     assert!(
         !verifier
             .config_server
-            .payers
+            .escrow_keys
             .lock()
             .await
             .get(&0)
@@ -516,7 +517,7 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
     // Check that 3x the BURN_THRESHOLD DC are pending to be burned:
     let balance = verifier
         .debiter
-        .get_payer_balance(&payer)
+        .get_escrow_balance(&escrow_key)
         .await
         .expect("known payer");
     assert_eq!(balance.balance, STARTING_BALANCE);
@@ -528,21 +529,21 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
     // Now that we've burn, the balances and burn amount should be reset:
     let balance = verifier
         .debiter
-        .get_payer_balance(&payer)
+        .get_escrow_balance(&escrow_key)
         .await
-        .expect("known payer");
+        .expect("known escrow");
     assert_eq!(balance.balance, 0);
     assert_eq!(balance.burned, 0);
 
     // Pending burns should be empty as well:
-    let payer_balance = balance_cache
-        .get_payer_balance(&payer)
+    let escrow_balance = balance_cache
+        .get_escrow_balance(&escrow_key)
         .await
         .expect("known payer");
-    assert_eq!(payer_balance.burned, 0, "pending was burned");
+    assert_eq!(escrow_balance.burned, 0, "pending was burned");
 
     // Additionally, the balance on the solana network should be zero:
-    let solana_balance = solana_network.get_payer_balance(&payer).await;
+    let solana_balance = solana_network.get_escrow_balance(&escrow_key).await;
     assert_eq!(solana_balance, 0, "solana balance");
 
     // Attempting to validate one packet should fail now:
@@ -576,32 +577,30 @@ async fn test_end_to_end(pool: PgPool) -> anyhow::Result<()> {
 async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     const CONFIRMED_BURN_AMOUNT: u64 = 7;
     const UNCONFIRMED_BURN_AMOUNT: u64 = 11;
-    let payer: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-        .parse()
-        .unwrap();
+    let escrow_key = format!("112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6");
     let mut ledger = HashMap::new();
     ledger.insert(
-        payer.clone(),
+        escrow_key.clone(),
         CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
     );
     let mut cache = HashMap::new();
     cache.insert(
-        payer.clone(),
-        PayerAccount {
+        escrow_key.clone(),
+        EscrowAccount {
             balance: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
             burned: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
         },
     );
     let solana_network = TestSolanaClientMap::default();
     solana_network
-        .insert(&payer, CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT)
+        .insert(&escrow_key, CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT)
         .await;
 
     // Add both the burn amounts to the pending burns table
     {
         let mut transaction = pool.begin().await.unwrap();
         transaction
-            .add_burned_amount(&payer, CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT)
+            .add_burned_amount(&escrow_key, CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
         transaction.commit().await.unwrap();
@@ -610,12 +609,12 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // First transaction is confirmed
     {
         let txn = solana_network
-            .make_burn_transaction(&payer, CONFIRMED_BURN_AMOUNT)
+            .make_burn_transaction(&escrow_key, CONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
 
         pool.do_add_pending_transaction(
-            &payer,
+            &escrow_key,
             CONFIRMED_BURN_AMOUNT,
             txn.get_signature(),
             Utc::now() - chrono::Duration::minutes(2),
@@ -630,11 +629,11 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Make submission time in past to bypass confirm txn sleep
     {
         let txn = solana_network
-            .make_burn_transaction(&payer, UNCONFIRMED_BURN_AMOUNT)
+            .make_burn_transaction(&escrow_key, UNCONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
         pool.do_add_pending_transaction(
-            &payer,
+            &escrow_key,
             UNCONFIRMED_BURN_AMOUNT,
             txn.get_signature(),
             Utc::now() - chrono::Duration::minutes(3),
@@ -661,8 +660,8 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn test_burn_with_pending_txn_triggers_confirmation(pool: PgPool) -> anyhow::Result<()> {
-    let org_one = PublicKeyBinary::from(vec![0]);
-    let org_two = PublicKeyBinary::from(vec![1]);
+    let org_one = format!("OUI_{}", 0);
+    let org_two = format!("OUI_{}", 1);
 
     let solana_network = TestSolanaClientMap::default();
     solana_network.insert(&org_one, 50_000).await;
@@ -731,20 +730,17 @@ async fn test_burn_with_pending_txn_triggers_confirmation(pool: PgPool) -> anyho
     Ok(())
 }
 
-async fn assert_pending_burns(
-    pool: &PgPool,
-    expected: &[(&PublicKeyBinary, u64)],
-) -> anyhow::Result<()> {
+async fn assert_pending_burns(pool: &PgPool, expected: &[(&String, u64)]) -> anyhow::Result<()> {
     let burns = sqlx::query_as("SELECT * from pending_burns")
         .fetch_all(pool)
         .await?
         .into_iter()
-        .map(|burn: Burn| (burn.payer, burn.amount))
+        .map(|burn: Burn| (burn.escrow_key, burn.amount))
         .collect::<std::collections::HashMap<_, _>>();
 
     for (key, expected_amount) in expected {
         let amount = burns
-            .get(key)
+            .get(key.as_str())
             .unwrap_or_else(|| panic!("{key:?} does not exist in pending burns"));
         assert_eq!(amount, expected_amount);
     }

@@ -31,19 +31,23 @@ const CACHE_TTL: Duration = Duration::from_secs(60 * 60 * 3);
 pub struct GatewayService {
     auth_cache: AuthCache,
     gateway_cache: Arc<Cache<PublicKeyBinary, GatewayInfo>>,
+    iot_config_db_pool: Pool<Postgres>,
     metadata_pool: Pool<Postgres>,
     region_map: RegionMapReader,
     signing_key: Arc<Keypair>,
     delegate_cache: watch::Receiver<org::DelegateCache>,
+    delegate_updater: Arc<watch::Sender<org::DelegateCache>>,
 }
 
 impl GatewayService {
     pub fn new(
         settings: &Settings,
+        iot_config_db_pool: Pool<Postgres>,
         metadata_pool: Pool<Postgres>,
         region_map: RegionMapReader,
         auth_cache: AuthCache,
         delegate_cache: watch::Receiver<org::DelegateCache>,
+        delegate_updater: Arc<watch::Sender<org::DelegateCache>>,
     ) -> Result<Self> {
         let gateway_cache = Arc::new(Cache::new());
         let cache_clone = gateway_cache.clone();
@@ -52,10 +56,12 @@ impl GatewayService {
         Ok(Self {
             auth_cache,
             gateway_cache,
+            iot_config_db_pool,
             metadata_pool,
             region_map,
             signing_key: Arc::new(settings.signing_keypair()?),
             delegate_cache,
+            delegate_updater,
         })
     }
 
@@ -75,7 +81,7 @@ impl GatewayService {
         Ok(())
     }
 
-    fn verify_location_request(&self, request: &GatewayLocationReqV1) -> Result<(), Status> {
+    async fn verify_location_request(&self, request: &GatewayLocationReqV1) -> Result<(), Status> {
         let signature_bytes = request.signer.clone();
         let signer_pubkey = verify_public_key(&signature_bytes)?;
 
@@ -87,15 +93,27 @@ impl GatewayService {
             return Ok(());
         }
 
-        self.delegate_cache
-            .borrow()
-            .contains(&signature_bytes.clone().into())
-            .then(|| {
+        let signature_key: PublicKeyBinary = signature_bytes.clone().into();
+
+        if self.delegate_cache.borrow().contains(&signature_key) {
+            return request
+                .verify(&signer_pubkey)
+                .map_err(|_| Status::invalid_argument("bad request signature"));
+        }
+
+        match org::is_delegate_key(&self.iot_config_db_pool, &signature_key).await {
+            Ok(true) => {
+                let mut current_cache = self.delegate_cache.borrow().clone();
+                current_cache.insert(signature_key.clone());
+                self.delegate_updater.send(current_cache).ok();
+
                 request
                     .verify(&signer_pubkey)
                     .map_err(|_| Status::invalid_argument("bad request signature"))
-            })
-            .ok_or_else(|| Status::permission_denied("unauthorized request signature"))?
+            }
+            Ok(false) => Err(Status::permission_denied("unauthorized request signature")),
+            Err(_) => Err(Status::internal("error checking delegate permissions")),
+        }
     }
 
     async fn resolve_gateway_info(&self, pubkey: &PublicKeyBinary) -> Result<GatewayInfo, Status> {
@@ -141,7 +159,7 @@ impl iot_config::Gateway for GatewayService {
         custom_tracing::record_b58("pub_key", &request.gateway);
         custom_tracing::record_b58("signer", &request.signer);
 
-        self.verify_location_request(&request)?;
+        self.verify_location_request(&request).await?;
 
         let address: &PublicKeyBinary = &request.gateway.into();
 

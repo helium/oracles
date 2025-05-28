@@ -71,15 +71,24 @@ impl Daemon {
         let (auth_updater, auth_cache) = AuthCache::new(settings.admin_pubkey()?, &pool).await?;
         let (region_updater, region_map) = RegionMapReader::new(&pool).await?;
         let (delegate_key_updater, delegate_key_cache) = org::delegate_keys_cache(&pool).await?;
+        let delegate_key_updater = Arc::new(delegate_key_updater);
+
+        org::spawn_delegate_cache_updater(
+            pool.clone(),
+            delegate_key_updater.clone(),
+            Duration::from_secs(60 * 5),
+        );
 
         let signing_keypair = Arc::new(settings.signing_keypair()?);
 
         let gateway_svc = GatewayService::new(
             settings,
+            pool.clone(),
             metadata_pool.clone(),
             region_map.clone(),
             auth_cache.clone(),
             delegate_key_cache,
+            delegate_key_updater.clone(),
         )?;
 
         let route_svc =
@@ -90,7 +99,6 @@ impl Daemon {
             auth_cache.clone(),
             pool.clone(),
             route_svc.clone_update_channel(),
-            delegate_key_updater,
         )?;
 
         let admin_svc = AdminService::new(
