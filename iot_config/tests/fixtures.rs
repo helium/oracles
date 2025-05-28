@@ -1,6 +1,6 @@
 use backon::{ExponentialBuilder, Retryable};
-use helium_lib::solana_sdk::pubkey::Pubkey;
 use helium_proto::services::iot_config::{self as proto, config_org_client::OrgClient};
+use solana::{self, SolPubkey};
 use sqlx::{Pool, Postgres};
 use std::net::SocketAddr;
 
@@ -11,7 +11,7 @@ pub async fn create_solana_org(
     net_id: &String,
     oui: Option<i64>,
 ) -> anyhow::Result<(String, u64)> {
-    let address = Pubkey::new_unique().to_string();
+    let address = SolPubkey::new_unique().to_string();
     let oui = oui.unwrap_or(1);
 
     sqlx::query(
@@ -46,7 +46,7 @@ pub async fn create_solana_org_devaddr_constraint(
     current_addr_offset: Option<i64>,
     num_blocks: i64,
 ) -> anyhow::Result<String> {
-    let address = Pubkey::new_unique().to_string();
+    let address = SolPubkey::new_unique().to_string();
     let end_addr = current_addr_offset.unwrap_or(0) + num_blocks * 8;
 
     sqlx::query(
@@ -77,7 +77,7 @@ pub async fn create_solana_org_delegate_key(
     organization: &String,
     delegate: &String,
 ) -> anyhow::Result<String> {
-    let address = Pubkey::new_unique().to_string();
+    let address = SolPubkey::new_unique().to_string();
 
     sqlx::query(
         r#"
@@ -104,7 +104,7 @@ pub async fn create_solana_net_id(
     id: Option<i32>,
     current_addr_offset: Option<i64>,
 ) -> anyhow::Result<String> {
-    let address = Pubkey::new_unique().to_string();
+    let address = SolPubkey::new_unique().to_string();
 
     sqlx::query(
         r#"
@@ -133,7 +133,7 @@ pub async fn create_org(socket_addr: SocketAddr, pool: &Pool<Postgres>) -> proto
         .await
         .expect("org client");
 
-    let payer = Pubkey::new_unique().to_string();
+    let payer = SolPubkey::new_unique().to_string();
     let net_id_res = create_solana_net_id(pool, &payer, None, None).await;
     let net_id = net_id_res.unwrap();
 
