@@ -53,7 +53,7 @@ task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
 hex-literal = "0"
-tempfile = "3"
+tempfile = { workspace = true }
 
 [features]
 default = ["sqlx-postgres"]

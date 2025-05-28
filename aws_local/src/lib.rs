@@ -6,6 +6,7 @@ use file_store::traits::MsgBytes;
 use file_store::{file_sink, file_upload, FileStore, FileType, Settings};
 use std::path::Path;
 use std::{str::FromStr, sync::Arc};
+use tempfile::TempDir;
 use tokio::sync::Mutex;
 use tonic::transport::Uri;
 use uuid::Uuid;
@@ -69,16 +70,20 @@ impl AwsLocal {
                 .unwrap(),
         }
     }
+
+    pub fn fs_settings(&self) -> Settings {
+        self.fs_settings.clone()
+    }
+
     pub async fn put_proto_to_aws<T: prost::Message + MsgBytes>(
         &self,
         items: Vec<T>,
         file_type: FileType,
         metric_name: &'static str,
     ) -> Result<String> {
-        // Uuid uses as random to avoid colisions
-        let uuid: Uuid = Uuid::new_v4();
-        let dir_path = format!("/tmp/{}/{}", uuid, self.fs_settings.bucket);
-        let store_base_path = std::path::Path::new(&dir_path);
+        let tmp_dir = TempDir::new()?;
+        let tmp_dir_path = tmp_dir.path().to_owned();
+
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
 
         let (file_upload, file_upload_server) =
@@ -87,7 +92,7 @@ impl AwsLocal {
                 .unwrap();
 
         let (item_sink, item_server) =
-            file_sink::FileSinkBuilder::new(file_type, store_base_path, file_upload, metric_name)
+            file_sink::FileSinkBuilder::new(file_type, &tmp_dir_path, file_upload, metric_name)
                 .auto_commit(false)
                 .roll_time(std::time::Duration::new(15, 0))
                 .create::<T>()
@@ -99,7 +104,6 @@ impl AwsLocal {
         }
         let item_recv = item_sink.commit().await.unwrap();
 
-        let dir_path_clone = dir_path.clone();
         let uploaded_file = Arc::new(Mutex::new(String::default()));
         let up_2 = uploaded_file.clone();
         let mut timeout = std::time::Duration::new(5, 0);
@@ -114,7 +118,7 @@ impl AwsLocal {
             // So we wait when dir will be empty.
             // It means all files are uploaded to aws
             loop {
-                if is_dir_has_files(&dir_path_clone) {
+                if is_dir_has_files(&tmp_dir_path) {
                     let dur = std::time::Duration::from_millis(10);
                     tokio::time::sleep(dur).await;
                     timeout -= dur;
@@ -131,10 +135,13 @@ impl AwsLocal {
             item_server.run(shutdown_listener.clone())
         )
         .unwrap();
-        std::fs::remove_dir_all(dir_path).unwrap();
+
+        tmp_dir.close()?;
+
         let res = uploaded_file.lock().await;
         Ok(res.clone())
     }
+
     pub async fn put_file_to_aws(&self, file_path: &Path) -> Result<()> {
         let path_str = file_path.display();
         if !file_path.exists() {
@@ -149,7 +156,7 @@ impl AwsLocal {
     }
 }
 
-fn is_dir_has_files(dir_path: &str) -> bool {
+fn is_dir_has_files(dir_path: &Path) -> bool {
     let entries = std::fs::read_dir(dir_path)
         .unwrap()
         .map(|res| res.map(|e| e.path().is_dir()))

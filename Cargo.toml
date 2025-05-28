@@ -117,6 +117,7 @@ derive_builder = "0"
 aws-config = "0.51"
 aws-sdk-s3 = "0.21"
 aws-types = { version = "0.51", features = ["hardcoded-credentials"]}
+tempfile = "3"
 
 [patch.crates-io]
 anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madninja/const_pubkey" }
