@@ -200,8 +200,10 @@ pub async fn set_unassigned_oracle_boosting_assignments(
     pool: &PgPool,
     data_sets: &impl HexBoostDataAssignmentsExt,
 ) -> anyhow::Result<Vec<OracleBoostingReportV1>> {
+    let mut tx = pool.begin().await?;
+
     let assigned_coverage_objs = AssignedCoverageObjects::assign_hex_stream(
-        mobile_verifier::boosting_oracles::data_sets::db::fetch_hexes_with_null_assignments(pool),
+        dataset_downloader::db::fetch_hexes_with_null_assignments(&mut tx),
         data_sets,
     )
     .await?;
@@ -231,7 +233,9 @@ pub async fn set_unassigned_oracle_boosting_assignments(
             timestamp,
         });
     }
-    assigned_coverage_objs.save(pool).await?;
+
+    assigned_coverage_objs.save(&mut tx).await?;
+    tx.commit().await?;
     Ok(output)
 }
 
