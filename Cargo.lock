@@ -841,6 +841,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-local"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aws-config",
+ "aws-sdk-s3",
+ "aws-types 0.51.0",
+ "chrono",
+ "file-store",
+ "prost",
+ "tempfile",
+ "tokio",
+ "tonic",
+ "triggered",
+ "uuid",
+]
+
+[[package]]
 name = "aws-sdk-s3"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4971,6 +4989,7 @@ dependencies = [
  "anyhow",
  "async-compression",
  "async-trait",
+ "aws-local",
  "base64 0.22.1",
  "chrono",
  "clap",
@@ -5013,6 +5032,7 @@ dependencies = [
  "solana",
  "sqlx",
  "task-manager",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",

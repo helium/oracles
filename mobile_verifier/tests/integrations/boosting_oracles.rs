@@ -3,12 +3,15 @@ use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::RadioHexSignalLevel,
+    file_upload::{self, FileUpload},
     speedtest::CellSpeedtest,
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     wifi_heartbeat::{WifiHeartbeat, WifiHeartbeatIngestReport},
 };
 use futures::stream::{self, StreamExt};
 use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
+use helium_proto::services::poc_mobile::OracleBoostingReportV1;
 use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, LocationSource, OracleBoostingHexAssignment, SignalLevel,
 };
@@ -16,7 +19,11 @@ use hex_assignments::Assignment;
 use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
     banning::BannedRadios,
-    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache},
+    boosting_oracles::DataSetDownloaderDaemon,
+    coverage::{
+        new_coverage_object_notification_channel, CoverageClaimTimeCache, CoverageObject,
+        CoverageObjectCache, NewCoverageObjectNotification,
+    },
     geofence::GeofenceValidator,
     heartbeats::{last_location::LocationCache, Heartbeat, HeartbeatReward, ValidatedHeartbeat},
     reward_shares::CoverageShares,
@@ -30,6 +37,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::{collections::HashMap, pin::pin};
+use tempfile::TempDir;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -94,6 +102,121 @@ fn signal_level(hex: &str, signal_level: SignalLevel) -> anyhow::Result<RadioHex
 
 fn hex_cell(loc: &str) -> hextree::Cell {
     hextree::Cell::from_raw(u64::from_str_radix(loc, 16).unwrap()).unwrap()
+}
+
+use aws_local::*;
+use hex_assignments::HexBoostData;
+use std::{path::PathBuf, str::FromStr};
+
+pub async fn create_data_set_downloader(
+    pool: PgPool,
+    file_paths: Vec<PathBuf>,
+    file_upload: FileUpload,
+    new_coverage_object_notification: NewCoverageObjectNotification,
+    tmp_dir: &TempDir,
+) -> (DataSetDownloaderDaemon, PathBuf, String) {
+    let bucket_name = gen_bucket_name();
+
+    let awsl = AwsLocal::new(AWSLOCAL_DEFAULT_ENDPOINT, &bucket_name).await;
+
+    for file_path in file_paths {
+        awsl.put_file_to_aws(&file_path).await.unwrap();
+    }
+
+    let uuid: Uuid = Uuid::new_v4();
+    let data_set_directory = tmp_dir.path().join(uuid.to_string());
+    tokio::fs::create_dir_all(data_set_directory.clone())
+        .await
+        .unwrap();
+
+    let file_store = awsl.file_store.clone();
+    let poll_duration = std::time::Duration::from_secs(4);
+
+    let (oracle_boosting_reports, _) = OracleBoostingReportV1::file_sink(
+        tmp_dir.path(),
+        file_upload.clone(),
+        FileSinkCommitStrategy::Automatic,
+        FileSinkRollTime::Duration(std::time::Duration::from_secs(15 * 60)),
+        env!("CARGO_PKG_NAME"),
+    )
+    .await
+    .unwrap();
+
+    let mut data_set_downloader = DataSetDownloaderDaemon::new(
+        pool,
+        HexBoostData::default(),
+        file_store,
+        oracle_boosting_reports,
+        data_set_directory.clone(),
+        new_coverage_object_notification,
+        poll_duration,
+    );
+
+    data_set_downloader.fetch_first_datasets().await.unwrap();
+    data_set_downloader.check_for_new_data_sets().await.unwrap();
+    (data_set_downloader, data_set_directory, bucket_name)
+}
+
+pub async fn hex_assignment_file_exist(pool: &PgPool, filename: &str) -> bool {
+    sqlx::query_scalar::<_, bool>(
+        r#"
+            SELECT EXISTS(SELECT 1 FROM hex_assignment_data_set_status WHERE filename = $1)
+        "#,
+    )
+    .bind(filename)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test]
+async fn test_dataset_downloader(pool: PgPool) {
+    // Scenario:
+    // 1. DataSetDownloader downloads initial files
+    // 2. Upload a new file
+    // 3. DataSetDownloader downloads new file
+
+    let paths = [
+        "footfall.1722895200000.gz",
+        "urbanization.1722895200000.gz",
+        "landtype.1722895200000.gz",
+        "service_provider_override.1739404800000.gz",
+    ];
+
+    let file_paths: Vec<PathBuf> = paths
+        .iter()
+        .map(|f| PathBuf::from(format!("./tests/integrations/fixtures/{}", f)))
+        .collect();
+
+    let (file_upload_tx, _file_upload_rx) = file_upload::message_channel();
+    let file_upload = FileUpload {
+        sender: file_upload_tx,
+    };
+
+    let (_, new_coverage_obj_notification) = new_coverage_object_notification_channel();
+
+    let tmp_dir = TempDir::new().expect("Unable to create temp dir");
+    let (mut data_set_downloader, _, bucket_name) = create_data_set_downloader(
+        pool.clone(),
+        file_paths,
+        file_upload,
+        new_coverage_obj_notification,
+        &tmp_dir,
+    )
+    .await;
+    assert!(hex_assignment_file_exist(&pool, "footfall.1722895200000.gz").await);
+    assert!(hex_assignment_file_exist(&pool, "urbanization.1722895200000.gz").await);
+    assert!(hex_assignment_file_exist(&pool, "landtype.1722895200000.gz").await);
+    assert!(hex_assignment_file_exist(&pool, "service_provider_override.1739404800000.gz").await);
+
+    let awsl = AwsLocal::new(AWSLOCAL_DEFAULT_ENDPOINT, &bucket_name).await;
+    awsl.put_file_to_aws(
+        &PathBuf::from_str("./tests/integrations/fixtures/footfall.1732895200000.gz").unwrap(),
+    )
+    .await
+    .unwrap();
+    data_set_downloader.check_for_new_data_sets().await.unwrap();
+    assert!(hex_assignment_file_exist(&pool, "footfall.1732895200000.gz").await);
 }
 
 #[sqlx::test]
