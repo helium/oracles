@@ -2383,6 +2383,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
+name = "dataset-downloader"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-compression",
+ "async-trait",
+ "aws-local",
+ "chrono",
+ "file-store",
+ "futures-util",
+ "hex-assignments",
+ "hextree",
+ "lazy_static",
+ "regex",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "db-store"
 version = "0.1.0"
 dependencies = [
@@ -4997,6 +5020,7 @@ dependencies = [
  "coverage-map",
  "coverage-point-calculator",
  "custom-tracing",
+ "dataset-downloader",
  "db-store",
  "derive_builder",
  "file-store",
