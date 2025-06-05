@@ -285,3 +285,36 @@ pub struct SubscriberMappingShares {
 
     pub reward_override_entity_key: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::SubscriberMappingActivity;
+    use helium_proto::services::poc_mobile::SubscriberMappingActivityIngestReportV1;
+
+    #[test]
+    fn try_from_subscriber_mapping_activity_check_entity_key() {
+        // Make sure reward_override_entity_key empty string transforms to None
+        let smair = SubscriberMappingActivityIngestReportV1 {
+            received_timestamp: 1,
+            report: Some({
+                helium_proto::services::poc_mobile::SubscriberMappingActivityReqV1 {
+                    subscriber_id: vec![10],
+                    discovery_reward_shares: 2,
+                    verification_reward_shares: 3,
+                    timestamp: 4,
+                    carrier_pub_key: vec![11],
+                    signature: vec![12],
+                    reward_override_entity_key: "".to_string(),
+                }
+            }),
+        };
+        let mut smair2 = smair.clone();
+        smair2.report.as_mut().unwrap().reward_override_entity_key = "key".to_string();
+
+        let res = SubscriberMappingActivity::try_from(smair).unwrap();
+        assert!(res.reward_override_entity_key.is_none());
+
+        let res = SubscriberMappingActivity::try_from(smair2).unwrap();
+        assert_eq!(res.reward_override_entity_key, Some("key".to_string()));
+    }
+}
