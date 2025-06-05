@@ -12,20 +12,22 @@ pub async fn save(
     transaction: &mut Transaction<'_, Postgres>,
     ingest_reports: impl Stream<Item = anyhow::Result<SubscriberMappingActivity>>,
 ) -> anyhow::Result<()> {
-    const NUM_IN_BATCH: usize = (u16::MAX / 5) as usize;
+    const NUM_IN_BATCH: usize = (u16::MAX / 6) as usize;
 
     ingest_reports
         .try_chunks(NUM_IN_BATCH)
         .err_into::<anyhow::Error>()
         .try_fold(transaction, |txn, chunk| async move {
-            QueryBuilder::new("INSERT INTO subscriber_mapping_activity(subscriber_id, discovery_reward_shares, verification_reward_shares, received_timestamp, inserted_at)")
+            QueryBuilder::new(r#"INSERT INTO subscriber_mapping_activity(
+                    subscriber_id, discovery_reward_shares, verification_reward_shares, received_timestamp, inserted_at, entity_key)"#)
             .push_values(chunk, |mut b, activity| {
 
                 b.push_bind(activity.subscriber_id)
                     .push_bind(activity.discovery_reward_shares as i64)
                     .push_bind(activity.verification_reward_shares as i64)
                     .push_bind(activity.received_timestamp)
-                    .push_bind(Utc::now());
+                    .push_bind(Utc::now())
+                    .push_bind(activity.entity_key);
             })
             .push("ON CONFLICT (subscriber_id, received_timestamp) DO NOTHING")
             .build()
@@ -45,7 +47,7 @@ pub async fn rewardable_mapping_activity(
 ) -> anyhow::Result<Vec<SubscriberMappingShares>> {
     sqlx::query_as(
         r#"
-        SELECT DISTINCT ON (subscriber_id) subscriber_id, discovery_reward_shares, verification_reward_shares
+        SELECT DISTINCT ON (subscriber_id) subscriber_id, discovery_reward_shares, verification_reward_shares, entity_key
         FROM subscriber_mapping_activity
         WHERE received_timestamp >= $1
             AND received_timestamp < $2

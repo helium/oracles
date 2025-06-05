@@ -3449,7 +3449,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#ddc23d5b19b56d4725f94005e6f89bf8fc516043"
+source = "git+https://www.github.com/helium/proto.git?branch=add-entity-key-to-mapping-act-req#a2b9b139ae9efa3fe0fe04fc772cbd17d0384344"
 dependencies = [
  "bytes",
  "prost",
