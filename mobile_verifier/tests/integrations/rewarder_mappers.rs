@@ -70,6 +70,40 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[sqlx::test]
+async fn reward_mapper_check_entity_key_db(pool: PgPool) {
+    let reward_info = reward_info_24_hours();
+    // seed db
+    let mut txn = pool.clone().begin().await.unwrap();
+    seed_mapping_data(reward_info.epoch_period.end, &mut txn)
+        .await
+        .unwrap();
+    txn.commit().await.expect("db txn failed");
+
+    let rewardable_mapping_activity = subscriber_mapping_activity::db::rewardable_mapping_activity(
+        &pool,
+        &reward_info.epoch_period,
+    )
+    .await
+    .unwrap();
+
+    assert!(rewardable_mapping_activity
+        .iter()
+        .find(|v| v.subscriber_id == SUBSCRIBER_1.to_string().encode_to_vec())
+        .unwrap()
+        .reward_override_entity_key
+        .is_none(),);
+
+    assert_eq!(
+        rewardable_mapping_activity
+            .iter()
+            .find(|v| v.subscriber_id == SUBSCRIBER_3.to_string().encode_to_vec())
+            .unwrap()
+            .reward_override_entity_key,
+        Some("entity key".to_string())
+    );
+}
+
 async fn seed_mapping_data(
     ts: DateTime<Utc>,
     txn: &mut Transaction<'_, Postgres>,
@@ -108,7 +142,7 @@ async fn seed_mapping_data(
             discovery_reward_shares: 30,
             verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
-            reward_override_entity_key: None,
+            reward_override_entity_key: Some("entity key".to_string()),
         },
     ];
 
