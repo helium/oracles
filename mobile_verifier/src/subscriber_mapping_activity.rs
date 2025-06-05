@@ -247,7 +247,7 @@ pub struct SubscriberMappingActivity {
     pub verification_reward_shares: u64,
     pub received_timestamp: DateTime<Utc>,
     pub carrier_pub_key: PublicKeyBinary,
-    pub entity_key: Option<String>,
+    pub reward_override_entity_key: Option<String>,
 }
 
 impl TryFrom<SubscriberMappingActivityIngestReportV1> for SubscriberMappingActivity {
@@ -258,10 +258,10 @@ impl TryFrom<SubscriberMappingActivityIngestReportV1> for SubscriberMappingActiv
             .report
             .ok_or_else(|| anyhow::anyhow!("SubscriberMappingActivityReqV1 not found"))?;
 
-        let entity_key = if report.entity_key.is_empty() {
+        let reward_override_entity_key = if report.reward_override_entity_key.is_empty() {
             None
         } else {
-            Some(report.entity_key)
+            Some(report.reward_override_entity_key)
         };
 
         Ok(Self {
@@ -270,7 +270,7 @@ impl TryFrom<SubscriberMappingActivityIngestReportV1> for SubscriberMappingActiv
             verification_reward_shares: report.verification_reward_shares,
             received_timestamp: value.received_timestamp.to_timestamp_millis()?,
             carrier_pub_key: PublicKeyBinary::from(report.carrier_pub_key),
-            entity_key,
+            reward_override_entity_key,
         })
     }
 }
@@ -283,5 +283,5 @@ pub struct SubscriberMappingShares {
     #[sqlx(try_from = "i64")]
     pub verification_reward_shares: u64,
 
-    pub entity_key: Option<String>,
+    pub reward_override_entity_key: Option<String>,
 }

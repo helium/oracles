@@ -19,7 +19,7 @@ pub async fn save(
         .err_into::<anyhow::Error>()
         .try_fold(transaction, |txn, chunk| async move {
             QueryBuilder::new(r#"INSERT INTO subscriber_mapping_activity(
-                    subscriber_id, discovery_reward_shares, verification_reward_shares, received_timestamp, inserted_at, entity_key)"#)
+                    subscriber_id, discovery_reward_shares, verification_reward_shares, received_timestamp, inserted_at, reward_override_entity_key)"#)
             .push_values(chunk, |mut b, activity| {
 
                 b.push_bind(activity.subscriber_id)
@@ -27,7 +27,7 @@ pub async fn save(
                     .push_bind(activity.verification_reward_shares as i64)
                     .push_bind(activity.received_timestamp)
                     .push_bind(Utc::now())
-                    .push_bind(activity.entity_key);
+                    .push_bind(activity.reward_override_entity_key);
             })
             .push("ON CONFLICT (subscriber_id, received_timestamp) DO NOTHING")
             .build()
@@ -47,7 +47,7 @@ pub async fn rewardable_mapping_activity(
 ) -> anyhow::Result<Vec<SubscriberMappingShares>> {
     sqlx::query_as(
         r#"
-        SELECT DISTINCT ON (subscriber_id) subscriber_id, discovery_reward_shares, verification_reward_shares, entity_key
+        SELECT DISTINCT ON (subscriber_id) subscriber_id, discovery_reward_shares, verification_reward_shares, reward_override_entity_key
         FROM subscriber_mapping_activity
         WHERE received_timestamp >= $1
             AND received_timestamp < $2

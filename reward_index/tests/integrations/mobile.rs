@@ -150,7 +150,7 @@ async fn subscriber_reward(pool: PgPool) -> anyhow::Result<()> {
                 subscriber_id: vec![1],
                 discovery_location_amount: 1,
                 verification_mapping_amount: 2,
-                entity_key: "".into(),
+                reward_override_entity_key: "".into(),
             },
         )),
     }]);

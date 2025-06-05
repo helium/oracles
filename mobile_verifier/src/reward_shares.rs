@@ -230,7 +230,9 @@ impl MapperShares {
                         subscriber_id: mas.subscriber_id,
                         discovery_location_amount,
                         verification_mapping_amount,
-                        entity_key: mas.entity_key.unwrap_or("".to_string()),
+                        reward_override_entity_key: mas
+                            .reward_override_entity_key
+                            .unwrap_or("".to_string()),
                     })),
                 },
             )
@@ -832,7 +834,7 @@ mod test {
                 subscriber_id: n.encode_to_vec(),
                 discovery_reward_shares: 30,
                 verification_reward_shares: 30,
-                entity_key: None,
+                reward_override_entity_key: None,
             })
         }
 

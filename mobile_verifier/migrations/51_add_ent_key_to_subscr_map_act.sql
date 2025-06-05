@@ -1,1 +1,1 @@
-ALTER TABLE subscriber_mapping_activity ADD COLUMN entity_key text;
+ALTER TABLE subscriber_mapping_activity ADD COLUMN reward_override_entity_key text;

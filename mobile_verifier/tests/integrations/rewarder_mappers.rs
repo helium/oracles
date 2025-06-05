@@ -84,7 +84,7 @@ async fn seed_mapping_data(
             discovery_reward_shares: 30,
             verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
-            entity_key: None,
+            reward_override_entity_key: None,
         },
         SubscriberMappingActivity {
             received_timestamp: ts - ChronoDuration::hours(2),
@@ -92,7 +92,7 @@ async fn seed_mapping_data(
             discovery_reward_shares: 30,
             verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
-            entity_key: None,
+            reward_override_entity_key: None,
         },
         SubscriberMappingActivity {
             received_timestamp: ts - ChronoDuration::hours(1),
@@ -100,7 +100,7 @@ async fn seed_mapping_data(
             discovery_reward_shares: 30,
             verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
-            entity_key: None,
+            reward_override_entity_key: None,
         },
         SubscriberMappingActivity {
             received_timestamp: ts - ChronoDuration::hours(1),
@@ -108,7 +108,7 @@ async fn seed_mapping_data(
             discovery_reward_shares: 30,
             verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
-            entity_key: None,
+            reward_override_entity_key: None,
         },
     ];
 
