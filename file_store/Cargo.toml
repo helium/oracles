@@ -7,48 +7,48 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = {workspace = true}
-clap = {workspace = true}
-config = {workspace = true}
-serde =  {workspace = true}
-serde_json = {workspace = true}
-thiserror = {workspace = true}
+anyhow = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-tokio-stream = {workspace = true}
-triggered = {workspace = true}
-async-compression = {version = "0", features = ["tokio", "gzip"]}
-futures = {workspace = true}
-futures-util = {workspace = true}
-prost = {workspace = true}
+tokio-stream = { workspace = true }
+triggered = { workspace = true }
+async-compression = { version = "0", features = ["tokio", "gzip"] }
+futures = { workspace = true }
+futures-util = { workspace = true }
+prost = { workspace = true }
 bytes = "*"
 regex = "1"
-lazy_static = {workspace = true}
+lazy_static = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
-helium-proto = {workspace = true}
-helium-crypto = {workspace = true}
+helium-proto = { workspace = true }
+helium-crypto = { workspace = true }
 csv = "*"
-http = {workspace = true}
-aws-config = {workspace = true} 
-aws-sdk-s3 = {workspace = true}
-aws-types = {workspace = true, optional = true}
-strum = {version = "0", features = ["derive"]}
+http = { workspace = true }
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-types = { workspace = true, optional = true }
+strum = { version = "0", features = ["derive"] }
 strum_macros = "0"
-sha2 = {workspace = true}
-metrics = {workspace = true }
-blake3 = {workspace = true}
+sha2 = { workspace = true }
+metrics = { workspace = true }
+blake3 = { workspace = true }
 poc-metrics = { path = "../metrics" }
-rust_decimal = {workspace = true}
-rust_decimal_macros = {workspace = true}
-base64 = {workspace = true}
-beacon = {workspace = true}
-sqlx = {workspace = true, optional = true}
-async-trait = {workspace = true}
-derive_builder = {workspace = true}
-retainer = {workspace = true}
-uuid = {workspace = true}
-h3o = {workspace = true}
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+base64 = { workspace = true }
+beacon = { workspace = true }
+sqlx = { workspace = true, optional = true }
+async-trait = { workspace = true }
+derive_builder = { workspace = true }
+retainer = { workspace = true }
+uuid = { workspace = true }
+h3o = { workspace = true }
 task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
