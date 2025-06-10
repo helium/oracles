@@ -195,8 +195,7 @@ where
     if let Some(rek) = &activity.reward_override_entity_key {
         // use UTF8(key_serialization) as bytea
         if !verify_entity(entity_verifier, &rek.clone().into_bytes()).await? {
-            // TODO change to InvalidRewardOverrideEntityKey
-            return Ok(SubscriberReportVerificationStatus::InvalidSubscriberId);
+            return Ok(SubscriberReportVerificationStatus::InvalidRewardOverrideEntityKey);
         };
     }
     Ok(SubscriberReportVerificationStatus::Valid)
