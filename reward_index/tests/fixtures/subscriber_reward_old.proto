@@ -1,0 +1,23 @@
+syntax = "proto3";
+package subscriber_reward_old;
+
+message subscriber_reward {
+  /// id of the subscriber to which the reward will be credited
+  bytes subscriber_id = 1;
+  /// Amount in bones credited to the subscriber for location sharing
+  uint64 discovery_location_amount = 2;
+  /// Amount in bones credited to the subscriber for verification mapping
+  uint64 verification_mapping_amount = 3;
+}
+
+message mobile_reward_share {
+  /// Unix timestamp in seconds of the start of the reward period
+  uint64 start_period = 1;
+  /// Unix timestamp in seconds of the end of the reward period
+  uint64 end_period = 2;
+  /// Reward allocation for this share
+  oneof reward {
+    subscriber_reward subscriber_reward = 5;
+  }
+}
+

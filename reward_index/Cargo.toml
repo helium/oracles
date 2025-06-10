@@ -44,3 +44,10 @@ db-store = { path = "../db_store" }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
 task-manager = { path = "../task_manager" }
+
+[dev-dependencies]
+bytes = "1"
+
+
+[build-dependencies]
+prost-build = "0.12"

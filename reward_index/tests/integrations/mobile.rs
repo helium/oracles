@@ -171,6 +171,73 @@ async fn subscriber_reward_empty_reward_override(pool: PgPool) -> anyhow::Result
     Ok(())
 }
 
+// Or wrap it in a module for better organization
+mod test_proto {
+    include!(concat!(env!("OUT_DIR"), "/subscriber_reward_old.rs"));
+
+    use file_store::traits::FileSinkWriteExt;
+    use file_store::traits::MsgBytes;
+    use helium_proto::Message;
+
+    // impl_file_sink is required for pushing proto files to the localstack(aws)
+    // for testing purposes
+    macro_rules! impl_file_sink {
+        ($msg_type:ty, $file_prefix:expr, $metric_suffix:expr) => {
+            #[async_trait::async_trait]
+            impl FileSinkWriteExt for $msg_type {
+                const FILE_PREFIX: &'static str = $file_prefix;
+                const METRIC_SUFFIX: &'static str = $metric_suffix;
+            }
+
+            impl MsgBytes for $msg_type {
+                fn as_bytes(&self) -> bytes::Bytes {
+                    bytes::Bytes::from(self.encode_to_vec())
+                }
+            }
+        };
+    }
+
+    impl_file_sink!(
+        MobileRewardShare,
+        file_store::FileType::MobileRewardShare.to_str(),
+        "radio_reward_share"
+    );
+}
+
+#[sqlx::test]
+async fn subscriber_reward_regression_test(pool: PgPool) -> anyhow::Result<()> {
+    // Test old SubscriberReward without reward_override_entity_key field
+    use test_proto::MobileRewardShare;
+    use test_proto::SubscriberReward;
+
+    let rewards = bytes_mut_stream(vec![MobileRewardShare {
+        start_period: Utc::now().timestamp_millis() as u64,
+        end_period: Utc::now().timestamp_millis() as u64,
+        reward: Some(test_proto::mobile_reward_share::Reward::SubscriberReward(
+            SubscriberReward {
+                subscriber_id: vec![1],
+                discovery_location_amount: 3,
+                verification_mapping_amount: 4,
+            },
+        )),
+    }]);
+
+    let mut txn = pool.begin().await?;
+    let manifest_time = Utc::now();
+    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &manifest_time).await?;
+    txn.commit().await?;
+
+    let reward = common::get_reward(
+        &pool,
+        &bs58::encode(vec![1]).into_string(),
+        RewardType::MobileSubscriber,
+    )
+    .await?;
+    assert_eq!(reward.rewards, 7);
+
+    Ok(())
+}
+
 #[sqlx::test]
 async fn subscriber_reward_with_reward_override(pool: PgPool) -> anyhow::Result<()> {
     let reward_override_entity_key = "new_address".to_string();
