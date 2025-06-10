@@ -7,7 +7,7 @@ use futures_util::TryFutureExt;
 use retainer::Cache;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 use task_manager::ManagedTask;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{Permit, Receiver, Sender};
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: std::time::Duration =
@@ -265,18 +265,31 @@ where
                     tracing::info!(r#type = self.config.prefix, %process_name, "stopping FileInfoPoller");
                     break;
                 }
-                _ = cleanup_trigger.tick() => self.clean(&self.cache).await?,
+                _ = cleanup_trigger.tick() => {
+                    self.clean(&self.cache).await?;
+                }
                 result = futures::future::try_join(sender.reserve().map_err(Error::from), self.get_next_file()) => {
                     let (permit, file) = result?;
-                    let byte_stream = self.config.store.get_raw(file.clone()).await?;
-                    let data = self.config.parser.parse(byte_stream).await?;
-                    let file_info_stream = FileInfoStream::new(process_name.clone(), file.clone(), data);
-
-                    permit.send(file_info_stream);
-                    cache_file(&self.cache, &file).await;
+                    self.handle_next_file(permit, file).await?;
                 }
             }
         }
+        Ok(())
+    }
+
+    async fn handle_next_file(
+        &self,
+        permit: Permit<'_, FileInfoStream<Message>>,
+        file: FileInfo,
+    ) -> Result {
+        let byte_stream = self.config.store.get_raw(file.clone()).await?;
+        let data = self.config.parser.parse(byte_stream).await?;
+        let file_info_stream =
+            FileInfoStream::new(self.config.process_name.clone(), file.clone(), data);
+
+        permit.send(file_info_stream);
+        cache_file(&self.cache, &file).await;
+
         Ok(())
     }
 
