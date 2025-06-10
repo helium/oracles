@@ -8,6 +8,7 @@ use retainer::Cache;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Permit, Receiver, Sender};
+use tracing::{instrument, Instrument, Span};
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: std::time::Duration =
@@ -247,30 +248,29 @@ where
         }
     }
 
+    #[instrument(skip_all, fields(
+        r#type = self.config.prefix,
+        process_name = self.config.process_name
+    ))]
     async fn run(mut self, shutdown: triggered::Listener) -> Result {
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
-        let process_name = self.config.process_name.clone();
 
-        tracing::info!(
-            r#type = self.config.prefix,
-            %process_name,
-            "starting FileInfoPoller",
-        );
+        tracing::info!("starting FileInfoPoller");
 
         let sender = self.sender.clone();
         loop {
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
-                    tracing::info!(r#type = self.config.prefix, %process_name, "stopping FileInfoPoller");
+                    tracing::info!("stopping FileInfoPoller");
                     break;
                 }
                 _ = cleanup_trigger.tick() => {
-                    self.clean(&self.cache).await?;
+                    self.clean(&self.cache).instrument(Span::current()).await?;
                 }
                 result = futures::future::try_join(sender.reserve().map_err(Error::from), self.get_next_file()) => {
                     let (permit, file) = result?;
-                    self.handle_next_file(permit, file).await?;
+                    self.handle_next_file(permit, file).instrument(Span::current()).await?;
                 }
             }
         }
