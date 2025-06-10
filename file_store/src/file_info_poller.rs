@@ -1,4 +1,4 @@
-use crate::{file_store, traits::MsgDecode, Error, FileInfo, FileStore, Result};
+use crate::{file_store, Error, FileInfo, FileStore, Result};
 use aws_sdk_s3::types::ByteStream;
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
@@ -9,6 +9,8 @@ use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration}
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Permit, Receiver, Sender};
 use tracing::{instrument, Instrument, Span};
+
+pub use parse::{FileInfoPollerParser, MsgDecodeFileInfoPollerParser, ProstFileInfoPollerParser};
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: std::time::Duration =
@@ -35,11 +37,6 @@ pub trait FileInfoPollerState: Send + Sync + 'static {
         file_type: &str,
         offset: DateTime<Utc>,
     ) -> Result<u64>;
-}
-
-#[async_trait::async_trait]
-pub trait FileInfoPollerParser<T>: Send + Sync + 'static {
-    async fn parse(&self, stream: ByteStream) -> Result<Vec<T>>;
 }
 
 #[async_trait::async_trait]
@@ -283,7 +280,12 @@ where
         file: FileInfo,
     ) -> Result {
         let byte_stream = self.config.store.get_raw(file.clone()).await?;
-        let data = self.config.parser.parse(byte_stream).await?;
+
+        let data = file_store::stream_source(byte_stream)
+            .filter_map(|item| async { self.config.parser.handle_item(item).ok() })
+            .collect()
+            .await;
+
         let file_info_stream =
             FileInfoStream::new(self.config.process_name.clone(), file.clone(), data);
 
@@ -344,76 +346,6 @@ where
     }
 }
 
-pub struct MsgDecodeFileInfoPollerParser;
-
-#[async_trait::async_trait]
-impl<T> FileInfoPollerParser<T> for MsgDecodeFileInfoPollerParser
-where
-    T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
-{
-    async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
-        Ok(file_store::stream_source(byte_stream)
-            .filter_map(|msg| async {
-                msg.map_err(|err| {
-                    tracing::error!(
-                        "Error streaming entry in file of type {}: {err:?}",
-                        std::any::type_name::<T>()
-                    );
-                    err
-                })
-                .ok()
-            })
-            .filter_map(|msg| async {
-                <T as MsgDecode>::decode(msg)
-                    .map_err(|err| {
-                        tracing::error!(
-                            "Error in decoding message of type {}: {err:?}",
-                            std::any::type_name::<T>()
-                        );
-                        err
-                    })
-                    .ok()
-            })
-            .collect()
-            .await)
-    }
-}
-
-pub struct ProstFileInfoPollerParser;
-
-#[async_trait::async_trait]
-impl<T> FileInfoPollerParser<T> for ProstFileInfoPollerParser
-where
-    T: helium_proto::Message + Default,
-{
-    async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
-        Ok(file_store::stream_source(byte_stream)
-            .filter_map(|msg| async {
-                msg.map_err(|err| {
-                    tracing::error!(
-                        "Error streaming entry in file of type {}: {err:?}",
-                        std::any::type_name::<T>()
-                    );
-                    err
-                })
-                .ok()
-            })
-            .filter_map(|msg| async {
-                <T as helium_proto::Message>::decode(msg)
-                    .map_err(|err| {
-                        tracing::error!(
-                            "Error in decoding message of type {}: {err:?}",
-                            std::any::type_name::<T>()
-                        );
-                        err
-                    })
-                    .ok()
-            })
-            .collect()
-            .await)
-    }
-}
-
 fn create_cache() -> MemoryFileCache {
     Arc::new(Cache::new())
 }
@@ -437,6 +369,109 @@ impl FileInfoPollerStore for FileStore {
         K: Into<String> + Send + Sync,
     {
         self.get_raw(key).await
+    }
+}
+
+pub mod parse {
+    use crate::{traits::MsgDecode, Error, Result};
+
+    /// A trait for parsing and handling items from a file info poller stream.
+    ///
+    /// This trait defines the interface for decoding items from a byte stream
+    /// and logginga potential errors that may occur during streaming or
+    /// decoding. Implementors of this trait are expected to provide a decoding
+    /// strategy for items of type `T`.
+    ///
+    /// # Example:
+    /// ```text
+    /// struct Bs58Parser;
+    ///
+    /// impl FileInfoPollerParser<String> for Bs58Parser {
+    ///    fn decode_item(&self, item: bytes::BytesMut) -> Result<String> {
+    ///        bs58::decode(item).into_string().map_err(Error::from)
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// # Stateful Example:
+    /// ```text
+    /// struct Bs58MetricsParser {
+    ///     streaming_err: metrics::Counter,
+    ///     decoding_err: metrics::Counter,
+    /// }
+    ///
+    /// impl Bs58MetricsParser {
+    ///     fn new() -> Self {
+    ///         Self {
+    ///             streaming_err: metrics::counter!("streaming", "status" => "err"),
+    ///             decoding_err: metrics::counter!("decoding", "status" => "err"),
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl FileInfoPollerParser<String> for Bs58MetricsParser {
+    ///     fn decode_item(&self, item: bytes::BytesMut) -> Result<String> {
+    ///         bs58::decode(item).into_string().map_err(Error::from)
+    ///     }
+    ///     fn streaming_err(&self, err: &Error) {
+    ///         self.streaming_err.increment(1);
+    ///     }
+    ///     fn decoding_err(&self, _err: &Error) {
+    ///         self.decoding_err.increment(1);
+    ///     }
+    /// }
+    /// ```
+    pub trait FileInfoPollerParser<T>: Sized + Send + Sync + 'static {
+        fn decode_item(&self, item: bytes::BytesMut) -> Result<T>;
+
+        fn handle_item(&self, res: Result<bytes::BytesMut>) -> Result<T> {
+            // Unwrap to prevent from double logging streaming error
+            let bytes = res.inspect_err(|err| self.streaming_err(err))?;
+            self.decode_item(bytes)
+                .inspect_err(|err| self.decoding_err(err))
+        }
+
+        fn streaming_err(&self, err: &Error) {
+            tracing::error!(
+                ?err,
+                file_type = std::any::type_name::<T>(),
+                "streaming entry",
+            );
+        }
+
+        fn decoding_err(&self, err: &Error) {
+            tracing::error!(
+                ?err,
+                file_type = std::any::type_name::<T>(),
+                "decoding message",
+            );
+        }
+    }
+
+    /// A parser for decoding file info items from a byte stream into a Rust
+    /// struct using the [`MsgDecode`] trait.
+    pub struct MsgDecodeFileInfoPollerParser;
+
+    impl<T> FileInfoPollerParser<T> for MsgDecodeFileInfoPollerParser
+    where
+        T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
+    {
+        fn decode_item(&self, item: bytes::BytesMut) -> std::result::Result<T, Error> {
+            T::decode(item)
+        }
+    }
+
+    /// A parser for decoding file info items from a byte stream into a proto
+    /// Message using the [`helium_proto::Message`] trait.
+    pub struct ProstFileInfoPollerParser;
+
+    impl<T> FileInfoPollerParser<T> for ProstFileInfoPollerParser
+    where
+        T: helium_proto::Message + Default,
+    {
+        fn decode_item(&self, item: bytes::BytesMut) -> Result<T> {
+            T::decode(item).map_err(Error::from)
+        }
     }
 }
 
@@ -558,10 +593,9 @@ pub mod sqlx_postgres {
         struct TestParser;
         struct TestStore(Vec<FileInfo>);
 
-        #[async_trait::async_trait]
         impl FileInfoPollerParser<String> for TestParser {
-            async fn parse(&self, _byte_stream: ByteStream) -> Result<Vec<String>> {
-                Ok(vec![])
+            fn decode_item(&self, _item: bytes::BytesMut) -> Result<String> {
+                unimplemented!("nothing to decode in these tests");
             }
         }
 
