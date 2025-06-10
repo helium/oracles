@@ -189,9 +189,16 @@ where
     if !verify_known_carrier_key(authorization_verifier, &activity.carrier_pub_key).await? {
         return Ok(SubscriberReportVerificationStatus::InvalidCarrierKey);
     };
-    if !verify_subscriber_id(entity_verifier, &activity.subscriber_id).await? {
+    if !verify_entity(&entity_verifier, &activity.subscriber_id).await? {
         return Ok(SubscriberReportVerificationStatus::InvalidSubscriberId);
     };
+    if let Some(rek) = &activity.reward_override_entity_key {
+        // use UTF8(key_serialization) as bytea
+        if !verify_entity(entity_verifier, &rek.clone().into_bytes()).await? {
+            // TODO change to InvalidRewardOverrideEntityKey
+            return Ok(SubscriberReportVerificationStatus::InvalidSubscriberId);
+        };
+    }
     Ok(SubscriberReportVerificationStatus::Valid)
 }
 
@@ -209,16 +216,16 @@ where
         .map_err(anyhow::Error::from)
 }
 
-async fn verify_subscriber_id<EV>(
+async fn verify_entity<EV>(
     entity_verifier: impl AsRef<EV>,
-    subscriber_id: &[u8],
+    entity_id: &[u8],
 ) -> anyhow::Result<bool>
 where
     EV: EntityVerifier,
 {
     entity_verifier
         .as_ref()
-        .verify_rewardable_entity(subscriber_id)
+        .verify_rewardable_entity(entity_id)
         .await
         .map_err(anyhow::Error::from)
 }
