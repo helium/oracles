@@ -232,7 +232,7 @@ impl MapperShares {
                         verification_mapping_amount,
                         reward_override_entity_key: mas
                             .reward_override_entity_key
-                            .unwrap_or("".to_string()),
+                            .unwrap_or_default(),
                     })),
                 },
             )

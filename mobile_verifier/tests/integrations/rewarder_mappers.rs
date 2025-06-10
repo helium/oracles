@@ -96,16 +96,6 @@ async fn reward_mapper_check_entity_key_db(pool: PgPool) {
         sub_3.reward_override_entity_key,
         Some("entity key".to_string())
     );
-
-    let sub_map = rewardable_mapping_activity.as_keyed_map();
-    let sub_1 = sub_map.get(SUBSCRIBER_1).expect("sub 1");
-    let sub_3 = sub_map.get(SUBSCRIBER_3).expect("sub 3");
-
-    assert!(sub_1.reward_override_entity_key.is_none());
-    assert_eq!(
-        sub_3.reward_override_entity_key,
-        Some("entity key".to_string())
-    );
 }
 
 async fn seed_mapping_data(
