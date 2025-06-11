@@ -68,7 +68,7 @@ helium-crypto = { version = "0.9.2", features = ["multisig", "sqlx-postgres"] }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
-helium-proto = { git = "https://github.com/helium/proto", branch = "add-entity-key-to-mapping-act-req", features = [
+helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
   "services",
 ] }
 beacon = { git = "https://github.com/helium/proto", branch = "master" }
@@ -132,5 +132,5 @@ anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madnin
 # helium-proto = { path = "../proto" }
 # beacon = { path = "../proto/beacon" }
 
-[patch.'https://github.com/helium/proto']
-helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "add-entity-key-to-mapping-act-req" }
+# [patch.'https://github.com/helium/proto']
+# helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "bbalser/deprecate-radio-reward-v1" }
