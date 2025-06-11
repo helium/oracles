@@ -120,7 +120,7 @@ jobs:
             - 5432:5432
       localstack:
         image: localstack/localstack:latest
-        environment:
+        env:
           SERVICES: s3
           EAGER_SERVICE_LOADING: 1
         ports:
