@@ -219,6 +219,7 @@ jobs:
             --rm \
             --network=host \
             -e DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres" \
+            -e AWSLOCAL_ENDPOINT="http://localhost:4566" \
             -v $PWD:/app \
             -w /app \
             ghcr.io/${{ github.repository }}/$TARGET:$IMAGE_TAG \

@@ -64,7 +64,6 @@ solana = { path = "../solana" }
 task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
-proptest = "1.5.0"
 aws-local = { path = "../aws_local" }
+proptest = "1.5.0"
 tempfile = "3"
-

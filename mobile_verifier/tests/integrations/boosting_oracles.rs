@@ -117,7 +117,8 @@ pub async fn create_data_set_downloader(
 ) -> (DataSetDownloaderDaemon, PathBuf, String) {
     let bucket_name = gen_bucket_name();
 
-    let awsl = AwsLocal::new(AWSLOCAL_DEFAULT_ENDPOINT, &bucket_name).await;
+    let endpoint = aws_local_default_endpoint();
+    let awsl = AwsLocal::new(endpoint.as_str(), &bucket_name).await;
 
     for file_path in file_paths {
         awsl.put_file_to_aws(&file_path).await.unwrap();
@@ -209,7 +210,8 @@ async fn test_dataset_downloader(pool: PgPool) {
     assert!(hex_assignment_file_exist(&pool, "landtype.1722895200000.gz").await);
     assert!(hex_assignment_file_exist(&pool, "service_provider_override.1739404800000.gz").await);
 
-    let awsl = AwsLocal::new(AWSLOCAL_DEFAULT_ENDPOINT, &bucket_name).await;
+    let endpoint = aws_local_default_endpoint();
+    let awsl = AwsLocal::new(endpoint.as_str(), &bucket_name).await;
     awsl.put_file_to_aws(
         &PathBuf::from_str("./tests/integrations/fixtures/footfall.1732895200000.gz").unwrap(),
     )

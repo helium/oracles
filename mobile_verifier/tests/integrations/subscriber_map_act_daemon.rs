@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use aws_local::{gen_bucket_name, AwsLocal, AWSLOCAL_DEFAULT_ENDPOINT};
+use aws_local::{gen_bucket_name, AwsLocal};
 use chrono::DateTime;
 use file_store::{
     file_info_poller::LookbackBehavior,
@@ -63,7 +63,8 @@ pub async fn put_subscriber_reports_to_aws(
 #[sqlx::test]
 async fn test_process_map_act_ingest_report_file(pool: PgPool) {
     let bucket_name = gen_bucket_name();
-    let awsl = AwsLocal::new(AWSLOCAL_DEFAULT_ENDPOINT, &bucket_name).await;
+    let endpoint = aws_local_default_endpoint();
+    let awsl = AwsLocal::new(endpoint.as_str(), &bucket_name).await;
 
     let (stream_receiver, stream_server) = file_source::Continuous::prost_source()
         .state(pool.clone())
