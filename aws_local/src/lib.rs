@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 use tonic::transport::Uri;
 use uuid::Uuid;
 
-pub const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://localhost:4566";
+pub const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://localstack:4566";
 
 pub fn gen_bucket_name() -> String {
     format!("mvr-{}-{}", Uuid::new_v4(), Utc::now().timestamp_millis())
