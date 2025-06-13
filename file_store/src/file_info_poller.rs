@@ -378,7 +378,7 @@ pub mod parse {
     /// A trait for parsing and handling items from a file info poller stream.
     ///
     /// This trait defines the interface for decoding items from a byte stream
-    /// and logginga potential errors that may occur during streaming or
+    /// and logging potential errors that may occur during streaming or
     /// decoding. Implementors of this trait are expected to provide a decoding
     /// strategy for items of type `T`.
     ///
