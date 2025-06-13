@@ -2,9 +2,8 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::{
-    file_info_poller::{
-        FileInfoPollerConfigBuilder, FileInfoStream, LookbackBehavior, ProstFileInfoPollerParser,
-    },
+    file_info_poller::{FileInfoPollerConfigBuilder, FileInfoStream, LookbackBehavior},
+    file_parsers::ProstParser,
     file_sink::FileSinkClient,
     file_upload::FileUpload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
@@ -158,7 +157,7 @@ where
             .await?;
 
         let (receiver, ingest_server) = FileInfoPollerConfigBuilder::default()
-            .parser(ProstFileInfoPollerParser)
+            .parser(ProstParser)
             .state(pool.clone())
             .store(file_store)
             .lookback(LookbackBehavior::StartAfter(settings.start_after))

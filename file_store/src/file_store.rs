@@ -1,13 +1,14 @@
 use crate::{
     error::DecodeError,
+    file_parsers::FileInfoParser,
     settings::{self, Settings},
     BytesMutStream, Error, FileInfo, FileInfoStream, Result,
 };
 use aws_config::{meta::region::RegionProviderChain, retry::RetryConfig, timeout::TimeoutConfig};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
-use futures::FutureExt;
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{FutureExt, Stream};
 use http::Uri;
 use std::path::Path;
 use std::str::FromStr;
@@ -21,6 +22,11 @@ pub struct FileStore {
 pub struct FileData {
     pub info: FileInfo,
     pub stream: BytesMutStream,
+}
+
+pub struct ParsingFileStore<Msg> {
+    file_store: FileStore,
+    parser: Box<dyn FileInfoParser<Msg>>,
 }
 
 impl FileStore {
@@ -90,6 +96,13 @@ impl FileStore {
 
         let client = Client::new(&config);
         Ok(Self { client, bucket })
+    }
+
+    pub fn with_parser<T>(self, parser: impl FileInfoParser<T>) -> ParsingFileStore<T> {
+        ParsingFileStore {
+            file_store: self,
+            parser: parser.boxed(),
+        }
     }
 
     pub async fn list_all<A, B>(
@@ -248,6 +261,33 @@ impl FileStore {
         get_byte_stream(self.client.clone(), self.bucket.clone(), file_info)
             .await
             .map(stream_source)
+    }
+}
+
+impl<T: 'static> ParsingFileStore<T> {
+    pub fn source(&self, infos: FileInfoStream) -> impl Stream<Item = T> + '_ {
+        self.file_store
+            .source(infos)
+            .filter_map(|x| async { self.parser.handle_item(x).ok() })
+    }
+
+    pub fn source_unordered(
+        &self,
+        workers: usize,
+        infos: FileInfoStream,
+    ) -> impl Stream<Item = T> + '_ {
+        self.file_store
+            .source_unordered(workers, infos)
+            .filter_map(|x| async { self.parser.handle_item(x).ok() })
+    }
+
+    pub async fn stream_file(&self, file_info: FileInfo) -> Result<impl Stream<Item = T> + '_> {
+        let stream = self
+            .file_store
+            .stream_file(file_info)
+            .await?
+            .filter_map(|x| async { self.parser.handle_item(x).ok() });
+        Ok(stream)
     }
 }
 

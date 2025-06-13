@@ -1,7 +1,6 @@
 use crate::{
-    file_info_poller::{
-        FileInfoPollerConfigBuilder, MsgDecodeFileInfoPollerParser, ProstFileInfoPollerParser,
-    },
+    file_info_poller::FileInfoPollerConfigBuilder,
+    file_parsers::{MsgDecodeParser, ProstParser},
     file_sink, BytesMutStream, Error, FileStore,
 };
 use async_compression::tokio::bufread::GzipDecoder;
@@ -18,30 +17,29 @@ use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
 pub struct Continuous<Store, Parser>(PhantomData<(Store, Parser)>);
 
-impl Continuous<FileStore, MsgDecodeFileInfoPollerParser> {
+impl Continuous<FileStore, MsgDecodeParser> {
     pub fn msg_source<Msg, State>(
-    ) -> FileInfoPollerConfigBuilder<Msg, State, FileStore, MsgDecodeFileInfoPollerParser>
+    ) -> FileInfoPollerConfigBuilder<Msg, State, FileStore, MsgDecodeParser>
     where
         Msg: Clone,
     {
-        FileInfoPollerConfigBuilder::<Msg, State, FileStore, MsgDecodeFileInfoPollerParser>::default()
-            .parser(MsgDecodeFileInfoPollerParser)
+        FileInfoPollerConfigBuilder::<Msg, State, FileStore, MsgDecodeParser>::default()
+            .parser(MsgDecodeParser)
     }
 }
 
-impl Continuous<FileStore, ProstFileInfoPollerParser> {
+impl Continuous<FileStore, ProstParser> {
     pub fn prost_source<Msg, State>(
-    ) -> FileInfoPollerConfigBuilder<Msg, State, FileStore, ProstFileInfoPollerParser>
+    ) -> FileInfoPollerConfigBuilder<Msg, State, FileStore, ProstParser>
     where
         Msg: Clone,
     {
-        FileInfoPollerConfigBuilder::<Msg, State, FileStore, ProstFileInfoPollerParser>::default()
-            .parser(ProstFileInfoPollerParser)
+        FileInfoPollerConfigBuilder::<Msg, State, FileStore, ProstParser>::default()
+            .parser(ProstParser)
     }
 }
 
-pub fn continuous_source<T, S>(
-) -> FileInfoPollerConfigBuilder<T, S, FileStore, MsgDecodeFileInfoPollerParser>
+pub fn continuous_source<T, S>() -> FileInfoPollerConfigBuilder<T, S, FileStore, MsgDecodeParser>
 where
     T: Clone,
 {
