@@ -4,6 +4,7 @@ pub mod entropy_report;
 mod error;
 pub mod file_info;
 pub mod file_info_poller;
+pub mod file_parsers;
 pub mod file_sink;
 pub mod file_source;
 pub mod file_store;
