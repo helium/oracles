@@ -14,6 +14,3 @@ INSERT INTO "key_to_assets" ("address", "dao", "asset", "entity_key", "bump_seed
 
 INSERT INTO "key_to_assets" ("address", "dao", "asset", "entity_key", "bump_seed", "refreshed_at", "created_at", "key_serialization") VALUES
 ('4RsbdRtGNiMEUPPJrmkVpSUswYXLKtZLUKaiyaGFxyd5',	'BQ3MCuTT5zVBhNfQ4SjMh3NPVhFy73MPV8rjfq5d1zie',	'4xpWF7KjbcShMt3LnEJmPkbDVyEZ19zrwtJwS1e1e827',	decode('0000d5a568ab7b418ba68eabe61b5b042f84afcfa86f1cdfcdba644401b6bcb65c84af622936', 'hex'),	253,	'2025-04-30 16:49:26.499+00',	'2023-05-04 14:36:16.429+00',	'"b58"');
--- 2025-06-13 09:18:08 UTC
-
-
