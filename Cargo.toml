@@ -26,8 +26,9 @@ members = [
   "solana",
   "task_manager",
   "hex_assignments",
-  "aws_local"
-, "dataset_downloader"]
+  "aws_local",
+  "dataset_downloader"]
+
 resolver = "2"
 
 [workspace.package]
@@ -64,7 +65,7 @@ sqlx = { version = "0.8", default-features = false, features = [
   "macros",
   "runtime-tokio-rustls",
 ] }
-helium-crypto = { version = "0.9.2", features = ["multisig", "sqlx-postgres"] }
+helium-crypto = { version = "0.9.2", default-features = false }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }

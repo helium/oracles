@@ -189,9 +189,15 @@ where
     if !verify_known_carrier_key(authorization_verifier, &activity.carrier_pub_key).await? {
         return Ok(SubscriberReportVerificationStatus::InvalidCarrierKey);
     };
-    if !verify_subscriber_id(entity_verifier, &activity.subscriber_id).await? {
+    if !verify_entity(&entity_verifier, &activity.subscriber_id).await? {
         return Ok(SubscriberReportVerificationStatus::InvalidSubscriberId);
     };
+    if let Some(rek) = &activity.reward_override_entity_key {
+        // use UTF8(key_serialization) as bytea
+        if !verify_entity(entity_verifier, &rek.clone().into_bytes()).await? {
+            return Ok(SubscriberReportVerificationStatus::InvalidRewardOverrideEntityKey);
+        };
+    }
     Ok(SubscriberReportVerificationStatus::Valid)
 }
 
@@ -209,16 +215,16 @@ where
         .map_err(anyhow::Error::from)
 }
 
-async fn verify_subscriber_id<EV>(
+async fn verify_entity<EV>(
     entity_verifier: impl AsRef<EV>,
-    subscriber_id: &[u8],
+    entity_id: &[u8],
 ) -> anyhow::Result<bool>
 where
     EV: EntityVerifier,
 {
     entity_verifier
         .as_ref()
-        .verify_rewardable_entity(subscriber_id)
+        .verify_rewardable_entity(entity_id)
         .await
         .map_err(anyhow::Error::from)
 }
@@ -247,6 +253,7 @@ pub struct SubscriberMappingActivity {
     pub verification_reward_shares: u64,
     pub received_timestamp: DateTime<Utc>,
     pub carrier_pub_key: PublicKeyBinary,
+    pub reward_override_entity_key: Option<String>,
 }
 
 impl TryFrom<SubscriberMappingActivityIngestReportV1> for SubscriberMappingActivity {
@@ -257,12 +264,19 @@ impl TryFrom<SubscriberMappingActivityIngestReportV1> for SubscriberMappingActiv
             .report
             .ok_or_else(|| anyhow::anyhow!("SubscriberMappingActivityReqV1 not found"))?;
 
+        let reward_override_entity_key = if report.reward_override_entity_key.is_empty() {
+            None
+        } else {
+            Some(report.reward_override_entity_key)
+        };
+
         Ok(Self {
             subscriber_id: report.subscriber_id,
             discovery_reward_shares: report.discovery_reward_shares,
             verification_reward_shares: report.verification_reward_shares,
             received_timestamp: value.received_timestamp.to_timestamp_millis()?,
             carrier_pub_key: PublicKeyBinary::from(report.carrier_pub_key),
+            reward_override_entity_key,
         })
     }
 }
@@ -274,4 +288,39 @@ pub struct SubscriberMappingShares {
     pub discovery_reward_shares: u64,
     #[sqlx(try_from = "i64")]
     pub verification_reward_shares: u64,
+
+    pub reward_override_entity_key: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SubscriberMappingActivity;
+    use helium_proto::services::poc_mobile::SubscriberMappingActivityIngestReportV1;
+
+    #[test]
+    fn try_from_subscriber_mapping_activity_check_entity_key() {
+        // Make sure reward_override_entity_key empty string transforms to None
+        let smair = SubscriberMappingActivityIngestReportV1 {
+            received_timestamp: 1,
+            report: Some({
+                helium_proto::services::poc_mobile::SubscriberMappingActivityReqV1 {
+                    subscriber_id: vec![10],
+                    discovery_reward_shares: 2,
+                    verification_reward_shares: 3,
+                    timestamp: 4,
+                    carrier_pub_key: vec![11],
+                    signature: vec![12],
+                    reward_override_entity_key: "".to_string(),
+                }
+            }),
+        };
+        let mut smair2 = smair.clone();
+        smair2.report.as_mut().unwrap().reward_override_entity_key = "key".to_string();
+
+        let res = SubscriberMappingActivity::try_from(smair).unwrap();
+        assert!(res.reward_override_entity_key.is_none());
+
+        let res = SubscriberMappingActivity::try_from(smair2).unwrap();
+        assert_eq!(res.reward_override_entity_key, Some("key".to_string()));
+    }
 }

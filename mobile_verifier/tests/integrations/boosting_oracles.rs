@@ -233,7 +233,8 @@ async fn test_dataset_downloader_daemon(pool: PgPool) {
                     .await
             );
 
-            let awsl = AwsLocal::new(AWSLOCAL_DEFAULT_ENDPOINT, &bucket_name).await;
+            let endpoint = aws_local_default_endpoint();
+            let awsl = AwsLocal::new(endpoint.as_str(), &bucket_name).await;
             awsl.put_file_to_aws(
                 &PathBuf::from_str("./tests/integrations/fixtures/footfall.1732895200000.gz")
                     .unwrap(),

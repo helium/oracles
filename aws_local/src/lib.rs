@@ -4,6 +4,7 @@ use aws_sdk_s3::{Client, Endpoint, Region};
 use chrono::Utc;
 use file_store::traits::MsgBytes;
 use file_store::{file_sink, file_upload, FileStore, FileType, Settings};
+use std::env;
 use std::path::Path;
 use std::{str::FromStr, sync::Arc};
 use tempfile::TempDir;
@@ -11,7 +12,12 @@ use tokio::sync::Mutex;
 use tonic::transport::Uri;
 use uuid::Uuid;
 
-pub const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://127.0.0.1:4566";
+pub const AWSLOCAL_ENDPOINT_ENV: &str = "AWSLOCAL_ENDPOINT";
+pub const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://localhost:4566";
+
+pub fn aws_local_default_endpoint() -> String {
+    env::var(AWSLOCAL_ENDPOINT_ENV).unwrap_or_else(|_| AWSLOCAL_DEFAULT_ENDPOINT.to_string())
+}
 
 pub fn gen_bucket_name() -> String {
     format!("mvr-{}-{}", Uuid::new_v4(), Utc::now().timestamp_millis())

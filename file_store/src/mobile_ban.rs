@@ -2,11 +2,12 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
-use sqlx::PgPool;
 
 use crate::{
     error::DecodeError,
-    file_info_poller::{FileInfoPollerServer, FileInfoStream, LookbackBehavior},
+    file_info_poller::{
+        FileInfoPollerServer, FileInfoPollerState, FileInfoStream, LookbackBehavior,
+    },
     file_sink::FileSinkClient,
     traits::{FileSinkWriteExt, MsgDecode, TimestampDecode, TimestampEncode},
     Error, FileSink, FileStore,
@@ -298,11 +299,11 @@ pub async fn verified_report_sink(
     .await
 }
 
-pub async fn report_source(
-    pool: PgPool,
+pub async fn report_source<State: FileInfoPollerState>(
+    pool: State,
     file_store: FileStore,
     start_after: DateTime<Utc>,
-) -> crate::Result<(BanReportSource, FileInfoPollerServer<BanReport>)> {
+) -> crate::Result<(BanReportSource, FileInfoPollerServer<BanReport, State>)> {
     crate::file_source::continuous_source()
         .state(pool)
         .store(file_store)
@@ -312,13 +313,13 @@ pub async fn report_source(
         .await
 }
 
-pub async fn verified_report_source(
-    pool: PgPool,
+pub async fn verified_report_source<State: FileInfoPollerState>(
+    pool: State,
     file_store: FileStore,
     start_after: DateTime<Utc>,
 ) -> crate::Result<(
     VerifiedBanReportSource,
-    FileInfoPollerServer<VerifiedBanReport>,
+    FileInfoPollerServer<VerifiedBanReport, State>,
 )> {
     crate::file_source::continuous_source()
         .state(pool)

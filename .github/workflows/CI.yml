@@ -120,7 +120,7 @@ jobs:
             - 5432:5432
       localstack:
         image: localstack/localstack:latest
-        environment:
+        env:
           SERVICES: s3
           EAGER_SERVICE_LOADING: 1
         ports:
@@ -153,6 +153,7 @@ jobs:
       - name: Run unit and integration tests
         env:
           DATABASE_URL: "postgres://postgres:postgres@postgres:5432/postgres"
+          AWSLOCAL_ENDPOINT: "http://localstack:4566"
         run: cargo test -p ${{ matrix.package }}  -- --include-ignored
 
   build-release:

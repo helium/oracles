@@ -70,6 +70,34 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[sqlx::test]
+async fn reward_mapper_check_entity_key_db(pool: PgPool) {
+    let reward_info = reward_info_24_hours();
+    // seed db
+    let mut txn = pool.clone().begin().await.unwrap();
+    seed_mapping_data(reward_info.epoch_period.end, &mut txn)
+        .await
+        .unwrap();
+    txn.commit().await.expect("db txn failed");
+
+    let rewardable_mapping_activity = subscriber_mapping_activity::db::rewardable_mapping_activity(
+        &pool,
+        &reward_info.epoch_period,
+    )
+    .await
+    .unwrap();
+
+    let sub_map = rewardable_mapping_activity.as_keyed_map();
+    let sub_1 = sub_map.get(SUBSCRIBER_1).expect("sub 1");
+    let sub_3 = sub_map.get(SUBSCRIBER_3).expect("sub 3");
+
+    assert!(sub_1.reward_override_entity_key.is_none());
+    assert_eq!(
+        sub_3.reward_override_entity_key,
+        Some("entity key".to_string())
+    );
+}
+
 async fn seed_mapping_data(
     ts: DateTime<Utc>,
     txn: &mut Transaction<'_, Postgres>,
@@ -84,6 +112,7 @@ async fn seed_mapping_data(
             discovery_reward_shares: 30,
             verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
+            reward_override_entity_key: None,
         },
         SubscriberMappingActivity {
             received_timestamp: ts - ChronoDuration::hours(2),
@@ -91,6 +120,7 @@ async fn seed_mapping_data(
             discovery_reward_shares: 30,
             verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
+            reward_override_entity_key: None,
         },
         SubscriberMappingActivity {
             received_timestamp: ts - ChronoDuration::hours(1),
@@ -98,6 +128,7 @@ async fn seed_mapping_data(
             discovery_reward_shares: 30,
             verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
+            reward_override_entity_key: None,
         },
         SubscriberMappingActivity {
             received_timestamp: ts - ChronoDuration::hours(1),
@@ -105,6 +136,7 @@ async fn seed_mapping_data(
             discovery_reward_shares: 30,
             verification_reward_shares: 0,
             carrier_pub_key: PublicKeyBinary::from_str(HOTSPOT_1).unwrap(),
+            reward_override_entity_key: Some("entity key".to_string()),
         },
     ];
 
