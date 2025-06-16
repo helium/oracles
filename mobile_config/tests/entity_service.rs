@@ -26,7 +26,7 @@ async fn spawn_entity_service(
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
-    // Start the gateway server
+    // Start the entity server
     let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
     let gws = EntityService::new(key_cache, pool.clone(), server_key);
