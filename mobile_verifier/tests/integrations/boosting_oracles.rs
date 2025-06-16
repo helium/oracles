@@ -118,7 +118,7 @@ pub async fn create_data_set_downloader(
     tmp_dir: &TempDir,
     bucket_name: String,
 ) -> impl ManagedTask {
-    let awsl = AwsLocal::new(AWSLOCAL_DEFAULT_ENDPOINT, &bucket_name).await;
+    let awsl = AwsLocal::new(&aws_local_default_endpoint(), &bucket_name).await;
 
     for file_path in file_paths {
         awsl.put_file_to_aws(&file_path).await.unwrap();
