@@ -224,27 +224,6 @@ impl DataSetProcessor<'_> for FileSinkClient<proto::OracleBoostingReportV1> {
     }
 }
 
-// pub struct NopDataSetProcessor;
-//
-// #[async_trait::async_trait]
-// impl DataSetProcessor for NopDataSetProcessor {
-//     async fn set_all_oracle_boosting_assignments(
-//         &self,
-//         _pool: &PgPool,
-//         _data_sets: &impl HexBoostDataAssignmentsExt,
-//     ) -> anyhow::Result<()> {
-//         Ok(())
-//     }
-//
-//     async fn set_unassigned_oracle_boosting_assignments(
-//         &self,
-//         _pool: &PgPool,
-//         _data_sets: &impl HexBoostDataAssignmentsExt,
-//     ) -> anyhow::Result<()> {
-//         Ok(())
-//     }
-// }
-
 pub struct AssignedCoverageObjects {
     pub coverage_objs: HashMap<uuid::Uuid, Vec<AssignedHex>>,
 }
