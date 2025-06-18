@@ -54,6 +54,7 @@ task-manager = { path = "../task_manager" }
 [dev-dependencies]
 hex-literal = "0"
 tempfile = { workspace = true }
+aws-local = { path = "../aws_local" }
 
 [features]
 default = ["sqlx-postgres"]

@@ -2844,6 +2844,7 @@ dependencies = [
  "async-compression",
  "async-trait",
  "aws-config",
+ "aws-local",
  "aws-sdk-s3",
  "aws-types 0.51.0",
  "base64 0.22.1",

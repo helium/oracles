@@ -11,7 +11,7 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
 pub struct CellSpeedtest {
     pub pubkey: PublicKeyBinary,
     pub serial: String,
@@ -21,7 +21,7 @@ pub struct CellSpeedtest {
     pub latency: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CellSpeedtestIngestReport {
     pub received_timestamp: DateTime<Utc>,
     pub report: CellSpeedtest,
