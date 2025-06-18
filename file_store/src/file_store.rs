@@ -281,13 +281,16 @@ impl<T: 'static> ParsingFileStore<T> {
             .filter_map(|x| async { self.parser.handle_item(x).ok() })
     }
 
-    pub async fn stream_file(&self, file_info: FileInfo) -> Result<impl Stream<Item = T> + '_> {
+    pub async fn stream_file(
+        &self,
+        file_info: FileInfo,
+    ) -> Result<futures::stream::BoxStream<'_, T>> {
         let stream = self
             .file_store
             .stream_file(file_info)
             .await?
             .filter_map(|x| async { self.parser.handle_item(x).ok() });
-        Ok(stream)
+        Ok(stream.boxed())
     }
 }
 
