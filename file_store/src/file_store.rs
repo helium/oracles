@@ -98,9 +98,9 @@ impl FileStore {
         Ok(Self { client, bucket })
     }
 
-    pub fn with_parser<T>(self, parser: impl FileInfoParser<T>) -> ParsingFileStore<T> {
+    pub fn with_parser<T>(&self, parser: impl FileInfoParser<T>) -> ParsingFileStore<T> {
         ParsingFileStore {
-            file_store: self,
+            file_store: self.clone(),
             parser: parser.boxed(),
         }
     }
