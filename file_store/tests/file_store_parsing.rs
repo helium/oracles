@@ -34,7 +34,7 @@ async fn single_message_decode() -> anyhow::Result<()> {
     };
 
     // Upload a simple file
-    let proto = SpeedtestIngestReportV1::try_from(speedtest_report.clone())?;
+    let proto = SpeedtestIngestReportV1::from(speedtest_report.clone());
     aws.put_proto_to_aws(vec![proto], FileType::CellSpeedtestIngestReport, "test")
         .await?;
 
@@ -58,7 +58,7 @@ async fn single_message_decode() -> anyhow::Result<()> {
     let mut proto_stream = proto_store.stream_file(file).await?;
     let proto = proto_stream.next().await.expect("proto_stream msg");
     // The decode should give us the proto version of the struct we encoded.
-    assert_eq!(proto, SpeedtestIngestReportV1::try_from(speedtest_report)?);
+    assert_eq!(proto, SpeedtestIngestReportV1::from(speedtest_report));
 
     Ok(())
 }
