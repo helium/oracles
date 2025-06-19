@@ -31,19 +31,17 @@ pub enum ClientError {
 
 #[async_trait::async_trait]
 pub trait Gateways: Clone + Send + Sync + 'static {
-    type Error: std::fmt::Debug + Send + Sync + 'static;
-
     async fn resolve_gateway_info(
         &mut self,
         address: &PublicKeyBinary,
-    ) -> Result<Option<GatewayInfo>, Self::Error>;
+    ) -> Result<Option<GatewayInfo>, ClientError>;
 
-    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, Self::Error>;
+    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, ClientError>;
 
     async fn resolve_region_params(
         &mut self,
         region: Region,
-    ) -> Result<RegionParamsInfo, Self::Error>;
+    ) -> Result<RegionParamsInfo, ClientError>;
 }
 
 #[derive(Clone, Debug)]
@@ -101,8 +99,6 @@ impl Client {
 
 #[async_trait::async_trait]
 impl Gateways for Client {
-    type Error = ClientError;
-
     async fn resolve_region_params(
         &mut self,
         region: Region,
@@ -128,7 +124,7 @@ impl Gateways for Client {
     async fn resolve_gateway_info(
         &mut self,
         address: &PublicKeyBinary,
-    ) -> Result<Option<gateway_info::GatewayInfo>, Self::Error> {
+    ) -> Result<Option<gateway_info::GatewayInfo>, ClientError> {
         let mut request = iot_config::GatewayInfoReqV1 {
             address: address.clone().into(),
             signer: self.signing_key.public_key().into(),
@@ -150,7 +146,7 @@ impl Gateways for Client {
 
     async fn stream_gateways_info(
         &mut self,
-    ) -> Result<gateway_info::GatewayInfoStream, Self::Error> {
+    ) -> Result<gateway_info::GatewayInfoStream, ClientError> {
         let mut request = iot_config::GatewayInfoStreamReqV1 {
             batch_size: self.batch_size,
             signer: self.signing_key.public_key().into(),

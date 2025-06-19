@@ -10,26 +10,21 @@ use helium_proto::services::{
     mobile_config::DeviceType as MobileDeviceType, poc_mobile::SpeedtestAvgValidity,
 };
 use mobile_config::{
-    client::gateway_client::GatewayInfoResolver,
+    client::{gateway_client::GatewayInfoResolver, ClientError},
     gateway_info::{DeviceType, GatewayInfo, GatewayInfoStream},
 };
 use mobile_verifier::speedtests::SpeedtestDaemon;
 use sqlx::{Pool, Postgres};
-
-#[derive(thiserror::Error, Debug)]
-enum MockError {}
 
 #[derive(Clone)]
 struct MockGatewayInfoResolver {}
 
 #[async_trait::async_trait]
 impl GatewayInfoResolver for MockGatewayInfoResolver {
-    type Error = MockError;
-
     async fn resolve_gateway_info(
         &self,
         address: &PublicKeyBinary,
-    ) -> Result<Option<GatewayInfo>, Self::Error> {
+    ) -> Result<Option<GatewayInfo>, ClientError> {
         Ok(Some(GatewayInfo {
             address: address.clone(),
             metadata: None,
@@ -43,7 +38,7 @@ impl GatewayInfoResolver for MockGatewayInfoResolver {
     async fn stream_gateways_info(
         &mut self,
         _device_types: &[MobileDeviceType],
-    ) -> Result<GatewayInfoStream, Self::Error> {
+    ) -> Result<GatewayInfoStream, ClientError> {
         todo!()
     }
 }
@@ -54,16 +49,8 @@ async fn speedtests_average_should_only_include_last_48_hours(
 ) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
-    let (speedtest_avg_client, mut speedtest_avg_receiver) = common::create_file_sink();
+    let (speedtest_avg_client, speedtest_avg_receiver) = common::create_file_sink();
     let (verified_client, _verified_receiver) = common::create_file_sink();
-
-    let daemon = SpeedtestDaemon::new(
-        pool,
-        gateway_info_resolver,
-        rx,
-        speedtest_avg_client,
-        verified_client,
-    );
 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
@@ -77,9 +64,20 @@ async fn speedtests_average_should_only_include_last_48_hours(
         speedtest(&hotspot, "2024-01-06 01:00:00", 10, 100, 10),
     ]);
 
-    assert!(daemon.process_file(stream).await.is_ok());
+    // Drop the daemon when it's done running to close the channel
+    {
+        let daemon = SpeedtestDaemon::new(
+            pool,
+            gateway_info_resolver,
+            rx,
+            speedtest_avg_client,
+            verified_client,
+        );
 
-    let avgs = speedtest_avg_receiver.get_all_speedtest_avgs().await;
+        daemon.process_file(stream).await?;
+    }
+
+    let avgs = speedtest_avg_receiver.finish().await?;
 
     assert_eq!(6, avgs.len());
     assert_eq!(SpeedtestAvgValidity::TooFewSamples, avgs[0].validity());

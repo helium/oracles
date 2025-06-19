@@ -1,8 +1,11 @@
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
-use helium_anchor_gen::{anchor_lang::AccountDeserialize, price_oracle::PriceOracleV0};
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::pubkey::Pubkey as SolPubkey;
+use solana::{
+    helium_lib::{
+        anchor_lang::AccountDeserialize, programs::price_oracle::accounts::PriceOracleV0,
+    },
+    RpcClient, SolPubkey,
+};
 use std::str::FromStr;
 
 const SECONDS_PER_DAY: i64 = 24 * 60 * 60;

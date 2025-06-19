@@ -25,7 +25,7 @@ impl Seniority {
             "SELECT uuid, seniority_ts, last_heartbeat, inserted_at, update_reason FROM seniority WHERE radio_key = $1 ORDER BY last_heartbeat DESC, seniority_ts DESC LIMIT 1",
         )
         .bind(key)
-        .fetch_optional(&mut *exec)
+        .fetch_optional(&mut **exec)
         .await
     }
 }
@@ -188,7 +188,7 @@ impl SeniorityUpdate<'_> {
                 .bind(Utc::now())
                 .bind(update_reason as i32)
                 .bind(self.key.hb_type())
-                .execute(&mut *exec)
+                .execute(&mut **exec)
                 .await?;
             }
             SeniorityUpdateAction::Update { curr_seniority } => {
@@ -204,7 +204,7 @@ impl SeniorityUpdate<'_> {
                 .bind(self.heartbeat_ts)
                 .bind(self.key)
                 .bind(curr_seniority)
-                .execute(&mut *exec)
+                .execute(&mut **exec)
                 .await?;
             }
         }
@@ -235,7 +235,6 @@ mod tests {
                 heartbeat: Heartbeat {
                     hb_type: crate::heartbeats::HbType::Wifi,
                     hotspot_key: PublicKeyBinary::from_str("1trSuseaaeZSW8pqSsYKFkFYTfFVvy8DbPCcne6fYYfry6XqzdN1PwAsqinbGKW2ux9554Dw4ciw1uDTdKjBZfjYeuzCEpd95kmZMPGiHaT5ZwasdPgSzXCSYzqmGeQ97riiqEik9xKKhxU52tjCgLd7HNfpLGT9ceY71FCcKBM3fooUZCSiNNibsVvorBWdWjvetgsHLwjTGuwYMGQ2BpmA15r9t3EGNnrfKMv6E1VmoBcuyPYgi7bBLZYpW16Yua3aHd78Jz8QqBVz51S5xRTwDBmgK41e9tSVSqMcQbcZkXi5W7Jru8QEiUTHWyghHgSYpsvCfcQkVBKkP7fHpM4Jh1YTxY2MEvLaoTzxFLRtrM")?,
-                    cbsd_id: None,
                     operation_mode: true,
                     lat: 0.0,
                     lon: 0.0,

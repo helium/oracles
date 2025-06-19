@@ -131,7 +131,8 @@ impl FileSinkBuilder {
             metric: self.metric,
         };
 
-        metrics::counter!(client.metric.clone(), vec![OK_LABEL]);
+        // Seed a value for the metric
+        metrics::counter!(client.metric.clone(), vec![OK_LABEL]).increment(1);
 
         let mut sink = FileSink {
             target_path: self.target_path,
@@ -170,13 +171,13 @@ impl<T> FileSinkClient<T> {
 
     pub async fn write(
         &self,
-        item: T,
+        item: impl Into<T>,
         labels: impl IntoIterator<Item = &(&'static str, &'static str)>,
     ) -> Result<oneshot::Receiver<Result>> {
         let (on_write_tx, on_write_rx) = oneshot::channel();
         let labels = labels.into_iter().map(Label::from);
         tokio::select! {
-            result = self.sender.send_timeout(Message::Data(on_write_tx, item), SEND_TIMEOUT) => match result {
+            result = self.sender.send_timeout(Message::Data(on_write_tx, item.into()), SEND_TIMEOUT) => match result {
                 Ok(_) => {
                     metrics::counter!(
                         self.metric.clone(),

@@ -37,14 +37,13 @@ impl DataSessionIngestor {
     ) -> anyhow::Result<impl ManagedTask> {
         let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
         // data transfers
-        let (data_session_ingest, data_session_ingest_server) =
-            file_source::continuous_source::<ValidDataTransferSession, _>()
-                .state(pool.clone())
-                .store(data_transfer_ingest)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::ValidDataTransferSession.to_string())
-                .create()
-                .await?;
+        let (data_session_ingest, data_session_ingest_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(data_transfer_ingest)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::ValidDataTransferSession.to_string())
+            .create()
+            .await?;
 
         let data_session_ingestor = DataSessionIngestor::new(pool.clone(), data_session_ingest);
 
@@ -135,25 +134,39 @@ pub struct HotspotDataSession {
     pub payer: PublicKeyBinary,
     pub upload_bytes: i64,
     pub download_bytes: i64,
+    pub rewardable_bytes: i64,
     pub num_dcs: i64,
     pub received_timestamp: DateTime<Utc>,
+    pub burn_timestamp: DateTime<Utc>,
 }
 
 impl HotspotDataSession {
     pub async fn save(self, db: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
-            INSERT INTO hotspot_data_transfer_sessions (pub_key, payer, upload_bytes, download_bytes, num_dcs, received_timestamp)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO hotspot_data_transfer_sessions (
+                pub_key,
+                payer,
+                upload_bytes,
+                download_bytes,
+                rewardable_bytes,
+                num_dcs,
+                received_timestamp,
+                burn_timestamp
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (pub_key, payer, burn_timestamp) DO NOTHING;
             "#,
         )
         .bind(self.pub_key)
         .bind(self.payer)
         .bind(self.upload_bytes)
         .bind(self.download_bytes)
+        .bind(self.rewardable_bytes)
         .bind(self.num_dcs)
         .bind(self.received_timestamp)
-        .execute(&mut *db)
+        .bind(self.burn_timestamp)
+        .execute(&mut **db)
         .await?;
         Ok(())
     }
@@ -167,8 +180,10 @@ impl HotspotDataSession {
             payer: v.payer,
             upload_bytes: v.upload_bytes as i64,
             download_bytes: v.download_bytes as i64,
+            rewardable_bytes: v.rewardable_bytes as i64,
             num_dcs: v.num_dcs as i64,
             received_timestamp,
+            burn_timestamp: v.burn_timestamp,
         }
     }
 }
@@ -179,9 +194,17 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
 ) -> Result<HotspotMap, sqlx::Error> {
     let stream = sqlx::query_as::<_, HotspotDataSession>(
         r#"
-        SELECT *
+        SELECT
+            pub_key,
+            payer,
+            upload_bytes,
+            download_bytes,
+            COALESCE(rewardable_bytes, upload_bytes + download_bytes) AS rewardable_bytes,
+            num_dcs,
+            received_timestamp,
+            burn_timestamp
         FROM hotspot_data_transfer_sessions
-        WHERE received_timestamp >= $1 and received_timestamp < $2
+        WHERE burn_timestamp >= $1 AND burn_timestamp < $2;
         "#,
     )
     .bind(epoch.start)
@@ -223,7 +246,7 @@ pub async fn data_sessions_to_dc(
     while let Some(session) = stream.try_next().await? {
         let rewards = map.entry(session.pub_key).or_default();
         rewards.rewardable_dc += session.num_dcs as u64;
-        rewards.rewardable_bytes += session.upload_bytes as u64 + session.download_bytes as u64;
+        rewards.rewardable_bytes += session.rewardable_bytes as u64;
     }
     Ok(map)
 }
@@ -234,7 +257,7 @@ pub async fn clear_hotspot_data_sessions(
 ) -> Result<(), sqlx::Error> {
     sqlx::query("delete from hotspot_data_transfer_sessions where received_timestamp < $1")
         .bind(timestamp)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     Ok(())
 }

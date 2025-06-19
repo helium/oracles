@@ -118,6 +118,13 @@ jobs:
           --health-retries 5
         ports:
             - 5432:5432
+      localstack:
+        image: localstack/localstack:latest
+        env:
+          SERVICES: s3
+          EAGER_SERVICE_LOADING: 1
+        ports:
+          - 4566:4566
     steps:
       - name: Install Dependencies
         run: |
@@ -146,6 +153,7 @@ jobs:
       - name: Run unit and integration tests
         env:
           DATABASE_URL: "postgres://postgres:postgres@postgres:5432/postgres"
+          AWSLOCAL_ENDPOINT: "http://localstack:4566"
         run: cargo test -p ${{ matrix.package }}  -- --include-ignored
 
   build-release:
@@ -230,3 +238,4 @@ jobs:
         run: |
           chmod +x ./.github/scripts/make_debian.sh
           ./.github/scripts/make_debian.sh
+

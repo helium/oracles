@@ -4,19 +4,14 @@ use std::string::ToString;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use helium_proto::{
-    service_provider_promotions::Promotion,
-    services::poc_mobile::{
-        MobileRewardShare, ServiceProviderReward, UnallocatedReward, UnallocatedRewardType,
-    },
+    service_provider_promotions::Promotion, services::poc_mobile::UnallocatedRewardType,
     ServiceProvider, ServiceProviderPromotions,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
 
-use crate::common::{
-    self, default_rewards_info, MockFileSinkReceiver, EMISSIONS_POOL_IN_BONES_24_HOURS,
-};
+use crate::common::{self, reward_info_24_hours, AsStringKeyedMap};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use mobile_verifier::{data_session, reward_shares, rewarder, service_provider};
 
@@ -49,9 +44,7 @@ impl MockCarrierServiceClient {
 
 #[async_trait]
 impl CarrierServiceVerifier for MockCarrierServiceClient {
-    type Error = ClientError;
-
-    async fn payer_key_to_service_provider<'a>(
+    async fn payer_key_to_service_provider(
         &self,
         pubkey: &str,
     ) -> Result<ServiceProvider, ClientError> {
@@ -65,7 +58,7 @@ impl CarrierServiceVerifier for MockCarrierServiceClient {
     async fn list_incentive_promotions(
         &self,
         _epoch_start: &DateTime<Utc>,
-    ) -> Result<Vec<ServiceProviderPromotions>, Self::Error> {
+    ) -> Result<Vec<ServiceProviderPromotions>, ClientError> {
         Ok(self.promotions.clone())
     }
 }
@@ -75,9 +68,9 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     let mut valid_sps = HashMap::<String, String>::new();
     valid_sps.insert(PAYER_1.to_string(), SP_1.to_string());
     let carrier_client = MockCarrierServiceClient::new(valid_sps);
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = reward_info_24_hours();
 
     // seed db with test specific data
     let mut txn = pool.clone().begin().await?;
@@ -91,45 +84,38 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
         .list_incentive_promotions(&reward_info.epoch_period.start)
         .await?;
 
-    let (_, rewards) = tokio::join!(
-        rewarder::reward_service_providers(
-            dc_sessions,
-            sp_promotions.into(),
-            &mobile_rewards_client,
-            &reward_info,
-            dec!(0.0001),
-        ),
-        receive_expected_rewards(&mut mobile_rewards)
+    rewarder::reward_service_providers(
+        dc_sessions,
+        sp_promotions.into(),
+        mobile_rewards_client,
+        &reward_info,
+        dec!(0.0001),
+    )
+    .await?;
+
+    let rewards = mobile_rewards.finish().await?;
+
+    let sp_reward = rewards.sp_rewards.first().expect("sp 1 reward");
+    assert_eq!(5_999, sp_reward.amount);
+
+    let unallocated_reward = rewards.unallocated.first().expect("unallocated");
+    assert_eq!(
+        UnallocatedRewardType::ServiceProvider as i32,
+        unallocated_reward.reward_type
     );
-    if let Ok((sp_reward, unallocated_reward)) = rewards {
-        assert_eq!(
-            SP_1.to_string(),
-            ServiceProvider::try_from(sp_reward.service_provider_id)
-                .unwrap()
-                .to_string()
-        );
-        assert_eq!(5_999, sp_reward.amount);
+    assert_eq!(8_219_178_076_192, unallocated_reward.amount);
 
-        assert_eq!(
-            UnallocatedRewardType::ServiceProvider as i32,
-            unallocated_reward.reward_type
-        );
-        assert_eq!(8_219_178_076_192, unallocated_reward.amount);
+    // confirm the total rewards allocated matches expectations
+    let expected_sum =
+        reward_shares::get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions)
+            .to_u64()
+            .unwrap();
+    assert_eq!(expected_sum, sp_reward.amount + unallocated_reward.amount);
 
-        // confirm the total rewards allocated matches expectations
-        let expected_sum =
-            reward_shares::get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions)
-                .to_u64()
-                .unwrap();
-        assert_eq!(expected_sum, sp_reward.amount + unallocated_reward.amount);
-
-        // confirm the rewarded percentage amount matches expectations
-        let percent = (Decimal::from(unallocated_reward.amount) / reward_info.epoch_emissions)
-            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-        assert_eq!(percent, dec!(0.1));
-    } else {
-        panic!("no rewards received");
-    }
+    // confirm the rewarded percentage amount matches expectations
+    let percent = (Decimal::from(unallocated_reward.amount) / reward_info.epoch_emissions)
+        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+    assert_eq!(percent, dec!(0.1));
 
     Ok(())
 }
@@ -142,7 +128,7 @@ async fn test_service_provider_rewards_halt_on_invalid_sp(pool: PgPool) -> anyho
     valid_sps.insert(PAYER_1.to_string(), SP_1.to_string());
     let carrier_client = MockCarrierServiceClient::new(valid_sps);
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = reward_info_24_hours();
 
     let mut txn = pool.clone().begin().await?;
     seed_hotspot_data_invalid_sp(reward_info.epoch_period.end, &mut txn).await?;
@@ -189,9 +175,9 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
             ],
         }]);
 
-    let reward_info = default_rewards_info(EMISSIONS_POOL_IN_BONES_24_HOURS, Duration::hours(24));
+    let reward_info = reward_info_24_hours();
 
-    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
 
     let mut txn = pool.begin().await?;
     seed_hotspot_data(reward_info.epoch_period.end, &mut txn).await?; // DC transferred == 6,000 reward amount
@@ -205,50 +191,35 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
         .list_incentive_promotions(&reward_info.epoch_period.start)
         .await?;
 
-    let (_, rewards) = tokio::join!(
-        rewarder::reward_service_providers(
-            dc_sessions,
-            sp_promotions.into(),
-            &mobile_rewards_client,
-            &reward_info,
-            dec!(0.00001)
-        ),
-        async move {
-            let mut promos = vec![
-                mobile_rewards.receive_promotion_reward().await,
-                mobile_rewards.receive_promotion_reward().await,
-                mobile_rewards.receive_promotion_reward().await,
-            ];
-            // sort by awarded amount least -> most
-            promos.sort_by_key(|a| a.service_provider_amount);
+    rewarder::reward_service_providers(
+        dc_sessions,
+        sp_promotions.into(),
+        mobile_rewards_client,
+        &reward_info,
+        dec!(0.00001),
+    )
+    .await?;
 
-            let sp_reward = mobile_rewards.receive_service_provider_reward().await;
-            let unallocated = mobile_rewards.receive_unallocated_reward().await;
-
-            mobile_rewards.assert_no_messages();
-
-            (promos, sp_reward, unallocated)
-        }
-    );
-
-    let (promos, sp_reward, unallocated) = rewards;
-    let promo_reward_1 = promos[0].clone();
-    let promo_reward_2 = promos[1].clone();
-    let promo_reward_3 = promos[2].clone();
+    let rewards = mobile_rewards.finish().await?;
+    let promo_rewards = rewards.promotion_rewards.as_keyed_map();
 
     // 1 share
+    let promo_reward_1 = promo_rewards.get("one").expect("promo 1");
     assert_eq!(promo_reward_1.service_provider_amount, 1_499);
     assert_eq!(promo_reward_1.matched_amount, 1_499);
 
     // 2 shares
+    let promo_reward_2 = promo_rewards.get("two").expect("promo 2");
     assert_eq!(promo_reward_2.service_provider_amount, 2999);
     assert_eq!(promo_reward_2.matched_amount, 2999);
 
     // 3 shares
+    let promo_reward_3 = promo_rewards.get("three").expect("promo 3");
     assert_eq!(promo_reward_3.service_provider_amount, 4_499);
     assert_eq!(promo_reward_3.matched_amount, 4_499);
 
     // dc_percentage * total_sp_allocation rounded down
+    let sp_reward = rewards.sp_rewards.first().expect("sp 1 reward");
     assert_eq!(sp_reward.amount, 50_999);
 
     let unallocated_sp_rewards = get_unallocated_sp_rewards(reward_info.epoch_emissions);
@@ -258,27 +229,10 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
         - 8_998 // matched promotion
         + 2; // rounding
 
+    let unallocated = rewards.unallocated.first().expect("unallocated");
     assert_eq!(unallocated.amount, expected_unallocated);
 
     Ok(())
-}
-
-async fn receive_expected_rewards(
-    mobile_rewards: &mut MockFileSinkReceiver<MobileRewardShare>,
-) -> anyhow::Result<(ServiceProviderReward, UnallocatedReward)> {
-    // get the filestore outputs from rewards run
-    // we will have 3 radio rewards, 1 wifi radio and 2 cbrs radios
-    let sp_reward1 = mobile_rewards.receive_service_provider_reward().await;
-    // let sp_reward2 = mobile_rewards.receive_service_provider_reward().await;
-    // dump the sp rewards into a vec and sort to get a deteminstic order
-
-    // expect one unallocated reward
-    let unallocated_reward = mobile_rewards.receive_unallocated_reward().await;
-
-    // should be no further msgs
-    mobile_rewards.assert_no_messages();
-
-    Ok((sp_reward1, unallocated_reward))
 }
 
 async fn seed_hotspot_data(
@@ -290,8 +244,10 @@ async fn seed_hotspot_data(
         payer: PAYER_1.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 10000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 10000,
         num_dcs: 10_000,
         received_timestamp: ts - Duration::hours(1),
+        burn_timestamp: ts - Duration::hours(1),
     };
 
     let data_session_2 = data_session::HotspotDataSession {
@@ -299,8 +255,10 @@ async fn seed_hotspot_data(
         payer: PAYER_1.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 50000,
         num_dcs: 50_000,
         received_timestamp: ts - Duration::hours(2),
+        burn_timestamp: ts - Duration::hours(2),
     };
 
     data_session_1.save(txn).await?;
@@ -317,8 +275,10 @@ async fn seed_hotspot_data_invalid_sp(
         payer: PAYER_1.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 10000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 10000,
         num_dcs: 10_000,
         received_timestamp: ts - Duration::hours(2),
+        burn_timestamp: ts - Duration::hours(2),
     };
 
     let data_session_2 = data_session::HotspotDataSession {
@@ -326,8 +286,10 @@ async fn seed_hotspot_data_invalid_sp(
         payer: PAYER_2.parse().unwrap(),
         upload_bytes: 1024 * 1000,
         download_bytes: 1024 * 50000,
+        rewardable_bytes: 1024 * 1000 + 1024 * 50000,
         num_dcs: 50_000,
         received_timestamp: ts - Duration::hours(2),
+        burn_timestamp: ts - Duration::hours(2),
     };
 
     data_session_1.save(txn).await?;

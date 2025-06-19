@@ -6,8 +6,7 @@ use file_store::traits::TimestampEncode;
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_proto::BoostedHexUpdateV1 as BoostedHexUpdateProto;
 use mobile_config::{
-    boosted_hex_info::BoostedHexes,
-    client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
+    boosted_hex_info::BoostedHexes, client::hex_boosting_client::HexBoostingInfoResolver,
 };
 use sqlx::{PgExecutor, Pool, Postgres};
 use task_manager::ManagedTask;
@@ -24,7 +23,7 @@ pub struct Watcher<A> {
 
 impl<A> ManagedTask for Watcher<A>
 where
-    A: HexBoostingInfoResolver<Error = ClientError>,
+    A: HexBoostingInfoResolver,
 {
     fn start_task(
         self: Box<Self>,
@@ -41,7 +40,7 @@ where
 
 impl<A> Watcher<A>
 where
-    A: HexBoostingInfoResolver<Error = ClientError>,
+    A: HexBoostingInfoResolver,
 {
     pub async fn new(
         pool: Pool<Postgres>,

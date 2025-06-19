@@ -1,2 +1,9 @@
-target
-tests
+.github
+target/
+**/target/
+.dockerignore
+.env
+.env.template
+.gitignore
+build.rs
+Dockerfile

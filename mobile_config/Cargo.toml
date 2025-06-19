@@ -15,28 +15,25 @@ bs58 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
-db-store = { path = "../db_store" }
-rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
-file-store = { path = "../file_store" }
 futures = { workspace = true }
 futures-util = { workspace = true }
 helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
 helium-proto = { workspace = true }
-humantime = { workspace = true }
-humantime-serde = { workspace = true }
 hextree = { workspace = true }
 http = { workspace = true }
 http-serde = { workspace = true }
+humantime = { workspace = true }
+humantime-serde = { workspace = true }
 lazy_static = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
-poc-metrics = { path = "../metrics" }
 prost = { workspace = true }
+retainer = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
-retainer = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
@@ -46,11 +43,14 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 triggered = { workspace = true }
-task-manager = { path = "../task_manager" }
-solana-sdk = { workspace = true }
-custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
-coverage-map = { path = "../coverage_map" }
 csv = {workspace = true}
+coverage-map = { path = "../coverage_map" }
+custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
+db-store = { path = "../db_store" }
+file-store = { path = "../file_store" }
+poc-metrics = { path = "../metrics" }
+solana = { path = "../solana" }
+task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
 rand = { workspace = true }

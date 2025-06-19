@@ -126,6 +126,26 @@ impl MsgTimestamp<u64> for VerifiedDataTransferIngestReport {
     }
 }
 
+impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedDataTransferIngestReportV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.timestamp.to_timestamp_millis()
+    }
+}
+
+impl TryFrom<VerifiedDataTransferIngestReportV1> for VerifiedDataTransferIngestReport {
+    type Error = Error;
+    fn try_from(v: VerifiedDataTransferIngestReportV1) -> Result<Self> {
+        Ok(Self {
+            status: v.status(),
+            timestamp: v.timestamp()?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("data transfer session ingest report"))?
+                .try_into()?,
+        })
+    }
+}
+
 impl From<VerifiedDataTransferIngestReport> for VerifiedDataTransferIngestReportV1 {
     fn from(v: VerifiedDataTransferIngestReport) -> Self {
         let timestamp = v.timestamp();

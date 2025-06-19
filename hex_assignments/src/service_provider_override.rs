@@ -3,6 +3,7 @@ use hextree::disktree::DiskTreeMap;
 
 use super::{Assignment, HexAssignment};
 
+#[derive(Default)]
 pub struct ServiceProviderOverride {
     pub service_provider_override: Option<DiskTreeMap>,
     pub timestamp: Option<DateTime<Utc>>,
@@ -14,12 +15,6 @@ impl ServiceProviderOverride {
             service_provider_override,
             timestamp: None,
         }
-    }
-}
-
-impl Default for ServiceProviderOverride {
-    fn default() -> Self {
-        Self::new(None)
     }
 }
 

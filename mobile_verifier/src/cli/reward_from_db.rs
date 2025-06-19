@@ -1,11 +1,11 @@
 use crate::{
+    banning::BannedRadios,
     heartbeats::HeartbeatReward,
     resolve_subdao_pubkey,
     reward_shares::{
         get_scheduled_tokens_for_poc, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
     },
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
-    sp_boosted_rewards_bans::BannedRadios,
     speedtests_average::SpeedtestAverages,
     unique_connections, Settings,
 };
@@ -82,12 +82,11 @@ impl Cmd {
             )
             .ok_or(anyhow::anyhow!("no rewardable events"))?
             .1;
-        for (_reward_amount, reward, _v2) in radio_rewards {
-            if let Some(proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
+        for (poc_reward, radio_reward_v2) in radio_rewards {
+            if let Some(proto::mobile_reward_share::Reward::RadioRewardV2(proto::RadioRewardV2 {
                 hotspot_key,
-                poc_reward,
                 ..
-            })) = reward.reward
+            })) = radio_reward_v2.reward
             {
                 total_rewards += poc_reward;
                 *owner_rewards

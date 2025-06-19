@@ -1,17 +1,16 @@
 use std::time::Duration;
 
 use crate::{
+    banning,
     boosting_oracles::DataSetDownloaderDaemon,
     coverage::{new_coverage_object_notification_channel, CoverageDaemon},
     data_session::DataSessionIngestor,
     geofence::Geofence,
-    heartbeats::{cbrs::CbrsHeartbeatDaemon, wifi::WifiHeartbeatDaemon},
+    heartbeats::wifi::WifiHeartbeatDaemon,
     radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
-    sp_boosted_rewards_bans::ServiceProviderBoostedRewardsBanIngestor,
     speedtests::SpeedtestDaemon,
-    subscriber_location::SubscriberLocationIngestor,
-    subscriber_verified_mapping_event::SubscriberVerifiedMappingEventDaemon,
+    subscriber_mapping_activity::SubscriberMappingActivityDaemon,
     telemetry,
     unique_connections::ingestor::UniqueConnectionsIngestor,
     Settings,
@@ -84,12 +83,6 @@ impl Cmd {
         )
         .await?;
 
-        let usa_region_paths = settings.usa_region_paths()?;
-        tracing::info!(?usa_region_paths, "usa_geofence_regions");
-
-        let usa_geofence =
-            Geofence::from_paths(usa_region_paths, settings.usa_fencing_resolution()?)?;
-
         let usa_and_mexico_region_paths = settings.usa_and_mexico_region_paths()?;
         tracing::info!(
             ?usa_and_mexico_region_paths,
@@ -109,18 +102,6 @@ impl Cmd {
             .add_task(valid_heartbeats_server)
             .add_task(seniority_updates_server)
             .add_task(speedtests_avg_server)
-            .add_task(
-                CbrsHeartbeatDaemon::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    report_ingest.clone(),
-                    gateway_client.clone(),
-                    valid_heartbeats.clone(),
-                    seniority_updates.clone(),
-                    usa_geofence,
-                )
-                .await?,
-            )
             .add_task(
                 WifiHeartbeatDaemon::create_managed_task(
                     pool.clone(),
@@ -145,7 +126,7 @@ impl Cmd {
                 .await?,
             )
             .add_task(
-                SubscriberVerifiedMappingEventDaemon::create_managed_task(
+                SubscriberMappingActivityDaemon::create_managed_task(
                     pool.clone(),
                     settings,
                     auth_client.clone(),
@@ -176,17 +157,6 @@ impl Cmd {
                 .await?,
             )
             .add_task(
-                SubscriberLocationIngestor::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    file_upload.clone(),
-                    report_ingest.clone(),
-                    auth_client.clone(),
-                    entity_client.clone(),
-                )
-                .await?,
-            )
-            .add_task(
                 RadioThresholdIngestor::create_managed_task(
                     pool.clone(),
                     settings,
@@ -208,7 +178,7 @@ impl Cmd {
             )
             .add_task(DataSessionIngestor::create_managed_task(pool.clone(), settings).await?)
             .add_task(
-                ServiceProviderBoostedRewardsBanIngestor::create_managed_task(
+                banning::create_managed_task(
                     pool.clone(),
                     file_upload.clone(),
                     report_ingest,

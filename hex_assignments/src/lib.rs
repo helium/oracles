@@ -8,6 +8,11 @@ use std::collections::{HashMap, HashSet};
 
 pub use assignment::Assignment;
 use assignment::HexAssignments;
+use footfall::Footfall;
+use hextree::Cell;
+use landtype::Landtype;
+use service_provider_override::ServiceProviderOverride;
+use urbanization::Urbanization;
 
 pub trait HexAssignment: Send + Sync + 'static {
     fn assignment(&self, cell: hextree::Cell) -> anyhow::Result<Assignment>;
@@ -34,54 +39,67 @@ impl HexAssignment for Assignment {
         Ok(*self)
     }
 }
-pub trait HexBoostDataAssignments: Send + Sync + 'static {
-    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments>;
+
+pub trait HexBoostDataAssignmentsExt: Send + Sync {
+    fn assignments(&self, cell: Cell) -> anyhow::Result<HexAssignments> {
+        Ok(HexAssignments {
+            footfall: self.footfall_assignment(cell)?,
+            landtype: self.landtype_assignment(cell)?,
+            urbanized: self.urbanization_assignment(cell)?,
+            service_provider_override: self.service_provider_override_assignment(cell)?,
+        })
+    }
+    fn footfall_assignment(&self, cell: Cell) -> anyhow::Result<Assignment>;
+    fn landtype_assignment(&self, cell: Cell) -> anyhow::Result<Assignment>;
+    fn urbanization_assignment(&self, cell: Cell) -> anyhow::Result<Assignment>;
+    fn service_provider_override_assignment(&self, cell: Cell) -> anyhow::Result<Assignment>;
 }
 
-#[derive(derive_builder::Builder)]
-#[builder(pattern = "owned")]
-pub struct HexBoostData<Foot, Land, Urban, ServiceProviderOverride> {
-    pub footfall: Foot,
-    pub landtype: Land,
-    pub urbanization: Urban,
+impl HexBoostDataAssignmentsExt for HexBoostData {
+    fn footfall_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
+        self.footfall.assignment(cell)
+    }
+
+    fn landtype_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
+        self.landtype.assignment(cell)
+    }
+
+    fn urbanization_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
+        self.urbanization.assignment(cell)
+    }
+
+    fn service_provider_override_assignment(&self, cell: Cell) -> anyhow::Result<Assignment> {
+        self.service_provider_override.assignment(cell)
+    }
+}
+
+#[derive(Default)]
+pub struct HexBoostData {
+    pub footfall: Footfall,
+    pub landtype: Landtype,
+    pub urbanization: Urbanization,
     pub service_provider_override: ServiceProviderOverride,
-}
-impl<F, L, U, S> HexBoostData<F, L, U, S> {
-    pub fn builder() -> HexBoostDataBuilder<F, L, U, S> {
-        HexBoostDataBuilder::default()
-    }
-}
-
-impl<Foot, Land, Urban, ServiceProviderOverride> HexBoostDataAssignments
-    for HexBoostData<Foot, Land, Urban, ServiceProviderOverride>
-where
-    Foot: HexAssignment,
-    Land: HexAssignment,
-    Urban: HexAssignment,
-    ServiceProviderOverride: HexAssignment,
-{
-    fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
-        HexAssignments::builder(cell)
-            .footfall(&self.footfall)
-            .landtype(&self.landtype)
-            .urbanized(&self.urbanization)
-            .service_provider_override(&self.service_provider_override)
-            .build()
-    }
 }
 
 #[cfg(test)]
 mod tests {
 
+    use assignment::HexAssignments;
     use hextree::{disktree::DiskTreeMap, HexTreeMap, HexTreeSet};
     use std::io::Cursor;
 
-    use self::{
-        footfall::Footfall, landtype::Landtype, service_provider_override::ServiceProviderOverride,
-        urbanization::Urbanization,
-    };
-
     use super::*;
+
+    impl HexBoostData {
+        fn assignments(&self, cell: hextree::Cell) -> anyhow::Result<HexAssignments> {
+            Ok(HexAssignments {
+                footfall: self.footfall.assignment(cell)?,
+                landtype: self.landtype.assignment(cell)?,
+                urbanized: self.urbanization.assignment(cell)?,
+                service_provider_override: self.service_provider_override.assignment(cell)?,
+            })
+        }
+    }
 
     #[test]
     fn test_hex_boost_data() -> anyhow::Result<()> {
@@ -266,12 +284,12 @@ mod tests {
         )?));
 
         // Let the testing commence
-        let data = HexBoostData::builder()
-            .footfall(footfall)
-            .landtype(landtype)
-            .urbanization(urbanization)
-            .service_provider_override(service_provider_override)
-            .build()?;
+        let data = HexBoostData {
+            footfall,
+            landtype,
+            urbanization,
+            service_provider_override,
+        };
 
         // NOTE(mj): formatting ignored to make it easier to see the expected change in assignments.
         // NOTE(mj): The semicolon at the end of the block is there to keep rust from

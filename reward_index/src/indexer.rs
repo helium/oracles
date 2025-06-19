@@ -220,7 +220,7 @@ pub async fn handle_iot_rewards(
 
     for (reward_key, amount) in rewards {
         db::insert(
-            &mut *txn,
+            &mut **txn,
             reward_key.key,
             amount,
             reward_key.reward_type,
@@ -255,7 +255,7 @@ pub async fn handle_mobile_rewards(
 
     for (reward_key, amount) in rewards {
         db::insert(
-            &mut *txn,
+            &mut **txn,
             reward_key.key,
             amount,
             reward_key.reward_type,

@@ -2,13 +2,15 @@ use anyhow::bail;
 use backon::{ExponentialBuilder, Retryable};
 use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
+use file_store::mobile_ban::proto::{BanAction, BanDetailsV1, BanReason};
 use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
-    CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1, DataTransferEvent,
-    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
-    DataTransferSessionRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
-    RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
-    UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
+    BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
+    DataTransferEvent, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
+    DataTransferSessionReqV1, DataTransferSessionRespV1, HexUsageStatsIngestReportV1,
+    HexUsageStatsReqV1, HexUsageStatsResV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
+    RadioUsageStatsResV1, UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1,
+    UniqueConnectionsRespV1,
 };
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -19,6 +21,7 @@ use helium_proto::services::{
 };
 use ingest::server_mobile::GrpcServer;
 use mobile_config::client::authorization_client::AuthorizationVerifier;
+use mobile_config::client::ClientError;
 use prost::Message;
 use rand::rngs::OsRng;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -32,29 +35,19 @@ use tonic::{
 };
 use triggered::Trigger;
 
-pub struct MockAuthorizationClient {}
-
-impl MockAuthorizationClient {
-    pub fn new() -> Self {
-        MockAuthorizationClient {}
-    }
-}
+struct MockAuthorizationClient;
 
 #[async_trait]
 impl AuthorizationVerifier for MockAuthorizationClient {
-    type Error = anyhow::Error;
-
     async fn verify_authorized_key(
         &self,
         _pubkey: &PublicKeyBinary,
         _role: NetworkKeyRole,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool, ClientError> {
         Ok(true)
     }
 }
-pub async fn setup_mobile(
-    cbrs_disable_time: DateTime<Utc>,
-) -> anyhow::Result<(TestClient, Trigger)> {
+pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let key_pair = generate_keypair();
 
     let socket_addr = {
@@ -70,7 +63,6 @@ pub async fn setup_mobile(
 
     let (trigger, listener) = triggered::trigger();
 
-    let (cbrs_heartbeat_tx, cbrs_hearbeat_rx) = tokio::sync::mpsc::channel(10);
     let (wifi_heartbeat_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (speedtest_tx, _rx) = tokio::sync::mpsc::channel(10);
     let (data_transfer_tx, data_transfer_rx) = tokio::sync::mpsc::channel(10);
@@ -83,12 +75,12 @@ pub async fn setup_mobile(
     let (hex_usage_stat_tx, hex_usage_stat_rx) = tokio::sync::mpsc::channel(10);
     let (radio_usage_stat_tx, radio_usage_stat_rx) = tokio::sync::mpsc::channel(10);
     let (unique_connections_tx, unique_connections_rx) = tokio::sync::mpsc::channel(10);
-
-    let auth_client = MockAuthorizationClient::new();
+    let (subscriber_mapping_activity_tx, _subscriber_mapping_activity_rx) =
+        tokio::sync::mpsc::channel(10);
+    let (ban_tx, ban_rx) = tokio::sync::mpsc::channel(10);
 
     tokio::spawn(async move {
         let grpc_server = GrpcServer::new(
-            FileSinkClient::new(cbrs_heartbeat_tx, "noop"),
             FileSinkClient::new(wifi_heartbeat_tx, "noop"),
             FileSinkClient::new(speedtest_tx, "noop"),
             FileSinkClient::new(data_transfer_tx, "noop"),
@@ -101,11 +93,12 @@ pub async fn setup_mobile(
             FileSinkClient::new(hex_usage_stat_tx, "hex_usage_test_file_sink"),
             FileSinkClient::new(radio_usage_stat_tx, "radio_usage_test_file_sink"),
             FileSinkClient::new(unique_connections_tx, "noop"),
+            FileSinkClient::new(subscriber_mapping_activity_tx, "noop"),
+            FileSinkClient::new(ban_tx, "noop"),
             Network::MainNet,
             socket_addr,
             api_token,
-            auth_client,
-            cbrs_disable_time,
+            MockAuthorizationClient,
         );
 
         grpc_server.run(listener).await
@@ -119,7 +112,7 @@ pub async fn setup_mobile(
         hex_usage_stat_rx,
         radio_usage_stat_rx,
         unique_connections_rx,
-        cbrs_hearbeat_rx,
+        ban_rx,
         data_transfer_rx,
     )
     .await;
@@ -139,7 +132,7 @@ pub struct TestClient {
         Receiver<file_store::file_sink::Message<RadioUsageStatsIngestReportV1>>,
     unique_connections_file_sink_rx:
         Receiver<file_store::file_sink::Message<UniqueConnectionsIngestReportV1>>,
-    cell_heartbeat_rx: Receiver<file_store::file_sink::Message<CellHeartbeatIngestReportV1>>,
+    ban_file_sink_rx: Receiver<file_store::file_sink::Message<BanIngestReportV1>>,
     data_transfer_rx: Receiver<file_store::file_sink::Message<DataTransferSessionIngestReportV1>>,
 }
 
@@ -161,7 +154,7 @@ impl TestClient {
         unique_connections_file_sink_rx: Receiver<
             file_store::file_sink::Message<UniqueConnectionsIngestReportV1>,
         >,
-        cell_heartbeat_rx: Receiver<file_store::file_sink::Message<CellHeartbeatIngestReportV1>>,
+        ban_file_sink_rx: Receiver<file_store::file_sink::Message<BanIngestReportV1>>,
         data_transfer_rx: Receiver<
             file_store::file_sink::Message<DataTransferSessionIngestReportV1>,
         >,
@@ -179,28 +172,8 @@ impl TestClient {
             hex_usage_stats_file_sink_rx,
             radio_usage_stats_file_sink_rx,
             unique_connections_file_sink_rx,
-            cell_heartbeat_rx,
+            ban_file_sink_rx,
             data_transfer_rx,
-        }
-    }
-
-    pub async fn cell_heartbeat_recv(mut self) -> anyhow::Result<CellHeartbeatIngestReportV1> {
-        match timeout(Duration::from_secs(2), self.cell_heartbeat_rx.recv()).await {
-            Ok(Some(msg)) => match msg {
-                file_store::file_sink::Message::Data(_, data) => Ok(data),
-                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
-                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
-            },
-            Ok(None) => bail!("got none"),
-            Err(reason) => bail!("got error {reason}"),
-        }
-    }
-
-    pub fn is_cell_heartbeat_rx_empty(&mut self) -> anyhow::Result<bool> {
-        match self.cell_heartbeat_rx.try_recv() {
-            Ok(_) => Ok(false),
-            Err(TryRecvError::Empty) => Ok(true),
-            Err(err) => bail!(err),
         }
     }
 
@@ -296,6 +269,46 @@ impl TestClient {
         }
     }
 
+    pub async fn ban_recv(mut self) -> anyhow::Result<BanIngestReportV1> {
+        match timeout(Duration::from_secs(2), self.ban_file_sink_rx.recv()).await {
+            Ok(Some(msg)) => match msg {
+                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
+                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
+                file_store::file_sink::Message::Data(_, data) => Ok(data),
+            },
+            Ok(None) => bail!("got none"),
+            Err(reason) => bail!("got error {reason}"),
+        }
+    }
+
+    pub async fn submit_ban(&mut self, hotspot_pubkey: Vec<u8>) -> anyhow::Result<BanRespV1> {
+        use helium_proto::services::poc_mobile::BanType;
+        let mut req = BanReqV1 {
+            hotspot_pubkey,
+            timestamp_ms: Utc::now().timestamp_millis() as u64,
+            ban_pubkey: self.key_pair.public_key().into(),
+            signature: vec![],
+            ban_action: Some(BanAction::Ban(BanDetailsV1 {
+                hotspot_serial: "test-serial".to_string(),
+                message: "test ban".to_string(),
+                reason: BanReason::LocationGaming.into(),
+                ban_type: BanType::All.into(),
+                expiration_timestamp_ms: 0,
+            })),
+        };
+
+        req.signature = self.key_pair.sign(&req.encode_to_vec()).expect("sign");
+
+        let mut request = Request::new(req);
+        let metadata = request.metadata_mut();
+
+        metadata.insert("authorization", self.authorization.clone());
+
+        let response = self.client.submit_ban(request).await?;
+
+        Ok(response.into_inner())
+    }
+
     pub async fn submit_unique_connections(
         &mut self,
         pubkey: Vec<u8>,
@@ -388,11 +401,9 @@ impl TestClient {
         Ok(res.into_inner())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn submit_radio_usage_req(
         &mut self,
         hotspot_pubkey: PublicKeyBinary,
-        cbsd_id: String,
         service_provider_user_count: u64,
         disco_mapping_user_count: u64,
         offload_user_count: u64,
@@ -401,7 +412,7 @@ impl TestClient {
     ) -> anyhow::Result<RadioUsageStatsResV1> {
         let mut req = RadioUsageStatsReqV1 {
             hotspot_pubkey: hotspot_pubkey.into(),
-            cbsd_id,
+            cbsd_id: String::default(),
             service_provider_user_count,
             disco_mapping_user_count,
             offload_user_count,

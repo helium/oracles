@@ -36,7 +36,7 @@ pub struct UniqueConnectionsIngestor<AV> {
 
 impl<AV> ManagedTask for UniqueConnectionsIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
 {
     fn start_task(
         self: Box<Self>,
@@ -53,7 +53,7 @@ where
 
 impl<AV> UniqueConnectionsIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
 {
     pub async fn create_managed_task(
         pool: PgPool,
@@ -73,7 +73,7 @@ where
             .await?;
 
         let (unique_connections_ingest, unique_connections_server) =
-            file_source::Continuous::msg_source::<UniqueConnectionsIngestReport, _>()
+            file_source::continuous_source()
                 .state(pool.clone())
                 .store(file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
@@ -156,7 +156,7 @@ where
 
             self.verified_unique_connections_sink
                 .write(
-                    verified_report_proto.into(),
+                    verified_report_proto,
                     &[("report_status", verified_report_status.as_str_name())],
                 )
                 .await?;

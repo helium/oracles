@@ -27,11 +27,11 @@ use iot_verifier::{
     PriceInfo,
 };
 
-use helium_lib::token::Token;
 use iot_config::sub_dao_epoch_reward_info::EpochRewardInfo;
 use prost::Message;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use solana::Token;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{self, ops::DerefMut, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, sync::Mutex, time::timeout};
@@ -40,14 +40,15 @@ pub const EPOCH_ADDRESS: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1
 pub const SUB_DAO_ADDRESS: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 pub const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 89_041_095_890_411;
 
-pub fn default_rewards_info(total_emissions: u64, epoch_duration: Duration) -> EpochRewardInfo {
+pub fn rewards_info_24_hours() -> EpochRewardInfo {
     let now = Utc::now();
+    let epoch_duration = Duration::hours(24);
     EpochRewardInfo {
         epoch_day: 1,
         epoch_address: EPOCH_ADDRESS.into(),
         sub_dao_address: SUB_DAO_ADDRESS.into(),
         epoch_period: (now - epoch_duration)..now,
-        epoch_emissions: Decimal::from(total_emissions),
+        epoch_emissions: Decimal::from(EMISSIONS_POOL_IN_BONES_24_HOURS),
         rewards_issued_at: now,
     }
 }
@@ -336,7 +337,7 @@ pub async fn inject_last_witness(
     gateway: PublicKeyBinary,
     ts: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    LastWitness::update_last_timestamp(&mut *txn, &gateway, ts).await
+    LastWitness::update_last_timestamp(&mut **txn, &gateway, ts).await
 }
 
 pub fn valid_gateway() -> GatewayInfo {

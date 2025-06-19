@@ -128,12 +128,12 @@ pub async fn create_route(
         .bind(json!(&protocol_opts))
         .bind(route.active)
         .bind(route.ignore_empty_skf)
-        .fetch_one(&mut transaction)
+        .fetch_one(&mut *transaction)
         .await?;
 
     let route_id = row.get::<Uuid, &str>("id").to_string();
 
-    let new_route = get_route(&route_id, &mut transaction).await?;
+    let new_route = get_route(&route_id, &mut *transaction).await?;
 
     transaction.commit().await?;
 
@@ -196,10 +196,10 @@ pub async fn update_route(
     .bind(json!(&protocol_opts))
     .bind(route.active)
     .bind(route.ignore_empty_skf)
-    .execute(&mut transaction)
+    .execute(&mut *transaction)
     .await?;
 
-    let updated_route = get_route(&route.id, &mut transaction).await?;
+    let updated_route = get_route(&route.id, &mut *transaction).await?;
 
     transaction.commit().await?;
 
@@ -301,13 +301,13 @@ pub async fn update_euis(
 ) -> anyhow::Result<()> {
     let mut transaction = db.begin().await?;
 
-    let added_euis: Vec<(EuiPair, proto::ActionV1)> = insert_euis(to_add, &mut transaction)
+    let added_euis: Vec<(EuiPair, proto::ActionV1)> = insert_euis(to_add, &mut *transaction)
         .await?
         .into_iter()
         .map(|added_eui| (added_eui, proto::ActionV1::Add))
         .collect();
 
-    let removed_euis: Vec<(EuiPair, proto::ActionV1)> = remove_euis(to_remove, &mut transaction)
+    let removed_euis: Vec<(EuiPair, proto::ActionV1)> = remove_euis(to_remove, &mut *transaction)
         .await?
         .into_iter()
         .map(|removed_eui| (removed_eui, proto::ActionV1::Remove))
@@ -414,14 +414,14 @@ pub async fn update_devaddr_ranges(
     let mut transaction = db.begin().await?;
 
     let added_devaddrs: Vec<(DevAddrRange, proto::ActionV1)> =
-        insert_devaddr_ranges(to_add, &mut transaction)
+        insert_devaddr_ranges(to_add, &mut *transaction)
             .await?
             .into_iter()
             .map(|added_range| (added_range, proto::ActionV1::Add))
             .collect();
 
     let removed_devaddrs: Vec<(DevAddrRange, proto::ActionV1)> =
-        remove_devaddr_ranges(to_remove, &mut transaction)
+        remove_devaddr_ranges(to_remove, &mut *transaction)
             .await?
             .into_iter()
             .map(|removed_range| (removed_range, proto::ActionV1::Remove))
@@ -653,7 +653,7 @@ pub async fn delete_route(
     let uuid = Uuid::try_parse(id)?;
     let mut transaction = db.begin().await?;
 
-    let route = get_route(id, &mut transaction).await?;
+    let route = get_route(id, &mut *transaction).await?;
 
     sqlx::query(
         r#"
@@ -663,7 +663,7 @@ pub async fn delete_route(
         "#,
     )
     .bind(uuid)
-    .execute(&mut transaction)
+    .execute(&mut *transaction)
     .await?;
 
     transaction.commit().await?;
@@ -742,13 +742,13 @@ pub async fn update_skfs(
 
     // Always process removes before adds to ensure updating existing values doesn't result in
     // removing a value that was just added
-    let removed_updates: Vec<(Skf, proto::ActionV1)> = remove_skfs(to_remove, &mut transaction)
+    let removed_updates: Vec<(Skf, proto::ActionV1)> = remove_skfs(to_remove, &mut *transaction)
         .await?
         .into_iter()
         .map(|removed_skf| (removed_skf, proto::ActionV1::Remove))
         .collect();
 
-    let added_updates: Vec<(Skf, proto::ActionV1)> = insert_skfs(to_add, &mut transaction)
+    let added_updates: Vec<(Skf, proto::ActionV1)> = insert_skfs(to_add, &mut *transaction)
         .await?
         .into_iter()
         .map(|added_skf| (added_skf, proto::ActionV1::Add))

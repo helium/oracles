@@ -1,21 +1,21 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
-use anchor_client::RequestBuilder;
 use async_trait::async_trait;
 use file_store::hex_boost::BoostedHexActivation;
-use helium_anchor_gen::{
+use helium_lib::{
+    anchor_client::RequestBuilder,
     anchor_lang::{InstructionData, ToAccountMetas},
-    hexboosting::{self, accounts, instruction},
+    programs::hexboosting,
+    solana_client::nonblocking::rpc_client::RpcClient,
+    solana_program::instruction::Instruction,
+    solana_sdk::{
+        commitment_config::CommitmentConfig,
+        pubkey::Pubkey,
+        signature::{read_keypair_file, Keypair, Signature},
+        signer::Signer,
+        transaction::Transaction,
+    },
 };
 use serde::Deserialize;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_program::instruction::Instruction;
-use solana_sdk::{
-    commitment_config::CommitmentConfig,
-    pubkey::Pubkey,
-    signature::{read_keypair_file, Keypair, Signature},
-    signer::Signer,
-    transaction::Transaction,
-};
 use std::sync::Arc;
 
 #[async_trait]
@@ -78,24 +78,25 @@ impl SolanaNetwork for SolanaRpc {
     ) -> Result<Self::Transaction, SolanaRpcError> {
         let instructions = {
             let mut request = RequestBuilder::from(
-                hexboosting::id(),
+                hexboosting::ID,
                 &self.cluster,
                 std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
                 Some(CommitmentConfig::finalized()),
+                &self.provider,
             );
             for update in batch {
-                let account = accounts::StartBoostV0 {
+                let account = hexboosting::client::accounts::StartBoostV0 {
                     start_authority: self.start_authority,
                     boost_config: update.boost_config_pubkey.parse()?,
                     boosted_hex: update.boosted_hex_pubkey.parse()?,
                 };
-                let args = instruction::StartBoostV0 {
-                    _args: hexboosting::StartBoostArgsV0 {
+                let args = hexboosting::client::args::StartBoostV0 {
+                    args: hexboosting::types::StartBoostArgsV0 {
                         start_ts: update.activation_ts.timestamp(),
                     },
                 };
                 let instruction = Instruction {
-                    program_id: hexboosting::id(),
+                    program_id: hexboosting::ID,
                     accounts: account.to_account_metas(None),
                     data: args.data(),
                 };

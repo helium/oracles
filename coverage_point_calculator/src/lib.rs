@@ -14,6 +14,8 @@
 //!     - provider boosted hexes increase oracle boosting to 1x
 //!   - [HIP-134][carrier-offload]
 //!     - serving >25 unique connection increase oracle boosting to 1x
+//!   - [HRP-20250409][urban-area-adjustment]
+//!     - all footfall C hexes now have a 0.03 multiplier
 //!
 //! - [CoveredHex::rank]
 //!   - [HIP-105][hex-limits]
@@ -71,6 +73,7 @@
 //! [anti-gaming]:             https://github.com/helium/HIP/blob/main/0131-bridging-gap-between-verification-mappers-and-anti-gaming-measures.md
 //! [carrier-offload]:         https://github.com/helium/HIP/blob/main/0134-reward-mobile-carrier-offload-hotspots.md
 //! [sp-boost-qualifiers]:     https://github.com/helium/HIP/blob/main/0140-adjust-service-provider-boost-qualifiers.md
+//! [urban-area-adjustment]    https://github.com/helium/helium-release-proposals/blob/main/releases/20250409-core-devs.md#1-hip-103-urban-area-multiplier-adjustment
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
@@ -94,6 +97,8 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("signal level {0:?} not allowed for {1:?}")]
     InvalidSignalLevel(SignalLevel, RadioType),
+    #[error("Input array is empty")]
+    ArrayIsEmpty,
 }
 
 /// Output of calculating coverage points for a Radio.
@@ -167,14 +172,13 @@ impl CoveragePoints {
         ranked_coverage: Vec<coverage_map::RankedCoverage>,
         oracle_boost_status: OracleBoostingStatus,
     ) -> Result<CoveragePoints> {
-        let location_trust_multiplier = location::multiplier(radio_type, &location_trust_scores);
+        let location_trust_multiplier = location::multiplier(&location_trust_scores)?;
 
         let sp_boost_eligibility = SpBoostedHexStatus::new(
-            radio_type,
             location_trust_multiplier,
             &location_trust_scores,
             service_provider_boosted_reward_eligibility,
-        );
+        )?;
 
         let covered_hexes = hexes::clean_covered_hexes(
             radio_type,
@@ -267,30 +271,30 @@ pub enum SpBoostedHexStatus {
 
 impl SpBoostedHexStatus {
     fn new(
-        radio_type: RadioType,
         location_trust_multiplier: Decimal,
         location_trust_scores: &[LocationTrust],
         service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
-    ) -> Self {
+    ) -> Result<Self> {
         match service_provider_boosted_reward_eligibility {
             // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
-            SPBoostedRewardEligibility::RadioThresholdNotMet => Self::RadioThresholdNotMet,
+            SPBoostedRewardEligibility::RadioThresholdNotMet => Ok(Self::RadioThresholdNotMet),
             // hip-140: radio must have enough unique connections
-            SPBoostedRewardEligibility::NotEnoughConnections => Self::NotEnoughConnections,
+            SPBoostedRewardEligibility::NotEnoughConnections => Ok(Self::NotEnoughConnections),
             SPBoostedRewardEligibility::Eligible => {
                 // hip-93: if radio is wifi & location_trust score multiplier < 0.75, no boosting
-                if radio_type.is_wifi() && location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
-                    return Self::WifiLocationScoreBelowThreshold(location_trust_multiplier);
+                if location_trust_multiplier < MIN_WIFI_TRUST_MULTIPLIER {
+                    return Ok(Self::WifiLocationScoreBelowThreshold(
+                        location_trust_multiplier,
+                    ));
                 }
 
                 // hip-119: if the average distance to asserted is beyond 50m, no boosting
-                let average_distance =
-                    location::average_distance(radio_type, location_trust_scores);
+                let average_distance = location::average_distance(location_trust_scores)?;
                 if average_distance > MAX_AVERAGE_DISTANCE {
-                    return Self::AverageAssertedDistanceOverLimit(average_distance);
+                    return Ok(Self::AverageAssertedDistanceOverLimit(average_distance));
                 }
 
-                Self::Eligible
+                Ok(Self::Eligible)
             }
         }
     }
@@ -304,8 +308,6 @@ impl SpBoostedHexStatus {
 pub enum RadioType {
     IndoorWifi,
     OutdoorWifi,
-    IndoorCbrs,
-    OutdoorCbrs,
 }
 
 impl RadioType {
@@ -322,45 +324,21 @@ impl RadioType {
                 SignalLevel::Low => dec!(4),
                 SignalLevel::None => dec!(0),
             },
-            RadioType::IndoorCbrs => match signal_level {
-                SignalLevel::High => dec!(100),
-                SignalLevel::Low => dec!(25),
-                other => return Err(Error::InvalidSignalLevel(*other, *self)),
-            },
-            RadioType::OutdoorCbrs => match signal_level {
-                SignalLevel::High => dec!(4),
-                SignalLevel::Medium => dec!(2),
-                SignalLevel::Low => dec!(1),
-                SignalLevel::None => dec!(0),
-            },
         };
         Ok(mult)
     }
 
     fn rank_multiplier(&self, rank: usize) -> Decimal {
         match (self, rank) {
-            // Indoors Radios
+            // Indoor wifi
             (RadioType::IndoorWifi, 1) => dec!(1),
-            (RadioType::IndoorCbrs, 1) => dec!(1),
             // Outdoor Wifi
             (RadioType::OutdoorWifi, 1) => dec!(1),
             (RadioType::OutdoorWifi, 2) => dec!(0.5),
             (RadioType::OutdoorWifi, 3) => dec!(0.25),
-            // Outdoor Cbrs
-            (RadioType::OutdoorCbrs, 1) => dec!(1),
-            (RadioType::OutdoorCbrs, 2) => dec!(0.5),
-            (RadioType::OutdoorCbrs, 3) => dec!(0.25),
             // Radios outside acceptable rank in a hex do not get points for that hex.
             _ => dec!(0),
         }
-    }
-
-    pub fn is_wifi(&self) -> bool {
-        matches!(self, Self::IndoorWifi | Self::OutdoorWifi)
-    }
-
-    pub fn is_cbrs(&self) -> bool {
-        matches!(self, Self::IndoorCbrs | Self::OutdoorCbrs)
     }
 }
 
@@ -393,7 +371,6 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -425,7 +402,6 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -451,7 +427,6 @@ mod tests {
                 location_trust_maximum(),
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
@@ -488,7 +463,6 @@ mod tests {
                 location_trust_scores,
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
@@ -527,7 +501,6 @@ mod tests {
                 location_trust_scores,
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
@@ -556,15 +529,14 @@ mod tests {
 
     #[test]
     fn speedtests_effect_reward_shares() {
-        let calculate_indoor_cbrs = |speedtests: Vec<Speedtest>| {
+        let calculate_indoor_wifi = |speedtests: Vec<Speedtest>| {
             CoveragePoints::new(
-                RadioType::IndoorCbrs,
+                RadioType::IndoorWifi,
                 SPBoostedRewardEligibility::Eligible,
                 speedtests,
                 location_trust_maximum(),
                 vec![RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: Some("serial".to_string()),
                     hex: hex_location(),
                     rank: 1,
                     signal_level: SignalLevel::High,
@@ -573,53 +545,53 @@ mod tests {
                 }],
                 OracleBoostingStatus::Eligible,
             )
-            .expect("indoor cbrs with speedtests")
+            .expect("indoor wifi with speedtests")
         };
 
-        let base_coverage_points = RadioType::IndoorCbrs
+        let base_coverage_points = RadioType::IndoorWifi
             .base_coverage_points(&SignalLevel::High)
             .unwrap();
 
-        let indoor_cbrs = calculate_indoor_cbrs(speedtest_maximum());
+        let indoor_wifi = calculate_indoor_wifi(speedtest_maximum());
         assert_eq!(
             base_coverage_points * SpeedtestTier::Good.multiplier(),
-            indoor_cbrs.total_shares()
+            indoor_wifi.total_shares()
         );
 
-        let indoor_cbrs = calculate_indoor_cbrs(vec![
+        let indoor_wifi = calculate_indoor_wifi(vec![
             speedtest_with_download(BytesPs::mbps(88)),
             speedtest_with_download(BytesPs::mbps(88)),
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Acceptable.multiplier(),
-            indoor_cbrs.total_shares()
+            indoor_wifi.total_shares()
         );
 
-        let indoor_cbrs = calculate_indoor_cbrs(vec![
+        let indoor_wifi = calculate_indoor_wifi(vec![
             speedtest_with_download(BytesPs::mbps(62)),
             speedtest_with_download(BytesPs::mbps(62)),
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Degraded.multiplier(),
-            indoor_cbrs.total_shares()
+            indoor_wifi.total_shares()
         );
 
-        let indoor_cbrs = calculate_indoor_cbrs(vec![
+        let indoor_wifi = calculate_indoor_wifi(vec![
             speedtest_with_download(BytesPs::mbps(42)),
             speedtest_with_download(BytesPs::mbps(42)),
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Poor.multiplier(),
-            indoor_cbrs.total_shares()
+            indoor_wifi.total_shares()
         );
 
-        let indoor_cbrs = calculate_indoor_cbrs(vec![
+        let indoor_wifi = calculate_indoor_wifi(vec![
             speedtest_with_download(BytesPs::mbps(25)),
             speedtest_with_download(BytesPs::mbps(25)),
         ]);
         assert_eq!(
             base_coverage_points * SpeedtestTier::Fail.multiplier(),
-            indoor_cbrs.total_shares()
+            indoor_wifi.total_shares()
         );
     }
 
@@ -633,7 +605,6 @@ mod tests {
         ) -> RankedCoverage {
             RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: Some("serial".to_string()),
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -648,36 +619,42 @@ mod tests {
         }
 
         use Assignment::*;
-        let indoor_cbrs = CoveragePoints::new(
-            RadioType::IndoorCbrs,
+        let outdoor_wifi = CoveragePoints::new(
+            RadioType::OutdoorWifi,
             SPBoostedRewardEligibility::Eligible,
             speedtest_maximum(),
             location_trust_maximum(),
             vec![
                 // yellow - POI ≥ 1 Urbanized, no SP override
-                ranked_coverage(A, A, A, C), // 100
-                ranked_coverage(A, B, A, C), // 100
-                ranked_coverage(A, C, A, C), // 100
+                ranked_coverage(A, A, A, C), // 16
+                ranked_coverage(A, B, A, C), // 16
+                ranked_coverage(A, C, A, C), // 16
+                // 48
                 // orange - POI ≥ 1 Not Urbanized, no SP override
-                ranked_coverage(A, A, B, C), // 100
-                ranked_coverage(A, B, B, C), // 100
-                ranked_coverage(A, C, B, C), // 100
+                ranked_coverage(A, A, B, C), // 16
+                ranked_coverage(A, B, B, C), // 16
+                ranked_coverage(A, C, B, C), // 16
+                // 48
                 // light green - Point of Interest Urbanized, no SP override
-                ranked_coverage(B, A, A, C), // 70
-                ranked_coverage(B, B, A, C), // 70
-                ranked_coverage(B, C, A, C), // 70
+                ranked_coverage(B, A, A, C), // 11.2
+                ranked_coverage(B, B, A, C), // 11.2
+                ranked_coverage(B, C, A, C), // 11.2
+                ranked_coverage(B, C, A, C), // 11.2
+                ranked_coverage(B, C, A, C), // 11.2
+                // 56
                 // dark green - Point of Interest Not Urbanized, no SP override
-                ranked_coverage(B, A, B, C), // 50
-                ranked_coverage(B, B, B, C), // 50
-                ranked_coverage(B, C, B, C), // 50
-                // light blue - No POI Urbanized, no SP override
-                ranked_coverage(C, A, A, C), // 40
-                ranked_coverage(C, B, A, C), // 30
-                ranked_coverage(C, C, A, C), // 5
-                // dark blue - No POI Not Urbanized, no SP override
-                ranked_coverage(C, A, B, C), // 20
-                ranked_coverage(C, B, B, C), // 15
-                ranked_coverage(C, C, B, C), // 3
+                ranked_coverage(B, A, B, C), // 8
+                ranked_coverage(B, B, B, C), // 8
+                ranked_coverage(B, C, B, C), // 8
+                // 24
+                // HRP-20250409 - footfall C
+                ranked_coverage(C, A, A, C), // 0.48
+                ranked_coverage(C, B, A, C), // 0.48
+                ranked_coverage(C, C, A, C), // 0.48
+                ranked_coverage(C, A, B, C), // 0.48
+                ranked_coverage(C, B, B, C), // 0.48
+                ranked_coverage(C, C, B, C), // 0.48
+                // 2.88
                 // gray - Outside of USA, no SP override
                 ranked_coverage(A, A, C, C), // 0
                 ranked_coverage(A, B, C, C), // 0
@@ -691,9 +668,10 @@ mod tests {
             ],
             OracleBoostingStatus::Eligible,
         )
-        .expect("indoor cbrs");
+        .expect("outdoor wifi");
 
-        assert_eq!(dec!(1073), indoor_cbrs.coverage_points_v1());
+        // 48 + 48 + 56 + 24 + 2.88 = 178.88
+        assert_eq!(dec!(178.88), outdoor_wifi.coverage_points_v1());
     }
 
     #[rstest]
@@ -713,7 +691,6 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank,
                 signal_level: SignalLevel::High,
@@ -744,7 +721,6 @@ mod tests {
             vec![
                 RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank,
                     signal_level: SignalLevel::High,
@@ -753,7 +729,6 @@ mod tests {
                 },
                 RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 2,
                     signal_level: SignalLevel::High,
@@ -762,7 +737,6 @@ mod tests {
                 },
                 RankedCoverage {
                     hotspot_key: pubkey(),
-                    cbsd_id: None,
                     hex: hex_location(),
                     rank: 42,
                     signal_level: SignalLevel::High,
@@ -787,7 +761,6 @@ mod tests {
             location_trust_with_scores(&[dec!(0.1), dec!(0.2), dec!(0.3), dec!(0.4)]),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -808,7 +781,6 @@ mod tests {
         let covered_hexes = vec![
             RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::High,
@@ -817,7 +789,6 @@ mod tests {
             },
             RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level: SignalLevel::Low,
@@ -841,64 +812,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(SignalLevel::High, dec!(4))]
-    #[case(SignalLevel::Medium, dec!(2))]
-    #[case(SignalLevel::Low, dec!(1))]
-    #[case(SignalLevel::None, dec!(0))]
-    fn outdoor_cbrs_base_coverage_points(
-        #[case] signal_level: SignalLevel,
-        #[case] expected: Decimal,
-    ) {
-        let outdoor_cbrs = CoveragePoints::new(
-            RadioType::OutdoorCbrs,
-            SPBoostedRewardEligibility::Eligible,
-            speedtest_maximum(),
-            location_trust_maximum(),
-            vec![RankedCoverage {
-                hotspot_key: pubkey(),
-                cbsd_id: Some("serial".to_string()),
-                hex: hex_location(),
-                rank: 1,
-                signal_level,
-                assignments: assignments_maximum_no_sp_override(),
-                boosted: None,
-            }],
-            OracleBoostingStatus::Eligible,
-        )
-        .expect("outdoor cbrs");
-
-        assert_eq!(expected, outdoor_cbrs.coverage_points_v1());
-    }
-
-    #[rstest]
-    #[case(SignalLevel::High, dec!(100))]
-    #[case(SignalLevel::Low, dec!(25))]
-    fn indoor_cbrs_base_coverage_points(
-        #[case] signal_level: SignalLevel,
-        #[case] expected: Decimal,
-    ) {
-        let indoor_cbrs = CoveragePoints::new(
-            RadioType::IndoorCbrs,
-            SPBoostedRewardEligibility::Eligible,
-            speedtest_maximum(),
-            location_trust_maximum(),
-            vec![RankedCoverage {
-                hotspot_key: pubkey(),
-                cbsd_id: Some("serial".to_string()),
-                hex: hex_location(),
-                rank: 1,
-                signal_level,
-                assignments: assignments_maximum_no_sp_override(),
-                boosted: None,
-            }],
-            OracleBoostingStatus::Eligible,
-        )
-        .expect("indoor cbrs");
-
-        assert_eq!(expected, indoor_cbrs.coverage_points_v1());
-    }
-
-    #[rstest]
     #[case(SignalLevel::High, dec!(16))]
     #[case(SignalLevel::Medium, dec!(8))]
     #[case(SignalLevel::Low, dec!(4))]
@@ -914,7 +827,6 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: Some("serial".to_string()),
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
@@ -923,7 +835,7 @@ mod tests {
             }],
             OracleBoostingStatus::Eligible,
         )
-        .expect("indoor cbrs");
+        .expect("outdoor wifi");
 
         assert_eq!(expected, outdoor_wifi.coverage_points_v1());
     }
@@ -942,7 +854,6 @@ mod tests {
             location_trust_maximum(),
             vec![RankedCoverage {
                 hotspot_key: pubkey(),
-                cbsd_id: None,
                 hex: hex_location(),
                 rank: 1,
                 signal_level,
@@ -965,11 +876,11 @@ mod tests {
 
         let wifi_bad_trust_score = |sp_status: SPBoostedRewardEligibility| {
             SpBoostedHexStatus::new(
-                RadioType::IndoorWifi,
-                location::multiplier(RadioType::IndoorWifi, &bad_location),
+                location::multiplier(&bad_location).unwrap(),
                 &bad_location,
                 sp_status,
             )
+            .unwrap()
         };
 
         assert_eq!(

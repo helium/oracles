@@ -25,7 +25,7 @@ use helium_proto::services::{
     },
 };
 use mobile_config::client::authorization_client::AuthorizationVerifier;
-use sqlx::{FromRow, PgPool, Pool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::{collections::HashSet, ops::Range};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
@@ -43,7 +43,7 @@ pub struct RadioThresholdIngestor<AV> {
 
 impl<AV> ManagedTask for RadioThresholdIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
 {
     fn start_task(
         self: Box<Self>,
@@ -60,7 +60,7 @@ where
 
 impl<AV> RadioThresholdIngestor<AV>
 where
-    AV: AuthorizationVerifier + Send + Sync + 'static,
+    AV: AuthorizationVerifier,
 {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
@@ -90,7 +90,7 @@ where
             .await?;
 
         let (radio_threshold_ingest, radio_threshold_ingest_server) =
-            file_source::continuous_source::<RadioThresholdIngestReport, _>()
+            file_source::continuous_source()
                 .state(pool.clone())
                 .store(file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
@@ -100,7 +100,7 @@ where
 
         // invalidated radio threshold reports
         let (invalidated_radio_threshold_ingest, invalidated_radio_threshold_ingest_server) =
-            file_source::continuous_source::<InvalidatedRadioThresholdIngestReport, _>()
+            file_source::continuous_source()
                 .state(pool.clone())
                 .store(file_store.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
@@ -175,7 +175,7 @@ where
             .map(anyhow::Ok)
             .try_fold(transaction, |mut transaction, ingest_report| async move {
                 // verify the report
-                let verified_report_status = self.verify_report(&ingest_report.report).await?;
+                let verified_report_status = self.verify_report(&ingest_report.report).await;
 
                 // if the report is valid then save to the db
                 // and thus available to the rewarder
@@ -254,19 +254,8 @@ where
     async fn verify_report(
         &self,
         report: &RadioThresholdReportReq,
-    ) -> anyhow::Result<RadioThresholdReportVerificationStatus> {
-        let is_legacy = self
-            .verify_legacy(&report.hotspot_pubkey, &report.cbsd_id)
-            .await?;
-        let report_validity = self.do_report_verifications(report).await;
-        let final_validity = if is_legacy
-            && report_validity == RadioThresholdReportVerificationStatus::ThresholdReportStatusValid
-        {
-            RadioThresholdReportVerificationStatus::ThresholdReportStatusLegacyValid
-        } else {
-            report_validity
-        };
-        Ok(final_validity)
+    ) -> RadioThresholdReportVerificationStatus {
+        self.do_report_verifications(report).await
     }
 
     async fn verify_invalid_report(
@@ -295,23 +284,6 @@ where
             .await
             .unwrap_or_default()
     }
-
-    async fn verify_legacy(
-        &self,
-        hotspot_key: &PublicKeyBinary,
-        cbsd_id: &Option<String>,
-    ) -> Result<bool, sqlx::Error> {
-        // check if the radio has been grandfathered in, meaning a radio which has received
-        // boosted rewards prior to the data component of hip84 going live
-        // if true then it is assigned a status reason of Legacy
-        // TODO: remove this handling after the grandfathering period
-        let row = sqlx::query(" select exists(select 1 from grandfathered_radio_threshold where hotspot_pubkey = $1 and (cbsd_id is null or cbsd_id = $2)) ")
-        .bind(hotspot_key)
-        .bind(cbsd_id)
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(row.get("exists"))
-    }
 }
 
 pub async fn save(
@@ -322,14 +294,13 @@ pub async fn save(
         r#"
             INSERT INTO radio_threshold (
             hotspot_pubkey,
-            cbsd_id,
             bytes_threshold,
             subscriber_threshold,
             threshold_timestamp,
             threshold_met,
             recv_timestamp)
-            VALUES ($1, $2, $3, $4, $5, true, $6)
-            ON CONFLICT (hotspot_pubkey, COALESCE(cbsd_id, ''))
+            VALUES ($1, $2, $3, $4, true, $5)
+            ON CONFLICT (hotspot_pubkey)
             DO UPDATE SET
             bytes_threshold = EXCLUDED.bytes_threshold,
             subscriber_threshold = EXCLUDED.subscriber_threshold,
@@ -339,34 +310,27 @@ pub async fn save(
             "#,
     )
     .bind(ingest_report.report.hotspot_pubkey.to_string())
-    .bind(ingest_report.report.cbsd_id.clone())
     .bind(ingest_report.report.bytes_threshold as i64)
     .bind(ingest_report.report.subscriber_threshold as i32)
     .bind(ingest_report.report.threshold_timestamp)
     .bind(ingest_report.received_timestamp)
-    .execute(db)
+    .execute(&mut **db)
     .await?;
     Ok(())
 }
 
-#[derive(FromRow, Debug)]
-pub struct RadioThreshold {
-    hotspot_pubkey: PublicKeyBinary,
-    cbsd_id: Option<String>,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct VerifiedRadioThresholds {
-    gateways: HashSet<(PublicKeyBinary, Option<String>)>,
+    gateways: HashSet<PublicKeyBinary>,
 }
 
 impl VerifiedRadioThresholds {
-    pub fn insert(&mut self, hotspot_key: PublicKeyBinary, cbsd_id: Option<String>) {
-        self.gateways.insert((hotspot_key, cbsd_id));
+    pub fn insert(&mut self, hotspot_key: PublicKeyBinary) {
+        self.gateways.insert(hotspot_key);
     }
 
-    pub fn is_verified(&self, key: PublicKeyBinary, cbsd_id: Option<String>) -> bool {
-        self.gateways.contains(&(key, cbsd_id))
+    pub fn is_verified(&self, key: PublicKeyBinary) -> bool {
+        self.gateways.contains(&key)
     }
 }
 
@@ -374,17 +338,16 @@ pub async fn verified_radio_thresholds(
     pool: &sqlx::Pool<Postgres>,
     reward_period: &Range<DateTime<Utc>>,
 ) -> Result<VerifiedRadioThresholds, sqlx::Error> {
-    let mut rows = sqlx::query_as::<_, RadioThreshold>(
-        "SELECT hotspot_pubkey, cbsd_id
-             FROM radio_threshold WHERE threshold_timestamp < $1",
+    let gateways = sqlx::query_scalar::<_, PublicKeyBinary>(
+        "SELECT hotspot_pubkey FROM radio_threshold WHERE threshold_timestamp < $1",
     )
     .bind(reward_period.end)
-    .fetch(pool);
-    let mut map = VerifiedRadioThresholds::default();
-    while let Some(row) = rows.try_next().await? {
-        map.insert(row.hotspot_pubkey, row.cbsd_id.filter(|s| !s.is_empty()));
-    }
-    Ok(map)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect::<HashSet<_>>();
+
+    Ok(VerifiedRadioThresholds { gateways })
 }
 
 pub async fn delete(
@@ -393,13 +356,370 @@ pub async fn delete(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-            DELETE FROM radio_threshold
-            WHERE hotspot_pubkey = $1 AND (cbsd_id is null or cbsd_id = $2)
+            DELETE FROM radio_threshold WHERE hotspot_pubkey = $1
         "#,
     )
     .bind(ingest_report.report.hotspot_pubkey.to_string())
-    .bind(ingest_report.report.cbsd_id.clone())
-    .execute(&mut *db)
+    .execute(&mut **db)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use file_store::mobile_radio_threshold::{RadioThresholdIngestReport, RadioThresholdReportReq};
+    use helium_crypto::{KeyTag, Keypair};
+    use rand::rngs::OsRng;
+    use sqlx::{prelude::FromRow, Row};
+
+    fn generate_keypair() -> Keypair {
+        Keypair::generate(KeyTag::default(), &mut OsRng)
+    }
+
+    #[sqlx::test]
+    async fn test_save_radio_threshold(pool: PgPool) {
+        let now = Utc::now();
+        let hotspot_keypair = generate_keypair();
+        let hotspot_pubkey = PublicKeyBinary::from(hotspot_keypair.public_key().to_owned());
+        let carrier_keypair = generate_keypair();
+        let carrier_pubkey = PublicKeyBinary::from(carrier_keypair.public_key().to_owned());
+
+        let report = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            carrier_pub_key: carrier_pubkey,
+            bytes_threshold: 1000,
+            subscriber_threshold: 50,
+            threshold_timestamp: now,
+        };
+
+        let ingest_report = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report,
+        };
+
+        let mut transaction = pool.begin().await.unwrap();
+        save(&ingest_report, &mut transaction).await.unwrap();
+        transaction.commit().await.unwrap();
+
+        #[derive(Debug, FromRow, PartialEq)]
+        struct TestRadioThreshold {
+            hotspot_pubkey: PublicKeyBinary,
+            bytes_threshold: i64,
+            subscriber_threshold: i32,
+            threshold_met: bool,
+            threshold_timestamp: DateTime<Utc>,
+        }
+
+        let result = sqlx::query_as::<_, TestRadioThreshold>(
+            r#"
+            SELECT
+                hotspot_pubkey,
+                bytes_threshold,
+                subscriber_threshold,
+                threshold_timestamp,
+                threshold_met
+            FROM radio_threshold
+            WHERE hotspot_pubkey = $1
+            "#,
+        )
+        .bind(&hotspot_pubkey)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        pub fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
+            use chrono::{Duration, DurationRound};
+            ts.duration_trunc(Duration::nanoseconds(1000)).unwrap()
+        }
+
+        assert_eq!(
+            result,
+            TestRadioThreshold {
+                hotspot_pubkey,
+                bytes_threshold: 1000,
+                subscriber_threshold: 50,
+                threshold_met: true,
+                threshold_timestamp: nanos_trunc(now)
+            }
+        );
+    }
+
+    #[sqlx::test]
+    async fn test_save_radio_threshold_update_existing(pool: PgPool) {
+        let now = Utc::now();
+        let hotspot_keypair = generate_keypair();
+        let hotspot_pubkey = PublicKeyBinary::from(hotspot_keypair.public_key().to_owned());
+        let carrier_keypair = generate_keypair();
+        let carrier_pubkey = PublicKeyBinary::from(carrier_keypair.public_key().to_owned());
+
+        let initial_report = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            carrier_pub_key: carrier_pubkey.clone(),
+            bytes_threshold: 1000,
+            subscriber_threshold: 50,
+            threshold_timestamp: now,
+        };
+
+        let initial_ingest_report = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report: initial_report,
+        };
+
+        // Save initial report
+        let mut transaction = pool.begin().await.unwrap();
+        save(&initial_ingest_report, &mut transaction)
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+
+        // Create an updated report with different values
+        let updated_now = Utc::now();
+        let updated_report = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            carrier_pub_key: carrier_pubkey,
+            bytes_threshold: 2000,     // Changed value
+            subscriber_threshold: 100, // Changed value
+            threshold_timestamp: updated_now,
+        };
+
+        let updated_ingest_report = RadioThresholdIngestReport {
+            received_timestamp: updated_now,
+            report: updated_report,
+        };
+
+        // Save updated report - should update the existing record
+        let mut transaction = pool.begin().await.unwrap();
+        save(&updated_ingest_report, &mut transaction)
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+
+        #[derive(Debug, FromRow, PartialEq)]
+        struct TestRadioThreshold {
+            hotspot_pubkey: PublicKeyBinary,
+            bytes_threshold: i64,
+            subscriber_threshold: i32,
+            threshold_met: bool,
+            threshold_timestamp: DateTime<Utc>,
+        }
+
+        let result = sqlx::query_as::<_, TestRadioThreshold>(
+            r#"
+            SELECT
+                hotspot_pubkey,
+                bytes_threshold,
+                subscriber_threshold,
+                threshold_timestamp,
+                threshold_met
+            FROM radio_threshold
+            WHERE hotspot_pubkey = $1
+            "#,
+        )
+        .bind(&hotspot_pubkey)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        pub fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
+            use chrono::{Duration, DurationRound};
+            ts.duration_trunc(Duration::nanoseconds(1000)).unwrap()
+        }
+
+        assert_eq!(
+            result,
+            TestRadioThreshold {
+                hotspot_pubkey,
+                bytes_threshold: 2000,
+                subscriber_threshold: 100,
+                threshold_met: true,
+                threshold_timestamp: nanos_trunc(updated_now)
+            }
+        );
+    }
+
+    #[sqlx::test]
+    async fn test_delete_radio_threshold(pool: PgPool) {
+        let now = Utc::now();
+        let hotspot_keypair = generate_keypair();
+        let hotspot_pubkey = PublicKeyBinary::from(hotspot_keypair.public_key().to_owned());
+        let hotspot_keypair_2 = generate_keypair();
+        let hotspot_pubkey_2 = PublicKeyBinary::from(hotspot_keypair_2.public_key().to_owned());
+        let carrier_keypair = generate_keypair();
+        let carrier_pubkey = PublicKeyBinary::from(carrier_keypair.public_key().to_owned());
+
+        let report = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            carrier_pub_key: carrier_pubkey.clone(),
+            bytes_threshold: 1000,
+            subscriber_threshold: 50,
+            threshold_timestamp: now,
+        };
+
+        let ingest_report = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report,
+        };
+
+        let report_2 = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey_2.clone(),
+            carrier_pub_key: carrier_pubkey.clone(),
+            bytes_threshold: 1000,
+            subscriber_threshold: 50,
+            threshold_timestamp: now,
+        };
+
+        let ingest_report_2 = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report: report_2,
+        };
+
+        // Save the radio threshold
+        let mut transaction = pool.begin().await.unwrap();
+        save(&ingest_report, &mut transaction).await.unwrap();
+        save(&ingest_report_2, &mut transaction).await.unwrap();
+        transaction.commit().await.unwrap();
+
+        // Verify the record exists
+        let count_before = sqlx::query(
+            r#"
+        SELECT COUNT(*) as count
+        FROM radio_threshold
+        "#,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get::<i64, _>("count");
+
+        assert_eq!(count_before, 2, "Records should exist before deletion");
+
+        // Create an invalidated radio threshold report
+        let invalidation_report = InvalidatedRadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey.clone(),
+            carrier_pub_key: carrier_pubkey,
+            reason: 0.try_into().unwrap(),
+            timestamp: now,
+        };
+
+        let invalidated_ingest_report = InvalidatedRadioThresholdIngestReport {
+            received_timestamp: Utc::now(),
+            report: invalidation_report,
+        };
+
+        // Delete the radio threshold
+        let mut transaction = pool.begin().await.unwrap();
+        delete(&invalidated_ingest_report, &mut transaction)
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+
+        // Verify the record (2) still exists
+        let count_after = sqlx::query(
+            r#"
+        SELECT COUNT(*) as count
+        FROM radio_threshold
+        WHERE hotspot_pubkey = $1
+        "#,
+        )
+        .bind(hotspot_pubkey_2.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get::<i64, _>("count");
+
+        assert_eq!(count_after, 1, "Record (2) should still exists");
+
+        // Verify the record (1) was deleted
+        let count_after = sqlx::query(
+            r#"
+        SELECT COUNT(*) as count
+        FROM radio_threshold
+        WHERE hotspot_pubkey = $1
+        "#,
+        )
+        .bind(hotspot_pubkey.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get::<i64, _>("count");
+
+        assert_eq!(count_after, 0, "Record (1) should be deleted");
+    }
+
+    #[sqlx::test]
+    async fn test_verified_radio_thresholds(pool: PgPool) {
+        // Setup: Create radio thresholds with different timestamps
+        let now = Utc::now();
+
+        // Create two hotspot keypairs
+        let hotspot_keypair1 = generate_keypair();
+        let hotspot_pubkey1 = PublicKeyBinary::from(hotspot_keypair1.public_key().to_owned());
+
+        let hotspot_keypair2 = generate_keypair();
+        let hotspot_pubkey2 = PublicKeyBinary::from(hotspot_keypair2.public_key().to_owned());
+
+        let carrier_keypair = generate_keypair();
+        let carrier_pubkey = PublicKeyBinary::from(carrier_keypair.public_key().to_owned());
+
+        // Create radio threshold reports with different timestamps
+        // Hotspot 1 - before the reward period end (should be verified)
+        let report1 = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey1.clone(),
+            carrier_pub_key: carrier_pubkey.clone(),
+            bytes_threshold: 1000,
+            subscriber_threshold: 50,
+            threshold_timestamp: now - chrono::Duration::hours(5), // Before the reward period end
+        };
+
+        // Hotspot 2 - after the reward period end (should not be verified)
+        let report2 = RadioThresholdReportReq {
+            hotspot_pubkey: hotspot_pubkey2.clone(),
+            carrier_pub_key: carrier_pubkey.clone(),
+            bytes_threshold: 2000,
+            subscriber_threshold: 100,
+            threshold_timestamp: now + chrono::Duration::hours(2), // After the reward period end
+        };
+
+        // Create and save ingest reports
+        let ingest_report1 = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report: report1,
+        };
+
+        let ingest_report2 = RadioThresholdIngestReport {
+            received_timestamp: now,
+            report: report2,
+        };
+
+        // Save both reports
+        let mut transaction = pool.begin().await.unwrap();
+        save(&ingest_report1, &mut transaction).await.unwrap();
+        save(&ingest_report2, &mut transaction).await.unwrap();
+        transaction.commit().await.unwrap();
+
+        // Define reward period for testing
+        let reward_period = (now - chrono::Duration::hours(24))..now;
+
+        // Call the function under test
+        let verified_thresholds = verified_radio_thresholds(&pool, &reward_period)
+            .await
+            .unwrap();
+
+        // Verify results
+        assert!(
+            verified_thresholds.is_verified(hotspot_pubkey1.clone()),
+            "Hotspot 1 should be verified (threshold timestamp before period end)"
+        );
+
+        assert!(
+            !verified_thresholds.is_verified(hotspot_pubkey2.clone()),
+            "Hotspot 2 should not be verified (threshold timestamp after period end)"
+        );
+
+        // Verify total count
+        let count = verified_thresholds.gateways.len();
+        assert_eq!(count, 1, "Should have exactly 1 verified hotspot");
+    }
 }

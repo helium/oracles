@@ -5,6 +5,7 @@ use mobile_config::client::{
 };
 
 pub mod accumulate;
+pub mod banning;
 pub mod burner;
 pub mod daemon;
 pub mod event_ids;
@@ -17,6 +18,10 @@ const BYTES_PER_DC: u64 = 20_000;
 pub fn bytes_to_dc(bytes: u64) -> u64 {
     let bytes = bytes.max(BYTES_PER_DC);
     bytes.div_ceil(BYTES_PER_DC)
+}
+
+pub fn dc_to_bytes(dcs: u64) -> u64 {
+    dcs * BYTES_PER_DC
 }
 
 pub struct MobileConfigClients {

@@ -55,13 +55,21 @@ pub fn mobile_reward(
             },
             r.dc_transfer_reward,
         )),
-        MobileReward::SubscriberReward(r) => Ok((
-            RewardKey {
-                key: bs58::encode(&r.subscriber_id).into_string(),
-                reward_type: RewardType::MobileSubscriber,
-            },
-            r.discovery_location_amount + r.verification_mapping_amount,
-        )),
+        MobileReward::SubscriberReward(r) => {
+            let key = if r.reward_override_entity_key.trim().is_empty() {
+                bs58::encode(&r.subscriber_id).into_string()
+            } else {
+                r.reward_override_entity_key
+            };
+
+            Ok((
+                RewardKey {
+                    key,
+                    reward_type: RewardType::MobileSubscriber,
+                },
+                r.discovery_location_amount + r.verification_mapping_amount,
+            ))
+        }
         MobileReward::ServiceProviderReward(r) => {
             let sp = ServiceProvider::try_from(r.service_provider_id)
                 .map_err(|_| ExtractError::ServiceProviderDecode(r.service_provider_id))?;

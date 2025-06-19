@@ -4,6 +4,7 @@
 
 use futures::{future::LocalBoxFuture, stream::StreamExt, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
+use iot_config::client::ClientError;
 use iot_config::{client::Gateways, gateway_info::GatewayInfo};
 use std::{collections::HashMap, time::Duration};
 use task_manager::ManagedTask;
@@ -21,9 +22,9 @@ pub struct GatewayUpdater<G> {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum GatewayUpdaterError<GatewayError> {
+pub enum GatewayUpdaterError {
     #[error("error querying gateway api")]
-    GatewayApiError(GatewayError),
+    GatewayApiError(ClientError),
     #[error("error sending on channel")]
     SendError(#[from] watch::error::SendError<GatewayMap>),
 }
@@ -52,7 +53,7 @@ where
     pub async fn new(
         refresh_interval: Duration,
         mut gateways: G,
-    ) -> Result<(MessageReceiver, Self), GatewayUpdaterError<G::Error>> {
+    ) -> Result<(MessageReceiver, Self), GatewayUpdaterError> {
         let gateway_map = refresh_gateways(&mut gateways).await?;
         let (sender, receiver) = watch::channel(gateway_map);
         Ok((
@@ -79,7 +80,7 @@ where
         Ok(())
     }
 
-    async fn handle_refresh_tick(&mut self) -> Result<(), GatewayUpdaterError<G::Error>> {
+    async fn handle_refresh_tick(&mut self) -> Result<(), GatewayUpdaterError> {
         tracing::info!("handling refresh tick");
         let updated_gateway_map = refresh_gateways(&mut self.gateways).await?;
         let gateway_count = updated_gateway_map.len();
@@ -93,9 +94,7 @@ where
     }
 }
 
-pub async fn refresh_gateways<G>(
-    gateways: &mut G,
-) -> Result<GatewayMap, GatewayUpdaterError<G::Error>>
+pub async fn refresh_gateways<G>(gateways: &mut G) -> Result<GatewayMap, GatewayUpdaterError>
 where
     G: Gateways,
 {

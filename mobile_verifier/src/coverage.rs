@@ -95,14 +95,13 @@ impl CoverageDaemon {
         )
         .await?;
 
-        let (coverage_objs, coverage_objs_server) =
-            file_source::continuous_source::<CoverageObjectIngestReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::CoverageObjectIngestReport.to_string())
-                .create()
-                .await?;
+        let (coverage_objs, coverage_objs_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::CoverageObjectIngestReport.to_string())
+            .create()
+            .await?;
 
         // let hex_boost_data = boosting_oracles::make_hex_boost_data(settings, geofence)?;
         let coverage_daemon = CoverageDaemon::new(
@@ -265,7 +264,6 @@ impl CoverageObject {
 
     pub fn key(&self) -> KeyType<'_> {
         match self.coverage_object.key_type {
-            coverage::KeyType::CbsdId(ref cbsd) => KeyType::Cbrs(cbsd.as_str()),
             coverage::KeyType::HotspotKey(ref hotspot_key) => KeyType::Wifi(hotspot_key),
         }
     }
@@ -328,7 +326,7 @@ impl CoverageObject {
         .bind(self.coverage_object.coverage_claim_time)
         .bind(self.coverage_object.trust_score as i32)
         .bind(insertion_time)
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
         const NUMBER_OF_FIELDS_IN_QUERY: u16 = 4;
@@ -355,7 +353,7 @@ impl CoverageObject {
                     "#,
                 )
                 .build()
-                .execute(&mut *transaction)
+                .execute(&mut **transaction)
                 .await?;
         }
 
@@ -384,7 +382,7 @@ pub async fn set_invalidated_at(
     .bind(inserted_at)
     .bind(radio_key)
     .bind(uuid)
-    .execute(&mut *exec)
+    .execute(&mut **exec)
     .await?;
 
     Ok(())
@@ -437,6 +435,7 @@ impl CoveredHexStream for Pool<Postgres> {
             .execute(self)
             .await?;
 
+        // radio_type != 'cbrs' - makes sure CBRS radios will never be selected since deprecation
         Ok(
             sqlx::query_as(
                 r#"
@@ -444,7 +443,7 @@ impl CoveredHexStream for Pool<Postgres> {
                 FROM coverage_objects co
                     INNER JOIN hexes h on co.uuid = h.uuid
                 WHERE co.radio_key = $1
-                    AND co.uuid = $2
+                    AND co.uuid = $2 AND radio_type != 'cbrs'
                 "#,
             )
             .bind(key)
@@ -489,7 +488,7 @@ pub async fn clear_coverage_objects(
     // Remove all invalidated objects before timestamp
     sqlx::query("DELETE FROM coverage_objects WHERE invalidated_at < $1")
         .bind(timestamp)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
     // Delete all but the last 10 valid coverage_objects entry per radio_key before a given timestamp
@@ -517,7 +516,7 @@ pub async fn clear_coverage_objects(
             "#,
         )
         .bind(timestamp)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())
@@ -564,7 +563,7 @@ impl CoverageClaimTimeCache {
             )
             .bind(radio_key)
             .bind(coverage_object)
-            .fetch_optional(&mut *exec)
+            .fetch_optional(&mut **exec)
             .await?;
             if let Some(coverage_claim_time) = coverage_claim_time {
                 self.cache

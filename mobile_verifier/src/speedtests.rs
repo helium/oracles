@@ -83,14 +83,13 @@ where
         )
         .await?;
 
-        let (speedtests, speedtests_server) =
-            file_source::continuous_source::<CellSpeedtestIngestReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .prefix(FileType::CellSpeedtestIngestReport.to_string())
-                .create()
-                .await?;
+        let (speedtests, speedtests_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .prefix(FileType::CellSpeedtestIngestReport.to_string())
+            .create()
+            .await?;
 
         let speedtest_daemon = SpeedtestDaemon::new(
             pool.clone(),
@@ -206,7 +205,8 @@ where
         };
         self.verified_speedtest_file_sink
             .write(proto, &[("result", result.as_str_name())])
-            .await?;
+            .await?
+            .await??;
         Ok(())
     }
 }
@@ -245,7 +245,7 @@ pub async fn save_speedtest(
     .bind(speedtest.latency as i32)
     .bind(&speedtest.serial)
     .bind(speedtest.timestamp)
-    .execute(exec)
+    .execute(&mut **exec)
     .await?;
     Ok(())
 }
@@ -270,7 +270,7 @@ pub async fn get_latest_speedtests_for_pubkey(
     .bind(timestamp - chrono::Duration::hours(SPEEDTEST_LAPSE))
     .bind(timestamp)
     .bind(SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
-    .fetch_all(exec)
+    .fetch_all(&mut **exec)
     .await?;
     Ok(speedtests)
 }
@@ -311,7 +311,7 @@ pub async fn clear_speedtests(
     let oldest_ts = *epoch_end - chrono::Duration::hours(SPEEDTEST_LAPSE);
     sqlx::query("DELETE FROM speedtests WHERE timestamp < $1")
         .bind(oldest_ts)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     Ok(())
 }

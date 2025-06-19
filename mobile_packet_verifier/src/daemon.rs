@@ -1,9 +1,13 @@
 use crate::{
-    burner::Burner, event_ids::EventIdPurger, pending_burns, settings::Settings,
+    banning::{self},
+    burner::Burner,
+    event_ids::EventIdPurger,
+    pending_burns,
+    settings::Settings,
     MobileConfigClients, MobileConfigResolverExt,
 };
 use anyhow::{bail, Result};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
@@ -32,7 +36,6 @@ pub struct Daemon<S, MCR> {
     min_burn_period: Duration,
     mobile_config_resolver: MCR,
     verified_data_session_report_sink: FileSinkClient<VerifiedDataTransferIngestReportV1>,
-    cbrs_disable_time: DateTime<Utc>,
 }
 
 impl<S, MCR> Daemon<S, MCR> {
@@ -52,7 +55,6 @@ impl<S, MCR> Daemon<S, MCR> {
             min_burn_period: settings.min_burn_period,
             mobile_config_resolver,
             verified_data_session_report_sink,
-            cbrs_disable_time: settings.cbrs_disable_time,
         }
     }
 }
@@ -95,19 +97,40 @@ where
                     }
                 }
                 file = self.reports.recv() => {
-                    let Some(file) = file else {
-                        anyhow::bail!("FileInfoPoller sender was dropped unexpectedly");
+                    let Some(file_info_stream) = file else {
+                        anyhow::bail!("data transfer FileInfoPoller sender was dropped unexpectedly");
                     };
-                    tracing::info!("Verifying file: {}", file.file_info);
-                    let ts = file.file_info.timestamp;
-                    let mut transaction = self.pool.begin().await?;
-                    let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&self.mobile_config_resolver, &mut transaction, &self.verified_data_session_report_sink, ts, reports, self.cbrs_disable_time).await?;
-                    transaction.commit().await?;
-                    self.verified_data_session_report_sink.commit().await?;
+                    self.handle_data_transfer_session_file(file_info_stream).await?;
                 }
+
             }
         }
+    }
+
+    async fn handle_data_transfer_session_file(
+        &self,
+        file: FileInfoStream<DataTransferSessionIngestReport>,
+    ) -> anyhow::Result<()> {
+        tracing::info!("Verifying file: {}", file.file_info);
+        let ts = file.file_info.timestamp;
+        let mut transaction = self.pool.begin().await?;
+
+        let banned_radios = banning::get_banned_radios(&mut transaction, ts).await?;
+        let reports = file.into_stream(&mut transaction).await?;
+
+        crate::accumulate::accumulate_sessions(
+            &self.mobile_config_resolver,
+            banned_radios,
+            &mut transaction,
+            &self.verified_data_session_report_sink,
+            ts,
+            reports,
+        )
+        .await?;
+
+        transaction.commit().await?;
+        self.verified_data_session_report_sink.commit().await?;
+        Ok(())
     }
 }
 
@@ -166,19 +189,18 @@ impl Cmd {
             settings.txn_confirmation_check_interval,
         );
 
-        let file_store = FileStore::from_settings(&settings.ingest).await?;
+        let ingest_file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let (reports, reports_server) =
-            file_source::continuous_source::<DataTransferSessionIngestReport, _>()
-                .state(pool.clone())
-                .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(
-                    Utc.timestamp_millis_opt(0).unwrap(),
-                ))
-                .prefix(FileType::DataTransferSessionIngestReport.to_string())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
-                .create()
-                .await?;
+        let (reports, reports_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .store(ingest_file_store)
+            .lookback(LookbackBehavior::StartAfter(
+                Utc.timestamp_millis_opt(0).unwrap(),
+            ))
+            .prefix(FileType::DataTransferSessionIngestReport.to_string())
+            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .create()
+            .await?;
 
         let resolver = MobileConfigClients::new(&settings.config_client)?;
 
@@ -191,13 +213,15 @@ impl Cmd {
             invalid_sessions,
         );
 
-        let event_id_purger = EventIdPurger::from_settings(pool, settings);
+        let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
+        let banning = banning::create_managed_task(pool, &settings.banning).await?;
 
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_sessions_server)
             .add_task(invalid_sessions_server)
             .add_task(reports_server)
+            .add_task(banning)
             .add_task(event_id_purger)
             .add_task(daemon)
             .build()

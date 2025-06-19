@@ -141,7 +141,7 @@ async fn radio_reward_v1_is_ignored(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn subscriber_reward(pool: PgPool) -> anyhow::Result<()> {
+async fn subscriber_reward_empty_reward_override(pool: PgPool) -> anyhow::Result<()> {
     let rewards = bytes_mut_stream(vec![MobileRewardShare {
         start_period: Utc::now().timestamp_millis() as u64,
         end_period: Utc::now().timestamp_millis() as u64,
@@ -150,6 +150,7 @@ async fn subscriber_reward(pool: PgPool) -> anyhow::Result<()> {
                 subscriber_id: vec![1],
                 discovery_location_amount: 1,
                 verification_mapping_amount: 2,
+                reward_override_entity_key: "".into(),
             },
         )),
     }]);
@@ -166,6 +167,38 @@ async fn subscriber_reward(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
     assert_eq!(reward.rewards, 3);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn subscriber_reward_with_reward_override(pool: PgPool) -> anyhow::Result<()> {
+    let reward_override_entity_key = "new_address".to_string();
+    let rewards = bytes_mut_stream(vec![MobileRewardShare {
+        start_period: Utc::now().timestamp_millis() as u64,
+        end_period: Utc::now().timestamp_millis() as u64,
+        reward: Some(mobile_reward_share::Reward::SubscriberReward(
+            SubscriberReward {
+                subscriber_id: vec![1],
+                discovery_location_amount: 3,
+                verification_mapping_amount: 4,
+                reward_override_entity_key: reward_override_entity_key.clone(),
+            },
+        )),
+    }]);
+
+    let mut txn = pool.begin().await?;
+    let manifest_time = Utc::now();
+    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &manifest_time).await?;
+    txn.commit().await?;
+
+    let reward = common::get_reward(
+        &pool,
+        &reward_override_entity_key,
+        RewardType::MobileSubscriber,
+    )
+    .await?;
+    assert_eq!(reward.rewards, 7);
 
     Ok(())
 }
