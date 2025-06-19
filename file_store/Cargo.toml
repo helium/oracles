@@ -28,7 +28,6 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
-csv = "*"
 http = { workspace = true }
 aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
@@ -49,6 +48,7 @@ derive_builder = { workspace = true }
 retainer = { workspace = true }
 uuid = { workspace = true }
 h3o = { workspace = true }
+csv = { workspace = true }
 task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
