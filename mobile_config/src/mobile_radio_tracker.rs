@@ -332,7 +332,7 @@ pub async fn migrate_mobile_tracker_locations(
         );
 
         let built = query_builder.build();
-        built.execute(&mut txn).await?;
+        built.execute(&mut *txn).await?;
     }
 
     // 2. Read data from csv report. Fill mobile_radio_tracker if and only if location from csv and in mobile_hotspot_infos table matches
@@ -381,7 +381,7 @@ pub async fn migrate_mobile_tracker_locations(
         );
 
         let built = query_builder.build();
-        built.execute(&mut txn).await?;
+        built.execute(&mut *txn).await?;
     }
 
     txn.commit().await?;
