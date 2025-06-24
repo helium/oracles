@@ -97,7 +97,6 @@ impl TrackedMobileRadio {
 
     fn update_from_radio(mut self, radio: &MobileRadio) -> Self {
         let new_hash = radio.hash();
-        self.last_checked_at = Utc::now();
         if self.hash != new_hash {
             self.hash = new_hash;
             self.last_changed_at = radio.refreshed_at;
@@ -106,7 +105,7 @@ impl TrackedMobileRadio {
             self.asserted_location = radio.location;
             self.asserted_location_changed_at = Some(radio.refreshed_at);
         }
-
+        self.last_checked_at = Utc::now();
         self
     }
 }
