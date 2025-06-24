@@ -46,6 +46,7 @@ impl Cli {
         match self.cmd {
             Cmd::Server(daemon) => daemon.run(&settings).await,
             Cmd::MigrateMobileTracker(csv_file) => {
+                custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
                 let mobile_config_pool = settings.database.connect("mobile-config-store").await?;
                 let metadata_pool = settings.metadata.connect("mobile-config-metadata").await?;
                 sqlx::migrate!().run(&mobile_config_pool).await?;

@@ -294,7 +294,7 @@ async fn update_tracked_radios(
 // This function can be removed after migration is done.
 // 1. Fill mobile_radio_tracker asserted_location from mobile_hotspot_infos
 // 2. Read data from csv report. Fill mobile_radio_tracker.asserted_location_changed_at if location from csv and in mobile_hotspot_infos table matches
-// 3. Set `asserted_location_changed_at = created_at` for WifiDataOnly and CBRS radios that have num_location_asserts = 1
+// 3. Set `asserted_location_changed_at = created_at` for others (num_location_asserts > 0)
 pub async fn migrate_mobile_tracker_locations(
     mobile_config_pool: Pool<Postgres>,
     metadata_pool: Pool<Postgres>,
@@ -342,7 +342,7 @@ pub async fn migrate_mobile_tracker_locations(
 
     // 2. Read data from csv report. Fill mobile_radio_tracker if and only if location from csv and in mobile_hotspot_infos table matches
     let mobile_infos_map: HashMap<_, _> = mobile_infos
-        .into_iter()
+        .iter()
         .map(|v| (bs58::encode(v.entity_key.clone()).into_string(), v.location))
         .collect();
     tracing::info!("Exporting data from CSV");
@@ -354,6 +354,7 @@ pub async fn migrate_mobile_tracker_locations(
 
     let mut mobile_infos_to_update_map: HashMap<EntityKey, DateTime<Utc>> = HashMap::new();
 
+    let mut csv_migrated_counter = 0;
     for record in rdr.records() {
         let record = record?;
         let pub_key: &str = record.get(pub_key_idx).unwrap();
@@ -366,6 +367,7 @@ pub async fn migrate_mobile_tracker_locations(
                 let entity_key = bs58::decode(pub_key.to_string()).into_vec()?;
 
                 mobile_infos_to_update_map.insert(entity_key, date_time);
+                csv_migrated_counter += 1;
             }
         } else {
             tracing::warn!(
@@ -374,25 +376,9 @@ pub async fn migrate_mobile_tracker_locations(
             )
         }
     }
-    // 3. Set `asserted_location_changed_at = created_at` for WifiDataOnly and CBRS radios that have num_location_asserts = 1
-    // TODO test this part
-    let mobile_infos = get_all_mobile_radios(&metadata_pool)
-        .filter(|v| futures::future::ready(v.location.is_some()))
-        .filter(|v| {
-            futures::future::ready(
-                v.num_location_asserts.is_some() && v.num_location_asserts.unwrap() == 1,
-            )
-        })
-        .filter(|v| {
-            futures::future::ready(v.device_type == "cbrs" || v.device_type == "wifiDataOnly")
-        })
-        .collect::<Vec<_>>()
-        .await;
-    tracing::info!(
-        "Cbrs and WifiDataOnly mobile_infos num_location_asserts = 1 len: {}",
-        mobile_infos.len()
-    );
+    tracing::info!("Count radios migrated from CSV: {csv_migrated_counter}");
 
+    // 3. Set `asserted_location_changed_at = created_at` for others (num_location_asserts > 0)
     for mi in mobile_infos.into_iter() {
         mobile_infos_to_update_map
             .entry(mi.entity_key)
