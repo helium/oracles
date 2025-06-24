@@ -538,6 +538,7 @@ mod tests {
         MobileRadio {
             entity_key,
             refreshed_at: Utc::now() - chrono::Duration::hours(1),
+            created_at: Utc::now() - chrono::Duration::hours(1),
             location: Some(1),
             is_full_hotspot: Some(1),
             num_location_asserts: Some(1),
