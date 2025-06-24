@@ -12,6 +12,7 @@ type EntityKey = Vec<u8>;
 struct MobileRadio {
     entity_key: EntityKey,
     refreshed_at: DateTime<Utc>,
+    created_at: DateTime<Utc>,
     location: Option<i64>,
     is_full_hotspot: Option<i32>,
     num_location_asserts: Option<i32>,
@@ -224,6 +225,7 @@ fn get_all_mobile_radios(metadata: &Pool<Postgres>) -> impl Stream<Item = Mobile
             kta.entity_key,
             mhi.asset,
             mhi.refreshed_at,
+            mhi.created_at,
             mhi.location::bigint,
             mhi.is_full_hotspot::int,
             mhi.num_location_asserts,
@@ -292,12 +294,14 @@ async fn update_tracked_radios(
 // This function can be removed after migration is done.
 // 1. Fill mobile_radio_tracker asserted_location from mobile_hotspot_infos
 // 2. Read data from csv report. Fill mobile_radio_tracker.asserted_location_changed_at if location from csv and in mobile_hotspot_infos table matches
+// 3. Set `asserted_location_changed_at = created_at` for WifiDataOnly and CBRS radios that have num_location_asserts = 1
 pub async fn migrate_mobile_tracker_locations(
     mobile_config_pool: Pool<Postgres>,
     metadata_pool: Pool<Postgres>,
     csv_file_path: &str,
 ) -> anyhow::Result<()> {
     // 1. Fill mobile_radio_tracker asserted_location from mobile_hotspot_infos
+
     // get_all_mobile_radios
     tracing::info!("Exporting data from mobile_hotspot_infos");
     let mobile_infos = get_all_mobile_radios(&metadata_pool)
@@ -314,6 +318,7 @@ pub async fn migrate_mobile_tracker_locations(
 
     const BATCH_SIZE: usize = (u16::MAX / 3) as usize;
 
+    // Set asserted_location in mobile_radio_tracker from metadata_pool
     for chunk in mobile_infos.chunks(BATCH_SIZE) {
         let mut query_builder = QueryBuilder::new(
             "UPDATE mobile_radio_tracker AS mrt SET asserted_location = data.location
@@ -346,7 +351,8 @@ pub async fn migrate_mobile_tracker_locations(
     let pub_key_idx = headers.iter().position(|h| h == "public_key").unwrap();
     let location_idx = headers.iter().position(|h| h == "h3").unwrap();
     let time_idx = headers.iter().position(|h| h == "time").unwrap();
-    let mut mobile_infos_to_update: Vec<(EntityKey, DateTime<Utc>)> = vec![];
+
+    let mut mobile_infos_to_update_map: HashMap<EntityKey, DateTime<Utc>> = HashMap::new();
 
     for record in rdr.records() {
         let record = record?;
@@ -359,10 +365,42 @@ pub async fn migrate_mobile_tracker_locations(
                 let date_time: DateTime<Utc> = DateTime::from_str(date).unwrap();
                 let entity_key = bs58::decode(pub_key.to_string()).into_vec()?;
 
-                mobile_infos_to_update.push((entity_key, date_time));
+                mobile_infos_to_update_map.insert(entity_key, date_time);
             }
+        } else {
+            tracing::warn!(
+                "Pubkey: {} exist in csv but not found in metadata database",
+                pub_key
+            )
         }
     }
+    // 3. Set `asserted_location_changed_at = created_at` for WifiDataOnly and CBRS radios that have num_location_asserts = 1
+    // TODO test this part
+    let mobile_infos = get_all_mobile_radios(&metadata_pool)
+        .filter(|v| futures::future::ready(v.location.is_some()))
+        .filter(|v| {
+            futures::future::ready(
+                v.num_location_asserts.is_some() && v.num_location_asserts.unwrap() == 1,
+            )
+        })
+        .filter(|v| {
+            futures::future::ready(v.device_type == "cbrs" || v.device_type == "wifiDataOnly")
+        })
+        .collect::<Vec<_>>()
+        .await;
+    tracing::info!(
+        "Cbrs and WifiDataOnly mobile_infos num_location_asserts = 1 len: {}",
+        mobile_infos.len()
+    );
+
+    for mi in mobile_infos.into_iter() {
+        mobile_infos_to_update_map
+            .entry(mi.entity_key)
+            .or_insert(mi.created_at);
+    }
+
+    let mobile_infos_to_update: Vec<(EntityKey, DateTime<Utc>)> =
+        mobile_infos_to_update_map.into_iter().collect();
 
     tracing::info!("Updating asserted_location_changed_at in db");
     for chunk in mobile_infos_to_update.chunks(BATCH_SIZE) {
