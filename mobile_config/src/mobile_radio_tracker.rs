@@ -1,8 +1,9 @@
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 use chrono::{DateTime, Utc};
 use csv::Reader;
 use futures::{Stream, StreamExt, TryFutureExt, TryStreamExt};
+use helium_crypto::PublicKeyBinary;
 use sqlx::{Pool, Postgres, QueryBuilder};
 use task_manager::ManagedTask;
 
@@ -291,6 +292,9 @@ async fn update_tracked_radios(
 }
 
 // This function can be removed after migration is done.
+// Expected CSV example:
+//    "public_key","time","h3"
+//    "1trSus...srQqM1P",2024-09-20 15:12:55.000 +0000,"8c2a10705a4cbff"
 // 1. Fill mobile_radio_tracker asserted_location from mobile_hotspot_infos
 // 2. Read data from csv report. Fill mobile_radio_tracker.asserted_location_changed_at if location from csv and in mobile_hotspot_infos table matches
 // 3. Set `asserted_location_changed_at = created_at` for others (num_location_asserts > 0)
@@ -305,11 +309,7 @@ pub async fn migrate_mobile_tracker_locations(
     tracing::info!("Exporting data from mobile_hotspot_infos");
     let mobile_infos = get_all_mobile_radios(&metadata_pool)
         .filter(|v| futures::future::ready(v.location.is_some()))
-        .filter(|v| {
-            futures::future::ready(
-                v.num_location_asserts.is_some() && v.num_location_asserts.unwrap() > 0,
-            )
-        })
+        .filter(|v| futures::future::ready(v.num_location_asserts.is_some_and(|num| num > 0)))
         .collect::<Vec<_>>()
         .await;
 
@@ -346,24 +346,26 @@ pub async fn migrate_mobile_tracker_locations(
         .collect();
     tracing::info!("Exporting data from CSV");
     let mut rdr = Reader::from_path(csv_file_path)?;
-    let headers = rdr.headers().unwrap().clone();
-    let pub_key_idx = headers.iter().position(|h| h == "public_key").unwrap();
-    let location_idx = headers.iter().position(|h| h == "h3").unwrap();
-    let time_idx = headers.iter().position(|h| h == "time").unwrap();
+
+    #[derive(Debug, serde::Deserialize)]
+    struct Record {
+        public_key: PublicKeyBinary,
+        h3: String,
+        time: DateTime<Utc>,
+    }
 
     let mut mobile_infos_to_update_map: HashMap<EntityKey, DateTime<Utc>> = HashMap::new();
 
     let mut csv_migrated_counter = 0;
-    for record in rdr.records() {
-        let record = record?;
-        let pub_key: &str = record.get(pub_key_idx).unwrap();
+    for record in rdr.deserialize() {
+        let record: Record = record?;
+        let pub_key: &str = &record.public_key.to_string();
 
-        if let Some(v) = mobile_infos_map.get(&String::from(pub_key)) {
-            let loc = i64::from_str_radix(record.get(location_idx).unwrap(), 16);
-            if v.unwrap() == loc.unwrap() {
-                let date: &str = record.get(time_idx).unwrap();
-                let date_time: DateTime<Utc> = DateTime::from_str(date).unwrap();
-                let entity_key = bs58::decode(pub_key.to_string()).into_vec()?;
+        if let Some(v) = mobile_infos_map.get(pub_key) {
+            let loc = i64::from_str_radix(&record.h3, 16).unwrap();
+            if v.unwrap() == loc {
+                let date_time = record.time;
+                let entity_key = bs58::decode(pub_key).into_vec()?;
 
                 mobile_infos_to_update_map.insert(entity_key, date_time);
                 csv_migrated_counter += 1;
