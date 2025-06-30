@@ -26,12 +26,10 @@ regex = "1"
 tracing = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }
-helium-crypto = { workspace = true }
+# helium-crypto = { workspace = true }
+helium-crypto = { path = "../../helium-crypto-rs" }
 csv = { workspace = true }
 http = { workspace = true }
-aws-config = { workspace = true }
-aws-sdk-s3 = { workspace = true }
-aws-types = { workspace = true, optional = true }
 strum = { version = "0", features = ["derive"] }
 strum_macros = "0"
 sha2 = { workspace = true }
@@ -50,6 +48,15 @@ uuid = { workspace = true }
 h3o = { workspace = true }
 task-manager = { path = "../task_manager" }
 humantime-serde = { workspace = true }
+
+aws-config = "1.8.0"
+aws-sdk-s3 = "1.94.0"
+aws-types = { version = "0.51", optional = true, features = [
+    "hardcoded-credentials",
+] }
+aws-smithy-types-convert = { version = "0.60.9", features = [
+    "convert-streams",
+] }
 
 [dev-dependencies]
 hex-literal = "0"
