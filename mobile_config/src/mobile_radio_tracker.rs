@@ -105,6 +105,7 @@ impl TrackedMobileRadio {
         if self.asserted_location != radio.location {
             self.asserted_location = radio.location;
             self.asserted_location_changed_at = Some(radio.refreshed_at);
+            self.last_changed_at = radio.refreshed_at;
         }
         self.last_checked_at = Utc::now();
         self
