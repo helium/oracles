@@ -6,8 +6,7 @@ use crate::{
 use aws_config::{meta::region::RegionProviderChain, retry::RetryConfig, timeout::TimeoutConfig};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
-use futures::FutureExt;
-use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{future, stream, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use http::Uri;
 use std::path::Path;
 use std::str::FromStr;
@@ -114,53 +113,20 @@ impl FileStore {
         let before = before.into();
         let after = after.into();
 
-        let request = self
-            .client
+        self.client
             .list_objects_v2()
             .bucket(&self.bucket)
             .prefix(file_type.to_string())
-            .set_start_after(after.map(|dt| FileInfo::from((file_type, dt)).into()));
-
-        futures::stream::unfold(
-            (request, true, None),
-            |(req, first_time, next)| async move {
-                if first_time || next.is_some() {
-                    let list_objects_response =
-                        req.clone().set_continuation_token(next).send().await;
-
-                    let next_token = list_objects_response
-                        .as_ref()
-                        .ok()
-                        .and_then(|r| r.next_continuation_token())
-                        .map(|x| x.to_owned());
-
-                    Some((list_objects_response, (req, false, next_token)))
-                } else {
-                    None
-                }
-            },
-        )
-        .flat_map(move |entry| match entry {
-            Ok(output) => {
-                let filtered = output
-                    .contents
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|obj| {
-                        if FileInfo::matches(obj.key().unwrap_or_default()) {
-                            Some(FileInfo::try_from(&obj).unwrap())
-                        } else {
-                            None
-                        }
-                    })
-                    .filter(move |info| after.is_none_or(|v| info.timestamp > v))
-                    .filter(move |info| before.is_none_or(|v| info.timestamp <= v))
-                    .map(Ok);
-                stream::iter(filtered).boxed()
-            }
-            Err(err) => stream::once(async move { Err(Error::s3_error(err)) }).boxed(),
-        })
-        .boxed()
+            .set_start_after(after.map(|dt| FileInfo::from((file_type, dt)).into()))
+            .into_paginator()
+            .send()
+            .map_ok(|page| stream::iter(page.contents.unwrap_or_default()).map(Ok))
+            .map_err(|err| Error::from(aws_sdk_s3::Error::from(err)))
+            .try_flatten()
+            .try_filter_map(|file| future::ready(FileInfo::try_from(&file).map(Some)))
+            .try_filter(move |info| future::ready(after.is_none_or(|v| info.timestamp > v)))
+            .try_filter(move |info| future::ready(before.is_none_or(|v| info.timestamp <= v)))
+            .boxed()
     }
 
     pub async fn put(&self, file: &Path) -> Result {
