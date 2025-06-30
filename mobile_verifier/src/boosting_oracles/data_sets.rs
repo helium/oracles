@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     pin::pin,
+    sync::LazyLock,
     time::Duration,
 };
 
@@ -18,7 +19,6 @@ use file_store::{
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile::{self as proto, OracleBoostingReportV1};
 use hextree::disktree::DiskTreeMap;
-use lazy_static::lazy_static;
 use regex::Regex;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
@@ -462,9 +462,9 @@ fn get_data_set_path(
     dir
 }
 
-lazy_static! {
-    static ref RE: Regex = Regex::new(r"([a-z,_]+).(\d+)(.res[0-9]{1,2}.h3tree)?").unwrap();
-}
+static RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"([a-z,_]+).(\d+)(.res[0-9]{1,2}.h3tree)?").expect("Failed to compile regex")
+});
 
 async fn delete_old_data_sets(
     data_set_directory: &Path,
@@ -497,8 +497,8 @@ async fn download_data_set(
     tracing::info!("Downloading new data set: {}", out_path.to_string_lossy());
     let stream = store.get_raw(in_file_name).await?;
     let mut bytes = tokio_util::codec::FramedRead::new(
-        async_compression::tokio::bufread::GzipDecoder::new(tokio_util::io::StreamReader::new(
-            stream,
+        async_compression::tokio::bufread::GzipDecoder::new(tokio::io::BufReader::new(
+            stream.into_async_read(),
         )),
         tokio_util::codec::BytesCodec::new(),
     );
