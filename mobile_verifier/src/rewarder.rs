@@ -492,20 +492,24 @@ async fn reward_poc(
         {
             // handle poc reward outputs
             let mut allocated_poc_rewards = 0_u64;
+            let mut count_rewarded_radios = 0;
             for (poc_reward_amount, mobile_reward_share_v2) in mobile_reward_shares {
                 allocated_poc_rewards += poc_reward_amount;
+                count_rewarded_radios += 1;
                 mobile_rewards
                     .write(mobile_reward_share_v2, [])
                     .await?
                     // await the returned one shot to ensure that we wrote the file
                     .await??;
             }
+            telemetry::poc_rewarded_radios(count_rewarded_radios);
             // calculate any unallocated poc reward
             (
                 total_poc_rewards - Decimal::from(allocated_poc_rewards),
                 calculated_poc_rewards_per_share,
             )
         } else {
+            telemetry::poc_rewarded_radios(0);
             // default unallocated poc reward to the total poc reward
             (total_poc_rewards, CalculatedPocRewardShares::default())
         };
@@ -520,14 +524,17 @@ pub async fn reward_dc(
 ) -> anyhow::Result<Decimal> {
     // handle dc reward outputs
     let mut allocated_dc_rewards = 0_u64;
+    let mut count_rewarded_gateways = 0;
     for (dc_reward_amount, mobile_reward_share) in transfer_rewards.into_rewards(reward_info) {
         allocated_dc_rewards += dc_reward_amount;
+        count_rewarded_gateways += 1;
         mobile_rewards
             .write(mobile_reward_share, [])
             .await?
             // Await the returned one shot to ensure that we wrote the file
             .await??;
     }
+    telemetry::data_transfer_rewarded_gateways(count_rewarded_gateways);
     // for Dc we return the unallocated amount rather than writing it out to as an unallocated reward
     // it then gets added to the poc pool
     // we return the full decimal value just to ensure we allocate all to poc
@@ -554,17 +561,19 @@ pub async fn reward_mappers(
 
     // translate discovery mapping shares into subscriber rewards
     let mut allocated_mapping_rewards = 0_u64;
-
+    let mut count_mappers_rewarded = 0;
     for (reward_amount, mapping_share) in
         mapping_shares.into_subscriber_rewards(&reward_info.epoch_period, rewards_per_share)
     {
         allocated_mapping_rewards += reward_amount;
+        count_mappers_rewarded += 1;
         mobile_rewards
             .write(mapping_share.clone(), [])
             .await?
             // Await the returned one shot to ensure that we wrote the file
             .await??;
     }
+    telemetry::mappers_rewarded(count_mappers_rewarded);
 
     // write out any unallocated mapping rewards
     let unallocated_mapping_reward_amount = total_mappers_pool
