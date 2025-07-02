@@ -1,7 +1,5 @@
 use crate::{
-    banning,
-    boosting_oracles::db::check_for_unprocessed_data_sets,
-    coverage, data_session,
+    banning, coverage, data_session,
     heartbeats::{self, HeartbeatReward},
     radio_threshold, resolve_subdao_pubkey,
     reward_shares::{
@@ -15,6 +13,7 @@ use crate::{
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
+use dataset_downloader::db::check_for_unprocessed_data_sets;
 use db_store::meta;
 use file_store::{
     file_sink::FileSinkClient,

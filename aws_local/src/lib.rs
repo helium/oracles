@@ -13,9 +13,9 @@ use tonic::transport::Uri;
 use uuid::Uuid;
 
 pub const AWSLOCAL_ENDPOINT_ENV: &str = "AWSLOCAL_ENDPOINT";
-pub const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://localhost:4566";
 
 pub fn aws_local_default_endpoint() -> String {
+    const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://localhost:4566";
     env::var(AWSLOCAL_ENDPOINT_ENV).unwrap_or_else(|_| AWSLOCAL_DEFAULT_ENDPOINT.to_string())
 }
 
