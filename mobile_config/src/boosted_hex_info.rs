@@ -9,10 +9,6 @@ use std::{collections::HashMap, convert::TryFrom, num::NonZeroU32};
 
 pub type BoostedHexInfoStream = BoxStream<'static, BoostedHexInfo>;
 
-lazy_static::lazy_static! {
-    static ref PERIOD_IN_SECONDS: Duration = Duration::seconds(60 * 60 * 24 * 30);
-}
-
 #[derive(Clone, Debug)]
 pub struct BoostedHexInfo {
     pub location: Cell,

@@ -1,10 +1,13 @@
 use file_store::SCALING_PRECISION;
 use h3o::{CellIndex, Resolution};
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::{cmp, collections::HashMap, sync::Arc};
+use std::{
+    cmp,
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 use tokio::sync::RwLock;
 
 pub struct HexResConfig {
@@ -48,21 +51,19 @@ const SCALING_RES: [Resolution; 10] = [
     Resolution::Four,
 ];
 
-lazy_static! {
-    static ref HIP104_RES_CONFIG: HashMap<Resolution, HexResConfig> = {
-        // Hex resolutions 0 - 3 and 11 and 12 are currently ignored when calculating density;
-        // For completeness sake their on-chain settings are N=2, TGT=100_000, MAX=100_000
-        let mut configs = HashMap::new();
-        configs.insert(Resolution::Four, HexResConfig::new(2, 500, 1000));
-        configs.insert(Resolution::Five, HexResConfig::new(4, 100, 200));
-        configs.insert(Resolution::Six, HexResConfig::new(4, 25, 50));
-        configs.insert(Resolution::Seven, HexResConfig::new(4, 5, 10));
-        configs.insert(Resolution::Eight, HexResConfig::new(2, 1, 1));
-        configs.insert(Resolution::Nine, HexResConfig::new(2, 1, 1));
-        configs.insert(Resolution::Ten, HexResConfig::new(2, 1, 1));
-        configs
-    };
-}
+static HIP104_RES_CONFIG: LazyLock<HashMap<Resolution, HexResConfig>> = LazyLock::new(|| {
+    // Hex resolutions 0 - 3 and 11 and 12 are currently ignored when calculating density;
+    // For completeness sake their on-chain settings are N=2, TGT=100_000, MAX=100_000
+    let mut configs = HashMap::new();
+    configs.insert(Resolution::Four, HexResConfig::new(2, 500, 1000));
+    configs.insert(Resolution::Five, HexResConfig::new(4, 100, 200));
+    configs.insert(Resolution::Six, HexResConfig::new(4, 25, 50));
+    configs.insert(Resolution::Seven, HexResConfig::new(4, 5, 10));
+    configs.insert(Resolution::Eight, HexResConfig::new(2, 1, 1));
+    configs.insert(Resolution::Nine, HexResConfig::new(2, 1, 1));
+    configs.insert(Resolution::Ten, HexResConfig::new(2, 1, 1));
+    configs
+});
 
 #[derive(Debug, Clone)]
 pub struct HexDensityMap(Arc<RwLock<HashMap<u64, Decimal>>>);

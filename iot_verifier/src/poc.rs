@@ -28,10 +28,9 @@ use iot_config::{
     client::Gateways,
     gateway_info::{GatewayInfo, GatewayMetadata},
 };
-use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use std::{f64::consts::PI, time::Duration};
+use std::{f64::consts::PI, sync::LazyLock, time::Duration};
 
 pub type GenericVerifyResult<T = ()> = Result<T, InvalidResponse>;
 
@@ -47,18 +46,17 @@ const POC_CELL_DISTANCE_MINIMUM: u32 = 8;
 /// the resolution at which parent cell distance is derived
 const POC_CELL_PARENT_RES: Resolution = Resolution::Eleven;
 
-lazy_static! {
-    /// Scaling factor when inactive gateway is not found in the tx scaling map (20%).
-    /// A default tx scale is required to allow for inactive hotspots to become active
-    /// again when an inactive hotspot's h3 index would otherwise be garbage-collected
-    /// from density scaling calculations and not finding a value on subsequent lookups
-    /// would disqualify the hotspot from validating further beacons
-    static ref DEFAULT_TX_SCALE: Decimal = Decimal::new(2000, 4);
-    /// max permitted lag between the first witness and all subsequent witnesses
-    static ref MAX_WITNESS_LAG: chrono::Duration = chrono::Duration::milliseconds(1500);
-    /// max permitted lag between the beaconer and a witness
-    static ref MAX_BEACON_TO_WITNESS_LAG: chrono::Duration = chrono::Duration::milliseconds(4000);
-}
+/// Scaling factor when inactive gateway is not found in the tx scaling map (20%).
+/// A default tx scale is required to allow for inactive hotspots to become active
+/// again when an inactive hotspot's h3 index would otherwise be garbage-collected
+/// from density scaling calculations and not finding a value on subsequent lookups
+/// would disqualify the hotspot from validating further beacons
+static DEFAULT_TX_SCALE: LazyLock<Decimal> = LazyLock::new(|| Decimal::new(2000, 4));
+/// max permitted lag between the first witness and all subsequent witnesses
+static MAX_WITNESS_LAG: chrono::Duration = chrono::Duration::milliseconds(1500);
+/// max permitted lag between the beaconer and a witness
+static MAX_BEACON_TO_WITNESS_LAG: chrono::Duration = chrono::Duration::milliseconds(4000);
+
 #[derive(Debug, PartialEq)]
 pub struct InvalidResponse {
     reason: InvalidReason,
@@ -722,9 +720,9 @@ fn verify_witness_lag(
     received_ts: DateTime<Utc>,
 ) -> GenericVerifyResult {
     let (first_event_ts, max_permitted_lag) = if beacon_received_ts <= first_witness_ts {
-        (beacon_received_ts, *MAX_BEACON_TO_WITNESS_LAG)
+        (beacon_received_ts, MAX_BEACON_TO_WITNESS_LAG)
     } else {
-        (first_witness_ts, *MAX_WITNESS_LAG)
+        (first_witness_ts, MAX_WITNESS_LAG)
     };
     let this_witness_lag = received_ts - first_event_ts;
     if this_witness_lag > max_permitted_lag {

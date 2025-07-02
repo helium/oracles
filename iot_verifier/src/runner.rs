@@ -59,7 +59,6 @@ use helium_proto::services::poc_lora::{
     LoraInvalidWitnessReportV1, LoraPocV1, VerificationStatus,
 };
 use iot_config::{client::Gateways, gateway_info::GatewayInfo};
-use lazy_static::lazy_static;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
@@ -76,10 +75,8 @@ const WITNESS_REDUNDANCY: u32 = 4;
 const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
 const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
-lazy_static! {
-    /// the duration in which a beaconer or witnesser must have a valid opposite report from
-    static ref RECIPROCITY_WINDOW: ChronoDuration = ChronoDuration::hours(48);
-}
+/// the duration in which a beaconer or witnesser must have a valid opposite report from
+static RECIPROCITY_WINDOW: ChronoDuration = ChronoDuration::hours(48);
 
 pub struct Runner<G> {
     pub pool: PgPool,
@@ -556,9 +553,8 @@ where
             .witness_updater
             .get_last_witness(&beacon_report.report.pub_key)
             .await?;
-        Ok(last_witness.is_some_and(|lw| {
-            beacon_report.received_timestamp - lw.timestamp < *RECIPROCITY_WINDOW
-        }))
+        Ok(last_witness
+            .is_some_and(|lw| beacon_report.received_timestamp - lw.timestamp < RECIPROCITY_WINDOW))
     }
 
     // witness recropocity checks require that a witnesser must have a prior valid beacon report within
@@ -589,7 +585,7 @@ where
         let last_beacon_recip =
             LastBeaconReciprocity::get(&self.pool, &report.report.pub_key).await?;
         Ok(last_beacon_recip
-            .is_some_and(|lw| report.received_timestamp - lw.timestamp < *RECIPROCITY_WINDOW))
+            .is_some_and(|lw| report.received_timestamp - lw.timestamp < RECIPROCITY_WINDOW))
     }
 }
 

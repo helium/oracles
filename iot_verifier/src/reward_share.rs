@@ -5,7 +5,6 @@ use futures::stream::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora as proto;
 use helium_proto::services::poc_lora::iot_reward_share::Reward as ProtoReward;
-use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{Postgres, Transaction};
@@ -13,44 +12,42 @@ use std::{collections::HashMap, ops::Range};
 
 const DEFAULT_PREC: u32 = 15;
 
-lazy_static! {
-    static ref BEACON_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.06);
-    static ref WITNESS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.24);
-    // Data transfer is allocated 50% of daily rewards
-    static ref DATA_TRANSFER_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.50);
-    // Operations fund is allocated 7% of daily rewards
-    static ref OPERATIONS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
-    // Oracles fund is allocated 7% of daily rewards
-    static ref ORACLES_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
-    // dc remainer distributed at ration of 4:1 in favour of witnesses
-    // ie WITNESS_REWARDS_PER_DAY_PERCENT:BEACON_REWARDS_PER_DAY_PERCENT
-    static ref WITNESS_DC_REMAINER_PERCENT: Decimal = dec!(0.80);
-    static ref BEACON_DC_REMAINER_PERCENT: Decimal = dec!(0.20);
-    static ref DC_USD_PRICE: Decimal =  dec!(0.00001);
-}
+static BEACON_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.06);
+static WITNESS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.24);
+// Data transfer is allocated 50% of daily rewards
+static DATA_TRANSFER_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.50);
+// Operations fund is allocated 7% of daily rewards
+static OPERATIONS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
+// Oracles fund is allocated 7% of daily rewards
+static ORACLES_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
+// dc remainer distributed at ration of 4:1 in favour of witnesses
+// ie WITNESS_REWARDS_PER_DAY_PERCENT:BEACON_REWARDS_PER_DAY_PERCENT
+static WITNESS_DC_REMAINER_PERCENT: Decimal = dec!(0.80);
+static BEACON_DC_REMAINER_PERCENT: Decimal = dec!(0.20);
+static DC_USD_PRICE: Decimal = dec!(0.00001);
 
 pub fn get_scheduled_poc_tokens(
     epoch_emissions: Decimal,
     dc_transfer_remainder: Decimal,
 ) -> (Decimal, Decimal) {
     (
-        epoch_emissions * *BEACON_REWARDS_PER_DAY_PERCENT
-            + (dc_transfer_remainder * *BEACON_DC_REMAINER_PERCENT),
-        epoch_emissions * *WITNESS_REWARDS_PER_DAY_PERCENT
-            + (dc_transfer_remainder * *WITNESS_DC_REMAINER_PERCENT),
+        epoch_emissions * BEACON_REWARDS_PER_DAY_PERCENT
+            + (dc_transfer_remainder * BEACON_DC_REMAINER_PERCENT),
+        epoch_emissions * WITNESS_REWARDS_PER_DAY_PERCENT
+            + (dc_transfer_remainder * WITNESS_DC_REMAINER_PERCENT),
     )
 }
 
 pub fn get_scheduled_dc_tokens(epoch_emissions: Decimal) -> Decimal {
-    epoch_emissions * *DATA_TRANSFER_REWARDS_PER_DAY_PERCENT
+    epoch_emissions * DATA_TRANSFER_REWARDS_PER_DAY_PERCENT
 }
 
 pub fn get_scheduled_ops_fund_tokens(epoch_emissions: Decimal) -> Decimal {
-    epoch_emissions * *OPERATIONS_REWARDS_PER_DAY_PERCENT
+    epoch_emissions * OPERATIONS_REWARDS_PER_DAY_PERCENT
 }
 
 pub fn get_scheduled_oracle_tokens(epoch_emissions: Decimal) -> Decimal {
-    epoch_emissions * *ORACLES_REWARDS_PER_DAY_PERCENT
+    epoch_emissions * ORACLES_REWARDS_PER_DAY_PERCENT
 }
 
 #[derive(sqlx::FromRow)]
@@ -338,7 +335,7 @@ impl GatewayShares {
 
 /// Returns the equivalent amount of Hnt bones for a specified amount of Data Credits
 pub fn dc_to_hnt_bones(dc_amount: Decimal, hnt_bone_price: Decimal) -> Decimal {
-    let dc_in_usd = dc_amount * *DC_USD_PRICE;
+    let dc_in_usd = dc_amount * DC_USD_PRICE;
     (dc_in_usd / hnt_bone_price)
         .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
 }
@@ -462,7 +459,7 @@ mod test {
     /// returns the equiv dc value for a specified hnt bones amount
     pub fn hnt_bones_to_dc(hnt_amount: Decimal, hnt_bones_price: Decimal) -> Decimal {
         let value = hnt_amount * hnt_bones_price;
-        (value / (*DC_USD_PRICE)).round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
+        (value / (DC_USD_PRICE)).round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
     }
 
     fn rewards_info_1_hour() -> EpochRewardInfo {

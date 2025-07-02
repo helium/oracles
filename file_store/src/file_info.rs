@@ -1,9 +1,8 @@
 use crate::{error::DecodeError, traits::TimestampDecode, Error, Result};
 use chrono::{DateTime, Utc};
-use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Serialize;
-use std::{fmt, io, os::unix::fs::MetadataExt, path::Path, str::FromStr};
+use std::{fmt, io, os::unix::fs::MetadataExt, path::Path, str::FromStr, sync::LazyLock};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FileInfo {
@@ -13,9 +12,7 @@ pub struct FileInfo {
     pub size: usize,
 }
 
-lazy_static! {
-    static ref RE: Regex = Regex::new(r"([a-z,\d,_]+)\.(\d+)(\.gz)?").unwrap();
-}
+static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([a-z,\d,_]+)\.(\d+)(\.gz)?").unwrap());
 
 impl FromStr for FileInfo {
     type Err = Error;

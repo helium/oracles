@@ -369,7 +369,7 @@ pub(crate) mod db {
     };
     use helium_crypto::PublicKeyBinary;
     use sqlx::{types::Json, PgExecutor, Row};
-    use std::{collections::HashMap, str::FromStr};
+    use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
     const GET_METADATA_SQL: &str = r#"
             select kta.entity_key, infos.location::bigint, infos.device_type,
@@ -389,10 +389,10 @@ pub(crate) mod db {
     const GET_TRACKED_RADIOS_SQL: &str =
         "SELECT entity_key, last_changed_at FROM mobile_radio_tracker where entity_key = any($1::bytea[])";
 
-    lazy_static::lazy_static! {
-        static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
-        static ref DEVICE_TYPES_METADATA_SQL: String = format!("{GET_METADATA_SQL} {DEVICE_TYPES_WHERE_SNIPPET}");
-    }
+    static BATCH_METADATA_SQL: LazyLock<String> =
+        LazyLock::new(|| format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}"));
+    static DEVICE_TYPES_METADATA_SQL: LazyLock<String> =
+        LazyLock::new(|| format!("{GET_METADATA_SQL} {DEVICE_TYPES_WHERE_SNIPPET}"));
 
     pub async fn get_batch_tracked_radios(
         db: impl PgExecutor<'_>,
