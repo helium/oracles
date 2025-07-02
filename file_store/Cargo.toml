@@ -28,7 +28,7 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
-csv = "*"
+csv = { workspace = true }
 http = { workspace = true }
 aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }

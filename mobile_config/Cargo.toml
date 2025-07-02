@@ -43,6 +43,7 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 triggered = { workspace = true }
+csv = { workspace = true }
 
 coverage-map = { path = "../coverage_map" }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
