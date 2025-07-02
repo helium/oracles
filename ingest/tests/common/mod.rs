@@ -421,8 +421,8 @@ impl TestClient {
             epoch_start_timestamp: 0,
             epoch_end_timestamp: 0,
             timestamp: 0,
-            carrier_mapping_key: self.key_pair.public_key().to_vec(),
             carrier_transfer_info: vec![],
+            carrier_mapping_key: self.key_pair.public_key().to_vec(),
             signature: vec![],
         };
 
