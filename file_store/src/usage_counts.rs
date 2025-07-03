@@ -9,8 +9,8 @@ use chrono::{DateTime, Utc};
 use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, RadioUsageStatsIngestReportV1,
-    RadioUsageStatsReqV1,
+    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, RadioUsageCarrierTransferInfo,
+    RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
 };
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +40,7 @@ pub struct RadioUsageStatsReq {
     pub epoch_end_timestamp: DateTime<Utc>,
     pub timestamp: DateTime<Utc>,
     pub carrier_mapping_key: PublicKeyBinary,
+    pub carrier_transfer_info: Vec<RadioUsageCarrierTransferInfo>,
 }
 
 impl MsgDecode for HexUsageStatsReq {
@@ -137,6 +138,7 @@ impl TryFrom<RadioUsageStatsReqV1> for RadioUsageStatsReq {
             epoch_end_timestamp,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
+            carrier_transfer_info: v.carrier_transfer_info,
         })
     }
 }
@@ -159,6 +161,7 @@ impl From<RadioUsageStatsReq> for RadioUsageStatsReqV1 {
             epoch_end_timestamp,
             timestamp,
             carrier_mapping_key: v.carrier_mapping_key.into(),
+            carrier_transfer_info: v.carrier_transfer_info,
             signature: vec![],
         }
     }

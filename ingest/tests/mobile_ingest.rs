@@ -1,7 +1,9 @@
 use chrono::{TimeZone, Utc};
 use common::generate_keypair;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
+use helium_proto::services::poc_mobile::{
+    DataTransferRadioAccessTechnology, RadioUsageCarrierTransferInfo,
+};
 use std::str::FromStr;
 
 mod common;
@@ -153,6 +155,11 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
     const OFFLOAD_USER_COUNT: u64 = 12;
     const SERVICE_PROVIDER_TRANSFER_BYTES: u64 = 13;
     const OFFLOAD_TRANSFER_BYTES: u64 = 14;
+    let radio_usage_carrier_info = RadioUsageCarrierTransferInfo {
+        carrier_id: 1,
+        transfer_bytes: OFFLOAD_TRANSFER_BYTES,
+        user_count: 2,
+    };
 
     let res = client
         .submit_radio_usage_req(
@@ -162,6 +169,7 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
             OFFLOAD_USER_COUNT,
             SERVICE_PROVIDER_TRANSFER_BYTES,
             OFFLOAD_TRANSFER_BYTES,
+            vec![radio_usage_carrier_info.clone()],
         )
         .await;
 
@@ -188,6 +196,8 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
                         event.service_provider_transfer_bytes
                     );
                     assert_eq!(OFFLOAD_TRANSFER_BYTES, event.offload_transfer_bytes);
+                    assert_eq!(OFFLOAD_TRANSFER_BYTES, event.offload_transfer_bytes);
+                    assert_eq!(vec![radio_usage_carrier_info], event.carrier_transfer_info);
                 }
             }
         }

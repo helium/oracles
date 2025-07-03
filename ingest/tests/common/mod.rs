@@ -8,9 +8,9 @@ use helium_proto::services::poc_mobile::{
     BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     DataTransferEvent, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
     DataTransferSessionReqV1, DataTransferSessionRespV1, HexUsageStatsIngestReportV1,
-    HexUsageStatsReqV1, HexUsageStatsResV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
-    RadioUsageStatsResV1, UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1,
-    UniqueConnectionsRespV1,
+    HexUsageStatsReqV1, HexUsageStatsResV1, RadioUsageCarrierTransferInfo,
+    RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
+    UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
 };
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -401,6 +401,7 @@ impl TestClient {
         Ok(res.into_inner())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn submit_radio_usage_req(
         &mut self,
         hotspot_pubkey: PublicKeyBinary,
@@ -409,6 +410,7 @@ impl TestClient {
         offload_user_count: u64,
         service_provider_transfer_bytes: u64,
         offload_transfer_bytes: u64,
+        carrier_transfer_info: Vec<RadioUsageCarrierTransferInfo>,
     ) -> anyhow::Result<RadioUsageStatsResV1> {
         let mut req = RadioUsageStatsReqV1 {
             hotspot_pubkey: hotspot_pubkey.into(),
@@ -421,6 +423,7 @@ impl TestClient {
             epoch_start_timestamp: 0,
             epoch_end_timestamp: 0,
             timestamp: 0,
+            carrier_transfer_info,
             carrier_mapping_key: self.key_pair.public_key().to_vec(),
             signature: vec![],
         };
