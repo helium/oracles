@@ -524,7 +524,7 @@ where
         let (verified_pubkey, event) = self
             .verify_public_key(event.carrier_mapping_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
-            .and_then(|public_key| self.verify_signature(public_key, event.clone()))?;
+            .and_then(|public_key| self.verify_signature(public_key, event))?;
         self.verify_known_carrier_key(verified_pubkey).await?;
 
         let report = HexUsageStatsIngestReportV1 {
@@ -550,7 +550,7 @@ where
         let (verified_pubkey, event) = self
             .verify_public_key(event.carrier_mapping_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
-            .and_then(|public_key| self.verify_signature(public_key, event.clone()))?;
+            .and_then(|public_key| self.verify_signature(public_key, event))?;
         self.verify_known_carrier_key(verified_pubkey).await?;
 
         let report = RadioUsageStatsIngestReportV1 {
