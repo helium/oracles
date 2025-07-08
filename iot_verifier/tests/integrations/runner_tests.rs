@@ -19,15 +19,15 @@ use iot_verifier::{
     gateway_cache::GatewayCache, gateway_updater::GatewayUpdater, poc_report::Report,
     region_cache::RegionCache, runner::Runner, tx_scaler::Server as DensityScaler,
 };
-use lazy_static::lazy_static;
+
 use sqlx::PgPool;
+use std::sync::LazyLock;
 use std::{self, str::FromStr, time::Duration};
 
-lazy_static! {
-    static ref BEACON_INTERVAL: Duration = Duration::from_secs(21600);
-    static ref BEACON_INTERVAL_PLUS_TWO_HOURS: Duration =
-        *BEACON_INTERVAL + Duration::from_secs(2 * 60 * 60);
-}
+static BEACON_INTERVAL: Duration = Duration::from_secs(21600);
+static BEACON_INTERVAL_PLUS_TWO_HOURS: LazyLock<Duration> =
+    LazyLock::new(|| BEACON_INTERVAL + Duration::from_secs(2 * 60 * 60));
+
 #[derive(Debug, Clone)]
 pub struct MockIotConfigClient {
     resolve_gateway: GatewayInfo,
@@ -136,7 +136,7 @@ impl TestContext {
 
 #[sqlx::test]
 async fn valid_beacon_and_witness(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = ctx.entropy_ts;
 
     // test with a valid beacon and a valid witness
@@ -203,7 +203,7 @@ async fn valid_beacon_and_witness(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn confirm_valid_reports_unmodified(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = ctx.entropy_ts;
 
     // test with a valid beacon and a valid witness
@@ -266,7 +266,7 @@ async fn confirm_valid_reports_unmodified(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn confirm_invalid_reports_unmodified(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = Utc::now();
 
     // test with an invalid beacon and a valid witness
@@ -316,7 +316,7 @@ async fn confirm_invalid_reports_unmodified(pool: PgPool) -> anyhow::Result<()> 
 async fn confirm_valid_beacon_invalid_witness_reports_unmodified(
     pool: PgPool,
 ) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = ctx.entropy_ts;
 
     // test with an valid beacon and an  invalid witness
@@ -377,7 +377,7 @@ async fn confirm_valid_beacon_invalid_witness_reports_unmodified(
 
 #[sqlx::test]
 async fn valid_beacon_irregular_schedule_with_witness(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = ctx.entropy_ts;
 
     // submit a valid beacon and a valid witness
@@ -482,7 +482,7 @@ async fn valid_beacon_irregular_schedule_with_witness(pool: PgPool) -> anyhow::R
 
 #[sqlx::test]
 async fn valid_beacon_irregular_schedule_no_witness(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = ctx.entropy_ts;
 
     // submit a valid beacon and no witnesses
@@ -568,7 +568,7 @@ async fn valid_beacon_irregular_schedule_no_witness(pool: PgPool) -> anyhow::Res
 
 #[sqlx::test]
 async fn invalid_beacon_irregular_schedule_with_witness(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = ctx.entropy_ts;
 
     // submit an invalid beacon and a valid witness
@@ -684,7 +684,7 @@ async fn invalid_beacon_irregular_schedule_with_witness(pool: PgPool) -> anyhow:
 
 #[sqlx::test]
 async fn valid_beacon_gateway_not_found(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = ctx.entropy_ts;
     //
     // test with a valid beacon and an invalid witness
@@ -750,7 +750,7 @@ async fn valid_beacon_gateway_not_found(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn invalid_witness_no_metadata(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = ctx.entropy_ts;
     //
     // test with a valid beacon and an invalid witness
@@ -826,7 +826,7 @@ async fn invalid_witness_no_metadata(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn invalid_beacon_no_gateway_found(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = Utc::now();
     //
     // test with an invalid beacon & 1 witness
@@ -888,7 +888,7 @@ async fn invalid_beacon_no_gateway_found(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn invalid_beacon_gateway_not_found_no_witnesses(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     //
     // test with an invalid beacon, no witnesses
     // beacon is invalid as GW is unknown
@@ -916,7 +916,7 @@ async fn invalid_beacon_gateway_not_found_no_witnesses(pool: PgPool) -> anyhow::
 
 #[sqlx::test]
 async fn invalid_beacon_bad_payload(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     //
     // test with an invalid beacon, no witnesses
     // the beacon will have an invalid payload, resulting in an error
@@ -948,7 +948,7 @@ async fn invalid_beacon_bad_payload(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn valid_beacon_and_witness_no_beacon_reciprocity(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = ctx.entropy_ts;
 
     // test with a valid beacon and a valid witness
@@ -1007,7 +1007,7 @@ async fn valid_beacon_and_witness_no_beacon_reciprocity(pool: PgPool) -> anyhow:
 
 #[sqlx::test]
 async fn valid_beacon_and_witness_no_witness_reciprocity(pool: PgPool) -> anyhow::Result<()> {
-    let mut ctx = TestContext::setup(pool.clone(), *BEACON_INTERVAL).await?;
+    let mut ctx = TestContext::setup(pool.clone(), BEACON_INTERVAL).await?;
     let now = ctx.entropy_ts;
 
     // test with a valid beacon and a valid witness

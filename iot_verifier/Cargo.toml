@@ -26,9 +26,7 @@ helium-proto = { workspace = true }
 http-serde = { workspace = true }
 humantime-serde = { workspace = true }
 itertools = { workspace = true }
-lazy_static = { workspace = true }
 metrics = { workspace = true }
-once_cell = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
 retainer = { workspace = true }

@@ -97,8 +97,6 @@ triggered = "0"
 futures = "*"
 futures-util = "*"
 prost = "0.12"
-once_cell = "1"
-lazy_static = "1"
 config = { version = "0", default-features = false, features = ["toml"] }
 h3o = { version = "0", features = ["serde"] }
 xorf = { version = "0", features = ["serde"] }
