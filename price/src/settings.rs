@@ -62,7 +62,7 @@ impl Settings {
     /// Load Settings from a given path. Settings are loaded from a given
     /// optional path and can be overriden with environment variables.
     ///
-    /// Environemnt overrides have the same name as the entries in the settings
+    /// Environment overrides have the same name as the entries in the settings
     /// file in uppercase and prefixed with "price_". For example
     /// "price_LOG_" will override the log setting.
     pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self, config::ConfigError> {
