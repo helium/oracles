@@ -5,7 +5,7 @@ use file_store::file_sink::FileSinkClient;
 use file_store::mobile_ban::proto::{BanAction, BanDetailsV1, BanReason};
 use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
-    BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
+    BanIngestReportV1, BanReqV1, BanRespV1, CarrierId, CellHeartbeatReqV1, CellHeartbeatRespV1,
     DataTransferEvent, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
     DataTransferSessionReqV1, DataTransferSessionRespV1, HexUsageStatsIngestReportV1,
     HexUsageStatsReqV1, HexUsageStatsResV1, RadioUsageCarrierTransferInfo,
@@ -486,6 +486,7 @@ impl TestClient {
                 payer: vec![1, 2, 3, 4],
                 timestamp: Utc::now().timestamp() as u64,
                 signature: vec![],
+                carrier_id: CarrierId::Carrier9 as i32,
             }),
             reward_cancelled: false,
             pub_key: keypair.public_key().into(),
