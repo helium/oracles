@@ -7,7 +7,7 @@ use file_store::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
+    CarrierId, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{accumulate::accumulate_sessions, banning, dc_to_bytes};
 use sqlx::{types::Uuid, PgPool};
@@ -36,6 +36,7 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
                 payer: payer_key.clone(),
                 timestamp: Utc::now(),
                 signature: vec![],
+                carrier_id: CarrierId::Carrier9,
             },
         },
     };
