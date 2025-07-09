@@ -17,7 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        package: [boost-manager, ingest, iot-config, iot-packet-verifier, iot-verifier, mobile-config, mobile-packet-verifier, mobile-verifier, poc-entropy, price, reward-index]
+        # package: [boost-manager, ingest, iot-config, iot-packet-verifier, iot-verifier, mobile-config, mobile-packet-verifier, mobile-verifier, poc-entropy, price, reward-index]
+        package: [ingest]
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-build-${{ matrix.package }}
       cancel-in-progress: true
@@ -32,6 +33,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN  }}
+          role-session-name: gha_build_${{ github.repository_id }}_${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Determine Release Version
         id: version
         run: |
@@ -43,17 +53,22 @@ jobs:
             echo "RELEASE_VERSION=$TAG_NAME" >> $GITHUB_ENV
           fi
 
-      - name: Debug Release Version
-        run: echo "Building Docker image with RELEASE_VERSION=${{ env.RELEASE_VERSION }}"
-
-      - name: Build and Push Docker Image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          push: false  # Change to `true` if you want to push
-          tags: helium/oracle-${{ matrix.package }}:${{ env.RELEASE_VERSION }}
-          build-args: |
-            PACKAGE=${{ matrix.package }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Set ECR URL
+        run: |
+          case "${{ matrix.package }}" in
+            ingest)
+              echo "ECR_URL=${{ vars.INGEST_ECR_URL }}" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "Unsupported package: ${{ matrix.package }}"
+              exit 1
+              ;;
+          esac
+      - name: Build the Docker image
+        run: |
+          echo "Building Docker image with RELEASE_VERSION=${{ env.RELEASE_VERSION }}"
+          docker build  --target runner --build-arg PACKAGE=${{ matrix.package }} -t ${{ env.ECR_URL }}:${{ env.RELEASE_VERSION }} -f Dockerfile .
+      - name: Push Docker image to ECR
+        run: |
+          echo "Pushing image ${{ env.RELEASE_VERSION }} to ${{ env.ECR_URL }}"
+          docker push ${{ env.ECR_URL }}:${{ env.RELEASE_VERSION }}
