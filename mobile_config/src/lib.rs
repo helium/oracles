@@ -13,6 +13,7 @@ pub mod carrier_service;
 pub mod client;
 pub mod entity_service;
 pub mod gateway_info;
+pub mod gateway_info_v3;
 pub mod gateway_service;
 pub mod hex_boosting_service;
 pub mod sub_dao_epoch_reward_info;
