@@ -4,6 +4,7 @@ use crate::{
         db::{get_batch_tracked_radios, get_updated_radios},
         DeviceType, GatewayInfo,
     },
+    gateway_info_v3::{self},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -18,8 +19,8 @@ use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{
         self, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoResV2,
-        GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamResV1,
-        GatewayInfoStreamResV2, GatewayInfoV2,
+        GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamReqV3,
+        GatewayInfoStreamResV1, GatewayInfoStreamResV2, GatewayInfoStreamResV3, GatewayInfoV2,
     },
     Message,
 };
@@ -349,6 +350,62 @@ impl mobile_config::Gateway for GatewayService {
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
     }
+
+    type info_stream_v3Stream = GrpcStreamResult<GatewayInfoStreamResV3>;
+    async fn info_stream_v3(
+        &self,
+        request: Request<GatewayInfoStreamReqV3>,
+    ) -> GrpcResult<Self::info_stream_v3Stream> {
+        let request = request.into_inner();
+        telemetry::count_request("gateway", "info-stream-v3");
+        custom_tracing::record_b58("signer", &request.signer);
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        let metadata_db_pool = self.metadata_pool.clone();
+        let mobile_config_db_pool = self.mobile_config_db_pool.clone();
+        let signing_key = self.signing_key.clone();
+        let batch_size = request.batch_size;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        // let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
+
+        tokio::spawn(async move {
+            let min_updated_at = Utc
+                .timestamp_opt(request.min_updated_at as i64, 0)
+                .single()
+                .ok_or(Status::invalid_argument(
+                    "Invalid min_refreshed_at argument",
+                ))
+                .unwrap(); // TODO
+
+            let _min_location_changed_at = Utc
+                .timestamp_opt(request.min_location_changed_at as i64, 0)
+                .single()
+                .ok_or(Status::invalid_argument(
+                    "Invalid min_location_changed_at argument",
+                ))
+                .unwrap(); // TODO;
+
+            let _updated_radios = get_updated_radios(&mobile_config_db_pool, min_updated_at).await?;
+            let stream = gateway_info_v3::all_info_stream_v3(&metadata_db_pool);
+            // let stream = stream
+            //     .filter_map(|gateway_info| {
+            //         // todo set location and location_changed_at here?
+            //         future::ready(handle_updated_at(
+            //             gateway_info,
+            //             &updated_radios,
+            //             min_updated_at,
+            //         ))
+            //     })
+            //     .boxed();
+            stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
 }
 
 fn handle_updated_at(
@@ -426,20 +483,37 @@ impl GatewayInfoStreamRes for GatewayInfoStreamResV2 {
     }
 }
 
-async fn stream_multi_gateways_info<T>(
-    stream: impl Stream<Item = GatewayInfo>,
+impl GatewayInfoStreamRes for GatewayInfoStreamResV3 {
+    type GatewayInfoType = mobile_config::GatewayInfoV3;
+
+    fn new(gateways: Vec<Self::GatewayInfoType>, timestamp: u64, signer: Vec<u8>) -> Self {
+        GatewayInfoStreamResV3 {
+            gateways,
+            timestamp,
+            signer,
+            signature: vec![],
+        }
+    }
+
+    fn set_signature(&mut self, signature: Vec<u8>) {
+        self.signature = signature;
+    }
+}
+
+async fn stream_multi_gateways_info<T, GI>(
+    stream: impl Stream<Item = GI>,
     tx: tokio::sync::mpsc::Sender<Result<T, Status>>,
     signing_key: Arc<Keypair>,
     batch_size: u32,
 ) -> anyhow::Result<()>
 where
     T: GatewayInfoStreamRes + Send + Sync + 'static + helium_proto::Message,
-    T::GatewayInfoType: TryFrom<GatewayInfo> + Send + 'static,
+    T::GatewayInfoType: TryFrom<GI> + Send + 'static,
 {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
     Ok(stream
-        .map(Ok::<GatewayInfo, sqlx::Error>)
+        .map(Ok::<GI, sqlx::Error>)
         .try_filter_map(|info| async move {
             let result: Option<T::GatewayInfoType> = info.try_into().ok();
             Ok(result)
