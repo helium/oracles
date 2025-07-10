@@ -4,7 +4,7 @@ use crate::{
         db::{get_batch_tracked_radios, get_updated_radios},
         DeviceType, GatewayInfo,
     },
-    gateway_info_v3::{self},
+    gateway_info_v3::{self, DeviceTypeV2},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -370,7 +370,7 @@ impl mobile_config::Gateway for GatewayService {
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
-        // let device_types: Vec<DeviceType> = request.device_types().map(|v| v.into()).collect();
+        let device_types: Vec<DeviceTypeV2> = request.device_types().map(|v| v.into()).collect();
 
         tokio::spawn(async move {
             let min_updated_at = Utc
@@ -389,8 +389,9 @@ impl mobile_config::Gateway for GatewayService {
                 ))
                 .unwrap(); // TODO;
 
-            let _updated_radios = get_updated_radios(&mobile_config_db_pool, min_updated_at).await?;
-            let stream = gateway_info_v3::all_info_stream_v3(&metadata_db_pool);
+            let _updated_radios =
+                get_updated_radios(&mobile_config_db_pool, min_updated_at).await?;
+            let stream = gateway_info_v3::db::all_info_stream_v3(&metadata_db_pool, &device_types);
             // let stream = stream
             //     .filter_map(|gateway_info| {
             //         // todo set location and location_changed_at here?
