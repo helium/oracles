@@ -127,7 +127,7 @@ async fn gateway_stream_info_v1(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         now,
@@ -138,7 +138,7 @@ async fn gateway_stream_info_v1(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiDataOnly\"",
         asset2_pubkey.clone().into(),
         now_plus_10,
@@ -181,7 +181,7 @@ async fn gateway_stream_info_v2(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         now,
@@ -192,7 +192,7 @@ async fn gateway_stream_info_v2(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiDataOnly\"",
         asset2_pubkey.clone().into(),
         now_plus_10,
@@ -235,7 +235,7 @@ async fn gateway_stream_info_v2_updated_at(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -249,7 +249,7 @@ async fn gateway_stream_info_v2_updated_at(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiDataOnly\"",
         asset2_pubkey.clone().into(),
         created_at,
@@ -295,7 +295,7 @@ async fn gateway_info_batch_v2(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -307,7 +307,7 @@ async fn gateway_info_batch_v2(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiDataOnly\"",
         asset2_pubkey.clone().into(),
         created_at,
@@ -376,7 +376,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -388,7 +388,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiIndoor\"",
         asset2_pubkey.clone().into(),
         created_at,
@@ -400,7 +400,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset3",
-        asset3_hex_idx,
+        Some(asset3_hex_idx),
         "\"wifiDataOnly\"",
         asset3_pubkey.clone().into(),
         created_at,
@@ -414,7 +414,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset4",
-        asset4_hex_idx,
+        Some(asset4_hex_idx),
         "\"wifiIndoor\"",
         asset4_pubkey.clone().into(),
         created_at,
@@ -484,7 +484,7 @@ async fn gateway_info_v2_no_mobile_tracker_record(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -496,7 +496,7 @@ async fn gateway_info_v2_no_mobile_tracker_record(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiIndoor\"",
         asset2_pubkey.clone().into(),
         created_at,
@@ -538,7 +538,7 @@ async fn gateway_info_v2(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -608,7 +608,7 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -620,7 +620,7 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiIndoor\"",
         asset2_pubkey.clone().into(),
         created_at,
@@ -632,7 +632,7 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset3",
-        asset3_hex_idx,
+        Some(asset3_hex_idx),
         "\"wifiDataOnly\"",
         asset3_pubkey.clone().into(),
         created_at,
@@ -696,7 +696,7 @@ async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         now,
@@ -707,7 +707,7 @@ async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiDataOnly\"",
         asset2_pubkey.clone().into(),
         now,
@@ -719,7 +719,7 @@ async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     add_db_record(
         &pool,
         "asset3",
-        asset3_hex_idx,
+        Some(asset3_hex_idx),
         "\"wifiDataOnly\"",
         asset3_pubkey.clone().into(),
         now,

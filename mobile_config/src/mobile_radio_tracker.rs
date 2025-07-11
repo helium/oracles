@@ -86,13 +86,19 @@ pub struct TrackedMobileRadio {
 
 impl TrackedMobileRadio {
     fn new(radio: &MobileRadio) -> Self {
+        let asserted_location_changed_at = if radio.location.is_some() {
+            Some(radio.refreshed_at)
+        } else {
+            None
+        };
+
         Self {
             entity_key: radio.entity_key.clone(),
             hash: radio.hash(),
             last_changed_at: radio.refreshed_at,
             last_checked_at: Utc::now(),
             asserted_location: radio.location,
-            asserted_location_changed_at: None,
+            asserted_location_changed_at,
         }
     }
 
@@ -466,7 +472,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn last_asserted_location_will_not_updated_if_nothing_changes() {
+    async fn asserted_location_changed_at_is_none_if_location_none() {
         // location None
         let mut radio = mobile_radio(vec![1, 2, 3]);
         radio.location = None;
@@ -478,17 +484,6 @@ mod tests {
 
         assert!(result[0].asserted_location_changed_at.is_none());
         assert!(result[0].asserted_location.is_none());
-
-        // location is 1
-        let mut radio = mobile_radio(vec![1, 2, 3]);
-        radio.location = Some(1);
-        let tracked_radio = TrackedMobileRadio::new(&radio);
-        let mut tracked_radios = HashMap::new();
-        tracked_radios.insert(tracked_radio.entity_key.clone(), tracked_radio);
-
-        let result = identify_changes(stream::iter(vec![radio.clone()]), tracked_radios).await;
-        assert!(result[0].asserted_location_changed_at.is_none());
-        assert_eq!(result[0].asserted_location, Some(1));
     }
 
     #[tokio::test]
