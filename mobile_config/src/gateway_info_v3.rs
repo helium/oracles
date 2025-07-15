@@ -1,15 +1,15 @@
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
-    // gateway_metadata_v2::DeploymentInfo as DeploymentInfoProto,
-    // CbrsDeploymentInfo as CbrsDeploymentInfoProto,
-    // CbrsRadioDeploymentInfo as CbrsRadioDeploymentInfoProto, DeviceType as DeviceTypeProto,
-    // GatewayInfo as GatewayInfoProto, GatewayInfoV2 as GatewayInfoProtoV2,
-    // GatewayMetadata as GatewayMetadataProto, GatewayMetadataV2 as GatewayMetadataProtoV2,
     // WifiDeploymentInfo as WifiDeploymentInfoProto,
     DeploymentInfo as DeploymentInfoProto,
     DeviceTypeV2 as DeviceTypeProtoV2,
     GatewayInfoV3 as GatewayInfoProtoV3,
+    // gateway_metadata_v2::DeploymentInfo as DeploymentInfoProto,
+    // CbrsDeploymentInfo as CbrsDeploymentInfoProto,
+    // CbrsRadioDeploymentInfo as CbrsRadioDeploymentInfoProto, DeviceType as DeviceTypeProto,
+    // GatewayInfo as GatewayInfoProto, GatewayInfoV2 as GatewayInfoProtoV2,
+    GatewayMetadataV3 as GatewayMetadataProtoV3,
     LocationInfo as LocationInfoProto,
 };
 
@@ -23,7 +23,9 @@ pub struct LocationInfo {
 
 #[derive(Clone, Debug)]
 pub struct GatewayMetadataV3 {
+    // TODO: Should it be optional?
     pub location_info: LocationInfo,
+    // TODO: Can it be Proto?
     pub deployment_info: Option<DeploymentInfoProto>,
 }
 
@@ -83,20 +85,32 @@ impl From<DeviceTypeProtoV2> for DeviceTypeV2 {
 impl TryFrom<GatewayInfoV3> for GatewayInfoProtoV3 {
     type Error = hextree::Error;
 
-    fn try_from(_info: GatewayInfoV3) -> Result<Self, Self::Error> {
-        todo!()
-        // let metadata = if let Some(metadata) = info.metadata {
-        //     Some(GatewayMetadataProto {
-        //         location: hextree::Cell::from_raw(metadata.location)?.to_string(),
-        //     })
-        // } else {
-        //     None
-        // };
-        // Ok(Self {
-        //     address: info.address.into(),
-        //     metadata,
-        //     device_type: info.device_type as i32,
-        // })
+    fn try_from(info: GatewayInfoV3) -> Result<Self, Self::Error> {
+        let metadata = if let Some(metadata) = info.metadata {
+            let location_info = LocationInfoProto {
+                location: hextree::Cell::from_raw(metadata.location_info.location)?.to_string(),
+                location_changed_at: metadata.location_info.location_changed_at.timestamp() as u64,
+            };
+            let deployment_info = metadata.deployment_info.map(|di| DeploymentInfoProto {
+                antenna: di.antenna,
+                elevation: di.elevation,
+                azimuth: di.azimuth,
+            });
+
+            Some(GatewayMetadataProtoV3 {
+                location_info: Some(location_info),
+                deployment_info,
+            })
+        } else {
+            None
+        };
+        Ok(Self {
+            address: info.address.into(),
+            metadata,
+            device_type: info.device_type as i32,
+            created_at: info.created_at.timestamp() as u64,
+            updated_at: info.updated_at.timestamp() as u64,
+        })
     }
 }
 
@@ -111,6 +125,8 @@ pub(crate) mod db {
     use sqlx::Row;
     use sqlx::{types::Json, PgExecutor};
     use std::{collections::HashMap, str::FromStr, sync::LazyLock};
+
+    use crate::gateway_info::DeploymentInfo;
 
     use super::{DeviceTypeV2, GatewayInfoV3, GatewayMetadataV3};
 
@@ -204,111 +220,98 @@ pub(crate) mod db {
         }
     }
 
+    /// Streams all gateway info records, optionally filtering by device types.
     pub fn all_info_stream_v3<'a>(
         db: impl PgExecutor<'a> + 'a,
         device_types: &'a [DeviceTypeV2],
         mtim: &'a MobileTrackerInfoMap,
     ) -> impl Stream<Item = GatewayInfoV3> + 'a {
-        match device_types.is_empty() {
-            true => sqlx::query(GET_MOBILE_HOTSPOT_INFO)
-                .fetch(db)
-                .filter_map(move |hs_info| async move {
-                    match hs_info {
-                        Ok(info_row) => {
-                            let address = PublicKeyBinary::from_str(
-                                &bs58::encode(info_row.get::<&[u8], &str>("entity_key"))
-                                    .into_string(),
-                            )
-                            .map_err(|err| sqlx::Error::Decode(Box::new(err)))
-                            .unwrap(); // TODO remove unwrap()
+        // Choose base query depending on whether filtering is needed.
+        let query = if device_types.is_empty() {
+            sqlx::query(GET_MOBILE_HOTSPOT_INFO)
+        } else {
+            sqlx::query(&DEVICE_TYPES_METADATA_SQL).bind(
+                device_types
+                    .iter()
+                    // The device_types field has a jsonb type but is being used as a string,
+                    // which forces us to add quotes.
+                    .map(|v| format!("\"{}\"", v.to_sql_param()))
+                    .collect::<Vec<_>>(),
+            )
+        };
 
-                            match mtim.get(&address) {
-                                Some(mti) => {
-                                    // TODO test location is Some but asserted_location_changed_at
-                                    // is None
-                                    let location = mti.location;
-                                    let metadata = if let Some(loc) = location {
-                                        // If location is Some, asserted_location_changed_at must
-                                        // also be some. Otherwise, data is corrupted
-                                        let asserted_location_changed_at =
-                                            mti.asserted_location_changed_at?;
-
-                                        // TODO function getWifiDeploymentInfo
-                                        let deployment_info = match info_row.try_get::<Option<
-                                            Json<crate::gateway_info::DeploymentInfo>,
-                                        >, &str>(
-                                            "deployment_info"
-                                        ) {
-                                            Ok(di) => di.map(|v| v.0),
-                                            // We shouldn't fail if an error occurs in this case.
-                                            // This is because the data in this column could be inconsistent,
-                                            // and we don't want to break
-                                            Err(_e) => None,
-                                        };
-                                        let deployment_info = match deployment_info {
-                                            Some(di) => match di {
-                                                crate::gateway_info::DeploymentInfo::WifiDeploymentInfo(wdi) => {
-                                                    Some(DeploymentInfoProto {
-                                                        antenna: wdi.antenna,
-                                                        elevation: wdi.elevation,
-                                                        azimuth: wdi.azimuth,
-                                                    })
-                                                }
-                                                crate::gateway_info::DeploymentInfo::CbrsDeploymentInfo(_cdi) => None,
-                                            },
-                                            None => None,
-                                        };
-
-                                        Some(GatewayMetadataV3 {
-                                            location_info: super::LocationInfo {
-                                                location: loc,
-                                                location_changed_at: asserted_location_changed_at,
-                                            },
-                                            deployment_info,
-                                        })
-                                    } else {
-                                        None
-                                    };
-                                    let device_type = DeviceTypeV2::from_str(
-                        info_row.get::<Json<String>, &str>("device_type")
-                            .to_string()
-                            .as_ref(),
-                    )
-                    .map_err(|err| sqlx::Error::Decode(Box::new(err))).unwrap();// todo remove unwrap
-                    let created_at = info_row.get::<DateTime<Utc>, &str>("created_at");
-                    let refreshed_at = info_row.get::<DateTime<Utc>, &str>("refreshed_at");
-
-                                    Some(GatewayInfoV3 {
-                                        address,
-                                        metadata,
-                                        device_type,
-                                        created_at,
-                                        refreshed_at,
-                                        updated_at: mti.last_changed_at
-                                    })
-                                }
-                                None => None,
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("SLQX error during fetching mobile hotspot infos. {e}");
-                            None
-                        }
+        query
+            .fetch(db)
+            .filter_map(move |result| async move {
+                match result {
+                    Ok(row) => process_row(row, mtim).await,
+                    Err(e) => {
+                        tracing::error!("SQLx fetch error: {e:?}");
+                        None
                     }
-                })
-                .boxed(),
-            false => todo!(), // false => sqlx::query_as::<_, GatewayInfoV3>(&DEVICE_TYPES_METADATA_SQL)
-                              //     .bind(
-                              //         device_types
-                              //             .iter()
-                              //             // The device_types field has a jsonb type but is being used as a string,
-                              //             // which forces us to add quotes.
-                              //             .map(|v| format!("\"{}\"", v.to_sql_param()))
-                              //             .collect::<Vec<_>>(),
-                              //     )
-                              //     .fetch(db)
-                              //     .filter_map(|gwinfo| async move { gwinfo.ok() })
-                              //     .boxed(),
-        }
+                }
+            })
+            .boxed()
+    }
+
+    /// Processes a single database row into a GatewayInfoV3, returning None if any step fails.
+    async fn process_row(
+        row: sqlx::postgres::PgRow,
+        mtim: &MobileTrackerInfoMap,
+    ) -> Option<GatewayInfoV3> {
+        let device_type = DeviceTypeV2::from_str(
+            row.get::<Json<String>, &str>("device_type")
+                .to_string()
+                .as_ref(),
+        )
+        .map_err(|err| sqlx::Error::Decode(Box::new(err)))
+        .unwrap(); // TODO REMOVE
+
+        let address = PublicKeyBinary::from_str(
+            &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
+        )
+        .map_err(|err| sqlx::Error::Decode(Box::new(err)))
+        .unwrap(); // TODO REMOVE
+
+        let mti = mtim.get(&address)?;
+
+        let updated_at = mti.last_changed_at;
+
+        let metadata = mti.location.and_then(|loc| {
+            let location_changed_at = mti.asserted_location_changed_at?;
+            // Safely parse deployment_info JSON
+            let deployment_info = row
+                .try_get::<Option<sqlx::types::Json<DeploymentInfo>>, _>("deployment_info")
+                .ok()
+                .flatten()
+                .and_then(|json| match json.0 {
+                    DeploymentInfo::WifiDeploymentInfo(wdi) => Some(DeploymentInfoProto {
+                        antenna: wdi.antenna,
+                        elevation: wdi.elevation,
+                        azimuth: wdi.azimuth,
+                    }),
+                    _ => None,
+                });
+
+            Some(GatewayMetadataV3 {
+                location_info: super::LocationInfo {
+                    location: loc,
+                    location_changed_at,
+                },
+                deployment_info,
+            })
+        });
+
+        let created_at: DateTime<Utc> = row.get("created_at");
+        let refreshed_at: DateTime<Utc> = row.get("refreshed_at");
+
+        Some(GatewayInfoV3 {
+            address,
+            metadata,
+            device_type,
+            created_at,
+            refreshed_at,
+            updated_at,
+        })
     }
 }
