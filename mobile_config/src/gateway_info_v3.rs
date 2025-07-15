@@ -152,7 +152,7 @@ pub(crate) mod db {
             JOIN key_to_assets kta ON infos.asset = kta.asset
             WHERE device_type != '"cbrs"'
         "#;
-    const DEVICE_TYPES_WHERE_SNIPPET: &str = " where device_type::text = any($1) ";
+    const DEVICE_TYPES_WHERE_SNIPPET: &str = " AND device_type::text = any($1) ";
     static DEVICE_TYPES_METADATA_SQL: LazyLock<String> =
         LazyLock::new(|| format!("{GET_MOBILE_HOTSPOT_INFO} {DEVICE_TYPES_WHERE_SNIPPET}"));
 
@@ -175,7 +175,7 @@ pub(crate) mod db {
                         let entity_key = bs58::encode(entity_key_b).into_string();
                         let last_changed_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
                         let asserted_location_changed_at =
-                            row.get::<Option<DateTime<Utc>>, &str>("asserted_location_changed_at ");
+                            row.get::<Option<DateTime<Utc>>, &str>("asserted_location_changed_at");
                         let asserted_location = row.get::<i64, &str>("asserted_location");
 
                         map.insert(
@@ -202,7 +202,7 @@ pub(crate) mod db {
                         let entity_key = bs58::encode(entity_key_b).into_string();
                         let last_changed_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
                         let asserted_location_changed_at =
-                            row.get::<Option<DateTime<Utc>>, &str>("asserted_location_changed_at ");
+                            row.get::<Option<DateTime<Utc>>, &str>("asserted_location_changed_at");
                         let asserted_location = row.get::<Option<i64>, &str>("asserted_location");
 
                         map.insert(
