@@ -15,6 +15,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: mobile-devnet
     strategy:
       matrix:
         # package: [boost-manager, ingest, iot-config, iot-packet-verifier, iot-verifier, mobile-config, mobile-packet-verifier, mobile-verifier, poc-entropy, price, reward-index]
