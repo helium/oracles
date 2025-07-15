@@ -32,7 +32,7 @@ pub async fn add_mobile_tracker_record(
 pub async fn add_db_record(
     pool: &PgPool,
     asset: &str,
-    location: i64,
+    location: Option<i64>,
     device_type: &str,
     key: PublicKeyBinary,
     created_at: DateTime<Utc>,
@@ -55,18 +55,19 @@ pub async fn add_db_record(
 pub async fn add_mobile_hotspot_infos(
     pool: &PgPool,
     asset: &str,
-    location: i64,
+    location: Option<i64>,
     device_type: &str,
     created_at: DateTime<Utc>,
     refreshed_at: Option<DateTime<Utc>>,
     deployment_info: Option<&str>,
 ) {
+    let num_locations = if location.is_some() { Some(1) } else { Some(0) };
     sqlx::query(
         r#"
             INSERT INTO
-"mobile_hotspot_infos" ("asset", "location", "device_type", "created_at", "refreshed_at", "deployment_info")
+"mobile_hotspot_infos" ("asset", "location", "device_type", "created_at", "refreshed_at", "deployment_info", "num_location_asserts")
             VALUES
-($1, $2, $3::jsonb, $4, $5, $6::jsonb);
+($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7);
     "#,
     )
     .bind(asset)
@@ -75,6 +76,7 @@ pub async fn add_mobile_hotspot_infos(
     .bind(created_at)
     .bind(refreshed_at)
     .bind(deployment_info)
+    .bind(num_locations)
     .execute(pool)
     .await
     .unwrap();
