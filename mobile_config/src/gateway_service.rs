@@ -4,7 +4,7 @@ use crate::{
         db::{get_batch_tracked_radios, get_updated_radios},
         DeviceType, GatewayInfo,
     },
-    gateway_info_v3::{self, DeviceTypeV2},
+    gateway_info_v3::{self, db::get_mobile_tracker_gateways_info, DeviceTypeV2},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -378,20 +378,31 @@ impl mobile_config::Gateway for GatewayService {
                 .single()
                 .ok_or(Status::invalid_argument(
                     "Invalid min_refreshed_at argument",
-                ))
-                .unwrap(); // TODO
+                ))?;
 
-            let _min_location_changed_at = Utc
-                .timestamp_opt(request.min_location_changed_at as i64, 0)
-                .single()
-                .ok_or(Status::invalid_argument(
-                    "Invalid min_location_changed_at argument",
-                ))
-                .unwrap(); // TODO;
+            let min_location_changed_at = if request.min_location_changed_at == 0 {
+                None
+            } else {
+                Some(
+                    Utc.timestamp_opt(request.min_location_changed_at as i64, 0)
+                        .single()
+                        .ok_or(Status::invalid_argument(
+                            "Invalid min_location_changed_at argument",
+                        ))?,
+                )
+            };
 
-            let _updated_radios =
-                get_updated_radios(&mobile_config_db_pool, min_updated_at).await?;
-            let stream = gateway_info_v3::db::all_info_stream_v3(&metadata_db_pool, &device_types);
+            let mobile_tracker_gateways_info = get_mobile_tracker_gateways_info(
+                &mobile_config_db_pool,
+                min_updated_at,
+                min_location_changed_at,
+            )
+            .await?;
+            let stream = gateway_info_v3::db::all_info_stream_v3(
+                &metadata_db_pool,
+                &device_types,
+                &mobile_tracker_gateways_info,
+            );
             // let stream = stream
             //     .filter_map(|gateway_info| {
             //         // todo set location and location_changed_at here?
