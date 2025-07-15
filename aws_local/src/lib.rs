@@ -42,6 +42,7 @@ impl AwsLocal {
             .await;
 
         let mut s3_config = aws_sdk_s3::config::Builder::from(&config)
+            .force_path_style(true)
             .endpoint_url(settings.endpoint.as_ref().expect("endpoint"));
 
         let creds = aws_sdk_s3::config::Credentials::builder()

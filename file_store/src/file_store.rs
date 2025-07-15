@@ -68,17 +68,21 @@ impl FileStore {
 
         #[cfg(feature = "local")]
         {
-            let mut creds = aws_sdk_s3::config::Credentials::builder();
-            creds = creds.provider_name("Static");
+            // NOTE(mj): If you see something like a DNS error, this is probably
+            // the culprit. Need to find a way to make this configurable. It
+            // would be nice to allow the "local" feature to be active, but not
+            // enforce path style.
+            s3_config = s3_config.force_path_style(true);
 
-            if let Some(access_key_id) = _access_key_id {
-                creds = creds.access_key_id(access_key_id);
-            }
-            if let Some(secret_access_key) = _secret_access_key {
-                creds = creds.secret_access_key(secret_access_key);
-            }
+            if let Some((access_key_id, secret_access_key)) = _access_key_id.zip(_secret_access_key)
+            {
+                let creds = aws_sdk_s3::config::Credentials::builder()
+                    .provider_name("Static")
+                    .access_key_id(access_key_id)
+                    .secret_access_key(secret_access_key);
 
-            s3_config = s3_config.credentials_provider(creds.build());
+                s3_config = s3_config.credentials_provider(creds.build());
+            }
         }
 
         if let Some(timeout) = timeout_config {
