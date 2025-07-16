@@ -403,16 +403,6 @@ impl mobile_config::Gateway for GatewayService {
                 &device_types,
                 &mobile_tracker_gateways_info,
             );
-            // let stream = stream
-            //     .filter_map(|gateway_info| {
-            //         // todo set location and location_changed_at here?
-            //         future::ready(handle_updated_at(
-            //             gateway_info,
-            //             &updated_radios,
-            //             min_updated_at,
-            //         ))
-            //     })
-            //     .boxed();
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
