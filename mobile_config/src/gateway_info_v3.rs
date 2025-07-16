@@ -23,7 +23,6 @@ pub struct LocationInfo {
 
 #[derive(Clone, Debug)]
 pub struct GatewayMetadataV3 {
-    // TODO: Should it be optional?
     pub location_info: LocationInfo,
     // TODO: Can it be Proto?
     pub deployment_info: Option<DeploymentInfoProto>,
