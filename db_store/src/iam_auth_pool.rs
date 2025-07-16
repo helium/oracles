@@ -1,17 +1,12 @@
 use crate::{error::invalid_configuration, Error, Result, Settings};
-use aws_config::BehaviorVersion;
 use sqlx::{
     postgres::{PgConnectOptions, PgSslMode, Postgres},
     Pool,
 };
 
+use aws_config::{BehaviorVersion, Region};
 use aws_credential_types::Credentials;
-use aws_sig_auth::signer::{self, HttpSignatureType, OperationSigningConfig, RequestConfig};
-use aws_smithy_http::body::SdkBody;
-use aws_types::{
-    region::{Region, SigningRegion},
-    SigningService,
-};
+use aws_sigv4::sign::v4;
 use std::time::{Duration, SystemTime};
 
 pub async fn connect(settings: &Settings) -> Result<Pool<Postgres>> {
@@ -118,12 +113,12 @@ impl ConnectParameters {
     async fn auth_token(&self, client: &aws_sdk_sts::Client) -> Result<String> {
         let credentials = self.credentials(client).await?;
 
-        generate_rds_iam_token_old(
+        generate_rds_iam_token(
             &self.host,
             self.iam_region.clone(),
             self.port,
             &self.username,
-            &credentials,
+            credentials,
             std::time::SystemTime::now(),
         )
     }
@@ -173,146 +168,50 @@ fn region(settings: &Settings) -> Result<Region> {
         .ok_or_else(|| invalid_configuration("iam_region is required"))
 }
 
-fn generate_rds_iam_token_old(
+// Reference: https://docs.aws.amazon.com/sdk-for-rust/latest/dg/rust_rds_code_examples.html
+pub fn generate_rds_iam_token(
     db_hostname: &str,
-    region: Region,
+    region: aws_config::Region,
     port: u16,
     db_username: &str,
-    credentials: &Credentials,
+    credentials: Credentials,
     timestamp: SystemTime,
 ) -> Result<String> {
-    let signer = signer::SigV4Signer::new();
-    let mut operation_config = OperationSigningConfig::default_config();
-    operation_config.signature_type = HttpSignatureType::HttpRequestQueryParams;
-    operation_config.expires_in = Some(Duration::from_secs(15 * 60));
-    let request_config = RequestConfig {
-        request_ts: timestamp,
-        region: &SigningRegion::from(region),
-        service: &SigningService::from_static("rds-db"),
-        payload_override: None,
-    };
-    let mut request = http::Request::builder()
-        .uri(format!(
-            "http://{db_hostname}:{port}/?Action=connect&DBUser={db_user}",
-            db_hostname = db_hostname,
-            port = port,
-            db_user = db_username
-        ))
-        .body(SdkBody::empty())
-        .expect("valid request");
-    let _signature = signer.sign(
-        &operation_config,
-        &request_config,
-        credentials,
-        &mut request,
-    )?;
-
-    let mut uri = request.uri().to_string();
-    if uri.starts_with("http://") {
-        Ok(uri.split_off("http://".len()))
-    } else {
-        Err(Error::InvalidAuthToken())
-    }
-}
-
-mod iam {
-    use std::time::{Duration, SystemTime};
-
-    use aws_sigv4::{
-        http_request::{sign, SignableBody, SignableRequest, SignatureLocation, SigningSettings},
-        sign::v4,
+    use aws_sigv4::http_request::{
+        self, SignableBody, SignableRequest, SignatureLocation, SigningSettings,
     };
 
-    pub fn generate_rds_iam_token(
-        db_hostname: &str,
-        region: aws_config::Region,
-        port: u16,
-        db_username: &str,
-        credentials: new_aws_credential_types::Credentials,
-        timestamp: SystemTime,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        let identity = credentials.into();
+    let mut signing_settings = SigningSettings::default();
+    signing_settings.expires_in = Some(Duration::from_secs(15 * 60));
+    signing_settings.signature_location = SignatureLocation::QueryParams;
 
-        let mut signing_settings = SigningSettings::default();
-        signing_settings.expires_in = Some(Duration::from_secs(15 * 60));
-        signing_settings.signature_location = SignatureLocation::QueryParams;
+    let identity = credentials.into();
+    let signing_params = v4::SigningParams::builder()
+        .identity(&identity)
+        .region(region.as_ref())
+        .name("rds-db")
+        .time(timestamp)
+        .settings(signing_settings)
+        .build()
+        .map_err(|err| Error::SigningError(format!("SigningParams build: {err:?}")))?;
 
-        let signing_params = v4::SigningParams::builder()
-            .identity(&identity)
-            .region(region.as_ref())
-            .name("rds-db")
-            .time(timestamp)
-            .settings(signing_settings)
-            .build()?;
+    let url = format!("https://{db_hostname}:{port}/?Action=connect&DBUser={db_username}",);
 
-        let url = format!(
-            "https://{db_hostname}:{port}/?Action=connect&DBUser={db_user}",
-            db_hostname = db_hostname,
-            port = port,
-            db_user = db_username
-        );
+    let signable_request =
+        SignableRequest::new("GET", &url, std::iter::empty(), SignableBody::Bytes(&[]))
+            .expect("signable request");
 
-        let signable_request =
-            SignableRequest::new("GET", &url, std::iter::empty(), SignableBody::Bytes(&[]))
-                .expect("signable request");
+    let (signing_instructions, _signature) =
+        http_request::sign(signable_request, &signing_params.into())
+            .map_err(|err| Error::SigningError(format!("Signing: {err:?}")))?
+            .into_parts();
 
-        let (signing_instructions, _signature) =
-            sign(signable_request, &signing_params.into())?.into_parts();
-
-        let mut url = url::Url::parse(&url).unwrap();
-        for (name, value) in signing_instructions.params() {
-            url.query_pairs_mut().append_pair(name, &value);
-        }
-
-        let response = url.to_string().split_off("https://".len());
-
-        Ok(response)
+    let mut url = url::Url::parse(&url).expect("valid url");
+    for (name, value) in signing_instructions.params() {
+        url.query_pairs_mut().append_pair(name, value);
     }
-}
 
-#[cfg(test)]
-mod tests {
+    let response = url.to_string().split_off("https://".len());
 
-    use super::*;
-
-    #[test]
-    fn creds() {
-        let now = std::time::SystemTime::now();
-        let token = generate_rds_iam_token_old(
-            "host-name",
-            Region::new("us-east-1"),
-            5566,
-            "username",
-            &Credentials::new(
-                "access_key_id",
-                "secret_access_key",
-                Some("session_token".to_string()),
-                None,
-                "Helium Foundation",
-            ),
-            now,
-        )
-        .unwrap();
-
-        println!("old: {token:?}");
-
-        let new_token = iam::generate_rds_iam_token(
-            "host-name",
-            aws_config::Region::new("us-east-1"),
-            5566,
-            "username",
-            new_aws_credential_types::Credentials::new(
-                "access_key_id",
-                "secret_access_key",
-                Some("session_token".to_string()),
-                None,
-                "Helium Foundation",
-            ),
-            now,
-        )
-        .unwrap();
-        println!("new: {new_token:?}");
-
-        assert_eq!(token, new_token);
-    }
+    Ok(response)
 }
