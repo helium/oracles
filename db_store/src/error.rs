@@ -24,11 +24,9 @@ pub enum Error {
     #[error("Assumed Credentials were invalid: {0}")]
     InvalidAssumedCredentials(String),
     #[error("Aws Signing Error")]
-    SigningError(#[from] aws_sig_auth::signer::SigningError),
+    SigningError(String),
     #[error("tokio join error")]
     JoinError(#[from] tokio::task::JoinError),
-    #[error("invalid auth token, does not start with http")]
-    InvalidAuthToken(),
 }
 
 pub fn invalid_configuration(str: impl Into<String>) -> Error {
