@@ -4,7 +4,8 @@ use std::vec;
 
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::services::mobile_config::{
-    self as proto, DeviceTypeV2, GatewayClient, GatewayInfoStreamReqV3,
+    self as proto, DeploymentInfo, DeviceTypeV2, GatewayClient, GatewayInfoStreamReqV3,
+    GatewayInfoV3, LocationInfo,
 };
 use prost::Message;
 use sqlx::PgPool;
@@ -13,7 +14,7 @@ pub mod common;
 use common::*;
 
 #[sqlx::test]
-async fn gateway_stream_info_v3(pool: PgPool) {
+async fn gateway_stream_info_v3_basic(pool: PgPool) {
     let admin_key = make_keypair();
     let asset1_pubkey = make_keypair().public_key().clone();
     let asset1_hex_idx = 631711281837647359_i64;
@@ -21,6 +22,7 @@ async fn gateway_stream_info_v3(pool: PgPool) {
     let asset2_pubkey = make_keypair().public_key().clone();
     let now = Utc::now();
     let now_plus_10 = now + chrono::Duration::seconds(10);
+    let now_plus_5 = now + chrono::Duration::seconds(5);
 
     create_db_tables(&pool).await;
     add_db_record(
@@ -31,10 +33,17 @@ async fn gateway_stream_info_v3(pool: PgPool) {
         asset1_pubkey.clone().into(),
         now,
         Some(now),
-        None,
+        Some(r#"{"wifiInfoV0": {"antenna": 18, "azimuth": 161, "elevation": 2, "electricalDownTilt": 3, "mechanicalDownTilt": 4}}"#)
     )
     .await;
-    add_mobile_tracker_record(&pool, asset1_pubkey.clone().into(), now, None, None).await;
+    add_mobile_tracker_record(
+        &pool,
+        asset1_pubkey.clone().into(),
+        now_plus_10,
+        Some(asset1_hex_idx),
+        Some(now_plus_5),
+    )
+    .await;
 
     add_db_record(
         &pool,
@@ -63,9 +72,25 @@ async fn gateway_stream_info_v3(pool: PgPool) {
     let mut stream = client.info_stream_v3(req).await.unwrap().into_inner();
     let resp = stream.next().await.unwrap().unwrap();
     assert_eq!(resp.gateways.len(), 1);
+    let gateway: &GatewayInfoV3 = resp.gateways.first().unwrap();
+    assert_eq!(gateway.device_type, Into::<i32>::into(DeviceTypeV2::Indoor));
+    assert_eq!(gateway.address, asset1_pubkey.to_vec());
+    assert_eq!(gateway.created_at, now.timestamp() as u64);
+    assert_eq!(gateway.updated_at, now_plus_10.timestamp() as u64);
     assert_eq!(
-        resp.gateways.first().unwrap().device_type,
-        Into::<i32>::into(DeviceTypeV2::Indoor)
+        gateway.metadata.clone().unwrap().location_info.unwrap(),
+        LocationInfo {
+            location: format!("{:x}", asset1_hex_idx),
+            location_changed_at: now_plus_5.timestamp() as u64
+        }
+    );
+    assert_eq!(
+        gateway.metadata.clone().unwrap().deployment_info.unwrap(),
+        DeploymentInfo {
+            antenna: 18,
+            elevation: 2,
+            azimuth: 161,
+        }
     );
 }
 
