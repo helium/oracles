@@ -1,15 +1,8 @@
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
-    // WifiDeploymentInfo as WifiDeploymentInfoProto,
-    DeploymentInfo as DeploymentInfoProto,
-    DeviceTypeV2 as DeviceTypeProtoV2,
-    GatewayInfoV3 as GatewayInfoProtoV3,
-    // gateway_metadata_v2::DeploymentInfo as DeploymentInfoProto,
-    // CbrsDeploymentInfo as CbrsDeploymentInfoProto,
-    // CbrsRadioDeploymentInfo as CbrsRadioDeploymentInfoProto, DeviceType as DeviceTypeProto,
-    // GatewayInfo as GatewayInfoProto, GatewayInfoV2 as GatewayInfoProtoV2,
-    GatewayMetadataV3 as GatewayMetadataProtoV3,
+    DeploymentInfo as DeploymentInfoProto, DeviceTypeV2 as DeviceTypeProtoV2,
+    GatewayInfoV3 as GatewayInfoProtoV3, GatewayMetadataV3 as GatewayMetadataProtoV3,
     LocationInfo as LocationInfoProto,
 };
 
@@ -194,7 +187,7 @@ pub(crate) mod db {
             .await
     }
 
-    /// Streams all gateway info records, optionally filtering by device types.
+    // Streams all gateway info records, optionally filtering by device types.
     pub fn all_info_stream_v3<'a>(
         db: impl PgExecutor<'a> + 'a,
         device_types: &'a [DeviceTypeV2],
@@ -228,7 +221,7 @@ pub(crate) mod db {
             .boxed()
     }
 
-    /// Processes a single database row into a GatewayInfoV3, returning None if any step fails.
+    // Processes a single database row into a GatewayInfoV3, returning None if any step fails.
     async fn process_row(
         row: sqlx::postgres::PgRow,
         mtim: &MobileTrackerInfoMap,
@@ -239,13 +232,13 @@ pub(crate) mod db {
                 .as_ref(),
         )
         .map_err(|err| sqlx::Error::Decode(Box::new(err)))
-        .unwrap(); // TODO REMOVE
+        .ok()?;
 
         let address = PublicKeyBinary::from_str(
             &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
         )
         .map_err(|err| sqlx::Error::Decode(Box::new(err)))
-        .unwrap(); // TODO REMOVE
+        .ok()?;
 
         let mti = mtim.get(&address)?;
 
@@ -253,7 +246,6 @@ pub(crate) mod db {
 
         let metadata = mti.location.and_then(|loc| {
             let location_changed_at = mti.asserted_location_changed_at?;
-            // Safely parse deployment_info JSON
             let deployment_info = row
                 .try_get::<Option<sqlx::types::Json<DeploymentInfo>>, _>("deployment_info")
                 .ok()
