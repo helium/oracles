@@ -128,7 +128,6 @@ pub(crate) mod db {
     }
     pub type MobileTrackerInfoMap = HashMap<PublicKeyBinary, MobileTrackerInfo>;
 
-    // TODO test and add indexes if needed
     const GET_UPDATED_RADIOS: &str =
         "SELECT entity_key, last_changed_at, asserted_location, asserted_location_changed_at 
         FROM mobile_radio_tracker WHERE last_changed_at >= $1";
