@@ -159,63 +159,39 @@ pub(crate) mod db {
         min_updated_at: DateTime<Utc>,
         min_location_changed_at: Option<DateTime<Utc>>,
     ) -> anyhow::Result<MobileTrackerInfoMap> {
-        // TODO refactor
-        if let Some(min_loc_changed_at) = min_location_changed_at {
+        let query = if let Some(min_loc) = min_location_changed_at {
             sqlx::query(&GET_UPDATED_RADIOS_WITH_LOCATION)
                 .bind(min_updated_at)
-                .bind(min_loc_changed_at)
-                .fetch(db)
-                .map_err(anyhow::Error::from)
-                .try_fold(
-                    MobileTrackerInfoMap::new(),
-                    |mut map: MobileTrackerInfoMap, row| async move {
-                        let entity_key_b = row.get::<&[u8], &str>("entity_key");
-                        let entity_key = bs58::encode(entity_key_b).into_string();
-                        let last_changed_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
-                        let asserted_location_changed_at =
-                            row.get::<Option<DateTime<Utc>>, &str>("asserted_location_changed_at");
-                        let asserted_location = row.get::<i64, &str>("asserted_location");
-
-                        map.insert(
-                            PublicKeyBinary::from_str(&entity_key)?,
-                            MobileTrackerInfo {
-                                location: Some(asserted_location as u64),
-                                last_changed_at,
-                                asserted_location_changed_at,
-                            },
-                        );
-                        Ok(map)
-                    },
-                )
-                .await
+                .bind(min_loc)
         } else {
-            sqlx::query(GET_UPDATED_RADIOS)
-                .bind(min_updated_at)
-                .fetch(db)
-                .map_err(anyhow::Error::from)
-                .try_fold(
-                    MobileTrackerInfoMap::new(),
-                    |mut map: MobileTrackerInfoMap, row| async move {
-                        let entity_key_b = row.get::<&[u8], &str>("entity_key");
-                        let entity_key = bs58::encode(entity_key_b).into_string();
-                        let last_changed_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
-                        let asserted_location_changed_at =
-                            row.get::<Option<DateTime<Utc>>, &str>("asserted_location_changed_at");
-                        let asserted_location = row.get::<Option<i64>, &str>("asserted_location");
+            sqlx::query(GET_UPDATED_RADIOS).bind(min_updated_at)
+        };
 
-                        map.insert(
-                            PublicKeyBinary::from_str(&entity_key)?,
-                            MobileTrackerInfo {
-                                location: asserted_location.map(|v| v as u64),
-                                last_changed_at,
-                                asserted_location_changed_at,
-                            },
-                        );
-                        Ok(map)
-                    },
-                )
-                .await
-        }
+        query
+            .fetch(db)
+            .map_err(anyhow::Error::from)
+            .try_fold(
+                MobileTrackerInfoMap::new(),
+                |mut map: MobileTrackerInfoMap, row| async move {
+                    let entity_key_b = row.get::<&[u8], &str>("entity_key");
+                    let entity_key = bs58::encode(entity_key_b).into_string();
+                    let last_changed_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
+                    let asserted_location_changed_at =
+                        row.get::<Option<DateTime<Utc>>, &str>("asserted_location_changed_at");
+                    let asserted_location = row.get::<Option<i64>, &str>("asserted_location");
+
+                    map.insert(
+                        PublicKeyBinary::from_str(&entity_key)?,
+                        MobileTrackerInfo {
+                            location: asserted_location.map(|v| v as u64),
+                            last_changed_at,
+                            asserted_location_changed_at,
+                        },
+                    );
+                    Ok(map)
+                },
+            )
+            .await
     }
 
     /// Streams all gateway info records, optionally filtering by device types.
