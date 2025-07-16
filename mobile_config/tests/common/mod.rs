@@ -8,21 +8,25 @@ pub async fn add_mobile_tracker_record(
     pool: &PgPool,
     key: PublicKeyBinary,
     last_changed_at: DateTime<Utc>,
+    asserted_location: Option<i64>,
+    asserted_location_changed_at: Option<DateTime<Utc>>,
 ) {
     let b58 = bs58::decode(key.to_string()).into_vec().unwrap();
 
     sqlx::query(
         r#"
             INSERT INTO
-"mobile_radio_tracker" ("entity_key", "hash", "last_changed_at", "last_checked_at")
+"mobile_radio_tracker" ("entity_key", "hash", "last_changed_at", "last_checked_at", "asserted_location", "asserted_location_changed_at")
             VALUES
-($1, $2, $3, $4);
+($1, $2, $3, $4, $5, $6);
     "#,
     )
     .bind(b58)
     .bind("hash")
     .bind(last_changed_at)
     .bind(last_changed_at + Duration::hours(1))
+    .bind(asserted_location)
+    .bind(asserted_location_changed_at)
     .execute(pool)
     .await
     .unwrap();
