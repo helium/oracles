@@ -95,6 +95,59 @@ async fn gateway_stream_info_v3_basic(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn gateway_stream_info_v3_no_deployment_info(pool: PgPool) {
+    // There is location info but no deployment info
+    let admin_key = make_keypair();
+    let asset1_pubkey = make_keypair().public_key().clone();
+    let asset1_hex_idx = 631711281837647359_i64;
+    let now = Utc::now();
+    let now_plus_10 = now + chrono::Duration::seconds(10);
+    let now_plus_5 = now + chrono::Duration::seconds(5);
+
+    create_db_tables(&pool).await;
+    add_db_record(
+        &pool,
+        "asset1",
+        Some(asset1_hex_idx),
+        "\"wifiIndoor\"",
+        asset1_pubkey.clone().into(),
+        now,
+        Some(now),
+        None,
+    )
+    .await;
+    add_mobile_tracker_record(
+        &pool,
+        asset1_pubkey.clone().into(),
+        now_plus_10,
+        Some(asset1_hex_idx),
+        Some(now_plus_5),
+    )
+    .await;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await.unwrap();
+
+    let req = make_gateway_stream_signed_req_v3(&admin_key, &[], 0, 0);
+    let mut stream = client.info_stream_v3(req).await.unwrap().into_inner();
+    let resp = stream.next().await.unwrap().unwrap();
+    assert_eq!(resp.gateways.len(), 1);
+    let gateway: &GatewayInfoV3 = resp.gateways.first().unwrap();
+    assert_eq!(gateway.device_type, Into::<i32>::into(DeviceTypeV2::Indoor));
+    assert_eq!(gateway.address, asset1_pubkey.to_vec());
+    assert_eq!(gateway.created_at, now.timestamp() as u64);
+    assert_eq!(gateway.updated_at, now_plus_10.timestamp() as u64);
+    assert_eq!(
+        gateway.metadata.clone().unwrap().location_info.unwrap(),
+        LocationInfo {
+            location: format!("{:x}", asset1_hex_idx),
+            location_changed_at: now_plus_5.timestamp() as u64
+        }
+    );
+    assert!(gateway.metadata.clone().unwrap().deployment_info.is_none(),);
+}
+
+#[sqlx::test]
 async fn gateway_stream_info_v3_updated_at(pool: PgPool) {
     let admin_key = make_keypair();
     let asset1_pubkey = make_keypair().public_key().clone();
