@@ -225,6 +225,82 @@ async fn gateway_stream_info_v3_updated_at(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn gateway_stream_info_v3_min_location_changed_at_zero(pool: PgPool) {
+    // asset_1 has no location
+    // asset_2 has location
+    // Make sure if min_location_changed_at == 0 then returned both radios
+    // if min_location_changed_at >= 1 then radios with null location filtered out
+
+    let admin_key = make_keypair();
+    let asset1_pubkey = make_keypair().public_key().clone();
+    let asset2_hex_idx = 631711286145955327_i64;
+    let asset2_pubkey = make_keypair().public_key().clone();
+    let now = Utc::now();
+    let now_minus_six = now - Duration::hours(6);
+    let now_minus_three = now - Duration::hours(3);
+    let now_minus_four = now - Duration::hours(4);
+
+    create_db_tables(&pool).await;
+    add_db_record(
+        &pool,
+        "asset1",
+        None,
+        "\"wifiIndoor\"",
+        asset1_pubkey.clone().into(),
+        now_minus_six,
+        Some(now),
+        None,
+    )
+    .await;
+    add_mobile_tracker_record(
+        &pool,
+        asset1_pubkey.clone().into(),
+        now_minus_three,
+        None,
+        None,
+    )
+    .await;
+
+    add_db_record(
+        &pool,
+        "asset2",
+        Some(asset2_hex_idx),
+        "\"wifiDataOnly\"",
+        asset2_pubkey.clone().into(),
+        now_minus_six,
+        Some(now),
+        None,
+    )
+    .await;
+    add_mobile_tracker_record(
+        &pool,
+        asset2_pubkey.clone().into(),
+        now_minus_three,
+        Some(asset2_hex_idx),
+        Some(now_minus_four),
+    )
+    .await;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await.unwrap();
+
+    let req = make_gateway_stream_signed_req_v3(&admin_key, &[], 0, 0);
+    let mut stream = client.info_stream_v3(req).await.unwrap().into_inner();
+    let resp = stream.next().await.unwrap().unwrap();
+    assert_eq!(resp.gateways.len(), 2);
+
+    // min_location_changed_at = 1
+    let req = make_gateway_stream_signed_req_v3(&admin_key, &[], 0, 1);
+    let mut stream = client.info_stream_v3(req).await.unwrap().into_inner();
+    let resp = stream.next().await.unwrap().unwrap();
+    assert_eq!(resp.gateways.len(), 1);
+
+    let gw_info = resp.gateways.first().unwrap();
+    let pub_key = PublicKey::from_bytes(gw_info.address.clone()).unwrap();
+    assert_eq!(pub_key, asset2_pubkey.clone());
+}
+
+#[sqlx::test]
 async fn gateway_stream_info_v3_location_changed_at(pool: PgPool) {
     let admin_key = make_keypair();
     let asset1_pubkey = make_keypair().public_key().clone();
