@@ -8,12 +8,12 @@ edition.workspace = true
 [dependencies]
 aws-config = "1.8.0"
 aws-sdk-s3 = "1.94.0"
-tokio = {workspace = true}
-triggered = {workspace = true}
-tonic = {workspace = true}
-chrono = {workspace = true}
-prost = {workspace = true}
-anyhow = {workspace = true}
-uuid = {workspace = true}
-tempfile = {workspace = true}
+tokio = { workspace = true }
+triggered = { workspace = true }
+tonic = { workspace = true }
+chrono = { workspace = true }
+prost = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+tempfile = { workspace = true }
 file-store = { path = "../file_store", features = ["local"] }
