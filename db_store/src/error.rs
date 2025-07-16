@@ -2,6 +2,11 @@ use thiserror::Error;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
+pub mod aws_sts {
+    pub use aws_sdk_sts::error::SdkError;
+    pub use aws_sdk_sts::operation::assume_role::AssumeRoleError;
+}
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Sql error")]
@@ -13,7 +18,9 @@ pub enum Error {
     #[error("invalid configuration: {0}")]
     InvalidConfiguration(String),
     #[error("Aws Assume Role Error")]
-    AwsStsError(#[from] aws_sdk_sts::types::SdkError<aws_sdk_sts::error::AssumeRoleError>),
+    AwsStsError(#[from] aws_sts::SdkError<aws_sts::AssumeRoleError>),
+    #[error("Aws DateTime conversion error: {0}")]
+    AwsDateTimeConversionError(Box<dyn std::error::Error + Send + Sync>),
     #[error("Assumed Credentials were invalid: {0}")]
     InvalidAssumedCredentials(String),
     #[error("Aws Signing Error")]
