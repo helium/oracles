@@ -8,9 +8,6 @@ edition.workspace = true
 [dependencies]
 aws-config = "1.8.0"
 aws-sdk-s3 = "1.94.0"
-aws-types = { version = "0.51", optional = true, features = [
-    "hardcoded-credentials",
-] }
 tokio = {workspace = true}
 triggered = {workspace = true}
 tonic = {workspace = true}
