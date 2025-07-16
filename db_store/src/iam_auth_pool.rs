@@ -1,4 +1,5 @@
 use crate::{error::invalid_configuration, Error, Result, Settings};
+use aws_config::BehaviorVersion;
 use sqlx::{
     postgres::{PgConnectOptions, PgSslMode, Postgres},
     Pool,
@@ -11,10 +12,10 @@ use aws_types::{
     region::{Region, SigningRegion},
     SigningService,
 };
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 pub async fn connect(settings: &Settings) -> Result<Pool<Postgres>> {
-    let aws_config = aws_config::load_from_env().await;
+    let aws_config = aws_config::defaults(BehaviorVersion::latest()).load().await;
     let client = aws_sdk_sts::Client::new(&aws_config);
     let connect_parameters = ConnectParameters::try_from(settings)?;
     let connect_options = connect_parameters.connect_options(&client).await?;
@@ -117,7 +118,7 @@ impl ConnectParameters {
     async fn auth_token(&self, client: &aws_sdk_sts::Client) -> Result<String> {
         let credentials = self.credentials(client).await?;
 
-        generate_rds_iam_token(
+        generate_rds_iam_token_old(
             &self.host,
             self.iam_region.clone(),
             self.port,
@@ -131,21 +132,18 @@ impl ConnectParameters {
         self.assume_role(client)
             .await?
             .credentials()
-            .ok_or_else(|| {
-                Error::InvalidAssumedCredentials("No Credientials available".to_string())
-            })
+            .ok_or_else(|| Error::InvalidAssumedCredentials("No Credentials available".to_string()))
             .and_then(|creds| {
                 Ok(Credentials::new(
-                    creds.access_key_id().ok_or_else(|| {
-                        Error::InvalidAssumedCredentials("no access_key_id".to_string())
-                    })?,
-                    creds.secret_access_key().ok_or_else(|| {
-                        Error::InvalidAssumedCredentials("no secret_access_key".to_string())
-                    })?,
-                    creds.session_token().map(|s| s.to_string()),
-                    creds
-                        .expiration()
-                        .map(|e| UNIX_EPOCH + Duration::from_secs(e.secs() as u64)),
+                    creds.access_key_id.clone(),
+                    creds.secret_access_key.clone(),
+                    Some(creds.session_token.clone()),
+                    Some(
+                        creds
+                            .expiration
+                            .try_into()
+                            .map_err(|e| Error::AwsDateTimeConversionError(Box::new(e)))?,
+                    ),
                     "Helium Foundation",
                 ))
             })
@@ -154,7 +152,7 @@ impl ConnectParameters {
     async fn assume_role(
         &self,
         client: &aws_sdk_sts::Client,
-    ) -> Result<aws_sdk_sts::output::AssumeRoleOutput> {
+    ) -> Result<aws_sdk_sts::operation::assume_role::AssumeRoleOutput> {
         client
             .assume_role()
             .role_arn(self.iam_role_arn.clone())
@@ -175,7 +173,7 @@ fn region(settings: &Settings) -> Result<Region> {
         .ok_or_else(|| invalid_configuration("iam_region is required"))
 }
 
-fn generate_rds_iam_token(
+fn generate_rds_iam_token_old(
     db_hostname: &str,
     region: Region,
     port: u16,
@@ -214,5 +212,107 @@ fn generate_rds_iam_token(
         Ok(uri.split_off("http://".len()))
     } else {
         Err(Error::InvalidAuthToken())
+    }
+}
+
+mod iam {
+    use std::time::{Duration, SystemTime};
+
+    use aws_sigv4::{
+        http_request::{sign, SignableBody, SignableRequest, SignatureLocation, SigningSettings},
+        sign::v4,
+    };
+
+    pub fn generate_rds_iam_token(
+        db_hostname: &str,
+        region: aws_config::Region,
+        port: u16,
+        db_username: &str,
+        credentials: new_aws_credential_types::Credentials,
+        timestamp: SystemTime,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let identity = credentials.into();
+
+        let mut signing_settings = SigningSettings::default();
+        signing_settings.expires_in = Some(Duration::from_secs(15 * 60));
+        signing_settings.signature_location = SignatureLocation::QueryParams;
+
+        let signing_params = v4::SigningParams::builder()
+            .identity(&identity)
+            .region(region.as_ref())
+            .name("rds-db")
+            .time(timestamp)
+            .settings(signing_settings)
+            .build()?;
+
+        let url = format!(
+            "https://{db_hostname}:{port}/?Action=connect&DBUser={db_user}",
+            db_hostname = db_hostname,
+            port = port,
+            db_user = db_username
+        );
+
+        let signable_request =
+            SignableRequest::new("GET", &url, std::iter::empty(), SignableBody::Bytes(&[]))
+                .expect("signable request");
+
+        let (signing_instructions, _signature) =
+            sign(signable_request, &signing_params.into())?.into_parts();
+
+        let mut url = url::Url::parse(&url).unwrap();
+        for (name, value) in signing_instructions.params() {
+            url.query_pairs_mut().append_pair(name, &value);
+        }
+
+        let response = url.to_string().split_off("https://".len());
+
+        Ok(response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn creds() {
+        let now = std::time::SystemTime::now();
+        let token = generate_rds_iam_token_old(
+            "host-name",
+            Region::new("us-east-1"),
+            5566,
+            "username",
+            &Credentials::new(
+                "access_key_id",
+                "secret_access_key",
+                Some("session_token".to_string()),
+                None,
+                "Helium Foundation",
+            ),
+            now,
+        )
+        .unwrap();
+
+        println!("old: {token:?}");
+
+        let new_token = iam::generate_rds_iam_token(
+            "host-name",
+            aws_config::Region::new("us-east-1"),
+            5566,
+            "username",
+            new_aws_credential_types::Credentials::new(
+                "access_key_id",
+                "secret_access_key",
+                Some("session_token".to_string()),
+                None,
+                "Helium Foundation",
+            ),
+            now,
+        )
+        .unwrap();
+        println!("new: {new_token:?}");
+
+        assert_eq!(token, new_token);
     }
 }
