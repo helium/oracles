@@ -113,7 +113,6 @@ tower-http = { version = "0", features = ["trace"] }
 derive_builder = "0"
 aws-config = "0.51"
 aws-sdk-s3 = "0.21"
-aws-types = { version = "0.51", features = ["hardcoded-credentials"]}
 tempfile = "3"
 csv = "*"
 

@@ -51,9 +51,6 @@ humantime-serde = { workspace = true }
 
 aws-config = "1.8.0"
 aws-sdk-s3 = "1.94.0"
-aws-types = { version = "0.51", optional = true, features = [
-    "hardcoded-credentials",
-] }
 aws-smithy-types-convert = { version = "0.60.9", features = [
     "convert-streams",
 ] }
@@ -64,5 +61,5 @@ tempfile = { workspace = true }
 
 [features]
 default = ["sqlx-postgres"]
-local = ["aws-types"]
+local = []
 sqlx-postgres = ["sqlx/postgres"]
