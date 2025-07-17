@@ -6,8 +6,8 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-aws-config = "1.8.0"
-aws-sdk-s3 = "1.94.0"
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
 tokio = { workspace = true }
 triggered = { workspace = true }
 tonic = { workspace = true }
