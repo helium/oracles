@@ -26,8 +26,7 @@ regex = "1"
 tracing = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }
-# helium-crypto = { workspace = true }
-helium-crypto = { path = "../../helium-crypto-rs" }
+helium-crypto = { workspace = true }
 csv = { workspace = true }
 http = { workspace = true }
 strum = { version = "0", features = ["derive"] }
