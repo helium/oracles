@@ -119,6 +119,7 @@ csv = "*"
 
 [patch.crates-io]
 anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madninja/const_pubkey" }
+helium-crypto = { git = "https://github.com/helium/helium-crypto-rs.git", branch = "mj/update-crypto-deps" }
 
 # When attempting to test proto changes without needing to push a branch you can
 # patch the github url to point to your local proto repo.
