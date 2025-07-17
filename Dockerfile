@@ -29,4 +29,4 @@ COPY --from=builder /app/target/release/${PACKAGE} /opt/${PACKAGE}/bin/${PACKAGE
 
 ENV PACKAGE=${PACKAGE}
 
-CMD ["/opt/${PACKAGE}/bin/${PACKAGE}", "-c", "/opt/${PACKAGE}/etc/settings.toml", "server"]
+CMD ["sh", "-c", "/opt/${PACKAGE}/bin/${PACKAGE}", "-c", "/opt/${PACKAGE}/etc/settings.toml", "server"]
