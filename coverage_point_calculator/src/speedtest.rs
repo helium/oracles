@@ -223,7 +223,7 @@ mod tests {
             latency_millis: 15,
             timestamp: Utc::now(),
         };
-        let speedtests = |num: usize| std::iter::repeat(speedtest).take(num).collect::<Vec<_>>();
+        let speedtests = |num: usize| std::iter::repeat_n(speedtest, num).collect::<Vec<_>>();
 
         assert_eq!(
             dec!(0),
@@ -243,7 +243,7 @@ mod tests {
             latency_millis: 15,
             timestamp: Utc::now(),
         };
-        let speedtests = std::iter::repeat(base).take(10).collect();
+        let speedtests = std::iter::repeat_n(base, 10).collect();
         let speedtests = clean_speedtests(speedtests);
 
         assert_eq!(MAX_ALLOWED_SPEEDTEST_SAMPLES, speedtests.len());
