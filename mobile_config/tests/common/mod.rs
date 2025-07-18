@@ -8,21 +8,25 @@ pub async fn add_mobile_tracker_record(
     pool: &PgPool,
     key: PublicKeyBinary,
     last_changed_at: DateTime<Utc>,
+    asserted_location: Option<i64>,
+    asserted_location_changed_at: Option<DateTime<Utc>>,
 ) {
     let b58 = bs58::decode(key.to_string()).into_vec().unwrap();
 
     sqlx::query(
         r#"
             INSERT INTO
-"mobile_radio_tracker" ("entity_key", "hash", "last_changed_at", "last_checked_at")
+"mobile_radio_tracker" ("entity_key", "hash", "last_changed_at", "last_checked_at", "asserted_location", "asserted_location_changed_at")
             VALUES
-($1, $2, $3, $4);
+($1, $2, $3, $4, $5, $6);
     "#,
     )
     .bind(b58)
     .bind("hash")
     .bind(last_changed_at)
     .bind(last_changed_at + Duration::hours(1))
+    .bind(asserted_location)
+    .bind(asserted_location_changed_at)
     .execute(pool)
     .await
     .unwrap();
@@ -132,4 +136,38 @@ pub async fn create_db_tables(pool: &PgPool) {
 
 pub fn make_keypair() -> Keypair {
     Keypair::generate(KeyTag::default(), &mut rand::rngs::OsRng)
+}
+
+use helium_crypto::PublicKey;
+use helium_proto::services::mobile_config::{self as proto};
+use mobile_config::{
+    gateway_service::GatewayService,
+    key_cache::{CacheKeys, KeyCache},
+    KeyRole,
+};
+use tokio::net::TcpListener;
+use tonic::transport;
+
+pub async fn spawn_gateway_service(
+    pool: PgPool,
+    admin_pub_key: PublicKey,
+) -> (
+    String,
+    tokio::task::JoinHandle<std::result::Result<(), helium_proto::services::Error>>,
+) {
+    let server_key = make_keypair();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    // Start the gateway server
+    let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
+    let (_key_cache_tx, key_cache) = KeyCache::new(keys);
+    let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
+    let handle = tokio::spawn(
+        transport::Server::builder()
+            .add_service(proto::GatewayServer::new(gws))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)),
+    );
+
+    (format!("http://{addr}"), handle)
 }
