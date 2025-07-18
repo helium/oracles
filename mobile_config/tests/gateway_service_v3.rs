@@ -73,7 +73,7 @@ async fn gateway_stream_info_v3_basic(pool: PgPool) {
     let resp = stream.next().await.unwrap().unwrap();
     assert_eq!(resp.gateways.len(), 1);
     let gateway: &GatewayInfoV3 = resp.gateways.first().unwrap();
-    assert_eq!(gateway.device_type, Into::<i32>::into(DeviceTypeV2::Indoor));
+    assert_eq!(gateway.device_type(), DeviceTypeV2::Indoor);
     assert_eq!(gateway.address, asset1_pubkey.to_vec());
     assert_eq!(gateway.created_at, now.timestamp() as u64);
     assert_eq!(gateway.updated_at, now_plus_10.timestamp() as u64);
@@ -124,7 +124,7 @@ async fn gateway_stream_info_v3_no_metadata(pool: PgPool) {
     let resp = stream.next().await.unwrap().unwrap();
     assert_eq!(resp.gateways.len(), 1);
     let gateway: &GatewayInfoV3 = resp.gateways.first().unwrap();
-    assert_eq!(gateway.device_type, Into::<i32>::into(DeviceTypeV2::Indoor));
+    assert_eq!(gateway.device_type(), DeviceTypeV2::Indoor);
     assert_eq!(gateway.address, asset1_pubkey.to_vec());
     assert_eq!(gateway.created_at, now.timestamp() as u64);
     assert_eq!(gateway.updated_at, now_plus_10.timestamp() as u64);
@@ -170,7 +170,7 @@ async fn gateway_stream_info_v3_no_deployment_info(pool: PgPool) {
     let resp = stream.next().await.unwrap().unwrap();
     assert_eq!(resp.gateways.len(), 1);
     let gateway: &GatewayInfoV3 = resp.gateways.first().unwrap();
-    assert_eq!(gateway.device_type, Into::<i32>::into(DeviceTypeV2::Indoor));
+    assert_eq!(gateway.device_type(), DeviceTypeV2::Indoor);
     assert_eq!(gateway.address, asset1_pubkey.to_vec());
     assert_eq!(gateway.created_at, now.timestamp() as u64);
     assert_eq!(gateway.updated_at, now_plus_10.timestamp() as u64);
