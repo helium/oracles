@@ -230,13 +230,11 @@ pub(crate) mod db {
                 .to_string()
                 .as_ref(),
         )
-        .map_err(|err| sqlx::Error::Decode(Box::new(err)))
         .ok()?;
 
         let address = PublicKeyBinary::from_str(
             &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
         )
-        .map_err(|err| sqlx::Error::Decode(Box::new(err)))
         .ok()?;
 
         let mti = mtim.get(&address)?;
