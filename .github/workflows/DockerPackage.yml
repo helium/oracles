@@ -48,7 +48,7 @@ jobs:
         id: set-packages
         run: |
           if [ "${{ github.event.inputs.package }}" = "all" ]; then
-            echo 'packages=["boost-manager","ingest","iot-config","iot-packet-verifier","iot-verifier","mobile-config","mobile-packet-verifier","mobile-verifier","poc-entropy","price","reward-index"]' >> $GITHUB_OUTPUT
+            echo 'packages=["boost-manager","ingest","mobile-config","mobile-packet-verifier","mobile-verifier","poc-entropy","price","reward-index"]' >> $GITHUB_OUTPUT
           else
             echo "packages=[\"${{ github.event.inputs.package }}\"]" >> $GITHUB_OUTPUT
           fi
