@@ -1037,7 +1037,7 @@ async fn valid_beacon_and_witness_no_witness_reciprocity(pool: PgPool) -> anyhow
     ctx.runner.handle_db_tick().await?;
 
     let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
-    println!("{:?}", valid_poc);
+    println!("{valid_poc:?}");
     assert_eq!(0, valid_poc.selected_witnesses.len());
     assert_eq!(1, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -1114,7 +1114,7 @@ async fn valid_new_gateway_witness_first_reciprocity(pool: PgPool) -> anyhow::Re
     ctx.runner.handle_db_tick().await?;
 
     let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
-    println!("{:?}", valid_poc);
+    println!("{valid_poc:?}");
     assert_eq!(0, valid_poc.selected_witnesses.len());
     assert_eq!(1, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -1160,7 +1160,7 @@ async fn valid_new_gateway_witness_first_reciprocity(pool: PgPool) -> anyhow::Re
     ctx.runner.handle_db_tick().await?;
 
     let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
-    println!("{:?}", valid_poc);
+    println!("{valid_poc:?}");
     assert_eq!(1, valid_poc.selected_witnesses.len());
     assert_eq!(0, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -1213,7 +1213,7 @@ async fn valid_new_gateway_witness_first_reciprocity(pool: PgPool) -> anyhow::Re
     ctx.runner.handle_db_tick().await?;
 
     let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
-    println!("{:?}", valid_poc);
+    println!("{valid_poc:?}");
     assert_eq!(1, valid_poc.selected_witnesses.len());
     assert_eq!(0, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -1266,7 +1266,7 @@ async fn valid_new_gateway_beacon_first_reciprocity(pool: PgPool) -> anyhow::Res
 
     let invalid_beacon = ctx.invalid_beacons.receive_invalid_beacon().await;
     let invalid_beacon_report = invalid_beacon.report.clone().unwrap();
-    println!("{:?}", invalid_beacon);
+    println!("{invalid_beacon:?}");
     // assert the pubkeys in the outputted reports
     // match those which we injected
     assert_eq!(
@@ -1310,7 +1310,7 @@ async fn valid_new_gateway_beacon_first_reciprocity(pool: PgPool) -> anyhow::Res
     ctx.runner.handle_db_tick().await?;
 
     let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
-    println!("{:?}", valid_poc);
+    println!("{valid_poc:?}");
     assert_eq!(1, valid_poc.selected_witnesses.len());
     assert_eq!(0, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -1366,7 +1366,7 @@ async fn valid_new_gateway_beacon_first_reciprocity(pool: PgPool) -> anyhow::Res
     ctx.runner.handle_db_tick().await?;
 
     let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
-    println!("{:?}", valid_poc);
+    println!("{valid_poc:?}");
     assert_eq!(1, valid_poc.selected_witnesses.len());
     assert_eq!(0, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -1412,7 +1412,7 @@ async fn valid_lone_wolf_beacon(pool: PgPool) -> anyhow::Result<()> {
 
     let invalid_beacon = ctx.invalid_beacons.receive_invalid_beacon().await;
     let invalid_beacon_report = invalid_beacon.report.clone().unwrap();
-    println!("{:?}", invalid_beacon);
+    println!("{invalid_beacon:?}");
     // assert the pubkeys in the outputted reports
     // match those which we injected
     assert_eq!(
@@ -1461,7 +1461,7 @@ async fn valid_lone_wolf_beacon(pool: PgPool) -> anyhow::Result<()> {
     ctx.runner.handle_db_tick().await?;
 
     let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
-    println!("{:?}", valid_poc);
+    println!("{valid_poc:?}");
     assert_eq!(0, valid_poc.selected_witnesses.len());
     assert_eq!(1, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -1517,7 +1517,7 @@ async fn valid_two_isolated_gateways_beaconing_and_witnessing(pool: PgPool) -> a
 
     let invalid_beacon = ctx.invalid_beacons.receive_invalid_beacon().await;
     let invalid_beacon_report = invalid_beacon.report.clone().unwrap();
-    println!("{:?}", invalid_beacon);
+    println!("{invalid_beacon:?}");
     // assert the pubkeys in the outputted reports
     // match those which we injected
     assert_eq!(
@@ -1546,7 +1546,7 @@ async fn valid_two_isolated_gateways_beaconing_and_witnessing(pool: PgPool) -> a
     ctx.runner.handle_db_tick().await?;
 
     let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
-    println!("{:?}", valid_poc);
+    println!("{valid_poc:?}");
     assert_eq!(1, valid_poc.selected_witnesses.len());
     assert_eq!(0, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -1589,7 +1589,7 @@ async fn valid_two_isolated_gateways_beaconing_and_witnessing(pool: PgPool) -> a
     ctx.runner.handle_db_tick().await?;
 
     let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
-    println!("{:?}", valid_poc);
+    println!("{valid_poc:?}");
     assert_eq!(1, valid_poc.selected_witnesses.len());
     assert_eq!(0, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();

@@ -117,7 +117,7 @@ impl OrgService {
     async fn stream_org_routes_enable_disable(&self, oui: u64) -> Result<(), Status> {
         let routes = list_routes(oui, &self.pool).await.map_err(|err| {
             tracing::error!(org = oui, reason = ?err, "failed to list org routes for streaming update");
-            Status::internal(format!("error retrieving routes for updated org: {}", oui))
+            Status::internal(format!("error retrieving routes for updated org: {oui}"))
         })?;
         let timestamp = Utc::now().encode_timestamp();
         let signer: Vec<u8> = self.signing_key.public_key().into();

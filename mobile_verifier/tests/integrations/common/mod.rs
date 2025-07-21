@@ -464,7 +464,7 @@ impl<V: AsStringKeyedMapKey + Clone> AsStringKeyedMap<V> for Vec<V> {
         for item in self {
             let key = item.key();
             if map.contains_key(&key) {
-                panic!("Duplicate string key found: {}", key);
+                panic!("Duplicate string key found: {key}");
             }
             map.insert(key, item.clone());
         }

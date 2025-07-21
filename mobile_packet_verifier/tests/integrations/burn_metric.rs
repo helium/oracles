@@ -130,7 +130,7 @@ impl TestMetrics {
             anyhow::bail!("metrics body is empty")
         }
 
-        let expected = format!(r#"pending_dc_burn{{payer="{}"}} {}"#, payer, amount);
+        let expected = format!(r#"pending_dc_burn{{payer="{payer}"}} {amount}"#);
         if !body.contains(&expected) {
             anyhow::bail!("expected: {expected} in:\n{body}");
         }

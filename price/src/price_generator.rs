@@ -109,7 +109,7 @@ impl PriceGenerator {
             interval_duration: settings.interval,
             stale_price_duration: settings.stale_price_duration,
             latest_price_file: PathBuf::from_str(&settings.cache)?
-                .join(format!("{:?}.latest", token)),
+                .join(format!("{token:?}.latest")),
             file_sink,
         })
     }
