@@ -63,7 +63,7 @@ sqlx = { version = "0.8", default-features = false, features = [
   "macros",
   "runtime-tokio-rustls",
 ] }
-helium-crypto = { version = "0.9.2", default-features = false }
+helium-crypto = { version = "0.9.3", default-features = false }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
@@ -127,7 +127,6 @@ url = "2.5.4"
 
 [patch.crates-io]
 anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madninja/const_pubkey" }
-helium-crypto = { git = "https://github.com/helium/helium-crypto-rs.git", branch = "mj/update-crypto-deps" }
 
 # When attempting to test proto changes without needing to push a branch you can
 # patch the github url to point to your local proto repo.
