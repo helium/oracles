@@ -18,7 +18,7 @@ pub enum Error {
     #[error("invalid configuration: {0}")]
     InvalidConfiguration(String),
     #[error("Aws Assume Role Error")]
-    AwsStsError(#[from] aws_sts::SdkError<aws_sts::AssumeRoleError>),
+    AwsStsError(Box<aws_sts::SdkError<aws_sts::AssumeRoleError>>),
     #[error("Aws DateTime conversion error: {0}")]
     AwsDateTimeConversionError(Box<dyn std::error::Error + Send + Sync>),
     #[error("Assumed Credentials were invalid: {0}")]
@@ -31,4 +31,10 @@ pub enum Error {
 
 pub fn invalid_configuration(str: impl Into<String>) -> Error {
     Error::InvalidConfiguration(str.into())
+}
+
+impl From<aws_sts::SdkError<aws_sts::AssumeRoleError>> for Error {
+    fn from(value: aws_sts::SdkError<aws_sts::AssumeRoleError>) -> Self {
+        Self::AwsStsError(Box::new(value))
+    }
 }
