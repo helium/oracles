@@ -461,7 +461,7 @@ impl iot_config::Route for RouteService {
                 Ok(euis) => euis,
                 Err(RouteStorageError::UuidParse(err)) => {
                     _ = tx
-                        .send(Err(Status::invalid_argument(format!("{}", err))))
+                        .send(Err(Status::invalid_argument(format!("{err}"))))
                         .await;
                     return;
                 }
@@ -479,7 +479,7 @@ impl iot_config::Route for RouteService {
             while let Some(eui) = eui_stream.next().await {
                 let message = match eui {
                     Ok(eui) => Ok(eui.into()),
-                    Err(bad_eui) => Err(Status::internal(format!("invalid eui: {:?}", bad_eui))),
+                    Err(bad_eui) => Err(Status::internal(format!("invalid eui: {bad_eui:?}"))),
                 };
                 if tx.send(message).await.is_err() {
                     break;
@@ -613,7 +613,7 @@ impl iot_config::Route for RouteService {
                 Ok(devaddrs) => devaddrs,
                 Err(RouteStorageError::UuidParse(err)) => {
                     _ = tx
-                        .send(Err(Status::invalid_argument(format!("{}", err))))
+                        .send(Err(Status::invalid_argument(format!("{err}"))))
                         .await;
                     return;
                 }
@@ -629,8 +629,7 @@ impl iot_config::Route for RouteService {
                 let message = match devaddr {
                     Ok(devaddr) => Ok(devaddr.into()),
                     Err(bad_devaddr) => Err(Status::internal(format!(
-                        "invalid devaddr: {:?}",
-                        bad_devaddr
+                        "invalid devaddr: {bad_devaddr:?}"
                     ))),
                 };
                 if tx.send(message).await.is_err() {
@@ -773,7 +772,7 @@ impl iot_config::Route for RouteService {
                 Ok(skfs) => skfs,
                 Err(RouteStorageError::UuidParse(err)) => {
                     _ = tx
-                        .send(Err(Status::invalid_argument(format!("{}", err))))
+                        .send(Err(Status::invalid_argument(format!("{err}"))))
                         .await;
                     return;
                 }
@@ -791,7 +790,7 @@ impl iot_config::Route for RouteService {
             while let Some(skf) = skf_stream.next().await {
                 let message = match skf {
                     Ok(skf) => Ok(skf.into()),
-                    Err(bad_skf) => Err(Status::internal(format!("invalid skf: {:?}", bad_skf))),
+                    Err(bad_skf) => Err(Status::internal(format!("invalid skf: {bad_skf:?}"))),
                 };
                 if tx.send(message).await.is_err() {
                     break;
@@ -831,7 +830,7 @@ impl iot_config::Route for RouteService {
                 Ok(skfs) => skfs,
                 Err(RouteStorageError::UuidParse(err)) => {
                     _ = tx
-                        .send(Err(Status::invalid_argument(format!("{}", err))))
+                        .send(Err(Status::invalid_argument(format!("{err}"))))
                         .await;
                     return;
                 }
@@ -849,7 +848,7 @@ impl iot_config::Route for RouteService {
             while let Some(skf) = skf_stream.next().await {
                 let message = match skf {
                     Ok(skf) => Ok(skf.into()),
-                    Err(bad_skf) => Err(Status::internal(format!("invalid skf: {:?}", bad_skf))),
+                    Err(bad_skf) => Err(Status::internal(format!("invalid skf: {bad_skf:?}"))),
                 };
                 if tx.send(message).await.is_err() {
                     break;

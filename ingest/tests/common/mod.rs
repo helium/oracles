@@ -167,7 +167,7 @@ impl TestClient {
         TestClient {
             client,
             key_pair: Arc::new(key_pair),
-            authorization: format!("Bearer {}", api_token).try_into().unwrap(),
+            authorization: format!("Bearer {api_token}").try_into().unwrap(),
             subscriber_mapping_file_sink_rx,
             hex_usage_stats_file_sink_rx,
             radio_usage_stats_file_sink_rx,
