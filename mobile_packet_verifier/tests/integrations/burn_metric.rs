@@ -27,6 +27,7 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
             rewardable_bytes,
             pub_key: PublicKeyBinary::from(vec![1]),
             signature: vec![],
+            carrier_id: CarrierId::Carrier9,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![1]),
                 upload_bytes: 0,
@@ -36,7 +37,6 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
                 payer: payer_key.clone(),
                 timestamp: Utc::now(),
                 signature: vec![],
-                carrier_id: CarrierId::Carrier9,
             },
         },
     };

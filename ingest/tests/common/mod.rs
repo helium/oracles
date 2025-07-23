@@ -486,12 +486,12 @@ impl TestClient {
                 payer: vec![1, 2, 3, 4],
                 timestamp: Utc::now().timestamp() as u64,
                 signature: vec![],
-                carrier_id: CarrierId::Carrier9 as i32,
             }),
             reward_cancelled: false,
             pub_key: keypair.public_key().into(),
             signature: vec![],
             rewardable_bytes: 0,
+            carrier_id: CarrierId::Carrier9 as i32,
         };
 
         data_transfer.signature = keypair.sign(&data_transfer.encode_to_vec())?;

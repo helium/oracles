@@ -169,7 +169,6 @@ pub struct DataTransferEvent {
     pub payer: PublicKeyBinary,
     pub timestamp: DateTime<Utc>,
     pub signature: Vec<u8>,
-    pub carrier_id: CarrierId,
 }
 
 impl MsgTimestamp<Result<DateTime<Utc>>> for DataTransferEventProto {
@@ -194,7 +193,6 @@ impl TryFrom<DataTransferEventProto> for DataTransferEvent {
     fn try_from(v: DataTransferEventProto) -> Result<Self> {
         let timestamp = v.timestamp()?;
         let radio_access_technology = v.radio_access_technology();
-        let carrier_id = v.carrier_id();
 
         Ok(Self {
             pub_key: v.pub_key.into(),
@@ -205,7 +203,6 @@ impl TryFrom<DataTransferEventProto> for DataTransferEvent {
             payer: v.payer.into(),
             timestamp,
             signature: v.signature,
-            carrier_id,
         })
     }
 }
@@ -222,7 +219,6 @@ impl From<DataTransferEvent> for DataTransferEventProto {
             payer: v.payer.into(),
             timestamp,
             signature: v.signature,
-            carrier_id: v.carrier_id as i32,
         }
     }
 }
@@ -233,6 +229,7 @@ pub struct DataTransferSessionReq {
     pub rewardable_bytes: u64,
     pub pub_key: PublicKeyBinary,
     pub signature: Vec<u8>,
+    pub carrier_id: CarrierId,
 }
 
 impl MsgDecode for DataTransferSessionReq {
@@ -243,6 +240,8 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
     type Error = Error;
 
     fn try_from(v: DataTransferSessionReqV1) -> Result<Self> {
+        let carrier_id = v.carrier_id();
+
         Ok(Self {
             rewardable_bytes: v.rewardable_bytes,
             signature: v.signature,
@@ -251,6 +250,7 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
                 .ok_or_else(|| Error::not_found("data transfer usage"))?
                 .try_into()?,
             pub_key: v.pub_key.into(),
+            carrier_id,
         })
     }
 }
@@ -264,6 +264,7 @@ impl From<DataTransferSessionReq> for DataTransferSessionReqV1 {
             rewardable_bytes: v.rewardable_bytes,
             pub_key: v.pub_key.into(),
             signature: v.signature,
+            carrier_id: v.carrier_id as i32,
             ..Default::default()
         }
     }

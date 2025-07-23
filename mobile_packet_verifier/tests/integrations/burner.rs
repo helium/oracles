@@ -404,11 +404,11 @@ fn mk_data_transfer_session(
             payer: payer_key.clone(),
             timestamp: Utc::now(),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
         },
         rewardable_bytes,
         pub_key: pubkey.clone(),
         signature: vec![],
+        carrier_id: CarrierId::Carrier9,
     }
 }
 
