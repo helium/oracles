@@ -227,7 +227,7 @@ fn get_all_mobile_radios(metadata: &Pool<Postgres>) -> impl Stream<Item = Mobile
     sqlx::query_as::<_, MobileRadio>(
         r#"
         SELECT
-            DISTINCT ON (kta.entity_key, mhi.asset)
+            DISTINCT ON (kta.entity_key)
             kta.entity_key,
             mhi.asset,
             mhi.refreshed_at,
@@ -244,7 +244,7 @@ fn get_all_mobile_radios(metadata: &Pool<Postgres>) -> impl Stream<Item = Mobile
             kta.asset = mhi.asset
         WHERE kta.entity_key IS NOT NULL
         	AND mhi.refreshed_at IS NOT NULL
-        ORDER BY kta.entity_key, mhi.asset, refreshed_at DESC
+        ORDER BY kta.entity_key, refreshed_at DESC
     "#,
     )
     .fetch(metadata)
