@@ -3446,7 +3446,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#2ebbdb1772ffed9fcde2b6a7de5aa7b2afeca1a6"
+source = "git+https://www.github.com/helium/proto.git?branch=mobile-config-loc-assert#fb692c19ea4a2d10b205e7a2ae511f098e7c11ca"
 dependencies = [
  "bytes",
  "prost",
@@ -11221,7 +11221,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
