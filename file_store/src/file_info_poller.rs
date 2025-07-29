@@ -1,5 +1,5 @@
 use crate::{file_store, traits::MsgDecode, Error, FileInfo, FileStore, Result};
-use aws_sdk_s3::types::ByteStream;
+use aws_sdk_s3::primitives::ByteStream;
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
