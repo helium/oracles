@@ -214,7 +214,7 @@ async fn handle_transaction_success(
     sessions: Vec<pending_burns::DataTransferSession>,
     valid_sessions: &FileSinkClient<ValidDataTransferSession>,
 ) -> Result<(), anyhow::Error> {
-    // We succesfully managed to burn data credits:
+    // We successfully managed to burn data credits:
     metrics::counter!(
         "burned",
         "payer" => payer.to_string(),

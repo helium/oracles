@@ -1166,7 +1166,7 @@ mod tests {
         )
         .is_ok());
 
-        // modify the generated beacon to have a tx power > that that defined in
+        // modify the generated beacon to have a tx power > that defined in
         // region params
         // this will be rendered invalid
         ingest_beacon_report.report.tx_power = 20;
