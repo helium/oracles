@@ -61,6 +61,7 @@ pub struct GatewayInfoV3 {
     pub updated_at: DateTime<Utc>,
     // refreshed_at indicates the last time the chain was consulted, regardless of data changes.
     pub refreshed_at: DateTime<Utc>,
+    pub num_location_asserts: i32,
 }
 
 impl From<DeviceTypeProtoV2> for DeviceTypeV2 {
@@ -101,6 +102,7 @@ impl TryFrom<GatewayInfoV3> for GatewayInfoProtoV3 {
             device_type: info.device_type as i32,
             created_at: info.created_at.timestamp() as u64,
             updated_at: info.updated_at.timestamp() as u64,
+            num_location_asserts: info.num_location_asserts as u64,
         })
     }
 }
@@ -137,7 +139,7 @@ pub(crate) mod db {
     });
 
     const GET_MOBILE_HOTSPOT_INFO: &str = r#"
-            SELECT kta.entity_key, infos.device_type, infos.refreshed_at, infos.created_at, infos.deployment_info
+            SELECT kta.entity_key, infos.device_type, infos.refreshed_at, infos.created_at, infos.deployment_info, infos.num_location_asserts
             FROM mobile_hotspot_infos infos
             JOIN key_to_assets kta ON infos.asset = kta.asset
             WHERE device_type != '"cbrs"'
@@ -267,6 +269,7 @@ pub(crate) mod db {
 
         let created_at: DateTime<Utc> = row.get("created_at");
         let refreshed_at: DateTime<Utc> = row.get("refreshed_at");
+        let num_location_asserts: Option<i32> = row.get("num_location_asserts");
 
         Some(GatewayInfoV3 {
             address,
@@ -275,6 +278,7 @@ pub(crate) mod db {
             created_at,
             refreshed_at,
             updated_at,
+            num_location_asserts: num_location_asserts.unwrap_or(0),
         })
     }
 }

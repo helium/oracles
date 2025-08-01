@@ -77,6 +77,7 @@ async fn gateway_stream_info_v3_basic(pool: PgPool) {
     assert_eq!(gateway.address, asset1_pubkey.to_vec());
     assert_eq!(gateway.created_at, now.timestamp() as u64);
     assert_eq!(gateway.updated_at, now_plus_10.timestamp() as u64);
+    assert_eq!(gateway.num_location_asserts, 1); // Has location, so should be 1
     assert_eq!(
         gateway.metadata.clone().unwrap().location_info.unwrap(),
         LocationInfo {
@@ -128,6 +129,7 @@ async fn gateway_stream_info_v3_no_metadata(pool: PgPool) {
     assert_eq!(gateway.address, asset1_pubkey.to_vec());
     assert_eq!(gateway.created_at, now.timestamp() as u64);
     assert_eq!(gateway.updated_at, now_plus_10.timestamp() as u64);
+    assert_eq!(gateway.num_location_asserts, 0); // No location, so should be 0
     assert!(gateway.metadata.is_none());
 }
 
@@ -174,6 +176,7 @@ async fn gateway_stream_info_v3_no_deployment_info(pool: PgPool) {
     assert_eq!(gateway.address, asset1_pubkey.to_vec());
     assert_eq!(gateway.created_at, now.timestamp() as u64);
     assert_eq!(gateway.updated_at, now_plus_10.timestamp() as u64);
+    assert_eq!(gateway.num_location_asserts, 1); // Has location, so should be 1
     assert_eq!(
         gateway.metadata.clone().unwrap().location_info.unwrap(),
         LocationInfo {
@@ -240,6 +243,7 @@ async fn gateway_stream_info_v3_updated_at(pool: PgPool) {
     let gw_info = resp.gateways.first().unwrap();
     let pub_key = PublicKey::from_bytes(gw_info.address.clone()).unwrap();
     assert_eq!(pub_key, asset1_pubkey.clone());
+    assert_eq!(gw_info.num_location_asserts, 1); // Has location, so should be 1
     assert_eq!(
         DeviceTypeV2::try_from(gw_info.device_type).unwrap(),
         DeviceTypeV2::Indoor
