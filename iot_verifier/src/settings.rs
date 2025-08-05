@@ -230,7 +230,7 @@ fn default_witness_max_retries() -> u64 {
 
 impl Settings {
     /// Load Settings from a given path. Settings are loaded from a given
-    /// optional path and can be overriden with environment variables.
+    /// optional path and can be overridden with environment variables.
     ///
     /// Environment overrides have the same name as the entries in the settings
     /// file in uppercase and prefixed with "VERIFY_". For example
