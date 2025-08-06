@@ -1,7 +1,6 @@
-use std::vec;
-
 use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
+use std::vec;
 
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::services::mobile_config::{
@@ -89,30 +88,6 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn spawn_gateway_service(
-    pool: PgPool,
-    admin_pub_key: PublicKey,
-) -> (
-    String,
-    tokio::task::JoinHandle<std::result::Result<(), helium_proto::services::Error>>,
-) {
-    let server_key = make_keypair();
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-
-    // Start the gateway server
-    let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
-    let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
-    let handle = tokio::spawn(
-        transport::Server::builder()
-            .add_service(proto::GatewayServer::new(gws))
-            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)),
-    );
-
-    (format!("http://{addr}"), handle)
-}
-
 #[sqlx::test]
 async fn gateway_stream_info_v1(pool: PgPool) {
     let admin_key = make_keypair();
@@ -127,7 +102,7 @@ async fn gateway_stream_info_v1(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         now,
@@ -138,7 +113,7 @@ async fn gateway_stream_info_v1(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiDataOnly\"",
         asset2_pubkey.clone().into(),
         now_plus_10,
@@ -181,7 +156,7 @@ async fn gateway_stream_info_v2(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         now,
@@ -192,7 +167,7 @@ async fn gateway_stream_info_v2(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiDataOnly\"",
         asset2_pubkey.clone().into(),
         now_plus_10,
@@ -235,7 +210,7 @@ async fn gateway_stream_info_v2_updated_at(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -243,13 +218,13 @@ async fn gateway_stream_info_v2_updated_at(pool: PgPool) {
         None,
     )
     .await;
-    add_mobile_tracker_record(&pool, asset1_pubkey.clone().into(), updated_at).await;
+    add_mobile_tracker_record(&pool, asset1_pubkey.clone().into(), updated_at, None, None).await;
 
     // Shouldn't be returned
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiDataOnly\"",
         asset2_pubkey.clone().into(),
         created_at,
@@ -257,7 +232,7 @@ async fn gateway_stream_info_v2_updated_at(pool: PgPool) {
         None,
     )
     .await;
-    add_mobile_tracker_record(&pool, asset2_pubkey.clone().into(), created_at).await;
+    add_mobile_tracker_record(&pool, asset2_pubkey.clone().into(), created_at, None, None).await;
 
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
@@ -295,7 +270,7 @@ async fn gateway_info_batch_v2(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -307,7 +282,7 @@ async fn gateway_info_batch_v2(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiDataOnly\"",
         asset2_pubkey.clone().into(),
         created_at,
@@ -315,7 +290,7 @@ async fn gateway_info_batch_v2(pool: PgPool) {
         None,
     )
     .await;
-    add_mobile_tracker_record(&pool, asset2_pubkey.clone().into(), created_at).await;
+    add_mobile_tracker_record(&pool, asset2_pubkey.clone().into(), created_at, None, None).await;
 
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
@@ -376,7 +351,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -388,7 +363,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiIndoor\"",
         asset2_pubkey.clone().into(),
         created_at,
@@ -400,7 +375,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset3",
-        asset3_hex_idx,
+        Some(asset3_hex_idx),
         "\"wifiDataOnly\"",
         asset3_pubkey.clone().into(),
         created_at,
@@ -408,13 +383,13 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
         None,
     )
     .await;
-    add_mobile_tracker_record(&pool, asset3_pubkey.clone().into(), updated_at).await;
+    add_mobile_tracker_record(&pool, asset3_pubkey.clone().into(), updated_at, None, None).await;
 
     // Must be ignored since not included in req
     add_db_record(
         &pool,
         "asset4",
-        asset4_hex_idx,
+        Some(asset4_hex_idx),
         "\"wifiIndoor\"",
         asset4_pubkey.clone().into(),
         created_at,
@@ -484,7 +459,7 @@ async fn gateway_info_v2_no_mobile_tracker_record(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -496,7 +471,7 @@ async fn gateway_info_v2_no_mobile_tracker_record(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiIndoor\"",
         asset2_pubkey.clone().into(),
         created_at,
@@ -538,7 +513,7 @@ async fn gateway_info_v2(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -546,7 +521,7 @@ async fn gateway_info_v2(pool: PgPool) {
         Some(r#"{"wifiInfoV0": {"antenna": 18, "azimuth": 161, "elevation": 2, "electricalDownTilt": 3, "mechanicalDownTilt": 4}}"#)
     )
     .await;
-    add_mobile_tracker_record(&pool, asset1_pubkey.clone().into(), updated_at).await;
+    add_mobile_tracker_record(&pool, asset1_pubkey.clone().into(), updated_at, None, None).await;
 
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
@@ -608,7 +583,7 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         created_at,
@@ -620,7 +595,7 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiIndoor\"",
         asset2_pubkey.clone().into(),
         created_at,
@@ -632,7 +607,7 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
     add_db_record(
         &pool,
         "asset3",
-        asset3_hex_idx,
+        Some(asset3_hex_idx),
         "\"wifiDataOnly\"",
         asset3_pubkey.clone().into(),
         created_at,
@@ -640,7 +615,7 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
         None,
     )
     .await;
-    add_mobile_tracker_record(&pool, asset3_pubkey.clone().into(), updated_at).await;
+    add_mobile_tracker_record(&pool, asset3_pubkey.clone().into(), updated_at, None, None).await;
 
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await.unwrap();
@@ -696,7 +671,7 @@ async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     add_db_record(
         &pool,
         "asset1",
-        asset1_hex_idx,
+        Some(asset1_hex_idx),
         "\"wifiIndoor\"",
         asset1_pubkey.clone().into(),
         now,
@@ -707,7 +682,7 @@ async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     add_db_record(
         &pool,
         "asset2",
-        asset2_hex_idx,
+        Some(asset2_hex_idx),
         "\"wifiDataOnly\"",
         asset2_pubkey.clone().into(),
         now,
@@ -719,7 +694,7 @@ async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     add_db_record(
         &pool,
         "asset3",
-        asset3_hex_idx,
+        Some(asset3_hex_idx),
         "\"wifiDataOnly\"",
         asset3_pubkey.clone().into(),
         now,

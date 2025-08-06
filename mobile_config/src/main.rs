@@ -17,7 +17,7 @@ use mobile_config::{
     gateway_service::GatewayService,
     hex_boosting_service::HexBoostingService,
     key_cache::KeyCache,
-    mobile_radio_tracker::{migrate_mobile_tracker_locations, MobileRadioTracker},
+    mobile_radio_tracker::{post_migrate_mobile_tracker_locations, MobileRadioTracker},
     settings::Settings,
     sub_dao_service::SubDaoService,
 };
@@ -45,13 +45,12 @@ impl Cli {
 
         match self.cmd {
             Cmd::Server(daemon) => daemon.run(&settings).await,
-            Cmd::MigrateMobileTracker(csv_file) => {
+            Cmd::PostMigrateMobileTracker => {
                 custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
                 let mobile_config_pool = settings.database.connect("mobile-config-store").await?;
                 let metadata_pool = settings.metadata.connect("mobile-config-metadata").await?;
                 sqlx::migrate!().run(&mobile_config_pool).await?;
-                migrate_mobile_tracker_locations(mobile_config_pool, metadata_pool, &csv_file.path)
-                    .await?;
+                post_migrate_mobile_tracker_locations(mobile_config_pool, metadata_pool).await?;
                 Ok(())
             }
         }
@@ -61,8 +60,8 @@ impl Cli {
 #[derive(Debug, clap::Subcommand)]
 pub enum Cmd {
     Server(Daemon),
-    // Oneshot command to migrate location data for mobile tracker
-    MigrateMobileTracker(CsvFile),
+    // Fill missed "asserted_location_changed_at" in mobile_radio_tracker table
+    PostMigrateMobileTracker,
 }
 
 #[derive(Debug, clap::Args)]

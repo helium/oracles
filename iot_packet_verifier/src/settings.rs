@@ -58,7 +58,7 @@ fn default_monitor_funds_period() -> Duration {
 
 impl Settings {
     /// Load Settings from a given path. Settings are loaded from a given
-    /// optional path and can be overriden with environment variables.
+    /// optional path and can be overridden with environment variables.
     ///
     /// Environment overrides have the same name as the entries in the settings
     /// file in uppercase and prefixed with "VERIFY_". For example
