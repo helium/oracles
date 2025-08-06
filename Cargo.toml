@@ -132,4 +132,4 @@ anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madnin
 # beacon = { path = "../proto/beacon" }
 
 # [patch.'https://github.com/helium/proto']
-# helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "mobile-config-loc-assert" }
+# helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "add_num_location_asserts" }
