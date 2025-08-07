@@ -1430,17 +1430,17 @@ checksum = "89e25b6adfb930f02d1981565a6e5d9c547ac15a96606256d3b59040e5cd4ca3"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#6090ecba1bb5a5ac5f69f5b68d2ac6311880dee1"
+source = "git+https://github.com/helium/proto?branch=master#7931b63506ebd56acbffb19cb605def13b9e7255"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
  "helium-proto",
  "prost",
- "rand 0.7.3",
- "rand_chacha 0.2.2",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "rust_decimal",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.9.9",
  "thiserror 1.0.69",
 ]
 
@@ -3446,7 +3446,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#6090ecba1bb5a5ac5f69f5b68d2ac6311880dee1"
+source = "git+https://github.com/helium/proto?branch=master#7931b63506ebd56acbffb19cb605def13b9e7255"
 dependencies = [
  "bytes",
  "prost",
@@ -5859,7 +5859,7 @@ checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
  "heck 0.5.0",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "log",
  "multimap",
  "once_cell",
@@ -5879,7 +5879,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.101",
@@ -10798,7 +10798,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
@@ -11690,7 +11690,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.9.9",
  "thiserror 1.0.69",
  "twox-hash",
  "xorf",
