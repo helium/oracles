@@ -49,9 +49,9 @@ impl MockFileSinkReceiver {
                 Some(msg.encode_to_vec())
             }
             Ok(None) => None,
-            Err(e) => panic!("timeout while waiting for message1 {:?}", e),
+            Err(e) => panic!("timeout while waiting for message1 {e:?}"),
             Ok(Some(unexpected_msg)) => {
-                println!("ignoring unexpected msg {:?}", unexpected_msg);
+                println!("ignoring unexpected msg {unexpected_msg:?}");
                 None
             }
         }
@@ -68,7 +68,7 @@ impl MockFileSinkReceiver {
             Some(bytes) => {
                 let boosted_hex_update = BoostedHexUpdateProto::decode(bytes.as_slice())
                     .expect("failed to decode boosted hex update");
-                println!("boosted hex update: {:?}", boosted_hex_update);
+                println!("boosted hex update: {boosted_hex_update:?}");
                 match boosted_hex_update.update {
                     Some(r) => r,
                     _ => panic!("failed to get boosted hex update"),
