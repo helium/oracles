@@ -9,7 +9,7 @@ use file_store::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    CarrierId, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
+    CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{
     accumulate::accumulate_sessions, banning, bytes_to_dc, pending_burns,
@@ -42,7 +42,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
                 rewardable_bytes: 1_000,
                 pub_key: key.clone(),
                 signature: vec![],
-                carrier_id: CarrierId::Carrier9,
+                carrier_id: CarrierIdV2::Carrier9,
                 data_transfer_usage: DataTransferEvent {
                     pub_key: key.clone(),
                     upload_bytes: 1,
@@ -61,7 +61,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
                 rewardable_bytes: 1_000,
                 pub_key: key.clone(),
                 signature: vec![],
-                carrier_id: CarrierId::Carrier9,
+                carrier_id: CarrierIdV2::Carrier9,
                 data_transfer_usage: DataTransferEvent {
                     pub_key: key.clone(),
                     upload_bytes: 1,
@@ -107,7 +107,7 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
             rewardable_bytes: 0,
             pub_key: vec![0].into(),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
+            carrier_id: CarrierIdV2::Carrier9,
         },
         received_timestamp: Utc::now(),
     }];
@@ -131,7 +131,7 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
             rewardable_bytes: 1_000,
             pub_key: PublicKeyBinary::from(vec![0]),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
+            carrier_id: CarrierIdV2::Carrier9,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![0]),
                 upload_bytes: 1_000,
@@ -164,7 +164,7 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
             rewardable_bytes: 1_000,
             pub_key: PublicKeyBinary::from(vec![0]),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
+            carrier_id: CarrierIdV2::Carrier9,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![0]),
                 upload_bytes: 1_000,
@@ -199,7 +199,7 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
             rewardable_bytes: 1_000,
             pub_key: PublicKeyBinary::from(vec![0]),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
+            carrier_id: CarrierIdV2::Carrier9,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![0]),
                 upload_bytes: 1_000,
@@ -233,7 +233,7 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
             rewardable_bytes: 1_000,
             pub_key: PublicKeyBinary::from(vec![0]),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
+            carrier_id: CarrierIdV2::Carrier9,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![0]),
                 upload_bytes: 1_000,
@@ -270,7 +270,7 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
             rewardable_bytes: 1_000,
             pub_key: key.clone(),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
+            carrier_id: CarrierIdV2::Carrier9,
             data_transfer_usage: DataTransferEvent {
                 pub_key: key.clone(),
                 upload_bytes: 1_000,
@@ -309,7 +309,7 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
             rewardable_bytes: 1_000,
             pub_key: key.clone(),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
+            carrier_id: CarrierIdV2::Carrier9,
             data_transfer_usage: DataTransferEvent {
                 pub_key: key.clone(),
                 upload_bytes: 1_000,
@@ -348,7 +348,7 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
             rewardable_bytes: 1_000,
             pub_key: key.clone(),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
+            carrier_id: CarrierIdV2::Carrier9,
             data_transfer_usage: DataTransferEvent {
                 pub_key: key.clone(),
                 upload_bytes: 1_000,
@@ -386,7 +386,7 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
             rewardable_bytes: 1_000,
             pub_key: key.clone(),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
+            carrier_id: CarrierIdV2::Carrier9,
             data_transfer_usage: DataTransferEvent {
                 pub_key: key.clone(),
                 upload_bytes: 1_000,

@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
-    verified_data_transfer_ingest_report_v1, CarrierId,
+    verified_data_transfer_ingest_report_v1, CarrierIdV2,
     DataTransferEvent as DataTransferEventProto, DataTransferRadioAccessTechnology,
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, InvalidDataTransferIngestReportV1,
     VerifiedDataTransferIngestReportV1,
@@ -229,7 +229,7 @@ pub struct DataTransferSessionReq {
     pub rewardable_bytes: u64,
     pub pub_key: PublicKeyBinary,
     pub signature: Vec<u8>,
-    pub carrier_id: CarrierId,
+    pub carrier_id: CarrierIdV2,
 }
 
 impl MsgDecode for DataTransferSessionReq {
@@ -240,7 +240,7 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
     type Error = Error;
 
     fn try_from(v: DataTransferSessionReqV1) -> Result<Self> {
-        let carrier_id = v.carrier_id();
+        let carrier_id = v.carrier_id_v2();
 
         Ok(Self {
             rewardable_bytes: v.rewardable_bytes,
@@ -264,7 +264,7 @@ impl From<DataTransferSessionReq> for DataTransferSessionReqV1 {
             rewardable_bytes: v.rewardable_bytes,
             pub_key: v.pub_key.into(),
             signature: v.signature,
-            carrier_id: v.carrier_id as i32,
+            carrier_id_v2: v.carrier_id.into(),
             ..Default::default()
         }
     }

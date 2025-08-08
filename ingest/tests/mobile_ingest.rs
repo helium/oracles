@@ -156,9 +156,10 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
     const SERVICE_PROVIDER_TRANSFER_BYTES: u64 = 13;
     const OFFLOAD_TRANSFER_BYTES: u64 = 14;
     let radio_usage_carrier_info = RadioUsageCarrierTransferInfo {
-        carrier_id: 1,
         transfer_bytes: OFFLOAD_TRANSFER_BYTES,
         user_count: 2,
+        carrier_id_v2: 2,
+        ..Default::default()
     };
 
     let res = client
