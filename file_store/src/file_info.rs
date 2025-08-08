@@ -178,6 +178,8 @@ pub const VERIFIED_SUBSCRIBER_MAPPING_ACTIVITY_REPORT: &str =
     "verified_subscriber_mapping_activity_report";
 pub const MOBILE_BAN_REPORT: &str = "mobile_ban_report";
 pub const VERIFIED_MOBILE_BAN_REPORT: &str = "verified_mobile_ban_report";
+pub const MOBILE_HOTSPOT_CHANGE_REPORT: &str = "mobile_hotspot_change_report";
+pub const IOT_HOTSPOT_CHANGE_REPORT: &str = "iot_hotspot_change_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -248,6 +250,8 @@ pub enum FileType {
     VerifiedSubscriberMappingActivityReport,
     MobileBanReport,
     VerifiedMobileBanReport,
+    MobileHotspotChangeReport,
+    IotHotspotChangeReport,
 }
 
 impl fmt::Display for FileType {
@@ -343,6 +347,8 @@ impl FileType {
             }
             Self::MobileBanReport => MOBILE_BAN_REPORT,
             Self::VerifiedMobileBanReport => VERIFIED_MOBILE_BAN_REPORT,
+            Self::MobileHotspotChangeReport => MOBILE_HOTSPOT_CHANGE_REPORT,
+            Self::IotHotspotChangeReport => IOT_HOTSPOT_CHANGE_REPORT,
         }
     }
 }
@@ -435,6 +441,8 @@ impl FromStr for FileType {
             MOBILE_BAN_REPORT => Self::MobileBanReport,
             VERIFIED_MOBILE_BAN_REPORT => Self::VerifiedMobileBanReport,
             VERIFIED_DATA_TRANSFER_SESSION => Self::VerifiedDataTransferSession,
+            MOBILE_HOTSPOT_CHANGE_REPORT => Self::MobileHotspotChangeReport,
+            IOT_HOTSPOT_CHANGE_REPORT => Self::IotHotspotChangeReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

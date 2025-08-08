@@ -44,6 +44,8 @@ pub struct Settings {
     // mobile config client settings
     // optional to avoid having to define a client for IOT mode
     pub config_client: Option<mobile_config::ClientSettings>,
+    /// Key that can sign Chain Rewardable Entities messages
+    pub chain_rewardable_entities_auth_key: Option<String>,
 }
 
 fn default_roll_time() -> Duration {
@@ -73,6 +75,7 @@ fn default_log() -> String {
 pub enum Mode {
     Iot,
     Mobile,
+    Chain,
 }
 
 impl Settings {

@@ -1430,14 +1430,14 @@ checksum = "89e25b6adfb930f02d1981565a6e5d9c547ac15a96606256d3b59040e5cd4ca3"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#7931b63506ebd56acbffb19cb605def13b9e7255"
+source = "git+https://www.github.com/helium/proto.git?branch=mj%2Fchain-rewardable-entities#a95a6d32f1cd3fd43829533c90182bf11903ca56"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "byteorder",
  "helium-proto",
  "prost",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
+ "rand 0.7.3",
+ "rand_chacha 0.2.2",
  "rust_decimal",
  "serde",
  "sha2 0.9.9",
@@ -3446,7 +3446,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#7931b63506ebd56acbffb19cb605def13b9e7255"
+source = "git+https://www.github.com/helium/proto.git?branch=mj%2Fchain-rewardable-entities#a95a6d32f1cd3fd43829533c90182bf11903ca56"
 dependencies = [
  "bytes",
  "prost",
