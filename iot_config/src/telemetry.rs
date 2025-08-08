@@ -1,5 +1,7 @@
 const RPC_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "grpc-request");
 const STREAM_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "grpc-stream");
+const STREAM_THROTTLE_COUNT_METRIC: &str =
+    concat!(env!("CARGO_PKG_NAME"), "-", "grpc-stream-throttle");
 const REGION_HEX_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "region-hexes");
 const REGION_LOOKUP_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "region-lookup");
 const SKF_ADD_COUNT_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "skfs-added");
@@ -75,4 +77,8 @@ pub fn route_stream_subscribe() {
 
 pub fn route_stream_unsubscribe() {
     metrics::gauge!(STREAM_METRIC).decrement(1.0);
+}
+
+pub fn route_stream_throttle() {
+    metrics::counter!(STREAM_THROTTLE_COUNT_METRIC).increment(1);
 }
