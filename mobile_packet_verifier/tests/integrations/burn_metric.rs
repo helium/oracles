@@ -7,7 +7,7 @@ use file_store::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    CarrierId, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
+    CarrierIdV2, DataTransferRadioAccessTechnology, VerifiedDataTransferIngestReportV1,
 };
 use mobile_packet_verifier::{accumulate::accumulate_sessions, banning, dc_to_bytes};
 use sqlx::{types::Uuid, PgPool};
@@ -27,7 +27,7 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
             rewardable_bytes,
             pub_key: PublicKeyBinary::from(vec![1]),
             signature: vec![],
-            carrier_id: CarrierId::Carrier9,
+            carrier_id: CarrierIdV2::Carrier9,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![1]),
                 upload_bytes: 0,
