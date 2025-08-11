@@ -1,0 +1,108 @@
+name: ECRPush
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        type: choice
+        description: "Select package to build"
+        required: true
+        default: 'all'
+        options:
+          - all
+          - boost-manager
+          - ingest
+          - iot-config
+          - iot-packet-verifier
+          - iot-verifier
+          - mobile-config
+          - mobile-packet-verifier
+          - mobile-verifier
+          - poc-entropy
+          - price
+          - reward-index
+      environment:
+        type: choice
+        description: "Target environment"
+        required: true
+        default: 'mobile-devnet'
+        options:
+          - mobile-devnet
+          - mobile-labnet
+          - mobile-mainnet
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  set-packages:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.set-packages.outputs.packages }}
+    steps:
+      - name: Set packages value
+        id: set-packages
+        run: |
+          if [ "${{ github.event.inputs.package }}" = "all" ]; then
+            echo 'packages=["boost-manager","ingest","mobile-config","mobile-packet-verifier","mobile-verifier","poc-entropy","price","reward-index"]' >> $GITHUB_OUTPUT
+          else
+            echo "packages=[\"${{ github.event.inputs.package }}\"]" >> $GITHUB_OUTPUT
+          fi
+  pull-push:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: set-packages
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    strategy:
+      matrix:
+        package: ${{ fromJson(needs.set-packages.outputs.packages) }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-pull-push-${{ matrix.package }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-session-name: gha_build_${{ github.repository_id }}_${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Set ECR URL
+        run: |
+          case "${{ matrix.package }}" in
+            boost-manager)           echo "ECR_URL=${{ vars.BOOST_MANAGER_ECR_URL }}" >> $GITHUB_ENV ;;
+            ingest)                   echo "ECR_URL=${{ vars.INGEST_ECR_URL }}" >> $GITHUB_ENV ;;
+            iot-config)               echo "ECR_URL=${{ vars.IOT_CONFIG_ECR_URL }}" >> $GITHUB_ENV ;;
+            iot-packet-verifier)      echo "ECR_URL=${{ vars.IOT_PACKET_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;
+            iot-verifier)             echo "ECR_URL=${{ vars.IOT_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;
+            mobile-config)            echo "ECR_URL=${{ vars.MOBILE_CONFIG_ECR_URL }}" >> $GITHUB_ENV ;;
+            mobile-packet-verifier)   echo "ECR_URL=${{ vars.MOBILE_PACKET_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;
+            mobile-verifier)          echo "ECR_URL=${{ vars.MOBILE_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;
+            poc-entropy)              echo "ECR_URL=${{ vars.POC_ENTROPY_ECR_URL }}" >> $GITHUB_ENV ;;
+            price)                    echo "ECR_URL=${{ vars.PRICE_ECR_URL }}" >> $GITHUB_ENV ;;
+            reward-index)             echo "ECR_URL=${{ vars.REWARD_INDEX_ECR_URL }}" >> $GITHUB_ENV ;;
+            *) echo "Unsupported package: ${{ matrix.package }}"; exit 1 ;;
+          esac
+      - name: Pull from GHCR, tag for ECR, and push
+        run: |
+          SRC="ghcr.io/${{ github.repository }}/${{ matrix.package }}:${{ github.ref_name }}"
+          DST="${{ env.ECR_URL }}:${{ github.ref_name }}"
+
+          echo "Pulling $SRC"
+          docker pull "$SRC"
+
+          echo "Tagging $SRC -> $DST"
+          docker tag "$SRC" "$DST"
+
+          echo "Pushing $DST"
+          docker push "$DST"
