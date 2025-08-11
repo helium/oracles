@@ -157,6 +157,7 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+          AWSLOCAL_ENDPOINT: "http://localstack:4566"
         run: cargo test -p ${{ matrix.package }} -- --include-ignored
   build-image:
     if: startsWith(github.ref, 'refs/tags/')
