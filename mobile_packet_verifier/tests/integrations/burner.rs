@@ -5,7 +5,7 @@ use file_store::{
     mobile_session::{DataTransferEvent, DataTransferSessionReq},
 };
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::CarrierId;
+use helium_proto::services::poc_mobile::CarrierIdV2;
 use mobile_packet_verifier::{burner::Burner, bytes_to_dc, pending_burns, pending_txns};
 use solana::{burn::TestSolanaClientMap, Signature};
 use sqlx::PgPool;
@@ -408,7 +408,7 @@ fn mk_data_transfer_session(
         rewardable_bytes,
         pub_key: pubkey.clone(),
         signature: vec![],
-        carrier_id: CarrierId::Carrier9,
+        carrier_id: CarrierIdV2::Carrier9,
     }
 }
 
