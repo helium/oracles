@@ -13,7 +13,7 @@ permissions:
   packages: write
 
 jobs:
-  compute-tag:
+  compute-base-build-tag:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.out.outputs.tag }}
@@ -24,7 +24,7 @@ jobs:
         id: out
         run: echo "tag=${{ hashFiles('Dockerfile','rust-toolchain.toml') }}" >> "$GITHUB_OUTPUT"
   build-base:
-    needs: compute-tag
+    needs: compute-base-build-tag
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -37,7 +37,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Pull Cached Base Image
         run: |
-          if docker pull ghcr.io/${{ github.repository }}/base:${{ needs.compute-tag.outputs.image_tag }}; then
+          if docker pull ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}; then
             echo "CACHE_HIT=true" >> $GITHUB_ENV
           else
             echo "CACHE_HIT=false" >> $GITHUB_ENV
@@ -53,12 +53,12 @@ jobs:
           file: Dockerfile
           target: base
           push: true
-          tags: ghcr.io/${{ github.repository }}/base:${{ needs.compute-tag.outputs.image_tag }}
+          tags: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
   fmt:
-    needs: [compute-tag, build-base]
+    needs: [compute-base-build-tag, build-base]
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-tag.outputs.image_tag }}
+      image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
       options: --user 1001:1001
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-fmt
@@ -69,10 +69,10 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
   clippy:
-    needs: [compute-tag, build-base]
+    needs: [compute-base-build-tag, build-base]
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-tag.outputs.image_tag }}
+      image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
       options: --user 1001:1001
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-clippy
@@ -84,9 +84,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target
-          key: clippy-base-${{ needs.compute-tag.outputs.image_tag }}-${{ hashFiles('**/Cargo.lock') }}
+          key: clippy-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            clippy-base-${{ needs.compute-tag.outputs.image_tag }}-
+            clippy-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-
       - name: Clippy
         run: cargo clippy --all-targets -- -Dclippy::all -D warnings
   generate-matrix:
@@ -111,10 +111,10 @@ jobs:
         id: get-matrix
         run: echo "matrix=$(cat matrix.json)" >> $GITHUB_OUTPUT
   tests:
-    needs: [compute-tag, build-base, generate-matrix]
+    needs: [compute-base-build-tag, build-base, generate-matrix]
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-tag.outputs.image_tag }}
+      image: ghcr.io/${{ github.repository }}/base:${{ needs.compute-base-build-tag.outputs.image_tag }}
       options: --user 1001:1001
     strategy:
       fail-fast: false
@@ -151,9 +151,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target
-          key: tests-${{ matrix.package }}-base-${{ needs.compute-tag.outputs.image_tag }}-${{ hashFiles('**/Cargo.lock') }}
+          key: tests-${{ matrix.package }}-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            tests-${{ matrix.package }}-base-${{ needs.compute-tag.outputs.image_tag }}-
+            tests-${{ matrix.package }}-base-${{ needs.compute-base-build-tag.outputs.image_tag }}-
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
