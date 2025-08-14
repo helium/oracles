@@ -188,3 +188,5 @@ jobs:
           target: runner
           push: true
           tags: ghcr.io/${{ github.repository }}/${{ matrix.package }}:${{ github.ref_name }}
+          build-args: |
+            PACKAGE=${{ matrix.package }}
