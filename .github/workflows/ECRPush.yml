@@ -58,7 +58,7 @@ jobs:
       matrix:
         package: ${{ fromJson(needs.set-packages.outputs.packages) }}
     concurrency:
-      group: ${{ github.workflow }}-${{ inputs.version }}-pull-push-${{ matrix.package }}
+      group: ${{ github.workflow }}-${{ inputs.version }}-${{ inputs.environment }}-pull-push-${{ matrix.package }}
       cancel-in-progress: true
     steps:
       - name: Log in to GitHub Container Registry
