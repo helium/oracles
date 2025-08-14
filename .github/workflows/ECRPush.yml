@@ -70,6 +70,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull from GHCR
+        run: |
+          SRC="ghcr.io/${{ github.repository }}/${{ matrix.package }}:${{ github.ref_name }}"
+
+          echo "Pulling $SRC"
+          docker pull "$SRC"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -94,13 +101,10 @@ jobs:
             reward-index)             echo "ECR_URL=${{ vars.REWARD_INDEX_ECR_URL }}" >> $GITHUB_ENV ;;
             *) echo "Unsupported package: ${{ matrix.package }}"; exit 1 ;;
           esac
-      - name: Pull from GHCR, tag for ECR, and push
+      - name: tag for ECR, and push
         run: |
           SRC="ghcr.io/${{ github.repository }}/${{ matrix.package }}:${{ github.ref_name }}"
           DST="${{ env.ECR_URL }}:${{ github.ref_name }}"
-
-          echo "Pulling $SRC"
-          docker pull "$SRC"
 
           echo "Tagging $SRC -> $DST"
           docker tag "$SRC" "$DST"
