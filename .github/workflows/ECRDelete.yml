@@ -1,0 +1,84 @@
+name: ECRDelete
+run-name: Delete version ${{ inputs.version }} of ${{ inputs.package }} from ${{ inputs.environment }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        type: choice
+        description: "Select package to delete"
+        required: true
+        default: 'all'
+        options:
+          - all
+          - boost-manager
+          - ingest
+          - iot-config
+          - iot-packet-verifier
+          - iot-verifier
+          - mobile-config
+          - mobile-packet-verifier
+          - mobile-verifier
+          - poc-entropy
+          - price
+          - reward-index
+      version:
+        type: string
+        description: "Version of package to delete"
+        required: true
+      environment:
+        type: environment
+        description: "Target environment"
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  set-packages:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.set-packages.outputs.packages }}
+    steps:
+      - name: Set packages value
+        id: set-packages
+        run: |
+          if [ "${{ inputs.package }}" = "all" ]; then
+            echo 'packages=["boost-manager","ingest","mobile-config","mobile-packet-verifier","mobile-verifier","poc-entropy","price","reward-index"]' >> $GITHUB_OUTPUT
+          else
+            echo "packages=[\"${{ inputs.package }}\"]" >> $GITHUB_OUTPUT
+          fi
+  delete:
+    needs: set-packages
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    strategy:
+      matrix:
+        package: ${{ fromJson(needs.set-packages.outputs.packages) }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ inputs.version }}-${{ inputs.environment }}-delete-${{ matrix.package }}
+      cancel-in-progress: true
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-session-name: gha_delete_${{ github.repository_id }}_${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Delete tag from ECR
+        run: |
+          set -euo pipefail
+          echo "Deleting tag '${{ inputs.version }}' in repo '${{ matrix.package }}'"
+
+          FAILS=$(aws ecr batch-delete-image \
+            --repository-name "${{ matrix.package}}" \
+            --image-ids imageTag="${{ inputs.version }}" \
+            --region "${{ vars.AWS_REGION }}" \
+            --query 'failures | length(@array)' \
+            --output text)
+
+          if [ "${FAILS}" != "0" ]; then
+            echo "ECR reported failures while deleting tag '${{ inputs.version }}' for '${{ matrix.package }}'."
+            exit 1
+          fi
