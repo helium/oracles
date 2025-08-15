@@ -28,6 +28,7 @@ use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
+const SPEEDTEST_MAX_BYTES: u64 = 300 * 1024 * 1024; // 300MB in bytes
 
 pub type EpochSpeedTests = HashMap<PublicKeyBinary, Vec<Speedtest>>;
 
@@ -174,6 +175,13 @@ where
         speedtest: &CellSpeedtestIngestReport,
     ) -> anyhow::Result<SpeedtestResult> {
         let pubkey = speedtest.report.pubkey.clone();
+
+        // Check if upload or download speed exceeds 300MB
+        if speedtest.report.upload_speed > SPEEDTEST_MAX_BYTES
+            || speedtest.report.download_speed > SPEEDTEST_MAX_BYTES
+        {
+            return Ok(SpeedtestResult::SpeedtestValueOutOfBounds);
+        }
 
         match self
             .gateway_info_resolver

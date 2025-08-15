@@ -3513,7 +3513,13 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
+<<<<<<< HEAD
 source = "git+https://github.com/helium/proto?branch=master#2217e1a917583ddccb6668a7bd185f3d39bcede0"
+||||||| parent of a68f1554 (Add 300MB speedtest validation with bounds checking)
+source = "git+https://github.com/helium/proto?branch=master#0ba63207fa6935861ad2c3649edbb3c74f7f87ec"
+=======
+source = "git+https://www.github.com/helium/proto.git?branch=kurotych%2Fspeedtest-bounds#c4a03661f85a6399ed8c6b6b7245e9cb04301762"
+>>>>>>> a68f1554 (Add 300MB speedtest validation with bounds checking)
 dependencies = [
  "bytes",
  "prost",
