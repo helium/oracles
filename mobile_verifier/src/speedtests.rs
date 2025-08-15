@@ -174,8 +174,6 @@ where
         &self,
         speedtest: &CellSpeedtestIngestReport,
     ) -> anyhow::Result<SpeedtestResult> {
-        let pubkey = speedtest.report.pubkey.clone();
-
         // Check if upload or download speed exceeds 300MB
         if speedtest.report.upload_speed > SPEEDTEST_MAX_BYTES
             || speedtest.report.download_speed > SPEEDTEST_MAX_BYTES
@@ -185,7 +183,7 @@ where
 
         match self
             .gateway_info_resolver
-            .resolve_gateway_info(&pubkey)
+            .resolve_gateway_info(&speedtest.report.pubkey)
             .await?
         {
             Some(gw_info) if gw_info.is_data_only() => {
