@@ -12,18 +12,18 @@ type Millis = u32;
 pub struct BytesPs(u64);
 
 impl BytesPs {
-    const BYTES_PER_MEGABYTE: u64 = 125_000;
+    const BYTES_PER_MEGABIT: u64 = 125_000;
 
     pub fn new(bytes_per_second: u64) -> Self {
         Self(bytes_per_second)
     }
 
     pub fn mbps(megabytes_per_second: u64) -> Self {
-        Self(megabytes_per_second * Self::BYTES_PER_MEGABYTE)
+        Self(megabytes_per_second * Self::BYTES_PER_MEGABIT)
     }
 
     fn as_mbps(&self) -> u64 {
-        self.0 / Self::BYTES_PER_MEGABYTE
+        self.0 / Self::BYTES_PER_MEGABIT
     }
 
     pub fn as_bps(&self) -> u64 {
