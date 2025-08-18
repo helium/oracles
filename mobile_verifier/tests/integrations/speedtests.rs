@@ -1,5 +1,6 @@
 use crate::common;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use coverage_point_calculator::speedtest::BYTES_PER_MEGABIT;
 use file_store::{file_info_poller::FileInfoStream, FileInfo};
 use file_store_oracles::speedtest::{CellSpeedtest, CellSpeedtestIngestReport};
 use helium_crypto::PublicKeyBinary;
@@ -88,7 +89,7 @@ async fn speedtests_average_should_only_include_last_48_hours(
 }
 
 #[sqlx::test]
-async fn speedtest_upload_exceeds_300mb_limit(pool: Pool<Postgres>) -> anyhow::Result<()> {
+async fn speedtest_upload_exceeds_300megabits_ps_limit(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
     let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
@@ -105,15 +106,14 @@ async fn speedtest_upload_exceeds_300mb_limit(pool: Pool<Postgres>) -> anyhow::R
         verified_client,
     );
 
-    // Create speedtest with upload speed > 300MB (300MB = 314,572,800 bytes)
     let speedtest_report = CellSpeedtestIngestReport {
         received_timestamp: Utc::now(),
         report: CellSpeedtest {
             pubkey: hotspot.clone(),
             serial: "test-serial".to_string(),
             timestamp: Utc::now(),
-            upload_speed: 400 * 1024 * 1024, // 400MB - exceeds limit
-            download_speed: 100 * 1024 * 1024, // 100MB - within limit
+            upload_speed: mbps(400),   // exceeds limit
+            download_speed: mbps(100), // within limit
             latency: 10,
         },
     };
@@ -142,15 +142,15 @@ async fn speedtest_download_exceeds_300mb_limit(pool: Pool<Postgres>) -> anyhow:
         verified_client,
     );
 
-    // Create speedtest with download speed > 300MB
+    // Create speedtest with download speed > 300Mbits
     let speedtest_report = CellSpeedtestIngestReport {
         received_timestamp: Utc::now(),
         report: CellSpeedtest {
             pubkey: hotspot.clone(),
             serial: "test-serial".to_string(),
             timestamp: Utc::now(),
-            upload_speed: 50 * 1024 * 1024,    // 50MB - within limit
-            download_speed: 350 * 1024 * 1024, // 350MB - exceeds limit
+            upload_speed: mbps(50),    // within limit
+            download_speed: mbps(350), // exceeds limit
             latency: 10,
         },
     };
@@ -179,15 +179,15 @@ async fn speedtest_both_speeds_exceed_300mb_limit(pool: Pool<Postgres>) -> anyho
         verified_client,
     );
 
-    // Create speedtest with both speeds > 300MB
+    // Create speedtest with both speeds > 300Mbits
     let speedtest_report = CellSpeedtestIngestReport {
         received_timestamp: Utc::now(),
         report: CellSpeedtest {
             pubkey: hotspot.clone(),
             serial: "test-serial".to_string(),
             timestamp: Utc::now(),
-            upload_speed: 400 * 1024 * 1024, // 400MB - exceeds limit
-            download_speed: 350 * 1024 * 1024, // 350MB - exceeds limit
+            upload_speed: mbps(400),   // exceeds limit
+            download_speed: mbps(350), // exceeds limit
             latency: 10,
         },
     };
@@ -216,15 +216,15 @@ async fn speedtest_within_300mb_limit_should_be_valid(pool: Pool<Postgres>) -> a
         verified_client,
     );
 
-    // Create speedtest with both speeds within 300MB limit
+    // Create speedtest with both speeds within 300Mbits limit
     let speedtest_report = CellSpeedtestIngestReport {
         received_timestamp: Utc::now(),
         report: CellSpeedtest {
             pubkey: hotspot.clone(),
             serial: "test-serial".to_string(),
             timestamp: Utc::now(),
-            upload_speed: 100 * 1024 * 1024,   // 100MB - within limit
-            download_speed: 200 * 1024 * 1024, // 200MB - within limit
+            upload_speed: mbps(100),   // within limit
+            download_speed: mbps(200), // within limit
             latency: 10,
         },
     };
@@ -253,15 +253,15 @@ async fn speedtest_exactly_300mb_limit_should_be_valid(pool: Pool<Postgres>) -> 
         verified_client,
     );
 
-    // Create speedtest with speeds exactly at 300MB limit
+    // Create speedtest with speeds exactly at 300Mbits limit
     let speedtest_report = CellSpeedtestIngestReport {
         received_timestamp: Utc::now(),
         report: CellSpeedtest {
             pubkey: hotspot.clone(),
             serial: "test-serial".to_string(),
             timestamp: Utc::now(),
-            upload_speed: 300 * 1024 * 1024, // Exactly 300MB - should be valid
-            download_speed: 300 * 1024 * 1024, // Exactly 300MB - should be valid
+            upload_speed: mbps(300),   // should be valid
+            download_speed: mbps(300), // should be valid
             latency: 10,
         },
     };
@@ -296,8 +296,8 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
                 pubkey: hotspot.clone(),
                 serial: "test-serial-1".to_string(),
                 timestamp: parse_dt("2024-01-01 01:00:00"),
-                upload_speed: mbps(3),    // 3 Mbps = Poor tier
-                download_speed: mbps(35), // 35 Mbps = Poor tier
+                upload_speed: mbps(3),    // Poor tier
+                download_speed: mbps(35), // Poor tier
                 latency: 80,              // Poor tier
             },
         },
@@ -309,9 +309,9 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
                 pubkey: hotspot.clone(),
                 serial: "test-serial-2".to_string(),
                 timestamp: parse_dt("2024-01-01 02:00:00"),
-                upload_speed: 900 * 1024 * 1024, // 900MB - invalid (way above limit)
-                download_speed: mbps(150),       // 150 Mbps - would be Good tier
-                latency: 20,                     // Would be Good tier
+                upload_speed: mbps(900),   // Invalid (way above limit)
+                download_speed: mbps(150), // Good tier
+                latency: 20,               // Good tier
             },
         },
         // Another valid speedtest - should be included in average
@@ -324,8 +324,8 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
                 pubkey: hotspot.clone(),
                 serial: "test-serial-3".to_string(),
                 timestamp: parse_dt("2024-01-01 03:00:00"),
-                upload_speed: mbps(4),    // 4 Mbps = Poor tier
-                download_speed: mbps(40), // 40 Mbps = Poor tier
+                upload_speed: mbps(4),    // Poor tier
+                download_speed: mbps(40), // Poor tier
                 latency: 90,              // Poor tier
             },
         },
@@ -337,9 +337,9 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
                 pubkey: hotspot.clone(),
                 serial: "test-serial-4".to_string(),
                 timestamp: parse_dt("2024-01-01 04:00:00"),
-                upload_speed: mbps(15), // 15 Mbps - would be Good tier
-                download_speed: 900 * 1024 * 1024, // 900MB - invalid (way above limit)
-                latency: 30,            // Would be Good tier
+                upload_speed: mbps(15),    // 15 Mbps - would be Good tier
+                download_speed: mbps(900), // invalid (way above limit)
+                latency: 30,               // Would be Good tier
             },
         },
     ];
@@ -426,9 +426,8 @@ fn parse_dt(dt: &str) -> DateTime<Utc> {
         .expect("unable_to_parse")
         .and_utc()
 }
-
 fn mbps(mbps: u64) -> u64 {
-    mbps * 125000
+    mbps * BYTES_PER_MEGABIT
 }
 fn file_info_stream(
     speedtests: Vec<CellSpeedtestIngestReport>,
