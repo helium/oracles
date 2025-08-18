@@ -125,7 +125,9 @@ async fn speedtest_upload_exceeds_300megabits_ps_limit(pool: Pool<Postgres>) -> 
 }
 
 #[sqlx::test]
-async fn speedtest_download_exceeds_300mb_limit(pool: Pool<Postgres>) -> anyhow::Result<()> {
+async fn speedtest_download_exceeds_300_megabits_ps_limit(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
     let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
@@ -162,7 +164,9 @@ async fn speedtest_download_exceeds_300mb_limit(pool: Pool<Postgres>) -> anyhow:
 }
 
 #[sqlx::test]
-async fn speedtest_both_speeds_exceed_300mb_limit(pool: Pool<Postgres>) -> anyhow::Result<()> {
+async fn speedtest_both_speeds_exceed_300_megabits_ps_limit(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
     let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
@@ -199,7 +203,9 @@ async fn speedtest_both_speeds_exceed_300mb_limit(pool: Pool<Postgres>) -> anyho
 }
 
 #[sqlx::test]
-async fn speedtest_within_300mb_limit_should_be_valid(pool: Pool<Postgres>) -> anyhow::Result<()> {
+async fn speedtest_within_300_megabits_ps_limit_should_be_valid(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
     let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
@@ -236,7 +242,9 @@ async fn speedtest_within_300mb_limit_should_be_valid(pool: Pool<Postgres>) -> a
 }
 
 #[sqlx::test]
-async fn speedtest_exactly_300mb_limit_should_be_valid(pool: Pool<Postgres>) -> anyhow::Result<()> {
+async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
     let (_tx, rx) = tokio::sync::mpsc::channel(2);
     let gateway_info_resolver = MockGatewayInfoResolver {};
     let (speedtest_avg_client, _speedtest_avg_receiver) = common::create_file_sink();
@@ -301,7 +309,7 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
                 latency: 80,              // Poor tier
             },
         },
-        // Invalid speedtest - upload exceeds 300MB, should NOT be included
+        // Invalid speedtest - upload exceeds 300Mbits, should NOT be included
         // If included, this would push toward Good tier due to very high speeds
         CellSpeedtestIngestReport {
             received_timestamp: Utc::now(),
@@ -329,7 +337,7 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
                 latency: 90,              // Poor tier
             },
         },
-        // Invalid speedtest - download exceeds 300MB, should NOT be included
+        // Invalid speedtest - download exceeds 300Mbits, should NOT be included
         // If included, this would push toward Good tier due to very high speeds
         CellSpeedtestIngestReport {
             received_timestamp: Utc::now(),
@@ -362,7 +370,7 @@ async fn invalid_speedtests_should_not_affect_average(pool: Pool<Postgres>) -> a
     let avgs = speedtest_avg_receiver.finish().await?;
 
     // Should have 2 average entries (one for each valid speedtest)
-    // Invalid speedtests with speeds > 300MB should NOT generate averages
+    // Invalid speedtests with speeds > 300Mbits should NOT generate averages
     assert_eq!(
         2,
         avgs.len(),
