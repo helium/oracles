@@ -3,6 +3,7 @@ use crate::{
     Settings,
 };
 use chrono::{DateTime, Utc};
+use coverage_point_calculator::speedtest::BYTES_PER_MEGABIT;
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
@@ -31,7 +32,10 @@ use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
-const SPEEDTEST_MAX_BYTES: u64 = 300 * 1024 * 1024; // 300MB in bytes
+// The limit must be 300 megabits per second.
+// Values in proto are in bytes/sec format.
+// Convert 300 megabits per second to bytes per second.
+const SPEEDTEST_MAX_BYTES_PER_SECOND: u64 = 300 * BYTES_PER_MEGABIT;
 
 pub type EpochSpeedTests = HashMap<PublicKeyBinary, Vec<Speedtest>>;
 
@@ -177,9 +181,8 @@ where
         &self,
         speedtest: &CellSpeedtestIngestReport,
     ) -> anyhow::Result<SpeedtestResult> {
-        // Check if upload or download speed exceeds 300MB
-        if speedtest.report.upload_speed > SPEEDTEST_MAX_BYTES
-            || speedtest.report.download_speed > SPEEDTEST_MAX_BYTES
+        if speedtest.report.upload_speed > SPEEDTEST_MAX_BYTES_PER_SECOND
+            || speedtest.report.download_speed > SPEEDTEST_MAX_BYTES_PER_SECOND
         {
             return Ok(SpeedtestResult::SpeedtestValueOutOfBounds);
         }
