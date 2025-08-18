@@ -1,4 +1,5 @@
 use anyhow::Context;
+use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::{net::SocketAddr, path::Path, str::FromStr};
@@ -30,6 +31,12 @@ pub struct Settings {
     )]
     pub mobile_radio_tracker_interval: std::time::Duration,
     pub metrics: poc_metrics::Settings,
+    #[serde(default = "default_boosted_hex_activation_cutoff")]
+    pub boosted_hex_activation_cutoff: DateTime<Utc>,
+}
+
+fn default_boosted_hex_activation_cutoff() -> DateTime<Utc> {
+    DateTime::from_str("2025-07-01T00:00:00Z").unwrap()
 }
 
 fn default_mobile_radio_tracker_interval() -> std::time::Duration {

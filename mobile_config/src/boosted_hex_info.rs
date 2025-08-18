@@ -174,37 +174,43 @@ pub(crate) mod db {
     use std::str::FromStr;
 
     const GET_BOOSTED_HEX_INFO_SQL: &str = r#"
-            select 
+            SELECT 
                 CAST(hexes.location AS bigint),
                 CAST(hexes.start_ts AS bigint),
                 CAST(config.period_length AS bigint),
-                hexes.boosts_by_period as multipliers,
-                hexes.address as boosted_hex_pubkey, 
-                config.address as boost_config_pubkey,
+                hexes.boosts_by_period AS multipliers,
+                hexes.address AS boosted_hex_pubkey, 
+                config.address AS boost_config_pubkey,
                 CAST(hexes.version AS integer)
-            from boosted_hexes hexes
-            join boost_configs config on hexes.boost_config = config.address
+            FROM boosted_hexes hexes
+            JOIN boost_configs config ON hexes.boost_config = config.address
+            WHERE hexes.start_ts != 0
+            	AND TO_TIMESTAMP(hexes.start_ts) < $1
         "#;
 
     // TODO: reuse with string above
     const GET_MODIFIED_BOOSTED_HEX_INFO_SQL: &str = r#"
-            select 
+            SELECT 
                 CAST(hexes.location AS bigint),
                 CAST(hexes.start_ts AS bigint),
                 CAST(config.period_length AS bigint),
-                hexes.boosts_by_period as multipliers,
-                hexes.address as boosted_hex_pubkey, 
-                config.address as boost_config_pubkey,
+                hexes.boosts_by_period AS multipliers,
+                hexes.address AS boosted_hex_pubkey, 
+                config.address AS boost_config_pubkey,
                 CAST(hexes.version AS integer)
-            from boosted_hexes hexes
-            join boost_configs config on hexes.boost_config = config.address
-            where hexes.refreshed_at > $1
+            FROM boosted_hexes hexes
+            JOIN boost_configs config ON hexes.boost_config = config.address
+            WHERE hexes.start_ts != 0
+            	AND TO_TIMESTAMP(hexes.start_ts) < $1
+                AND hexes.refreshed_at > $2
         "#;
 
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
+        activation_cutoff: DateTime<Utc>,
     ) -> impl Stream<Item = BoostedHexInfo> + 'a {
         sqlx::query_as::<_, BoostedHexInfo>(GET_BOOSTED_HEX_INFO_SQL)
+            .bind(activation_cutoff)
             .fetch(db)
             .filter_map(|info| async move { info.ok() })
             .boxed()
@@ -212,9 +218,11 @@ pub(crate) mod db {
 
     pub fn modified_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
+        activation_cutoff: DateTime<Utc>,
         ts: DateTime<Utc>,
     ) -> impl Stream<Item = BoostedHexInfo> + 'a {
         sqlx::query_as::<_, BoostedHexInfo>(GET_MODIFIED_BOOSTED_HEX_INFO_SQL)
+            .bind(activation_cutoff)
             .bind(ts)
             .fetch(db)
             .filter_map(|info| async move { info.ok() })
