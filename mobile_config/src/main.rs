@@ -113,6 +113,7 @@ impl Daemon {
             key_cache.clone(),
             metadata_pool.clone(),
             settings.signing_keypair()?,
+            settings.boosted_hex_activation_cutoff,
         );
 
         let sub_dao_svc = SubDaoService::new(
