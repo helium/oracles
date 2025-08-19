@@ -74,10 +74,10 @@ impl From<(String, DateTime<Utc>)> for FileInfo {
     }
 }
 
-impl TryFrom<&aws_sdk_s3::model::Object> for FileInfo {
+impl TryFrom<&aws_sdk_s3::types::Object> for FileInfo {
     type Error = Error;
-    fn try_from(value: &aws_sdk_s3::model::Object) -> Result<Self> {
-        let size = value.size() as usize;
+    fn try_from(value: &aws_sdk_s3::types::Object) -> Result<Self> {
+        let size = value.size().unwrap_or_default() as usize;
         let key = value
             .key
             .as_ref()

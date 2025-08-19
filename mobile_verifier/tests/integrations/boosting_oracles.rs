@@ -186,7 +186,7 @@ async fn test_dataset_downloader(pool: PgPool) {
 
     let file_paths: Vec<PathBuf> = paths
         .iter()
-        .map(|f| PathBuf::from(format!("./tests/integrations/fixtures/{}", f)))
+        .map(|f| PathBuf::from(format!("./tests/integrations/fixtures/{f}")))
         .collect();
 
     let (file_upload_tx, _file_upload_rx) = file_upload::message_channel();
