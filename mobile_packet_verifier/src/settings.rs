@@ -111,7 +111,11 @@ impl Settings {
         // Add in settings from the environment (with a prefix of VERIFY)
         // Eg.. `INJECT_DEBUG=1 ./target/app` would set the `debug` key
         builder
-            .add_source(Environment::with_prefix("MPV").separator("__").try_parsing(true))
+            .add_source(
+                Environment::with_prefix("MPV")
+                    .separator("__")
+                    .try_parsing(true),
+            )
             .build()
             .and_then(|config| config.try_deserialize())
     }
