@@ -129,6 +129,6 @@ where
         .map_err(serde::de::Error::custom)?;
 
     Keypair::try_from(bytes.as_slice())
-        .map(|kp| Arc::new(kp))
+        .map(Arc::new)
         .map_err(serde::de::Error::custom)
 }

@@ -73,7 +73,7 @@ impl Settings {
         // E.g. `CFG_DEBUG=1 .target/app` would set the `debug` key
         builder
             .add_source(
-                Environment::with_prefix("CFG")
+                Environment::with_prefix("MC")
                     .separator("__")
                     .try_parsing(true),
             )
