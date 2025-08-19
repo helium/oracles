@@ -1,16 +1,16 @@
 use helium_crypto::{Keypair, PublicKey};
 use helium_proto::services::{mobile_config, sub_dao, Channel, Endpoint};
 use humantime_serde::re::humantime;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// grpc url to the mobile config oracle server
     #[serde(with = "http_serde::uri")]
     pub url: http::Uri,
     /// Base64 encoded string of the helium keypair
-    #[serde(deserialize_with = "crate::deserialize_keypair")]
+    #[serde(deserialize_with = "crate::deserialize_keypair", skip_serializing)]
     pub signing_keypair: Arc<Keypair>,
     /// B58 encoded public key of the mobile config server for verification
     pub config_pubkey: PublicKey,

@@ -46,6 +46,7 @@ impl Cmd {
             Self::Server(cmd) => {
                 let settings = Settings::new(config)?;
                 custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
+                tracing::info!("Settings: {}", serde_json::to_string_pretty(&settings)?);
                 cmd.run(&settings).await
             }
             Self::Check(options) => check::run(options.into()).await,
