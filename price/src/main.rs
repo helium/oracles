@@ -99,7 +99,7 @@ impl Server {
         task_manager.add(file_upload_server);
         task_manager.add(price_sink_server);
 
-        for token_setting in settings.tokens()?.iter() {
+        for token_setting in settings.tokens.iter() {
             task_manager.add(
                 PriceGenerator::new(
                     settings,

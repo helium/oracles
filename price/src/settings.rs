@@ -1,12 +1,11 @@
 use anyhow::Result;
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
-use serde::{Deserialize, Serialize};
-use serde_json;
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use solana::Token;
 use std::{path::Path, time::Duration};
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct TokenSetting {
     pub token: Token,
     pub default_price: Option<u64>,
@@ -34,7 +33,8 @@ pub struct Settings {
     /// Tick interval (secs). Default = 60s.
     #[serde(with = "humantime_serde", default = "default_interval")]
     pub interval: Duration,
-    pub tokens: Vec<String>,
+    #[serde(default, deserialize_with = "from_json_or_struct")]
+    pub tokens: Vec<TokenSetting>,
     /// How long to use a stale price in minutes
     #[serde(with = "humantime_serde", default = "default_stale_price_duration")]
     pub stale_price_duration: Duration,
@@ -76,260 +76,197 @@ impl Settings {
                 .add_source(File::with_name(&file.as_ref().to_string_lossy()).required(false));
         }
         // Add in settings from the environment (with a prefix of APP)
-        // Eg.. `MI_DEBUG=1 ./target/app` would set the `debug` key
+        // Eg.. `PRICE__DEBUG=1 ./target/app` would set the `debug` key
         builder
             .add_source(
                 Environment::with_prefix("PRICE")
                     .separator("__")
-                    .list_separator(",")
-                    .with_list_parse_key("tokens")
                     .try_parsing(true),
             )
             .build()
             .and_then(|config| config.try_deserialize())
     }
+}
 
-    pub fn tokens(&self) -> anyhow::Result<Vec<TokenSetting>> {
-        let mut token_settings = Vec::new();
-        let mut errors = Vec::new();
+fn from_json_or_struct<'de, D, T>(de: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let v = serde_json::Value::deserialize(de)?;
+    match v {
+        // Environment source provides a *string*; parse that string as JSON
+        serde_json::Value::String(s) => serde_json::from_str(&s).map_err(serde::de::Error::custom),
 
-        for (i, token_json_str) in self.tokens.iter().enumerate() {
-            match serde_json::from_str::<TokenSetting>(token_json_str) {
-                Ok(token_setting) => token_settings.push(token_setting),
-                Err(e) => {
-                    errors.push(format!("Token {} at index {}: {}", token_json_str, i, e));
-                }
-            }
-        }
-
-        if !errors.is_empty() {
-            anyhow::bail!("Failed to parse some tokens:\n{}", errors.join("\n"));
-        }
-
-        Ok(token_settings)
+        // Already a map/array/etc.; just deserialize it normally
+        other => serde_json::from_value(other).map_err(serde::de::Error::custom),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
-    fn create_test_file_store_settings() -> file_store::Settings {
-        file_store::Settings {
-            bucket: "test-bucket".to_string(),
-            endpoint: None,
-            region: "us-west-2".to_string(),
-            access_key_id: None,
-            secret_access_key: None,
+    impl Settings {
+        // Use Settings::new() constructor while injecting some env variables
+        // that will be cleaned up when the test is done.
+        fn test_with_token_env(token_setting: String) -> anyhow::Result<Self> {
+            let settings = temp_env::with_vars(
+                [
+                    ("PRICE__OUTPUT__BUCKET", Some("test-bucket".to_string())),
+                    ("PRICE__OUTPUT__REGION", Some("us-west-2".to_string())),
+                    (
+                        "PRICE__TOKENS",
+                        Some(token_setting).filter(|s| !s.is_empty()),
+                    ),
+                ],
+                || Self::new::<PathBuf>(None),
+            )?;
+
+            Ok(settings)
         }
     }
 
     #[test]
-    fn test_tokens_with_valid_json_strings() {
-        let settings = Settings {
-            log: "debug".to_string(),
-            custom_tracing: custom_tracing::Settings::default(),
-            source: "https://api.devnet.solana.com".to_string(),
-            output: create_test_file_store_settings(),
-            cache: "/tmp/cache".to_string(),
-            metrics: poc_metrics::Settings::default(),
-            interval: std::time::Duration::from_secs(60),
-            tokens: vec![
-                r#"{"token": "hnt"}"#.to_string(),
-                r#"{"token": "mobile", "default_price": 1000000}"#.to_string(),
-                r#"{"token": "iot"}"#.to_string(),
-            ],
-            stale_price_duration: std::time::Duration::from_secs(43200),
-        };
+    fn test_tokens_with_valid_json_strings_env() -> anyhow::Result<()> {
+        let settings = Settings::test_with_token_env(
+            serde_json::json!([
+                {"token": "hnt"},
+                {"token": "mobile", "default_price": 1000000},
+                {"token": "iot"}
+            ])
+            .to_string(),
+        )?;
 
-        let result = settings.tokens().unwrap();
-        assert_eq!(result.len(), 3);
+        assert_eq!(
+            settings.tokens,
+            vec![
+                TokenSetting {
+                    token: Token::Hnt,
+                    default_price: None
+                },
+                TokenSetting {
+                    token: Token::Mobile,
+                    default_price: Some(1000000)
+                },
+                TokenSetting {
+                    token: Token::Iot,
+                    default_price: None
+                }
+            ]
+        );
 
-        // Check first token (HNT)
-        assert!(matches!(result[0].token, Token::Hnt));
-        assert_eq!(result[0].default_price, None);
-
-        // Check second token (Mobile with default price)
-        assert!(matches!(result[1].token, Token::Mobile));
-        assert_eq!(result[1].default_price, Some(1000000));
-
-        // Check third token (IoT)
-        assert!(matches!(result[2].token, Token::Iot));
-        assert_eq!(result[2].default_price, None);
+        Ok(())
     }
 
     #[test]
-    fn test_tokens_with_default_price_only() {
-        let settings = Settings {
-            log: "debug".to_string(),
-            custom_tracing: custom_tracing::Settings::default(),
-            source: "https://api.devnet.solana.com".to_string(),
-            output: create_test_file_store_settings(),
-            cache: "/tmp/cache".to_string(),
-            metrics: poc_metrics::Settings::default(),
-            interval: std::time::Duration::from_secs(60),
-            tokens: vec![r#"{"token": "hnt", "default_price": 5000000}"#.to_string()],
-            stale_price_duration: std::time::Duration::from_secs(43200),
-        };
+    fn test_tokens_with_default_price_only() -> anyhow::Result<()> {
+        let settings = Settings::test_with_token_env(
+            r#"[{"token": "hnt", "default_price": 5000000}]"#.to_string(),
+        )?;
 
-        let result = settings.tokens().unwrap();
-        assert_eq!(result.len(), 1);
+        assert_eq!(
+            settings.tokens,
+            vec![TokenSetting {
+                token: Token::Hnt,
+                default_price: Some(5000000)
+            }]
+        );
 
-        assert!(matches!(result[0].token, Token::Hnt));
-        assert_eq!(result[0].default_price, Some(5000000));
+        Ok(())
     }
 
     #[test]
-    fn test_tokens_with_empty_tokens_list() {
-        let settings = Settings {
-            log: "debug".to_string(),
-            custom_tracing: custom_tracing::Settings::default(),
-            source: "https://api.devnet.solana.com".to_string(),
-            output: create_test_file_store_settings(),
-            cache: "/tmp/cache".to_string(),
-            metrics: poc_metrics::Settings::default(),
-            interval: std::time::Duration::from_secs(60),
-            tokens: vec![],
-            stale_price_duration: std::time::Duration::from_secs(43200),
-        };
-
-        let result = settings.tokens().unwrap();
-        assert_eq!(result.len(), 0);
+    fn test_tokens_with_empty_tokens_list() -> anyhow::Result<()> {
+        let settings = Settings::test_with_token_env("".to_string())?;
+        assert!(settings.tokens.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn test_tokens_with_invalid_json() {
-        let settings = Settings {
-            log: "debug".to_string(),
-            custom_tracing: custom_tracing::Settings::default(),
-            source: "https://api.devnet.solana.com".to_string(),
-            output: create_test_file_store_settings(),
-            cache: "/tmp/cache".to_string(),
-            metrics: poc_metrics::Settings::default(),
-            interval: std::time::Duration::from_secs(60),
-            tokens: vec![
-                r#"{"token": "hnt"}"#.to_string(),
-                r#"invalid json"#.to_string(),
-                r#"{"token": "mobile"}"#.to_string(),
-            ],
-            stale_price_duration: std::time::Duration::from_secs(43200),
-        };
+    fn test_tokens_with_invalid_json() -> anyhow::Result<()> {
+        let settings = Settings::test_with_token_env(
+            serde_json::json!([
+                {"token": "hnt"},
+                "invalid json",
+                {"token": "mobile"},
+            ])
+            .to_string(),
+        );
 
-        let result = settings.tokens();
-        assert!(result.is_err());
+        let error = settings.unwrap_err().to_string();
+        assert!(error.contains("expected struct TokenSetting"));
+        assert!(error.contains("invalid json"));
 
-        let error = result.unwrap_err();
-        assert!(error.to_string().contains("Failed to parse some tokens"));
-        assert!(error.to_string().contains("invalid json"));
+        Ok(())
     }
 
     #[test]
     fn test_tokens_with_missing_token_field() {
-        let settings = Settings {
-            log: "debug".to_string(),
-            custom_tracing: custom_tracing::Settings::default(),
-            source: "https://api.devnet.solana.com".to_string(),
-            output: create_test_file_store_settings(),
-            cache: "/tmp/cache".to_string(),
-            metrics: poc_metrics::Settings::default(),
-            interval: std::time::Duration::from_secs(60),
-            tokens: vec![r#"{"default_price": 1000000}"#.to_string()],
-            stale_price_duration: std::time::Duration::from_secs(43200),
-        };
+        let settings = Settings::test_with_token_env(
+            serde_json::json!([{"default_price": 1000000}]).to_string(),
+        );
 
-        let result = settings.tokens();
-        assert!(result.is_err());
-
-        let error = result.unwrap_err();
-        assert!(error.to_string().contains("Failed to parse some tokens"));
+        let error = settings.unwrap_err().to_string();
+        assert!(error.contains("missing field `token`"));
     }
 
     #[test]
     fn test_tokens_with_invalid_token_type() {
-        let settings = Settings {
-            log: "debug".to_string(),
-            custom_tracing: custom_tracing::Settings::default(),
-            source: "https://api.devnet.solana.com".to_string(),
-            output: create_test_file_store_settings(),
-            cache: "/tmp/cache".to_string(),
-            metrics: poc_metrics::Settings::default(),
-            interval: std::time::Duration::from_secs(60),
-            tokens: vec![r#"{"token": "invalid_token"}"#.to_string()],
-            stale_price_duration: std::time::Duration::from_secs(43200),
-        };
+        let settings = Settings::test_with_token_env(
+            serde_json::json!([{"token": "invalid_token"}]).to_string(),
+        );
 
-        let result = settings.tokens();
-        assert!(result.is_err());
-
-        let error = result.unwrap_err();
-        assert!(error.to_string().contains("Failed to parse some tokens"));
+        let error = settings.unwrap_err().to_string();
+        assert!(error.contains("unknown variant `invalid_token`"));
+        assert!(error.contains("expected one of `sol`, `hnt`, `mobile`, `iot`, `dc`"));
     }
 
     #[test]
     fn test_tokens_with_malformed_json() {
-        let settings = Settings {
-            log: "debug".to_string(),
-            custom_tracing: custom_tracing::Settings::default(),
-            source: "https://api.devnet.solana.com".to_string(),
-            output: create_test_file_store_settings(),
-            cache: "/tmp/cache".to_string(),
-            metrics: poc_metrics::Settings::default(),
-            interval: std::time::Duration::from_secs(60),
-            tokens: vec![
-                r#"{"token": "hnt"#.to_string(), // Missing closing brace
-            ],
-            stale_price_duration: std::time::Duration::from_secs(43200),
-        };
+        let settings = Settings::test_with_token_env(r#"{"token": "hnt"#.to_string());
 
-        let result = settings.tokens();
-        assert!(result.is_err());
-
-        let error = result.unwrap_err();
-        assert!(error.to_string().contains("Failed to parse some tokens"));
+        let error = settings.unwrap_err().to_string();
+        assert!(error.contains("invalid type: map"));
     }
 
     #[test]
-    fn test_tokens_with_extra_fields() {
-        let settings = Settings {
-            log: "debug".to_string(),
-            custom_tracing: custom_tracing::Settings::default(),
-            source: "https://api.devnet.solana.com".to_string(),
-            output: create_test_file_store_settings(),
-            cache: "/tmp/cache".to_string(),
-            metrics: poc_metrics::Settings::default(),
-            interval: std::time::Duration::from_secs(60),
-            tokens: vec![
-                r#"{"token": "hnt", "default_price": 1000000, "extra_field": "ignored"}"#
-                    .to_string(),
-            ],
-            stale_price_duration: std::time::Duration::from_secs(43200),
-        };
+    fn test_tokens_with_extra_fields() -> anyhow::Result<()> {
+        let settings = Settings::test_with_token_env(
+            serde_json::json!([{
+                "token": "hnt",
+                "default_price": 1000000,
+                "extra_field": "ignored"
+            }])
+            .to_string(),
+        )?;
 
-        let result = settings.tokens().unwrap();
-        assert_eq!(result.len(), 1);
-
-        assert!(matches!(result[0].token, Token::Hnt));
-        assert_eq!(result[0].default_price, Some(1000000));
+        assert_eq!(
+            settings.tokens,
+            vec![TokenSetting {
+                token: Token::Hnt,
+                default_price: Some(1000000)
+            }]
+        );
+        Ok(())
     }
 
     #[test]
-    fn test_tokens_with_null_default_price() {
-        let settings = Settings {
-            log: "debug".to_string(),
-            custom_tracing: custom_tracing::Settings::default(),
-            source: "https://api.devnet.solana.com".to_string(),
-            output: create_test_file_store_settings(),
-            cache: "/tmp/cache".to_string(),
-            metrics: poc_metrics::Settings::default(),
-            interval: std::time::Duration::from_secs(60),
-            tokens: vec![r#"{"token": "hnt", "default_price": null}"#.to_string()],
-            stale_price_duration: std::time::Duration::from_secs(43200),
-        };
+    fn test_tokens_with_null_default_price() -> anyhow::Result<()> {
+        let settings = Settings::test_with_token_env(
+            serde_json::json!([{"token": "hnt", "default_price": null}]).to_string(),
+        )?;
 
-        let result = settings.tokens().unwrap();
-        assert_eq!(result.len(), 1);
+        assert_eq!(
+            settings.tokens,
+            vec![TokenSetting {
+                token: Token::Hnt,
+                default_price: None
+            }]
+        );
 
-        assert!(matches!(result[0].token, Token::Hnt));
-        assert_eq!(result[0].default_price, None);
+        Ok(())
     }
 }
