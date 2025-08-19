@@ -1,18 +1,18 @@
 use anyhow::Result;
 use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json;
 use solana::Token;
 use std::{path::Path, time::Duration};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TokenSetting {
     pub token: Token,
     pub default_price: Option<u64>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Default to
     /// "price=debug"
