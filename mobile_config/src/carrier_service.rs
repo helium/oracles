@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult};
 use chrono::Utc;
@@ -19,7 +19,7 @@ pub struct CarrierService {
     key_cache: KeyCache,
     mobile_config_db: Pool<Postgres>,
     metadata_db: Pool<Postgres>,
-    signing_key: Keypair,
+    signing_key: Arc<Keypair>,
 }
 
 impl CarrierService {
@@ -27,7 +27,7 @@ impl CarrierService {
         key_cache: KeyCache,
         mobile_config_db: Pool<Postgres>,
         metadata_db: Pool<Postgres>,
-        signing_key: Keypair,
+        signing_key: Arc<Keypair>,
     ) -> Self {
         Self {
             key_cache,
