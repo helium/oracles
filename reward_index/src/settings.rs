@@ -37,12 +37,14 @@ pub struct Settings {
     pub mode: Mode,
     /// Required when running in mode=iot
     pub operation_fund_key: Option<String>,
+    #[serde(default = "default_unallocated_reward_entity_key")]
     pub unallocated_reward_entity_key: String,
     #[serde(default = "default_start_after")]
     pub start_after: DateTime<Utc>,
 
     pub database: db_store::Settings,
     pub verifier: file_store::Settings,
+    #[serde(default)]
     pub metrics: poc_metrics::Settings,
 }
 
@@ -56,6 +58,10 @@ fn default_start_after() -> DateTime<Utc> {
 
 fn default_log() -> String {
     "reward_index=debug,poc_store=info".to_string()
+}
+
+fn default_unallocated_reward_entity_key() -> String {
+    "not_emitted".to_string()
 }
 
 impl Settings {

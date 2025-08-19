@@ -16,6 +16,7 @@ pub enum AuthType {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
+    #[serde(default = "default_max_connections")]
     pub max_connections: u32,
 
     /// URL to access the postgres database, only used when
@@ -42,6 +43,10 @@ pub struct Settings {
 
 fn default_auth_type() -> AuthType {
     AuthType::Postgres
+}
+
+fn default_max_connections() -> u32 {
+    5
 }
 
 impl Settings {

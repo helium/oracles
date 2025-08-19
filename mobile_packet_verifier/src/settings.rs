@@ -18,7 +18,8 @@ pub struct Settings {
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
     /// Cache location for generated verified reports
-    pub cache: String,
+    #[serde(default = "default_cache")]
+    pub cache: PathBuf,
     /// Burn period in hours. (Default is 1 hour)
     #[serde(with = "humantime_serde", default = "default_burn_period")]
     pub burn_period: Duration,
@@ -80,6 +81,10 @@ fn default_log() -> String {
     "mobile_packet_verifier=debug,poc_store=info".to_string()
 }
 
+fn default_cache() -> PathBuf {
+    PathBuf::from("/opt/mobile-packet-verifier/data")
+}
+
 fn default_burn_period() -> Duration {
     humantime::parse_duration("1 hour").unwrap()
 }
@@ -106,7 +111,7 @@ impl Settings {
         // Add in settings from the environment (with a prefix of VERIFY)
         // Eg.. `INJECT_DEBUG=1 ./target/app` would set the `debug` key
         builder
-            .add_source(Environment::with_prefix("MOBILE_PACKET_VERIFY").separator("_"))
+            .add_source(Environment::with_prefix("MPV").separator("__").try_parsing(true))
             .build()
             .and_then(|config| config.try_deserialize())
     }

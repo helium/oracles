@@ -46,6 +46,7 @@ impl Cmd {
             Self::Server(cmd) => {
                 let settings = Settings::new(config)?;
                 custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
+                tracing::error!("settings: {:?}", settings);
                 cmd.run(&settings).await
             }
             Self::Check(options) => check::run(options.into()).await,
@@ -98,7 +99,7 @@ impl Server {
         task_manager.add(file_upload_server);
         task_manager.add(price_sink_server);
 
-        for token_setting in settings.tokens.iter() {
+        for token_setting in settings.tokens()?.iter() {
             task_manager.add(
                 PriceGenerator::new(
                     settings,

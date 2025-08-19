@@ -161,10 +161,8 @@ impl Cmd {
         let (file_upload, file_upload_server) =
             file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
-        let store_base_path = std::path::Path::new(&settings.cache);
-
         let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Default,
@@ -174,7 +172,7 @@ impl Cmd {
 
         let (invalid_sessions, invalid_sessions_server) =
             VerifiedDataTransferIngestReportV1::file_sink(
-                store_base_path,
+                &settings.cache,
                 file_upload.clone(),
                 FileSinkCommitStrategy::Manual,
                 FileSinkRollTime::Default,
