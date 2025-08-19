@@ -78,7 +78,13 @@ impl Settings {
         // Add in settings from the environment (with a prefix of APP)
         // Eg.. `MI_DEBUG=1 ./target/app` would set the `debug` key
         builder
-            .add_source(Environment::with_prefix("PRICE").separator("__").list_separator(",").with_list_parse_key("tokens").try_parsing(true))
+            .add_source(
+                Environment::with_prefix("PRICE")
+                    .separator("__")
+                    .list_separator(",")
+                    .with_list_parse_key("tokens")
+                    .try_parsing(true),
+            )
             .build()
             .and_then(|config| config.try_deserialize())
     }
@@ -86,7 +92,7 @@ impl Settings {
     pub fn tokens(&self) -> anyhow::Result<Vec<TokenSetting>> {
         let mut token_settings = Vec::new();
         let mut errors = Vec::new();
-        
+
         for (i, token_json_str) in self.tokens.iter().enumerate() {
             match serde_json::from_str::<TokenSetting>(token_json_str) {
                 Ok(token_setting) => token_settings.push(token_setting),
@@ -95,11 +101,11 @@ impl Settings {
                 }
             }
         }
-        
+
         if !errors.is_empty() {
             anyhow::bail!("Failed to parse some tokens:\n{}", errors.join("\n"));
         }
-        
+
         Ok(token_settings)
     }
 }
@@ -138,15 +144,15 @@ mod tests {
 
         let result = settings.tokens().unwrap();
         assert_eq!(result.len(), 3);
-        
+
         // Check first token (HNT)
         assert!(matches!(result[0].token, Token::Hnt));
         assert_eq!(result[0].default_price, None);
-        
+
         // Check second token (Mobile with default price)
         assert!(matches!(result[1].token, Token::Mobile));
         assert_eq!(result[1].default_price, Some(1000000));
-        
+
         // Check third token (IoT)
         assert!(matches!(result[2].token, Token::Iot));
         assert_eq!(result[2].default_price, None);
@@ -162,15 +168,13 @@ mod tests {
             cache: "/tmp/cache".to_string(),
             metrics: poc_metrics::Settings::default(),
             interval: std::time::Duration::from_secs(60),
-            tokens: vec![
-                r#"{"token": "hnt", "default_price": 5000000}"#.to_string(),
-            ],
+            tokens: vec![r#"{"token": "hnt", "default_price": 5000000}"#.to_string()],
             stale_price_duration: std::time::Duration::from_secs(43200),
         };
 
         let result = settings.tokens().unwrap();
         assert_eq!(result.len(), 1);
-        
+
         assert!(matches!(result[0].token, Token::Hnt));
         assert_eq!(result[0].default_price, Some(5000000));
     }
@@ -213,7 +217,7 @@ mod tests {
 
         let result = settings.tokens();
         assert!(result.is_err());
-        
+
         let error = result.unwrap_err();
         assert!(error.to_string().contains("Failed to parse some tokens"));
         assert!(error.to_string().contains("invalid json"));
@@ -229,15 +233,13 @@ mod tests {
             cache: "/tmp/cache".to_string(),
             metrics: poc_metrics::Settings::default(),
             interval: std::time::Duration::from_secs(60),
-            tokens: vec![
-                r#"{"default_price": 1000000}"#.to_string(),
-            ],
+            tokens: vec![r#"{"default_price": 1000000}"#.to_string()],
             stale_price_duration: std::time::Duration::from_secs(43200),
         };
 
         let result = settings.tokens();
         assert!(result.is_err());
-        
+
         let error = result.unwrap_err();
         assert!(error.to_string().contains("Failed to parse some tokens"));
     }
@@ -252,15 +254,13 @@ mod tests {
             cache: "/tmp/cache".to_string(),
             metrics: poc_metrics::Settings::default(),
             interval: std::time::Duration::from_secs(60),
-            tokens: vec![
-                r#"{"token": "invalid_token"}"#.to_string(),
-            ],
+            tokens: vec![r#"{"token": "invalid_token"}"#.to_string()],
             stale_price_duration: std::time::Duration::from_secs(43200),
         };
 
         let result = settings.tokens();
         assert!(result.is_err());
-        
+
         let error = result.unwrap_err();
         assert!(error.to_string().contains("Failed to parse some tokens"));
     }
@@ -283,7 +283,7 @@ mod tests {
 
         let result = settings.tokens();
         assert!(result.is_err());
-        
+
         let error = result.unwrap_err();
         assert!(error.to_string().contains("Failed to parse some tokens"));
     }
@@ -299,14 +299,15 @@ mod tests {
             metrics: poc_metrics::Settings::default(),
             interval: std::time::Duration::from_secs(60),
             tokens: vec![
-                r#"{"token": "hnt", "default_price": 1000000, "extra_field": "ignored"}"#.to_string(),
+                r#"{"token": "hnt", "default_price": 1000000, "extra_field": "ignored"}"#
+                    .to_string(),
             ],
             stale_price_duration: std::time::Duration::from_secs(43200),
         };
 
         let result = settings.tokens().unwrap();
         assert_eq!(result.len(), 1);
-        
+
         assert!(matches!(result[0].token, Token::Hnt));
         assert_eq!(result[0].default_price, Some(1000000));
     }
@@ -321,15 +322,13 @@ mod tests {
             cache: "/tmp/cache".to_string(),
             metrics: poc_metrics::Settings::default(),
             interval: std::time::Duration::from_secs(60),
-            tokens: vec![
-                r#"{"token": "hnt", "default_price": null}"#.to_string(),
-            ],
+            tokens: vec![r#"{"token": "hnt", "default_price": null}"#.to_string()],
             stale_price_duration: std::time::Duration::from_secs(43200),
         };
 
         let result = settings.tokens().unwrap();
         assert_eq!(result.len(), 1);
-        
+
         assert!(matches!(result[0].token, Token::Hnt));
         assert_eq!(result[0].default_price, None);
     }
