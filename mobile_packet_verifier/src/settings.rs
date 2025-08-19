@@ -2,7 +2,10 @@ use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
 use humantime_serde::re::humantime;
 use serde::Deserialize;
-use std::{path::Path, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use crate::banning;
 
@@ -25,6 +28,7 @@ pub struct Settings {
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
+    #[serde(default)]
     pub metrics: poc_metrics::Settings,
     #[serde(default)]
     pub enable_solana_integration: bool,

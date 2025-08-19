@@ -1,8 +1,9 @@
+use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
-use helium_crypto::PublicKey;
+use helium_crypto::{Keypair, PublicKey};
 use helium_proto::services::mobile_config::AdminKeyRole as ProtoKeyRole;
-use serde::Serialize;
-use std::ops::Range;
+use serde::{Deserialize, Serialize};
+use std::{ops::Range, sync::Arc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
 
@@ -116,4 +117,18 @@ impl From<u64> for EpochInfo {
             period: start_time..end_time,
         }
     }
+}
+
+pub fn deserialize_keypair<'a, D>(deserializer: D) -> Result<Arc<Keypair>, D::Error>
+where
+    D: serde::Deserializer<'a>,
+{
+    let string = String::deserialize(deserializer)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&string)
+        .map_err(serde::de::Error::custom)?;
+
+    Keypair::try_from(bytes.as_slice())
+        .map(|kp| Arc::new(kp))
+        .map_err(serde::de::Error::custom)
 }

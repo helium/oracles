@@ -1,8 +1,8 @@
-use anyhow::Context;
 use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
+use helium_crypto::Keypair;
 use serde::Deserialize;
-use std::{net::SocketAddr, path::Path, str::FromStr};
+use std::{net::SocketAddr, path::Path, str::FromStr, sync::Arc};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -15,8 +15,9 @@ pub struct Settings {
     /// Listen address. Required. Default to 0.0.0.0::8080
     #[serde(default = "default_listen_addr")]
     pub listen: SocketAddr,
-    /// File from which to load config server signing keypair
-    pub signing_keypair: String,
+    /// Base64 encoded string with bytes of helium keypair
+    #[serde(deserialize_with = "crate::deserialize_keypair")]
+    pub signing_keypair: Arc<Keypair>,
     /// B58 encoded public key of the default admin keypair
     pub admin_pubkey: String,
     /// Settings passed to the db_store crate for connecting to
@@ -30,6 +31,7 @@ pub struct Settings {
         default = "default_mobile_radio_tracker_interval"
     )]
     pub mobile_radio_tracker_interval: std::time::Duration,
+    #[serde(default)]
     pub metrics: poc_metrics::Settings,
     #[serde(default = "default_boosted_hex_activation_cutoff")]
     pub boosted_hex_activation_cutoff: DateTime<Utc>,
@@ -48,7 +50,7 @@ fn default_log() -> String {
 }
 
 fn default_listen_addr() -> SocketAddr {
-    "0.0.0.0:8080".parse().unwrap()
+    "0.0.0.0:6080".parse().unwrap()
 }
 
 impl Settings {
@@ -70,16 +72,13 @@ impl Settings {
         // Add in settings from the environment (with prefix of APP)
         // E.g. `CFG_DEBUG=1 .target/app` would set the `debug` key
         builder
-            .add_source(Environment::with_prefix("CFG").separator("__"))
+            .add_source(
+                Environment::with_prefix("CFG")
+                    .separator("__")
+                    .try_parsing(true),
+            )
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn signing_keypair(&self) -> anyhow::Result<helium_crypto::Keypair> {
-        let data = std::fs::read(&self.signing_keypair)
-            .map_err(helium_crypto::Error::from)
-            .with_context(|| format!("reading keypair from settings: {}", self.signing_keypair))?;
-        Ok(helium_crypto::Keypair::try_from(&data[..])?)
     }
 
     pub fn admin_pubkey(&self) -> anyhow::Result<helium_crypto::PublicKey> {
