@@ -103,3 +103,234 @@ impl Settings {
         Ok(token_settings)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_file_store_settings() -> file_store::Settings {
+        file_store::Settings {
+            bucket: "test-bucket".to_string(),
+            endpoint: None,
+            region: "us-west-2".to_string(),
+            access_key_id: None,
+            secret_access_key: None,
+        }
+    }
+
+    #[test]
+    fn test_tokens_with_valid_json_strings() {
+        let settings = Settings {
+            log: "debug".to_string(),
+            custom_tracing: custom_tracing::Settings::default(),
+            source: "https://api.devnet.solana.com".to_string(),
+            output: create_test_file_store_settings(),
+            cache: "/tmp/cache".to_string(),
+            metrics: poc_metrics::Settings::default(),
+            interval: std::time::Duration::from_secs(60),
+            tokens: vec![
+                r#"{"token": "hnt"}"#.to_string(),
+                r#"{"token": "mobile", "default_price": 1000000}"#.to_string(),
+                r#"{"token": "iot"}"#.to_string(),
+            ],
+            stale_price_duration: std::time::Duration::from_secs(43200),
+        };
+
+        let result = settings.tokens().unwrap();
+        assert_eq!(result.len(), 3);
+        
+        // Check first token (HNT)
+        assert!(matches!(result[0].token, Token::Hnt));
+        assert_eq!(result[0].default_price, None);
+        
+        // Check second token (Mobile with default price)
+        assert!(matches!(result[1].token, Token::Mobile));
+        assert_eq!(result[1].default_price, Some(1000000));
+        
+        // Check third token (IoT)
+        assert!(matches!(result[2].token, Token::Iot));
+        assert_eq!(result[2].default_price, None);
+    }
+
+    #[test]
+    fn test_tokens_with_default_price_only() {
+        let settings = Settings {
+            log: "debug".to_string(),
+            custom_tracing: custom_tracing::Settings::default(),
+            source: "https://api.devnet.solana.com".to_string(),
+            output: create_test_file_store_settings(),
+            cache: "/tmp/cache".to_string(),
+            metrics: poc_metrics::Settings::default(),
+            interval: std::time::Duration::from_secs(60),
+            tokens: vec![
+                r#"{"token": "hnt", "default_price": 5000000}"#.to_string(),
+            ],
+            stale_price_duration: std::time::Duration::from_secs(43200),
+        };
+
+        let result = settings.tokens().unwrap();
+        assert_eq!(result.len(), 1);
+        
+        assert!(matches!(result[0].token, Token::Hnt));
+        assert_eq!(result[0].default_price, Some(5000000));
+    }
+
+    #[test]
+    fn test_tokens_with_empty_tokens_list() {
+        let settings = Settings {
+            log: "debug".to_string(),
+            custom_tracing: custom_tracing::Settings::default(),
+            source: "https://api.devnet.solana.com".to_string(),
+            output: create_test_file_store_settings(),
+            cache: "/tmp/cache".to_string(),
+            metrics: poc_metrics::Settings::default(),
+            interval: std::time::Duration::from_secs(60),
+            tokens: vec![],
+            stale_price_duration: std::time::Duration::from_secs(43200),
+        };
+
+        let result = settings.tokens().unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_tokens_with_invalid_json() {
+        let settings = Settings {
+            log: "debug".to_string(),
+            custom_tracing: custom_tracing::Settings::default(),
+            source: "https://api.devnet.solana.com".to_string(),
+            output: create_test_file_store_settings(),
+            cache: "/tmp/cache".to_string(),
+            metrics: poc_metrics::Settings::default(),
+            interval: std::time::Duration::from_secs(60),
+            tokens: vec![
+                r#"{"token": "hnt"}"#.to_string(),
+                r#"invalid json"#.to_string(),
+                r#"{"token": "mobile"}"#.to_string(),
+            ],
+            stale_price_duration: std::time::Duration::from_secs(43200),
+        };
+
+        let result = settings.tokens();
+        assert!(result.is_err());
+        
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Failed to parse some tokens"));
+        assert!(error.to_string().contains("invalid json"));
+    }
+
+    #[test]
+    fn test_tokens_with_missing_token_field() {
+        let settings = Settings {
+            log: "debug".to_string(),
+            custom_tracing: custom_tracing::Settings::default(),
+            source: "https://api.devnet.solana.com".to_string(),
+            output: create_test_file_store_settings(),
+            cache: "/tmp/cache".to_string(),
+            metrics: poc_metrics::Settings::default(),
+            interval: std::time::Duration::from_secs(60),
+            tokens: vec![
+                r#"{"default_price": 1000000}"#.to_string(),
+            ],
+            stale_price_duration: std::time::Duration::from_secs(43200),
+        };
+
+        let result = settings.tokens();
+        assert!(result.is_err());
+        
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Failed to parse some tokens"));
+    }
+
+    #[test]
+    fn test_tokens_with_invalid_token_type() {
+        let settings = Settings {
+            log: "debug".to_string(),
+            custom_tracing: custom_tracing::Settings::default(),
+            source: "https://api.devnet.solana.com".to_string(),
+            output: create_test_file_store_settings(),
+            cache: "/tmp/cache".to_string(),
+            metrics: poc_metrics::Settings::default(),
+            interval: std::time::Duration::from_secs(60),
+            tokens: vec![
+                r#"{"token": "invalid_token"}"#.to_string(),
+            ],
+            stale_price_duration: std::time::Duration::from_secs(43200),
+        };
+
+        let result = settings.tokens();
+        assert!(result.is_err());
+        
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Failed to parse some tokens"));
+    }
+
+    #[test]
+    fn test_tokens_with_malformed_json() {
+        let settings = Settings {
+            log: "debug".to_string(),
+            custom_tracing: custom_tracing::Settings::default(),
+            source: "https://api.devnet.solana.com".to_string(),
+            output: create_test_file_store_settings(),
+            cache: "/tmp/cache".to_string(),
+            metrics: poc_metrics::Settings::default(),
+            interval: std::time::Duration::from_secs(60),
+            tokens: vec![
+                r#"{"token": "hnt"#.to_string(), // Missing closing brace
+            ],
+            stale_price_duration: std::time::Duration::from_secs(43200),
+        };
+
+        let result = settings.tokens();
+        assert!(result.is_err());
+        
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Failed to parse some tokens"));
+    }
+
+    #[test]
+    fn test_tokens_with_extra_fields() {
+        let settings = Settings {
+            log: "debug".to_string(),
+            custom_tracing: custom_tracing::Settings::default(),
+            source: "https://api.devnet.solana.com".to_string(),
+            output: create_test_file_store_settings(),
+            cache: "/tmp/cache".to_string(),
+            metrics: poc_metrics::Settings::default(),
+            interval: std::time::Duration::from_secs(60),
+            tokens: vec![
+                r#"{"token": "hnt", "default_price": 1000000, "extra_field": "ignored"}"#.to_string(),
+            ],
+            stale_price_duration: std::time::Duration::from_secs(43200),
+        };
+
+        let result = settings.tokens().unwrap();
+        assert_eq!(result.len(), 1);
+        
+        assert!(matches!(result[0].token, Token::Hnt));
+        assert_eq!(result[0].default_price, Some(1000000));
+    }
+
+    #[test]
+    fn test_tokens_with_null_default_price() {
+        let settings = Settings {
+            log: "debug".to_string(),
+            custom_tracing: custom_tracing::Settings::default(),
+            source: "https://api.devnet.solana.com".to_string(),
+            output: create_test_file_store_settings(),
+            cache: "/tmp/cache".to_string(),
+            metrics: poc_metrics::Settings::default(),
+            interval: std::time::Duration::from_secs(60),
+            tokens: vec![
+                r#"{"token": "hnt", "default_price": null}"#.to_string(),
+            ],
+            stale_price_duration: std::time::Duration::from_secs(43200),
+        };
+
+        let result = settings.tokens().unwrap();
+        assert_eq!(result.len(), 1);
+        
+        assert!(matches!(result[0].token, Token::Hnt));
+        assert_eq!(result[0].default_price, None);
+    }
+}
