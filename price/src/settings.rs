@@ -20,7 +20,7 @@ pub struct Settings {
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
     /// Source URL for price data. Required
-    #[serde(default = "default_source")]
+    #[serde(default = "default_source", skip_serializing)]
     pub source: String,
     /// Target output bucket details
     pub output: file_store::Settings,
@@ -45,7 +45,7 @@ fn default_source() -> String {
 }
 
 fn default_log() -> String {
-    "price=debug".to_string()
+    "price=info,file_store=info".to_string()
 }
 
 fn default_interval() -> Duration {
@@ -57,7 +57,7 @@ fn default_stale_price_duration() -> Duration {
 }
 
 fn default_cache() -> String {
-    "/var/data/price".to_string()
+    "/opt/price/data".to_string()
 }
 
 impl Settings {
