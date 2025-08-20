@@ -84,10 +84,8 @@ impl Server {
         let (file_upload, file_upload_server) =
             file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
-        let store_base_path = path::Path::new(&settings.cache);
-
         let (price_sink, price_sink_server) = PriceReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(Duration::from_secs(PRICE_SINK_ROLL_SECS)),

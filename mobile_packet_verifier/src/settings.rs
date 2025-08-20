@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
 use humantime_serde::re::humantime;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -9,7 +9,7 @@ use std::{
 
 use crate::banning;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Defsault to
     /// "mobile_verifier=debug,poc_store=info"

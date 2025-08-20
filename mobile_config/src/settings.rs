@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
 use helium_crypto::Keypair;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::Path, str::FromStr, sync::Arc};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Default to
     /// "mobile_config=info"
@@ -16,7 +16,7 @@ pub struct Settings {
     #[serde(default = "default_listen_addr")]
     pub listen: SocketAddr,
     /// Base64 encoded string with bytes of helium keypair
-    #[serde(deserialize_with = "crate::deserialize_keypair")]
+    #[serde(deserialize_with = "crate::deserialize_keypair", skip_serializing)]
     pub signing_keypair: Arc<Keypair>,
     /// B58 encoded public key of the default admin keypair
     pub admin_pubkey: String,
@@ -46,7 +46,7 @@ fn default_mobile_radio_tracker_interval() -> std::time::Duration {
 }
 
 fn default_log() -> String {
-    "mobile_config=debug".to_string()
+    "mobile_config=info".to_string()
 }
 
 fn default_listen_addr() -> SocketAddr {

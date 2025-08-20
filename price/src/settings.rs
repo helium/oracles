@@ -3,7 +3,10 @@ use config::{Config, Environment, File};
 use humantime_serde::re::humantime;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use solana::Token;
-use std::{path::Path, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct TokenSetting {
@@ -26,7 +29,7 @@ pub struct Settings {
     pub output: file_store::Settings,
     /// Folder for local cache of ingest data
     #[serde(default = "default_cache")]
-    pub cache: String,
+    pub cache: PathBuf,
     /// Metrics settings
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
@@ -56,8 +59,8 @@ fn default_stale_price_duration() -> Duration {
     humantime::parse_duration("12 hours").unwrap()
 }
 
-fn default_cache() -> String {
-    "/opt/price/data".to_string()
+fn default_cache() -> PathBuf {
+    PathBuf::from("/opt/price/data")
 }
 
 impl Settings {
