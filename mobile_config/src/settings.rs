@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use config::{Config, Environment, File};
-use helium_crypto::Keypair;
+use helium_crypto::{Keypair, PublicKey};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::Path, str::FromStr, sync::Arc};
 
@@ -19,7 +19,7 @@ pub struct Settings {
     #[serde(deserialize_with = "crate::deserialize_keypair", skip_serializing)]
     pub signing_keypair: Arc<Keypair>,
     /// B58 encoded public key of the default admin keypair
-    pub admin_pubkey: String,
+    pub admin_pubkey: PublicKey,
     /// Settings passed to the db_store crate for connecting to
     /// the config service's own persistence store
     pub database: db_store::Settings,
@@ -79,9 +79,5 @@ impl Settings {
             )
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn admin_pubkey(&self) -> anyhow::Result<helium_crypto::PublicKey> {
-        Ok(helium_crypto::PublicKey::from_str(&self.admin_pubkey)?)
     }
 }
