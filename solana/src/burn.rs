@@ -21,7 +21,7 @@ use helium_lib::{
     },
 };
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
@@ -58,7 +58,7 @@ pub struct Settings {
     burn_keypair: Keypair,
     dc_mint: String,
     dnt_mint: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "from_json_or_struct")]
     payers_to_monitor: Vec<String>,
     #[serde(default = "min_priority_fee")]
     min_priority_fee: u64,
@@ -75,6 +75,21 @@ impl Settings {
             .map(|payer| PublicKeyBinary::from_str(payer))
             .collect::<Result<_, _>>()
             .map_err(SolanaRpcError::from)
+    }
+}
+
+fn from_json_or_struct<'de, D, T>(de: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let v = serde_json::Value::deserialize(de)?;
+    match v {
+        // Environment source provides a *string*; parse that string as JSON
+        serde_json::Value::String(s) => serde_json::from_str(&s).map_err(serde::de::Error::custom),
+
+        // Already a map/array/etc.; just deserialize it normally
+        other => serde_json::from_value(other).map_err(serde::de::Error::custom),
     }
 }
 

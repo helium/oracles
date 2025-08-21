@@ -59,11 +59,11 @@ fn default_fencing_resolution() -> u8 {
 
 fn default_max_distance_from_coverage() -> u32 {
     // Default is 2 km
-    2000
+    3000
 }
 
 fn default_log() -> String {
-    "mobile_verifier=debug,poc_store=info".to_string()
+    "mobile_verifier=info,file_store=info".to_string()
 }
 
 fn default_start_after() -> DateTime<Utc> {
@@ -75,7 +75,7 @@ fn default_reward_period() -> Duration {
 }
 
 fn default_reward_period_offset() -> Duration {
-    humantime::parse_duration("30 minutes").unwrap()
+    humantime::parse_duration("60 minutes").unwrap()
 }
 
 fn default_data_sets_poll_duration() -> Duration {

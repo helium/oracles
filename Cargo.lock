@@ -7216,6 +7216,7 @@ dependencies = [
  "itertools 0.14.0",
  "metrics",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
  "spl-token 8.0.0",
  "sqlx",
