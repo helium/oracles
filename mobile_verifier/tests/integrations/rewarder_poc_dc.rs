@@ -134,7 +134,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let price_info = default_price_info();
 
-    // seed single unique conections report within epoch
+    // seed single unique connections report within epoch
     let mut txn = pool.begin().await?;
     seed_unique_connections(&mut txn, &[(pubkey.clone(), 42)], &reward_info.epoch_period).await?;
     txn.commit().await?;

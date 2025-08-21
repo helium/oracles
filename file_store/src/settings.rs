@@ -25,7 +25,7 @@ pub fn default_region() -> String {
 impl Settings {
     /// Load Settings from a given path.
     ///
-    /// Environment overrides are not suppported for file_store cli commands
+    /// Environment overrides are not supported for file_store cli commands
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         Config::builder()
             .add_source(File::with_name(&path.as_ref().to_string_lossy()))
