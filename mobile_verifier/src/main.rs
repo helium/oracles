@@ -12,7 +12,7 @@ use std::path;
 pub struct Cli {
     /// Optional configuration file to use. If present the toml file at the
     /// given path will be loaded. Environment variables can override the
-    /// settins in the given file.
+    /// settings in the given file.
     #[clap(short = 'c')]
     config: Option<path::PathBuf>,
 
