@@ -52,6 +52,7 @@ pub trait SolanaNetwork: Clone + Send + Sync + 'static {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
+    #[serde(skip_serializing)]
     rpc_url: String,
     cluster: String,
     #[serde(deserialize_with = "crate::deserialize_keypair", skip_serializing)]
