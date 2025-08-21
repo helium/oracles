@@ -52,7 +52,11 @@ pub struct Settings {
     #[serde(skip_serializing)]
     rpc_url: String,
     cluster: String,
-    #[serde(deserialize_with = "crate::deserialize_keypair", skip_serializing)]
+    /// JSON encoded array of solana keypair
+    #[serde(
+        deserialize_with = "crate::deserialize_solana_keypair",
+        skip_serializing
+    )]
     burn_keypair: Keypair,
     dc_mint: String,
     dnt_mint: String,

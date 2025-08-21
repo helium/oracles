@@ -97,7 +97,7 @@ impl GetSignature for Signature {
     }
 }
 
-pub fn deserialize_keypair<'a, D>(deserializer: D) -> Result<Keypair, D::Error>
+pub fn deserialize_solana_keypair<'a, D>(deserializer: D) -> Result<Keypair, D::Error>
 where
     D: serde::Deserializer<'a>,
 {

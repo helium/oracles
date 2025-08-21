@@ -119,7 +119,7 @@ impl From<u64> for EpochInfo {
     }
 }
 
-pub fn deserialize_keypair<'a, D>(deserializer: D) -> Result<Arc<Keypair>, D::Error>
+pub fn deserialize_helium_keypair<'a, D>(deserializer: D) -> Result<Arc<Keypair>, D::Error>
 where
     D: serde::Deserializer<'a>,
 {

@@ -16,7 +16,10 @@ pub struct Settings {
     #[serde(default = "default_listen_addr")]
     pub listen: SocketAddr,
     /// Base64 encoded string with bytes of helium keypair
-    #[serde(deserialize_with = "crate::deserialize_keypair", skip_serializing)]
+    #[serde(
+        deserialize_with = "crate::deserialize_helium_keypair",
+        skip_serializing
+    )]
     pub signing_keypair: Arc<Keypair>,
     /// B58 encoded public key of the default admin keypair
     pub admin_pubkey: PublicKey,

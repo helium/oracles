@@ -10,7 +10,10 @@ pub struct Settings {
     #[serde(with = "http_serde::uri")]
     pub url: http::Uri,
     /// Base64 encoded string of the helium keypair
-    #[serde(deserialize_with = "crate::deserialize_keypair", skip_serializing)]
+    #[serde(
+        deserialize_with = "crate::deserialize_helium_keypair",
+        skip_serializing
+    )]
     pub signing_keypair: Arc<Keypair>,
     /// B58 encoded public key of the mobile config server for verification
     pub config_pubkey: PublicKey,
