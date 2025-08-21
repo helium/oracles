@@ -23,10 +23,7 @@ use helium_lib::{
 use itertools::Itertools;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-};
+use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
@@ -60,23 +57,13 @@ pub struct Settings {
     dc_mint: String,
     dnt_mint: String,
     #[serde(default, deserialize_with = "from_json_or_struct")]
-    payers_to_monitor: Vec<String>,
+    payers_to_monitor: Vec<PublicKeyBinary>,
     #[serde(default = "min_priority_fee")]
     min_priority_fee: u64,
 }
 
 fn min_priority_fee() -> u64 {
     1
-}
-
-impl Settings {
-    pub fn payers_to_monitor(&self) -> Result<Vec<PublicKeyBinary>, SolanaRpcError> {
-        self.payers_to_monitor
-            .iter()
-            .map(|payer| PublicKeyBinary::from_str(payer))
-            .collect::<Result<_, _>>()
-            .map_err(SolanaRpcError::from)
-    }
 }
 
 fn from_json_or_struct<'de, D, T>(de: D) -> Result<T, D::Error>
@@ -120,7 +107,7 @@ impl SolanaRpc {
             provider: Arc::new(provider),
             program_cache,
             keypair: settings.burn_keypair.to_bytes(),
-            payers_to_monitor: settings.payers_to_monitor()?,
+            payers_to_monitor: settings.payers_to_monitor.clone(),
             priority_fee: PriorityFee::default(),
             min_priority_fee: settings.min_priority_fee,
         }))
