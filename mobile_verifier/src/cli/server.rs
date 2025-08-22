@@ -43,8 +43,6 @@ impl Cmd {
         let (file_upload, file_upload_server) =
             file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
-        let store_base_path = std::path::Path::new(&settings.cache);
-
         let report_ingest = FileStore::from_settings(&settings.ingest).await?;
 
         // mobile config clients
@@ -56,7 +54,7 @@ impl Cmd {
         let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.config_client)?;
 
         let (valid_heartbeats, valid_heartbeats_server) = Heartbeat::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
             FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
@@ -66,7 +64,7 @@ impl Cmd {
 
         // Seniority updates
         let (seniority_updates, seniority_updates_server) = SeniorityUpdate::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
             FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),
@@ -75,7 +73,7 @@ impl Cmd {
         .await?;
 
         let (speedtests_avg, speedtests_avg_server) = SpeedtestAvg::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
             FileSinkRollTime::Duration(Duration::from_secs(15 * 60)),

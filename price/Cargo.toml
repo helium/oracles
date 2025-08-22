@@ -34,3 +34,6 @@ file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
 solana = { path = "../solana" }
 task-manager = { path = "../task_manager" }
+
+[dev-dependencies]
+temp-env = "0.3.6"

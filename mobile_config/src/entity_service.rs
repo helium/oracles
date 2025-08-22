@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult};
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
@@ -12,11 +14,15 @@ use tonic::{Request, Response, Status};
 pub struct EntityService {
     key_cache: KeyCache,
     metadata_pool: Pool<Postgres>,
-    signing_key: Keypair,
+    signing_key: Arc<Keypair>,
 }
 
 impl EntityService {
-    pub fn new(key_cache: KeyCache, metadata_pool: Pool<Postgres>, signing_key: Keypair) -> Self {
+    pub fn new(
+        key_cache: KeyCache,
+        metadata_pool: Pool<Postgres>,
+        signing_key: Arc<Keypair>,
+    ) -> Self {
         Self {
             key_cache,
             metadata_pool,

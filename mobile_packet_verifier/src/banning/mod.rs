@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use file_store::{mobile_ban, FileStore};
 use helium_crypto::PublicKeyBinary;
 use humantime_serde::re::humantime;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use task_manager::{ManagedTask, TaskManager};
 
@@ -17,7 +17,7 @@ pub use ingestor::handle_verified_ban_report;
 
 pub const BAN_CLEANUP_DAYS: i64 = 7;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct BanSettings {
     /// Where do we look in s3 for ban files
     pub input_bucket: file_store::Settings,

@@ -41,7 +41,7 @@ pub struct Server {}
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
         custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
-
+        tracing::info!("Settings: {}", serde_json::to_string_pretty(&settings)?);
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 

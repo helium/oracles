@@ -23,6 +23,7 @@ impl Cli {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
         custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
+        tracing::info!("Settings: {}", serde_json::to_string_pretty(&settings)?);
         self.cmd.run(settings).await
     }
 }

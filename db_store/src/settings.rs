@@ -1,25 +1,27 @@
 use std::path::PathBuf;
 
 use crate::{iam_auth_pool, metric_tracker, Error, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions, PgSslMode},
     Pool, Postgres,
 };
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthType {
     Postgres,
     Iam,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Settings {
+    #[serde(default = "default_max_connections")]
     pub max_connections: u32,
 
     /// URL to access the postgres database, only used when
     /// the auth_type is Postgres
+    #[serde(skip_serializing)]
     pub url: Option<String>,
 
     /// Optionally provided certificate authority
@@ -42,6 +44,10 @@ pub struct Settings {
 
 fn default_auth_type() -> AuthType {
     AuthType::Postgres
+}
+
+fn default_max_connections() -> u32 {
+    5
 }
 
 impl Settings {

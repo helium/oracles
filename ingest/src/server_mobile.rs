@@ -31,7 +31,7 @@ use helium_proto::services::{
     poc_mobile::{UniqueConnectionsReqV1, UniqueConnectionsRespV1},
 };
 use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
-use std::{net::SocketAddr, path::Path};
+use std::net::SocketAddr;
 use task_manager::{ManagedTask, TaskManager};
 use tonic::{
     metadata::{Ascii, MetadataValue},
@@ -623,11 +623,9 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let (file_upload, file_upload_server) =
         file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
-    let store_base_path = Path::new(&settings.cache);
-
     let (wifi_heartbeat_report_sink, wifi_heartbeat_report_sink_server) =
         WifiHeartbeatIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -637,7 +635,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     // speedtests
     let (speedtest_report_sink, speedtest_report_sink_server) = SpeedtestIngestReportV1::file_sink(
-        store_base_path,
+        &settings.cache,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(settings.roll_time),
@@ -647,7 +645,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (data_transfer_session_sink, data_transfer_session_sink_server) =
         DataTransferSessionIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -657,7 +655,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (subscriber_location_report_sink, subscriber_location_report_sink_server) =
         SubscriberLocationIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -667,7 +665,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (radio_threshold_report_sink, radio_threshold_report_sink_server) =
         RadioThresholdIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -677,7 +675,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (invalidated_radio_threshold_report_sink, invalidated_radio_threshold_report_sink_server) =
         InvalidatedRadioThresholdIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -687,7 +685,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (coverage_object_report_sink, coverage_object_report_sink_server) =
         CoverageObjectIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -697,7 +695,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (sp_boosted_rewards_ban_sink, sp_boosted_rewards_ban_sink_server) =
         ServiceProviderBoostedRewardsBannedRadioIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -707,7 +705,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (subscriber_mapping_event_sink, subscriber_mapping_event_server) =
         SubscriberVerifiedMappingEventIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -717,7 +715,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (hex_usage_stats_event_sink, hex_usage_stats_event_server) =
         HexUsageStatsIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -727,7 +725,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (radio_usage_stats_event_sink, radio_usage_stats_event_server) =
         RadioUsageStatsIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -737,7 +735,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (unique_connections_sink, unique_connections_server) =
         UniqueConnectionsIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -746,7 +744,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .await?;
 
     let (ban_sink, ban_server) = BanIngestReportV1::file_sink(
-        store_base_path,
+        &settings.cache,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(settings.roll_time),
@@ -756,7 +754,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     let (subscriber_mapping_activity_sink, subscriber_mapping_activity_server) =
         SubscriberMappingActivityIngestReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),

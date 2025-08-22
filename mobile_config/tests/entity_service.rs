@@ -1,4 +1,4 @@
-use std::vec;
+use std::{sync::Arc, vec};
 
 use helium_crypto::{PublicKey, Sign};
 use helium_proto::services::mobile_config::{self as proto, EntityClient, EntityVerifyReqV1};
@@ -29,7 +29,7 @@ async fn spawn_entity_service(
     // Start the entity server
     let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let gws = EntityService::new(key_cache, pool.clone(), server_key);
+    let gws = EntityService::new(key_cache, pool.clone(), Arc::new(server_key));
     let handle = tokio::spawn(
         transport::Server::builder()
             .add_service(proto::EntityServer::new(gws))

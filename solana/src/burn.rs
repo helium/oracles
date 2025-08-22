@@ -15,18 +15,15 @@ use helium_lib::{
         compute_budget::ComputeBudgetInstruction,
         program_pack::Pack,
         pubkey::Pubkey,
-        signature::{read_keypair_file, Keypair, Signature},
+        signature::{Keypair, Signature},
         signer::Signer,
         transaction::Transaction,
     },
 };
 use itertools::Itertools;
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-};
+use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
@@ -50,15 +47,21 @@ pub trait SolanaNetwork: Clone + Send + Sync + 'static {
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, SolanaRpcError>;
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
+    #[serde(skip_serializing)]
     rpc_url: String,
     cluster: String,
-    burn_keypair: String,
+    /// JSON encoded array of solana keypair
+    #[serde(
+        deserialize_with = "crate::deserialize_solana_keypair",
+        skip_serializing
+    )]
+    burn_keypair: Keypair,
     dc_mint: String,
     dnt_mint: String,
-    #[serde(default)]
-    payers_to_monitor: Vec<String>,
+    #[serde(default, deserialize_with = "from_json_or_struct")]
+    payers_to_monitor: Vec<PublicKeyBinary>,
     #[serde(default = "min_priority_fee")]
     min_priority_fee: u64,
 }
@@ -67,13 +70,18 @@ fn min_priority_fee() -> u64 {
     1
 }
 
-impl Settings {
-    pub fn payers_to_monitor(&self) -> Result<Vec<PublicKeyBinary>, SolanaRpcError> {
-        self.payers_to_monitor
-            .iter()
-            .map(|payer| PublicKeyBinary::from_str(payer))
-            .collect::<Result<_, _>>()
-            .map_err(SolanaRpcError::from)
+fn from_json_or_struct<'de, D, T>(de: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let v = serde_json::Value::deserialize(de)?;
+    match v {
+        // Environment source provides a *string*; parse that string as JSON
+        serde_json::Value::String(s) => serde_json::from_str(&s).map_err(serde::de::Error::custom),
+
+        // Already a map/array/etc.; just deserialize it normally
+        other => serde_json::from_value(other).map_err(serde::de::Error::custom),
     }
 }
 
@@ -92,23 +100,18 @@ impl SolanaRpc {
     pub async fn new(settings: &Settings) -> Result<Arc<Self>, SolanaRpcError> {
         let dc_mint = settings.dc_mint.parse()?;
         let dnt_mint = settings.dnt_mint.parse()?;
-        let Ok(keypair) = read_keypair_file(&settings.burn_keypair) else {
-            return Err(SolanaRpcError::FailedToReadKeypairError(
-                settings.burn_keypair.to_owned(),
-            ));
-        };
         let provider =
             RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());
         let program_cache = BurnProgramCache::new(&provider, dc_mint, dnt_mint).await?;
-        if program_cache.dc_burn_authority != keypair.pubkey() {
+        if program_cache.dc_burn_authority != settings.burn_keypair.pubkey() {
             return Err(SolanaRpcError::InvalidKeypair);
         }
         Ok(Arc::new(Self {
             cluster: settings.cluster.clone(),
             provider: Arc::new(provider),
             program_cache,
-            keypair: keypair.to_bytes(),
-            payers_to_monitor: settings.payers_to_monitor()?,
+            keypair: settings.burn_keypair.to_bytes(),
+            payers_to_monitor: settings.payers_to_monitor.clone(),
             priority_fee: PriorityFee::default(),
             min_priority_fee: settings.min_priority_fee,
         }))

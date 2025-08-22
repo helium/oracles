@@ -18,7 +18,7 @@ use helium_proto::services::poc_lora::{
     LoraStreamSessionInitV1, LoraStreamSessionOfferV1, LoraWitnessIngestReportV1,
     LoraWitnessReportReqV1, LoraWitnessReportRespV1,
 };
-use std::{convert::TryFrom, net::SocketAddr, path::Path, time::Duration};
+use std::{convert::TryFrom, net::SocketAddr, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{sync::mpsc::Sender, time::Instant};
 use tokio_stream::wrappers::ReceiverStream;
@@ -359,11 +359,9 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let (file_upload, file_upload_server) =
         file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
-    let store_base_path = Path::new(&settings.cache);
-
     // iot beacon reports
     let (beacon_report_sink, beacon_report_sink_server) = LoraBeaconIngestReportV1::file_sink(
-        store_base_path,
+        &settings.cache,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(Duration::from_secs(5 * 60)),
@@ -373,7 +371,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     // iot witness reports
     let (witness_report_sink, witness_report_sink_server) = LoraWitnessIngestReportV1::file_sink(
-        store_base_path,
+        &settings.cache,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(Duration::from_secs(5 * 60)),

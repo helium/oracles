@@ -22,8 +22,8 @@ impl SubDaoClient {
     pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
         Ok(Self {
             client: settings.connect_epoch_client(),
-            signing_key: settings.signing_keypair()?,
-            config_pubkey: settings.config_pubkey()?,
+            signing_key: settings.signing_keypair.clone(),
+            config_pubkey: settings.config_pubkey.clone(),
         })
     }
 }

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     key_cache::{self, CacheKeys, KeyCache},
     settings::Settings,
@@ -20,7 +22,7 @@ pub struct AdminService {
     key_cache: KeyCache,
     key_cache_updater: watch::Sender<CacheKeys>,
     pool: Pool<Postgres>,
-    signing_key: Keypair,
+    signing_key: Arc<Keypair>,
 }
 
 impl AdminService {
@@ -34,7 +36,7 @@ impl AdminService {
             key_cache,
             key_cache_updater,
             pool,
-            signing_key: settings.signing_keypair()?,
+            signing_key: settings.signing_keypair.clone(),
         })
     }
 
