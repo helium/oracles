@@ -58,7 +58,7 @@ fn default_fencing_resolution() -> u8 {
 }
 
 fn default_max_distance_from_coverage() -> u32 {
-    // Default is 2 km
+    // Default is 3 km
     3000
 }
 
