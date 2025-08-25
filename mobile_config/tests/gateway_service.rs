@@ -53,7 +53,7 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     assert_ne!(
         err.code(),
         Code::PermissionDenied,
-        "gateway can request infomation about itself"
+        "gateway can request information about itself"
     );
 
     // Request gateway info as administrator
