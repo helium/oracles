@@ -7,10 +7,11 @@ use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
     BanIngestReportV1, BanReqV1, BanRespV1, CarrierIdV2, CellHeartbeatReqV1, CellHeartbeatRespV1,
     DataTransferEvent, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
-    DataTransferSessionReqV1, DataTransferSessionRespV1, HexUsageStatsIngestReportV1,
-    HexUsageStatsReqV1, HexUsageStatsResV1, RadioUsageCarrierTransferInfo,
-    RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
-    UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
+    DataTransferSessionReqV1, DataTransferSessionRespV1, EnabledCarriersInfoReportV1,
+    HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
+    RadioUsageCarrierTransferInfo, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
+    RadioUsageStatsResV1, UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1,
+    UniqueConnectionsRespV1,
 };
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -78,6 +79,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let (subscriber_mapping_activity_tx, _subscriber_mapping_activity_rx) =
         tokio::sync::mpsc::channel(10);
     let (ban_tx, ban_rx) = tokio::sync::mpsc::channel(10);
+    let (enabled_carriers_tx, enabled_carriers_rx) = tokio::sync::mpsc::channel(10);
 
     tokio::spawn(async move {
         let grpc_server = GrpcServer::new(
@@ -95,6 +97,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             FileSinkClient::new(unique_connections_tx, "noop"),
             FileSinkClient::new(subscriber_mapping_activity_tx, "noop"),
             FileSinkClient::new(ban_tx, "noop"),
+            FileSinkClient::new(enabled_carriers_tx, "enabled_carriers_sink"),
             Network::MainNet,
             socket_addr,
             api_token,
@@ -114,6 +117,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
         unique_connections_rx,
         ban_rx,
         data_transfer_rx,
+        enabled_carriers_rx,
     )
     .await;
 
@@ -134,6 +138,8 @@ pub struct TestClient {
         Receiver<file_store::file_sink::Message<UniqueConnectionsIngestReportV1>>,
     ban_file_sink_rx: Receiver<file_store::file_sink::Message<BanIngestReportV1>>,
     data_transfer_rx: Receiver<file_store::file_sink::Message<DataTransferSessionIngestReportV1>>,
+    // TODO add test
+    _enabled_carriers_rx: Receiver<file_store::file_sink::Message<EnabledCarriersInfoReportV1>>,
 }
 
 impl TestClient {
@@ -158,6 +164,7 @@ impl TestClient {
         data_transfer_rx: Receiver<
             file_store::file_sink::Message<DataTransferSessionIngestReportV1>,
         >,
+        enabled_carriers_rx: Receiver<file_store::file_sink::Message<EnabledCarriersInfoReportV1>>,
     ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
             .retry(&ExponentialBuilder::default())
@@ -174,6 +181,7 @@ impl TestClient {
             unique_connections_file_sink_rx,
             ban_file_sink_rx,
             data_transfer_rx,
+            _enabled_carriers_rx: enabled_carriers_rx,
         }
     }
 
