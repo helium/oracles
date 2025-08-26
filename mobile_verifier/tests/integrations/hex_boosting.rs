@@ -153,24 +153,22 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(poc_rewards.len(), 3);
 
     // Calculating expected rewards
-    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
+    let regular_poc = get_poc_allocation_buckets(reward_info.epoch_emissions);
 
     // With regular poc now 50% of total emissions, that will be split
     // between the 3 radios equally. 900 comes from IndoorWifi 400 *
     // 0.75 speedtest multiplier * 3 radios
-    let regular_share = regular_poc / dec!(900);
 
     // Boosted hexes are 10x and 20x.
     // (300 * 19) + (300 * 9) = 8400;
     // To get points _only_ from boosting.
-    let boosted_share = boosted_poc / dec!(8400);
 
-    let exp_reward_1 =
-        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(19));
-    let exp_reward_2 =
-        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(9));
-    let exp_reward_3 =
-        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(0));
+    //combined is 9300 points
+    let share = regular_poc / dec!(9300);
+
+    let exp_reward_1 = rounded(share * dec!(300)) + rounded(share * dec!(300) * dec!(19));
+    let exp_reward_2 = rounded(share * dec!(300)) + rounded(share * dec!(300) * dec!(9));
+    let exp_reward_3 = rounded(share * dec!(300)) + rounded(share * dec!(300) * dec!(0));
 
     assert_eq!(exp_reward_1, hotspot_2.total_poc_reward()); // 20x boost
     assert_eq!(exp_reward_2, hotspot_1.total_poc_reward()); // 10x boost
@@ -439,20 +437,23 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     // - 2 covered hexes boosted at 10x
     // - 1 covered hex boosted at 20x
     // - 1 covered hex no boost
-    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
+    let regular_poc = get_poc_allocation_buckets(reward_info.epoch_emissions);
 
     // With regular poc now 50% of total emissions, that will be split
     // between the 3 radios equally.
     // 1200 comes from IndoorWifi 400 * 0.75 speedtest multiplier * 4 hexes
-    let regular_share = regular_poc / dec!(1200);
+    // let regular_share = regular_poc / dec!(1200);
 
     // Boosted hexes are 2 at 10x and 1 at 20x.
     // (300 * (9 * 2)) + (300 * 19) = 11,100;
     // To get points _only_ from boosting.
-    let boosted_share = boosted_poc / dec!(11_100);
+    // let boosted_share = boosted_poc / dec!(11_100);
 
-    let hex_coverage = |hexes: u8| regular_share * dec!(300) * Decimal::from(hexes);
-    let boost_coverage = |mult: u8| boosted_share * dec!(300) * Decimal::from(mult);
+    // combined points is 12,300
+    let share = regular_poc / dec!(12_300);
+
+    let hex_coverage = |hexes: u8| share * dec!(300) * Decimal::from(hexes);
+    let boost_coverage = |mult: u8| share * dec!(300) * Decimal::from(mult);
 
     let exp_reward_1 = rounded(hex_coverage(2)) + rounded(boost_coverage(18));
     let exp_reward_2 = rounded(hex_coverage(1)) + rounded(boost_coverage(19));
@@ -461,13 +462,6 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     assert_eq!(exp_reward_1, hotspot_1.total_poc_reward()); // 2 at 10x boost
     assert_eq!(exp_reward_2, hotspot_2.total_poc_reward()); // 1 at 20x boost
     assert_eq!(exp_reward_3, hotspot_3.total_poc_reward()); // 1 at no boost
-
-    // hotspot 1 and 2 should have the same coverage points, but different poc rewards.
-    assert_eq!(
-        hotspot_1.total_coverage_points(),
-        hotspot_2.total_coverage_points()
-    );
-    assert_ne!(hotspot_1.total_poc_reward(), hotspot_2.total_poc_reward());
 
     // assert the number of boosted hexes for each radio
     assert_eq!(1, hotspot_2.boosted_hexes_len());
@@ -679,7 +673,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     assert_eq!(poc_rewards.len(), 3);
 
     // Calculating expected rewards
-    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
+    let regular_poc = get_poc_allocation_buckets(reward_info.epoch_emissions);
 
     // Here's how we get the regular shares per coverage points
     // | base coverage point | speedtest | location | total |
@@ -689,19 +683,17 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     // | 400                 | 0.75      | 0.25     | 75    |
     // |---------------------|-----------|----------|-------|
     //                                              | 675   |
-    let regular_share = regular_poc / dec!(675);
 
     // Boosted hexes are 2x, only one radio qualifies based on the location trust
     // 300 * 1 == 300
     // To get points _only_ from boosting.
-    let boosted_share = boosted_poc / dec!(300);
 
-    let exp_reward_1 =
-        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(1));
-    let exp_reward_2 =
-        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(0));
-    let exp_reward_3 =
-        rounded(regular_share * dec!(75)) + rounded(boosted_share * dec!(75) * dec!(0));
+    // combined points is 975
+    let share = regular_poc / dec!(975);
+
+    let exp_reward_1 = rounded(share * dec!(300)) + rounded(share * dec!(300) * dec!(1));
+    let exp_reward_2 = rounded(share * dec!(300)) + rounded(share * dec!(300) * dec!(0));
+    let exp_reward_3 = rounded(share * dec!(75)) + rounded(share * dec!(75) * dec!(0));
 
     assert_eq!(exp_reward_1, hotspot_1.total_poc_reward());
     assert_eq!(exp_reward_2, hotspot_2.total_poc_reward());
@@ -818,7 +810,7 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     assert_eq!(poc_rewards.len(), 3);
 
     // Calculating expected rewards
-    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
+    let regular_poc = get_poc_allocation_buckets(reward_info.epoch_emissions);
 
     // Here's how we get the regular shares per coverage points
     // | base coverage point | speedtest | location | total |
@@ -828,19 +820,20 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
     // | 400                 | 0.75      | 1.00     | 300   |
     // |---------------------|-----------|----------|-------|
     //                                              | 900   |
-    let regular_share = regular_poc / dec!(900);
 
     // Boosted hexes are 2x, only one radio qualifies based on the location trust
     // 300 * 1 == 300
     // To get points _only_ from boosting.
-    let boosted_share = boosted_poc / dec!(300);
+
+    // combined base poc points and boosted poc points is 1200
+    let regular_share = regular_poc / dec!(1200);
 
     let exp_reward_1 =
-        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(1));
+        rounded(regular_share * dec!(300)) + rounded(regular_share * dec!(300) * dec!(1));
     let exp_reward_2 =
-        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(0));
+        rounded(regular_share * dec!(300)) + rounded(regular_share * dec!(300) * dec!(0));
     let exp_reward_3 =
-        rounded(regular_share * dec!(300)) + rounded(boosted_share * dec!(300) * dec!(0));
+        rounded(regular_share * dec!(300)) + rounded(regular_share * dec!(300) * dec!(0));
 
     assert_eq!(exp_reward_1, hotspot_1.total_poc_reward());
     assert_eq!(exp_reward_2, hotspot_2.total_poc_reward());
@@ -980,7 +973,7 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     assert_eq!(poc_rewards.len(), 3);
 
     // Calculating expected rewards
-    let (regular_poc, boosted_poc) = get_poc_allocation_buckets(reward_info.epoch_emissions);
+    let regular_poc = get_poc_allocation_buckets(reward_info.epoch_emissions);
 
     // Here's how we get the regular shares per coverage points
     // | base coverage point | speedtest | location | total |
@@ -990,20 +983,19 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     // | 400                 | 0.75      | 1.00     | 300   |
     // |---------------------|-----------|----------|-------|
     //                                              | 624   |
-    let regular_share = regular_poc / dec!(624);
 
     // Boosted hexes are 1 at 10x and 1 at 20x.
     // Only wifi is targeted with Boosts.
     // (24 * 9) + (300 * 19) == 5916
     // To get points _only_ from boosting.
-    let boosted_share = boosted_poc / dec!(5916);
 
-    let exp_reward_1 = rounded(regular_share * (dec!(24) * dec!(1)))
-        + rounded(boosted_share * (dec!(24) * dec!(9)));
-    let exp_reward_2 = rounded(regular_share * dec!(300) * dec!(1))
-        + rounded(boosted_share * dec!(300) * dec!(19));
-    let exp_reward_3 =
-        rounded(regular_share * dec!(300) * dec!(1)) + rounded(boosted_share * dec!(300) * dec!(0));
+    // combined points are 6540
+    let share = regular_poc / dec!(6540);
+
+    let exp_reward_1 =
+        rounded(share * (dec!(24) * dec!(1))) + rounded(share * (dec!(24) * dec!(9)));
+    let exp_reward_2 = rounded(share * dec!(300) * dec!(1)) + rounded(share * dec!(300) * dec!(19));
+    let exp_reward_3 = rounded(share * dec!(300) * dec!(1)) + rounded(share * dec!(300) * dec!(0));
 
     assert_eq!(exp_reward_1, hotspot_1.total_poc_reward());
     assert_eq!(exp_reward_2, hotspot_2.total_poc_reward());
@@ -1533,19 +1525,16 @@ async fn save_seniority_object(
     Ok(())
 }
 
-fn get_poc_allocation_buckets(total_emissions: Decimal) -> (Decimal, Decimal) {
+fn get_poc_allocation_buckets(total_emissions: Decimal) -> Decimal {
     // To not deal with percentages of percentages, let's start with the
     // total emissions and work from there.
-    let data_transfer = total_emissions * dec!(0.4);
-    let regular_poc = total_emissions * dec!(0.1);
-    let boosted_poc = total_emissions * dec!(0.1);
+    let data_transfer = total_emissions * dec!(0.6);
+    let regular_poc = total_emissions * dec!(0.0);
 
     // There is no data transfer in this test to be rewarded, so we know
     // the entirety of the unallocated amount will be put in the poc
     // pool.
-    let regular_poc = regular_poc + data_transfer;
-
-    (regular_poc, boosted_poc)
+    regular_poc + data_transfer
 }
 
 fn assert_total_matches_emissions(total: u64, reward_info: &EpochRewardInfo) {
