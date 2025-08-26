@@ -781,7 +781,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     .await?;
 
     let (enabled_carriers_sink, enabled_carriers_server) = EnabledCarriersInfoReportV1::file_sink(
-        store_base_path,
+        &settings.cache,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(settings.roll_time),
