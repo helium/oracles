@@ -23,7 +23,7 @@ impl KeyCache {
         settings: &Settings,
         db: impl sqlx::PgExecutor<'_> + Copy,
     ) -> anyhow::Result<(watch::Sender<CacheKeys>, Self)> {
-        let config_admin = settings.admin_pubkey()?;
+        let config_admin = settings.admin_pubkey.clone();
 
         let mut stored_keys = db::fetch_stored_keys(db).await?;
         stored_keys.insert((config_admin, KeyRole::Administrator));

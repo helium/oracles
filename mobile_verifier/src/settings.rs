@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 use config::{Config, ConfigError, Environment, File};
 use humantime_serde::re::humantime;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Defsault to
     /// "mobile_verifier=debug,poc_store=info"
@@ -16,7 +16,8 @@ pub struct Settings {
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
     /// Cache location for generated verified reports
-    pub cache: String,
+    #[serde(default = "default_cache")]
+    pub cache: PathBuf,
     /// Reward period in hours. (Default is 24 hours)
     #[serde(with = "humantime_serde", default = "default_reward_period")]
     pub reward_period: Duration,
@@ -29,6 +30,7 @@ pub struct Settings {
     /// S3 bucket from which new data sets are downloaded for oracle boosting
     /// assignments
     pub data_sets: file_store::Settings,
+    #[serde(default)]
     pub metrics: poc_metrics::Settings,
     pub price_tracker: price::price_tracker::Settings,
     pub config_client: mobile_config::ClientSettings,
@@ -39,12 +41,14 @@ pub struct Settings {
     #[serde(default = "default_max_distance_from_coverage")]
     pub max_distance_from_coverage: u32,
     /// Directory in which new oracle boosting data sets are downloaded into
+    #[serde(default = "default_data_sets_directory")]
     pub data_sets_directory: PathBuf,
     /// Poll duration for new data sets
     #[serde(with = "humantime_serde", default = "default_data_sets_poll_duration")]
     pub data_sets_poll_duration: Duration,
     // Geofencing settings
-    pub usa_and_mexico_geofence_regions: String,
+    #[serde(default = "default_usa_and_mexico_geofence_regions")]
+    pub usa_and_mexico_geofence_regions: PathBuf,
     #[serde(default = "default_fencing_resolution")]
     pub usa_and_mexico_fencing_resolution: u8,
 }
@@ -54,12 +58,12 @@ fn default_fencing_resolution() -> u8 {
 }
 
 fn default_max_distance_from_coverage() -> u32 {
-    // Default is 2 km
-    2000
+    // Default is 3 km
+    3000
 }
 
 fn default_log() -> String {
-    "mobile_verifier=debug,poc_store=info".to_string()
+    "mobile_verifier=info,file_store=info".to_string()
 }
 
 fn default_start_after() -> DateTime<Utc> {
@@ -71,11 +75,23 @@ fn default_reward_period() -> Duration {
 }
 
 fn default_reward_period_offset() -> Duration {
-    humantime::parse_duration("30 minutes").unwrap()
+    humantime::parse_duration("60 minutes").unwrap()
 }
 
 fn default_data_sets_poll_duration() -> Duration {
     humantime::parse_duration("30 minutes").unwrap()
+}
+
+fn default_cache() -> PathBuf {
+    PathBuf::from("/opt/mobile-verifier/data")
+}
+
+fn default_data_sets_directory() -> PathBuf {
+    PathBuf::from("/opt/mobile-verifier/data_sets")
+}
+
+fn default_usa_and_mexico_geofence_regions() -> PathBuf {
+    PathBuf::from("/opt/mobile-verifier/geofence")
 }
 
 impl Settings {
@@ -96,7 +112,11 @@ impl Settings {
         // Add in settings from the environment (with a prefix of VERIFY)
         // Eg.. `INJECT_DEBUG=1 ./target/app` would set the `debug` key
         builder
-            .add_source(Environment::with_prefix("VERIFY").separator("_"))
+            .add_source(
+                Environment::with_prefix("MV")
+                    .separator("__")
+                    .try_parsing(true),
+            )
             .build()
             .and_then(|config| config.try_deserialize())
     }
