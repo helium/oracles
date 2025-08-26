@@ -614,7 +614,7 @@ where
         Ok(Response::new(BanRespV1 { timestamp_ms }))
     }
 
-    async fn subimt_enabled_carriers_info(
+    async fn submit_enabled_carriers_info(
         &self,
         request: Request<EnabledCarriersInfoReqV1>,
     ) -> GrpcResult<EnabledCarriersInfoRespV1> {
