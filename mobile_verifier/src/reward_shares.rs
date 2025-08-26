@@ -32,13 +32,10 @@ mod radio_reward_v2;
 
 /// Maximum amount of the total emissions pool allocated for data transfer
 /// rewards
-const MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.4);
+const MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.6);
 
 /// Percentage of total emissions pool allocated for proof of coverage
-const POC_REWARDS_PERCENT: Decimal = dec!(0.1);
-
-/// Percentage of total emissions pool allocated for boosted proof of coverage
-const BOOSTED_POC_REWARDS_PERCENT: Decimal = dec!(0.1);
+const POC_REWARDS_PERCENT: Decimal = dec!(0.0);
 
 /// The fixed price of a mobile data credit
 const DC_USD_PRICE: Decimal = dec!(0.00001);
@@ -544,7 +541,6 @@ impl CoverageShares {
 pub struct DataTransferAndPocAllocatedRewardBuckets {
     pub data_transfer: Decimal,
     pub poc: Decimal,
-    pub boosted_poc: Decimal,
 }
 
 impl DataTransferAndPocAllocatedRewardBuckets {
@@ -552,12 +548,11 @@ impl DataTransferAndPocAllocatedRewardBuckets {
         Self {
             data_transfer: total_emission_pool * MAX_DATA_TRANSFER_REWARDS_PERCENT,
             poc: total_emission_pool * POC_REWARDS_PERCENT,
-            boosted_poc: total_emission_pool * BOOSTED_POC_REWARDS_PERCENT,
         }
     }
 
     pub fn total_poc(&self) -> Decimal {
-        self.poc + self.boosted_poc
+        self.poc
     }
 
     /// Rewards left over from Data Transfer rewards go into the POC pool. They
@@ -586,7 +581,8 @@ impl CalculatedPocRewardShares {
         allocated_rewards: DataTransferAndPocAllocatedRewardBuckets,
         radios: impl Iterator<Item = &'a coverage_point_calculator::CoveragePoints>,
     ) -> Option<Self> {
-        let (total_points, boost_points, poc_points) = radios.fold(
+        //TODO fix this
+        let (total_points, _boost_points, _poc_points) = radios.fold(
             (dec!(0), dec!(0), dec!(0)),
             |(total, boosted, poc), radio| {
                 (
@@ -602,20 +598,10 @@ impl CalculatedPocRewardShares {
         }
 
         let shares_per_point = allocated_rewards.total_poc() / total_points;
-        let boost_within_limit = allocated_rewards.boosted_poc >= shares_per_point * boost_points;
-
-        if boost_within_limit {
-            Some(CalculatedPocRewardShares {
-                normal: shares_per_point,
-                boost: shares_per_point,
-            })
-        } else {
-            // Over boosted reward limit, need to calculate 2 share ratios
-            let normal = allocated_rewards.poc / poc_points;
-            let boost = allocated_rewards.boosted_poc / boost_points;
-
-            Some(CalculatedPocRewardShares { normal, boost })
-        }
+        Some(CalculatedPocRewardShares {
+            normal: shares_per_point,
+            boost: shares_per_point,
+        })
     }
 
     fn base_poc_reward(&self, points: &coverage_point_calculator::CoveragePoints) -> u64 {
@@ -636,8 +622,7 @@ impl CalculatedPocRewardShares {
 }
 
 pub fn get_scheduled_tokens_for_poc(total_emission_pool: Decimal) -> Decimal {
-    let poc_percent =
-        MAX_DATA_TRANSFER_REWARDS_PERCENT + POC_REWARDS_PERCENT + BOOSTED_POC_REWARDS_PERCENT;
+    let poc_percent = MAX_DATA_TRANSFER_REWARDS_PERCENT + POC_REWARDS_PERCENT;
     total_emission_pool * poc_percent
 }
 
@@ -723,7 +708,6 @@ mod test {
         DataTransferAndPocAllocatedRewardBuckets {
             data_transfer: dec!(0),
             poc: poc + data_transfer,
-            boosted_poc: total_emission_pool * BOOSTED_POC_REWARDS_PERCENT,
         }
     }
 
@@ -1007,13 +991,13 @@ mod test {
         // for POC and data transfer (which is 60% of the daily total emissions).
         let available_poc_rewards = get_scheduled_tokens_for_poc(rewards_info.epoch_emissions)
             - data_transfer_rewards.reward_sum;
-        assert_eq!(available_poc_rewards.trunc(), dec!(16_438_356_164_383));
+        assert_eq!(available_poc_rewards.trunc(), Decimal::ZERO);
         assert_eq!(
             // Rewards are automatically scaled
             data_transfer_rewards.reward(&owner).trunc(),
-            dec!(32_876_712_328_766)
+            get_scheduled_tokens_for_poc(rewards_info.epoch_emissions).trunc(),
         );
-        assert_eq!(data_transfer_rewards.reward_scale().round_dp(1), dec!(0.5));
+        assert_eq!(data_transfer_rewards.reward_scale().round_dp(1), dec!(0.7));
     }
 
     fn bytes_per_s(mbps: u64) -> u64 {
