@@ -1,7 +1,14 @@
 use helium_lib::{
     solana_client::client_error::ClientError,
-    solana_sdk::{program_error, pubkey::ParsePubkeyError, signature, transaction::Transaction},
+    solana_sdk::{
+        program_error,
+        pubkey::ParsePubkeyError,
+        signature::{self, read_keypair},
+        signer::keypair::Keypair,
+        transaction::Transaction,
+    },
 };
+use serde::Deserialize;
 use std::time::SystemTimeError;
 
 pub use helium_lib::{
@@ -88,4 +95,13 @@ impl GetSignature for Signature {
     fn get_signature(&self) -> &Signature {
         self
     }
+}
+
+pub fn deserialize_solana_keypair<'a, D>(deserializer: D) -> Result<Keypair, D::Error>
+where
+    D: serde::Deserializer<'a>,
+{
+    let s = String::deserialize(deserializer)?;
+    let keypair = read_keypair(&mut s.as_bytes()).map_err(serde::de::Error::custom)?;
+    Ok(keypair)
 }

@@ -14,7 +14,9 @@ pub struct Settings {
     pub region: String,
 
     /// Should only be used for local testing
+    #[serde(skip_serializing)]
     pub access_key_id: Option<String>,
+    #[serde(skip_serializing)]
     pub secret_access_key: Option<String>,
 }
 

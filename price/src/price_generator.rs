@@ -7,7 +7,7 @@ use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use solana::{RpcClient, Token};
-use std::{path::PathBuf, str::FromStr, time::Duration};
+use std::{path::PathBuf, time::Duration};
 use task_manager::ManagedTask;
 use tokio::{fs, time};
 
@@ -108,8 +108,7 @@ impl PriceGenerator {
             default_price,
             interval_duration: settings.interval,
             stale_price_duration: settings.stale_price_duration,
-            latest_price_file: PathBuf::from_str(&settings.cache)?
-                .join(format!("{:?}.latest", token)),
+            latest_price_file: settings.cache.join(format!("{:?}.latest", token)),
             file_sink,
         })
     }
