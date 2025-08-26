@@ -13,7 +13,8 @@ use helium_proto::services::poc_mobile::{
     self, BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
     DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
-    DataTransferSessionRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
+    DataTransferSessionRespV1, EnabledCarriersInfoReportV1, EnabledCarriersInfoReqV1,
+    EnabledCarriersInfoRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
     RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
@@ -58,6 +59,7 @@ pub struct GrpcServer<AV> {
     unique_connections_sink: FileSinkClient<UniqueConnectionsIngestReportV1>,
     subscriber_mapping_activity_sink: FileSinkClient<SubscriberMappingActivityIngestReportV1>,
     ban_sink: FileSinkClient<BanIngestReportV1>,
+    enabled_carriers_sink: FileSinkClient<EnabledCarriersInfoReportV1>,
     required_network: Network,
     address: SocketAddr,
     api_token: MetadataValue<Ascii>,
@@ -108,6 +110,7 @@ where
         unique_connections_sink: FileSinkClient<UniqueConnectionsIngestReportV1>,
         subscriber_mapping_activity_sink: FileSinkClient<SubscriberMappingActivityIngestReportV1>,
         ban_sink: FileSinkClient<BanIngestReportV1>,
+        enabled_carriers_sink: FileSinkClient<EnabledCarriersInfoReportV1>,
         required_network: Network,
         address: SocketAddr,
         api_token: MetadataValue<Ascii>,
@@ -128,6 +131,7 @@ where
             unique_connections_sink,
             subscriber_mapping_activity_sink,
             ban_sink,
+            enabled_carriers_sink,
             required_network,
             address,
             api_token,
@@ -609,6 +613,30 @@ where
         let timestamp_ms = received_timestamp_ms;
         Ok(Response::new(BanRespV1 { timestamp_ms }))
     }
+
+    async fn subimt_enabled_carriers_info(
+        &self,
+        request: Request<EnabledCarriersInfoReqV1>,
+    ) -> GrpcResult<EnabledCarriersInfoRespV1> {
+        let received_timestamp_ms = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+        custom_tracing::record_b58("pub_key", &event.hotspot_pubkey);
+
+        let report = self
+            .verify_public_key(&event.hotspot_pubkey)
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| EnabledCarriersInfoReportV1 {
+                received_timestamp_ms,
+                report: Some(event),
+            })?;
+
+        _ = self.enabled_carriers_sink.write(report, []).await;
+
+        Ok(Response::new(EnabledCarriersInfoRespV1 {
+            timestamp_ms: received_timestamp_ms,
+        }))
+    }
 }
 
 fn is_data_transfer_for_cbrs(event: &DataTransferSessionReqV1) -> bool {
@@ -754,6 +782,15 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     )
     .await?;
 
+    let (enabled_carriers_sink, enabled_carriers_server) = EnabledCarriersInfoReportV1::file_sink(
+        store_base_path,
+        file_upload.clone(),
+        FileSinkCommitStrategy::Automatic,
+        FileSinkRollTime::Duration(settings.roll_time),
+        env!("CARGO_PKG_NAME"),
+    )
+    .await?;
+
     let (subscriber_mapping_activity_sink, subscriber_mapping_activity_server) =
         SubscriberMappingActivityIngestReportV1::file_sink(
             store_base_path,
@@ -791,6 +828,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         unique_connections_sink,
         subscriber_mapping_activity_sink,
         ban_sink,
+        enabled_carriers_sink,
         settings.network,
         settings.listen_addr,
         api_token,
@@ -819,6 +857,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(unique_connections_server)
         .add_task(subscriber_mapping_activity_server)
         .add_task(ban_server)
+        .add_task(enabled_carriers_server)
         .add_task(grpc_server)
         .build()
         .start()

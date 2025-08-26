@@ -313,3 +313,8 @@ impl_file_sink!(
     FileType::VerifiedSubscriberMappingActivityReport.to_str(),
     "verified_subscriber_mapping_activity_report"
 );
+impl_file_sink!(
+    poc_mobile::EnabledCarriersInfoReportV1,
+    FileType::EnabledCarriersInfoReport.to_str(),
+    "enabled_carriers_report"
+);
