@@ -581,17 +581,9 @@ impl CalculatedPocRewardShares {
         allocated_rewards: DataTransferAndPocAllocatedRewardBuckets,
         radios: impl Iterator<Item = &'a coverage_point_calculator::CoveragePoints>,
     ) -> Option<Self> {
-        //TODO fix this
-        let (total_points, _boost_points, _poc_points) = radios.fold(
-            (dec!(0), dec!(0), dec!(0)),
-            |(total, boosted, poc), radio| {
-                (
-                    total + radio.total_shares(),
-                    boosted + radio.total_boosted_shares(),
-                    poc + radio.total_base_shares(),
-                )
-            },
-        );
+        let total_points = radios
+            .map(|radio| radio.total_shares())
+            .sum::<Decimal>();
 
         if total_points.is_zero() {
             return None;
