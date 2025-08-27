@@ -38,6 +38,7 @@ impl GatewayInfoResolver for MockGatewayInfoResolver {
     async fn stream_gateways_info(
         &mut self,
         _device_types: &[MobileDeviceType],
+        _min_updated_at: u64,
     ) -> Result<GatewayInfoStream, ClientError> {
         todo!()
     }
