@@ -29,7 +29,6 @@ use solana::Token;
 use sqlx::PgPool;
 use std::{
     collections::{HashMap, HashSet},
-    str::FromStr,
     sync::Arc,
 };
 use tokio::{sync::RwLock, time::Timeout};
@@ -87,7 +86,6 @@ pub trait RadioRewardV2Ext {
     fn nth_boosted_hex(&self, index: usize) -> radio_reward_v2::CoveredHex;
     fn boosted_hexes_len(&self) -> usize;
     fn total_poc_reward(&self) -> u64;
-    fn total_coverage_points(&self) -> u64;
 }
 
 impl RadioRewardV2Ext for RadioRewardV2 {
@@ -116,16 +114,6 @@ impl RadioRewardV2Ext for RadioRewardV2 {
 
     fn total_poc_reward(&self) -> u64 {
         self.base_poc_reward + self.boosted_poc_reward
-    }
-
-    fn total_coverage_points(&self) -> u64 {
-        let base = self.base_coverage_points_sum.clone().unwrap_or_default();
-        let boosted = self.boosted_coverage_points_sum.clone().unwrap_or_default();
-
-        let base = Decimal::from_str(&base.value).expect("decoding base cp");
-        let boosted = Decimal::from_str(&boosted.value).expect("decoding boosted cp");
-
-        (base + boosted).to_u64().unwrap()
     }
 }
 
