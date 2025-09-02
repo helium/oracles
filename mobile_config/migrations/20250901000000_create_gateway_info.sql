@@ -15,7 +15,7 @@ CREATE TYPE deployment_info_v1 AS (
 CREATE TYPE location_info_v1 AS (
     location BIGINT,
     location_changed_at TIMESTAMPTZ,
-    location_asserts BIGINT,
+    location_asserts BIGINT
 );
 
 CREATE TABLE gateway_info (
@@ -25,5 +25,5 @@ CREATE TABLE gateway_info (
     deployment_info deployment_info_v1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
