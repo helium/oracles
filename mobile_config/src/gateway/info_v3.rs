@@ -6,7 +6,7 @@ use helium_proto::services::mobile_config::{
     LocationInfo as LocationInfoProto,
 };
 
-use crate::gateway_info::DeviceTypeParseError;
+use crate::gateway::info::DeviceTypeParseError;
 
 #[derive(Clone, Debug)]
 pub struct LocationInfo {
@@ -119,7 +119,7 @@ pub(crate) mod db {
     use sqlx::{types::Json, PgExecutor};
     use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
-    use crate::gateway_info::DeploymentInfo;
+    use crate::gateway::info::DeploymentInfo;
 
     use super::{DeviceTypeV2, GatewayInfoV3, GatewayMetadataV3};
 

@@ -1,10 +1,10 @@
 use crate::{
-    gateway_info::{
+    gateway::info::{
         self,
         db::{get_batch_tracked_radios, get_updated_radios},
         DeviceType, GatewayInfo,
     },
-    gateway_info_v3::{self, db::get_mobile_tracker_gateways_info, DeviceTypeV2},
+    gateway::info_v3::{self, db::get_mobile_tracker_gateways_info, DeviceTypeV2},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -94,7 +94,7 @@ impl mobile_config::Gateway for GatewayService {
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info");
 
-        gateway_info::db::get_info(&self.metadata_pool, &pubkey)
+        info::db::get_info(&self.metadata_pool, &pubkey)
             .await
             .map_err(|_| Status::internal("error fetching gateway info"))?
             .map_or_else(
@@ -134,13 +134,13 @@ impl mobile_config::Gateway for GatewayService {
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info (v2)");
 
-        let updated_at = gateway_info::db::get_updated_at(&self.mobile_config_db_pool, &pubkey)
+        let updated_at = info::db::get_updated_at(&self.mobile_config_db_pool, &pubkey)
             .await
             .map_err(|_| {
                 Status::internal("error fetching updated_at field for gateway info (v2)")
             })?;
 
-        gateway_info::db::get_info(&self.metadata_pool, &pubkey)
+        info::db::get_info(&self.metadata_pool, &pubkey)
             .await
             .map_err(|_| Status::internal("error fetching gateway info (v2)"))?
             .map_or_else(
@@ -210,7 +210,7 @@ impl mobile_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         tokio::spawn(async move {
-            let stream = gateway_info::db::batch_info_stream(&pool, &addresses)?;
+            let stream = info::db::batch_info_stream(&pool, &addresses)?;
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -251,7 +251,7 @@ impl mobile_config::Gateway for GatewayService {
             let updated_radios =
                 get_batch_tracked_radios(&mobile_config_db_pool, &addresses).await?;
 
-            let stream = gateway_info::db::batch_info_stream(&metadata_db_pool, &addresses)?;
+            let stream = info::db::batch_info_stream(&metadata_db_pool, &addresses)?;
             let stream = stream
                 .filter_map(|gateway_info| {
                     future::ready(handle_updated_at(
@@ -293,7 +293,7 @@ impl mobile_config::Gateway for GatewayService {
         );
 
         tokio::spawn(async move {
-            let stream = gateway_info::db::all_info_stream(&pool, &device_types);
+            let stream = info::db::all_info_stream(&pool, &device_types);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -335,7 +335,7 @@ impl mobile_config::Gateway for GatewayService {
                 ))?;
 
             let updated_radios = get_updated_radios(&mobile_config_db_pool, min_updated_at).await?;
-            let stream = gateway_info::db::all_info_stream(&metadata_db_pool, &device_types);
+            let stream = info::db::all_info_stream(&metadata_db_pool, &device_types);
             let stream = stream
                 .filter_map(|gateway_info| {
                     future::ready(handle_updated_at(
@@ -398,7 +398,7 @@ impl mobile_config::Gateway for GatewayService {
                 min_location_changed_at,
             )
             .await?;
-            let stream = gateway_info_v3::db::all_info_stream_v3(
+            let stream = info_v3::db::all_info_stream_v3(
                 &metadata_db_pool,
                 &device_types,
                 &mobile_tracker_gateways_info,

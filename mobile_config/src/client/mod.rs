@@ -1,21 +1,20 @@
 pub mod authorization_client;
 pub mod carrier_service_client;
 pub mod entity_client;
-pub mod gateway_client;
 pub mod hex_boosting_client;
 mod settings;
 pub mod sub_dao_client;
 
 use std::time::Duration;
 
+pub use crate::gateway::client::GatewayClient;
 pub use authorization_client::AuthorizationClient;
 pub use carrier_service_client::CarrierServiceClient;
 pub use entity_client::EntityClient;
-pub use gateway_client::GatewayClient;
 pub use settings::Settings;
 pub use sub_dao_client::SubDaoClient;
 
-const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
+pub const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
 
 #[derive(thiserror::Error, Debug)]
 pub enum ClientError {
@@ -30,7 +29,7 @@ pub enum ClientError {
     #[error("unknown service provider {0}")]
     UnknownServiceProvider(String),
     #[error("Invalid GatewayInfo proto response {0}")]
-    InvalidGatewayInfoProto(#[from] crate::gateway_info::GatewayInfoProtoParseError),
+    InvalidGatewayInfoProto(#[from] crate::gateway::info::GatewayInfoProtoParseError),
     #[error("Invalid SubDaoRewardInfo proto response {0}")]
     InvalidSubDaoRewardInfoProto(
         #[from] crate::sub_dao_epoch_reward_info::SubDaoRewardInfoParseError,

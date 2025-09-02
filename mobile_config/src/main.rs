@@ -14,7 +14,7 @@ use mobile_config::{
     authorization_service::AuthorizationService,
     carrier_service::CarrierService,
     entity_service::EntityService,
-    gateway_service::GatewayService,
+    gateway::service::GatewayService,
     hex_boosting_service::HexBoostingService,
     key_cache::KeyCache,
     mobile_radio_tracker::{post_migrate_mobile_tracker_locations, MobileRadioTracker},
