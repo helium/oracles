@@ -5,13 +5,13 @@ CREATE TYPE device_type AS ENUM (
     'wifiDataOnly'
 );
 
-CREATE TABLE gateway_info (
+CREATE TABLE gateways (
     address BYTEA NOT NULL,
     device_type device_type NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    antena BIGINT,
+    antenna BIGINT,
     elevation BIGINT,
     azimuth BIGINT,
     radio_id TEXT,
