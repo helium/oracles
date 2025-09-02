@@ -3,6 +3,7 @@ use crate::{
     settings::{self, Settings},
     BytesMutStream, Error, FileInfo, FileInfoStream, Result,
 };
+use aws_config::default_provider::credentials::DefaultCredentialsChain;
 use aws_config::{meta::region::RegionProviderChain, retry::RetryConfig, timeout::TimeoutConfig};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
@@ -67,15 +68,7 @@ impl FileStore {
             config = config.endpoint_resolver(endpoint);
         }
 
-        #[cfg(feature = "local")]
-        if _access_key_id.is_some() && _secret_access_key.is_some() {
-            let creds = aws_types::credentials::Credentials::from_keys(
-                _access_key_id.as_ref().unwrap(),
-                _secret_access_key.as_ref().unwrap(),
-                None,
-            );
-            config = config.credentials_provider(creds);
-        }
+        config = set_credentials_provider(config, _access_key_id, _secret_access_key).await;
 
         if let Some(timeout) = timeout_config {
             config = config.timeout_config(timeout);
@@ -246,4 +239,37 @@ where
         .map_err(Error::s3_error)
         .fuse()
         .await
+}
+
+#[cfg(feature = "local")]
+async fn set_credentials_provider(
+    config: aws_config::ConfigLoader,
+    access_key: Option<String>,
+    secret_access_key: Option<String>,
+) -> aws_config::ConfigLoader {
+    match (access_key, secret_access_key) {
+        (Some(ak), Some(sak)) => config.credentials_provider(
+            aws_types::credentials::Credentials::from_keys(ak, sak, None),
+        ),
+        _ => config.credentials_provider(
+            DefaultCredentialsChain::builder()
+                .load_timeout(std::time::Duration::from_secs(30))
+                .build()
+                .await,
+        ),
+    }
+}
+
+#[cfg(not(feature = "local"))]
+async fn set_credentials_provider(
+    config: aws_config::ConfigLoader,
+    access_key: Option<String>,
+    secrect_access_key: Option<String>,
+) -> aws_config::ConfigLoader {
+    config.credentials_provider(
+        DefaultCredentialsChain::builder()
+            .load_timeout(std::time::Duration::from_secs(30))
+            .build()
+            .await,
+    )
 }
