@@ -142,7 +142,7 @@ pub fn make_keypair() -> Keypair {
 use helium_crypto::PublicKey;
 use helium_proto::services::mobile_config::{self as proto};
 use mobile_config::{
-    gateway_service::GatewayService,
+    gateway::service::GatewayService,
     key_cache::{CacheKeys, KeyCache},
     KeyRole,
 };

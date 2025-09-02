@@ -8,7 +8,7 @@ use helium_proto::services::mobile_config::{
     GatewayInfoStreamReqV2, GatewayInfoStreamResV2,
 };
 use mobile_config::{
-    gateway_service::GatewayService,
+    gateway::service::GatewayService,
     key_cache::{CacheKeys, KeyCache},
     KeyRole,
 };

@@ -21,7 +21,7 @@ use helium_proto::services::poc_mobile::{
     SpeedtestAvg as SpeedtestAvgProto, SpeedtestIngestReportV1,
     SpeedtestVerificationResult as SpeedtestResult, VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
-use mobile_config::client::gateway_client::GatewayInfoResolver;
+use mobile_config::gateway::client::GatewayInfoResolver;
 use sqlx::{postgres::PgRow, FromRow, Pool, Postgres, Row, Transaction};
 use std::{
     collections::HashMap,
