@@ -79,7 +79,9 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{FileInfo, FileInfoStream, FileStore, Settings};
+    use crate::{
+        settings::default_credentials_load_timeout, FileInfo, FileInfoStream, FileStore, Settings,
+    };
     use std::str::FromStr;
 
     fn infos(names: &'static [&str]) -> FileInfoStream {
@@ -103,6 +105,7 @@ mod test {
             bucket: "devnet-poc5g-rewards".to_string(),
             endpoint: None,
             region: "us-east-1".to_string(),
+            credentials_load_timeout: default_credentials_load_timeout(),
             access_key_id: None,
             secret_access_key: None,
         };

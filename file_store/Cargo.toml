@@ -49,6 +49,7 @@ retainer = { workspace = true }
 uuid = { workspace = true }
 h3o = { workspace = true }
 task-manager = { path = "../task_manager" }
+humantime-serde = { workspace = true }
 
 [dev-dependencies]
 hex-literal = "0"
