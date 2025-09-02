@@ -274,8 +274,8 @@ async fn set_credentials_provider(
 #[cfg(not(feature = "local"))]
 async fn set_credentials_provider(
     config: aws_config::ConfigLoader,
-    access_key: Option<String>,
-    secrect_access_key: Option<String>,
+    _access_key: Option<String>,
+    _secrect_access_key: Option<String>,
     load_timeout: Duration,
 ) -> aws_config::ConfigLoader {
     config.credentials_provider(
