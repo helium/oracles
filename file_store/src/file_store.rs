@@ -1,6 +1,6 @@
 use crate::{
     error::DecodeError,
-    settings::{self, Settings},
+    settings::{self, default_credentials_load_timeout, Settings},
     BytesMutStream, Error, FileInfo, FileInfoStream, Result,
 };
 use aws_config::default_provider::credentials::DefaultCredentialsChain;
@@ -9,8 +9,8 @@ use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
 use futures::{future, stream, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use http::Uri;
-use std::path::Path;
 use std::str::FromStr;
+use std::{path::Path, time::Duration};
 
 #[derive(Debug, Clone)]
 pub struct FileStore {
@@ -31,6 +31,7 @@ impl FileStore {
             access_key_id,
             secret_access_key,
             region,
+            credentials_load_timeout,
         } = settings.clone();
         Self::new(
             bucket,
@@ -38,18 +39,21 @@ impl FileStore {
             Some(region),
             None,
             None,
+            Some(credentials_load_timeout),
             access_key_id,
             secret_access_key,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         bucket: String,
         endpoint: Option<String>,
         region: Option<String>,
         timeout_config: Option<TimeoutConfig>,
         retry_config: Option<RetryConfig>,
+        credentials_load_timeout: Option<Duration>,
         _access_key_id: Option<String>,
         _secret_access_key: Option<String>,
     ) -> Result<Self> {
@@ -68,7 +72,13 @@ impl FileStore {
             config = config.endpoint_resolver(endpoint);
         }
 
-        config = set_credentials_provider(config, _access_key_id, _secret_access_key).await;
+        config = set_credentials_provider(
+            config,
+            _access_key_id,
+            _secret_access_key,
+            credentials_load_timeout.unwrap_or_else(default_credentials_load_timeout),
+        )
+        .await;
 
         if let Some(timeout) = timeout_config {
             config = config.timeout_config(timeout);
@@ -246,6 +256,7 @@ async fn set_credentials_provider(
     config: aws_config::ConfigLoader,
     access_key: Option<String>,
     secret_access_key: Option<String>,
+    load_timeout: Duration,
 ) -> aws_config::ConfigLoader {
     match (access_key, secret_access_key) {
         (Some(ak), Some(sak)) => config.credentials_provider(
@@ -253,7 +264,7 @@ async fn set_credentials_provider(
         ),
         _ => config.credentials_provider(
             DefaultCredentialsChain::builder()
-                .load_timeout(std::time::Duration::from_secs(30))
+                .load_timeout(load_timeout)
                 .build()
                 .await,
         ),
@@ -265,10 +276,11 @@ async fn set_credentials_provider(
     config: aws_config::ConfigLoader,
     access_key: Option<String>,
     secrect_access_key: Option<String>,
+    load_timeout: Duration,
 ) -> aws_config::ConfigLoader {
     config.credentials_provider(
         DefaultCredentialsChain::builder()
-            .load_timeout(std::time::Duration::from_secs(30))
+            .load_timeout(load_timeout)
             .build()
             .await,
     )

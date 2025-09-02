@@ -2860,6 +2860,7 @@ dependencies = [
  "helium-proto",
  "hex-literal",
  "http 0.2.12",
+ "humantime-serde",
  "metrics",
  "poc-metrics",
  "prost",

@@ -1,7 +1,7 @@
 use crate::{Error, Result};
 use config::{Config, File};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
@@ -18,10 +18,16 @@ pub struct Settings {
     pub access_key_id: Option<String>,
     #[serde(skip_serializing)]
     pub secret_access_key: Option<String>,
+    #[serde(with = "humantime_serde", default = "default_credentials_load_timeout")]
+    pub credentials_load_timeout: Duration,
 }
 
 pub fn default_region() -> String {
     "us-west-2".to_string()
+}
+
+pub fn default_credentials_load_timeout() -> Duration {
+    Duration::from_secs(30)
 }
 
 impl Settings {
