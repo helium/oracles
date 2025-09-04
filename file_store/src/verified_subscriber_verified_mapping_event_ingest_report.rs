@@ -62,7 +62,7 @@ impl TryFrom<VerifiedSubscriberVerifiedMappingEventIngestReportV1>
                     )
                 })?
                 .try_into()?,
-            status: v.status.try_into()?,
+            status: v.status(),
             timestamp: v.timestamp()?,
         })
     }
