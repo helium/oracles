@@ -1,10 +1,11 @@
 use crate::{
-    gateway::info::{
-        self,
-        db::{get_batch_tracked_radios, get_updated_radios},
-        DeviceType, GatewayInfo,
+    gateway::service::{
+        info::{
+            db::{get_batch_tracked_radios, get_updated_radios},
+            DeviceType, GatewayInfo,
+        },
+        info_v3::{db::get_mobile_tracker_gateways_info, DeviceTypeV2},
     },
-    gateway::info_v3::{self, db::get_mobile_tracker_gateways_info, DeviceTypeV2},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -27,6 +28,9 @@ use helium_proto::{
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tonic::{Request, Response, Status};
+
+pub mod info;
+pub mod info_v3;
 
 pub struct GatewayService {
     key_cache: KeyCache,

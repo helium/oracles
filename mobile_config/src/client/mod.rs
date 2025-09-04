@@ -29,7 +29,7 @@ pub enum ClientError {
     #[error("unknown service provider {0}")]
     UnknownServiceProvider(String),
     #[error("Invalid GatewayInfo proto response {0}")]
-    InvalidGatewayInfoProto(#[from] crate::gateway::info::GatewayInfoProtoParseError),
+    InvalidGatewayInfoProto(#[from] crate::gateway::service::info::GatewayInfoProtoParseError),
     #[error("Invalid SubDaoRewardInfo proto response {0}")]
     InvalidSubDaoRewardInfoProto(
         #[from] crate::sub_dao_epoch_reward_info::SubDaoRewardInfoParseError,

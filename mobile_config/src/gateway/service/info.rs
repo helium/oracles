@@ -370,8 +370,9 @@ impl std::str::FromStr for DeviceType {
 }
 
 pub(crate) mod db {
+    use crate::gateway::service::info::DeploymentInfo;
+
     use super::{DeviceType, GatewayInfo, GatewayMetadata};
-    use crate::gateway::info::DeploymentInfo;
     use chrono::{DateTime, Utc};
     use futures::{
         stream::{Stream, StreamExt},

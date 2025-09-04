@@ -13,7 +13,7 @@ use mobile_config::{
     client::ClientError,
     gateway::{
         client::GatewayInfoResolver,
-        info::{DeviceType, GatewayInfo, GatewayInfoStream},
+        service::info::{DeviceType, GatewayInfo, GatewayInfoStream},
     },
 };
 use mobile_verifier::speedtests::SpeedtestDaemon;

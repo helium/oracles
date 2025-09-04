@@ -1,6 +1,6 @@
 use crate::gateway::{
     db::{Gateway, GatewayType},
-    info::{DeploymentInfo, DeviceType},
+    service::info::{DeploymentInfo, DeviceType},
 };
 use chrono::{DateTime, Utc};
 use futures::Stream;

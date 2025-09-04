@@ -6,7 +6,7 @@ use helium_proto::services::mobile_config::{
     LocationInfo as LocationInfoProto,
 };
 
-use crate::gateway::info::DeviceTypeParseError;
+use crate::gateway::service::info::DeviceTypeParseError;
 
 #[derive(Clone, Debug)]
 pub struct LocationInfo {
@@ -108,6 +108,8 @@ impl TryFrom<GatewayInfoV3> for GatewayInfoProtoV3 {
 }
 
 pub(crate) mod db {
+    use super::{DeviceTypeV2, GatewayInfoV3, GatewayMetadataV3};
+    use crate::gateway::service::info::DeploymentInfo;
     use chrono::{DateTime, Utc};
     use futures::{
         stream::{Stream, StreamExt},
@@ -118,10 +120,6 @@ pub(crate) mod db {
     use sqlx::Row;
     use sqlx::{types::Json, PgExecutor};
     use std::{collections::HashMap, str::FromStr, sync::LazyLock};
-
-    use crate::gateway::info::DeploymentInfo;
-
-    use super::{DeviceTypeV2, GatewayInfoV3, GatewayMetadataV3};
 
     pub struct MobileTrackerInfo {
         location: Option<u64>,
