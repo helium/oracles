@@ -1,7 +1,6 @@
-use crate::gateway::{self, metadata_db::MobileHotspotInfo};
+use crate::gateway::metadata_db::MobileHotspotInfo;
 use futures::TryFutureExt;
 use futures_util::TryStreamExt;
-use solana::helium_lib::anchor_spl::token::spl_token::error;
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 use task_manager::ManagedTask;
@@ -63,7 +62,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
     while let Some(mhi) = stream.try_next().await? {
         if let Some(gateway) = mhi.to_gateway()? {
             tracing::debug!(?gateway, "inserting gateway from mobile hotspot info");
-            gateway.insert(&pool).await?;
+            gateway.insert(pool).await?;
         }
     }
 

@@ -1,4 +1,5 @@
 // TODO: REMOVE ME WHEN DONE
+// and table in db
 
 use std::{collections::HashMap, time::Duration};
 

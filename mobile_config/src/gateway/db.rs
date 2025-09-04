@@ -182,8 +182,7 @@ impl FromRow<'_, PgRow> for Gateway {
         let to_u64 = |v: Option<i64>| -> Option<u64> { v.map(|x| x as u64) };
 
         Ok(Self {
-            address: PublicKeyBinary::try_from(row.try_get::<Vec<u8>, _>("address")?)
-                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+            address: PublicKeyBinary::from(row.try_get::<Vec<u8>, _>("address")?),
             gateway_type: row.try_get("gateway_type")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
