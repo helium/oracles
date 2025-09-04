@@ -5,7 +5,7 @@ use std::{sync::Arc, vec};
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::services::mobile_config::{
     self as proto, gateway_metadata_v2::DeploymentInfo, DeviceType, GatewayClient,
-    GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamResV2,
+    GatewayInfoStreamReqV2, GatewayInfoStreamResV2,
 };
 use mobile_config::{
     gateway_service::GatewayService,
@@ -49,7 +49,10 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
 
     // Request information about ourselves
     let req = make_signed_info_request(gw_key.public_key(), &gw_key);
-    let err = client.info(req).await.expect_err("testing expects error");
+    let err = client
+        .info_v2(req)
+        .await
+        .expect_err("testing expects error");
     assert_ne!(
         err.code(),
         Code::PermissionDenied,
@@ -58,7 +61,10 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
 
     // Request gateway info as administrator
     let req = make_signed_info_request(gw_key.public_key(), &admin_key);
-    let err = client.info(req).await.expect_err("testing expects error");
+    let err = client
+        .info_v2(req)
+        .await
+        .expect_err("testing expects error");
     assert_ne!(
         err.code(),
         Code::PermissionDenied,
@@ -67,7 +73,10 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
 
     // Request gateway from unknown key
     let req = make_signed_info_request(gw_key.public_key(), &unknown_key);
-    let err = client.info(req).await.expect_err("testing expects errors");
+    let err = client
+        .info_v2(req)
+        .await
+        .expect_err("testing expects errors");
     assert_eq!(
         err.code(),
         Code::PermissionDenied,
@@ -78,7 +87,10 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     let mut req = make_signed_info_request(gw_key.public_key(), &gw_key);
     req.signature = vec![];
     req.signature = admin_key.sign(&req.encode_to_vec()).unwrap();
-    let err = client.info(req).await.expect_err("testing expects errors");
+    let err = client
+        .info_v2(req)
+        .await
+        .expect_err("testing expects errors");
     assert_eq!(
         err.code(),
         Code::PermissionDenied,
@@ -86,60 +98,6 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     );
 
     Ok(())
-}
-
-#[sqlx::test]
-async fn gateway_stream_info_v1(pool: PgPool) {
-    let admin_key = make_keypair();
-    let asset1_pubkey = make_keypair().public_key().clone();
-    let asset1_hex_idx = 631711281837647359_i64;
-    let asset2_hex_idx = 631711286145955327_i64;
-    let asset2_pubkey = make_keypair().public_key().clone();
-    let now = Utc::now();
-    let now_plus_10 = now + chrono::Duration::seconds(10);
-
-    create_db_tables(&pool).await;
-    add_db_record(
-        &pool,
-        "asset1",
-        Some(asset1_hex_idx),
-        "\"wifiIndoor\"",
-        asset1_pubkey.clone().into(),
-        now,
-        Some(now),
-        None,
-    )
-    .await;
-    add_db_record(
-        &pool,
-        "asset2",
-        Some(asset2_hex_idx),
-        "\"wifiDataOnly\"",
-        asset2_pubkey.clone().into(),
-        now_plus_10,
-        Some(now_plus_10),
-        None,
-    )
-    .await;
-
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
-    let mut client = GatewayClient::connect(addr).await.unwrap();
-
-    // Select all devices
-    let req = make_gateway_stream_signed_req_v1(&admin_key, &[]);
-    let mut stream = client.info_stream(req).await.unwrap().into_inner();
-    let resp = stream.next().await.unwrap().unwrap();
-    assert_eq!(resp.gateways.len(), 2);
-
-    // Filter by device type
-    let req = make_gateway_stream_signed_req_v1(&admin_key, &[DeviceType::WifiIndoor]);
-    let mut stream = client.info_stream(req).await.unwrap().into_inner();
-    let resp = stream.next().await.unwrap().unwrap();
-    assert_eq!(resp.gateways.len(), 1);
-    assert_eq!(
-        resp.gateways.first().unwrap().device_type,
-        Into::<i32>::into(DeviceType::WifiIndoor)
-    );
 }
 
 #[sqlx::test]
@@ -789,21 +747,6 @@ fn make_gateway_stream_signed_req_v2(
         signature: vec![],
         device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),
         min_updated_at,
-    };
-
-    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
-    req
-}
-
-fn make_gateway_stream_signed_req_v1(
-    signer: &Keypair,
-    device_types: &[DeviceType],
-) -> proto::GatewayInfoStreamReqV1 {
-    let mut req = GatewayInfoStreamReqV1 {
-        batch_size: 10000,
-        signer: signer.public_key().to_vec(),
-        signature: vec![],
-        device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),
     };
 
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
