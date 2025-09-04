@@ -165,7 +165,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        package: ["boost-manager","ingest","mobile-config","mobile-packet-verifier","mobile-verifier","poc-entropy","price","reward-index"]
+        package: ["ingest","mobile-config","mobile-packet-verifier","mobile-verifier","price","reward-index"]
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-build-image-${{ matrix.package }}
       cancel-in-progress: true
