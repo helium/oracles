@@ -1559,51 +1559,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "boost-manager"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum 0.8.4",
- "base64 0.22.1",
- "bs58",
- "chrono",
- "clap",
- "config",
- "custom-tracing",
- "db-store",
- "file-store",
- "futures",
- "futures-util",
- "helium-proto",
- "hextree",
- "http 0.2.12",
- "http-serde",
- "humantime-serde",
- "metrics",
- "metrics-exporter-prometheus",
- "mobile-config",
- "poc-metrics",
- "prost",
- "rand 0.8.5",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "solana",
- "sqlx",
- "task-manager",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "triggered",
-]
-
-[[package]]
 name = "borsh"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
