@@ -54,7 +54,7 @@ impl GatewayResolver for mobile_config::GatewayClient {
         address: &helium_crypto::PublicKeyBinary,
     ) -> Result<GatewayResolution, ClientError> {
         use mobile_config::gateway::client::GatewayInfoResolver;
-        use mobile_config::gateway::info::{DeviceType, GatewayInfo};
+        use mobile_config::gateway::service::info::{DeviceType, GatewayInfo};
 
         match self.resolve_gateway_info(address).await? {
             None => Ok(GatewayResolution::GatewayNotFound),
