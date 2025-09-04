@@ -11,7 +11,6 @@ on:
         default: 'all'
         options:
           - all
-          - boost-manager
           - ingest
           - iot-config
           - iot-packet-verifier
@@ -46,7 +45,7 @@ jobs:
         id: set-packages
         run: |
           if [ "${{ inputs.package }}" = "all" ]; then
-            echo 'packages=["boost-manager","ingest","mobile-config","mobile-packet-verifier","mobile-verifier","poc-entropy","price","reward-index"]' >> $GITHUB_OUTPUT
+            echo 'packages=["ingest","mobile-config","mobile-packet-verifier","mobile-verifier","poc-entropy","price","reward-index"]' >> $GITHUB_OUTPUT
           else
             echo "packages=[\"${{ inputs.package }}\"]" >> $GITHUB_OUTPUT
           fi
@@ -78,7 +77,6 @@ jobs:
       - name: Set ECR URL
         run: |
           case "${{ matrix.package }}" in
-            boost-manager)           echo "ECR_URL=${{ vars.BOOST_MANAGER_ECR_URL }}" >> $GITHUB_ENV ;;
             ingest)                   echo "ECR_URL=${{ vars.INGEST_ECR_URL }}" >> $GITHUB_ENV ;;
             iot-config)               echo "ECR_URL=${{ vars.IOT_CONFIG_ECR_URL }}" >> $GITHUB_ENV ;;
             iot-packet-verifier)      echo "ECR_URL=${{ vars.IOT_PACKET_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;

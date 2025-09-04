@@ -147,7 +147,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Cache Cargo Target Directory
         # Anything above 4min run
-        if: contains('["boost-manager", "ingest", "iot-config", "iot-packet-verifier", "iot-verifier", "mobile-packet-verifier", "mobile-verifier", "price", "solana"]', matrix.package)
+        if: contains('["ingest", "iot-config", "iot-packet-verifier", "iot-verifier", "mobile-packet-verifier", "mobile-verifier", "price", "solana"]', matrix.package)
         uses: actions/cache@v4
         with:
           path: target
