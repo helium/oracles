@@ -67,10 +67,6 @@ helium-crypto = { version = "0.9.3", default-features = false }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
   "disktree",
 ] }
-helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
-  "services",
-] }
-beacon = { git = "https://github.com/helium/proto", branch = "master" }
 reqwest = { version = "0", default-features = false, features = [
   "gzip",
   "json",
@@ -90,12 +86,10 @@ rust_decimal = "1"
 rust_decimal_macros = "1"
 base64 = ">=0.21"
 sha2 = "0.10"
-tonic = { version = "0.10", features = ["tls", "tls-roots"] }
 http = "<=0.2"
 triggered = "0"
 futures = "*"
 futures-util = "*"
-prost = "0.12"
 config = { version = "0", default-features = false, features = ["toml"] }
 h3o = { version = "0", features = ["serde"] }
 xorf = { version = "0", features = ["serde"] }
@@ -124,6 +118,15 @@ aws-smithy-types-convert = { version = "0.60.9", features = [
     "convert-streams",
 ] }
 url = "2.5.4"
+
+### Protobuf
+helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
+  "services",
+] }
+beacon = { git = "https://github.com/helium/proto", branch = "master" }
+# Pickup versions from above
+prost = "*"
+tonic = { version = "*", features = ["tls-ring", "tls-native-roots"] }
 
 [patch.crates-io]
 anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madninja/const_pubkey" }

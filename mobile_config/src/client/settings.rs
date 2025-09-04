@@ -1,8 +1,9 @@
 use helium_crypto::{Keypair, PublicKey};
-use helium_proto::services::{mobile_config, sub_dao, Channel, Endpoint};
+use helium_proto::services::{mobile_config, sub_dao};
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
+use tonic::transport::{Channel, Endpoint};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {

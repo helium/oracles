@@ -4,14 +4,12 @@ use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
-    services::{
-        mobile_config::{self, DeviceType},
-        Channel,
-    },
+    services::mobile_config::{self, DeviceType},
     Message,
 };
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
+use tonic::transport::Channel;
 
 #[derive(Clone)]
 pub struct GatewayClient {
