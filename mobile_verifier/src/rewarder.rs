@@ -450,7 +450,7 @@ pub async fn reward_poc_and_dc(
     Ok(calculated_poc_reward_shares)
 }
 
-async fn reward_poc(
+pub async fn reward_poc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
