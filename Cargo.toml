@@ -100,7 +100,7 @@ async-trait = "*"
 blake3 = "*"
 retainer = "*"
 rand = "0.8"
-itertools = "*"
+itertools = "0.14"
 tokio-util = "0"
 uuid = { version = "1", features = ["v4", "serde"] }
 tower-http = { version = "0", features = ["trace"] }
