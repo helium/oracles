@@ -72,7 +72,7 @@ impl GatewayInfoResolver for GatewayClient {
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
         tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
-        let response = match call_with_retry!(self.client.clone().info(request.clone())) {
+        let response = match call_with_retry!(self.client.clone().info_v2(request.clone())) {
             Ok(info_res) => {
                 let response = info_res.into_inner();
                 response.verify(&self.config_pubkey)?;
@@ -98,16 +98,17 @@ impl GatewayInfoResolver for GatewayClient {
         &mut self,
         device_types: &[DeviceType],
     ) -> Result<gateway_info::GatewayInfoStream, ClientError> {
-        let mut req = mobile_config::GatewayInfoStreamReqV1 {
+        let mut req = mobile_config::GatewayInfoStreamReqV2 {
             batch_size: self.batch_size,
             device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),
+            min_updated_at: 0,
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
         req.signature = self.signing_key.sign(&req.encode_to_vec())?;
         tracing::debug!("fetching gateway info stream");
         let pubkey = Arc::new(self.config_pubkey.clone());
-        let res_stream = call_with_retry!(self.client.info_stream(req.clone()))?
+        let res_stream = call_with_retry!(self.client.info_stream_v2(req.clone()))?
             .into_inner()
             .filter_map(|res| async move { res.ok() })
             .map(move |res| (res, pubkey.clone()))
