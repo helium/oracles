@@ -79,6 +79,16 @@ pub enum DeploymentInfo {
     CbrsDeploymentInfo(CbrsDeploymentInfo),
 }
 
+impl DeploymentInfo {
+    pub fn to_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
+    }
+
+    pub fn to_json_pretty(&self) -> serde_json::Result<String> {
+        serde_json::to_string_pretty(self)
+    }
+}
+
 impl From<DeploymentInfoProto> for DeploymentInfo {
     fn from(v: DeploymentInfoProto) -> Self {
         match v {
@@ -311,7 +321,7 @@ impl TryFrom<GatewayInfo> for GatewayInfoProtoV2 {
     }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum DeviceType {
     Cbrs,
     WifiIndoor,

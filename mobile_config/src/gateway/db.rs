@@ -4,12 +4,12 @@ use helium_crypto::PublicKeyBinary;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Row};
 use std::convert::TryFrom;
 
+use crate::gateway::info::DeviceType;
+
 // Postgres enum: device_type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
 #[sqlx(type_name = "device_type")]
-pub enum DeviceType {
-    #[sqlx(rename = "cbrs")]
-    Cbrs,
+pub enum GatewayType {
     #[sqlx(rename = "wifiIndoor")]
     WifiIndoor,
     #[sqlx(rename = "wifiOutdoor")]
@@ -18,18 +18,71 @@ pub enum DeviceType {
     WifiDataOnly,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("invalid device type string")]
+pub struct GatewayTypeParseError;
+
+impl std::fmt::Display for GatewayType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GatewayType::WifiIndoor => write!(f, "wifiIndoor"),
+            GatewayType::WifiOutdoor => write!(f, "wifiOutdoor"),
+            GatewayType::WifiDataOnly => write!(f, "wifiDataOnly"),
+        }
+    }
+}
+
+impl std::str::FromStr for GatewayType {
+    type Err = GatewayTypeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let result = match s {
+            "wifiIndoor" => Self::WifiIndoor,
+            "wifiOutdoor" => Self::WifiOutdoor,
+            "wifiDataOnly" => Self::WifiDataOnly,
+            _ => return Err(GatewayTypeParseError),
+        };
+        Ok(result)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum GatewayTypeError {
+    #[error("CBRS gateways are not supported in the Gateway table")]
+    CbrsUnsupported,
+}
+
+impl TryFrom<DeviceType> for GatewayType {
+    type Error = GatewayTypeError;
+
+    fn try_from(dt: DeviceType) -> Result<Self, Self::Error> {
+        match dt {
+            DeviceType::Cbrs => Err(GatewayTypeError::CbrsUnsupported),
+            DeviceType::WifiIndoor => Ok(GatewayType::WifiIndoor),
+            DeviceType::WifiOutdoor => Ok(GatewayType::WifiOutdoor),
+            DeviceType::WifiDataOnly => Ok(GatewayType::WifiDataOnly),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Gateway {
     pub address: PublicKeyBinary,
-    pub device_type: DeviceType,
+    pub gateway_type: GatewayType,
+    // When the record was first created from metadata DB
     pub created_at: DateTime<Utc>,
+    // When record was last updated
     pub updated_at: DateTime<Utc>,
+    // When record was last updated from metadata DB (could be set to now if no metadata DB info)
     pub refreshed_at: DateTime<Utc>,
+    // When location or hash last changed, set to refreshed_at (updated via SQL query see Gateway::insert)
+    pub last_changed_at: DateTime<Utc>,
+    pub hash: String,
     pub antenna: Option<u32>,
     pub elevation: Option<u32>,
     pub azimuth: Option<u32>,
-    pub radio_id: Option<String>,
     pub location: Option<u64>,
+    // When location last changed, set to refreshed_at (updated via SQL query see Gateway::insert)
     pub location_changed_at: Option<DateTime<Utc>>,
     pub location_asserts: Option<u32>,
 }
@@ -40,11 +93,13 @@ impl Gateway {
             r#"
             INSERT INTO gateways (
                 address,
-                device_type,
+                gateway_type,
                 created_at,
                 updated_at,
                 refreshed_at,
-                antena,
+                last_changed_at,
+                hash,
+                antenna,
                 elevation,
                 azimuth,
                 radio_id,
@@ -53,31 +108,41 @@ impl Gateway {
                 location_asserts
             )
             VALUES (
-                $1, $2, $3, $4, $5,
-                $6, $7, $8, $9, $10, $11, $12
+                $1, $2, $3, $4, $5, $6, $7,
+                $8, $9, $10, $11, $12, $13, $14
             )
             ON CONFLICT (address)
             DO UPDATE SET
                 updated_at = EXCLUDED.updated_at,
                 refreshed_at = EXCLUDED.refreshed_at,
-                antena = EXCLUDED.antena,
+                last_changed_at = CASE
+                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location
+                        OR gateways.hash IS DISTINCT FROM EXCLUDED.hash
+                    THEN EXCLUDED.refreshed_at
+                    ELSE gateways.last_changed_at
+                END,
+                hash = EXCLUDED.hash,
+                antenna = EXCLUDED.antenna,
                 elevation = EXCLUDED.elevation,
                 azimuth = EXCLUDED.azimuth,
                 radio_id = EXCLUDED.radio_id,
                 location = EXCLUDED.location,
-                location_changed_at = EXCLUDED.location_changed_at,
+                location_changed_at = CASE
+                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location
+                    THEN EXCLUDED.refreshed_at
+                    ELSE gateways.location_changed_at
+                END,
                 location_asserts = EXCLUDED.location_asserts
             "#,
         )
         .bind(self.address.as_ref())
-        .bind(self.device_type)
+        .bind(self.gateway_type)
         .bind(self.created_at)
         .bind(self.updated_at)
         .bind(self.refreshed_at)
         .bind(self.antenna.map(|v| v as i64))
         .bind(self.elevation.map(|v| v as i64))
         .bind(self.azimuth.map(|v| v as i64))
-        .bind(&self.radio_id)
         .bind(self.location.map(|v| v as i64))
         .bind(self.location_changed_at)
         .bind(self.location_asserts.map(|v| v as i64))
@@ -87,25 +152,24 @@ impl Gateway {
         Ok(())
     }
 
-    pub fn stream_gateways(pool: &PgPool) -> impl Stream<Item = Result<Gateway, sqlx::Error>> + '_ {
-        sqlx::query_as::<_, Gateway>(
+    pub fn stream_gateways(pool: &PgPool) -> impl Stream<Item = Result<Self, sqlx::Error>> + '_ {
+        sqlx::query_as::<_, Self>(
             r#"
-        SELECT
-            address,
-            device_type,
-            created_at,
-            updated_at,
-            refreshed_at,
-            antenna,
-            elevation,
-            azimuth,
-            radio_id,
-            location,
-            location_changed_at,
-            location_asserts
-        FROM gateways
-        ORDER BY address
-        "#,
+                SELECT
+                    address,
+                    gateway_type,
+                    created_at,
+                    updated_at,
+                    refreshed_at,
+                    antenna,
+                    elevation,
+                    azimuth,
+                    location,
+                    location_changed_at,
+                    location_asserts
+                FROM gateways
+                ORDER BY address
+            "#,
         )
         .fetch(pool)
     }
@@ -120,14 +184,15 @@ impl FromRow<'_, PgRow> for Gateway {
         Ok(Self {
             address: PublicKeyBinary::try_from(row.try_get::<Vec<u8>, _>("address")?)
                 .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
-            device_type: row.try_get("device_type")?,
+            gateway_type: row.try_get("gateway_type")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
             refreshed_at: row.try_get("refreshed_at")?,
-            antenna: to_u32(row.try_get::<Option<i64>, _>("antena")?),
+            last_changed_at: row.try_get("last_changed_at")?,
+            hash: row.try_get::<String, _>("hash")?,
+            antenna: to_u32(row.try_get::<Option<i64>, _>("antenna")?),
             elevation: to_u32(row.try_get::<Option<i64>, _>("elevation")?),
             azimuth: to_u32(row.try_get::<Option<i64>, _>("azimuth")?),
-            radio_id: row.try_get::<Option<String>, _>("radio_id")?,
             location: to_u64(row.try_get::<Option<i64>, _>("location")?),
             location_changed_at: row.try_get::<Option<DateTime<Utc>>, _>("location_changed_at")?,
             location_asserts: to_u32(row.try_get::<Option<i64>, _>("location_asserts")?),
