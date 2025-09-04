@@ -170,7 +170,7 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
             OFFLOAD_USER_COUNT,
             SERVICE_PROVIDER_TRANSFER_BYTES,
             OFFLOAD_TRANSFER_BYTES,
-            vec![radio_usage_carrier_info.clone()],
+            vec![radio_usage_carrier_info],
         )
         .await;
 
