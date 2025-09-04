@@ -4,7 +4,7 @@ use helium_crypto::PublicKeyBinary;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Row};
 use std::convert::TryFrom;
 
-use crate::gateway::info::DeviceType;
+use crate::gateway::service::info::DeviceType;
 
 // Postgres enum: device_type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
