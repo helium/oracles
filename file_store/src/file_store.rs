@@ -31,7 +31,6 @@ impl FileStore {
             access_key_id,
             secret_access_key,
             region,
-            credentials_load_timeout,
         } = settings.clone();
         Self::new(
             bucket,
@@ -39,7 +38,6 @@ impl FileStore {
             Some(region),
             None,
             None,
-            Some(credentials_load_timeout),
             access_key_id,
             secret_access_key,
         )
@@ -53,7 +51,6 @@ impl FileStore {
         region: Option<String>,
         timeout_config: Option<TimeoutConfig>,
         retry_config: Option<RetryConfig>,
-        credentials_load_timeout: Option<Duration>,
         _access_key_id: Option<String>,
         _secret_access_key: Option<String>,
     ) -> Result<Self> {
@@ -255,39 +252,4 @@ where
         .map_err(Error::s3_error)
         .fuse()
         .await
-}
-
-#[cfg(feature = "local")]
-async fn set_credentials_provider(
-    config: aws_config::ConfigLoader,
-    access_key: Option<String>,
-    secret_access_key: Option<String>,
-    load_timeout: Duration,
-) -> aws_config::ConfigLoader {
-    match (access_key, secret_access_key) {
-        (Some(ak), Some(sak)) => config.credentials_provider(
-            aws_types::credentials::Credentials::from_keys(ak, sak, None),
-        ),
-        _ => config.credentials_provider(
-            DefaultCredentialsChain::builder()
-                .load_timeout(load_timeout)
-                .build()
-                .await,
-        ),
-    }
-}
-
-#[cfg(not(feature = "local"))]
-async fn set_credentials_provider(
-    config: aws_config::ConfigLoader,
-    _access_key: Option<String>,
-    _secrect_access_key: Option<String>,
-    load_timeout: Duration,
-) -> aws_config::ConfigLoader {
-    config.credentials_provider(
-        DefaultCredentialsChain::builder()
-            .load_timeout(load_timeout)
-            .build()
-            .await,
-    )
 }

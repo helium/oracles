@@ -65,7 +65,6 @@ impl AwsLocal {
             bucket: bucket.into(),
             endpoint: Some(endpoint.into()),
             region: "us-east-1".into(),
-            credentials_load_timeout: std::time::Duration::from_secs(30),
             access_key_id: Some("random".into()),
             secret_access_key: Some("random2".into()),
         };
