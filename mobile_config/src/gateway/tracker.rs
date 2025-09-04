@@ -1,4 +1,7 @@
+use crate::gateway::{self, metadata_db::MobileHotspotInfo};
 use futures::TryFutureExt;
+use futures_util::TryStreamExt;
+use solana::helium_lib::anchor_spl::token::spl_token::error;
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 use task_manager::ManagedTask;
@@ -41,9 +44,9 @@ impl Tracker {
                 biased;
                 _ = &mut shutdown => break,
                 _ = interval.tick() => {
-                    // if let Err(err) = track_changes(&self.pool, &self.metadata).await {
-                    //     tracing::error!(?err, "error in tracking changes to mobile radios");
-                    // }
+                    if let Err(err) = execute(&self.pool, &self.metadata).await {
+                        tracing::error!(?err, "error in tracking changes to mobile radios");
+                    }
                 }
             }
         }
@@ -52,4 +55,17 @@ impl Tracker {
 
         Ok(())
     }
+}
+
+pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow::Result<()> {
+    let mut stream = MobileHotspotInfo::stream(metadata);
+
+    while let Some(mhi) = stream.try_next().await? {
+        if let Some(gateway) = mhi.to_gateway()? {
+            tracing::debug!(?gateway, "inserting gateway from mobile hotspot info");
+            gateway.insert(&pool).await?;
+        }
+    }
+
+    Ok(())
 }
