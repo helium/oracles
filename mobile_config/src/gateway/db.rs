@@ -1,10 +1,9 @@
-use chrono::{DateTime, Utc};
-use futures::Stream;
-use helium_crypto::PublicKeyBinary;
-use sqlx::{postgres::PgRow, FromRow, PgPool, Row};
-use std::convert::TryFrom;
-
 use crate::gateway::service::info::DeviceType;
+use chrono::{DateTime, Utc};
+use futures::{Stream, StreamExt, TryStreamExt};
+use helium_crypto::PublicKeyBinary;
+use sqlx::{postgres::PgRow, FromRow, PgExecutor, PgPool, Row};
+use std::convert::TryFrom;
 
 // Postgres enum: device_type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
@@ -152,26 +151,99 @@ impl Gateway {
         Ok(())
     }
 
-    pub fn stream_gateways(pool: &PgPool) -> impl Stream<Item = Result<Self, sqlx::Error>> + '_ {
-        sqlx::query_as::<_, Self>(
+    pub async fn get_by_address<'e>(
+        db: impl PgExecutor<'e>,
+        address: &PublicKeyBinary,
+    ) -> anyhow::Result<Option<Self>> {
+        let gateway = sqlx::query_as::<_, Self>(
             r#"
-                SELECT
-                    address,
-                    gateway_type,
-                    created_at,
-                    updated_at,
-                    refreshed_at,
-                    antenna,
-                    elevation,
-                    azimuth,
-                    location,
-                    location_changed_at,
-                    location_asserts
-                FROM gateways
-                ORDER BY address
+            SELECT
+                address,
+                gateway_type,
+                created_at,
+                updated_at,
+                refreshed_at,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
+            FROM gateways
+            WHERE address = $1
             "#,
         )
-        .fetch(pool)
+        .bind(address.as_ref())
+        .fetch_optional(db)
+        .await?;
+
+        Ok(gateway)
+    }
+
+    pub fn stream_by_addresses<'a>(
+        db: impl PgExecutor<'a> + 'a,
+        addresses: &[PublicKeyBinary],
+        min_updated_at: DateTime<Utc>,
+    ) -> impl Stream<Item = Self> + 'a {
+        let addr_array: Vec<Vec<u8>> = addresses.iter().map(|a| a.as_ref().to_vec()).collect();
+
+        sqlx::query_as::<_, Self>(
+            r#"
+            SELECT
+                address,
+                gateway_type,
+                created_at,
+                updated_at,
+                refreshed_at,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
+            FROM gateways
+            WHERE address = ANY($1)
+                AND (updated_at >= $2 OR refreshed_at >= $2 OR created_at >= $2)
+            ORDER BY address
+            "#,
+        )
+        .bind(addr_array)
+        .bind(min_updated_at)
+        .fetch(db)
+        .map_err(anyhow::Error::from)
+        .filter_map(|res| async move { res.ok() })
+    }
+
+    pub fn stream_by_types<'a>(
+        db: impl PgExecutor<'a> + 'a,
+        types: Vec<GatewayType>,
+        min_date: DateTime<Utc>,
+    ) -> impl Stream<Item = Self> + 'a {
+        sqlx::query_as::<_, Self>(
+            r#"
+            SELECT
+                address,
+                gateway_type,
+                created_at,
+                updated_at,
+                refreshed_at,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
+            FROM gateways
+            WHERE gateway_type = ANY($1)
+                AND (updated_at >= $2 OR refreshed_at >= $2 OR created_at >= $2)
+            ORDER BY address
+            "#,
+        )
+        .bind(types)
+        .bind(min_date)
+        .fetch(db)
+        .map_err(anyhow::Error::from)
+        .filter_map(|res| async move { res.ok() })
     }
 }
 
