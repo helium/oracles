@@ -1,5 +1,9 @@
+use crate::gateway::{
+    self,
+    db::{Gateway, GatewayType},
+};
 use chrono::{DateTime, TimeZone, Utc};
-use futures::stream::BoxStream;
+use futures::{stream::BoxStream, Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
     gateway_metadata_v2::DeploymentInfo as DeploymentInfoProto,
@@ -10,6 +14,7 @@ use helium_proto::services::mobile_config::{
     WifiDeploymentInfo as WifiDeploymentInfoProto,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::PgExecutor;
 
 pub type GatewayInfoStream = BoxStream<'static, GatewayInfo>;
 
@@ -217,6 +222,36 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
     }
 }
 
+impl From<Gateway> for GatewayInfo {
+    fn from(gateway: Gateway) -> Self {
+        let metadata = if let Some(location) = gateway.location {
+            Some(GatewayMetadata {
+                location,
+                deployment_info: Some(gateway::service::info::DeploymentInfo::WifiDeploymentInfo(
+                    WifiDeploymentInfo {
+                        antenna: gateway.antenna.unwrap_or(0),
+                        elevation: gateway.elevation.unwrap_or(0),
+                        azimuth: gateway.azimuth.unwrap_or(0),
+                        mechanical_down_tilt: 0,
+                        electrical_down_tilt: 0,
+                    },
+                )),
+            })
+        } else {
+            None
+        };
+
+        Self {
+            address: gateway.address,
+            metadata,
+            device_type: gateway.gateway_type.into(),
+            created_at: Some(gateway.created_at),
+            updated_at: Some(gateway.updated_at),
+            refreshed_at: Some(gateway.refreshed_at),
+        }
+    }
+}
+
 impl From<WifiDeploymentInfo> for WifiDeploymentInfoProto {
     fn from(v: WifiDeploymentInfo) -> Self {
         Self {
@@ -340,6 +375,16 @@ impl From<DeviceTypeProto> for DeviceType {
     }
 }
 
+impl From<GatewayType> for DeviceType {
+    fn from(gt: GatewayType) -> Self {
+        match gt {
+            GatewayType::WifiIndoor => DeviceType::WifiIndoor,
+            GatewayType::WifiOutdoor => DeviceType::WifiOutdoor,
+            GatewayType::WifiDataOnly => DeviceType::WifiDataOnly,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("invalid device type string")]
 pub struct DeviceTypeParseError;
@@ -369,197 +414,39 @@ impl std::str::FromStr for DeviceType {
     }
 }
 
-pub(crate) mod db {
-    use crate::gateway::service::info::DeploymentInfo;
+pub async fn get_by_address(
+    db: impl PgExecutor<'_>,
+    pubkey_bin: &PublicKeyBinary,
+) -> anyhow::Result<Option<GatewayInfo>> {
+    let gateway = Gateway::get_by_address(db, pubkey_bin).await?;
+    Ok(gateway.map(|g| g.into()))
+}
 
-    use super::{DeviceType, GatewayInfo, GatewayMetadata};
-    use chrono::{DateTime, Utc};
-    use futures::{
-        stream::{Stream, StreamExt},
-        TryStreamExt,
+pub fn stream_by_addresses<'a>(
+    db: impl PgExecutor<'a> + 'a,
+    addresses: &'a [PublicKeyBinary],
+    min_updated_at: DateTime<Utc>,
+) -> anyhow::Result<impl Stream<Item = GatewayInfo> + 'a> {
+    Ok(Gateway::stream_by_addresses(db, addresses, min_updated_at).map(|gateway| gateway.into()))
+}
+
+pub fn stream_by_types<'a>(
+    db: impl PgExecutor<'a> + 'a,
+    types: &'a [DeviceType],
+    min_date: DateTime<Utc>,
+) -> anyhow::Result<impl Stream<Item = GatewayInfo> + 'a> {
+    let gateway_types = if types.is_empty() {
+        vec![
+            GatewayType::WifiIndoor,
+            GatewayType::WifiOutdoor,
+            GatewayType::WifiDataOnly,
+        ]
+    } else {
+        types
+            .iter()
+            .filter_map(|t| t.clone().try_into().ok())
+            .collect::<Vec<GatewayType>>()
     };
-    use helium_crypto::PublicKeyBinary;
-    use sqlx::{types::Json, PgExecutor, Row};
-    use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
-    const GET_METADATA_SQL: &str = r#"
-            select kta.entity_key, infos.location::bigint, infos.device_type,
-                infos.refreshed_at, infos.created_at, infos.deployment_info
-            from mobile_hotspot_infos infos
-            join key_to_assets kta on infos.asset = kta.asset
-        "#;
-    const BATCH_SQL_WHERE_SNIPPET: &str = " where kta.entity_key = any($1::bytea[]) ";
-    const DEVICE_TYPES_WHERE_SNIPPET: &str = " where device_type::text = any($1) ";
-
-    const GET_UPDATED_RADIOS: &str =
-        "SELECT entity_key, last_changed_at FROM mobile_radio_tracker WHERE last_changed_at >= $1";
-
-    const GET_UPDATED_AT: &str =
-        "SELECT last_changed_at FROM mobile_radio_tracker WHERE entity_key = $1";
-
-    const GET_TRACKED_RADIOS_SQL: &str =
-        "SELECT entity_key, last_changed_at FROM mobile_radio_tracker where entity_key = any($1::bytea[])";
-
-    static BATCH_METADATA_SQL: LazyLock<String> =
-        LazyLock::new(|| format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}"));
-    static DEVICE_TYPES_METADATA_SQL: LazyLock<String> =
-        LazyLock::new(|| format!("{GET_METADATA_SQL} {DEVICE_TYPES_WHERE_SNIPPET}"));
-
-    pub async fn get_batch_tracked_radios(
-        db: impl PgExecutor<'_>,
-        addresses: &[PublicKeyBinary],
-    ) -> anyhow::Result<HashMap<PublicKeyBinary, DateTime<Utc>>> {
-        let entity_keys = addresses
-            .iter()
-            .map(|address| bs58::decode(address.to_string()).into_vec())
-            .collect::<Result<Vec<_>, bs58::decode::Error>>()?;
-
-        sqlx::query(GET_TRACKED_RADIOS_SQL)
-            .bind(entity_keys)
-            .fetch(db)
-            .map_err(anyhow::Error::from)
-            .try_fold(
-                HashMap::new(),
-                |mut map: HashMap<PublicKeyBinary, DateTime<Utc>>, row| async move {
-                    let entity_key_b = row.get::<&[u8], &str>("entity_key");
-                    let entity_key = bs58::encode(entity_key_b).into_string();
-                    let updated_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
-                    map.insert(PublicKeyBinary::from_str(&entity_key)?, updated_at);
-                    Ok(map)
-                },
-            )
-            .await
-    }
-
-    pub async fn get_updated_radios(
-        db: impl PgExecutor<'_>,
-        min_updated_at: DateTime<Utc>,
-    ) -> anyhow::Result<HashMap<PublicKeyBinary, DateTime<Utc>>> {
-        sqlx::query(GET_UPDATED_RADIOS)
-            .bind(min_updated_at)
-            .fetch(db)
-            .map_err(anyhow::Error::from)
-            .try_fold(
-                HashMap::new(),
-                |mut map: HashMap<PublicKeyBinary, DateTime<Utc>>, row| async move {
-                    let entity_key_b = row.get::<&[u8], &str>("entity_key");
-                    let entity_key = bs58::encode(entity_key_b).into_string();
-                    let updated_at = row.get::<DateTime<Utc>, &str>("last_changed_at");
-                    map.insert(PublicKeyBinary::from_str(&entity_key)?, updated_at);
-                    Ok(map)
-                },
-            )
-            .await
-    }
-
-    pub async fn get_updated_at(
-        db: impl PgExecutor<'_>,
-        address: &PublicKeyBinary,
-    ) -> anyhow::Result<Option<DateTime<Utc>>> {
-        let entity_key = bs58::decode(address.to_string()).into_vec()?;
-        sqlx::query_scalar(GET_UPDATED_AT)
-            .bind(entity_key)
-            .fetch_optional(db)
-            .await
-            .map_err(anyhow::Error::from)
-    }
-
-    pub async fn get_info(
-        db: impl PgExecutor<'_>,
-        address: &PublicKeyBinary,
-    ) -> anyhow::Result<Option<GatewayInfo>> {
-        let entity_key = bs58::decode(address.to_string()).into_vec()?;
-        let mut query: sqlx::QueryBuilder<sqlx::Postgres> =
-            sqlx::QueryBuilder::new(GET_METADATA_SQL);
-        query.push(" where kta.entity_key = $1 ");
-        Ok(query
-            .build_query_as::<GatewayInfo>()
-            .bind(entity_key)
-            .fetch_optional(db)
-            .await?)
-    }
-
-    pub fn batch_info_stream<'a>(
-        db: impl PgExecutor<'a> + 'a,
-        addresses: &'a [PublicKeyBinary],
-    ) -> anyhow::Result<impl Stream<Item = GatewayInfo> + 'a> {
-        let entity_keys = addresses
-            .iter()
-            .map(|address| bs58::decode(address.to_string()).into_vec())
-            .collect::<Result<Vec<_>, bs58::decode::Error>>()?;
-        Ok(sqlx::query_as::<_, GatewayInfo>(&BATCH_METADATA_SQL)
-            .bind(entity_keys)
-            .fetch(db)
-            .filter_map(|metadata| async move { metadata.ok() })
-            .boxed())
-    }
-
-    pub fn all_info_stream<'a>(
-        db: impl PgExecutor<'a> + 'a,
-        device_types: &'a [DeviceType],
-    ) -> impl Stream<Item = GatewayInfo> + 'a {
-        match device_types.is_empty() {
-            true => sqlx::query_as::<_, GatewayInfo>(GET_METADATA_SQL)
-                .fetch(db)
-                .filter_map(|metadata| async move { metadata.ok() })
-                .boxed(),
-            false => sqlx::query_as::<_, GatewayInfo>(&DEVICE_TYPES_METADATA_SQL)
-                .bind(
-                    device_types
-                        .iter()
-                        // The device_types field has a jsonb type but is being used as a string,
-                        // which forces us to add quotes.
-                        .map(|v| format!("\"{v}\""))
-                        .collect::<Vec<_>>(),
-                )
-                .fetch(db)
-                .filter_map(|metadata| async move { metadata.ok() })
-                .boxed(),
-        }
-    }
-
-    impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {
-        fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-            let deployment_info =
-                match row.try_get::<Option<Json<DeploymentInfo>>, &str>("deployment_info") {
-                    Ok(di) => di.map(|v| v.0),
-                    // We shouldn't fail if an error occurs in this case.
-                    // This is because the data in this column could be inconsistent,
-                    // and we don't want to break backward compatibility.
-                    Err(_e) => None,
-                };
-
-            // If location field is None, GatewayMetadata also is None, even if deployment_info is present.
-            // Because "location" is mandatory field
-            let metadata = row
-                .get::<Option<i64>, &str>("location")
-                .map(|loc| GatewayMetadata {
-                    location: loc as u64,
-                    deployment_info,
-                });
-
-            let device_type = DeviceType::from_str(
-                row.get::<Json<String>, &str>("device_type")
-                    .to_string()
-                    .as_ref(),
-            )
-            .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
-            let created_at = row.get::<DateTime<Utc>, &str>("created_at");
-            let refreshed_at = row.get::<Option<DateTime<Utc>>, &str>("refreshed_at");
-
-            Ok(Self {
-                address: PublicKeyBinary::from_str(
-                    &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
-                )
-                .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
-                metadata,
-                device_type,
-                created_at: Some(created_at),
-                refreshed_at,
-                // The updated_at field should be determined by considering the last_changed_at
-                // value from the mobile_radio_tracker table.
-                updated_at: None,
-            })
-        }
-    }
+    Ok(Gateway::stream_by_types(db, gateway_types, min_date).map(|gateway| gateway.into()))
 }
