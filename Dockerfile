@@ -2,7 +2,8 @@
 FROM rust:bookworm AS base
 
 RUN apt-get update && apt-get install -y \
-    protobuf-compiler
+    protobuf-compiler \
+    cmake
 
 # BUILDER
 FROM base AS builder
@@ -21,8 +22,7 @@ FROM debian:bookworm-slim AS runner
 
 RUN apt-get update && apt-get install -y \
     libssl-dev \
-    ca-certificates \
-    cmake
+    ca-certificates
 
 ARG PACKAGE
 
