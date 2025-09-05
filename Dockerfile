@@ -21,7 +21,8 @@ FROM debian:bookworm-slim AS runner
 
 RUN apt-get update && apt-get install -y \
     libssl-dev \
-    ca-certificates
+    ca-certificates \
+    cmake
 
 ARG PACKAGE
 
