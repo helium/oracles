@@ -13,7 +13,7 @@ COPY . .
 RUN cargo fetch
 
 ARG PACKAGE
-RUN cargo build --release -p ${PACKAGE}
+RUN AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --release -p ${PACKAGE}
 
 
 # RUNNER
