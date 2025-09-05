@@ -18,6 +18,7 @@ env:
   RUST_BACKTRACE: short
   RUSTFLAGS: "-D warnings"
   RUSTUP_MAX_RETRIES: 10
+  AWS_LC_SYS_CMAKE_BUILDER: 1
 
 jobs:
 
@@ -229,7 +230,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Release
-        run: AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --all --release
+        run: cargo build --all --release
 
       - name: Debian packaging
         env:
