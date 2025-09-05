@@ -1,0 +1,5 @@
+# Threshold increased to avoid tonic Result lint errors.
+# Possibly to remove after bumping tonic version.
+# https://github.com/hyperium/tonic/issues/2253
+# Limit is 1 byte larger than the warning generated (176 bytes)
+large-error-threshold = 177

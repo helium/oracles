@@ -1,5 +1,5 @@
-use helium_proto::services::Body;
-use http::request::Request;
+use http::Request;
+use tonic::body::Body;
 use tower_http::{
     classify::{GrpcErrorsAsFailures, SharedClassifier},
     trace::{DefaultOnFailure, DefaultOnResponse, TraceLayer},

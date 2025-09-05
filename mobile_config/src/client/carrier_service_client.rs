@@ -3,12 +3,10 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
-use helium_proto::{
-    services::{mobile_config, Channel},
-    Message, ServiceProvider, ServiceProviderPromotions,
-};
+use helium_proto::{services::mobile_config, Message, ServiceProvider, ServiceProviderPromotions};
 use retainer::Cache;
 use std::{str::FromStr, sync::Arc, time::Duration};
+use tonic::transport::Channel;
 #[async_trait]
 pub trait CarrierServiceVerifier: Send + Sync + 'static {
     async fn payer_key_to_service_provider(

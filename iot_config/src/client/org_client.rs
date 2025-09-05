@@ -44,7 +44,7 @@ impl Orgs for OrgClient {
         tracing::debug!(%oui, "retrieving org");
 
         let req = OrgGetReqV1 { oui };
-        let res = call_with_retry!(self.client.get(req.clone()))?.into_inner();
+        let res = call_with_retry!(self.client.get(req))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(res)
     }

@@ -344,13 +344,13 @@ async fn remove_constraint_update(
             remove_helium_constraints(oui, &[removed_constraint], &mut **db).await?;
             Ok(())
         } else if org_constraints.len() == 1 {
-            return Err(OrgStoreError::InvalidUpdate(
+            Err(OrgStoreError::InvalidUpdate(
                 "org must have at least one constraint range".to_string(),
-            ));
+            ))
         } else {
-            return Err(OrgStoreError::InvalidUpdate(
+            Err(OrgStoreError::InvalidUpdate(
                 "cannot remove constraint leased by other org".to_string(),
-            ));
+            ))
         }
     } else {
         Err(OrgStoreError::InvalidUpdate(
