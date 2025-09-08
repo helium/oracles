@@ -24,7 +24,6 @@ use mobile_verifier::{
     heartbeats::{
         last_location::LocationCache, Heartbeat, HeartbeatReward, KeyType, ValidatedHeartbeat,
     },
-    radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
@@ -823,10 +822,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &boosted_hexes,
-        &BoostedHexEligibility::new(
-            VerifiedRadioThresholds::default(),
-            unique_connections.clone(),
-        ),
+        &BoostedHexEligibility::new(unique_connections.clone()),
         &BannedRadios::default(),
         &unique_connections,
         &reward_period,

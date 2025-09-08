@@ -3,7 +3,7 @@ use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
-    radio_threshold, resolve_subdao_pubkey,
+    resolve_subdao_pubkey,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
@@ -465,10 +465,7 @@ async fn reward_poc(
 
     let unique_connections = unique_connections::db::get(pool, &reward_info.epoch_period).await?;
 
-    let boosted_hex_eligibility = BoostedHexEligibility::new(
-        radio_threshold::verified_radio_thresholds(pool, &reward_info.epoch_period).await?,
-        unique_connections.clone(),
-    );
+    let boosted_hex_eligibility = BoostedHexEligibility::new(unique_connections.clone());
 
     let banned_radios = banning::BannedRadios::new(pool, reward_info.epoch_period.end).await?;
 
