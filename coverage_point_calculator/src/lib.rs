@@ -445,8 +445,12 @@ mod tests {
 
         // Radio without enough connections is not eligible for boosted hexes.
         // Boost from hex is not applied, radio receives base points.
-        let insufficient_connections_wifi = calculate_wifi(SPBoostedRewardEligibility::NotEnoughConnections);
-        assert_eq!(base_points, insufficient_connections_wifi.coverage_points_v1());
+        let insufficient_connections_wifi =
+            calculate_wifi(SPBoostedRewardEligibility::NotEnoughConnections);
+        assert_eq!(
+            base_points,
+            insufficient_connections_wifi.coverage_points_v1()
+        );
     }
 
     #[test]
