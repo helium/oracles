@@ -22,12 +22,6 @@ pub(crate) const MAX_AVERAGE_DISTANCE: Decimal = dec!(50);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SPBoostedRewardEligibility {
     Eligible,
-    /// Radio must pass at least 1mb of data from 3 unique phones.
-    ///
-    /// [HIP-84: Provider Hex Boosting][provider-boosting]
-    ///
-    /// [provider-boosting]: https://github.com/helium/HIP/blob/main/0084-service-provider-hex-boosting.md
-    RadioThresholdNotMet,
     /// Radio must have greather than 25 unique connections over 7 days
     ///
     /// [HIP-140: Adjust Service Provider Boost Qualifiers][adjust-service-provider-boost-qualifiers]
