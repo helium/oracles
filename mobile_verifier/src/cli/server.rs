@@ -7,7 +7,6 @@ use crate::{
     data_session::DataSessionIngestor,
     geofence::Geofence,
     heartbeats::wifi::WifiHeartbeatDaemon,
-    radio_threshold::RadioThresholdIngestor,
     rewarder::Rewarder,
     speedtests::SpeedtestDaemon,
     subscriber_mapping_activity::SubscriberMappingActivityDaemon,
@@ -151,16 +150,6 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     new_coverage_obj_notification,
-                )
-                .await?,
-            )
-            .add_task(
-                RadioThresholdIngestor::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    file_upload.clone(),
-                    report_ingest.clone(),
-                    auth_client.clone(),
                 )
                 .await?,
             )

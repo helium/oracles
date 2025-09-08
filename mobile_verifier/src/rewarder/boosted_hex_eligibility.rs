@@ -35,7 +35,6 @@ impl BoostedHexEligibility {
         }
     }
 
-
     fn in_united_states(covered_hexes: &[UnrankedCoverage]) -> bool {
         covered_hexes
             .iter()
@@ -87,7 +86,6 @@ mod tests {
 
         assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
     }
-
 
     #[test]
     fn not_enough_connections() {
