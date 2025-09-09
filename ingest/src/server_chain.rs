@@ -170,7 +170,7 @@ impl IntoReport for IotHotspotUpdateReqV1 {
     fn into_report(self, received_timestamp_ms: u64) -> Self::Out {
         IotHotspotUpdateReportV1 {
             received_timestamp_ms,
-            update: Some(self),
+            report: Some(self),
         }
     }
 }
