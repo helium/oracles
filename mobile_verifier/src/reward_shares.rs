@@ -540,7 +540,7 @@ impl CoverageShares {
 #[derive(Debug, Clone, Copy)]
 pub struct DataTransferAndPocAllocatedRewardBuckets {
     pub data_transfer: Decimal,
-    pub poc: Decimal,
+    poc: Decimal,
 }
 
 impl DataTransferAndPocAllocatedRewardBuckets {

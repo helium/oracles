@@ -706,10 +706,7 @@ async fn test_reward_poc_with_zero_poc_allocation(pool: PgPool) -> anyhow::Resul
     let hex_boosting_client = MockHexBoostingClient::new(vec![]);
 
     // Create reward shares with zero POC allocation
-    let reward_shares = DataTransferAndPocAllocatedRewardBuckets {
-        data_transfer: dec!(1000000), // some data transfer rewards
-        poc: dec!(0),                 // explicitly set POC to zero
-    };
+    let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(dec!(1000000));
 
     // Test the reward_poc function directly with zero POC allocation
     let (unallocated_amount, _calculated_shares) = rewarder::reward_poc(
