@@ -1026,14 +1026,14 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
 
     // Constrain distances by only moving vertically
     let near_latlng = LatLng::new(40.0194278140, -105.272)?; // 35m
-    let med_latlng = LatLng::new(40.0194278140, -105.274)?; // 205m
+    let med_latlng = LatLng::new(40.0194278140, -105.276)?; // 350m
     let far_latlng = LatLng::new(40.0194278140, -105.3)?; // 2,419m
     let past_latlng = LatLng::new(40.0194278140, 105.2715848904)?; // 10,591,975m
 
     // It's easy to gloss over floats, let make sure the distances are within the ranges we expect.
-    assert!((0.0..=200.0).contains(&covered_latlng.distance_m(near_latlng))); // Indoor low distance <= 200
-    assert!((200.0..=300.0).contains(&covered_latlng.distance_m(med_latlng))); // Indoor Medium distance <= 300
-    assert!(covered_latlng.distance_m(far_latlng) > 300.0); // Indoor Over Distance => 300
+    assert!((0.0..=300.0).contains(&covered_latlng.distance_m(near_latlng))); // Indoor low distance <= 300
+    assert!((300.0..=400.0).contains(&covered_latlng.distance_m(med_latlng))); // Indoor Medium distance <= 400
+    assert!(covered_latlng.distance_m(far_latlng) > 400.0); // Indoor Over Distance => 400
     assert!(covered_latlng.distance_m(past_latlng) > max_covered_distance as f64); // Indoor past max distance => max_distance
 
     let low_dist_validated = validate(near_latlng).await?;
