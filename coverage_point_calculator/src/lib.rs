@@ -21,7 +21,6 @@
 //!   - [HIP-105][hex-limits]
 //!
 //! - [CoveredHex::boosted_multiplier]
-//!   - must meet minimum subscriber thresholds [HIP-84][provider-boosting]
 //!   - Wifi Location trust score >0.75 for boosted hex eligibility [HIP-93][wifi-aps]
 //!
 //! - [CoveragePoints::location_trust_multiplier]
@@ -49,7 +48,6 @@
 //!   - If a Hex is boosted by a Provider, the Oracle Assignment multiplier is automatically 1x.
 //!
 //! - [SPBoostedRewardEligibility]
-//!   - Radio must pass at least 1mb of data from 3 unique phones [HIP-84][provider-boosting]
 //!   - Radio must serve >25 unique connections on a rolling 7-day window [HIP-140][sp-boost-qualifiers]
 //!   - [@deprecated] Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
@@ -247,7 +245,6 @@ impl CoveragePoints {
             SpBoostedHexStatus::Eligible => self.coverage_points.boosted,
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
             SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
-            SpBoostedHexStatus::RadioThresholdNotMet => dec!(0),
             SpBoostedHexStatus::NotEnoughConnections => dec!(0),
         }
     }
@@ -265,7 +262,6 @@ pub enum SpBoostedHexStatus {
     Eligible,
     WifiLocationScoreBelowThreshold(Decimal),
     AverageAssertedDistanceOverLimit(Decimal),
-    RadioThresholdNotMet,
     NotEnoughConnections,
 }
 
@@ -276,8 +272,6 @@ impl SpBoostedHexStatus {
         service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     ) -> Result<Self> {
         match service_provider_boosted_reward_eligibility {
-            // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
-            SPBoostedRewardEligibility::RadioThresholdNotMet => Ok(Self::RadioThresholdNotMet),
             // hip-140: radio must have enough unique connections
             SPBoostedRewardEligibility::NotEnoughConnections => Ok(Self::NotEnoughConnections),
             SPBoostedRewardEligibility::Eligible => {
@@ -418,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn hip_84_radio_meets_minimum_subscriber_threshold_for_boosted_hexes() {
+    fn hip_84_radio_eligible_for_boosted_hexes() {
         let calculate_wifi = |eligibility: SPBoostedRewardEligibility| {
             CoveragePoints::new(
                 RadioType::IndoorWifi,
@@ -442,15 +436,19 @@ mod tests {
             .base_coverage_points(&SignalLevel::High)
             .unwrap();
 
-        // Radio meeting the threshold is eligible for boosted hexes.
+        // Radio that is eligible receives boosted hex rewards.
         // Boosted hex provides radio with more than base_points.
-        let verified_wifi = calculate_wifi(SPBoostedRewardEligibility::Eligible);
-        assert_eq!(base_points * dec!(5), verified_wifi.coverage_points_v1());
+        let eligible_wifi = calculate_wifi(SPBoostedRewardEligibility::Eligible);
+        assert_eq!(base_points * dec!(5), eligible_wifi.coverage_points_v1());
 
-        // Radio not meeting the threshold is not eligible for boosted hexes.
+        // Radio without enough connections is not eligible for boosted hexes.
         // Boost from hex is not applied, radio receives base points.
-        let unverified_wifi = calculate_wifi(SPBoostedRewardEligibility::RadioThresholdNotMet);
-        assert_eq!(base_points, unverified_wifi.coverage_points_v1());
+        let insufficient_connections_wifi =
+            calculate_wifi(SPBoostedRewardEligibility::NotEnoughConnections);
+        assert_eq!(
+            base_points,
+            insufficient_connections_wifi.coverage_points_v1()
+        );
     }
 
     #[test]

@@ -202,10 +202,10 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn test_poc_boosted_hexes_thresholds_not_met(pool: PgPool) -> anyhow::Result<()> {
-    // this is the same setup as the previous one, but with the hotspot thresholds not seeded
-    // this simulates the case where we have radios in boosted hexes but where the coverage
-    // thresholds for the radios have not been met
+async fn test_poc_boosted_hexes_unique_connections_not_seeded(pool: PgPool) -> anyhow::Result<()> {
+    // this is the same setup as the previous one, but with unique connections data not seeded
+    // this simulates the case where we have US radios in boosted hexes but where the unique
+    // connections requirement has not been met (HIP-140)
     // the end result is that no boosting takes place, the radios are awarded non boosted reward values
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
     let now = Utc::now();
