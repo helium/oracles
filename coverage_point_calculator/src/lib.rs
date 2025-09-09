@@ -21,7 +21,6 @@
 //!   - [HIP-105][hex-limits]
 //!
 //! - [CoveredHex::boosted_multiplier]
-//!   - must meet minimum subscriber thresholds [HIP-84][provider-boosting]
 //!   - Wifi Location trust score >0.75 for boosted hex eligibility [HIP-93][wifi-aps]
 //!
 //! - [CoveragePoints::location_trust_multiplier]
@@ -49,7 +48,6 @@
 //!   - If a Hex is boosted by a Provider, the Oracle Assignment multiplier is automatically 1x.
 //!
 //! - [SPBoostedRewardEligibility]
-//!   - Radio must pass at least 1mb of data from 3 unique phones [HIP-84][provider-boosting]
 //!   - Radio must serve >25 unique connections on a rolling 7-day window [HIP-140][sp-boost-qualifiers]
 //!   - [@deprecated] Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
