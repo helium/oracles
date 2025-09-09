@@ -1,8 +1,5 @@
 use crate::{
-    gateway::service::{
-        info::DeviceType,
-        info_v3::{db::get_mobile_tracker_gateways_info, DeviceTypeV2},
-    },
+    gateway::service::{info::DeviceType, info_v3::DeviceTypeV2},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -304,9 +301,7 @@ impl mobile_config::Gateway for GatewayService {
             let min_updated_at = Utc
                 .timestamp_opt(request.min_updated_at as i64, 0)
                 .single()
-                .ok_or(Status::invalid_argument(
-                    "Invalid min_refreshed_at argument",
-                ))?;
+                .ok_or(Status::invalid_argument("Invalid min_updated_at argument"))?;
 
             let stream =
                 info::stream_by_types(&mobile_config_db_pool, &device_types, min_updated_at)?;
@@ -328,7 +323,6 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        let metadata_db_pool = self.metadata_pool.clone();
         let mobile_config_db_pool = self.mobile_config_db_pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
@@ -357,17 +351,12 @@ impl mobile_config::Gateway for GatewayService {
                 )
             };
 
-            let mobile_tracker_gateways_info = get_mobile_tracker_gateways_info(
+            let stream = info_v3::stream_by_types(
                 &mobile_config_db_pool,
+                &device_types,
                 min_updated_at,
                 min_location_changed_at,
-            )
-            .await?;
-            let stream = info_v3::db::all_info_stream_v3(
-                &metadata_db_pool,
-                &device_types,
-                &mobile_tracker_gateways_info,
-            );
+            )?;
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
