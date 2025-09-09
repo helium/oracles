@@ -448,5 +448,5 @@ pub fn stream_by_types<'a>(
             .collect::<Vec<GatewayType>>()
     };
 
-    Ok(Gateway::stream_by_types(db, gateway_types, min_date).map(|gateway| gateway.into()))
+    Ok(Gateway::stream_by_types(db, gateway_types, min_date, None).map(|gateway| gateway.into()))
 }

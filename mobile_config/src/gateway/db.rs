@@ -1,4 +1,4 @@
-use crate::gateway::service::info::DeviceType;
+use crate::gateway::service::{info::DeviceType, info_v3::DeviceTypeV2};
 use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -60,6 +60,16 @@ impl TryFrom<DeviceType> for GatewayType {
             DeviceType::WifiIndoor => Ok(GatewayType::WifiIndoor),
             DeviceType::WifiOutdoor => Ok(GatewayType::WifiOutdoor),
             DeviceType::WifiDataOnly => Ok(GatewayType::WifiDataOnly),
+        }
+    }
+}
+
+impl From<DeviceTypeV2> for GatewayType {
+    fn from(dt: DeviceTypeV2) -> Self {
+        match dt {
+            DeviceTypeV2::Indoor => GatewayType::WifiIndoor,
+            DeviceTypeV2::Outdoor => GatewayType::WifiOutdoor,
+            DeviceTypeV2::DataOnly => GatewayType::WifiDataOnly,
         }
     }
 }
@@ -218,29 +228,34 @@ impl Gateway {
         db: impl PgExecutor<'a> + 'a,
         types: Vec<GatewayType>,
         min_date: DateTime<Utc>,
+        min_location_changed_at: Option<DateTime<Utc>>,
     ) -> impl Stream<Item = Self> + 'a {
         sqlx::query_as::<_, Self>(
             r#"
-            SELECT
-                address,
-                gateway_type,
-                created_at,
-                updated_at,
-                refreshed_at,
-                antenna,
-                elevation,
-                azimuth,
-                location,
-                location_changed_at,
-                location_asserts
-            FROM gateways
-            WHERE gateway_type = ANY($1)
+                SELECT
+                    address,
+                    gateway_type,
+                    created_at,
+                    updated_at,
+                    refreshed_at,
+                    antenna,
+                    elevation,
+                    azimuth,
+                    location,
+                    location_changed_at,
+                    location_asserts
+                FROM gateways
+                WHERE gateway_type = ANY($1)
                 AND (updated_at >= $2 OR refreshed_at >= $2 OR created_at >= $2)
-            ORDER BY address
+                AND (
+                    $3::timestamptz IS NULL
+                    OR (asserted_location IS NOT NULL AND asserted_location_changed_at >= $2)
+                )
             "#,
         )
         .bind(types)
         .bind(min_date)
+        .bind(min_location_changed_at)
         .fetch(db)
         .map_err(anyhow::Error::from)
         .filter_map(|res| async move { res.ok() })
