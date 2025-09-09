@@ -618,8 +618,22 @@ where
         &self,
         request: Request<EnabledCarriersInfoReqV1>,
     ) -> GrpcResult<EnabledCarriersInfoRespV1> {
-        let received_timestamp_ms = Utc::now().timestamp_millis() as u64;
+        const MESSAGE_EXPIRATION_TIME_MS: u64 = 10 * 60 * 1000; // 10 minutes
         let event = request.into_inner();
+        let received_timestamp_ms = Utc::now().timestamp_millis() as u64;
+
+        if event.timestamp_ms > received_timestamp_ms {
+            return Err(Status::invalid_argument(
+                "The timestamp_ms field is invalid, it can't be greater than now()",
+            ));
+        }
+
+        if received_timestamp_ms - event.timestamp_ms > MESSAGE_EXPIRATION_TIME_MS {
+            return Err(Status::invalid_argument(format!(
+                "The message is expired. It is generated more than {} seconds ago",
+                MESSAGE_EXPIRATION_TIME_MS / 1000
+            )));
+        }
         custom_tracing::record_b58("pub_key", &event.hotspot_pubkey);
 
         let report = self
