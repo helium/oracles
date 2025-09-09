@@ -17,7 +17,7 @@ pub enum Error {
     #[error("csv error")]
     Csv(#[from] csv::Error),
     #[error("aws error")]
-    Aws(Box<aws_sdk_s3::Error>),
+    Aws(#[source] Box<aws_sdk_s3::Error>),
     #[error("config error")]
     Config(#[from] config::ConfigError),
     #[error("mpsc channel error")]
