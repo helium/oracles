@@ -129,7 +129,10 @@ impl FileStore {
             .send()
             .into_stream_03x()
             .map_ok(|page| stream::iter(page.contents.unwrap_or_default()).map(Ok))
-            .map_err(|err| Error::from(aws_sdk_s3::Error::from(err)))
+            .map_err(|err| {
+                tracing::warn!(?err, "list objects sdk error");
+                Error::from(aws_sdk_s3::Error::from(err))
+            })
             .try_flatten()
             .try_filter_map(|file| future::ready(FileInfo::try_from(&file).map(Some)))
             .try_filter(move |info| future::ready(after.is_none_or(|v| info.timestamp > v)))

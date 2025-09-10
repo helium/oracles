@@ -220,8 +220,19 @@ impl PriceTrackerDaemon {
             tokio::select! {
                 _ = shutdown => break,
                 _ = trigger.tick() => {
-                    let timestamp = process_files(&self.file_store, &self.price_sender, self.after).await?;
-                    self.after = timestamp.unwrap_or(self.after);
+                    match process_files(&self.file_store, &self.price_sender, self.after).await {
+                        Ok(timestamp) => {
+                            self.after = timestamp.unwrap_or(self.after);
+                        }
+                        Err(err) => {
+                            for (key, value) in std::env::vars() {
+                                if key.starts_with("AWS_") {
+                                    tracing::info!(?key, ?value, "aws env var");
+                                }
+                            }
+                            return Err(anyhow::Error::from(err));
+                        }
+                    }
                 }
                 msg = self.task_killer.recv() => if let Some(error) = msg {
                     return Err(anyhow!(error));
