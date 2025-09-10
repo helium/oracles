@@ -313,9 +313,9 @@ impl RadioType {
                 other => return Err(Error::InvalidSignalLevel(*other, *self)),
             },
             RadioType::OutdoorWifi => match signal_level {
-                SignalLevel::High => dec!(16),
-                SignalLevel::Medium => dec!(8),
-                SignalLevel::Low => dec!(4),
+                SignalLevel::High => dec!(120),
+                SignalLevel::Medium => dec!(60),
+                SignalLevel::Low => dec!(0),
                 SignalLevel::None => dec!(0),
             },
         };
@@ -624,35 +624,35 @@ mod tests {
             location_trust_maximum(),
             vec![
                 // yellow - POI ≥ 1 Urbanized, no SP override
-                ranked_coverage(A, A, A, C), // 16
-                ranked_coverage(A, B, A, C), // 16
-                ranked_coverage(A, C, A, C), // 16
-                // 48
+                ranked_coverage(A, A, A, C), // 120
+                ranked_coverage(A, B, A, C), // 120
+                ranked_coverage(A, C, A, C), // 120
+                // 360
                 // orange - POI ≥ 1 Not Urbanized, no SP override
-                ranked_coverage(A, A, B, C), // 16
-                ranked_coverage(A, B, B, C), // 16
-                ranked_coverage(A, C, B, C), // 16
-                // 48
+                ranked_coverage(A, A, B, C), // 120
+                ranked_coverage(A, B, B, C), // 120
+                ranked_coverage(A, C, B, C), // 120
+                // 360
                 // light green - Point of Interest Urbanized, no SP override
-                ranked_coverage(B, A, A, C), // 11.2
-                ranked_coverage(B, B, A, C), // 11.2
-                ranked_coverage(B, C, A, C), // 11.2
-                ranked_coverage(B, C, A, C), // 11.2
-                ranked_coverage(B, C, A, C), // 11.2
-                // 56
+                ranked_coverage(B, A, A, C), // 84
+                ranked_coverage(B, B, A, C), // 84
+                ranked_coverage(B, C, A, C), // 84
+                ranked_coverage(B, C, A, C), // 84
+                ranked_coverage(B, C, A, C), // 84
+                // 420
                 // dark green - Point of Interest Not Urbanized, no SP override
-                ranked_coverage(B, A, B, C), // 8
-                ranked_coverage(B, B, B, C), // 8
-                ranked_coverage(B, C, B, C), // 8
-                // 24
+                ranked_coverage(B, A, B, C), // 60
+                ranked_coverage(B, B, B, C), // 60
+                ranked_coverage(B, C, B, C), // 60
+                // 180
                 // HRP-20250409 - footfall C
-                ranked_coverage(C, A, A, C), // 0.48
-                ranked_coverage(C, B, A, C), // 0.48
-                ranked_coverage(C, C, A, C), // 0.48
-                ranked_coverage(C, A, B, C), // 0.48
-                ranked_coverage(C, B, B, C), // 0.48
-                ranked_coverage(C, C, B, C), // 0.48
-                // 2.88
+                ranked_coverage(C, A, A, C), // 3.60
+                ranked_coverage(C, B, A, C), // 3.60
+                ranked_coverage(C, C, A, C), // 3.60
+                ranked_coverage(C, A, B, C), // 3.60
+                ranked_coverage(C, B, B, C), // 3.60
+                ranked_coverage(C, C, B, C), // 3.60
+                // 21.60
                 // gray - Outside of USA, no SP override
                 ranked_coverage(A, A, C, C), // 0
                 ranked_coverage(A, B, C, C), // 0
@@ -668,14 +668,14 @@ mod tests {
         )
         .expect("outdoor wifi");
 
-        // 48 + 48 + 56 + 24 + 2.88 = 178.88
-        assert_eq!(dec!(178.88), outdoor_wifi.coverage_points_v1());
+        // 360 + 360 + 420 + 180 + 21.60 = 1341.60
+        assert_eq!(dec!(1341.60), outdoor_wifi.coverage_points_v1());
     }
 
     #[rstest]
-    #[case(RadioType::OutdoorWifi, 1, dec!(16))]
-    #[case(RadioType::OutdoorWifi, 2, dec!(8))]
-    #[case(RadioType::OutdoorWifi, 3, dec!(4))]
+    #[case(RadioType::OutdoorWifi, 1, dec!(120))]
+    #[case(RadioType::OutdoorWifi, 2, dec!(60))]
+    #[case(RadioType::OutdoorWifi, 3, dec!(30))]
     #[case(RadioType::OutdoorWifi, 42, dec!(0))]
     fn outdoor_radios_consider_top_3_ranked_hexes(
         #[case] radio_type: RadioType,
@@ -810,9 +810,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case(SignalLevel::High, dec!(16))]
-    #[case(SignalLevel::Medium, dec!(8))]
-    #[case(SignalLevel::Low, dec!(4))]
+    #[case(SignalLevel::High, dec!(120))]
+    #[case(SignalLevel::Medium, dec!(60))]
+    #[case(SignalLevel::Low, dec!(0))]
     #[case(SignalLevel::None, dec!(0))]
     fn outdoor_wifi_base_coverage_points(
         #[case] signal_level: SignalLevel,

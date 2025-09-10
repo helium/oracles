@@ -379,9 +379,9 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16
-                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 8
-                signal_level("8c2681a3065d3ff", SignalLevel::Low)?,  // 4
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60
+                signal_level("8c2681a3065d3ff", SignalLevel::Low)?,  // 0
             ],
             trust_score: 1000,
         },
@@ -429,7 +429,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(
         coverage_shares.test_hotspot_reward_shares(&pub_key),
-        dec!(28)
+        dec!(180)
     );
 
     Ok(())
@@ -457,9 +457,9 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16
-                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 8
-                signal_level("8c2681a3066e7ff", SignalLevel::Low)?,  // 4
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60
+                signal_level("8c2681a3066e7ff", SignalLevel::Low)?,  // 0
             ],
             trust_score: 1000,
         },
@@ -474,10 +474,10 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3065adff", SignalLevel::High)?, // 16
-                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 8 * 0.5 = 4 (this hex is
+                signal_level("8c2681a3065adff", SignalLevel::High)?, // 120
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60 * 0.5 = 30 (this hex is
                 // shared
-                signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
+                signal_level("8c2681a3065d7ff", SignalLevel::Low)?, // 0
             ],
             trust_score: 1000,
         },
@@ -540,12 +540,12 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(
         coverage_shares.test_hotspot_reward_shares(&hs_pubkey_1),
-        (dec!(16) + dec!(8) + dec!(4)) * dec!(0.5) // speedtest degraded
+        (dec!(120) + dec!(60) + dec!(0)) * dec!(0.5) // speedtest degraded
     );
 
     assert_eq!(
         coverage_shares.test_hotspot_reward_shares(&hs_pubkey_2),
-        (dec!(16) + dec!(8) * dec!(0.5) + dec!(4))
+        (dec!(120) + dec!(60) * dec!(0.5) + dec!(0))
     );
 
     Ok(())
@@ -570,7 +570,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     let hs_pub_key_4 = PublicKeyBinary::from(vec![4]);
     let hs_pub_key_5 = PublicKeyBinary::from(vec![5]);
 
-    let expected_base_cp_co1 = dec!(44);
+    let expected_base_cp_co1 = dec!(240);
     let coverage_object_1 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
         report: file_store::coverage::CoverageObject {
@@ -581,16 +581,16 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 8 * 2 = 16
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 4 * 3 = 12
-                                                                     // = 44
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120
+                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 60 * 2 = 120
+                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 0 * 3 = 0
+                                                                     // = 240 (but rank-limited to top 3 hexes for outdoor)
             ],
             trust_score: 1000,
         },
     };
 
-    let expected_base_cp_co2 = dec!(22);
+    let expected_base_cp_co2 = dec!(120);
     let coverage_object_2 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
         report: file_store::coverage::CoverageObject {
@@ -601,16 +601,16 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16 * 0.5 = 8
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 8 * 0.5 * 2 = 8
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 4 * 0.5 * 3 = 6
-                                                                     // = 22
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120 * 0.5 = 60
+                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 60 * 0.5 * 2 = 60
+                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 0 * 0.5 * 3 = 0
+                                                                     // = 120
             ],
             trust_score: 1000,
         },
     };
 
-    let expected_base_cp_co3 = dec!(11);
+    let expected_base_cp_co3 = dec!(60);
     let coverage_object_3 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
         report: file_store::coverage::CoverageObject {
@@ -621,9 +621,9 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16 * 0.25  = 4
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 8 * 0.25 * 2 = 4
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 4 * 0.25 * 3 = 3
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120 * 0.25  = 30
+                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 60 * 0.25 * 2 = 30
+                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 0 * 0.25 * 3 = 0
             ],
             trust_score: 1000,
         },
