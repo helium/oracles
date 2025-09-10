@@ -14,10 +14,9 @@ use mobile_config::{
     authorization_service::AuthorizationService,
     carrier_service::CarrierService,
     entity_service::EntityService,
-    gateway::service::GatewayService,
+    gateway::{service::GatewayService, tracker::Tracker},
     hex_boosting_service::HexBoostingService,
     key_cache::KeyCache,
-    mobile_radio_tracker::{post_migrate_mobile_tracker_locations, MobileRadioTracker},
     settings::Settings,
     sub_dao_service::SubDaoService,
 };
@@ -48,9 +47,7 @@ impl Cli {
             Cmd::PostMigrateMobileTracker => {
                 custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
                 let mobile_config_pool = settings.database.connect("mobile-config-store").await?;
-                let metadata_pool = settings.metadata.connect("mobile-config-metadata").await?;
                 sqlx::migrate!().run(&mobile_config_pool).await?;
-                post_migrate_mobile_tracker_locations(mobile_config_pool, metadata_pool).await?;
                 Ok(())
             }
         }
@@ -138,7 +135,7 @@ impl Daemon {
 
         TaskManager::builder()
             .add_task(grpc_server)
-            .add_task(MobileRadioTracker::new(
+            .add_task(Tracker::new(
                 pool.clone(),
                 metadata_pool.clone(),
                 settings.mobile_radio_tracker_interval,

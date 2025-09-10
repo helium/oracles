@@ -15,11 +15,9 @@ pub mod client;
 pub mod entity_service;
 pub mod gateway;
 pub mod hex_boosting_service;
-pub mod sub_dao_epoch_reward_info;
-
 pub mod key_cache;
-pub mod mobile_radio_tracker;
 pub mod settings;
+pub mod sub_dao_epoch_reward_info;
 pub mod sub_dao_service;
 pub mod telemetry;
 
