@@ -40,10 +40,22 @@ impl Cmd {
 
         telemetry::initialize(&pool).await?;
 
-        let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
+        let s3_client = FileStore::s3_client(
+            settings.output.endpoint.clone(),
+            Some(settings.output.region.clone()),
+            None,
+            None,
+            settings.output.access_key_id.clone(),
+            settings.output.secret_access_key.clone(),
+        )
+        .await;
 
-        let report_ingest = FileStore::from_settings(&settings.ingest).await?;
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings_with_client(&settings.output, s3_client.clone())
+                .await?;
+
+        let report_ingest =
+            FileStore::new_with_client(settings.ingest.bucket.clone(), s3_client.clone()).await;
 
         // mobile config clients
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
@@ -151,6 +163,7 @@ impl Cmd {
                     settings,
                     file_upload.clone(),
                     new_coverage_obj_notification,
+                    s3_client.clone(),
                 )
                 .await?,
             )
@@ -174,7 +187,10 @@ impl Cmd {
                 )
                 .await?,
             )
-            .add_task(DataSessionIngestor::create_managed_task(pool.clone(), settings).await?)
+            .add_task(
+                DataSessionIngestor::create_managed_task(pool.clone(), settings, s3_client.clone())
+                    .await?,
+            )
             .add_task(
                 banning::create_managed_task(
                     pool.clone(),
@@ -195,6 +211,7 @@ impl Cmd {
                     hex_boosting_client,
                     sub_dao_rewards_client,
                     speedtests_avg,
+                    s3_client.clone(),
                 )
                 .await?,
             )

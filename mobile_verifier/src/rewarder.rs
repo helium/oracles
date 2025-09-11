@@ -76,6 +76,7 @@ where
     B: HexBoostingInfoResolver,
     C: SubDaoEpochRewardInfoResolver,
 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
@@ -84,8 +85,10 @@ where
         hex_boosting_info_resolver: B,
         sub_dao_epoch_reward_info_resolver: C,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
+        s3_client: aws_sdk_s3::Client,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
+        let (price_tracker, price_daemon) =
+            PriceTracker::new_with_client(&settings.price_tracker, s3_client).await?;
 
         let (mobile_rewards, mobile_rewards_server) = MobileRewardShare::file_sink(
             settings.store_base_path(),

@@ -265,6 +265,7 @@ impl DataSetDownloaderDaemon {
         settings: &Settings,
         file_upload: FileUpload,
         new_coverage_object_notification: NewCoverageObjectNotification,
+        s3_client: aws_sdk_s3::Client,
     ) -> anyhow::Result<impl ManagedTask> {
         tracing::info!("Creating data set downloader task");
         let (oracle_boosting_reports, oracle_boosting_reports_server) =
@@ -280,7 +281,7 @@ impl DataSetDownloaderDaemon {
         let data_set_downloader = Self::new(
             pool,
             HexBoostData::default(),
-            FileStore::from_settings(&settings.data_sets).await?,
+            FileStore::new_with_client(settings.data_sets.bucket.clone(), s3_client).await,
             oracle_boosting_reports,
             settings.data_sets_directory.clone(),
             new_coverage_object_notification,

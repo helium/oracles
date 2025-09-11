@@ -51,6 +51,20 @@ impl FileUpload {
         ))
     }
 
+    pub async fn from_settings_with_client(
+        settings: &Settings,
+        client: aws_sdk_s3::Client,
+    ) -> Result<(Self, FileUploadServer)> {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        Ok((
+            Self { sender },
+            FileUploadServer {
+                messages: UnboundedReceiverStream::new(receiver),
+                store: FileStore::new_with_client(settings.bucket.clone(), client).await,
+            },
+        ))
+    }
+
     pub async fn upload_file(&self, file: &Path) -> Result {
         self.sender
             .send(file.to_path_buf())

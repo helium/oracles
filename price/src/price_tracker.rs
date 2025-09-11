@@ -140,6 +140,33 @@ impl PriceTracker {
         ))
     }
 
+    pub async fn new_with_client(
+        settings: &Settings,
+        s3_client: aws_sdk_s3::Client,
+    ) -> anyhow::Result<(Self, PriceTrackerDaemon)> {
+        let file_store =
+            FileStore::new_with_client(settings.file_store.bucket.clone(), s3_client).await;
+        let price_duration = settings.price_duration();
+        let (price_sender, price_receiver) = watch::channel(Prices::new());
+        let (task_kill_sender, task_kill_receiver) = mpsc::channel(1);
+        let initial_timestamp =
+            calculate_initial_prices(&file_store, price_duration, &price_sender).await?;
+
+        Ok((
+            Self {
+                price_duration: settings.price_duration(),
+                price_receiver,
+                task_killer: task_kill_sender,
+            },
+            PriceTrackerDaemon {
+                file_store,
+                price_sender,
+                task_killer: task_kill_receiver,
+                after: initial_timestamp,
+            },
+        ))
+    }
+
     pub async fn price(
         &self,
         token_type: &BlockchainTokenTypeV1,

@@ -34,8 +34,11 @@ impl DataSessionIngestor {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
+        s3_client: aws_sdk_s3::Client,
     ) -> anyhow::Result<impl ManagedTask> {
-        let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
+        let data_transfer_ingest =
+            FileStore::new_with_client(settings.data_transfer_ingest.bucket.clone(), s3_client)
+                .await;
         // data transfers
         let (data_session_ingest, data_session_ingest_server) = file_source::continuous_source()
             .state(pool.clone())

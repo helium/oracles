@@ -4954,6 +4954,7 @@ dependencies = [
  "async-compression",
  "async-trait",
  "aws-local",
+ "aws-sdk-s3",
  "base64 0.22.1",
  "chrono",
  "clap",
@@ -5689,6 +5690,7 @@ name = "price"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aws-sdk-s3",
  "chrono",
  "clap",
  "config",

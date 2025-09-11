@@ -44,6 +44,61 @@ impl FileStore {
         .await
     }
 
+    pub async fn s3_client(
+        endpoint: Option<String>,
+        region: Option<String>,
+        timeout_config: Option<TimeoutConfig>,
+        retry_config: Option<RetryConfig>,
+        _access_key_id: Option<String>,
+        _secret_access_key: Option<String>,
+    ) -> Client {
+        let region = Region::new(region.unwrap_or_else(settings::default_region));
+        let region_provider = RegionProviderChain::first_try(region).or_default_provider();
+
+        let config = aws_config::defaults(BehaviorVersion::latest())
+            .region(region_provider)
+            .load()
+            .await;
+
+        let mut s3_config = aws_sdk_s3::config::Builder::from(&config);
+        if let Some(endpoint) = endpoint {
+            s3_config = s3_config.endpoint_url(endpoint);
+        }
+
+        #[cfg(feature = "local")]
+        {
+            // NOTE(mj): If you see something like a DNS error, this is probably
+            // the culprit. Need to find a way to make this configurable. It
+            // would be nice to allow the "local" feature to be active, but not
+            // enforce path style.
+            s3_config = s3_config.force_path_style(true);
+
+            if let Some((access_key_id, secret_access_key)) = _access_key_id.zip(_secret_access_key)
+            {
+                let creds = aws_sdk_s3::config::Credentials::builder()
+                    .provider_name("Static")
+                    .access_key_id(access_key_id)
+                    .secret_access_key(secret_access_key);
+
+                s3_config = s3_config.credentials_provider(creds.build());
+            }
+        }
+
+        if let Some(timeout) = timeout_config {
+            s3_config = s3_config.timeout_config(timeout);
+        }
+
+        if let Some(retry) = retry_config {
+            s3_config = s3_config.retry_config(retry);
+        }
+
+        Client::from_conf(s3_config.build())
+    }
+
+    pub async fn new_with_client(bucket: String, client: Client) -> Self {
+        Self { bucket, client }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         bucket: String,
