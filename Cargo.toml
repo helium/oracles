@@ -90,7 +90,7 @@ rust_decimal = "1"
 rust_decimal_macros = "1"
 base64 = ">=0.21"
 sha2 = "0.10"
-tonic = { version = "0.10", features = ["tls", "tls-roots"] }
+tonic = { version = "0.10"  }
 http = "<=0.2"
 triggered = "0"
 futures = "*"
