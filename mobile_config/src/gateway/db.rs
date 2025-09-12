@@ -5,9 +5,9 @@ use helium_crypto::PublicKeyBinary;
 use sqlx::{postgres::PgRow, FromRow, PgExecutor, PgPool, Row};
 use std::convert::TryFrom;
 
-// Postgres enum: device_type
+// Postgres enum: gateway_type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
-#[sqlx(type_name = "device_type")]
+#[sqlx(type_name = "gateway_type")]
 pub enum GatewayType {
     #[sqlx(rename = "wifiIndoor")]
     WifiIndoor,
@@ -111,17 +111,17 @@ impl Gateway {
                 antenna,
                 elevation,
                 azimuth,
-                radio_id,
                 location,
                 location_changed_at,
                 location_asserts
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
-                $8, $9, $10, $11, $12, $13, $14
+                $8, $9, $10, $11, $12, $13
             )
             ON CONFLICT (address)
             DO UPDATE SET
+                created_at = EXCLUDED.created_at,
                 updated_at = EXCLUDED.updated_at,
                 refreshed_at = EXCLUDED.refreshed_at,
                 last_changed_at = CASE
@@ -134,7 +134,6 @@ impl Gateway {
                 antenna = EXCLUDED.antenna,
                 elevation = EXCLUDED.elevation,
                 azimuth = EXCLUDED.azimuth,
-                radio_id = EXCLUDED.radio_id,
                 location = EXCLUDED.location,
                 location_changed_at = CASE
                     WHEN gateways.location IS DISTINCT FROM EXCLUDED.location
@@ -149,6 +148,8 @@ impl Gateway {
         .bind(self.created_at)
         .bind(self.updated_at)
         .bind(self.refreshed_at)
+        .bind(self.last_changed_at)
+        .bind(self.hash.as_str())
         .bind(self.antenna.map(|v| v as i64))
         .bind(self.elevation.map(|v| v as i64))
         .bind(self.azimuth.map(|v| v as i64))
@@ -173,6 +174,8 @@ impl Gateway {
                 created_at,
                 updated_at,
                 refreshed_at,
+                last_changed_at,
+                hash,
                 antenna,
                 elevation,
                 azimuth,
@@ -205,6 +208,8 @@ impl Gateway {
                 created_at,
                 updated_at,
                 refreshed_at,
+                last_changed_at,
+                hash,
                 antenna,
                 elevation,
                 azimuth,
@@ -238,6 +243,8 @@ impl Gateway {
                     created_at,
                     updated_at,
                     refreshed_at,
+                    last_changed_at,
+                    hash,
                     antenna,
                     elevation,
                     azimuth,

@@ -101,6 +101,60 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+async fn gateway_stream_info_v1(pool: PgPool) {
+    let admin_key = make_keypair();
+    let asset1_pubkey = make_keypair().public_key().clone();
+    let asset1_hex_idx = 631711281837647359_i64;
+    let asset2_hex_idx = 631711286145955327_i64;
+    let asset2_pubkey = make_keypair().public_key().clone();
+    let now = Utc::now();
+    let now_plus_10 = now + chrono::Duration::seconds(10);
+
+    create_metadata_db_tables(&pool).await;
+    add_db_record(
+        &pool,
+        "asset1",
+        Some(asset1_hex_idx),
+        "\"wifiIndoor\"",
+        asset1_pubkey.clone().into(),
+        now,
+        Some(now),
+        None,
+    )
+    .await;
+    add_db_record(
+        &pool,
+        "asset2",
+        Some(asset2_hex_idx),
+        "\"wifiDataOnly\"",
+        asset2_pubkey.clone().into(),
+        now_plus_10,
+        Some(now_plus_10),
+        None,
+    )
+    .await;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await.unwrap();
+
+    // Select all devices
+    let req = make_gateway_stream_signed_req_v1(&admin_key, &[]);
+    let mut stream = client.info_stream(req).await.unwrap().into_inner();
+    let resp = stream.next().await.unwrap().unwrap();
+    assert_eq!(resp.gateways.len(), 2);
+
+    // Filter by device type
+    let req = make_gateway_stream_signed_req_v1(&admin_key, &[DeviceType::WifiIndoor]);
+    let mut stream = client.info_stream(req).await.unwrap().into_inner();
+    let resp = stream.next().await.unwrap().unwrap();
+    assert_eq!(resp.gateways.len(), 1);
+    assert_eq!(
+        resp.gateways.first().unwrap().device_type,
+        Into::<i32>::into(DeviceType::WifiIndoor)
+    );
+}
+
+#[sqlx::test]
 async fn gateway_stream_info_v2(pool: PgPool) {
     let admin_key = make_keypair();
     let asset1_pubkey = make_keypair().public_key().clone();
@@ -110,7 +164,7 @@ async fn gateway_stream_info_v2(pool: PgPool) {
     let now = Utc::now();
     let now_plus_10 = now + chrono::Duration::seconds(10);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -164,7 +218,7 @@ async fn gateway_stream_info_v2_updated_at(pool: PgPool) {
     let created_at = Utc::now() - Duration::hours(5);
     let updated_at = Utc::now() - Duration::hours(3);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -224,7 +278,7 @@ async fn gateway_info_batch_v2(pool: PgPool) {
     let created_at = Utc::now() - Duration::hours(5);
     let updated_at = Utc::now() - Duration::hours(3);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -305,7 +359,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
     let refreshed_at = Utc::now() - Duration::hours(3);
     let updated_at = Utc::now() - Duration::hours(4);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -413,7 +467,7 @@ async fn gateway_info_v2_no_mobile_tracker_record(pool: PgPool) {
     let created_at = Utc::now() - Duration::hours(5);
     let refreshed_at = Utc::now() - Duration::hours(3);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -467,7 +521,7 @@ async fn gateway_info_v2(pool: PgPool) {
     let created_at = Utc::now() - Duration::hours(5);
     let updated_at = Utc::now() - Duration::hours(3);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -537,7 +591,7 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
     let refreshed_at = Utc::now() - Duration::hours(3);
     let updated_at = Utc::now() - Duration::hours(4);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -625,7 +679,7 @@ async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     let asset3_pubkey = make_keypair().public_key().clone();
     let now = Utc::now();
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
