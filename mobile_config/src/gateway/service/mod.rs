@@ -193,7 +193,7 @@ impl mobile_config::Gateway for GatewayService {
 
         tokio::spawn(async move {
             let min_updated_at = DateTime::UNIX_EPOCH;
-            let stream = info::stream_by_addresses(&pool, &addresses, min_updated_at)?;
+            let stream = info::stream_by_addresses(&pool, &addresses, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -231,7 +231,7 @@ impl mobile_config::Gateway for GatewayService {
         tokio::spawn(async move {
             let min_updated_at = DateTime::UNIX_EPOCH;
             let stream =
-                info::stream_by_addresses(&mobile_config_db_pool, &addresses, min_updated_at)?;
+                info::stream_by_addresses(&mobile_config_db_pool, &addresses, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -265,7 +265,7 @@ impl mobile_config::Gateway for GatewayService {
 
         tokio::spawn(async move {
             let min_updated_at = DateTime::UNIX_EPOCH;
-            let stream = info::stream_by_types(&pool, &device_types, min_updated_at)?;
+            let stream = info::stream_by_types(&pool, &device_types, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -304,7 +304,7 @@ impl mobile_config::Gateway for GatewayService {
                 .ok_or(Status::invalid_argument("Invalid min_updated_at argument"))?;
 
             let stream =
-                info::stream_by_types(&mobile_config_db_pool, &device_types, min_updated_at)?;
+                info::stream_by_types(&mobile_config_db_pool, &device_types, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -356,7 +356,7 @@ impl mobile_config::Gateway for GatewayService {
                 &device_types,
                 min_updated_at,
                 min_location_changed_at,
-            )?;
+            );
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
