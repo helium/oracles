@@ -8,7 +8,7 @@ use helium_proto::services::mobile_config::{
     GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamResV2,
 };
 use mobile_config::{
-    gateway_service::GatewayService,
+    gateway::service::GatewayService,
     key_cache::{CacheKeys, KeyCache},
     KeyRole,
 };
@@ -98,7 +98,7 @@ async fn gateway_stream_info_v1(pool: PgPool) {
     let now = Utc::now();
     let now_plus_10 = now + chrono::Duration::seconds(10);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -152,7 +152,7 @@ async fn gateway_stream_info_v2(pool: PgPool) {
     let now = Utc::now();
     let now_plus_10 = now + chrono::Duration::seconds(10);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -206,7 +206,7 @@ async fn gateway_stream_info_v2_updated_at(pool: PgPool) {
     let created_at = Utc::now() - Duration::hours(5);
     let updated_at = Utc::now() - Duration::hours(3);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -266,7 +266,7 @@ async fn gateway_info_batch_v2(pool: PgPool) {
     let created_at = Utc::now() - Duration::hours(5);
     let updated_at = Utc::now() - Duration::hours(3);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -347,7 +347,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) {
     let refreshed_at = Utc::now() - Duration::hours(3);
     let updated_at = Utc::now() - Duration::hours(4);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -455,7 +455,7 @@ async fn gateway_info_v2_no_mobile_tracker_record(pool: PgPool) {
     let created_at = Utc::now() - Duration::hours(5);
     let refreshed_at = Utc::now() - Duration::hours(3);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -509,7 +509,7 @@ async fn gateway_info_v2(pool: PgPool) {
     let created_at = Utc::now() - Duration::hours(5);
     let updated_at = Utc::now() - Duration::hours(3);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -579,7 +579,7 @@ async fn gateway_info_stream_v2_updated_at_check(pool: PgPool) {
     let refreshed_at = Utc::now() - Duration::hours(3);
     let updated_at = Utc::now() - Duration::hours(4);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -667,7 +667,7 @@ async fn gateway_stream_info_v2_deployment_info(pool: PgPool) {
     let asset3_pubkey = make_keypair().public_key().clone();
     let now = Utc::now();
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",

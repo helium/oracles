@@ -10,8 +10,11 @@ use helium_proto::services::{
     mobile_config::DeviceType as MobileDeviceType, poc_mobile::SpeedtestAvgValidity,
 };
 use mobile_config::{
-    client::{gateway_client::GatewayInfoResolver, ClientError},
-    gateway_info::{DeviceType, GatewayInfo, GatewayInfoStream},
+    client::ClientError,
+    gateway::{
+        client::GatewayInfoResolver,
+        service::info::{DeviceType, GatewayInfo, GatewayInfoStream},
+    },
 };
 use mobile_verifier::speedtests::SpeedtestDaemon;
 use sqlx::{Pool, Postgres};
