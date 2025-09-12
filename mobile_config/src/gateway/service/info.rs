@@ -427,23 +427,23 @@ pub fn stream_by_addresses<'a>(
     db: impl PgExecutor<'a> + 'a,
     addresses: &'a [PublicKeyBinary],
     min_updated_at: DateTime<Utc>,
-) -> anyhow::Result<impl Stream<Item = GatewayInfo> + 'a> {
-    Ok(Gateway::stream_by_addresses(db, addresses, min_updated_at).map(|gateway| gateway.into()))
+) -> impl Stream<Item = GatewayInfo> + 'a {
+    Gateway::stream_by_addresses(db, addresses, min_updated_at).map(|gateway| gateway.into())
 }
 
 pub fn stream_by_types<'a>(
     db: impl PgExecutor<'a> + 'a,
     types: &'a [DeviceType],
     min_date: DateTime<Utc>,
-) -> anyhow::Result<impl Stream<Item = GatewayInfo> + 'a> {
+) -> impl Stream<Item = GatewayInfo> + 'a {
     let gateway_types = if types.is_empty() {
-        GatewayType::iter().collect()
+        GatewayType::iter().collect::<Vec<_>>()
     } else {
         types
             .iter()
             .filter_map(|t| t.clone().try_into().ok())
-            .collect::<Vec<GatewayType>>()
+            .collect::<Vec<_>>()
     };
 
-    Ok(Gateway::stream_by_types(db, gateway_types, min_date, None).map(|gateway| gateway.into()))
+    Gateway::stream_by_types(db, gateway_types, min_date, None).map(|gateway| gateway.into())
 }

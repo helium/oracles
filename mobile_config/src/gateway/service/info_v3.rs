@@ -11,6 +11,7 @@ use helium_proto::services::mobile_config::{
     LocationInfo as LocationInfoProto,
 };
 use sqlx::PgExecutor;
+use strum::IntoEnumIterator;
 
 #[derive(Clone, Debug)]
 pub struct LocationInfo {
@@ -147,13 +148,9 @@ pub fn stream_by_types<'a>(
     types: &'a [DeviceTypeV2],
     min_date: DateTime<Utc>,
     min_location_changed_at: Option<DateTime<Utc>>,
-) -> anyhow::Result<impl Stream<Item = GatewayInfoV3> + 'a> {
+) -> impl Stream<Item = GatewayInfoV3> + 'a {
     let gateway_types = if types.is_empty() {
-        vec![
-            GatewayType::WifiIndoor,
-            GatewayType::WifiOutdoor,
-            GatewayType::WifiDataOnly,
-        ]
+        GatewayType::iter().collect::<Vec<_>>()
     } else {
         types
             .iter()
@@ -161,8 +158,6 @@ pub fn stream_by_types<'a>(
             .collect::<Vec<GatewayType>>()
     };
 
-    Ok(
-        Gateway::stream_by_types(db, gateway_types, min_date, min_location_changed_at)
-            .map(|gateway| gateway.into()),
-    )
+    Gateway::stream_by_types(db, gateway_types, min_date, min_location_changed_at)
+        .map(|gateway| gateway.into())
 }
