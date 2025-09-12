@@ -978,22 +978,22 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
     // Here's how we get the regular shares per coverage points
     // | base coverage point | speedtest | location | total |
     // |---------------------|-----------|----------|-------|
-    // | 16 x 2              | 0.75      | 1.00     | 24    |
+    // | 120 x 2             | 0.75      | 1.00     | 180   |
     // | 400                 | 0.75      | 1.00     | 300   |
     // | 400                 | 0.75      | 1.00     | 300   |
     // |---------------------|-----------|----------|-------|
-    //                                              | 624   |
+    //                                              | 780   |
 
     // Boosted hexes are 1 at 10x and 1 at 20x.
     // Only wifi is targeted with Boosts.
-    // (24 * 9) + (300 * 19) == 5916
+    // (180 * 9) + (300 * 19) == 7320
     // To get points _only_ from boosting.
-
-    // combined points are 6540
-    let share = regular_poc / dec!(6540);
+    //
+    // combined points is 8100
+    let share = regular_poc / dec!(8100);
 
     let exp_reward_1 =
-        rounded(share * (dec!(24) * dec!(1))) + rounded(share * (dec!(24) * dec!(9)));
+        rounded(share * (dec!(180) * dec!(1))) + rounded(share * (dec!(180) * dec!(9)));
     let exp_reward_2 = rounded(share * dec!(300) * dec!(1)) + rounded(share * dec!(300) * dec!(19));
     let exp_reward_3 = rounded(share * dec!(300) * dec!(1)) + rounded(share * dec!(300) * dec!(0));
 
