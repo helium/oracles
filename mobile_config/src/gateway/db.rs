@@ -74,7 +74,7 @@ impl From<DeviceTypeV2> for GatewayType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Gateway {
     pub address: PublicKeyBinary,
     pub gateway_type: GatewayType,
@@ -219,7 +219,6 @@ impl Gateway {
             FROM gateways
             WHERE address = ANY($1)
                 AND (updated_at >= $2 OR refreshed_at >= $2 OR created_at >= $2)
-            ORDER BY address
             "#,
         )
         .bind(addr_array)
@@ -256,7 +255,7 @@ impl Gateway {
                 AND (updated_at >= $2 OR refreshed_at >= $2 OR created_at >= $2)
                 AND (
                     $3::timestamptz IS NULL
-                    OR (asserted_location IS NOT NULL AND asserted_location_changed_at >= $2)
+                    OR (location IS NOT NULL AND location_changed_at >= $3)
                 )
             "#,
         )
