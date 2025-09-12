@@ -1,3 +1,5 @@
+mod common;
+
 use chrono::Utc;
 use custom_tracing::Settings;
 use mobile_config::gateway::{
@@ -5,8 +7,6 @@ use mobile_config::gateway::{
     tracker,
 };
 use sqlx::PgPool;
-
-pub mod common;
 
 #[sqlx::test]
 async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
@@ -16,8 +16,8 @@ async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
     let hex1 = 631711281837647359_i64;
     let now = Utc::now();
 
-    common::create_metadata_db_tables(&pool).await;
-    common::add_db_record(
+    common::gateway_metadata_db::create_tables(&pool).await;
+    common::gateway_metadata_db::insert_gateway(
         &pool,
         "asset1",
         Some(hex1),
