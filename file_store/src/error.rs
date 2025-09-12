@@ -1,3 +1,4 @@
+use prost::UnknownEnumValue;
 use thiserror::Error;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -41,6 +42,10 @@ pub enum Error {
     //Not recommended for internal use!
     #[error("external error")]
     ExternalError(#[from] Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("todo")]
+    ErrorTodo(#[from] UnknownEnumValue)
+
 }
 
 #[derive(Error, Debug)]

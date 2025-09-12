@@ -90,12 +90,12 @@ rust_decimal = "1"
 rust_decimal_macros = "1"
 base64 = ">=0.21"
 sha2 = "0.10"
-tonic = { version = "0.10", features = ["tls", "tls-roots"] }
+tonic = { version = "0.14", features = ["tls-ring", "tls-native-roots"] }
 http = "<=0.2"
 triggered = "0"
 futures = "*"
 futures-util = "*"
-prost = "0.12"
+prost = "0.14"
 config = { version = "0", default-features = false, features = ["toml"] }
 h3o = { version = "0", features = ["serde"] }
 xorf = { version = "0", features = ["serde"] }
