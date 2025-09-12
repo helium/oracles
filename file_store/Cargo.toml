@@ -29,8 +29,11 @@ helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
 csv = { workspace = true }
 http = { workspace = true }
-strum = { version = "0", features = ["derive"] }
-strum_macros = "0"
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-types = { workspace = true, optional = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
 sha2 = { workspace = true }
 metrics = { workspace = true }
 blake3 = { workspace = true }

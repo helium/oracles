@@ -4871,6 +4871,8 @@ dependencies = [
  "serde_json",
  "solana",
  "sqlx",
+ "strum 0.26.3",
+ "strum_macros 0.26.4",
  "task-manager",
  "thiserror 1.0.69",
  "tokio",
