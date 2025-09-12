@@ -5,7 +5,8 @@ use crate::gateway::{
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use helium_crypto::PublicKeyBinary;
-use sqlx::{types::Json, Pool, Postgres, Row};
+use serde_json;
+use sqlx::{Pool, Postgres, Row};
 use std::str::FromStr;
 
 #[derive(Debug, Clone)]
@@ -79,7 +80,6 @@ impl MobileHotspotInfo {
                 SELECT
                     DISTINCT ON (kta.entity_key)
                     kta.entity_key,
-                    mhi.asset,
                     mhi.refreshed_at,
                     mhi.created_at,
                     mhi.location::bigint,
@@ -125,14 +125,14 @@ impl MobileHotspotInfo {
             created_at: self.created_at,
             updated_at: Utc::now(),
             refreshed_at: self.refreshed_at.unwrap_or_else(Utc::now),
-            // Update via SQL query see Gateway::insert
+            // Updated via SQL query see Gateway::insert
             last_changed_at: Utc::now(),
             hash: self.hash(),
             antenna,
             elevation,
             azimuth,
             location,
-            // Update via SQL query see Gateway::insert
+            // Updated via SQL query see Gateway::insert
             location_changed_at: None,
             location_asserts: self.num_location_asserts.map(|n| n as u32),
         }))
@@ -141,20 +141,17 @@ impl MobileHotspotInfo {
 
 impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for MobileHotspotInfo {
     fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-        let device_type = DeviceType::from_str(
-            row.get::<Json<String>, &str>("device_type")
-                .to_string()
-                .as_ref(),
-        )
-        .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
+        // device_type came as TEXT from `::text` on jsonb; it may look like `"wifiIndoor"`
+        let dt_raw: String = row.try_get("device_type")?;
+        let dt_clean = dt_raw.trim_matches('"'); // handle jsonb -> text of a JSON string
+        let device_type =
+            DeviceType::from_str(dt_clean).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
 
-        let deployment_info =
-            match row.try_get::<Option<Json<DeploymentInfo>>, &str>("deployment_info") {
-                Ok(di) => di.map(|v| v.0),
-                // We shouldn't fail if an error occurs in this case.
-                // This is because the data in this column could be inconsistent,
-                // and we don't want to break backward compatibility.
-                Err(_e) => None,
+        let deployment_info: Option<DeploymentInfo> =
+            match row.try_get::<Option<String>, _>("deployment_info") {
+                Ok(Some(s)) if !s.is_empty() => serde_json::from_str::<DeploymentInfo>(&s).ok(),
+                Ok(_) => None,
+                Err(_) => None, // be lenient for backward-compat
             };
 
         Ok(Self {
