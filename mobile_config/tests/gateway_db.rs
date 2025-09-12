@@ -1,10 +1,10 @@
+mod common;
+
 use chrono::{TimeZone, Utc};
 use futures::{pin_mut, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use mobile_config::gateway::db::{Gateway, GatewayType};
 use sqlx::PgPool;
-
-pub mod common;
 
 #[sqlx::test]
 async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
