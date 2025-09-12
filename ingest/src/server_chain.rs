@@ -9,8 +9,8 @@ use file_store::{
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::chain_rewardable_entities::{
-    self, IotHotspotUpdateReportV1, IotHotspotUpdateReqV1, IotHotspotUpdateRespV1,
-    MobileHotspotUpdateReportV1, MobileHotspotUpdateReqV1, MobileHotspotUpdateRespV1,
+    self, IotHotspotChangeReportV1, IotHotspotChangeReqV1, IotHotspotChangeRespV1,
+    MobileHotspotChangeReportV1, MobileHotspotChangeReqV1, MobileHotspotChangeRespV1,
 };
 use task_manager::{ManagedTask, TaskManager};
 use tonic::{transport::Server, Request, Response, Status};
@@ -34,7 +34,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
     let (file_upload, file_upload_server) = FileUpload::from_settings_tm(&settings.output).await?;
     let store_base_path = Path::new(&settings.cache);
 
-    let (mobile_sink, mobile_sink_server) = MobileHotspotUpdateReportV1::file_sink(
+    let (mobile_sink, mobile_sink_server) = MobileHotspotChangeReportV1::file_sink(
         store_base_path,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
@@ -43,7 +43,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
     )
     .await?;
 
-    let (iot_sink, iot_sink_server) = IotHotspotUpdateReportV1::file_sink(
+    let (iot_sink, iot_sink_server) = IotHotspotChangeReportV1::file_sink(
         store_base_path,
         file_upload,
         FileSinkCommitStrategy::Automatic,
@@ -77,8 +77,8 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
 
 #[derive(Debug)]
 pub struct GrpcServer {
-    iot_sink: FileSinkClient<IotHotspotUpdateReportV1>,
-    mobile_sink: FileSinkClient<MobileHotspotUpdateReportV1>,
+    iot_sink: FileSinkClient<IotHotspotChangeReportV1>,
+    mobile_sink: FileSinkClient<MobileHotspotChangeReportV1>,
     address: SocketAddr,
     auth_key: PublicKey,
 }
@@ -109,8 +109,8 @@ impl GrpcServer {
 impl chain_rewardable_entities::ChainRewardableEntities for GrpcServer {
     async fn submit_mobile_hotspot_change(
         &self,
-        request: Request<MobileHotspotUpdateReqV1>,
-    ) -> Result<Response<MobileHotspotUpdateRespV1>, tonic::Status> {
+        request: Request<MobileHotspotChangeReqV1>,
+    ) -> Result<Response<MobileHotspotChangeRespV1>, tonic::Status> {
         let timestamp_ms = Utc::now().timestamp_millis() as u64;
         let req = request.into_inner();
 
@@ -119,13 +119,13 @@ impl chain_rewardable_entities::ChainRewardableEntities for GrpcServer {
         let report = req.into_report(timestamp_ms);
         let _ = self.mobile_sink.write(report, []).await;
 
-        Ok(Response::new(MobileHotspotUpdateRespV1 { timestamp_ms }))
+        Ok(Response::new(MobileHotspotChangeRespV1 { timestamp_ms }))
     }
 
     async fn submit_iot_hotspot_change(
         &self,
-        request: Request<IotHotspotUpdateReqV1>,
-    ) -> Result<Response<IotHotspotUpdateRespV1>, tonic::Status> {
+        request: Request<IotHotspotChangeReqV1>,
+    ) -> Result<Response<IotHotspotChangeRespV1>, tonic::Status> {
         let timestamp_ms = Utc::now().timestamp_millis() as u64;
         let req = request.into_inner();
 
@@ -134,7 +134,7 @@ impl chain_rewardable_entities::ChainRewardableEntities for GrpcServer {
         let report = req.into_report(timestamp_ms);
         let _ = self.iot_sink.write(report, []).await;
 
-        Ok(Response::new(IotHotspotUpdateRespV1 { timestamp_ms }))
+        Ok(Response::new(IotHotspotChangeRespV1 { timestamp_ms }))
     }
 }
 
@@ -155,20 +155,20 @@ trait IntoReport {
     fn into_report(self, received_timestamp_ms: u64) -> Self::Out;
 }
 
-impl IntoReport for MobileHotspotUpdateReqV1 {
-    type Out = MobileHotspotUpdateReportV1;
+impl IntoReport for MobileHotspotChangeReqV1 {
+    type Out = MobileHotspotChangeReportV1;
     fn into_report(self, received_timestamp_ms: u64) -> Self::Out {
-        MobileHotspotUpdateReportV1 {
+        MobileHotspotChangeReportV1 {
             received_timestamp_ms,
             report: Some(self),
         }
     }
 }
 
-impl IntoReport for IotHotspotUpdateReqV1 {
-    type Out = IotHotspotUpdateReportV1;
+impl IntoReport for IotHotspotChangeReqV1 {
+    type Out = IotHotspotChangeReportV1;
     fn into_report(self, received_timestamp_ms: u64) -> Self::Out {
-        IotHotspotUpdateReportV1 {
+        IotHotspotChangeReportV1 {
             received_timestamp_ms,
             report: Some(self),
         }
