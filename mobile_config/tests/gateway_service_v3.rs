@@ -24,7 +24,7 @@ async fn gateway_stream_info_v3_basic(pool: PgPool) {
     let now_plus_10 = now + chrono::Duration::seconds(10);
     let now_plus_5 = now + chrono::Duration::seconds(5);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -103,7 +103,7 @@ async fn gateway_stream_info_v3_no_metadata(pool: PgPool) {
     let now = Utc::now();
     let now_plus_10 = now + chrono::Duration::seconds(10);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -143,7 +143,7 @@ async fn gateway_stream_info_v3_no_deployment_info(pool: PgPool) {
     let now_plus_10 = now + chrono::Duration::seconds(10);
     let now_plus_5 = now + chrono::Duration::seconds(5);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -197,7 +197,7 @@ async fn gateway_stream_info_v3_updated_at(pool: PgPool) {
     let created_at = Utc::now() - Duration::hours(5);
     let updated_at = Utc::now() - Duration::hours(3);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -281,7 +281,7 @@ async fn gateway_stream_info_v3_min_location_changed_at_zero(pool: PgPool) {
     let now_minus_three = now - Duration::hours(3);
     let now_minus_four = now - Duration::hours(4);
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",
@@ -359,7 +359,7 @@ async fn gateway_stream_info_v3_location_changed_at(pool: PgPool) {
     // asset_2 location changed at now - 4 hours
     // request min_location_changed_at  location changed at now - 5 hours
 
-    create_db_tables(&pool).await;
+    create_metadata_db_tables(&pool).await;
     add_db_record(
         &pool,
         "asset1",

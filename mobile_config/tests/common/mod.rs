@@ -103,21 +103,21 @@ pub async fn add_asset_key(pool: &PgPool, asset: &str, key: PublicKeyBinary) {
     .unwrap();
 }
 
-pub async fn create_db_tables(pool: &PgPool) {
+pub async fn create_metadata_db_tables(pool: &PgPool) {
     sqlx::query(
         r#"
         CREATE TABLE mobile_hotspot_infos (
-        asset character varying(255) NULL,
-        location numeric NULL,
-        device_type jsonb NOT NULL,
-        created_at timestamptz NOT NULL DEFAULT NOW(),
-        refreshed_at timestamptz,
-        deployment_info jsonb,
-        is_full_hotspot bool NULL,
-        num_location_asserts integer NULL,
-        is_active bool NULL,
-        dc_onboarding_fee_paid numeric NULL
-    );"#,
+            asset character varying(255) NULL,
+            location numeric NULL,
+            device_type jsonb NOT NULL,
+            created_at timestamptz NOT NULL DEFAULT NOW(),
+            refreshed_at timestamptz,
+            deployment_info jsonb,
+            is_full_hotspot bool NULL,
+            num_location_asserts integer NULL,
+            is_active bool NULL,
+            dc_onboarding_fee_paid numeric NULL
+        );"#,
     )
     .execute(pool)
     .await
