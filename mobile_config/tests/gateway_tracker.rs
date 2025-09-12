@@ -1,5 +1,6 @@
 mod common;
 
+use crate::common::gateway_metadata_db;
 use chrono::Utc;
 use custom_tracing::Settings;
 use mobile_config::gateway::{
@@ -16,8 +17,8 @@ async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
     let hex1 = 631711281837647359_i64;
     let now = Utc::now();
 
-    common::gateway_metadata_db::create_tables(&pool).await;
-    common::gateway_metadata_db::insert_gateway(
+    gateway_metadata_db::create_tables(&pool).await;
+    gateway_metadata_db::insert_gateway(
         &pool,
         "asset1",
         Some(hex1),

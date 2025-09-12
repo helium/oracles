@@ -4,9 +4,10 @@ use futures::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use sqlx::{postgres::PgRow, FromRow, PgExecutor, PgPool, Row};
 use std::convert::TryFrom;
+use strum::EnumIter;
 
 // Postgres enum: gateway_type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, EnumIter)]
 #[sqlx(type_name = "gateway_type")]
 pub enum GatewayType {
     #[sqlx(rename = "wifiIndoor")]

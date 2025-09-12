@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn insert_gateway(
     pool: &PgPool,
     asset: &str,

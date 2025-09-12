@@ -15,6 +15,7 @@ use helium_proto::services::mobile_config::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgExecutor;
+use strum::IntoEnumIterator;
 
 pub type GatewayInfoStream = BoxStream<'static, GatewayInfo>;
 
@@ -436,11 +437,7 @@ pub fn stream_by_types<'a>(
     min_date: DateTime<Utc>,
 ) -> anyhow::Result<impl Stream<Item = GatewayInfo> + 'a> {
     let gateway_types = if types.is_empty() {
-        vec![
-            GatewayType::WifiIndoor,
-            GatewayType::WifiOutdoor,
-            GatewayType::WifiDataOnly,
-        ]
+        GatewayType::iter().collect()
     } else {
         types
             .iter()

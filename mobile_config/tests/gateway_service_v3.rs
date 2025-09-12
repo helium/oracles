@@ -1,9 +1,9 @@
 pub mod common;
 
-use crate::common::{gateway_metadata_db, make_keypair};
+use crate::common::make_keypair;
 use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
-use helium_crypto::{Keypair, PublicKey, Sign};
+use helium_crypto::{Keypair, Sign};
 use helium_proto::services::mobile_config::{
     self as proto, DeploymentInfo, DeviceTypeV2, GatewayClient, GatewayInfoStreamReqV3,
     GatewayInfoV3, LocationInfo,
