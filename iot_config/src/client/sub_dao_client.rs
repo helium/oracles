@@ -3,14 +3,11 @@ use crate::sub_dao_epoch_reward_info::EpochRewardInfo;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
-    services::{
-        sub_dao::{self, SubDaoEpochRewardInfoReqV1},
-        Channel,
-    },
+    services::sub_dao::{self, SubDaoEpochRewardInfoReqV1},
     Message,
 };
 use std::{error::Error, sync::Arc, time::Duration};
-use tonic::transport::Endpoint;
+use tonic::transport::{Channel, Endpoint};
 
 #[derive(Clone)]
 pub struct SubDaoClient {

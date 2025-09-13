@@ -514,8 +514,7 @@ fn verify_beacon_schedule(
                     // if we fail to cast to a valid bucket beacon interval is likely incorrectly set
                     // rather than default all beacons to success or fail, bail out
                     panic!(
-                        "failed to parse cur bucket: {}, beacon_interval: {}, error: {}:",
-                        beacon_received_ts, beacon_interval, e
+                        "failed to parse cur bucket: {beacon_received_ts}, beacon_interval: {beacon_interval}, error: {e}:"
                     )
                 })?;
             if cur_bucket <= last_bucket {

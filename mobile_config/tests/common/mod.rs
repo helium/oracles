@@ -154,7 +154,7 @@ pub async fn spawn_gateway_service(
     admin_pub_key: PublicKey,
 ) -> (
     String,
-    tokio::task::JoinHandle<std::result::Result<(), helium_proto::services::Error>>,
+    tokio::task::JoinHandle<std::result::Result<(), transport::Error>>,
 ) {
     let server_key = make_keypair();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

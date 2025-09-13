@@ -81,7 +81,7 @@ async fn gateway_stream_info_v3_basic(pool: PgPool) {
     assert_eq!(
         gateway.metadata.clone().unwrap().location_info.unwrap(),
         LocationInfo {
-            location: format!("{:x}", asset1_hex_idx),
+            location: format!("{asset1_hex_idx:x}"),
             location_changed_at: now_plus_5.timestamp() as u64
         }
     );
@@ -180,7 +180,7 @@ async fn gateway_stream_info_v3_no_deployment_info(pool: PgPool) {
     assert_eq!(
         gateway.metadata.clone().unwrap().location_info.unwrap(),
         LocationInfo {
-            location: format!("{:x}", asset1_hex_idx),
+            location: format!("{asset1_hex_idx:x}"),
             location_changed_at: now_plus_5.timestamp() as u64
         }
     );

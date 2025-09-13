@@ -99,7 +99,7 @@ pub enum OwnedKeyType {
 }
 
 impl OwnedKeyType {
-    pub fn to_ref(&self) -> KeyType {
+    pub fn to_ref(&self) -> KeyType<'_> {
         match self {
             OwnedKeyType::Wifi(pubkey) => KeyType::Wifi(pubkey),
         }

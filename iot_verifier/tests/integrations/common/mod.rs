@@ -83,9 +83,9 @@ impl<T: std::fmt::Debug> MockFileSinkReceiver<T> {
                 Some(msg)
             }
             Ok(None) => None,
-            Err(e) => panic!("timeout while waiting for message1 {:?}", e),
+            Err(e) => panic!("timeout while waiting for message1 {e:?}"),
             Ok(Some(unexpected_msg)) => {
-                println!("ignoring unexpected msg {:?}", unexpected_msg);
+                println!("ignoring unexpected msg {unexpected_msg:?}");
                 None
             }
         }
@@ -128,7 +128,7 @@ impl MockFileSinkReceiver<IotRewardShare> {
     pub async fn receive_gateway_reward(&mut self) -> GatewayReward {
         match self.receive().await {
             Some(iot_reward) => {
-                println!("iot_reward: {:?}", iot_reward);
+                println!("iot_reward: {iot_reward:?}");
                 match iot_reward.reward {
                     Some(IotReward::GatewayReward(r)) => r,
                     _ => panic!("failed to get gateway reward"),
@@ -141,7 +141,7 @@ impl MockFileSinkReceiver<IotRewardShare> {
     pub async fn receive_operational_reward(&mut self) -> OperationalReward {
         match self.receive().await {
             Some(iot_reward) => {
-                println!("iot_reward: {:?}", iot_reward);
+                println!("iot_reward: {iot_reward:?}");
                 match iot_reward.reward {
                     Some(IotReward::OperationalReward(r)) => r,
                     _ => panic!("failed to get operational reward"),
@@ -154,7 +154,7 @@ impl MockFileSinkReceiver<IotRewardShare> {
     pub async fn receive_unallocated_reward(&mut self) -> UnallocatedReward {
         match self.receive().await {
             Some(iot_reward) => {
-                println!("iot_reward: {:?}", iot_reward);
+                println!("iot_reward: {iot_reward:?}");
                 match iot_reward.reward {
                     Some(IotReward::UnallocatedReward(r)) => r,
                     _ => panic!("failed to get unallocated reward"),

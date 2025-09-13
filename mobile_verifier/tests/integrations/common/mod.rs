@@ -14,7 +14,6 @@ use hex_assignments::{Assignment, HexAssignment, HexBoostDataAssignmentsExt};
 use hextree::Cell;
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
-    client::sub_dao_client::SubDaoEpochRewardInfoResolver,
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
     sub_dao_epoch_reward_info::EpochRewardInfo,
 };
@@ -45,11 +44,6 @@ pub struct MockHexBoostingClient {
     boosted_hexes: Vec<BoostedHexInfo>,
 }
 
-#[derive(Debug, Clone)]
-pub struct MockSubDaoRewardsClient {
-    info: Option<EpochRewardInfo>,
-}
-
 impl MockHexBoostingClient {
     pub fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
         Self { boosted_hexes }
@@ -67,17 +61,6 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
         _timestamp: DateTime<Utc>,
     ) -> Result<BoostedHexInfoStream, ClientError> {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())
-    }
-}
-
-#[async_trait::async_trait]
-impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
-    async fn resolve_info(
-        &self,
-        _sub_dao: &str,
-        _epoch: u64,
-    ) -> Result<Option<EpochRewardInfo>, ClientError> {
-        Ok(self.info.clone())
     }
 }
 
@@ -452,7 +435,7 @@ impl<V: AsStringKeyedMapKey + Clone> AsStringKeyedMap<V> for Vec<V> {
         for item in self {
             let key = item.key();
             if map.contains_key(&key) {
-                panic!("Duplicate string key found: {}", key);
+                panic!("Duplicate string key found: {key}");
             }
             map.insert(key, item.clone());
         }

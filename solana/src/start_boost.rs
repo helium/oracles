@@ -80,7 +80,7 @@ impl SolanaNetwork for SolanaRpc {
             let mut request = RequestBuilder::from(
                 hexboosting::ID,
                 &self.cluster,
-                std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
+                std::rc::Rc::new(Keypair::try_from(&self.keypair[..]).unwrap()),
                 Some(CommitmentConfig::finalized()),
                 &self.provider,
             );
@@ -106,7 +106,7 @@ impl SolanaNetwork for SolanaRpc {
         };
         tracing::debug!("instructions: {:?}", instructions);
         let blockhash = self.provider.get_latest_blockhash().await?;
-        let signer = Keypair::from_bytes(&self.keypair).unwrap();
+        let signer = Keypair::try_from(&self.keypair[..]).unwrap();
 
         Ok(Transaction::new_signed_with_payer(
             &instructions,

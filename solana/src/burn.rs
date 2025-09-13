@@ -223,7 +223,7 @@ impl SolanaNetwork for SolanaRpc {
             let request = RequestBuilder::from(
                 data_credits::ID,
                 &self.cluster,
-                std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
+                std::rc::Rc::new(Keypair::try_from(&self.keypair[..]).unwrap()),
                 Some(CommitmentConfig::finalized()),
                 &self.provider,
             );
@@ -248,7 +248,7 @@ impl SolanaNetwork for SolanaRpc {
         };
 
         let blockhash = self.provider.get_latest_blockhash().await?;
-        let signer = Keypair::from_bytes(&self.keypair).unwrap();
+        let signer = Keypair::try_from(&self.keypair[..]).unwrap();
 
         Ok(Transaction::new_signed_with_payer(
             &instructions,
