@@ -122,6 +122,7 @@ impl Gateway {
             )
             ON CONFLICT (address)
             DO UPDATE SET
+                gateway_type = EXCLUDED.gateway_type,
                 created_at = EXCLUDED.created_at,
                 updated_at = EXCLUDED.updated_at,
                 refreshed_at = EXCLUDED.refreshed_at,
