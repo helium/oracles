@@ -1,5 +1,4 @@
 use crate::{
-    file_store,
     iot_beacon_report::IotBeaconIngestReport,
     iot_valid_poc::IotPoc,
     iot_witness_report::IotWitnessIngestReport,
@@ -75,7 +74,7 @@ pub struct FileFilter {
 
 impl FileFilter {
     pub fn list(&self, client: &aws_sdk_s3::Client, bucket: &str) -> FileInfoStream {
-        file_store::list_files(
+        crate::list_files(
             client,
             bucket,
             &self.prefix,
@@ -122,7 +121,7 @@ impl Put {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = settings.connect().await;
         for file in self.files.iter() {
-            file_store::put_file(&client, &self.bucket, file).await?;
+            crate::put_file(&client, &self.bucket, file).await?;
         }
         Ok(())
     }
@@ -141,7 +140,7 @@ impl Remove {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = settings.connect().await;
         for key in self.keys.iter() {
-            file_store::remove_file(&client, &self.bucket, key).await?;
+            crate::remove_file(&client, &self.bucket, key).await?;
         }
         Ok(())
     }
@@ -171,7 +170,7 @@ impl Get {
                     .open(&self.dest.join(Path::new(&info.key)))
                     .map_err(Error::from)
                     .and_then(|mut file| {
-                        file_store::get_raw_file(&client, &bucket, &info.key).and_then(
+                        crate::get_raw_file(&client, &bucket, &info.key).and_then(
                             |stream| async move {
                                 let mut reader =
                                     tokio::io::BufReader::new(stream.into_async_read());
@@ -205,7 +204,7 @@ impl Locate {
         let file_infos = self.filter.list(&client, &self.bucket);
         let prefix = self.filter.prefix.clone();
         let gateway = &self.gateway.clone();
-        let mut events = file_store::source_files(&client, &self.bucket, file_infos)
+        let mut events = crate::source_files(&client, &self.bucket, file_infos)
             .map_ok(|buf| (buf, gateway))
             .try_filter_map(|(buf, gateway)| {
                 let prefix = prefix.clone();

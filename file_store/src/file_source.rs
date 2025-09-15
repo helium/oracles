@@ -79,7 +79,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{file_store, FileInfo, FileInfoStream, Settings};
+    use crate::{FileInfo, FileInfoStream, Settings};
     use std::str::FromStr;
 
     fn infos(names: &'static [&str]) -> FileInfoStream {
@@ -101,7 +101,6 @@ mod test {
 
         let settings = Settings {
             endpoint: None,
-            region: "us-east-1".to_string(),
             access_key_id: None,
             secret_access_key: None,
         };
@@ -109,7 +108,7 @@ mod test {
         let client = settings.connect().await;
         let bucket = "devnet-poc5g-rewards".to_string();
 
-        let stream = file_store::source_files(
+        let stream = crate::source_files(
             &client,
             &bucket,
             infos(&[
@@ -117,12 +116,12 @@ mod test {
                 "cell_heartbeat.1658834120042.gz",
             ]),
         );
-        let p1_stream = file_store::source_files(
+        let p1_stream = crate::source_files(
             &client,
             &bucket,
             infos(&["cell_heartbeat.1658832527866.gz"]),
         );
-        let p2_stream = file_store::source_files(
+        let p2_stream = crate::source_files(
             &client,
             &bucket,
             infos(&["cell_heartbeat.1658834120042.gz"]),

@@ -1,4 +1,4 @@
-use crate::{file_store, traits::MsgDecode, Error, FileInfo, Result};
+use crate::{traits::MsgDecode, Error, FileInfo, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
@@ -348,7 +348,7 @@ where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
     async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
-        Ok(file_store::stream_source(byte_stream)
+        Ok(crate::stream_source(byte_stream)
             .filter_map(|msg| async {
                 msg.map_err(|err| {
                     tracing::error!(
@@ -383,7 +383,7 @@ where
     T: helium_proto::Message + Default,
 {
     async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
-        Ok(file_store::stream_source(byte_stream)
+        Ok(crate::stream_source(byte_stream)
             .filter_map(|msg| async {
                 msg.map_err(|err| {
                     tracing::error!(
@@ -436,14 +436,14 @@ impl FileInfoPollerStore for S3FileInfoPollerStore {
         A: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
         B: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
     {
-        file_store::list_all_files(&self.client, &self.bucket, file_type, after, before).await
+        crate::list_all_files(&self.client, &self.bucket, file_type, after, before).await
     }
 
     async fn get_raw<K>(&self, key: K) -> Result<ByteStream>
     where
         K: Into<String> + Send + Sync,
     {
-        file_store::get_raw_file(&self.client, &self.bucket, key).await
+        crate::get_raw_file(&self.client, &self.bucket, key).await
     }
 }
 
