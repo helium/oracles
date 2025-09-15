@@ -6,11 +6,7 @@ use futures::stream::StreamExt;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::services::mobile_config::{
     self as proto, gateway_metadata_v2::DeploymentInfo, DeviceType, GatewayClient,
-<<<<<<< HEAD
-    GatewayInfoStreamReqV2, GatewayInfoStreamResV2,
-=======
     GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
->>>>>>> a4695ad1 (More tests fix)
 };
 use mobile_config::{
     gateway::{
@@ -856,6 +852,7 @@ async fn gateway_info_stream_v1(
     };
 
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+    #[allow(deprecated)]
     let mut stream = client.info_stream(req).await?.into_inner();
 
     let first = stream
@@ -905,6 +902,7 @@ async fn info_batch_v1(
         signature: vec![],
     };
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+    #[allow(deprecated)]
     let stream = client.info_batch(req).await?.into_inner();
 
     Ok(stream)
