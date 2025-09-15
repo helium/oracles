@@ -1,4 +1,4 @@
-use crate::{Error, FileStore, Result, Settings};
+use crate::{file_store, Error, Result};
 use futures::{future::LocalBoxFuture, StreamExt, TryFutureExt};
 use std::{
     path::{Path, PathBuf},
@@ -26,29 +26,21 @@ pub struct FileUpload {
 
 pub struct FileUploadServer {
     messages: UnboundedReceiverStream<PathBuf>,
-    store: FileStore,
+    client: aws_sdk_s3::Client,
+    bucket: String,
 }
 
 impl FileUpload {
-    pub async fn from_settings(
-        settings: &Settings,
-        messages: MessageReceiver,
-    ) -> Result<FileUploadServer> {
-        Ok(FileUploadServer {
-            messages: UnboundedReceiverStream::new(messages),
-            store: FileStore::from_settings(settings).await?,
-        })
-    }
-
-    pub async fn from_settings_tm(settings: &Settings) -> Result<(Self, FileUploadServer)> {
+    pub async fn new(client: aws_sdk_s3::Client, bucket: String) -> (Self, FileUploadServer) {
         let (sender, receiver) = mpsc::unbounded_channel();
-        Ok((
+        (
             Self { sender },
             FileUploadServer {
                 messages: UnboundedReceiverStream::new(receiver),
-                store: FileStore::from_settings(settings).await?,
+                client,
+                bucket,
             },
-        ))
+        )
     }
 
     pub async fn upload_file(&self, file: &Path) -> Result {
@@ -75,14 +67,13 @@ impl ManagedTask for FileUploadServer {
 
 impl FileUploadServer {
     pub async fn run(self, shutdown: triggered::Listener) -> Result {
-        tracing::info!("starting file uploader {}", self.store.bucket);
+        tracing::info!("starting file uploader {}", self.bucket);
 
         let uploads = self
             .messages
-            .map(|msg| (self.store.clone(), msg))
-            .for_each_concurrent(5, |(store, path)| async move {
+            .map(|msg| (self.client.clone(), self.bucket.clone(), msg))
+            .for_each_concurrent(5, |(client, bucket, path)| async move {
                 let path_str = path.display();
-                let bucket = &store.bucket;
                 if !path.exists() {
                     tracing::warn!("ignoring absent file {path_str}");
                     return;
@@ -96,7 +87,7 @@ impl FileUploadServer {
                 const RETRY_WAIT: Duration = Duration::from_secs(10);
                 while retry <= MAX_RETRIES {
                     tracing::debug!("storing {path_str} in {bucket} retry {retry}");
-                    match store.put(&path).await {
+                    match file_store::put_file(&client, &bucket, &path).await {
                         Ok(()) => {
                             match fs::remove_file(&path).await {
                                 Ok(()) => {
@@ -126,7 +117,7 @@ impl FileUploadServer {
             _ = shutdown.clone() => (),
         }
 
-        tracing::info!("stopping file uploader {}", self.store.bucket);
+        tracing::info!("stopping file uploader {}", self.bucket);
         Ok(())
     }
 }

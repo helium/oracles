@@ -5,8 +5,6 @@ use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
-    /// Bucket name for the store. Required
-    pub bucket: String,
     /// Optional api endpoint for the bucket. Default none
     pub endpoint: Option<String>,
     /// Optional region for the endpoint. Default: us-west-2
@@ -34,5 +32,15 @@ impl Settings {
             .build()
             .and_then(|config| config.try_deserialize())
             .map_err(Error::from)
+    }
+
+    pub async fn connect(&self) -> aws_sdk_s3::Client {
+        crate::new_client(
+            self.region.clone(),
+            self.endpoint.clone(),
+            self.access_key_id.clone(),
+            self.secret_access_key.clone(),
+        )
+        .await
     }
 }
