@@ -1,6 +1,9 @@
 mod common;
 
-use crate::common::gateway_metadata_db;
+use crate::common::{
+    gateway_metadata_db::{create_tables, insert_gateway},
+    make_keypair,
+};
 use chrono::Utc;
 use custom_tracing::Settings;
 use mobile_config::gateway::{
@@ -13,12 +16,12 @@ use sqlx::PgPool;
 async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
     custom_tracing::init("mobile_config=debug,info".to_string(), Settings::default()).await?;
 
-    let pubkey1 = common::make_keypair().public_key().clone();
+    let pubkey1 = make_keypair().public_key().clone();
     let hex1 = 631711281837647359_i64;
     let now = Utc::now();
 
-    gateway_metadata_db::create_tables(&pool).await;
-    gateway_metadata_db::insert_gateway(
+    create_tables(&pool).await;
+    insert_gateway(
         &pool,
         "asset1",
         Some(hex1),

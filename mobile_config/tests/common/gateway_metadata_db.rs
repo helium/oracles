@@ -27,7 +27,7 @@ pub async fn insert_gateway(
     insert_asset_key(pool, asset, key).await;
 }
 
-pub async fn insert_mobile_hotspot_infos(
+async fn insert_mobile_hotspot_infos(
     pool: &PgPool,
     asset: &str,
     location: Option<i64>,
@@ -57,7 +57,7 @@ pub async fn insert_mobile_hotspot_infos(
     .unwrap();
 }
 
-pub async fn insert_asset_key(pool: &PgPool, asset: &str, key: PublicKeyBinary) {
+async fn insert_asset_key(pool: &PgPool, asset: &str, key: PublicKeyBinary) {
     let b58 = bs58::decode(key.to_string()).into_vec().unwrap();
     sqlx::query(
         r#"
