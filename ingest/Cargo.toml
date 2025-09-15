@@ -41,4 +41,4 @@ custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 humantime-serde = { workspace = true }
 
 [dev-dependencies]
-backon = "0"
+backon = "1"
