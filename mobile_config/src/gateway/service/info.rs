@@ -226,9 +226,9 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
 impl From<Gateway> for GatewayInfo {
     fn from(gateway: Gateway) -> Self {
         let metadata = if let Some(location) = gateway.location {
-            Some(GatewayMetadata {
-                location,
-                deployment_info: Some(gateway::service::info::DeploymentInfo::WifiDeploymentInfo(
+            let deployment_info = match (gateway.antenna, gateway.elevation, gateway.azimuth) {
+                (None, None, None) => None,
+                _ => Some(gateway::service::info::DeploymentInfo::WifiDeploymentInfo(
                     WifiDeploymentInfo {
                         antenna: gateway.antenna.unwrap_or(0),
                         elevation: gateway.elevation.unwrap_or(0),
@@ -237,6 +237,11 @@ impl From<Gateway> for GatewayInfo {
                         electrical_down_tilt: 0,
                     },
                 )),
+            };
+
+            Some(GatewayMetadata {
+                location,
+                deployment_info,
             })
         } else {
             None
