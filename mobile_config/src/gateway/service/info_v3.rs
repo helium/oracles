@@ -76,13 +76,17 @@ impl From<Gateway> for GatewayInfoV3 {
                 location,
                 location_changed_at: gateway.location_changed_at.unwrap_or(gateway.created_at),
             };
-            Some(GatewayMetadataV3 {
-                location_info,
-                deployment_info: Some(DeploymentInfoProto {
+            let deployment_info = match (gateway.antenna, gateway.elevation, gateway.azimuth) {
+                (None, None, None) => None,
+                _ => Some(DeploymentInfoProto {
                     antenna: gateway.antenna.unwrap_or(0),
                     elevation: gateway.elevation.unwrap_or(0),
                     azimuth: gateway.azimuth.unwrap_or(0),
                 }),
+            };
+            Some(GatewayMetadataV3 {
+                location_info,
+                deployment_info,
             })
         } else {
             None
