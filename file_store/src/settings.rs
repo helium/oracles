@@ -3,23 +3,15 @@ use config::{Config, File};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Settings {
     /// Optional api endpoint for the bucket. Default none
     pub endpoint: Option<String>,
-    /// Optional region for the endpoint. Default: us-west-2
-    #[serde(default = "default_region")]
-    pub region: String,
-
     /// Should only be used for local testing
     #[serde(skip_serializing)]
     pub access_key_id: Option<String>,
     #[serde(skip_serializing)]
     pub secret_access_key: Option<String>,
-}
-
-pub fn default_region() -> String {
-    "us-west-2".to_string()
 }
 
 impl Settings {
@@ -36,7 +28,6 @@ impl Settings {
 
     pub async fn connect(&self) -> aws_sdk_s3::Client {
         crate::new_client(
-            self.region.clone(),
             self.endpoint.clone(),
             self.access_key_id.clone(),
             self.secret_access_key.clone(),

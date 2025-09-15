@@ -33,7 +33,7 @@ pub mod usage_counts;
 pub mod verified_subscriber_verified_mapping_event_ingest_report;
 pub mod wifi_heartbeat;
 
-use aws_config::{meta::region::RegionProviderChain, BehaviorVersion, Region};
+use aws_config::BehaviorVersion;
 pub use cli::bucket::FileFilter;
 pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
@@ -49,18 +49,11 @@ pub type FileInfoStream = Stream<FileInfo>;
 pub type BytesMutStream = Stream<BytesMut>;
 
 pub async fn new_client(
-    region: String,
     endpoint: Option<String>,
     _access_key_id: Option<String>,
     _secret_access_key: Option<String>,
 ) -> aws_sdk_s3::Client {
-    let region = Region::new(region);
-    let region_provider = RegionProviderChain::first_try(region).or_default_provider();
-
-    let config = aws_config::defaults(BehaviorVersion::latest())
-        .region(region_provider)
-        .load()
-        .await;
+    let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
 
     let mut s3_config = aws_sdk_s3::config::Builder::from(&config);
     if let Some(endpoint) = endpoint {
