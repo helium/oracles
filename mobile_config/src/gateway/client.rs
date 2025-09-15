@@ -95,7 +95,7 @@ impl GatewayInfoResolver for GatewayClient {
         &mut self,
         device_types: &[DeviceType],
     ) -> Result<GatewayInfoStream, ClientError> {
-        let mut req = mobile_config::GatewayInfoStreamReqV1 {
+        let mut req = mobile_config::GatewayInfoStreamReqV2 {
             batch_size: self.batch_size,
             device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),
             min_updated_at: 0,
