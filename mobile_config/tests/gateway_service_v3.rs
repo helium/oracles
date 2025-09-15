@@ -1,6 +1,6 @@
-pub mod common;
+mod common;
 
-use crate::common::make_keypair;
+use crate::common::{make_keypair, spawn_gateway_service};
 use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
 use helium_crypto::{Keypair, Sign};
@@ -61,8 +61,7 @@ async fn gateway_stream_info_v3_basic(pool: PgPool) -> anyhow::Result<()> {
     };
     gateway2.insert(&pool).await?;
 
-    let (addr, _handle) =
-        common::spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await?;
 
     // Select all devices
@@ -123,8 +122,7 @@ async fn gateway_stream_info_v3_no_metadata(pool: PgPool) -> anyhow::Result<()> 
     };
     gateway1.insert(&pool).await?;
 
-    let (addr, _handle) =
-        common::spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await?;
 
     let resp = gateway_info_stream_v3(&mut client, &admin_key, &[], 0, 0).await?;
@@ -170,8 +168,7 @@ async fn gateway_stream_info_v3_no_deployment_info(pool: PgPool) -> anyhow::Resu
     };
     gateway1.insert(&pool).await?;
 
-    let (addr, _handle) =
-        common::spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await?;
 
     let resp = gateway_info_stream_v3(&mut client, &admin_key, &[], 0, 0).await?;
@@ -215,8 +212,8 @@ async fn gateway_stream_info_v3_updated_at(pool: PgPool) -> anyhow::Result<()> {
     let gateway1 = Gateway {
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
-        created_at: created_at,
-        updated_at: updated_at,
+        created_at,
+        updated_at,
         refreshed_at: updated_at,
         last_changed_at: updated_at,
         hash: "".to_string(),
@@ -232,7 +229,7 @@ async fn gateway_stream_info_v3_updated_at(pool: PgPool) -> anyhow::Result<()> {
     let gateway2 = Gateway {
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
-        created_at: created_at,
+        created_at,
         updated_at: created_at,
         refreshed_at: created_at,
         last_changed_at: created_at,
@@ -246,8 +243,7 @@ async fn gateway_stream_info_v3_updated_at(pool: PgPool) -> anyhow::Result<()> {
     };
     gateway2.insert(&pool).await?;
 
-    let (addr, _handle) =
-        common::spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await?;
 
     let resp = gateway_info_stream_v3(
@@ -335,8 +331,7 @@ async fn gateway_stream_info_v3_min_location_changed_at_zero(pool: PgPool) -> an
     };
     gateway2.insert(&pool).await?;
 
-    let (addr, _handle) =
-        common::spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await?;
 
     let resp = gateway_info_stream_v3(&mut client, &admin_key, &[], 0, 0).await?;
@@ -371,28 +366,7 @@ async fn gateway_stream_info_v3_location_changed_at(pool: PgPool) -> anyhow::Res
     // Scenario:
     // asset_1 location changed at now - 6 hours
     // asset_2 location changed at now - 4 hours
-    // request min_location_changed_at location changed at now - 5 hours
-
-    // gateway_metadata_db::create_tables(&pool).await;
-    // gateway_metadata_db::insert_gateway(
-    //     &pool,
-    //     "asset1",
-    //     Some(asset1_hex_idx),
-    //     "\"wifiIndoor\"",
-    //     asset1_pubkey.clone().into(),
-    //     now_minus_six,
-    //     Some(now),
-    //     None,
-    // )
-    // .await;
-    // add_mobile_tracker_record(
-    //     &pool,
-    //     asset1_pubkey.clone().into(),
-    //     now_minus_three,
-    //     Some(asset1_hex_idx),
-    //     Some(now_minus_six),
-    // )
-    // .await;
+    // request min_location_changed_at location changed at now - 5 hour
 
     let gateway1 = Gateway {
         address: address1.clone().into(),
@@ -411,27 +385,6 @@ async fn gateway_stream_info_v3_location_changed_at(pool: PgPool) -> anyhow::Res
     };
     gateway1.insert(&pool).await?;
 
-    // Shouldn't be returned
-    // gateway_metadata_db::insert_gateway(
-    //     &pool,
-    //     "asset2",
-    //     Some(asset2_hex_idx),
-    //     "\"wifiDataOnly\"",
-    //     asset2_pubkey.clone().into(),
-    //     now_minus_six,
-    //     Some(now),
-    //     None,
-    // )
-    // .await;
-    // add_mobile_tracker_record(
-    //     &pool,
-    //     asset2_pubkey.clone().into(),
-    //     now_minus_three,
-    //     Some(asset2_hex_idx),
-    //     Some(now_minus_four),
-    // )
-    // .await;
-
     let gateway2 = Gateway {
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
@@ -449,8 +402,7 @@ async fn gateway_stream_info_v3_location_changed_at(pool: PgPool) -> anyhow::Res
     };
     gateway2.insert(&pool).await?;
 
-    let (addr, _handle) =
-        common::spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await?;
 
     let resp = gateway_info_stream_v3(
