@@ -108,7 +108,7 @@ impl PriceGenerator {
             default_price,
             interval_duration: settings.interval,
             stale_price_duration: settings.stale_price_duration,
-            latest_price_file: settings.cache.join(format!("{:?}.latest", token)),
+            latest_price_file: settings.cache.join(format!("{token:?}.latest")),
             file_sink,
         })
     }

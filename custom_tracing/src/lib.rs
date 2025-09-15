@@ -157,6 +157,6 @@ fn file_match(event_path: &Path, file: String) -> bool {
     event_path
         .to_str()
         .map(|path| path.split('/'))
-        .map(|path| path.last().is_some_and(|file_name| file_name == file))
+        .map(|mut path| path.next_back().is_some_and(|file_name| file_name == file))
         .unwrap_or_default()
 }

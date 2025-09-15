@@ -4,11 +4,9 @@ use chrono::{DateTime, Utc};
 use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, Sign};
-use helium_proto::{
-    services::{mobile_config, Channel},
-    Message,
-};
+use helium_proto::{services::mobile_config, Message};
 use std::{sync::Arc, time::Duration};
+use tonic::transport::Channel;
 
 #[derive(Clone)]
 pub struct HexBoostingClient {
