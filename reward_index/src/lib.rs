@@ -8,3 +8,6 @@ pub mod telemetry;
 
 pub use indexer::Indexer;
 pub use settings::Settings;
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

@@ -5,3 +5,6 @@ pub mod server;
 pub mod settings;
 
 pub use settings::Settings;
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

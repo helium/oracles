@@ -86,3 +86,6 @@ where
         Ok(std::mem::replace(&mut self.value, new_val))
     }
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

@@ -74,3 +74,6 @@ mod tests {
         assert_eq!(2, bytes_to_dc(20_001));
     }
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

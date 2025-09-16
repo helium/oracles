@@ -47,3 +47,6 @@ use futures::stream::BoxStream;
 pub type Stream<T> = BoxStream<'static, Result<T>>;
 pub type FileInfoStream = Stream<FileInfo>;
 pub type BytesMutStream = Stream<BytesMut>;
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

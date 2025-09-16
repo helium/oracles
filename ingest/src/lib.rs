@@ -5,3 +5,6 @@ pub mod server_mobile;
 pub mod settings;
 
 pub use settings::{Mode, Settings};
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

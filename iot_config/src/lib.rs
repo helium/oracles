@@ -82,3 +82,6 @@ impl From<u64> for EpochInfo {
         }
     }
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

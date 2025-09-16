@@ -134,3 +134,6 @@ where
         .map(Arc::new)
         .map_err(serde::de::Error::custom)
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();
