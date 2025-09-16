@@ -8,7 +8,6 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-aws-sdk-s3 = { workspace = true }
 config = { workspace = true }
 clap = { workspace = true }
 thiserror = { workspace = true }

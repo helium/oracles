@@ -5036,6 +5036,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "aws-sdk-s3",
  "chrono",
  "clap",
  "config",
@@ -5815,7 +5816,6 @@ name = "price"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aws-sdk-s3",
  "chrono",
  "clap",
  "config",

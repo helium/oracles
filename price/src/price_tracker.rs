@@ -76,7 +76,7 @@ pub struct PriceTracker {
 impl PriceTracker {
     pub async fn new(
         settings: &Settings,
-        client: aws_sdk_s3::Client,
+        client: file_store::Client,
     ) -> anyhow::Result<(Self, PriceTrackerDaemon)> {
         let price_duration = settings.price_duration();
         let (price_sender, price_receiver) = watch::channel(Prices::new());
@@ -127,7 +127,7 @@ impl PriceTracker {
 }
 
 pub struct PriceTrackerDaemon {
-    client: aws_sdk_s3::Client,
+    client: file_store::Client,
     bucket: String,
     price_sender: watch::Sender<Prices>,
     task_killer: mpsc::Receiver<String>,
@@ -166,7 +166,7 @@ impl PriceTrackerDaemon {
 }
 
 async fn calculate_initial_prices(
-    client: &aws_sdk_s3::Client,
+    client: &file_store::Client,
     bucket: &str,
     price_duration: Duration,
     sender: &watch::Sender<Prices>,
@@ -178,7 +178,7 @@ async fn calculate_initial_prices(
 }
 
 async fn process_files(
-    client: &aws_sdk_s3::Client,
+    client: &file_store::Client,
     bucket: &str,
     sender: &watch::Sender<Prices>,
     after: DateTime<Utc>,
@@ -191,7 +191,7 @@ async fn process_files(
 }
 
 async fn process_file(
-    client: &aws_sdk_s3::Client,
+    client: &file_store::Client,
     bucket: &str,
     file: FileInfo,
     sender: &watch::Sender<Prices>,
