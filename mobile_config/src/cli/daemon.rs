@@ -37,9 +37,8 @@ impl Daemon {
             AdminService::new(settings, key_cache.clone(), key_cache_updater, pool.clone())?;
         let gateway_svc = GatewayService::new(
             key_cache.clone(),
-            metadata_pool.clone(),
-            settings.signing_keypair.clone(),
             pool.clone(),
+            settings.signing_keypair.clone(),
         );
         let auth_svc =
             AuthorizationService::new(key_cache.clone(), settings.signing_keypair.clone());
