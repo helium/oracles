@@ -83,9 +83,9 @@ impl MobileHotspotInfo {
                     mhi.refreshed_at,
                     mhi.created_at,
                     mhi.location::bigint,
-                    mhi.is_full_hotspot::int,
+                    mhi.is_full_hotspot,
                     mhi.num_location_asserts,
-                    mhi.is_active::int,
+                    mhi.is_active,
                     mhi.dc_onboarding_fee_paid::bigint,
                     mhi.device_type::text,
                     mhi.deployment_info::text
