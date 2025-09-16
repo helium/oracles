@@ -1,6 +1,6 @@
 mod common;
 
-use chrono::{TimeZone, Utc};
+use chrono::{TimeZone, Timelike, Utc};
 use futures::{pin_mut, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use mobile_config::gateway::db::{Gateway, GatewayType};
@@ -9,7 +9,9 @@ use sqlx::PgPool;
 #[sqlx::test]
 async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
     let addr = pk_binary();
-    let now = Utc::now();
+    let now = Utc::now()
+        .with_nanosecond(Utc::now().timestamp_subsec_micros() * 1000)
+        .unwrap();
 
     let gateway = gw(addr.clone(), GatewayType::WifiIndoor, now);
     gateway.insert(&pool).await?;
