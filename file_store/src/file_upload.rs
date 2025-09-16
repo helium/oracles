@@ -26,12 +26,12 @@ pub struct FileUpload {
 
 pub struct FileUploadServer {
     messages: UnboundedReceiverStream<PathBuf>,
-    client: aws_sdk_s3::Client,
+    client: crate::Client,
     bucket: String,
 }
 
 impl FileUpload {
-    pub async fn new(client: aws_sdk_s3::Client, bucket: String) -> (Self, FileUploadServer) {
+    pub async fn new(client: crate::Client, bucket: String) -> (Self, FileUploadServer) {
         let (sender, receiver) = mpsc::unbounded_channel();
         (
             Self { sender },

@@ -131,10 +131,10 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
 }
 
 impl<Message, State, Parser>
-    FileInfoPollerConfigBuilder<Message, State, S3FileInfoPollerStore, Parser>
+    FileInfoPollerConfigBuilder<Message, State, FileStoreInfoPollerStore, Parser>
 {
     pub fn s3_store(self, client: aws_sdk_s3::Client, bucket: String) -> Self {
-        self.store(S3FileInfoPollerStore::new(client, bucket))
+        self.store(FileStoreInfoPollerStore::new(client, bucket))
     }
 }
 
@@ -142,7 +142,7 @@ impl<Message, State, Parser>
 pub struct FileInfoPollerServer<
     Message,
     State,
-    Store = S3FileInfoPollerStore,
+    Store = FileStoreInfoPollerStore,
     Parser = MsgDecodeFileInfoPollerParser,
 > {
     config: FileInfoPollerConfig<Message, State, Store, Parser>,
@@ -188,7 +188,7 @@ where
 }
 
 impl<Message, State, Parser> ManagedTask
-    for FileInfoPollerServer<Message, State, S3FileInfoPollerStore, Parser>
+    for FileInfoPollerServer<Message, State, FileStoreInfoPollerStore, Parser>
 where
     Message: Send + Sync + 'static,
     State: FileInfoPollerState,
@@ -418,19 +418,19 @@ async fn cache_file(cache: &MemoryFileCache, file_info: &FileInfo) {
     cache.insert(file_info.key.clone(), true, CACHE_TTL).await;
 }
 
-pub struct S3FileInfoPollerStore {
-    client: aws_sdk_s3::Client,
+pub struct FileStoreInfoPollerStore {
+    client: crate::Client,
     bucket: String,
 }
 
-impl S3FileInfoPollerStore {
-    fn new(client: aws_sdk_s3::Client, bucket: String) -> Self {
+impl FileStoreInfoPollerStore {
+    fn new(client: crate::Client, bucket: String) -> Self {
         Self { client, bucket }
     }
 }
 
 #[async_trait::async_trait]
-impl FileInfoPollerStore for S3FileInfoPollerStore {
+impl FileInfoPollerStore for FileStoreInfoPollerStore {
     async fn list_all<A, B>(&self, file_type: &str, after: A, before: B) -> Result<Vec<FileInfo>>
     where
         A: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,

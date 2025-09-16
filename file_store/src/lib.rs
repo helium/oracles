@@ -35,7 +35,7 @@ pub mod wifi_heartbeat;
 use std::path::Path;
 
 use aws_config::BehaviorVersion;
-use aws_sdk_s3::{primitives::ByteStream, Client};
+use aws_sdk_s3::primitives::ByteStream;
 use aws_smithy_types_convert::stream::PaginationStreamExt;
 use chrono::{DateTime, Utc};
 pub use cli::bucket::FileFilter;
@@ -52,6 +52,7 @@ use futures::{
     FutureExt, StreamExt, TryFutureExt, TryStreamExt,
 };
 
+pub type Client = aws_sdk_s3::Client;
 pub type Stream<T> = BoxStream<'static, Result<T>>;
 pub type FileInfoStream = Stream<FileInfo>;
 pub type BytesMutStream = Stream<BytesMut>;
