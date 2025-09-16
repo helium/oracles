@@ -1,5 +1,3 @@
-mod common;
-
 use crate::common::make_keypair;
 use helium_crypto::{PublicKey, Sign};
 use helium_proto::services::mobile_config::{self as proto, EntityClient, EntityVerifyReqV1};
