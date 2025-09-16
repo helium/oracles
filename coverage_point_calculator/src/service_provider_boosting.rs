@@ -22,7 +22,7 @@ pub(crate) const MAX_AVERAGE_DISTANCE: Decimal = dec!(50);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SPBoostedRewardEligibility {
     Eligible,
-    /// Radio must have greather than 25 unique connections over 7 days
+    /// Radio must have greater than 25 unique connections over 7 days
     ///
     /// [HIP-140: Adjust Service Provider Boost Qualifiers][adjust-service-provider-boost-qualifiers]
     ///
