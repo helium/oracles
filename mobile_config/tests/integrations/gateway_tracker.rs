@@ -1,5 +1,3 @@
-mod common;
-
 use crate::common::{
     gateway_metadata_db::{create_tables, insert_gateway},
     make_keypair,

@@ -1,5 +1,3 @@
-mod common;
-
 use crate::common::{make_keypair, spawn_gateway_service};
 use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
