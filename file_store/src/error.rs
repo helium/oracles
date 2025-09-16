@@ -1,3 +1,4 @@
+use helium_proto::UnknownEnumValue;
 use thiserror::Error;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -10,6 +11,8 @@ pub enum Error {
     Encode(#[from] EncodeError),
     #[error("decode error")]
     Decode(#[from] DecodeError),
+    #[error("unknown enum value")]
+    UnknownEnumValue(#[from] UnknownEnumValue),
     #[error("not found")]
     NotFound(String),
     #[error("crypto error")]
