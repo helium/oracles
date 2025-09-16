@@ -8,6 +8,14 @@ use std::{
 };
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct Buckets {
+    pub ingest: String,
+    pub data_transfer: String,
+    pub data_sets: String,
+    pub output: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Defsault to
     /// "mobile_verifier=debug,poc_store=info"
@@ -15,6 +23,9 @@ pub struct Settings {
     pub log: String,
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
+    #[serde(default)]
+    pub file_store: file_store::Settings,
+    pub buckets: Buckets,
     /// Cache location for generated verified reports
     #[serde(default = "default_cache")]
     pub cache: PathBuf,
@@ -24,12 +35,6 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_reward_period_offset")]
     pub reward_period_offset: Duration,
     pub database: db_store::Settings,
-    pub ingest: file_store::Settings,
-    pub data_transfer_ingest: file_store::Settings,
-    pub output: file_store::Settings,
-    /// S3 bucket from which new data sets are downloaded for oracle boosting
-    /// assignments
-    pub data_sets: file_store::Settings,
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
     pub price_tracker: price::price_tracker::Settings,

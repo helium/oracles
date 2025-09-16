@@ -18,7 +18,6 @@ use anyhow::Result;
 use file_store::{
     file_upload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileStore,
 };
 use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate, SpeedtestAvg};
 use mobile_config::client::{
@@ -39,10 +38,12 @@ impl Cmd {
 
         telemetry::initialize(&pool).await?;
 
-        let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
-
-        let report_ingest = FileStore::from_settings(&settings.ingest).await?;
+        let file_store_client = settings.file_store.connect().await;
+        let (file_upload, file_upload_server) = file_upload::FileUpload::new(
+            file_store_client.clone(),
+            settings.buckets.output.clone(),
+        )
+        .await;
 
         // mobile config clients
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
@@ -103,7 +104,8 @@ impl Cmd {
                 WifiHeartbeatDaemon::create_managed_task(
                     pool.clone(),
                     settings,
-                    report_ingest.clone(),
+                    file_store_client.clone(),
+                    settings.buckets.ingest.clone(),
                     gateway_client.clone(),
                     valid_heartbeats,
                     seniority_updates.clone(),
@@ -116,7 +118,8 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     file_upload.clone(),
-                    report_ingest.clone(),
+                    file_store_client.clone(),
+                    settings.buckets.ingest.clone(),
                     speedtests_avg.clone(),
                     gateway_client.clone(),
                 )
@@ -128,7 +131,8 @@ impl Cmd {
                     settings,
                     auth_client.clone(),
                     entity_client.clone(),
-                    report_ingest.clone(),
+                    file_store_client.clone(),
+                    settings.buckets.ingest.clone(),
                     file_upload.clone(),
                 )
                 .await?,
@@ -138,7 +142,8 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     file_upload.clone(),
-                    report_ingest.clone(),
+                    file_store_client.clone(),
+                    settings.buckets.ingest.clone(),
                     auth_client.clone(),
                     new_coverage_obj_notifier,
                 )
@@ -149,6 +154,8 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     file_upload.clone(),
+                    file_store_client.clone(),
+                    settings.buckets.data_sets.clone(),
                     new_coverage_obj_notification,
                 )
                 .await?,
@@ -158,17 +165,27 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     file_upload.clone(),
-                    report_ingest.clone(),
+                    file_store_client.clone(),
+                    settings.buckets.ingest.clone(),
                     auth_client.clone(),
                 )
                 .await?,
             )
-            .add_task(DataSessionIngestor::create_managed_task(pool.clone(), settings).await?)
+            .add_task(
+                DataSessionIngestor::create_managed_task(
+                    pool.clone(),
+                    settings,
+                    file_store_client.clone(),
+                    settings.buckets.data_transfer.clone(),
+                )
+                .await?,
+            )
             .add_task(
                 banning::create_managed_task(
                     pool.clone(),
                     file_upload.clone(),
-                    report_ingest,
+                    file_store_client.clone(),
+                    settings.buckets.ingest.clone(),
                     auth_client,
                     settings,
                     seniority_updates,
@@ -180,6 +197,7 @@ impl Cmd {
                     pool,
                     settings,
                     file_upload,
+                    file_store_client.clone(),
                     carrier_client,
                     hex_boosting_client,
                     sub_dao_rewards_client,

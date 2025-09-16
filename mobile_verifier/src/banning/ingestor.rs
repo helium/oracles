@@ -6,7 +6,6 @@ use file_store::{
         VerifiedBanReport, VerifiedBanReportSink,
     },
     traits::{FileSinkCommitStrategy, FileSinkRollTime},
-    FileStore,
 };
 use futures::{StreamExt, TryFutureExt};
 use helium_proto::services::mobile_config::NetworkKeyRole;
@@ -43,7 +42,8 @@ impl BanIngestor {
     pub async fn create_managed_task(
         pool: PgPool,
         file_upload: FileUpload,
-        file_store: FileStore,
+        file_store_client: file_store::Client,
+        bucket: String,
         auth_verifier: AuthorizationClient,
         settings: &Settings,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -56,9 +56,13 @@ impl BanIngestor {
         )
         .await?;
 
-        let (report_rx, ingest_server) =
-            mobile_ban::report_source(pool.clone(), file_store.clone(), settings.start_after)
-                .await?;
+        let (report_rx, ingest_server) = mobile_ban::report_source(
+            pool.clone(),
+            file_store_client,
+            bucket,
+            settings.start_after,
+        )
+        .await?;
 
         let ingestor = Self {
             pool,
