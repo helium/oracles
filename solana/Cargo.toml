@@ -26,3 +26,4 @@ spl-token = { version = "8" }
 sqlx = { workspace = true }
 
 helium-lib = { git = "https://github.com/helium/helium-wallet-rs", branch = "master" }
+tls-init = { path = "../tls_init" }

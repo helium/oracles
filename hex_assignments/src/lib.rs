@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod assignment;
 pub mod footfall;
 pub mod landtype;

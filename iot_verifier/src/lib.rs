@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod entropy;
 pub mod entropy_loader;
 pub mod gateway_cache;

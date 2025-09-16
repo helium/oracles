@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod admin;
 pub mod admin_service;
 pub mod client;

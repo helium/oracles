@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod cli;
 pub mod metrics;
 pub mod price_generator;

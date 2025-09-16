@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use helium_crypto::{Keypair, PublicKey};

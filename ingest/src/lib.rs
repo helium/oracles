@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod server_iot;
 pub mod server_mobile;
 pub mod settings;

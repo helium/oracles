@@ -15,6 +15,7 @@ serde = { workspace = true }
 http = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+tls-init = { path = "../tls_init" }
 
 aws-config = { workspace = true }
 aws-sdk-sts = { workspace = true }

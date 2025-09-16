@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 use std::str::FromStr;
 mod error;
 mod iam_auth_pool;

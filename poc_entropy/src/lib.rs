@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod entropy_generator;
 pub mod server;
 pub mod settings;

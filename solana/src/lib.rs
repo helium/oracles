@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 use helium_lib::{
     solana_client::client_error::ClientError,
     solana_sdk::{

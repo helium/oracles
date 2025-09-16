@@ -63,7 +63,8 @@ sqlx = { version = "0.8", default-features = false, features = [
   "chrono",
   "migrate",
   "macros",
-  "runtime-tokio-rustls",
+  "runtime-tokio",
+  "tls-rustls-aws-lc-rs",
 ] }
 helium-crypto = { version = "0.9.3", default-features = false }
 hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", features = [
@@ -72,7 +73,8 @@ hextree = { git = "https://github.com/jaykickliter/HexTree", branch = "main", fe
 reqwest = { version = "0", default-features = false, features = [
   "gzip",
   "json",
-  "rustls-tls",
+  "http2",
+  "default-tls",
 ] }
 humantime = "2"
 humantime-serde = "1"
@@ -127,7 +129,10 @@ helium-proto = { git = "https://github.com/helium/proto", branch = "master", fea
 beacon = { git = "https://github.com/helium/proto", branch = "master" }
 # Pickup versions from above
 prost = "*"
-tonic = { version = "*", features = ["tls-ring", "tls-native-roots"] }
+tonic = { version = "*", features = ["tls-aws-lc", "tls-native-roots"] }
+
+### TLS
+# TODO(mj): add notes about including tls-init in workspaces that needt tls
 
 [patch.crates-io]
 anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madninja/const_pubkey" }

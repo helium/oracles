@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod db;
 pub mod extract;
 pub mod indexer;

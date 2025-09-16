@@ -16,3 +16,4 @@ helium-proto = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
+tls-init = { path = "../tls_init" }

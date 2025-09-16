@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod cli;
 pub mod coverage;
 pub mod entropy_report;

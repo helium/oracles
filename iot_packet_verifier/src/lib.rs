@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod balances;
 pub mod burner;
 pub mod daemon;
