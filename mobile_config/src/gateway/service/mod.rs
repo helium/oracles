@@ -27,23 +27,16 @@ pub mod info_v3;
 
 pub struct GatewayService {
     key_cache: KeyCache,
-    mobile_config_db_pool: Pool<Postgres>,
-    metadata_pool: Pool<Postgres>, // TODO: Remove when all endpoints use mobile_config_db_pool
+    pool: Pool<Postgres>,
     signing_key: Arc<Keypair>,
 }
 
 impl GatewayService {
-    pub fn new(
-        key_cache: KeyCache,
-        metadata_pool: Pool<Postgres>,
-        signing_key: Arc<Keypair>,
-        mobile_config_db_pool: Pool<Postgres>,
-    ) -> Self {
+    pub fn new(key_cache: KeyCache, pool: Pool<Postgres>, signing_key: Arc<Keypair>) -> Self {
         Self {
             key_cache,
-            metadata_pool,
+            pool,
             signing_key,
-            mobile_config_db_pool,
         }
     }
 
@@ -91,7 +84,7 @@ impl mobile_config::Gateway for GatewayService {
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info");
 
-        info::get_by_address(&self.mobile_config_db_pool, &pubkey)
+        info::get_by_address(&self.pool, &pubkey)
             .await
             .map_err(|_| Status::internal("error fetching gateway info"))?
             .map_or_else(
@@ -131,7 +124,7 @@ impl mobile_config::Gateway for GatewayService {
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info (v2)");
 
-        info::get_by_address(&self.mobile_config_db_pool, &pubkey)
+        info::get_by_address(&self.pool, &pubkey)
             .await
             .map_err(|_| Status::internal("error fetching gateway info (v2)"))?
             .map_or_else(
@@ -180,7 +173,7 @@ impl mobile_config::Gateway for GatewayService {
             "fetching gateways' info batch"
         );
 
-        let pool = self.metadata_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
         let addresses = request
@@ -217,7 +210,7 @@ impl mobile_config::Gateway for GatewayService {
             "fetching gateways' info batch"
         );
 
-        let mobile_config_db_pool = self.mobile_config_db_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
         let addresses = request
@@ -230,8 +223,7 @@ impl mobile_config::Gateway for GatewayService {
 
         tokio::spawn(async move {
             let min_updated_at = DateTime::UNIX_EPOCH;
-            let stream =
-                info::stream_by_addresses(&mobile_config_db_pool, &addresses, min_updated_at);
+            let stream = info::stream_by_addresses(&pool, &addresses, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -251,7 +243,7 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        let pool = self.metadata_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
 
@@ -284,7 +276,7 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        let mobile_config_db_pool = self.mobile_config_db_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
 
@@ -303,8 +295,7 @@ impl mobile_config::Gateway for GatewayService {
                 .single()
                 .ok_or(Status::invalid_argument("Invalid min_updated_at argument"))?;
 
-            let stream =
-                info::stream_by_types(&mobile_config_db_pool, &device_types, min_updated_at);
+            let stream = info::stream_by_types(&pool, &device_types, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -323,7 +314,7 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        let mobile_config_db_pool = self.mobile_config_db_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
 
@@ -352,7 +343,7 @@ impl mobile_config::Gateway for GatewayService {
             };
 
             let stream = info_v3::stream_by_types(
-                &mobile_config_db_pool,
+                &pool,
                 &device_types,
                 min_updated_at,
                 min_location_changed_at,
