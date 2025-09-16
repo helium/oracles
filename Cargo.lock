@@ -5815,6 +5815,7 @@ name = "price"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aws-sdk-s3",
  "chrono",
  "clap",
  "config",
