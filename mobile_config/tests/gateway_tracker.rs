@@ -4,7 +4,7 @@ use crate::common::{
     gateway_metadata_db::{create_tables, insert_gateway},
     make_keypair,
 };
-use chrono::Utc;
+use chrono::{Timelike, Utc};
 use custom_tracing::Settings;
 use mobile_config::gateway::{
     db::{Gateway, GatewayType},
@@ -18,7 +18,9 @@ async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
 
     let pubkey1 = make_keypair().public_key().clone();
     let hex1 = 631711281837647359_i64;
-    let now = Utc::now();
+    let now = Utc::now()
+        .with_nanosecond(Utc::now().timestamp_subsec_micros() * 1000)
+        .unwrap();
 
     create_tables(&pool).await;
     insert_gateway(
