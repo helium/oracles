@@ -1,1 +1,0 @@
-DROP TABLE IF EXISTS mobile_radio_tracker;
