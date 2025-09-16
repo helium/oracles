@@ -26,7 +26,7 @@ pub fn gen_bucket_name() -> String {
 // Used to create mocked aws buckets and files.
 pub struct AwsLocal {
     pub fs_settings: Settings,
-    pub aws_client: aws_sdk_s3::Client,
+    pub file_store_client: file_store::Client,
     bucket: String,
 }
 
@@ -62,7 +62,7 @@ impl AwsLocal {
         let client = Self::create_aws_client(&settings).await;
         client.create_bucket().bucket(bucket).send().await.unwrap();
         AwsLocal {
-            aws_client: client,
+            file_store_client: client,
             fs_settings: settings.clone(),
             bucket: bucket.to_string(),
         }
@@ -84,7 +84,7 @@ impl AwsLocal {
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
 
         let (file_upload, file_upload_server) =
-            file_upload::FileUpload::new(self.aws_client.clone(), self.bucket.clone()).await;
+            file_upload::FileUpload::new(self.file_store_client.clone(), self.bucket.clone()).await;
 
         let (item_sink, item_server) =
             file_sink::FileSinkBuilder::new(file_type, &tmp_dir_path, file_upload, metric_name)
@@ -145,7 +145,7 @@ impl AwsLocal {
         if !file_path.is_file() {
             return Err(anyhow!("File {path_str} is not a file"));
         }
-        file_store::put_file(&self.aws_client, &self.bucket, file_path).await?;
+        file_store::put_file(&self.file_store_client, &self.bucket, file_path).await?;
 
         Ok(())
     }
