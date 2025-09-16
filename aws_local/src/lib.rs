@@ -61,9 +61,7 @@ impl AwsLocal {
             secret_access_key: Some("random2".into()),
         };
         let client = Self::create_aws_client(&settings).await;
-        client.create_bucket()
-            .bucket(bucket)
-            .send().await.unwrap();
+        client.create_bucket().bucket(bucket).send().await.unwrap();
         AwsLocal {
             file_store_client: client,
             fs_settings: settings.clone(),
