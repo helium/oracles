@@ -76,6 +76,7 @@ where
     B: HexBoostingInfoResolver,
     C: SubDaoEpochRewardInfoResolver,
 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,

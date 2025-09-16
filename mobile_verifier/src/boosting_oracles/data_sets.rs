@@ -70,7 +70,7 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
         let mut new_data_sets = file_store::list_files(
             file_store_client,
             bucket,
-            &Self::TYPE.to_prefix(),
+            Self::TYPE.to_prefix(),
             self.timestamp(),
             None,
         );
@@ -313,6 +313,7 @@ impl DataSetDownloaderDaemon {
 }
 
 impl DataSetDownloaderDaemon {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: PgPool,
         data_sets: HexBoostData,

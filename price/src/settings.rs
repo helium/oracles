@@ -119,8 +119,7 @@ mod tests {
         fn test_with_token_env(token_setting: String) -> anyhow::Result<Self> {
             let settings = temp_env::with_vars(
                 [
-                    ("PRICE__OUTPUT__BUCKET", Some("test-bucket".to_string())),
-                    ("PRICE__OUTPUT__REGION", Some("us-west-2".to_string())),
+                    ("PRICE__OUTPUT_BUCKET", Some("test-bucket".to_string())),
                     (
                         "PRICE__TOKENS",
                         Some(token_setting).filter(|s| !s.is_empty()),

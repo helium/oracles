@@ -282,8 +282,8 @@ impl Loader {
             "checking for new ingest files of type {file_type} after {after} and before {before}"
         );
         let infos = file_store::list_all_files(
-            &&self.file_store_client,
-            &&self.bucket,
+            &self.file_store_client,
+            &self.bucket,
             file_type.to_str(),
             after,
             before,
