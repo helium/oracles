@@ -2,8 +2,11 @@ use crate::gateway::metadata_db::MobileHotspotInfo;
 use futures::TryFutureExt;
 use futures_util::TryStreamExt;
 use sqlx::{Pool, Postgres};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use task_manager::ManagedTask;
+
+const EXECUTE_DURATION_METRIC: &str =
+    concat!(env!("CARGO_PKG_NAME"), "-", "tracker-execute-duration");
 
 pub struct Tracker {
     pool: Pool<Postgres>,
@@ -57,6 +60,9 @@ impl Tracker {
 }
 
 pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow::Result<()> {
+    tracing::info!("starting execute");
+    let start = Instant::now();
+
     let mut stream = MobileHotspotInfo::stream(metadata);
 
     while let Some(mhi) = stream.try_next().await? {
@@ -65,6 +71,9 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
             gateway.insert(pool).await?;
         }
     }
+
+    tracing::info!("done execute");
+    metrics::histogram!(EXECUTE_DURATION_METRIC).record(start.elapsed());
 
     Ok(())
 }

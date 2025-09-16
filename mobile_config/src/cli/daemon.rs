@@ -84,7 +84,7 @@ impl Daemon {
             .add_task(Tracker::new(
                 pool.clone(),
                 metadata_pool.clone(),
-                settings.mobile_radio_tracker_interval,
+                settings.gateway_tracker_interval,
             ))
             .build()
             .start()
