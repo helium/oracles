@@ -132,7 +132,25 @@ prost = "*"
 tonic = { version = "*", features = ["tls-aws-lc", "tls-native-roots"] }
 
 ### TLS
-# TODO(mj): add notes about including tls-init in workspaces that needt tls
+# Updates to `rustls` now support multiple CryptoProvider backends. Namely
+# `aws-lc-rs` (default) and `ring` (legacy).
+#
+# Until more crates have updated to default to `aws-lc-rs` we need to ensure
+# that a single CryptoProvider backend is installed. Because of our heavy
+# reliance on aws crates, we've chosen `aws-lc-rs`. Also because `rustls` has
+# recently chosen that as it's default.
+#
+# If you're crate needs to use tls, add the following.
+# // Cargo.toml
+# tls-init = { path = "../tls_init" }
+#
+# // lib.rs
+# `extern crate tls_init;`
+#
+# `tls_init` uses `ctor` to run a constructor when the code is loaded a single
+# time. We need to `extern` the crate to prevent the linker from optimizing the
+# codepath away because there are no direct calls into the workspace.
+
 
 [patch.crates-io]
 anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madninja/const_pubkey" }
