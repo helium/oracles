@@ -2,7 +2,7 @@ use crate::gateway::service::{info::DeviceType, info_v3::DeviceTypeV2};
 use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
-use sqlx::{postgres::PgRow, FromRow, PgExecutor, PgPool, Row};
+use sqlx::{postgres::PgRow, FromRow, PgExecutor, PgPool, Postgres, QueryBuilder, Row};
 use std::convert::TryFrom;
 use strum::EnumIter;
 
@@ -98,6 +98,76 @@ pub struct Gateway {
 }
 
 impl Gateway {
+    pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        // IMPORTANT: no trailing comma in the column list
+        let mut qb = QueryBuilder::<Postgres>::new(
+            "INSERT INTO gateways (\
+                address,\
+                gateway_type,\
+                created_at,\
+                updated_at,\
+                refreshed_at,\
+                last_changed_at,\
+                hash,\
+                antenna,\
+                elevation,\
+                azimuth,\
+                location,\
+                location_changed_at,\
+                location_asserts\
+            ) ",
+        );
+
+        // VALUES (...), (...), ...
+        qb.push_values(rows, |mut b, g| {
+            b.push_bind(g.address.as_ref())
+                .push_bind(g.gateway_type)
+                .push_bind(g.created_at)
+                .push_bind(g.updated_at)
+                .push_bind(g.refreshed_at)
+                .push_bind(g.last_changed_at)
+                .push_bind(g.hash.as_str())
+                .push_bind(g.antenna.map(|v| v as i64))
+                .push_bind(g.elevation.map(|v| v as i64))
+                .push_bind(g.azimuth.map(|v| v as i64))
+                .push_bind(g.location.map(|v| v as i64))
+                .push_bind(g.location_changed_at)
+                .push_bind(g.location_asserts.map(|v| v as i64));
+        });
+
+        qb.push(
+            " ON CONFLICT (address) DO UPDATE SET \
+                gateway_type = EXCLUDED.gateway_type,\
+                created_at = EXCLUDED.created_at,\
+                updated_at = EXCLUDED.updated_at,\
+                refreshed_at = EXCLUDED.refreshed_at,\
+                last_changed_at = CASE \
+                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location \
+                      OR gateways.hash     IS DISTINCT FROM EXCLUDED.hash \
+                    THEN EXCLUDED.refreshed_at \
+                    ELSE gateways.last_changed_at \
+                END,\
+                hash = EXCLUDED.hash,\
+                antenna = EXCLUDED.antenna,\
+                elevation = EXCLUDED.elevation,\
+                azimuth = EXCLUDED.azimuth,\
+                location = EXCLUDED.location,\
+                location_changed_at = CASE \
+                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location \
+                    THEN EXCLUDED.refreshed_at \
+                    ELSE gateways.location_changed_at \
+                END,\
+                location_asserts = EXCLUDED.location_asserts",
+        );
+
+        let res = qb.build().execute(pool).await?;
+        Ok(res.rows_affected())
+    }
+
     pub async fn insert(&self, pool: &PgPool) -> anyhow::Result<()> {
         sqlx::query(
             r#"

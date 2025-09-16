@@ -1,4 +1,4 @@
-use crate::gateway::metadata_db::MobileHotspotInfo;
+use crate::gateway::{db::Gateway, metadata_db::MobileHotspotInfo};
 use futures::TryFutureExt;
 use futures_util::TryStreamExt;
 use sqlx::{Pool, Postgres};
@@ -63,17 +63,28 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
     tracing::info!("starting execute");
     let start = Instant::now();
 
+    const BATCH_SIZE: usize = 1_000;
+
     let mut stream = MobileHotspotInfo::stream(metadata);
+    let mut batch: Vec<Gateway> = Vec::with_capacity(BATCH_SIZE);
+    let mut total = 0u64;
 
     while let Some(mhi) = stream.try_next().await? {
         if let Some(gateway) = mhi.to_gateway()? {
-            tracing::debug!(?gateway, "inserting gateway from mobile hotspot info");
-            gateway.insert(pool).await?;
+            batch.push(gateway);
+            if batch.len() >= BATCH_SIZE {
+                total += Gateway::insert_bulk(pool, &batch).await?;
+                batch.clear();
+            }
         }
     }
 
-    tracing::info!("done execute");
-    metrics::histogram!(EXECUTE_DURATION_METRIC).record(start.elapsed());
+    if !batch.is_empty() {
+        total += Gateway::insert_bulk(pool, &batch).await?;
+    }
 
+    let elapsed = start.elapsed();
+    tracing::info!(?elapsed, affected = total, "done execute");
+    metrics::histogram!(EXECUTE_DURATION_METRIC).record(start.elapsed());
     Ok(())
 }
