@@ -27,8 +27,10 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_min_burn_period")]
     pub min_burn_period: Duration,
     pub database: db_store::Settings,
-    pub ingest: file_store::Settings,
-    pub output: file_store::Settings,
+    #[serde(default)]
+    pub file_store: file_store::Settings,
+    pub ingest_bucket: String,
+    pub output_bucket: String,
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
     #[serde(default)]

@@ -133,7 +133,7 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
 impl<Message, State, Parser>
     FileInfoPollerConfigBuilder<Message, State, FileStoreInfoPollerStore, Parser>
 {
-    pub fn s3_store(self, client: aws_sdk_s3::Client, bucket: String) -> Self {
+    pub fn file_store(self, client: crate::Client, bucket: String) -> Self {
         self.store(FileStoreInfoPollerStore::new(client, bucket))
     }
 }

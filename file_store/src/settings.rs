@@ -26,7 +26,7 @@ impl Settings {
             .map_err(Error::from)
     }
 
-    pub async fn connect(&self) -> aws_sdk_s3::Client {
+    pub async fn connect(&self) -> crate::Client {
         crate::new_client(
             self.endpoint.clone(),
             self.access_key_id.clone(),
