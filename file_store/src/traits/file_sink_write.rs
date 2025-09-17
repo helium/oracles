@@ -323,3 +323,13 @@ impl_file_sink!(
     FileType::IotHotspotChangeReport.to_str(),
     "chain_rewardable_entities_iot_hotspot_change_report"
 );
+impl_file_sink!(
+    chain_rewardable_entities::EntityOwnershipChangeReportV1,
+    FileType::EntityOwnershipChangeReport.to_str(),
+    "chain_rewardable_entities_entity_ownership_change_report"
+);
+impl_file_sink!(
+    chain_rewardable_entities::EntityRewardDestinationChangeReportV1,
+    FileType::EntityRewardDestinationChangeReport.to_str(),
+    "chain_rewardable_entities_entity_reward_destination_change_report"
+);

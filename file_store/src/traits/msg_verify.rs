@@ -115,6 +115,14 @@ impl_msg_verify!(
     chain_rewardable_entities::MobileHotspotChangeReqV1,
     signature
 );
+impl_msg_verify!(
+    chain_rewardable_entities::EntityOwnershipChangeReqV1,
+    signature
+);
+impl_msg_verify!(
+    chain_rewardable_entities::EntityRewardDestinationChangeReqV1,
+    signature
+);
 
 #[cfg(test)]
 mod test {
