@@ -104,7 +104,6 @@ impl List {
         }
         seq.end()?;
         Ok(())
-        // print_json(&file_infos)
     }
 }
 
