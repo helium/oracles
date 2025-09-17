@@ -9,8 +9,11 @@ use file_store::{
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::chain_rewardable_entities::{
-    self, IotHotspotChangeReportV1, IotHotspotChangeReqV1, IotHotspotChangeRespV1,
-    MobileHotspotChangeReportV1, MobileHotspotChangeReqV1, MobileHotspotChangeRespV1,
+    self, EntityOwnershipChangeReportV1, EntityOwnershipChangeReqV1, EntityOwnershipChangeRespV1,
+    EntityRewardDestinationChangeReportV1, EntityRewardDestinationChangeReqV1,
+    EntityRewardDestinationChangeRespV1, IotHotspotChangeReportV1, IotHotspotChangeReqV1,
+    IotHotspotChangeRespV1, MobileHotspotChangeReportV1, MobileHotspotChangeReqV1,
+    MobileHotspotChangeRespV1,
 };
 use task_manager::{ManagedTask, TaskManager};
 use tonic::{transport::Server, Request, Response, Status};
@@ -45,16 +48,38 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
 
     let (iot_sink, iot_sink_server) = IotHotspotChangeReportV1::file_sink(
         store_base_path,
-        file_upload,
+        file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(settings.roll_time),
         env!("CARGO_PKG_NAME"),
     )
     .await?;
 
+    let (entity_ownership_sink, entity_ownership_sink_server) =
+        EntityOwnershipChangeReportV1::file_sink(
+            store_base_path,
+            file_upload.clone(),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
+
+    let (entity_reward_destination_sink, entity_reward_destination_sink_server) =
+        EntityRewardDestinationChangeReportV1::file_sink(
+            store_base_path,
+            file_upload,
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
+
     let grpc_server = GrpcServer {
         iot_sink,
         mobile_sink,
+        entity_ownership_sink,
+        entity_reward_destination_sink,
         auth_key,
         address: settings.listen_addr,
     };
@@ -69,6 +94,8 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
         .add_task(file_upload_server)
         .add_task(mobile_sink_server)
         .add_task(iot_sink_server)
+        .add_task(entity_ownership_sink_server)
+        .add_task(entity_reward_destination_sink_server)
         .add_task(grpc_server)
         .build()
         .start()
@@ -79,6 +106,8 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
 pub struct GrpcServer {
     iot_sink: FileSinkClient<IotHotspotChangeReportV1>,
     mobile_sink: FileSinkClient<MobileHotspotChangeReportV1>,
+    entity_ownership_sink: FileSinkClient<EntityOwnershipChangeReportV1>,
+    entity_reward_destination_sink: FileSinkClient<EntityRewardDestinationChangeReportV1>,
     address: SocketAddr,
     auth_key: PublicKey,
 }
@@ -136,6 +165,38 @@ impl chain_rewardable_entities::ChainRewardableEntities for GrpcServer {
 
         Ok(Response::new(IotHotspotChangeRespV1 { timestamp_ms }))
     }
+
+    async fn submit_entity_ownership_change(
+        &self,
+        request: Request<EntityOwnershipChangeReqV1>,
+    ) -> Result<Response<EntityOwnershipChangeRespV1>, tonic::Status> {
+        let timestamp_ms = Utc::now().timestamp_millis() as u64;
+        let req = request.into_inner();
+
+        verify_signature(&req, &self.auth_key)?;
+
+        let report = req.into_report(timestamp_ms);
+        let _ = self.entity_ownership_sink.write(report, []).await;
+
+        Ok(Response::new(EntityOwnershipChangeRespV1 { timestamp_ms }))
+    }
+
+    async fn submit_entity_reward_destination_change(
+        &self,
+        request: Request<EntityRewardDestinationChangeReqV1>,
+    ) -> Result<Response<EntityRewardDestinationChangeRespV1>, tonic::Status> {
+        let timestamp_ms = Utc::now().timestamp_millis() as u64;
+        let req = request.into_inner();
+
+        verify_signature(&req, &self.auth_key)?;
+
+        let report = req.into_report(timestamp_ms);
+        let _ = self.entity_reward_destination_sink.write(report, []).await;
+
+        Ok(Response::new(EntityRewardDestinationChangeRespV1 {
+            timestamp_ms,
+        }))
+    }
 }
 
 fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
@@ -169,6 +230,26 @@ impl IntoReport for IotHotspotChangeReqV1 {
     type Out = IotHotspotChangeReportV1;
     fn into_report(self, received_timestamp_ms: u64) -> Self::Out {
         IotHotspotChangeReportV1 {
+            received_timestamp_ms,
+            report: Some(self),
+        }
+    }
+}
+
+impl IntoReport for EntityOwnershipChangeReqV1 {
+    type Out = EntityOwnershipChangeReportV1;
+    fn into_report(self, received_timestamp_ms: u64) -> Self::Out {
+        EntityOwnershipChangeReportV1 {
+            received_timestamp_ms,
+            report: Some(self),
+        }
+    }
+}
+
+impl IntoReport for EntityRewardDestinationChangeReqV1 {
+    type Out = EntityRewardDestinationChangeReportV1;
+    fn into_report(self, received_timestamp_ms: u64) -> Self::Out {
+        EntityRewardDestinationChangeReportV1 {
             received_timestamp_ms,
             report: Some(self),
         }
