@@ -52,6 +52,7 @@ pub trait GatewayInfoResolver: Clone + Send + Sync + 'static {
     async fn stream_gateways_info(
         &mut self,
         device_types: &[DeviceType],
+        min_updated_at: u64,
     ) -> Result<GatewayInfoStream, ClientError>;
 }
 
@@ -97,6 +98,7 @@ impl GatewayInfoResolver for GatewayClient {
     async fn stream_gateways_info(
         &mut self,
         device_types: &[DeviceType],
+        min_updated_at: u64,
     ) -> Result<gateway_info::GatewayInfoStream, ClientError> {
         let mut req = mobile_config::GatewayInfoStreamReqV2 {
             batch_size: self.batch_size,
@@ -104,6 +106,7 @@ impl GatewayInfoResolver for GatewayClient {
             min_updated_at: 0,
             signer: self.signing_key.public_key().into(),
             signature: vec![],
+            min_updated_at,
         };
         req.signature = self.signing_key.sign(&req.encode_to_vec())?;
         tracing::debug!("fetching gateway info stream");
