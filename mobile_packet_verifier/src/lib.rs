@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use mobile_config::client::{
@@ -72,3 +74,6 @@ mod tests {
         assert_eq!(2, bytes_to_dc(20_001));
     }
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod banning;
 pub mod boosting_oracles;
 pub mod cell_type;
@@ -115,3 +117,6 @@ impl PriceInfo {
 pub fn resolve_subdao_pubkey() -> SolPubkey {
     solana::SubDao::Mobile.key()
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

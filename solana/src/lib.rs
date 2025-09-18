@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 use helium_lib::{
     solana_client::client_error::ClientError,
     solana_sdk::{
@@ -105,3 +107,6 @@ where
     let keypair = read_keypair(&mut s.as_bytes()).map_err(serde::de::Error::custom)?;
     Ok(keypair)
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

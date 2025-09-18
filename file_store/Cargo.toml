@@ -47,6 +47,7 @@ uuid = { workspace = true }
 h3o = { workspace = true }
 task-manager = { path = "../task_manager" }
 humantime-serde = { workspace = true }
+tls-init = { path = "../tls_init" }
 
 aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }

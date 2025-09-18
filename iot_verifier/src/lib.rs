@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod entropy;
 pub mod entropy_loader;
 pub mod gateway_cache;
@@ -50,3 +52,6 @@ impl PriceInfo {
 pub fn resolve_subdao_pubkey() -> SolPubkey {
     solana::SubDao::Iot.key()
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

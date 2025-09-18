@@ -43,6 +43,7 @@ file-store = { path = "../file_store" }
 mobile-config = { path = "../mobile_config" }
 poc-metrics = { path = "../metrics" }
 task-manager = { path = "../task_manager" }
+tls-init = { path = "../tls_init" }
 
 [dev-dependencies]
 reqwest = { workspace = true }

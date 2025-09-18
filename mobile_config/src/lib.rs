@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use helium_crypto::{Keypair, PublicKey};
@@ -132,3 +134,6 @@ where
         .map(Arc::new)
         .map_err(serde::de::Error::custom)
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

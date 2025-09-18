@@ -42,3 +42,4 @@ db-store = { path = "../db_store" }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
 task-manager = { path = "../task_manager" }
+tls-init = { path = "../tls_init" }

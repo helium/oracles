@@ -26,4 +26,5 @@ tokio-stream = {workspace = true}
 tonic = {workspace = true}
 tracing = {workspace = true}
 custom-tracing = { path = "../custom_tracing" }
+tls-init = { path = "../tls_init" }
 

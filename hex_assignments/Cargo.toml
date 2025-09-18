@@ -9,10 +9,11 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 hextree = { workspace = true }
-sqlx = { version = "*", features = ["runtime-tokio-rustls"] }
+sqlx = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 helium-proto = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
+tls-init = { path = "../tls_init" }
