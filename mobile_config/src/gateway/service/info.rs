@@ -430,7 +430,7 @@ pub async fn get_by_address(
 
 pub fn stream_by_addresses<'a>(
     db: impl PgExecutor<'a> + 'a,
-    addresses: &'a [PublicKeyBinary],
+    addresses: Vec<PublicKeyBinary>,
     min_updated_at: DateTime<Utc>,
 ) -> impl Stream<Item = GatewayInfo> + 'a {
     Gateway::stream_by_addresses(db, addresses, min_updated_at).map(|gateway| gateway.into())
