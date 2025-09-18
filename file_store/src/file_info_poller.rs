@@ -133,7 +133,7 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
 impl<Message, State, Parser>
     FileInfoPollerConfigBuilder<Message, State, FileStoreInfoPollerStore, Parser>
 {
-    pub fn file_store(self, client: crate::Client, bucket: String) -> Self {
+    pub fn file_store(self, client: crate::Client, bucket: impl Into<String>) -> Self {
         self.store(FileStoreInfoPollerStore::new(client, bucket))
     }
 }
@@ -424,8 +424,11 @@ pub struct FileStoreInfoPollerStore {
 }
 
 impl FileStoreInfoPollerStore {
-    fn new(client: crate::Client, bucket: String) -> Self {
-        Self { client, bucket }
+    fn new(client: crate::Client, bucket: impl Into<String>) -> Self {
+        Self {
+            client,
+            bucket: bucket.into(),
+        }
     }
 }
 
