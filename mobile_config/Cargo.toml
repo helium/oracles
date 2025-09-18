@@ -27,6 +27,7 @@ humantime-serde = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 prost = { workspace = true }
+rand = { workspace = true }
 retainer = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }

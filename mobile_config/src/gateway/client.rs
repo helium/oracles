@@ -1,4 +1,4 @@
-use crate::client::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
+use crate::client::{call_with_retry, ClientError, Settings};
 use crate::gateway::service::info::{GatewayInfo, GatewayInfoStream};
 use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
@@ -10,6 +10,8 @@ use helium_proto::{
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 use tonic::transport::Channel;
+
+const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Clone)]
 pub struct GatewayClient {

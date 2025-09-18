@@ -14,7 +14,7 @@ pub use entity_client::EntityClient;
 pub use settings::Settings;
 pub use sub_dao_client::SubDaoClient;
 
-pub const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
+const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
 
 #[derive(thiserror::Error, Debug)]
 pub enum ClientError {
