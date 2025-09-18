@@ -9,9 +9,7 @@ use crate::common;
 #[sqlx::test]
 async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
     let addr = pk_binary();
-    let now = Utc::now()
-        .with_nanosecond(Utc::now().timestamp_subsec_micros() * 1000)
-        .unwrap();
+    let now = now_truncated();
 
     let gateway = gw(addr.clone(), GatewayType::WifiIndoor, now);
     gateway.insert(&pool).await?;
@@ -77,6 +75,114 @@ async fn gateway_upsert_last_changed_at_on_location_or_hash_change(
     let after_hash = Gateway::get_by_address(&pool, &addr).await?.unwrap();
     assert_eq!(after_hash.hash, "h1");
     assert_eq!(after_hash.last_changed_at, t3);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
+    let now = now_truncated();
+
+    let a1 = pk_binary();
+    let a2 = pk_binary();
+    let a3 = pk_binary();
+
+    let g1 = gw(a1.clone(), GatewayType::WifiIndoor, now);
+    let g2 = gw(a2.clone(), GatewayType::WifiOutdoor, now);
+    let g3 = gw(a3.clone(), GatewayType::WifiDataOnly, now);
+
+    let affected = Gateway::insert_bulk(&pool, &[g1, g2, g3]).await?;
+    assert_eq!(affected, 3, "should insert 3 rows");
+
+    for addr in [&a1, &a2, &a3] {
+        let got = Gateway::get_by_address(&pool, addr)
+            .await?
+            .expect("row should exist");
+        assert_eq!(got.created_at, now);
+        assert_eq!(got.updated_at, now);
+        assert_eq!(got.refreshed_at, now);
+        assert_eq!(got.last_changed_at, now);
+        assert_eq!(got.location, Some(123));
+        assert_eq!(got.hash, "h0");
+    }
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn gateway_bulk_upsert_updates_and_change(pool: PgPool) -> anyhow::Result<()> {
+    // seed two rows at t0
+    let t0 = now_truncated();
+    let a1 = pk_binary();
+    let a2 = pk_binary();
+
+    let mut g1 = gw(a1.clone(), GatewayType::WifiIndoor, t0);
+    let mut g2 = gw(a2.clone(), GatewayType::WifiOutdoor, t0);
+    let _ = Gateway::insert_bulk(&pool, &[g1.clone(), g2.clone()]).await?;
+
+    // upsert at t1: change only timestamps for g1 (no loc/hash change)
+    // and change location for g2 (should bump last_changed_at)
+    let t1 = now_truncated();
+
+    g1.updated_at = t1;
+    g1.refreshed_at = t1;
+    // leave g1.location / g1.hash the same
+
+    g2.updated_at = t1;
+    g2.refreshed_at = t1;
+    g2.location = Some(456); // change => last_changed_at should bump to t1
+                             // g2.hash unchanged
+
+    let affected = Gateway::insert_bulk(&pool, &[g1.clone(), g2.clone()]).await?;
+    // 2 rows should be affected (both upserted)
+    assert_eq!(affected, 2);
+
+    // verify g1: timestamps updated, last_changed_at unchanged (no relevant change)
+    let got1 = Gateway::get_by_address(&pool, &a1)
+        .await?
+        .expect("row should exist");
+    assert_eq!(got1.updated_at, t1);
+    assert_eq!(got1.refreshed_at, t1);
+    assert_eq!(
+        got1.last_changed_at, t0,
+        "no loc/hash change ⇒ last_changed_at stays t0"
+    );
+    assert_eq!(got1.location, Some(123));
+    assert_eq!(got1.hash, "h0");
+
+    // verify g2: timestamps updated, last_changed_at bumped due to location change
+    let got2 = Gateway::get_by_address(&pool, &a2)
+        .await?
+        .expect("row should exist");
+    assert_eq!(got2.updated_at, t1);
+    assert_eq!(got2.refreshed_at, t1);
+    assert_eq!(
+        got2.last_changed_at, t1,
+        "location changed ⇒ last_changed_at = refreshed_at"
+    );
+    assert_eq!(got2.location, Some(456));
+    assert_eq!(got2.hash, "h0");
+
+    // second upsert at t2: change hash only for g1, ensure bump
+    let t2 = now_truncated();
+
+    g1.updated_at = t2;
+    g1.refreshed_at = t2;
+    g1.hash = "h1".into(); // change ⇒ bump last_changed_at
+
+    let affected2 = Gateway::insert_bulk(&pool, &[g1.clone()]).await?;
+    assert_eq!(affected2, 1);
+
+    let got1b = Gateway::get_by_address(&pool, &a1)
+        .await?
+        .expect("row should exist");
+    assert_eq!(got1b.updated_at, t2);
+    assert_eq!(got1b.refreshed_at, t2);
+    assert_eq!(
+        got1b.last_changed_at, t2,
+        "hash changed ⇒ last_changed_at = refreshed_at"
+    );
+    assert_eq!(got1b.hash, "h1");
 
     Ok(())
 }
@@ -172,6 +278,12 @@ async fn stream_by_types_optional_location_changed_filter(pool: PgPool) -> anyho
     assert!(s.next().await.is_none());
 
     Ok(())
+}
+
+fn now_truncated() -> chrono::DateTime<Utc> {
+    let n = Utc::now();
+    let micros = n.timestamp_subsec_micros();
+    n.with_nanosecond(micros * 1_000).unwrap()
 }
 
 fn pk_binary() -> PublicKeyBinary {

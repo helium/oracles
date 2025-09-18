@@ -102,27 +102,24 @@ impl Gateway {
         if rows.is_empty() {
             return Ok(0);
         }
-
-        // IMPORTANT: no trailing comma in the column list
         let mut qb = QueryBuilder::<Postgres>::new(
-            "INSERT INTO gateways (\
-                address,\
-                gateway_type,\
-                created_at,\
-                updated_at,\
-                refreshed_at,\
-                last_changed_at,\
-                hash,\
-                antenna,\
-                elevation,\
-                azimuth,\
-                location,\
-                location_changed_at,\
-                location_asserts\
+            "INSERT INTO gateways (
+                address,
+                gateway_type,
+                created_at,
+                updated_at,
+                refreshed_at,
+                last_changed_at,
+                hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
             ) ",
         );
 
-        // VALUES (...), (...), ...
         qb.push_values(rows, |mut b, g| {
             b.push_bind(g.address.as_ref())
                 .push_bind(g.gateway_type)
@@ -140,27 +137,27 @@ impl Gateway {
         });
 
         qb.push(
-            " ON CONFLICT (address) DO UPDATE SET \
-                gateway_type = EXCLUDED.gateway_type,\
-                created_at = EXCLUDED.created_at,\
-                updated_at = EXCLUDED.updated_at,\
-                refreshed_at = EXCLUDED.refreshed_at,\
-                last_changed_at = CASE \
-                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location \
-                      OR gateways.hash     IS DISTINCT FROM EXCLUDED.hash \
-                    THEN EXCLUDED.refreshed_at \
-                    ELSE gateways.last_changed_at \
-                END,\
-                hash = EXCLUDED.hash,\
-                antenna = EXCLUDED.antenna,\
-                elevation = EXCLUDED.elevation,\
-                azimuth = EXCLUDED.azimuth,\
-                location = EXCLUDED.location,\
-                location_changed_at = CASE \
-                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location \
-                    THEN EXCLUDED.refreshed_at \
-                    ELSE gateways.location_changed_at \
-                END,\
+            " ON CONFLICT (address) DO UPDATE SET 
+                gateway_type = EXCLUDED.gateway_type,
+                created_at = EXCLUDED.created_at,
+                updated_at = EXCLUDED.updated_at,
+                refreshed_at = EXCLUDED.refreshed_at,
+                last_changed_at = CASE 
+                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location 
+                      OR gateways.hash     IS DISTINCT FROM EXCLUDED.hash 
+                    THEN EXCLUDED.refreshed_at 
+                    ELSE gateways.last_changed_at 
+                END,
+                hash = EXCLUDED.hash,
+                antenna = EXCLUDED.antenna,
+                elevation = EXCLUDED.elevation,
+                azimuth = EXCLUDED.azimuth,
+                location = EXCLUDED.location,
+                location_changed_at = CASE 
+                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location 
+                    THEN EXCLUDED.refreshed_at 
+                    ELSE gateways.location_changed_at 
+                END,
                 location_asserts = EXCLUDED.location_asserts",
         );
 
