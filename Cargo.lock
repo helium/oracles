@@ -4991,6 +4991,8 @@ dependencies = [
  "serde_json",
  "solana",
  "sqlx",
+ "strum",
+ "strum_macros",
  "task-manager",
  "thiserror 1.0.69",
  "tls-init",

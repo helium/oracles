@@ -29,11 +29,8 @@ pub struct Settings {
     /// Settings passed to the db_store crate for connecting to
     /// the database for Solana on-chain data
     pub metadata: db_store::Settings,
-    #[serde(
-        with = "humantime_serde",
-        default = "default_mobile_radio_tracker_interval"
-    )]
-    pub mobile_radio_tracker_interval: std::time::Duration,
+    #[serde(with = "humantime_serde", default = "default_gateway_tracker_interval")]
+    pub gateway_tracker_interval: std::time::Duration,
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
     #[serde(default = "default_boosted_hex_activation_cutoff")]
@@ -44,7 +41,7 @@ fn default_boosted_hex_activation_cutoff() -> DateTime<Utc> {
     DateTime::from_str("2025-07-01T00:00:00Z").unwrap()
 }
 
-fn default_mobile_radio_tracker_interval() -> std::time::Duration {
+fn default_gateway_tracker_interval() -> std::time::Duration {
     humantime::parse_duration("1 hour").unwrap()
 }
 
