@@ -7,7 +7,7 @@ use file_store::{
         RewardData::{self, IotRewardData, MobileRewardData},
         RewardManifest,
     },
-    FileInfo, FileStore, Stream,
+    FileInfo, Stream,
 };
 use futures::{future::LocalBoxFuture, stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::Message;
@@ -29,7 +29,8 @@ pub mod proto {
 
 pub struct Indexer {
     pool: PgPool,
-    verifier_store: FileStore,
+    file_store_client: file_store::Client,
+    bucket: String,
     mode: settings::Mode,
     op_fund_key: String,
     unallocated_reward_key: String,
@@ -72,7 +73,8 @@ impl task_manager::ManagedTask for Indexer {
 impl Indexer {
     fn new(
         pool: PgPool,
-        verifier_store: FileStore,
+        file_store_client: file_store::Client,
+        bucket: String,
         reward_manifest_rx: Receiver<FileInfoStream<RewardManifest>>,
         mode: settings::Mode,
         op_fund_key: String,
@@ -80,7 +82,8 @@ impl Indexer {
     ) -> Self {
         Self {
             pool,
-            verifier_store,
+            file_store_client,
+            bucket,
             mode,
             op_fund_key,
             unallocated_reward_key,
@@ -91,12 +94,14 @@ impl Indexer {
     pub async fn from_settings(
         settings: &Settings,
         pool: PgPool,
-        verifier_store: FileStore,
+        file_store_client: file_store::Client,
+        bucket: String,
         reward_manifest_rx: Receiver<FileInfoStream<RewardManifest>>,
     ) -> Result<Self> {
         Ok(Self::new(
             pool,
-            verifier_store,
+            file_store_client,
+            bucket,
             reward_manifest_rx,
             settings.mode,
             settings.operation_fund_key()?,
@@ -152,7 +157,12 @@ impl Indexer {
         // if the token type defined in the reward data is not HNT, then bail
         self.verify_token_type(&manifest.reward_data)?;
 
-        let reward_shares = self.verifier_store.source_unordered(5, reward_files);
+        let reward_shares = file_store::source_files_unordered(
+            &self.file_store_client,
+            &self.bucket,
+            5,
+            reward_files,
+        );
 
         match self.mode {
             settings::Mode::Iot => {

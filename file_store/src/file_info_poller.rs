@@ -1,4 +1,4 @@
-use crate::{file_store, traits::MsgDecode, Error, FileInfo, FileStore, Result};
+use crate::{traits::MsgDecode, Error, FileInfo, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
@@ -130,11 +130,19 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
     p: PhantomData<Message>,
 }
 
+impl<Message, State, Parser>
+    FileInfoPollerConfigBuilder<Message, State, FileStoreInfoPollerStore, Parser>
+{
+    pub fn file_store(self, client: crate::Client, bucket: impl Into<String>) -> Self {
+        self.store(FileStoreInfoPollerStore::new(client, bucket))
+    }
+}
+
 #[derive(Clone)]
 pub struct FileInfoPollerServer<
     Message,
     State,
-    Store = FileStore,
+    Store = FileStoreInfoPollerStore,
     Parser = MsgDecodeFileInfoPollerParser,
 > {
     config: FileInfoPollerConfig<Message, State, Store, Parser>,
@@ -179,11 +187,13 @@ where
     }
 }
 
-impl<Message, State, Parser> ManagedTask for FileInfoPollerServer<Message, State, FileStore, Parser>
+impl<Message, State, Store, Parser> ManagedTask
+    for FileInfoPollerServer<Message, State, Store, Parser>
 where
     Message: Send + Sync + 'static,
     State: FileInfoPollerState,
     Parser: FileInfoPollerParser<Message>,
+    Store: FileInfoPollerStore,
 {
     fn start_task(
         self: Box<Self>,
@@ -339,7 +349,7 @@ where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
     async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
-        Ok(file_store::stream_source(byte_stream)
+        Ok(crate::stream_source(byte_stream)
             .filter_map(|msg| async {
                 msg.map_err(|err| {
                     tracing::error!(
@@ -374,7 +384,7 @@ where
     T: helium_proto::Message + Default,
 {
     async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
-        Ok(file_store::stream_source(byte_stream)
+        Ok(crate::stream_source(byte_stream)
             .filter_map(|msg| async {
                 msg.map_err(|err| {
                     tracing::error!(
@@ -409,21 +419,35 @@ async fn cache_file(cache: &MemoryFileCache, file_info: &FileInfo) {
     cache.insert(file_info.key.clone(), true, CACHE_TTL).await;
 }
 
+pub struct FileStoreInfoPollerStore {
+    client: crate::Client,
+    bucket: String,
+}
+
+impl FileStoreInfoPollerStore {
+    fn new(client: crate::Client, bucket: impl Into<String>) -> Self {
+        Self {
+            client,
+            bucket: bucket.into(),
+        }
+    }
+}
+
 #[async_trait::async_trait]
-impl FileInfoPollerStore for FileStore {
+impl FileInfoPollerStore for FileStoreInfoPollerStore {
     async fn list_all<A, B>(&self, file_type: &str, after: A, before: B) -> Result<Vec<FileInfo>>
     where
         A: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
         B: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
     {
-        self.list_all(file_type, after, before).await
+        crate::list_all_files(&self.client, &self.bucket, file_type, after, before).await
     }
 
     async fn get_raw<K>(&self, key: K) -> Result<ByteStream>
     where
         K: Into<String> + Send + Sync,
     {
-        self.get_raw(key).await
+        crate::get_raw_file(&self.client, &self.bucket, key).await
     }
 }
 

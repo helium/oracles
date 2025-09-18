@@ -6,7 +6,7 @@ use file_store::{
     file_info_poller::LookbackBehavior,
     file_source, file_upload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileStore, FileType,
+    FileType,
 };
 use helium_proto::{
     services::poc_lora::{
@@ -76,8 +76,12 @@ impl Server {
 
         telemetry::initialize(&pool).await?;
 
-        let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
+        let file_store_client = settings.file_store.connect().await;
+        let (file_upload, file_upload_server) = file_upload::FileUpload::new(
+            file_store_client.clone(),
+            settings.buckets.output.clone(),
+        )
+        .await;
         let store_base_path = path::Path::new(&settings.cache);
 
         let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
@@ -98,13 +102,19 @@ impl Server {
         // *
         // setup the price tracker requirements
         // *
-        let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
+        let (price_tracker, price_daemon) =
+            PriceTracker::new(&settings.price_tracker, file_store_client.clone()).await?;
 
         // *
         // setup the loader requirements
         // *
-        let loader =
-            loader::Loader::from_settings(settings, pool.clone(), gateway_cache.clone()).await?;
+        let loader = loader::Loader::from_settings(
+            settings,
+            pool.clone(),
+            file_store_client.clone(),
+            gateway_cache.clone(),
+        )
+        .await?;
 
         // *
         // setup the density scaler requirements
@@ -154,11 +164,10 @@ impl Server {
         // setup entropy requirements
         // *
         let max_lookback_age = settings.loader_window_max_lookback_age;
-        let entropy_store = FileStore::from_settings(&settings.entropy).await?;
         let entropy_interval = settings.entropy_interval;
         let (entropy_loader_receiver, entropy_loader_server) = file_source::continuous_source()
             .state(pool.clone())
-            .store(entropy_store)
+            .file_store(file_store_client.clone(), settings.buckets.entropy.clone())
             .prefix(FileType::EntropyReport.to_string())
             .lookback(LookbackBehavior::Max(max_lookback_age))
             .poll_duration(entropy_interval)
@@ -185,11 +194,13 @@ impl Server {
             )
             .await?;
 
-        let packet_store = FileStore::from_settings(&settings.packet_ingest).await?;
         let packet_interval = settings.packet_interval;
         let (pk_loader_receiver, pk_loader_server) = file_source::continuous_source()
             .state(pool.clone())
-            .store(packet_store.clone())
+            .file_store(
+                file_store_client.clone(),
+                settings.buckets.packet_ingest.clone(),
+            )
             .prefix(FileType::IotValidPacket.to_string())
             .lookback(LookbackBehavior::Max(max_lookback_age))
             .poll_duration(packet_interval)

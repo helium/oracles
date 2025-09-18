@@ -1,10 +1,9 @@
 use anyhow::{anyhow, Result};
-use aws_config::meta::region::RegionProviderChain;
-use aws_config::{BehaviorVersion, Region};
+use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client;
 use chrono::Utc;
 use file_store::traits::MsgBytes;
-use file_store::{file_sink, file_upload, FileStore, FileType, Settings};
+use file_store::{file_sink, file_upload, FileType, Settings};
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
@@ -27,22 +26,17 @@ pub fn gen_bucket_name() -> String {
 // Used to create mocked aws buckets and files.
 pub struct AwsLocal {
     pub fs_settings: Settings,
-    pub file_store: FileStore,
-    pub aws_client: aws_sdk_s3::Client,
+    pub file_store_client: file_store::Client,
+    bucket: String,
 }
 
 impl AwsLocal {
     async fn create_aws_client(settings: &Settings) -> aws_sdk_s3::Client {
-        let region = Region::new(settings.region.clone());
-        let region_provider = RegionProviderChain::first_try(region).or_default_provider();
-
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .region(region_provider)
-            .load()
-            .await;
+        let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
 
         let mut s3_config = aws_sdk_s3::config::Builder::from(&config)
             .force_path_style(true)
+            .region(aws_config::Region::new("us-east-1"))
             .endpoint_url(settings.endpoint.as_ref().expect("endpoint"));
 
         let creds = aws_sdk_s3::config::Credentials::builder()
@@ -62,20 +56,16 @@ impl AwsLocal {
 
     pub async fn new(endpoint: &str, bucket: &str) -> AwsLocal {
         let settings = Settings {
-            bucket: bucket.into(),
             endpoint: Some(endpoint.into()),
-            region: "us-east-1".into(),
             access_key_id: Some("random".into()),
             secret_access_key: Some("random2".into()),
         };
         let client = Self::create_aws_client(&settings).await;
         client.create_bucket().bucket(bucket).send().await.unwrap();
         AwsLocal {
-            aws_client: client,
+            file_store_client: client,
             fs_settings: settings.clone(),
-            file_store: file_store::FileStore::from_settings(&settings)
-                .await
-                .unwrap(),
+            bucket: bucket.to_string(),
         }
     }
 
@@ -95,9 +85,7 @@ impl AwsLocal {
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
 
         let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_settings_tm(&self.fs_settings)
-                .await
-                .unwrap();
+            file_upload::FileUpload::new(self.file_store_client.clone(), self.bucket.clone()).await;
 
         let (item_sink, item_server) =
             file_sink::FileSinkBuilder::new(file_type, &tmp_dir_path, file_upload, metric_name)
@@ -158,7 +146,7 @@ impl AwsLocal {
         if !file_path.is_file() {
             return Err(anyhow!("File {path_str} is not a file"));
         }
-        self.file_store.put(file_path).await?;
+        file_store::put_file(&self.file_store_client, &self.bucket, file_path).await?;
 
         Ok(())
     }

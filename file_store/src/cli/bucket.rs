@@ -6,7 +6,7 @@ use crate::{
     mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
     speedtest::{cli::SpeedtestAverage, CellSpeedtest},
     traits::MsgDecode,
-    Error, FileInfoStream, FileStore, FileType, Result, Settings,
+    Error, FileInfoStream, FileType, Result, Settings,
 };
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
@@ -73,8 +73,10 @@ pub struct FileFilter {
 }
 
 impl FileFilter {
-    pub fn list(&self, store: &FileStore) -> FileInfoStream {
-        store.list(
+    pub fn list(&self, client: &aws_sdk_s3::Client, bucket: &str) -> FileInfoStream {
+        crate::list_files(
+            client,
+            bucket,
             &self.prefix,
             self.after.as_ref().map(|dt| Utc.from_utc_datetime(dt)),
             self.before.as_ref().map(|dt| Utc.from_utc_datetime(dt)),
@@ -85,14 +87,16 @@ impl FileFilter {
 /// List keys in a given bucket
 #[derive(Debug, clap::Args)]
 pub struct List {
+    #[clap(short)]
+    bucket: String,
     #[clap(flatten)]
     filter: FileFilter,
 }
 
 impl List {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let store = FileStore::from_settings(settings).await?;
-        let mut file_infos = self.filter.list(&store);
+        let client = settings.connect().await;
+        let mut file_infos = self.filter.list(&client, &self.bucket);
         let mut ser = serde_json::Serializer::new(io::stdout());
         let mut seq = ser.serialize_seq(None)?;
         while let Some(info) = file_infos.try_next().await? {
@@ -100,22 +104,23 @@ impl List {
         }
         seq.end()?;
         Ok(())
-        // print_json(&file_infos)
     }
 }
 
 /// Put one or more files in a given bucket
 #[derive(Debug, clap::Args)]
 pub struct Put {
+    #[clap(short)]
+    bucket: String,
     /// The files to upload to the bucket
     files: Vec<PathBuf>,
 }
 
 impl Put {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let file_store = FileStore::from_settings(settings).await?;
+        let client = settings.connect().await;
         for file in self.files.iter() {
-            file_store.put(file).await?;
+            crate::put_file(&client, &self.bucket, file).await?;
         }
         Ok(())
     }
@@ -132,9 +137,9 @@ pub struct Remove {
 
 impl Remove {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let file_store = FileStore::from_settings(settings).await?;
+        let client = settings.connect().await;
         for key in self.keys.iter() {
-            file_store.remove(key).await?;
+            crate::remove_file(&client, &self.bucket, key).await?;
         }
         Ok(())
     }
@@ -143,6 +148,7 @@ impl Remove {
 /// Get one or more files from a given bucket to a given folder
 #[derive(Debug, clap::Args)]
 pub struct Get {
+    bucket: String,
     /// The target folder to download files to
     dest: PathBuf,
     #[clap(flatten)]
@@ -151,11 +157,11 @@ pub struct Get {
 
 impl Get {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let store = FileStore::from_settings(settings).await?;
-        let file_infos = self.filter.list(&store);
+        let client = settings.connect().await;
+        let file_infos = self.filter.list(&client, &self.bucket);
         file_infos
-            .map_ok(|info| (store.clone(), info))
-            .try_for_each_concurrent(5, |(store, info)| async move {
+            .map_ok(|info| (client.clone(), self.bucket.clone(), info))
+            .try_for_each_concurrent(5, |(client, bucket, info)| async move {
                 fs::OpenOptions::new()
                     .write(true)
                     .create(true)
@@ -163,12 +169,15 @@ impl Get {
                     .open(&self.dest.join(Path::new(&info.key)))
                     .map_err(Error::from)
                     .and_then(|mut file| {
-                        store.get_raw(&info.key).and_then(|stream| async move {
-                            let mut reader = tokio::io::BufReader::new(stream.into_async_read());
-                            tokio::io::copy(&mut reader, &mut file)
-                                .map_err(Error::from)
-                                .await
-                        })
+                        crate::get_raw_file(&client, &bucket, &info.key).and_then(
+                            |stream| async move {
+                                let mut reader =
+                                    tokio::io::BufReader::new(stream.into_async_read());
+                                tokio::io::copy(&mut reader, &mut file)
+                                    .map_err(Error::from)
+                                    .await
+                            },
+                        )
                     })
                     .map_ok(|_| ())
                     .await
@@ -181,6 +190,7 @@ impl Get {
 /// Locate specific records in a time range
 #[derive(Debug, clap::Args)]
 pub struct Locate {
+    bucket: String,
     gateway: PublicKey,
 
     #[clap(flatten)]
@@ -189,12 +199,11 @@ pub struct Locate {
 
 impl Locate {
     pub async fn run(&self, settings: &Settings) -> Result {
-        let store = FileStore::from_settings(settings).await?;
-        let file_infos = self.filter.list(&store);
+        let client = settings.connect().await;
+        let file_infos = self.filter.list(&client, &self.bucket);
         let prefix = self.filter.prefix.clone();
         let gateway = &self.gateway.clone();
-        let mut events = store
-            .source(file_infos)
+        let mut events = crate::source_files(&client, &self.bucket, file_infos)
             .map_ok(|buf| (buf, gateway))
             .try_filter_map(|(buf, gateway)| {
                 let prefix = prefix.clone();

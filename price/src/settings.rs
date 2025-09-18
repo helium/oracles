@@ -25,8 +25,9 @@ pub struct Settings {
     /// Source URL for price data. Required
     #[serde(default = "default_source", skip_serializing)]
     pub source: String,
-    /// Target output bucket details
-    pub output: file_store::Settings,
+    #[serde(default)]
+    pub file_store: file_store::Settings,
+    pub output_bucket: String,
     /// Folder for local cache of ingest data
     #[serde(default = "default_cache")]
     pub cache: PathBuf,
@@ -118,8 +119,7 @@ mod tests {
         fn test_with_token_env(token_setting: String) -> anyhow::Result<Self> {
             let settings = temp_env::with_vars(
                 [
-                    ("PRICE__OUTPUT__BUCKET", Some("test-bucket".to_string())),
-                    ("PRICE__OUTPUT__REGION", Some("us-west-2".to_string())),
+                    ("PRICE__OUTPUT_BUCKET", Some("test-bucket".to_string())),
                     (
                         "PRICE__TOKENS",
                         Some(token_setting).filter(|s| !s.is_empty()),

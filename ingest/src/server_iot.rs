@@ -355,9 +355,9 @@ impl poc_lora::PocLora for GrpcServer {
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
-    // Initialize uploader
+    let s3_client = settings.file_store.connect().await;
     let (file_upload, file_upload_server) =
-        file_upload::FileUpload::from_settings_tm(&settings.output).await?;
+        file_upload::FileUpload::new(s3_client, settings.output_bucket.clone()).await;
 
     // iot beacon reports
     let (beacon_report_sink, beacon_report_sink_server) = LoraBeaconIngestReportV1::file_sink(

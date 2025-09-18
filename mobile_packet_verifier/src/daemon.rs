@@ -14,7 +14,7 @@ use file_store::{
     file_source, file_upload,
     mobile_session::DataTransferSessionIngestReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileStore, FileType,
+    FileType,
 };
 
 use helium_proto::services::{
@@ -158,8 +158,10 @@ impl Cmd {
             None
         };
 
+        let file_store_client = settings.file_store.connect().await;
         let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
+            file_upload::FileUpload::new(file_store_client.clone(), settings.output_bucket.clone())
+                .await;
 
         let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
             &settings.cache,
@@ -187,11 +189,9 @@ impl Cmd {
             settings.txn_confirmation_check_interval,
         );
 
-        let ingest_file_store = FileStore::from_settings(&settings.ingest).await?;
-
         let (reports, reports_server) = file_source::continuous_source()
             .state(pool.clone())
-            .store(ingest_file_store)
+            .file_store(file_store_client.clone(), settings.ingest_bucket.clone())
             .lookback(LookbackBehavior::StartAfter(
                 Utc.timestamp_millis_opt(0).unwrap(),
             ))
@@ -212,7 +212,8 @@ impl Cmd {
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
-        let banning = banning::create_managed_task(pool, &settings.banning).await?;
+        let banning =
+            banning::create_managed_task(pool, file_store_client, &settings.banning).await?;
 
         TaskManager::builder()
             .add_task(file_upload_server)

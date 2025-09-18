@@ -43,7 +43,9 @@ pub struct Settings {
     pub start_after: DateTime<Utc>,
 
     pub database: db_store::Settings,
-    pub verifier: file_store::Settings,
+    #[serde(default)]
+    pub file_store: file_store::Settings,
+    pub input_bucket: String,
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
 }

@@ -10,7 +10,7 @@ use file_store::{
     file_upload::FileUpload,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileStore, FileType,
+    FileType,
 };
 use futures::{
     stream::{StreamExt, TryStreamExt},
@@ -70,7 +70,8 @@ where
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store: FileStore,
+        file_store_client: file_store::Client,
+        bucket: String,
         speedtests_avg: FileSinkClient<SpeedtestAvgProto>,
         gateway_resolver: GIR,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -85,7 +86,7 @@ where
 
         let (speedtests, speedtests_server) = file_source::continuous_source()
             .state(pool.clone())
-            .store(file_store)
+            .file_store(file_store_client, bucket)
             .lookback(LookbackBehavior::StartAfter(settings.start_after))
             .prefix(FileType::CellSpeedtestIngestReport.to_string())
             .create()

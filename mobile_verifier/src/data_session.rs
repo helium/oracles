@@ -3,7 +3,7 @@ use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_source,
     mobile_transfer::ValidDataTransferSession,
-    FileStore, FileType,
+    FileType,
 };
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
@@ -34,12 +34,13 @@ impl DataSessionIngestor {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
+        file_store_client: file_store::Client,
+        bucket: String,
     ) -> anyhow::Result<impl ManagedTask> {
-        let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
         // data transfers
         let (data_session_ingest, data_session_ingest_server) = file_source::continuous_source()
             .state(pool.clone())
-            .store(data_transfer_ingest)
+            .file_store(file_store_client, bucket)
             .lookback(LookbackBehavior::StartAfter(settings.start_after))
             .prefix(FileType::ValidDataTransferSession.to_string())
             .create()

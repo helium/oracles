@@ -32,9 +32,9 @@ pub struct Settings {
     /// Timeout of session key session in seconds
     #[serde(with = "humantime_serde", default = "default_session_key_timeout")]
     pub session_key_timeout: Duration,
-    /// Settings for exposed public API
-    /// Target bucket for uploads
-    pub output: file_store::Settings,
+    #[serde(default)]
+    pub file_store: file_store::Settings,
+    pub output_bucket: String,
     /// Timeout of session key session in seconds
     #[serde(with = "humantime_serde", default = "default_roll_time")]
     pub roll_time: Duration,
