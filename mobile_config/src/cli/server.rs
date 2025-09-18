@@ -14,9 +14,9 @@ use crate::{
 use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
-pub struct Daemon;
+pub struct Server;
 
-impl Daemon {
+impl Server {
     pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
         tracing::info!("Settings: {}", serde_json::to_string_pretty(settings)?);

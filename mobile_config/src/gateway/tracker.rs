@@ -1,5 +1,5 @@
 use crate::gateway::{db::Gateway, metadata_db::MobileHotspotInfo};
-use futures::TryFutureExt;
+use futures::{stream::TryChunksError, TryFutureExt};
 use futures_util::TryStreamExt;
 use sqlx::{Pool, Postgres};
 use std::time::{Duration, Instant};
@@ -65,26 +65,20 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
 
     const BATCH_SIZE: usize = 1_000;
 
-    let mut stream = MobileHotspotInfo::stream(metadata);
-    let mut batch: Vec<Gateway> = Vec::with_capacity(BATCH_SIZE);
-    let mut total = 0u64;
-
-    while let Some(mhi) = stream.try_next().await? {
-        if let Some(gateway) = mhi.to_gateway()? {
-            batch.push(gateway);
-            if batch.len() >= BATCH_SIZE {
-                total += Gateway::insert_bulk(pool, &batch).await?;
-                batch.clear();
-            }
-        }
-    }
-
-    if !batch.is_empty() {
-        total += Gateway::insert_bulk(pool, &batch).await?;
-    }
+    let (_, total): (&Pool<Postgres>, u64) = MobileHotspotInfo::stream(metadata)
+        .map_err(anyhow::Error::from)
+        .try_filter_map(|mhi| async move { mhi.to_gateway() })
+        .try_chunks(BATCH_SIZE)
+        .map_err(|TryChunksError(_gateways, err)| err)
+        .try_fold((pool, 0), |(p, total), batch| async move {
+            let affected = Gateway::insert_bulk(p, &batch).await?;
+            Ok((p, total + affected))
+        })
+        .await?;
 
     let elapsed = start.elapsed();
     tracing::info!(?elapsed, affected = total, "done execute");
-    metrics::histogram!(EXECUTE_DURATION_METRIC).record(start.elapsed());
+    metrics::histogram!(EXECUTE_DURATION_METRIC).record(elapsed);
+
     Ok(())
 }
