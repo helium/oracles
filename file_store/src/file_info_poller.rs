@@ -187,12 +187,13 @@ where
     }
 }
 
-impl<Message, State, Parser> ManagedTask
-    for FileInfoPollerServer<Message, State, FileStoreInfoPollerStore, Parser>
+impl<Message, State, Store, Parser> ManagedTask
+    for FileInfoPollerServer<Message, State, Store, Parser>
 where
     Message: Send + Sync + 'static,
     State: FileInfoPollerState,
     Parser: FileInfoPollerParser<Message>,
+    Store: FileInfoPollerStore,
 {
     fn start_task(
         self: Box<Self>,

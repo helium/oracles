@@ -69,48 +69,48 @@ impl FileUploadServer {
     pub async fn run(self, shutdown: triggered::Listener) -> Result {
         tracing::info!("starting file uploader {}", self.bucket);
 
-        let uploads = self
-            .messages
-            .map(|msg| (self.client.clone(), self.bucket.clone(), msg))
-            .for_each_concurrent(5, |(client, bucket, path)| async move {
-                let path_str = path.display();
-                if !path.exists() {
-                    tracing::warn!("ignoring absent file {path_str}");
-                    return;
-                }
-                if !path.is_file() {
-                    tracing::warn!("ignoring non file {path_str}");
-                    return;
-                }
-                let mut retry = 0;
-                const MAX_RETRIES: u8 = 5;
-                const RETRY_WAIT: Duration = Duration::from_secs(10);
-                while retry <= MAX_RETRIES {
-                    tracing::debug!("storing {path_str} in {bucket} retry {retry}");
-                    match crate::put_file(&client, &bucket, &path).await {
-                        Ok(()) => {
-                            match fs::remove_file(&path).await {
-                                Ok(()) => {
-                                    tracing::info!("stored {path_str} in {bucket}");
-                                }
-                                Err(err) => {
-                                    tracing::error!(
-                                        "failed to remove uploaded file {path_str}: {err:?}"
-                                    );
-                                }
+        let client = &self.client;
+        let bucket = &self.bucket;
+
+        let uploads = self.messages.for_each_concurrent(5, |path| async move {
+            let path_str = path.display();
+            if !path.exists() {
+                tracing::warn!("ignoring absent file {path_str}");
+                return;
+            }
+            if !path.is_file() {
+                tracing::warn!("ignoring non file {path_str}");
+                return;
+            }
+            let mut retry = 0;
+            const MAX_RETRIES: u8 = 5;
+            const RETRY_WAIT: Duration = Duration::from_secs(10);
+            while retry <= MAX_RETRIES {
+                tracing::debug!("storing {path_str} in {bucket} retry {retry}");
+                match crate::put_file(&client, &bucket, &path).await {
+                    Ok(()) => {
+                        match fs::remove_file(&path).await {
+                            Ok(()) => {
+                                tracing::info!("stored {path_str} in {bucket}");
                             }
-                            return;
+                            Err(err) => {
+                                tracing::error!(
+                                    "failed to remove uploaded file {path_str}: {err:?}"
+                                );
+                            }
                         }
-                        Err(err) => {
-                            tracing::error!(
-                                "failed to store {path_str} in {bucket} retry: {retry}: {err:?}"
-                            );
-                            retry += 1;
-                            time::sleep(RETRY_WAIT).await;
-                        }
+                        return;
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            "failed to store {path_str} in {bucket} retry: {retry}: {err:?}"
+                        );
+                        retry += 1;
+                        time::sleep(RETRY_WAIT).await;
                     }
                 }
-            });
+            }
+        });
 
         tokio::select! {
             _ = uploads => (),
