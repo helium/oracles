@@ -186,7 +186,7 @@ impl mobile_config::Gateway for GatewayService {
 
         tokio::spawn(async move {
             let min_updated_at = DateTime::UNIX_EPOCH;
-            let stream = info::stream_by_addresses(&pool, &addresses, min_updated_at);
+            let stream = info::stream_by_addresses(&pool, addresses, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -223,7 +223,7 @@ impl mobile_config::Gateway for GatewayService {
 
         tokio::spawn(async move {
             let min_updated_at = DateTime::UNIX_EPOCH;
-            let stream = info::stream_by_addresses(&pool, &addresses, min_updated_at);
+            let stream = info::stream_by_addresses(&pool, addresses, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 

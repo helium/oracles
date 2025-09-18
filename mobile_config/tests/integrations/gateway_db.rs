@@ -98,7 +98,7 @@ async fn stream_by_addresses_filters_by_min_updated(pool: PgPool) -> anyhow::Res
     g2.insert(&pool).await?;
 
     // min_updated_at = t2 => expect empty
-    let s = Gateway::stream_by_addresses(&pool, &[a1.clone(), a2.clone()], t2);
+    let s = Gateway::stream_by_addresses(&pool, vec![a1.clone(), a2.clone()], t2);
     pin_mut!(s);
     assert!(s.next().await.is_none());
 
@@ -109,7 +109,7 @@ async fn stream_by_addresses_filters_by_min_updated(pool: PgPool) -> anyhow::Res
     g1b.insert(&pool).await?;
 
     // now we should see g1 only
-    let s = Gateway::stream_by_addresses(&pool, &[a1.clone(), a2.clone()], t2);
+    let s = Gateway::stream_by_addresses(&pool, vec![a1.clone(), a2.clone()], t2);
     pin_mut!(s);
     let first = s.next().await.expect("one row");
     assert_eq!(first.address.as_ref(), a1.as_ref());

@@ -234,8 +234,8 @@ impl Gateway {
         Ok(())
     }
 
-    pub async fn get_by_address<'e>(
-        db: impl PgExecutor<'e>,
+    pub async fn get_by_address<'a>(
+        db: impl PgExecutor<'a>,
         address: &PublicKeyBinary,
     ) -> anyhow::Result<Option<Self>> {
         let gateway = sqlx::query_as::<_, Self>(
@@ -267,7 +267,7 @@ impl Gateway {
 
     pub fn stream_by_addresses<'a>(
         db: impl PgExecutor<'a> + 'a,
-        addresses: &[PublicKeyBinary],
+        addresses: Vec<PublicKeyBinary>,
         min_updated_at: DateTime<Utc>,
     ) -> impl Stream<Item = Self> + 'a {
         let addr_array: Vec<Vec<u8>> = addresses.iter().map(|a| a.as_ref().to_vec()).collect();
