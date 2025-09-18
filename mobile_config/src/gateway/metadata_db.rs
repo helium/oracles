@@ -24,7 +24,7 @@ pub struct MobileHotspotInfo {
 }
 
 impl MobileHotspotInfo {
-    fn hash(&self) -> String {
+    fn compute_hash(&self) -> String {
         let mut hasher = blake3::Hasher::new();
         hasher.update(
             self.location
@@ -127,7 +127,7 @@ impl MobileHotspotInfo {
             refreshed_at: self.refreshed_at.unwrap_or_else(Utc::now),
             // Updated via SQL query see Gateway::insert
             last_changed_at: Utc::now(),
-            hash: self.hash(),
+            hash: self.compute_hash(),
             antenna,
             elevation,
             azimuth,
