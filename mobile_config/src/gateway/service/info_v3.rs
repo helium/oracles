@@ -15,7 +15,7 @@ use strum::IntoEnumIterator;
 
 #[derive(Clone, Debug)]
 pub struct LocationInfo {
-    pub location: u64,
+    pub location: hextree::Cell,
     pub location_changed_at: DateTime<Utc>,
 }
 
@@ -69,11 +69,12 @@ pub struct GatewayInfoV3 {
     pub num_location_asserts: i32,
 }
 
-impl From<Gateway> for GatewayInfoV3 {
-    fn from(gateway: Gateway) -> Self {
+impl TryFrom<Gateway> for GatewayInfoV3 {
+    type Error = hextree::Error;
+    fn try_from(gateway: Gateway) -> Result<Self, Self::Error> {
         let metadata = if let Some(location) = gateway.location {
             let location_info = LocationInfo {
-                location,
+                location: hextree::Cell::from_raw(location)?,
                 location_changed_at: gateway.location_changed_at.unwrap_or(gateway.created_at),
             };
             let deployment_info = match (gateway.antenna, gateway.elevation, gateway.azimuth) {
@@ -92,7 +93,7 @@ impl From<Gateway> for GatewayInfoV3 {
             None
         };
 
-        Self {
+        Ok(Self {
             address: gateway.address,
             metadata,
             device_type: gateway.gateway_type.into(),
@@ -100,7 +101,7 @@ impl From<Gateway> for GatewayInfoV3 {
             updated_at: gateway.last_changed_at,
             refreshed_at: gateway.refreshed_at,
             num_location_asserts: gateway.location_asserts.unwrap_or(0) as i32,
-        }
+        })
     }
 }
 
@@ -120,7 +121,7 @@ impl TryFrom<GatewayInfoV3> for GatewayInfoProtoV3 {
     fn try_from(info: GatewayInfoV3) -> Result<Self, Self::Error> {
         let metadata = if let Some(metadata) = info.metadata {
             let location_info = LocationInfoProto {
-                location: hextree::Cell::from_raw(metadata.location_info.location)?.to_string(),
+                location: metadata.location_info.location.to_string(),
                 location_changed_at: metadata.location_info.location_changed_at.timestamp() as u64,
             };
             let deployment_info = metadata.deployment_info.map(|di| DeploymentInfoProto {
@@ -163,5 +164,5 @@ pub fn stream_by_types<'a>(
     };
 
     Gateway::stream_by_types(db, gateway_types, min_date, min_location_changed_at)
-        .map(|gateway| gateway.into())
+        .filter_map(|gateway| async move { gateway.try_into().ok() })
 }
