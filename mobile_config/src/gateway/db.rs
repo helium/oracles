@@ -350,13 +350,13 @@ impl FromRow<'_, PgRow> for Gateway {
             updated_at: row.try_get("updated_at")?,
             refreshed_at: row.try_get("refreshed_at")?,
             last_changed_at: row.try_get("last_changed_at")?,
-            hash: row.try_get::<String, _>("hash")?,
-            antenna: to_u32(row.try_get::<Option<i64>, _>("antenna")?),
-            elevation: to_u32(row.try_get::<Option<i64>, _>("elevation")?),
-            azimuth: to_u32(row.try_get::<Option<i64>, _>("azimuth")?),
-            location: to_u64(row.try_get::<Option<i64>, _>("location")?),
-            location_changed_at: row.try_get::<Option<DateTime<Utc>>, _>("location_changed_at")?,
-            location_asserts: to_u32(row.try_get::<Option<i64>, _>("location_asserts")?),
+            hash: row.try_get("hash")?,
+            antenna: to_u32(row.try_get("antenna")?),
+            elevation: to_u32(row.try_get("elevation")?),
+            azimuth: to_u32(row.try_get("azimuth")?),
+            location: to_u64(row.try_get("location")?),
+            location_changed_at: row.try_get("location_changed_at")?,
+            location_asserts: to_u32(row.try_get("location_asserts")?),
         })
     }
 }
