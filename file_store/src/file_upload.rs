@@ -87,7 +87,7 @@ impl FileUploadServer {
             const RETRY_WAIT: Duration = Duration::from_secs(10);
             while retry <= MAX_RETRIES {
                 tracing::debug!("storing {path_str} in {bucket} retry {retry}");
-                match crate::put_file(&client, &bucket, &path).await {
+                match crate::put_file(client, bucket, &path).await {
                     Ok(()) => {
                         match fs::remove_file(&path).await {
                             Ok(()) => {

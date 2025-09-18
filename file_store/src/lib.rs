@@ -92,8 +92,8 @@ pub async fn new_client(
 
 pub fn list_files<A, B>(
     client: &Client,
-    bucket: &str,
-    prefix: &str,
+    bucket: impl Into<String>,
+    prefix: impl Into<String>,
     after: A,
     before: B,
 ) -> FileInfoStream
@@ -101,14 +101,14 @@ where
     A: Into<Option<DateTime<Utc>>> + Copy,
     B: Into<Option<DateTime<Utc>>> + Copy,
 {
-    let file_type = prefix.to_string();
+    let file_type: String = prefix.into();
     let before = before.into();
     let after = after.into();
 
     client
         .list_objects_v2()
         .bucket(bucket)
-        .prefix(file_type.to_string())
+        .prefix(&file_type)
         .set_start_after(after.map(|dt| FileInfo::from((file_type, dt)).into()))
         .into_paginator()
         .send()
@@ -124,8 +124,8 @@ where
 
 pub async fn list_all_files<A, B>(
     client: &Client,
-    bucket: &str,
-    file_type: &str,
+    bucket: impl Into<String>,
+    prefix: impl Into<String>,
     after: A,
     before: B,
 ) -> Result<Vec<FileInfo>>
@@ -133,12 +133,12 @@ where
     A: Into<Option<DateTime<Utc>>> + Copy,
     B: Into<Option<DateTime<Utc>>> + Copy,
 {
-    list_files(client, bucket, file_type, after, before)
+    list_files(client, bucket, prefix, after, before)
         .try_collect()
         .await
 }
 
-pub async fn put_file(client: &Client, bucket: &str, file: &Path) -> Result {
+pub async fn put_file(client: &Client, bucket: impl Into<String>, file: &Path) -> Result {
     let byte_stream = ByteStream::from_path(&file)
         .await
         .map_err(|_| Error::not_found(format!("could not open {}", file.display())))?;
@@ -157,7 +157,11 @@ pub async fn put_file(client: &Client, bucket: &str, file: &Path) -> Result {
     )
 }
 
-pub async fn remove_file(client: &Client, bucket: &str, key: &str) -> Result {
+pub async fn remove_file(
+    client: &Client,
+    bucket: impl Into<String>,
+    key: impl Into<String>,
+) -> Result {
     poc_metrics::record_duration!(
         "file_store_remove_duration",
         client
@@ -171,23 +175,29 @@ pub async fn remove_file(client: &Client, bucket: &str, key: &str) -> Result {
     )
 }
 
-pub async fn get_raw_file<K>(client: &Client, bucket: &str, key: K) -> Result<ByteStream>
-where
-    K: Into<String>,
-{
-    get_byte_stream(client.clone(), bucket.to_string(), key).await
+pub async fn get_raw_file(
+    client: &Client,
+    bucket: impl Into<String>,
+    key: impl Into<String>,
+) -> Result<ByteStream> {
+    get_byte_stream(client.clone(), bucket, key).await
 }
 
-pub async fn get_file<K>(client: &Client, bucket: &str, key: K) -> Result<BytesMutStream>
-where
-    K: Into<String>,
-{
+pub async fn get_file(
+    client: &Client,
+    bucket: impl Into<String>,
+    key: impl Into<String>,
+) -> Result<BytesMutStream> {
     Ok(stream_source(get_raw_file(client, bucket, key).await?))
 }
 
-pub fn source_files(client: &Client, bucket: &str, infos: FileInfoStream) -> BytesMutStream {
-    let bucket = bucket.to_string();
+pub fn source_files(
+    client: &Client,
+    bucket: impl Into<String>,
+    infos: FileInfoStream,
+) -> BytesMutStream {
     let client = client.clone();
+    let bucket: String = bucket.into();
     infos
         .map_ok(move |info| get_byte_stream(client.clone(), bucket.clone(), info.key))
         .try_buffered(2)
@@ -201,11 +211,11 @@ pub fn source_files(client: &Client, bucket: &str, infos: FileInfoStream) -> Byt
 
 pub fn source_files_unordered(
     client: &Client,
-    bucket: &str,
+    bucket: impl Into<String>,
     workers: usize,
     infos: FileInfoStream,
 ) -> BytesMutStream {
-    let bucket = bucket.to_string();
+    let bucket: String = bucket.into();
     let client = client.clone();
     infos
         .map_ok(move |info| get_byte_stream(client.clone(), bucket.clone(), info.key))
@@ -214,16 +224,16 @@ pub fn source_files_unordered(
             Ok(stream) => stream_source(stream),
             Err(err) => stream::once(async move { Err(err) }).boxed(),
         })
-        // .fuse()
+        .fuse()
         .boxed()
 }
 
 pub async fn stream_single_file(
     client: &Client,
-    bucket: &str,
+    bucket: impl Into<String>,
     file_info: FileInfo,
 ) -> Result<BytesMutStream> {
-    get_byte_stream(client.clone(), bucket.to_string(), file_info)
+    get_byte_stream(client.clone(), bucket, file_info)
         .await
         .map(stream_source)
 }
@@ -242,10 +252,11 @@ pub fn stream_source(stream: ByteStream) -> BytesMutStream {
     )
 }
 
-async fn get_byte_stream<K>(client: Client, bucket: String, key: K) -> Result<ByteStream>
-where
-    K: Into<String>,
-{
+async fn get_byte_stream(
+    client: Client,
+    bucket: impl Into<String>,
+    key: impl Into<String>,
+) -> Result<ByteStream> {
     client
         .get_object()
         .bucket(bucket)
