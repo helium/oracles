@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult, KeyRole};
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
@@ -13,11 +15,11 @@ use tonic::{Request, Response, Status};
 
 pub struct AuthorizationService {
     key_cache: KeyCache,
-    signing_key: Keypair,
+    signing_key: Arc<Keypair>,
 }
 
 impl AuthorizationService {
-    pub fn new(key_cache: KeyCache, signing_key: Keypair) -> Self {
+    pub fn new(key_cache: KeyCache, signing_key: Arc<Keypair>) -> Self {
         Self {
             key_cache,
             signing_key,

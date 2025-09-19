@@ -11,7 +11,7 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source,
     wifi_heartbeat::WifiHeartbeatIngestReport,
-    FileStore, FileType,
+    FileType,
 };
 use futures::{stream::StreamExt, TryFutureExt};
 use helium_proto::services::poc_mobile as proto;
@@ -43,7 +43,8 @@ where
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
-        file_store: FileStore,
+        file_store_client: file_store::Client,
+        bucket: String,
         gateway_resolver: GIR,
         valid_heartbeats: FileSinkClient<proto::Heartbeat>,
         seniority_updates: FileSinkClient<proto::SeniorityUpdate>,
@@ -52,7 +53,7 @@ where
         // Wifi Heartbeats
         let (wifi_heartbeats, wifi_heartbeats_server) = file_source::continuous_source()
             .state(pool.clone())
-            .store(file_store)
+            .file_store(file_store_client, bucket)
             .lookback(LookbackBehavior::StartAfter(settings.start_after))
             .prefix(FileType::WifiHeartbeatIngestReport.to_string())
             .create()

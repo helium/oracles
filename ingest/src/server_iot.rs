@@ -18,7 +18,7 @@ use helium_proto::services::poc_lora::{
     LoraStreamSessionInitV1, LoraStreamSessionOfferV1, LoraWitnessIngestReportV1,
     LoraWitnessReportReqV1, LoraWitnessReportRespV1,
 };
-use std::{convert::TryFrom, net::SocketAddr, path::Path, time::Duration};
+use std::{convert::TryFrom, net::SocketAddr, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{sync::mpsc::Sender, time::Instant};
 use tokio_stream::wrappers::ReceiverStream;
@@ -204,7 +204,7 @@ impl ManagedTask for GrpcServer {
     }
 }
 
-fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
+fn make_span(_request: &http::request::Request<tonic::body::Body>) -> tracing::Span {
     tracing::info_span!(
         custom_tracing::DEFAULT_SPAN,
         pub_key = tracing::field::Empty
@@ -355,15 +355,13 @@ impl poc_lora::PocLora for GrpcServer {
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
-    // Initialize uploader
+    let s3_client = settings.file_store.connect().await;
     let (file_upload, file_upload_server) =
-        file_upload::FileUpload::from_settings_tm(&settings.output).await?;
-
-    let store_base_path = Path::new(&settings.cache);
+        file_upload::FileUpload::new(s3_client, settings.output_bucket.clone()).await;
 
     // iot beacon reports
     let (beacon_report_sink, beacon_report_sink_server) = LoraBeaconIngestReportV1::file_sink(
-        store_base_path,
+        &settings.cache,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(Duration::from_secs(5 * 60)),
@@ -373,7 +371,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
 
     // iot witness reports
     let (witness_report_sink, witness_report_sink_server) = LoraWitnessIngestReportV1::file_sink(
-        store_base_path,
+        &settings.cache,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(Duration::from_secs(5 * 60)),

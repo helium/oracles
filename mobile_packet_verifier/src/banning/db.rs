@@ -22,7 +22,7 @@ use super::{BannedRadios, BAN_CLEANUP_DAYS};
 //
 // `expiration_timestamp`:
 // Expiration must be throughout the entire duration of the epoch.
-// `>=` inclusive greather than
+// `>=` inclusive greater than
 pub async fn get_banned_radios(
     pool: &mut PgConnection,
     timestamp: DateTime<Utc>,

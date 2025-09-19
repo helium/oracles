@@ -75,6 +75,7 @@ pub struct Daemon;
 impl Daemon {
     pub async fn run(&self, settings: &Settings) -> Result<()> {
         custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
+        tracing::info!("Settings: {}", serde_json::to_string_pretty(settings)?);
 
         // Install prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
@@ -93,32 +94,34 @@ impl Daemon {
         let gateway_svc = GatewayService::new(
             key_cache.clone(),
             metadata_pool.clone(),
-            settings.signing_keypair()?,
+            settings.signing_keypair.clone(),
             pool.clone(),
         );
-        let auth_svc = AuthorizationService::new(key_cache.clone(), settings.signing_keypair()?);
+        let auth_svc =
+            AuthorizationService::new(key_cache.clone(), settings.signing_keypair.clone());
         let entity_svc = EntityService::new(
             key_cache.clone(),
             metadata_pool.clone(),
-            settings.signing_keypair()?,
+            settings.signing_keypair.clone(),
         );
         let carrier_svc = CarrierService::new(
             key_cache.clone(),
             pool.clone(),
             metadata_pool.clone(),
-            settings.signing_keypair()?,
+            settings.signing_keypair.clone(),
         );
 
         let hex_boosting_svc = HexBoostingService::new(
             key_cache.clone(),
             metadata_pool.clone(),
-            settings.signing_keypair()?,
+            settings.signing_keypair.clone(),
+            settings.boosted_hex_activation_cutoff,
         );
 
         let sub_dao_svc = SubDaoService::new(
             key_cache.clone(),
             metadata_pool.clone(),
-            settings.signing_keypair()?,
+            settings.signing_keypair.clone(),
         );
 
         let listen_addr = settings.listen;
@@ -181,7 +184,7 @@ impl ManagedTask for GrpcServer {
     }
 }
 
-fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
+fn make_span(_request: &http::request::Request<tonic::body::Body>) -> tracing::Span {
     tracing::info_span!(
         custom_tracing::DEFAULT_SPAN,
         pub_key = tracing::field::Empty,

@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod client;
 pub mod cmds;
 
@@ -108,3 +110,6 @@ impl Display for NetworkKeyRole {
         }
     }
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

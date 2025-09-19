@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod admin;
 pub mod admin_service;
 pub mod client;
@@ -80,3 +82,6 @@ impl From<u64> for EpochInfo {
         }
     }
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

@@ -2,7 +2,7 @@ use crate::{
     file_info_poller::{
         FileInfoPollerConfigBuilder, MsgDecodeFileInfoPollerParser, ProstFileInfoPollerParser,
     },
-    file_sink, BytesMutStream, Error, FileStore,
+    file_sink, BytesMutStream, Error,
 };
 use async_compression::tokio::bufread::GzipDecoder;
 use futures::{
@@ -16,36 +16,36 @@ use std::{
 use tokio::{fs::File, io::BufReader};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
-pub struct Continuous<Store, Parser>(PhantomData<(Store, Parser)>);
+pub struct Continuous<Parser>(PhantomData<Parser>);
 
-impl Continuous<FileStore, MsgDecodeFileInfoPollerParser> {
-    pub fn msg_source<Msg, State>(
-    ) -> FileInfoPollerConfigBuilder<Msg, State, FileStore, MsgDecodeFileInfoPollerParser>
+impl Continuous<MsgDecodeFileInfoPollerParser> {
+    pub fn msg_source<Msg, State, Store>(
+    ) -> FileInfoPollerConfigBuilder<Msg, State, Store, MsgDecodeFileInfoPollerParser>
     where
         Msg: Clone,
     {
-        FileInfoPollerConfigBuilder::<Msg, State, FileStore, MsgDecodeFileInfoPollerParser>::default()
+        FileInfoPollerConfigBuilder::<Msg, State, Store, MsgDecodeFileInfoPollerParser>::default()
             .parser(MsgDecodeFileInfoPollerParser)
     }
 }
 
-impl Continuous<FileStore, ProstFileInfoPollerParser> {
-    pub fn prost_source<Msg, State>(
-    ) -> FileInfoPollerConfigBuilder<Msg, State, FileStore, ProstFileInfoPollerParser>
+impl Continuous<ProstFileInfoPollerParser> {
+    pub fn prost_source<Msg, State, Store>(
+    ) -> FileInfoPollerConfigBuilder<Msg, State, Store, ProstFileInfoPollerParser>
     where
         Msg: Clone,
     {
-        FileInfoPollerConfigBuilder::<Msg, State, FileStore, ProstFileInfoPollerParser>::default()
+        FileInfoPollerConfigBuilder::<Msg, State, Store, ProstFileInfoPollerParser>::default()
             .parser(ProstFileInfoPollerParser)
     }
 }
 
-pub fn continuous_source<T, S>(
-) -> FileInfoPollerConfigBuilder<T, S, FileStore, MsgDecodeFileInfoPollerParser>
+pub fn continuous_source<T, S, S2>(
+) -> FileInfoPollerConfigBuilder<T, S, S2, MsgDecodeFileInfoPollerParser>
 where
     T: Clone,
 {
-    Continuous::msg_source::<T, S>()
+    Continuous::msg_source::<T, S, S2>()
 }
 
 pub fn source<I, P>(paths: I) -> BytesMutStream
@@ -79,7 +79,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{FileInfo, FileInfoStream, FileStore, Settings};
+    use crate::{FileInfo, FileInfoStream, Settings};
     use std::str::FromStr;
 
     fn infos(names: &'static [&str]) -> FileInfoStream {
@@ -100,22 +100,32 @@ mod test {
         //
 
         let settings = Settings {
-            bucket: "devnet-poc5g-rewards".to_string(),
             endpoint: None,
-            region: "us-east-1".to_string(),
             access_key_id: None,
             secret_access_key: None,
         };
 
-        let file_store = FileStore::from_settings(&settings)
-            .await
-            .expect("file store");
-        let stream = file_store.source(infos(&[
-            "cell_heartbeat.1658832527866.gz",
-            "cell_heartbeat.1658834120042.gz",
-        ]));
-        let p1_stream = file_store.source(infos(&["cell_heartbeat.1658832527866.gz"]));
-        let p2_stream = file_store.source(infos(&["cell_heartbeat.1658834120042.gz"]));
+        let client = settings.connect().await;
+        let bucket = "devnet-poc5g-rewards".to_string();
+
+        let stream = crate::source_files(
+            &client,
+            &bucket,
+            infos(&[
+                "cell_heartbeat.1658832527866.gz",
+                "cell_heartbeat.1658834120042.gz",
+            ]),
+        );
+        let p1_stream = crate::source_files(
+            &client,
+            &bucket,
+            infos(&["cell_heartbeat.1658832527866.gz"]),
+        );
+        let p2_stream = crate::source_files(
+            &client,
+            &bucket,
+            infos(&["cell_heartbeat.1658834120042.gz"]),
+        );
 
         let p1_count = p1_stream.count().await;
         let p2_count = p2_stream.count().await;

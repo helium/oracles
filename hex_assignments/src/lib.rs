@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod assignment;
 pub mod footfall;
 pub mod landtype;
@@ -80,6 +82,9 @@ pub struct HexBoostData {
     pub urbanization: Urbanization,
     pub service_provider_override: ServiceProviderOverride,
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();
 
 #[cfg(test)]
 mod tests {

@@ -1,3 +1,4 @@
+use helium_proto::UnknownEnumValue;
 use thiserror::Error;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -10,6 +11,8 @@ pub enum Error {
     Encode(#[from] EncodeError),
     #[error("decode error")]
     Decode(#[from] DecodeError),
+    #[error("unknown enum value")]
+    UnknownEnumValue(#[from] UnknownEnumValue),
     #[error("not found")]
     NotFound(String),
     #[error("crypto error")]
@@ -17,7 +20,7 @@ pub enum Error {
     #[error("csv error")]
     Csv(#[from] csv::Error),
     #[error("aws error")]
-    Aws(#[from] aws_sdk_s3::Error),
+    Aws(#[source] Box<aws_sdk_s3::Error>),
     #[error("config error")]
     Config(#[from] config::ConfigError),
     #[error("mpsc channel error")]
@@ -185,5 +188,11 @@ impl DecodeError {
 impl From<helium_crypto::Error> for Error {
     fn from(err: helium_crypto::Error) -> Self {
         Self::Crypto(Box::new(err))
+    }
+}
+
+impl From<aws_sdk_s3::Error> for Error {
+    fn from(err: aws_sdk_s3::Error) -> Self {
+        Self::Aws(Box::new(err))
     }
 }

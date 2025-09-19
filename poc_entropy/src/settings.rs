@@ -16,7 +16,9 @@ pub struct Settings {
     /// Source URL for entropy data. Required
     pub source: String,
     /// Target output bucket details
-    pub output: file_store::Settings,
+    #[serde(default)]
+    pub file_store: file_store::Settings,
+    pub output_bucket: String,
     /// Folder for locacl cache of ingest data
     #[serde(default = "default_cache")]
     pub cache: String,

@@ -130,7 +130,7 @@ pub async fn create_data_set_downloader(
         .await
         .unwrap();
 
-    let file_store = awsl.file_store.clone();
+    let file_store = awsl.file_store_client.clone();
     let poll_duration = std::time::Duration::from_secs(4);
 
     let (oracle_boosting_reports, _) = OracleBoostingReportV1::file_sink(
@@ -147,6 +147,7 @@ pub async fn create_data_set_downloader(
         pool,
         HexBoostData::default(),
         file_store,
+        bucket_name.clone(),
         oracle_boosting_reports,
         data_set_directory.clone(),
         new_coverage_object_notification,
@@ -186,7 +187,7 @@ async fn test_dataset_downloader(pool: PgPool) {
 
     let file_paths: Vec<PathBuf> = paths
         .iter()
-        .map(|f| PathBuf::from(format!("./tests/integrations/fixtures/{}", f)))
+        .map(|f| PathBuf::from(format!("./tests/integrations/fixtures/{f}")))
         .collect();
 
     let (file_upload_tx, _file_upload_rx) = file_upload::message_channel();

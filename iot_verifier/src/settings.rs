@@ -5,6 +5,14 @@ use serde::Deserialize;
 use std::{path::Path, time::Duration};
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct Buckets {
+    pub ingest: String,
+    pub packet_ingest: String,
+    pub entropy: String,
+    pub output: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Default to
     /// "iot_verifier=debug,poc_store=info"
@@ -50,10 +58,9 @@ pub struct Settings {
 
     pub database: db_store::Settings,
     pub iot_config_client: iot_config::client::Settings,
-    pub ingest: file_store::Settings,
-    pub packet_ingest: file_store::Settings,
-    pub entropy: file_store::Settings,
-    pub output: file_store::Settings,
+    #[serde(default)]
+    pub file_store: file_store::Settings,
+    pub buckets: Buckets,
     pub metrics: poc_metrics::Settings,
     pub denylist: denylist::Settings,
     pub price_tracker: price::price_tracker::Settings,

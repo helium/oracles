@@ -10,7 +10,7 @@ use crate::{
     },
     file_sink::FileSinkClient,
     traits::{FileSinkWriteExt, MsgDecode, TimestampDecode, TimestampEncode},
-    Error, FileSink, FileStore,
+    Error, FileSink,
 };
 
 pub mod proto {
@@ -301,12 +301,13 @@ pub async fn verified_report_sink(
 
 pub async fn report_source<State: FileInfoPollerState>(
     pool: State,
-    file_store: FileStore,
+    client: crate::Client,
+    bucket: String,
     start_after: DateTime<Utc>,
 ) -> crate::Result<(BanReportSource, FileInfoPollerServer<BanReport, State>)> {
     crate::file_source::continuous_source()
         .state(pool)
-        .store(file_store)
+        .file_store(client, bucket)
         .lookback(LookbackBehavior::StartAfter(start_after))
         .prefix(crate::FileType::MobileBanReport.to_string())
         .create()
@@ -315,7 +316,8 @@ pub async fn report_source<State: FileInfoPollerState>(
 
 pub async fn verified_report_source<State: FileInfoPollerState>(
     pool: State,
-    file_store: FileStore,
+    client: crate::Client,
+    bucket: String,
     start_after: DateTime<Utc>,
 ) -> crate::Result<(
     VerifiedBanReportSource,
@@ -323,7 +325,7 @@ pub async fn verified_report_source<State: FileInfoPollerState>(
 )> {
     crate::file_source::continuous_source()
         .state(pool)
-        .store(file_store)
+        .file_store(client, bucket)
         .lookback(LookbackBehavior::StartAfter(start_after))
         .prefix(crate::FileType::VerifiedMobileBanReport.to_string())
         .create()

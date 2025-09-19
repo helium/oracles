@@ -17,6 +17,7 @@ helium-crypto = { workspace = true }
 itertools = { workspace = true }
 metrics = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -25,3 +26,4 @@ spl-token = { version = "8" }
 sqlx = { workspace = true }
 
 helium-lib = { git = "https://github.com/helium/helium-wallet-rs", branch = "master" }
+tls-init = { path = "../tls_init" }

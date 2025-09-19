@@ -8,7 +8,7 @@ use file_store::{
     file_sink::FileSinkClient,
     file_upload::FileUpload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileStore, FileType,
+    FileType,
 };
 use futures::{prelude::future::LocalBoxFuture, StreamExt, TryFutureExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -142,7 +142,8 @@ where
     pub async fn create_managed_task(
         pool: PgPool,
         file_upload: FileUpload,
-        file_store: FileStore,
+        file_store_client: file_store::Client,
+        bucket: String,
         authorization_verifier: AV,
         settings: &Settings,
         seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
@@ -160,7 +161,7 @@ where
         let (receiver, ingest_server) = FileInfoPollerConfigBuilder::default()
             .parser(ProstFileInfoPollerParser)
             .state(pool.clone())
-            .store(file_store)
+            .file_store(file_store_client, bucket)
             .lookback(LookbackBehavior::StartAfter(settings.start_after))
             .prefix(FileType::SPBoostedRewardsBannedRadioIngestReport.to_string())
             .create()

@@ -7,9 +7,9 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+tls-init = { path = "../tls_init" }
 async-compression = { version = "0", features = ["tokio", "gzip"] }
 regex = "1"
-
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }

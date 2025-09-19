@@ -51,6 +51,7 @@ file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
 solana = { path = "../solana" }
 task-manager = { path = "../task_manager" }
+tls-init = { path = "../tls_init" }
 
 [dev-dependencies]
 rand = { workspace = true }

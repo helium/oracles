@@ -58,7 +58,7 @@ use file_store::{
     iot_beacon_report::IotBeaconIngestReport,
     iot_witness_report::IotWitnessIngestReport,
     traits::{IngestId, MsgDecode},
-    FileInfo, FileStore, FileType,
+    FileInfo, FileType,
 };
 use futures::{future::LocalBoxFuture, stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -76,7 +76,8 @@ use xorf::{Filter as XorFilter, Xor16};
 const REPORTS_META_NAME: &str = "report";
 
 pub struct Loader {
-    ingest_store: FileStore,
+    file_store_client: file_store::Client,
+    bucket: String,
     pool: PgPool,
     poll_time: time::Duration,
     window_width: Duration,
@@ -111,13 +112,14 @@ impl Loader {
     pub async fn from_settings(
         settings: &Settings,
         pool: PgPool,
+        file_store_client: file_store::Client,
         gateway_cache: GatewayCache,
     ) -> Result<Self, NewLoaderError> {
         tracing::info!("from_settings verifier loader");
-        let ingest_store = FileStore::from_settings(&settings.ingest).await?;
         Ok(Self {
             pool,
-            ingest_store,
+            file_store_client,
+            bucket: settings.buckets.ingest.clone(),
             poll_time: settings.poc_loader_poll_time,
             window_width: settings.poc_loader_window_width,
             ingestor_rollup_time: settings.ingestor_rollup_time,
@@ -211,7 +213,6 @@ impl Loader {
         match self
             .process_events(
                 FileType::IotBeaconIngestReport,
-                &self.ingest_store,
                 after,
                 before,
                 Some(&xor_data),
@@ -252,7 +253,6 @@ impl Loader {
         match self
             .process_events(
                 FileType::IotWitnessIngestReport,
-                &self.ingest_store,
                 after - (self.ingestor_rollup_time + buffer),
                 before + (self.ingestor_rollup_time + buffer),
                 None,
@@ -273,7 +273,6 @@ impl Loader {
     async fn process_events(
         &self,
         file_type: FileType,
-        store: &FileStore,
         after: chrono::DateTime<Utc>,
         before: chrono::DateTime<Utc>,
         xor_data: Option<&Mutex<Vec<u64>>>,
@@ -282,7 +281,14 @@ impl Loader {
         tracing::info!(
             "checking for new ingest files of type {file_type} after {after} and before {before}"
         );
-        let infos = store.list_all(file_type.to_str(), after, before).await?;
+        let infos = file_store::list_all_files(
+            &self.file_store_client,
+            &self.bucket,
+            file_type.to_str(),
+            after,
+            before,
+        )
+        .await?;
         if infos.is_empty() {
             tracing::info!("no available ingest files of type {file_type}");
             return Ok(());
@@ -292,7 +298,7 @@ impl Loader {
         stream::iter(infos)
             .for_each_concurrent(10, |file_info| async move {
                 match self
-                    .process_file(store, file_info.clone(), xor_data, xor_filter)
+                    .process_file(file_info.clone(), xor_data, xor_filter)
                     .await
                 {
                     Ok(()) => tracing::debug!(
@@ -314,7 +320,6 @@ impl Loader {
 
     async fn process_file(
         &self,
-        store: &FileStore,
         file_info: FileInfo,
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
@@ -322,8 +327,7 @@ impl Loader {
         let file_type = file_info.prefix.clone();
         let tx = Mutex::new(self.pool.begin().await?);
         let metrics = LoaderMetricTracker::new();
-        store
-            .stream_file(file_info.clone())
+        file_store::stream_single_file(&self.file_store_client, &self.bucket, file_info.clone())
             .await?
             .chunks(600)
             .for_each_concurrent(10, |msgs| async {

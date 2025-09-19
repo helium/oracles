@@ -14,7 +14,6 @@ use hex_assignments::{Assignment, HexAssignment, HexBoostDataAssignmentsExt};
 use hextree::Cell;
 use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
-    client::sub_dao_client::SubDaoEpochRewardInfoResolver,
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
     sub_dao_epoch_reward_info::EpochRewardInfo,
 };
@@ -29,7 +28,6 @@ use solana::Token;
 use sqlx::PgPool;
 use std::{
     collections::{HashMap, HashSet},
-    str::FromStr,
     sync::Arc,
 };
 use tokio::{sync::RwLock, time::Timeout};
@@ -44,11 +42,6 @@ pub const EMISSIONS_POOL_IN_BONES_24_HOURS: u64 = 82_191_780_821_917;
 #[allow(dead_code)]
 pub struct MockHexBoostingClient {
     boosted_hexes: Vec<BoostedHexInfo>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MockSubDaoRewardsClient {
-    info: Option<EpochRewardInfo>,
 }
 
 impl MockHexBoostingClient {
@@ -71,23 +64,11 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
     }
 }
 
-#[async_trait::async_trait]
-impl SubDaoEpochRewardInfoResolver for MockSubDaoRewardsClient {
-    async fn resolve_info(
-        &self,
-        _sub_dao: &str,
-        _epoch: u64,
-    ) -> Result<Option<EpochRewardInfo>, ClientError> {
-        Ok(self.info.clone())
-    }
-}
-
 pub trait RadioRewardV2Ext {
     fn boosted_hexes(&self) -> Vec<radio_reward_v2::CoveredHex>;
     fn nth_boosted_hex(&self, index: usize) -> radio_reward_v2::CoveredHex;
     fn boosted_hexes_len(&self) -> usize;
     fn total_poc_reward(&self) -> u64;
-    fn total_coverage_points(&self) -> u64;
 }
 
 impl RadioRewardV2Ext for RadioRewardV2 {
@@ -116,16 +97,6 @@ impl RadioRewardV2Ext for RadioRewardV2 {
 
     fn total_poc_reward(&self) -> u64 {
         self.base_poc_reward + self.boosted_poc_reward
-    }
-
-    fn total_coverage_points(&self) -> u64 {
-        let base = self.base_coverage_points_sum.clone().unwrap_or_default();
-        let boosted = self.boosted_coverage_points_sum.clone().unwrap_or_default();
-
-        let base = Decimal::from_str(&base.value).expect("decoding base cp");
-        let boosted = Decimal::from_str(&boosted.value).expect("decoding boosted cp");
-
-        (base + boosted).to_u64().unwrap()
     }
 }
 
@@ -464,7 +435,7 @@ impl<V: AsStringKeyedMapKey + Clone> AsStringKeyedMap<V> for Vec<V> {
         for item in self {
             let key = item.key();
             if map.contains_key(&key) {
-                panic!("Duplicate string key found: {}", key);
+                panic!("Duplicate string key found: {key}");
             }
             map.insert(key, item.clone());
         }

@@ -57,3 +57,4 @@ price = { path = "../price" }
 reward-scheduler = { path = "../reward_scheduler" }
 solana = { path = "../solana" }
 task-manager = { path = "../task_manager" }
+tls-init = { path = "../tls_init" }

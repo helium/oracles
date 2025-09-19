@@ -10,7 +10,7 @@ anyhow = "1"
 axum = { version = ">=0.7", features = ["tracing"], optional = true }
 bs58 = { workspace = true }
 helium-crypto = { workspace = true }
-helium-proto = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 notify = { version = "6", default-features = false }
 serde = { version = "1", features = ["derive"] }
@@ -34,4 +34,4 @@ notify = { version = "6", default-features = false, features = [
 [features]
 default = []
 http-1 = ["axum"]
-grpc = ["helium-proto", "http"]
+grpc = ["tonic", "http"]

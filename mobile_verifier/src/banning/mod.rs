@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
-use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, FileStore};
+use file_store::{file_sink::FileSinkClient, file_upload::FileUpload};
 use helium_crypto::PublicKeyBinary;
 use ingestor::BanIngestor;
 use mobile_config::client::AuthorizationClient;
@@ -24,7 +24,8 @@ pub const BAN_CLEANUP_DAYS: i64 = 7;
 pub async fn create_managed_task(
     pool: PgPool,
     file_upload: FileUpload,
-    file_store: FileStore,
+    file_store_client: file_store::Client,
+    bucket: String,
     auth_verifier: AuthorizationClient,
     settings: &Settings,
     seniority_update_sink: FileSinkClient<proto::SeniorityUpdate>,
@@ -32,7 +33,8 @@ pub async fn create_managed_task(
     let ban_ingestor = BanIngestor::create_managed_task(
         pool.clone(),
         file_upload.clone(),
-        file_store.clone(),
+        file_store_client.clone(),
+        bucket.clone(),
         auth_verifier.clone(),
         settings,
     )
@@ -41,7 +43,8 @@ pub async fn create_managed_task(
     let sp_ban_ingestor = ServiceProviderBoostedRewardsBanIngestor::create_managed_task(
         pool,
         file_upload,
-        file_store,
+        file_store_client,
+        bucket,
         auth_verifier,
         settings,
         seniority_update_sink,

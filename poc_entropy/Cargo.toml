@@ -36,3 +36,4 @@ helium-crypto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
+tls-init = { path = "../tls_init" }

@@ -39,6 +39,7 @@ task-manager = { path = "../task_manager" }
 rand = { workspace = true }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 humantime-serde = { workspace = true }
+tls-init = { path = "../tls_init" }
 
 [dev-dependencies]
-backon = "0"
+backon = "1"

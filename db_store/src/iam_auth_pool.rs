@@ -4,17 +4,13 @@ use sqlx::{
     Pool,
 };
 
+use aws_config::{BehaviorVersion, Region};
 use aws_credential_types::Credentials;
-use aws_sig_auth::signer::{self, HttpSignatureType, OperationSigningConfig, RequestConfig};
-use aws_smithy_http::body::SdkBody;
-use aws_types::{
-    region::{Region, SigningRegion},
-    SigningService,
-};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use aws_sigv4::sign::v4;
+use std::time::{Duration, SystemTime};
 
 pub async fn connect(settings: &Settings) -> Result<Pool<Postgres>> {
-    let aws_config = aws_config::load_from_env().await;
+    let aws_config = aws_config::defaults(BehaviorVersion::latest()).load().await;
     let client = aws_sdk_sts::Client::new(&aws_config);
     let connect_parameters = ConnectParameters::try_from(settings)?;
     let connect_options = connect_parameters.connect_options(&client).await?;
@@ -122,7 +118,7 @@ impl ConnectParameters {
             self.iam_region.clone(),
             self.port,
             &self.username,
-            &credentials,
+            credentials,
             std::time::SystemTime::now(),
         )
     }
@@ -131,21 +127,18 @@ impl ConnectParameters {
         self.assume_role(client)
             .await?
             .credentials()
-            .ok_or_else(|| {
-                Error::InvalidAssumedCredentials("No Credientials available".to_string())
-            })
+            .ok_or_else(|| Error::InvalidAssumedCredentials("No Credentials available".to_string()))
             .and_then(|creds| {
                 Ok(Credentials::new(
-                    creds.access_key_id().ok_or_else(|| {
-                        Error::InvalidAssumedCredentials("no access_key_id".to_string())
-                    })?,
-                    creds.secret_access_key().ok_or_else(|| {
-                        Error::InvalidAssumedCredentials("no secret_access_key".to_string())
-                    })?,
-                    creds.session_token().map(|s| s.to_string()),
-                    creds
-                        .expiration()
-                        .map(|e| UNIX_EPOCH + Duration::from_secs(e.secs() as u64)),
+                    creds.access_key_id.clone(),
+                    creds.secret_access_key.clone(),
+                    Some(creds.session_token.clone()),
+                    Some(
+                        creds
+                            .expiration
+                            .try_into()
+                            .map_err(|e| Error::AwsDateTimeConversionError(Box::new(e)))?,
+                    ),
                     "Helium Foundation",
                 ))
             })
@@ -154,7 +147,7 @@ impl ConnectParameters {
     async fn assume_role(
         &self,
         client: &aws_sdk_sts::Client,
-    ) -> Result<aws_sdk_sts::output::AssumeRoleOutput> {
+    ) -> Result<aws_sdk_sts::operation::assume_role::AssumeRoleOutput> {
         client
             .assume_role()
             .role_arn(self.iam_role_arn.clone())
@@ -175,44 +168,50 @@ fn region(settings: &Settings) -> Result<Region> {
         .ok_or_else(|| invalid_configuration("iam_region is required"))
 }
 
-fn generate_rds_iam_token(
+// Reference: https://docs.aws.amazon.com/sdk-for-rust/latest/dg/rust_rds_code_examples.html
+pub fn generate_rds_iam_token(
     db_hostname: &str,
-    region: Region,
+    region: aws_config::Region,
     port: u16,
     db_username: &str,
-    credentials: &Credentials,
+    credentials: Credentials,
     timestamp: SystemTime,
 ) -> Result<String> {
-    let signer = signer::SigV4Signer::new();
-    let mut operation_config = OperationSigningConfig::default_config();
-    operation_config.signature_type = HttpSignatureType::HttpRequestQueryParams;
-    operation_config.expires_in = Some(Duration::from_secs(15 * 60));
-    let request_config = RequestConfig {
-        request_ts: timestamp,
-        region: &SigningRegion::from(region),
-        service: &SigningService::from_static("rds-db"),
-        payload_override: None,
+    use aws_sigv4::http_request::{
+        self, SignableBody, SignableRequest, SignatureLocation, SigningSettings,
     };
-    let mut request = http::Request::builder()
-        .uri(format!(
-            "http://{db_hostname}:{port}/?Action=connect&DBUser={db_user}",
-            db_hostname = db_hostname,
-            port = port,
-            db_user = db_username
-        ))
-        .body(SdkBody::empty())
-        .expect("valid request");
-    let _signature = signer.sign(
-        &operation_config,
-        &request_config,
-        credentials,
-        &mut request,
-    )?;
 
-    let mut uri = request.uri().to_string();
-    if uri.starts_with("http://") {
-        Ok(uri.split_off("http://".len()))
-    } else {
-        Err(Error::InvalidAuthToken())
+    let mut signing_settings = SigningSettings::default();
+    signing_settings.expires_in = Some(Duration::from_secs(15 * 60));
+    signing_settings.signature_location = SignatureLocation::QueryParams;
+
+    let identity = credentials.into();
+    let signing_params = v4::SigningParams::builder()
+        .identity(&identity)
+        .region(region.as_ref())
+        .name("rds-db")
+        .time(timestamp)
+        .settings(signing_settings)
+        .build()
+        .map_err(|err| Error::SigningError(format!("SigningParams build: {err:?}")))?;
+
+    let url = format!("https://{db_hostname}:{port}/?Action=connect&DBUser={db_username}",);
+
+    let signable_request =
+        SignableRequest::new("GET", &url, std::iter::empty(), SignableBody::Bytes(&[]))
+            .expect("signable request");
+
+    let (signing_instructions, _signature) =
+        http_request::sign(signable_request, &signing_params.into())
+            .map_err(|err| Error::SigningError(format!("Signing: {err:?}")))?
+            .into_parts();
+
+    let mut url = url::Url::parse(&url).expect("valid url");
+    for (name, value) in signing_instructions.params() {
+        url.query_pairs_mut().append_pair(name, value);
     }
+
+    let response = url.to_string().split_off("https://".len());
+
+    Ok(response)
 }

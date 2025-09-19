@@ -39,13 +39,13 @@ impl GatewayService {
     pub fn new(
         key_cache: KeyCache,
         metadata_pool: Pool<Postgres>,
-        signing_key: Keypair,
+        signing_key: Arc<Keypair>,
         mobile_config_db_pool: Pool<Postgres>,
     ) -> Self {
         Self {
             key_cache,
             metadata_pool,
-            signing_key: Arc::new(signing_key),
+            signing_key,
             mobile_config_db_pool,
         }
     }

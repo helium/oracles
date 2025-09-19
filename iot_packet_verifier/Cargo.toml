@@ -41,3 +41,4 @@ iot-config = { path = "../iot_config" }
 poc-metrics = { path = "../metrics" }
 solana = { path = "../solana" }
 task-manager = { path = "../task_manager" }
+tls-init = { path = "../tls_init" }

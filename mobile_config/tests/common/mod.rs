@@ -3,6 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_crypto::{KeyTag, Keypair};
 use sqlx::PgPool;
+use std::sync::Arc;
 
 pub async fn add_mobile_tracker_record(
     pool: &PgPool,
@@ -153,7 +154,7 @@ pub async fn spawn_gateway_service(
     admin_pub_key: PublicKey,
 ) -> (
     String,
-    tokio::task::JoinHandle<std::result::Result<(), helium_proto::services::Error>>,
+    tokio::task::JoinHandle<std::result::Result<(), transport::Error>>,
 ) {
     let server_key = make_keypair();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -162,7 +163,7 @@ pub async fn spawn_gateway_service(
     // Start the gateway server
     let keys = CacheKeys::from_iter([(admin_pub_key.to_owned(), KeyRole::Administrator)]);
     let (_key_cache_tx, key_cache) = KeyCache::new(keys);
-    let gws = GatewayService::new(key_cache, pool.clone(), server_key, pool.clone());
+    let gws = GatewayService::new(key_cache, pool.clone(), Arc::new(server_key), pool.clone());
     let handle = tokio::spawn(
         transport::Server::builder()
             .add_service(proto::GatewayServer::new(gws))

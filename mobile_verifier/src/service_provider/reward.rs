@@ -783,7 +783,7 @@ mod tests {
 
         fn sp_reward(self) -> proto::ServiceProviderReward {
             match self.reward {
-                Some(proto::Reward::ServiceProviderReward(promo)) => promo.clone(),
+                Some(proto::Reward::ServiceProviderReward(promo)) => promo,
                 other => panic!("expected sp reward, got {other:?}"),
             }
         }

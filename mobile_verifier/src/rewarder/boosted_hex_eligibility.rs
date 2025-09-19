@@ -3,26 +3,16 @@ use coverage_point_calculator::SPBoostedRewardEligibility;
 use helium_crypto::PublicKeyBinary;
 use hex_assignments::Assignment;
 
-use crate::{
-    radio_threshold::VerifiedRadioThresholds,
-    unique_connections::{self, UniqueConnectionCounts},
-};
+use crate::unique_connections::{self, UniqueConnectionCounts};
 
 #[derive(Debug, Default)]
 pub struct BoostedHexEligibility {
-    radio_thresholds: VerifiedRadioThresholds,
     unique_connections: UniqueConnectionCounts,
 }
 
 impl BoostedHexEligibility {
-    pub fn new(
-        radio_thresholds: VerifiedRadioThresholds,
-        unique_connections: UniqueConnectionCounts,
-    ) -> Self {
-        Self {
-            radio_thresholds,
-            unique_connections,
-        }
+    pub fn new(unique_connections: UniqueConnectionCounts) -> Self {
+        Self { unique_connections }
     }
 
     pub fn eligibility(
@@ -33,7 +23,7 @@ impl BoostedHexEligibility {
         if Self::in_united_states(covered_hexes) {
             self.check_unique_connections(&key)
         } else {
-            self.check_radio_thresholds(key)
+            SPBoostedRewardEligibility::Eligible
         }
     }
 
@@ -42,14 +32,6 @@ impl BoostedHexEligibility {
             SPBoostedRewardEligibility::Eligible
         } else {
             SPBoostedRewardEligibility::NotEnoughConnections
-        }
-    }
-
-    fn check_radio_thresholds(&self, key: PublicKeyBinary) -> SPBoostedRewardEligibility {
-        if self.radio_thresholds.is_verified(key) {
-            SPBoostedRewardEligibility::Eligible
-        } else {
-            SPBoostedRewardEligibility::RadioThresholdNotMet
         }
     }
 
@@ -79,8 +61,7 @@ mod tests {
         let mut unique_connections = UniqueConnectionCounts::default();
         unique_connections.insert(pub_key.clone(), MINIMUM_UNIQUE_CONNECTIONS + 1);
 
-        let boosted_hex_eligibility =
-            BoostedHexEligibility::new(VerifiedRadioThresholds::default(), unique_connections);
+        let boosted_hex_eligibility = BoostedHexEligibility::new(unique_connections);
 
         let covered_hexes = vec![unranked_coverage(Assignment::A)];
 
@@ -96,39 +77,14 @@ mod tests {
         let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
 
         let unique_connections = UniqueConnectionCounts::default();
-        let mut verified_thresholds = VerifiedRadioThresholds::default();
-        verified_thresholds.insert(pub_key.clone());
 
-        let boosted_hex_eligibility =
-            BoostedHexEligibility::new(verified_thresholds, unique_connections);
+        let boosted_hex_eligibility = BoostedHexEligibility::new(unique_connections);
 
         let covered_hexes = vec![unranked_coverage(Assignment::C)];
 
         let eligibility = boosted_hex_eligibility.eligibility(pub_key, &covered_hexes);
 
         assert_eq!(SPBoostedRewardEligibility::Eligible, eligibility);
-    }
-
-    #[test]
-    fn radio_thresholds_not_met() {
-        let keypair = generate_keypair();
-
-        let pub_key: PublicKeyBinary = keypair.public_key().to_vec().into();
-
-        let unique_connections = UniqueConnectionCounts::default();
-        let verified_thresholds = VerifiedRadioThresholds::default();
-
-        let boosted_hex_eligibility =
-            BoostedHexEligibility::new(verified_thresholds, unique_connections);
-
-        let covered_hexes = vec![unranked_coverage(Assignment::C)];
-
-        let eligibility = boosted_hex_eligibility.eligibility(pub_key, &covered_hexes);
-
-        assert_eq!(
-            SPBoostedRewardEligibility::RadioThresholdNotMet,
-            eligibility
-        );
     }
 
     #[test]
@@ -140,8 +96,7 @@ mod tests {
         let mut unique_connections = UniqueConnectionCounts::default();
         unique_connections.insert(pub_key.clone(), MINIMUM_UNIQUE_CONNECTIONS);
 
-        let boosted_hex_eligibility =
-            BoostedHexEligibility::new(VerifiedRadioThresholds::default(), unique_connections);
+        let boosted_hex_eligibility = BoostedHexEligibility::new(unique_connections);
 
         let covered_hexes = vec![unranked_coverage(Assignment::A)];
 

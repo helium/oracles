@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 use std::str::FromStr;
 mod error;
 mod iam_auth_pool;
@@ -84,3 +86,6 @@ where
         Ok(std::mem::replace(&mut self.value, new_val))
     }
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

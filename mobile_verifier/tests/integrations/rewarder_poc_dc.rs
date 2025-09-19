@@ -17,7 +17,8 @@ use mobile_verifier::{
     coverage::CoverageObject,
     data_session,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
-    reward_shares, rewarder, speedtests, unique_connections,
+    reward_shares::{self, DataTransferAndPocAllocatedRewardBuckets},
+    rewarder, speedtests, unique_connections,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -134,7 +135,7 @@ async fn test_qualified_wifi_poc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let price_info = default_price_info();
 
-    // seed single unique conections report within epoch
+    // seed single unique connections report within epoch
     let mut txn = pool.begin().await?;
     seed_unique_connections(&mut txn, &[(pubkey.clone(), 42)], &reward_info.epoch_period).await?;
     txn.commit().await?;
@@ -687,5 +688,57 @@ async fn ban_radio(
         },
     )
     .await?;
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_reward_poc_with_zero_poc_allocation(pool: PgPool) -> anyhow::Result<()> {
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+    let reward_info = reward_info_24_hours();
+
+    // seed heartbeats and speedtests to create potential POC rewards
+    let mut txn = pool.clone().begin().await?;
+    seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
+    seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
+    txn.commit().await?;
+    update_assignments(&pool).await?;
+
+    let hex_boosting_client = MockHexBoostingClient::new(vec![]);
+
+    // Create reward shares with zero POC allocation
+    let reward_shares = DataTransferAndPocAllocatedRewardBuckets::new(dec!(1000000));
+
+    // Test the reward_poc function directly with zero POC allocation
+    let (unallocated_amount, _calculated_shares) = rewarder::reward_poc(
+        &pool,
+        &hex_boosting_client,
+        &mobile_rewards_client,
+        &reward_info,
+        reward_shares,
+    )
+    .await?;
+
+    // Drop the client to close the channel
+    drop(mobile_rewards_client);
+
+    let rewards = mobile_rewards.finish().await?;
+    let poc_rewards = rewards.radio_reward_v2s;
+
+    // With zero POC allocation, should have no POC rewards distributed
+    assert_eq!(
+        poc_rewards.len(),
+        0,
+        "No POC rewards should be distributed when POC allocation is zero"
+    );
+
+    // The unallocated amount should be zero since there was no POC pool to begin with
+    assert_eq!(
+        unallocated_amount,
+        dec!(0),
+        "Unallocated amount should be zero when POC pool is zero"
+    );
+
+    // With zero POC allocation, calculated shares should be default (no need to test private fields)
+
     Ok(())
 }

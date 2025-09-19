@@ -12,7 +12,7 @@ use std::path;
 pub struct Cli {
     /// Optional configuration file to use. If present the toml file at the
     /// given path will be loaded. Environment variables can override the
-    /// settins in the given file.
+    /// settings in the given file.
     #[clap(short = 'c')]
     config: Option<path::PathBuf>,
 
@@ -24,6 +24,7 @@ impl Cli {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
         custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
+        tracing::info!("Settings: {}", serde_json::to_string_pretty(&settings)?);
         self.cmd.run(settings).await
     }
 }

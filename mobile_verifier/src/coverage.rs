@@ -11,7 +11,7 @@ use file_store::{
     file_source,
     file_upload::FileUpload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
-    FileStore, FileType,
+    FileType,
 };
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
@@ -82,7 +82,8 @@ impl CoverageDaemon {
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store: FileStore,
+        file_store_client: file_store::Client,
+        bucket: String,
         auth_client: AuthorizationClient,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -97,7 +98,7 @@ impl CoverageDaemon {
 
         let (coverage_objs, coverage_objs_server) = file_source::continuous_source()
             .state(pool.clone())
-            .store(file_store)
+            .file_store(file_store_client, bucket)
             .lookback(LookbackBehavior::StartAfter(settings.start_after))
             .prefix(FileType::CoverageObjectIngestReport.to_string())
             .create()

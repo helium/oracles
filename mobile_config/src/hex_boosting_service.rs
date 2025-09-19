@@ -3,7 +3,7 @@ use crate::{
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use file_store::traits::{MsgVerify, TimestampDecode, TimestampEncode};
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
@@ -25,14 +25,21 @@ pub struct HexBoostingService {
     key_cache: KeyCache,
     metadata_pool: Pool<Postgres>,
     signing_key: Arc<Keypair>,
+    activation_cutoff: DateTime<Utc>,
 }
 
 impl HexBoostingService {
-    pub fn new(key_cache: KeyCache, metadata_pool: Pool<Postgres>, signing_key: Keypair) -> Self {
+    pub fn new(
+        key_cache: KeyCache,
+        metadata_pool: Pool<Postgres>,
+        signing_key: Arc<Keypair>,
+        activation_cutoff: DateTime<Utc>,
+    ) -> Self {
         Self {
             key_cache,
             metadata_pool,
-            signing_key: Arc::new(signing_key),
+            signing_key,
+            activation_cutoff,
         }
     }
 
@@ -67,11 +74,12 @@ impl mobile_config::HexBoosting for HexBoostingService {
         let pool = self.metadata_pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
+        let activation_cutoff = self.activation_cutoff;
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         tokio::spawn(async move {
-            let stream = boosted_hex_info::db::all_info_stream(&pool);
+            let stream = boosted_hex_info::db::all_info_stream(&pool, activation_cutoff);
             stream_multi_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -95,6 +103,7 @@ impl mobile_config::HexBoosting for HexBoostingService {
         let pool = self.metadata_pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
+        let activation_cutoff = self.activation_cutoff;
         let ts = request
             .timestamp
             .to_timestamp()
@@ -104,7 +113,7 @@ impl mobile_config::HexBoosting for HexBoostingService {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         tokio::spawn(async move {
-            let stream = boosted_hex_info::db::modified_info_stream(&pool, ts);
+            let stream = boosted_hex_info::db::modified_info_stream(&pool, activation_cutoff, ts);
             stream_multi_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
