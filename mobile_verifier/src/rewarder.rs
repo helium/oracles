@@ -3,7 +3,7 @@ use crate::{
     boosting_oracles::db::check_for_unprocessed_data_sets,
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
-    radio_threshold, resolve_subdao_pubkey,
+    resolve_subdao_pubkey,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         MapperShares, TransferRewards,
@@ -76,16 +76,19 @@ where
     B: HexBoostingInfoResolver,
     C: SubDaoEpochRewardInfoResolver,
 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
+        file_store_client: file_store::Client,
         carrier_service_verifier: A,
         hex_boosting_info_resolver: B,
         sub_dao_epoch_reward_info_resolver: C,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
+        let (price_tracker, price_daemon) =
+            PriceTracker::new(&settings.price_tracker, file_store_client).await?;
 
         let (mobile_rewards, mobile_rewards_server) = MobileRewardShare::file_sink(
             settings.store_base_path(),
@@ -450,7 +453,7 @@ pub async fn reward_poc_and_dc(
     Ok(calculated_poc_reward_shares)
 }
 
-async fn reward_poc(
+pub async fn reward_poc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver,
     mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
@@ -465,10 +468,7 @@ async fn reward_poc(
 
     let unique_connections = unique_connections::db::get(pool, &reward_info.epoch_period).await?;
 
-    let boosted_hex_eligibility = BoostedHexEligibility::new(
-        radio_threshold::verified_radio_thresholds(pool, &reward_info.epoch_period).await?,
-        unique_connections.clone(),
-    );
+    let boosted_hex_eligibility = BoostedHexEligibility::new(unique_connections.clone());
 
     let banned_radios = banning::BannedRadios::new(pool, reward_info.epoch_period.end).await?;
 

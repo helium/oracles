@@ -8,7 +8,7 @@ use file_store::{
     unique_connections::{
         UniqueConnectionReq, UniqueConnectionsIngestReport, VerifiedUniqueConnectionsIngestReport,
     },
-    FileStore, FileType,
+    FileType,
 };
 use futures::{StreamExt, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
@@ -59,7 +59,8 @@ where
         pool: PgPool,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store: FileStore,
+        file_store_client: file_store::Client,
+        bucket: String,
         authorization_verifier: AV,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_unique_connections, verified_unique_conections_server) =
@@ -75,7 +76,7 @@ where
         let (unique_connections_ingest, unique_connections_server) =
             file_source::continuous_source()
                 .state(pool.clone())
-                .store(file_store.clone())
+                .file_store(file_store_client, bucket)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after))
                 .prefix(FileType::UniqueConnectionsReport.to_string())
                 .create()

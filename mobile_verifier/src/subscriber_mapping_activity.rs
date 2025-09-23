@@ -10,7 +10,7 @@ use file_store::{
         FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampDecode,
         TimestampEncode,
     },
-    FileStore, FileType,
+    FileType,
 };
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -66,12 +66,13 @@ where
         settings: &Settings,
         authorization_verifier: AV,
         entity_verifier: EV,
-        file_store: FileStore,
+        file_store_client: file_store::Client,
+        bucket: String,
         file_upload: FileUpload,
     ) -> anyhow::Result<impl ManagedTask> {
         let (stream_reciever, stream_server) = file_source::Continuous::prost_source()
             .state(pool.clone())
-            .store(file_store)
+            .file_store(file_store_client, bucket)
             .lookback(LookbackBehavior::StartAfter(settings.start_after))
             .prefix(FileType::SubscriberMappingActivityIngestReport.to_string())
             .create()

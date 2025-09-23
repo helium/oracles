@@ -24,7 +24,6 @@ use mobile_verifier::{
     heartbeats::{
         last_location::LocationCache, Heartbeat, HeartbeatReward, KeyType, ValidatedHeartbeat,
     },
-    radio_threshold::VerifiedRadioThresholds,
     reward_shares::CoverageShares,
     rewarder::boosted_hex_eligibility::BoostedHexEligibility,
     seniority::{Seniority, SeniorityUpdate},
@@ -380,9 +379,9 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16
-                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 8
-                signal_level("8c2681a3065d3ff", SignalLevel::Low)?,  // 4
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60
+                signal_level("8c2681a3065d3ff", SignalLevel::Low)?,  // 0
             ],
             trust_score: 1000,
         },
@@ -430,7 +429,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(
         coverage_shares.test_hotspot_reward_shares(&pub_key),
-        dec!(28)
+        dec!(180)
     );
 
     Ok(())
@@ -458,9 +457,9 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16
-                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 8
-                signal_level("8c2681a3066e7ff", SignalLevel::Low)?,  // 4
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60
+                signal_level("8c2681a3066e7ff", SignalLevel::Low)?,  // 0
             ],
             trust_score: 1000,
         },
@@ -475,10 +474,10 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3065adff", SignalLevel::High)?, // 16
-                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 8 * 0.5 = 4 (this hex is
+                signal_level("8c2681a3065adff", SignalLevel::High)?, // 120
+                signal_level("8c2681a306635ff", SignalLevel::Medium)?, // 60 * 0.5 = 30 (this hex is
                 // shared
-                signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
+                signal_level("8c2681a3065d7ff", SignalLevel::Low)?, // 0
             ],
             trust_score: 1000,
         },
@@ -541,12 +540,12 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(
         coverage_shares.test_hotspot_reward_shares(&hs_pubkey_1),
-        (dec!(16) + dec!(8) + dec!(4)) * dec!(0.5) // speedtest degraded
+        (dec!(120) + dec!(60) + dec!(0)) * dec!(0.5) // speedtest degraded
     );
 
     assert_eq!(
         coverage_shares.test_hotspot_reward_shares(&hs_pubkey_2),
-        (dec!(16) + dec!(8) * dec!(0.5) + dec!(4))
+        (dec!(120) + dec!(60) * dec!(0.5) + dec!(0))
     );
 
     Ok(())
@@ -571,7 +570,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     let hs_pub_key_4 = PublicKeyBinary::from(vec![4]);
     let hs_pub_key_5 = PublicKeyBinary::from(vec![5]);
 
-    let expected_base_cp_co1 = dec!(44);
+    let expected_base_cp_co1 = dec!(240);
     let coverage_object_1 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
         report: file_store::coverage::CoverageObject {
@@ -582,16 +581,16 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 8 * 2 = 16
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 4 * 3 = 12
-                                                                     // = 44
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120
+                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 60 * 2 = 120
+                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 0 * 3 = 0
+                                                                     // = 240 (but rank-limited to top 3 hexes for outdoor)
             ],
             trust_score: 1000,
         },
     };
 
-    let expected_base_cp_co2 = dec!(22);
+    let expected_base_cp_co2 = dec!(120);
     let coverage_object_2 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
         report: file_store::coverage::CoverageObject {
@@ -602,16 +601,16 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16 * 0.5 = 8
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 8 * 0.5 * 2 = 8
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 4 * 0.5 * 3 = 6
-                                                                     // = 22
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120 * 0.5 = 60
+                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 60 * 0.5 * 2 = 60
+                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 0 * 0.5 * 3 = 0
+                                                                     // = 120
             ],
             trust_score: 1000,
         },
     };
 
-    let expected_base_cp_co3 = dec!(11);
+    let expected_base_cp_co3 = dec!(60);
     let coverage_object_3 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
         report: file_store::coverage::CoverageObject {
@@ -622,9 +621,9 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 16 * 0.25  = 4
-                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 8 * 0.25 * 2 = 4
-                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 4 * 0.25 * 3 = 3
+                signal_level("8c2681a3064d9ff", SignalLevel::High)?, // 120 * 0.25  = 30
+                signal_level("8c2681a3065d3ff", SignalLevel::Medium)?, // 60 * 0.25 * 2 = 30
+                signal_level("8c2681a306635ff", SignalLevel::Low)?,  // 0 * 0.25 * 3 = 0
             ],
             trust_score: 1000,
         },
@@ -823,10 +822,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &boosted_hexes,
-        &BoostedHexEligibility::new(
-            VerifiedRadioThresholds::default(),
-            unique_connections.clone(),
-        ),
+        &BoostedHexEligibility::new(unique_connections.clone()),
         &BannedRadios::default(),
         &unique_connections,
         &reward_period,
@@ -1026,14 +1022,14 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
 
     // Constrain distances by only moving vertically
     let near_latlng = LatLng::new(40.0194278140, -105.272)?; // 35m
-    let med_latlng = LatLng::new(40.0194278140, -105.274)?; // 205m
+    let med_latlng = LatLng::new(40.0194278140, -105.276)?; // 350m
     let far_latlng = LatLng::new(40.0194278140, -105.3)?; // 2,419m
     let past_latlng = LatLng::new(40.0194278140, 105.2715848904)?; // 10,591,975m
 
     // It's easy to gloss over floats, let make sure the distances are within the ranges we expect.
-    assert!((0.0..=200.0).contains(&covered_latlng.distance_m(near_latlng))); // Indoor low distance <= 200
-    assert!((200.0..=300.0).contains(&covered_latlng.distance_m(med_latlng))); // Indoor Medium distance <= 300
-    assert!(covered_latlng.distance_m(far_latlng) > 300.0); // Indoor Over Distance => 300
+    assert!((0.0..=300.0).contains(&covered_latlng.distance_m(near_latlng))); // Indoor low distance <= 300
+    assert!((300.0..=400.0).contains(&covered_latlng.distance_m(med_latlng))); // Indoor Medium distance <= 400
+    assert!(covered_latlng.distance_m(far_latlng) > 400.0); // Indoor Over Distance => 400
     assert!(covered_latlng.distance_m(past_latlng) > max_covered_distance as f64); // Indoor past max distance => max_distance
 
     let low_dist_validated = validate(near_latlng).await?;

@@ -14,7 +14,6 @@ use file_store::{
         FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampDecode,
         TimestampEncode,
     },
-    FileStore,
 };
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use helium_proto::services::poc_mobile::{self as proto, OracleBoostingReportV1};
@@ -63,11 +62,18 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
 
     async fn check_for_available_data_sets(
         &self,
-        store: &FileStore,
+        file_store_client: &file_store::Client,
+        bucket: &str,
         pool: &PgPool,
     ) -> anyhow::Result<()> {
         tracing::info!("Checking for new {} data sets", Self::TYPE.to_prefix());
-        let mut new_data_sets = store.list(Self::TYPE.to_prefix(), self.timestamp(), None);
+        let mut new_data_sets = file_store::list_files(
+            file_store_client,
+            bucket,
+            Self::TYPE.to_prefix(),
+            self.timestamp(),
+            None,
+        );
         while let Some(new_data_set) = new_data_sets.next().await.transpose()? {
             db::insert_new_data_set(pool, &new_data_set.key, Self::TYPE, new_data_set.timestamp)
                 .await?;
@@ -77,11 +83,13 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
 
     async fn fetch_next_available_data_set(
         &mut self,
-        store: &FileStore,
+        file_store_client: &file_store::Client,
+        bucket: &str,
         pool: &PgPool,
         data_set_directory: &Path,
     ) -> anyhow::Result<Option<NewDataSet>> {
-        self.check_for_available_data_sets(store, pool).await?;
+        self.check_for_available_data_sets(file_store_client, bucket, pool)
+            .await?;
 
         let latest_unprocessed_data_set =
             db::fetch_latest_unprocessed_data_set(pool, Self::TYPE, self.timestamp()).await?;
@@ -97,7 +105,13 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
         );
 
         if !latest_unprocessed_data_set.status.is_downloaded() {
-            download_data_set(store, &latest_unprocessed_data_set.filename, &path).await?;
+            download_data_set(
+                file_store_client,
+                bucket,
+                &latest_unprocessed_data_set.filename,
+                &path,
+            )
+            .await?;
             latest_unprocessed_data_set.mark_as_downloaded(pool).await?;
             tracing::info!(
                 data_set = latest_unprocessed_data_set.filename,
@@ -197,7 +211,8 @@ pub fn is_hex_boost_data_ready(h: &HexBoostData) -> bool {
 pub struct DataSetDownloaderDaemon {
     pool: PgPool,
     data_sets: HexBoostData,
-    store: FileStore,
+    file_store_client: file_store::Client,
+    bucket: String,
     data_set_processor: FileSinkClient<proto::OracleBoostingReportV1>,
     data_set_directory: PathBuf,
     new_coverage_object_notification: NewCoverageObjectNotification,
@@ -264,6 +279,8 @@ impl DataSetDownloaderDaemon {
         pool: PgPool,
         settings: &Settings,
         file_upload: FileUpload,
+        file_store_client: file_store::Client,
+        bucket: String,
         new_coverage_object_notification: NewCoverageObjectNotification,
     ) -> anyhow::Result<impl ManagedTask> {
         tracing::info!("Creating data set downloader task");
@@ -280,7 +297,8 @@ impl DataSetDownloaderDaemon {
         let data_set_downloader = Self::new(
             pool,
             HexBoostData::default(),
-            FileStore::from_settings(&settings.data_sets).await?,
+            file_store_client,
+            bucket,
             oracle_boosting_reports,
             settings.data_sets_directory.clone(),
             new_coverage_object_notification,
@@ -295,10 +313,12 @@ impl DataSetDownloaderDaemon {
 }
 
 impl DataSetDownloaderDaemon {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: PgPool,
         data_sets: HexBoostData,
-        store: FileStore,
+        file_store_client: file_store::Client,
+        bucket: String,
         data_set_processor: FileSinkClient<proto::OracleBoostingReportV1>,
         data_set_directory: PathBuf,
         new_coverage_object_notification: NewCoverageObjectNotification,
@@ -307,7 +327,8 @@ impl DataSetDownloaderDaemon {
         Self {
             pool,
             data_sets,
-            store,
+            file_store_client,
+            bucket,
             data_set_processor,
             data_set_directory,
             new_coverage_object_notification,
@@ -319,22 +340,42 @@ impl DataSetDownloaderDaemon {
         let new_urbanized = self
             .data_sets
             .urbanization
-            .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
+            .fetch_next_available_data_set(
+                &self.file_store_client,
+                &self.bucket,
+                &self.pool,
+                &self.data_set_directory,
+            )
             .await?;
         let new_footfall = self
             .data_sets
             .footfall
-            .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
+            .fetch_next_available_data_set(
+                &self.file_store_client,
+                &self.bucket,
+                &self.pool,
+                &self.data_set_directory,
+            )
             .await?;
         let new_landtype = self
             .data_sets
             .landtype
-            .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
+            .fetch_next_available_data_set(
+                &self.file_store_client,
+                &self.bucket,
+                &self.pool,
+                &self.data_set_directory,
+            )
             .await?;
         let new_service_provider_override = self
             .data_sets
             .service_provider_override
-            .fetch_next_available_data_set(&self.store, &self.pool, &self.data_set_directory)
+            .fetch_next_available_data_set(
+                &self.file_store_client,
+                &self.bucket,
+                &self.pool,
+                &self.data_set_directory,
+            )
             .await?;
 
         // If all of the data sets are ready and there is at least one new one, re-process all
@@ -490,12 +531,13 @@ async fn delete_old_data_sets(
 }
 
 async fn download_data_set(
-    store: &FileStore,
+    file_store_client: &file_store::Client,
+    bucket: &str,
     in_file_name: &str,
     out_path: &Path,
 ) -> anyhow::Result<()> {
     tracing::info!("Downloading new data set: {}", out_path.to_string_lossy());
-    let stream = store.get_raw(in_file_name).await?;
+    let stream = file_store::get_raw_file(file_store_client, bucket, in_file_name).await?;
     let mut bytes = tokio_util::codec::FramedRead::new(
         async_compression::tokio::bufread::GzipDecoder::new(tokio::io::BufReader::new(
             stream.into_async_read(),

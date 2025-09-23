@@ -2,11 +2,9 @@ use crate::gateway_info::{self, GatewayInfo, GatewayInfoStream};
 use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
-use helium_proto::{
-    services::{iot_config, Channel, Endpoint},
-    BlockchainRegionParamV1, Message, Region,
-};
+use helium_proto::{services::iot_config, BlockchainRegionParamV1, Message, Region};
 use std::{sync::Arc, time::Duration};
+use tonic::transport::{Channel, Endpoint};
 
 pub mod org_client;
 mod settings;

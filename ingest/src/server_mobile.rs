@@ -78,7 +78,7 @@ where
     }
 }
 
-fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
+fn make_span(_request: &http::request::Request<tonic::body::Body>) -> tracing::Span {
     tracing::info_span!(
         custom_tracing::DEFAULT_SPAN,
         pub_key = tracing::field::Empty,
@@ -663,9 +663,9 @@ fn is_data_transfer_for_cbrs(event: &DataTransferSessionReqV1) -> bool {
 }
 
 pub async fn grpc_server(settings: &Settings) -> Result<()> {
-    // Initialize uploader
+    let s3_client = settings.file_store.connect().await;
     let (file_upload, file_upload_server) =
-        file_upload::FileUpload::from_settings_tm(&settings.output).await?;
+        file_upload::FileUpload::new(s3_client, settings.output_bucket.clone()).await;
 
     let (wifi_heartbeat_report_sink, wifi_heartbeat_report_sink_server) =
         WifiHeartbeatIngestReportV1::file_sink(

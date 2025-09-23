@@ -3,25 +3,15 @@ use config::{Config, File};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Settings {
-    /// Bucket name for the store. Required
-    pub bucket: String,
     /// Optional api endpoint for the bucket. Default none
     pub endpoint: Option<String>,
-    /// Optional region for the endpoint. Default: us-west-2
-    #[serde(default = "default_region")]
-    pub region: String,
-
     /// Should only be used for local testing
     #[serde(skip_serializing)]
     pub access_key_id: Option<String>,
     #[serde(skip_serializing)]
     pub secret_access_key: Option<String>,
-}
-
-pub fn default_region() -> String {
-    "us-west-2".to_string()
 }
 
 impl Settings {
@@ -34,5 +24,14 @@ impl Settings {
             .build()
             .and_then(|config| config.try_deserialize())
             .map_err(Error::from)
+    }
+
+    pub async fn connect(&self) -> crate::Client {
+        crate::new_client(
+            self.endpoint.clone(),
+            self.access_key_id.clone(),
+            self.secret_access_key.clone(),
+        )
+        .await
     }
 }

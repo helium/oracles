@@ -50,7 +50,7 @@ pub async fn run(mode: Mode) -> Result<()> {
         })
         .collect();
 
-    println!("Total number of prices: {}", total_length);
+    println!("Total number of prices: {total_length}");
     println!("Number of valid prices: {}", prices.len());
 
     if prices.len() >= required_valid {

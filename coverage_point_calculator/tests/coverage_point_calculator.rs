@@ -47,7 +47,7 @@ fn base_radio_coverage_points() {
 
     for (radio_type, expected_base_coverage_point) in [
         (RadioType::IndoorWifi, dec!(400)),
-        (RadioType::OutdoorWifi, dec!(16)),
+        (RadioType::OutdoorWifi, dec!(120)),
     ] {
         let coverage_points = CoveragePoints::new(
             radio_type,
@@ -116,7 +116,14 @@ fn radios_with_coverage() {
         )
         .unwrap();
 
-        assert_eq!(dec!(400), coverage_points.coverage_points_v1());
+        assert_eq!(
+            if radio_type == RadioType::IndoorWifi {
+                dec!(400)
+            } else {
+                dec!(3000)
+            },
+            coverage_points.coverage_points_v1()
+        );
     }
 }
 
@@ -126,15 +133,15 @@ fn outdoor_wifi_with_mixed_signal_level_coverage() -> Result {
     let coverage_points = outdoor_wifi_radio(
         SpeedtestTier::Good,
         &[
-            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16
-            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Medium), // 8
-            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Medium), // 8
-            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),  // 4
-            top_ranked_coverage(0x8c2681a3065adff, SignalLevel::Low),  // 4
+            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 120
+            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Medium), // 60
+            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Medium), // 60
+            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),  // 0
+            top_ranked_coverage(0x8c2681a3065adff, SignalLevel::Low),  // 0
         ],
     )?;
 
-    assert_eq!(dec!(40), coverage_points.total_shares());
+    assert_eq!(dec!(240), coverage_points.total_shares());
 
     Ok(())
 }
@@ -146,28 +153,28 @@ fn outdoor_wifi_with_partially_overlapping_coverage_and_differing_speedtests() -
     let radio_1 = outdoor_wifi_radio(
         SpeedtestTier::Degraded, // multiplier 0.5 on all hexes
         &[
-            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16
+            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 120
             // This hex is shared (0.5 multiplier)
-            second_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Medium), // 8 * 0.5 = 4
-            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Medium),    // 8
-            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),       // 4
-            top_ranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),       // 4
+            second_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Medium), // 60 * 0.5 = 30
+            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Medium),    // 60
+            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),       // 0
+            top_ranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),       // 0
         ],
     )?;
 
     let radio_2 = outdoor_wifi_radio(
         SpeedtestTier::Good,
         &[
-            top_ranked_coverage(0x8c2681a30641dff, SignalLevel::High), // 16
-            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Medium), // 8
-            top_ranked_coverage(0x8c2681a3066a9ff, SignalLevel::Medium), // 8
-            top_ranked_coverage(0x8c2681a306481ff, SignalLevel::Low),  // 4
-            top_ranked_coverage(0x8c2681a302991ff, SignalLevel::Low),  // 4
+            top_ranked_coverage(0x8c2681a30641dff, SignalLevel::High), // 120
+            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::Medium), // 60
+            top_ranked_coverage(0x8c2681a3066a9ff, SignalLevel::Medium), // 60
+            top_ranked_coverage(0x8c2681a306481ff, SignalLevel::Low),  // 0
+            top_ranked_coverage(0x8c2681a302991ff, SignalLevel::Low),  // 0
         ],
     )?;
 
-    assert_eq!(dec!(18), radio_1.total_shares());
-    assert_eq!(dec!(40), radio_2.total_shares());
+    assert_eq!(dec!(105), radio_1.total_shares());
+    assert_eq!(dec!(240), radio_2.total_shares());
 
     Ok(())
 }
@@ -186,10 +193,10 @@ fn outdoor_wifi_with_wholly_overlapping_coverage_and_differing_speedtests() -> R
             hotspot_key,
             seniority_timestamp: timestamp.parse().expect("valid timestamp"),
             coverage: vec![
-                unranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16
-                unranked_coverage(0x8c2681a3065d3ff, SignalLevel::High), // 16
-                unranked_coverage(0x8c2681a306635ff, SignalLevel::Medium), // 8
-                unranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),  // 4
+                unranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 120
+                unranked_coverage(0x8c2681a3065d3ff, SignalLevel::High), // 120
+                unranked_coverage(0x8c2681a306635ff, SignalLevel::Medium), // 60
+                unranked_coverage(0x8c2681a3066e7ff, SignalLevel::Low),  // 0
             ],
         })
     };
@@ -210,9 +217,9 @@ fn outdoor_wifi_with_wholly_overlapping_coverage_and_differing_speedtests() -> R
     let radio_5 = outdoor_wifi_radio(SpeedtestTier::Fail, map.get_wifi_coverage(&[5]))?;
     let radio_6 = outdoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[6]))?;
 
-    assert_eq!(dec!(44), radio_1.total_shares());
-    assert_eq!(dec!(16.5), radio_2.total_shares());
-    assert_eq!(dec!(5.5), radio_3.total_shares());
+    assert_eq!(dec!(300), radio_1.total_shares());
+    assert_eq!(dec!(112.5), radio_2.total_shares());
+    assert_eq!(dec!(37.5), radio_3.total_shares());
     assert_eq!(dec!(0), radio_4.total_shares());
     assert_eq!(dec!(0), radio_5.total_shares());
     assert_eq!(dec!(0), radio_6.total_shares());
@@ -231,20 +238,20 @@ fn wifi_outdoor_with_mixed_signal_level_coverage() -> Result {
             trust_score: Decimal::from_u8(1).unwrap(),
         }],
         vec![
-            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 16
-            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::High), // 16
-            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Medium), // 8
-            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Medium), // 8
-            top_ranked_coverage(0x8c2681a3065adff, SignalLevel::Medium), // 8
-            top_ranked_coverage(0x8c2681a339a4bff, SignalLevel::Low),  // 4
-            top_ranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),  // 4
+            top_ranked_coverage(0x8c2681a3064d9ff, SignalLevel::High), // 120
+            top_ranked_coverage(0x8c2681a3065d3ff, SignalLevel::High), // 120
+            top_ranked_coverage(0x8c2681a306635ff, SignalLevel::Medium), // 60
+            top_ranked_coverage(0x8c2681a3066e7ff, SignalLevel::Medium), // 60
+            top_ranked_coverage(0x8c2681a3065adff, SignalLevel::Medium), // 60
+            top_ranked_coverage(0x8c2681a339a4bff, SignalLevel::Low),  // 0
+            top_ranked_coverage(0x8c2681a3065d7ff, SignalLevel::Low),  // 0
         ],
         OracleBoostingStatus::Eligible,
     )
     .unwrap();
 
     assert_eq!(
-        Decimal::from_i32(16 * 2 + 8 * 3 + 4 * 2).unwrap(),
+        Decimal::from_i32(120 * 2 + 60 * 3).unwrap(),
         radio.total_shares()
     );
 
@@ -266,9 +273,9 @@ fn wifi_outdoor_with_single_overlapping_coverage() -> Result {
             .parse()
             .expect("valid timestamp"),
         coverage: vec![
-            unranked_coverage(0x8c2681a302991ff, SignalLevel::High), // 16
-            unranked_coverage(0x8c2681a3028a7ff, SignalLevel::Medium), // 8. This hex is shared
-            unranked_coverage(0x8c2681a30659dff, SignalLevel::Low),  // 4
+            unranked_coverage(0x8c2681a302991ff, SignalLevel::High), // 120
+            unranked_coverage(0x8c2681a3028a7ff, SignalLevel::Medium), // 60. This hex is shared
+            unranked_coverage(0x8c2681a30659dff, SignalLevel::Low),  // 0
         ],
     });
     coverage_map_builder.insert_coverage_object(coverage_map::CoverageObject {
@@ -278,9 +285,9 @@ fn wifi_outdoor_with_single_overlapping_coverage() -> Result {
             .parse()
             .expect("valid timestamp"),
         coverage: vec![
-            unranked_coverage(0x8c2681a3066abff, SignalLevel::High), // 16
-            unranked_coverage(0x8c2681a3028a7ff, SignalLevel::Medium), // 8 * 0.5 = 4(This hex is shared)
-            unranked_coverage(0x8c2681a3066a9ff, SignalLevel::Low),    // 4
+            unranked_coverage(0x8c2681a3066abff, SignalLevel::High), // 120
+            unranked_coverage(0x8c2681a3028a7ff, SignalLevel::Medium), // 60 * 0.5 = 30(This hex is shared)
+            unranked_coverage(0x8c2681a3066a9ff, SignalLevel::Low),    // 0
         ],
     });
 
@@ -289,8 +296,8 @@ fn wifi_outdoor_with_single_overlapping_coverage() -> Result {
     let radio_1 = outdoor_wifi_radio(SpeedtestTier::Degraded, map.get_wifi_coverage(&[1]))?;
     let radio_2 = outdoor_wifi_radio(SpeedtestTier::Good, map.get_wifi_coverage(&[2]))?;
 
-    assert_eq!(dec!(28) * dec!(0.50), radio_1.total_shares());
-    assert_eq!(dec!(24), radio_2.total_shares());
+    assert_eq!(dec!(180) * dec!(0.50), radio_1.total_shares());
+    assert_eq!(dec!(150), radio_2.total_shares());
 
     Ok(())
 }
