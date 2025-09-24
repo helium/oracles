@@ -5,7 +5,8 @@ use crate::{
 use base64::{engine::general_purpose, Engine};
 use helium_crypto::{KeyTag, Keypair};
 use rand::rngs::OsRng;
-use std::path::PathBuf;
+use std::io::Write;
+use std::{fs::File, path::PathBuf};
 
 pub mod api;
 pub mod server;
@@ -40,8 +41,16 @@ impl Cli {
                 // Encode to base64 string for use in your config.toml
                 let b64 = general_purpose::STANDARD.encode(&bytes);
 
+                // Public key in base58
+                let pubkey_b58 = kp.public_key().to_string();
+
+                let file_name = format!("{pubkey_b58}.key");
+                let mut f = File::create(file_name.clone())?;
+                writeln!(f, "{}", b64)?;
+
+                println!("Public key (b58):\n{}", pubkey_b58);
                 println!("Base64 signing_keypair:\n{}", b64);
-                println!("Public key (b58):\n{}", kp.public_key());
+                println!("Keypair saved to file: {}", file_name);
 
                 Ok(())
             }
