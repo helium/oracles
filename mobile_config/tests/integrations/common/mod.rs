@@ -1,3 +1,4 @@
+use chrono::{DateTime, Duration, DurationRound, Utc};
 use helium_crypto::PublicKey;
 use helium_crypto::{KeyTag, Keypair};
 use helium_proto::services::mobile_config::{self as proto};
@@ -39,4 +40,11 @@ pub async fn spawn_gateway_service(
     );
 
     (format!("http://{addr}"), handle)
+}
+
+// When retreiving a timestamp from DB, depending on the version of postgres
+// the timestamp may be truncated. When comparing datetimes, to ones generated
+// in a test with `Utc::now()`, you should truncate it.
+pub fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {
+    ts.duration_trunc(Duration::nanoseconds(1000)).unwrap()
 }

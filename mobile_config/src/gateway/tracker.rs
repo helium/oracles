@@ -65,14 +65,14 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
 
     const BATCH_SIZE: usize = 1_000;
 
-    let (_, total): (&Pool<Postgres>, u64) = MobileHotspotInfo::stream(metadata)
+    let total: u64 = MobileHotspotInfo::stream(metadata)
         .map_err(anyhow::Error::from)
         .try_filter_map(|mhi| async move { mhi.to_gateway() })
         .try_chunks(BATCH_SIZE)
         .map_err(|TryChunksError(_gateways, err)| err)
-        .try_fold((pool, 0), |(p, total), batch| async move {
-            let affected = Gateway::insert_bulk(p, &batch).await?;
-            Ok((p, total + affected))
+        .try_fold(0, |total, batch| async move {
+            let affected = Gateway::insert_bulk(pool, &batch).await?;
+            Ok(total + affected)
         })
         .await?;
 
