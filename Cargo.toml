@@ -110,6 +110,8 @@ tower-http = { version = "0", features = ["trace"] }
 derive_builder = "0"
 tempfile = "3"
 csv = "*"
+strum = { version = "0", features = ["derive"] }
+strum_macros = "0"
 
 ### AWS
 aws-config = "1.8"

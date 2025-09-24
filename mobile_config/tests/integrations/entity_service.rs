@@ -1,5 +1,4 @@
-use std::{sync::Arc, vec};
-
+use crate::common::make_keypair;
 use helium_crypto::{PublicKey, Sign};
 use helium_proto::services::mobile_config::{self as proto, EntityClient, EntityVerifyReqV1};
 use mobile_config::{
@@ -9,11 +8,9 @@ use mobile_config::{
 };
 use prost::Message;
 use sqlx::PgPool;
+use std::{sync::Arc, vec};
 use tokio::net::TcpListener;
 use tonic::transport;
-
-pub mod common;
-use common::*;
 
 async fn spawn_entity_service(
     pool: PgPool,

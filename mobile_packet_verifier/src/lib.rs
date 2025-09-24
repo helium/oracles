@@ -2,8 +2,9 @@ extern crate tls_init;
 
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
-use mobile_config::client::{
-    self, authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
+use mobile_config::{
+    client::{self, authorization_client::AuthorizationVerifier},
+    gateway::client::GatewayInfoResolver,
 };
 
 pub mod accumulate;

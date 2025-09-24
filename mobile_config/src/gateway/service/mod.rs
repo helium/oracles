@@ -1,17 +1,11 @@
 use crate::{
-    gateway_info::{
-        self,
-        db::{get_batch_tracked_radios, get_updated_radios},
-        DeviceType, GatewayInfo,
-    },
-    gateway_info_v3::{self, db::get_mobile_tracker_gateways_info, DeviceTypeV2},
+    gateway::service::{info::DeviceType, info_v3::DeviceTypeV2},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
-    future,
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
@@ -25,28 +19,24 @@ use helium_proto::{
     Message,
 };
 use sqlx::{Pool, Postgres};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
+
+pub mod info;
+pub mod info_v3;
 
 pub struct GatewayService {
     key_cache: KeyCache,
-    mobile_config_db_pool: Pool<Postgres>,
-    metadata_pool: Pool<Postgres>,
+    pool: Pool<Postgres>,
     signing_key: Arc<Keypair>,
 }
 
 impl GatewayService {
-    pub fn new(
-        key_cache: KeyCache,
-        metadata_pool: Pool<Postgres>,
-        signing_key: Arc<Keypair>,
-        mobile_config_db_pool: Pool<Postgres>,
-    ) -> Self {
+    pub fn new(key_cache: KeyCache, pool: Pool<Postgres>, signing_key: Arc<Keypair>) -> Self {
         Self {
             key_cache,
-            metadata_pool,
+            pool,
             signing_key,
-            mobile_config_db_pool,
         }
     }
 
@@ -94,7 +84,7 @@ impl mobile_config::Gateway for GatewayService {
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info");
 
-        gateway_info::db::get_info(&self.metadata_pool, &pubkey)
+        info::get_by_address(&self.pool, &pubkey)
             .await
             .map_err(|_| Status::internal("error fetching gateway info"))?
             .map_or_else(
@@ -134,13 +124,7 @@ impl mobile_config::Gateway for GatewayService {
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info (v2)");
 
-        let updated_at = gateway_info::db::get_updated_at(&self.mobile_config_db_pool, &pubkey)
-            .await
-            .map_err(|_| {
-                Status::internal("error fetching updated_at field for gateway info (v2)")
-            })?;
-
-        gateway_info::db::get_info(&self.metadata_pool, &pubkey)
+        info::get_by_address(&self.pool, &pubkey)
             .await
             .map_err(|_| Status::internal("error fetching gateway info (v2)"))?
             .map_or_else(
@@ -148,21 +132,12 @@ impl mobile_config::Gateway for GatewayService {
                     telemetry::count_gateway_chain_lookup("not-found");
                     Err(Status::not_found(pubkey.to_string()))
                 },
-                |mut info| {
+                |info| {
                     if info.metadata.is_some() {
                         telemetry::count_gateway_chain_lookup("asserted");
                     } else {
                         telemetry::count_gateway_chain_lookup("not-asserted");
                     };
-
-                    // determine updated_at
-                    if let Some(v) = updated_at {
-                        info.updated_at = Some(v)
-                    } else if info.refreshed_at.is_some() {
-                        info.updated_at = info.refreshed_at;
-                    } else {
-                        info.updated_at = info.created_at;
-                    }
 
                     let info: GatewayInfoV2 = info
                         .try_into()
@@ -198,7 +173,7 @@ impl mobile_config::Gateway for GatewayService {
             "fetching gateways' info batch"
         );
 
-        let pool = self.metadata_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
         let addresses = request
@@ -210,7 +185,8 @@ impl mobile_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         tokio::spawn(async move {
-            let stream = gateway_info::db::batch_info_stream(&pool, &addresses)?;
+            let min_updated_at = DateTime::UNIX_EPOCH;
+            let stream = info::stream_by_addresses(&pool, addresses, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -234,8 +210,7 @@ impl mobile_config::Gateway for GatewayService {
             "fetching gateways' info batch"
         );
 
-        let metadata_db_pool = self.metadata_pool.clone();
-        let mobile_config_db_pool = self.mobile_config_db_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
         let addresses = request
@@ -248,19 +223,7 @@ impl mobile_config::Gateway for GatewayService {
 
         tokio::spawn(async move {
             let min_updated_at = DateTime::UNIX_EPOCH;
-            let updated_radios =
-                get_batch_tracked_radios(&mobile_config_db_pool, &addresses).await?;
-
-            let stream = gateway_info::db::batch_info_stream(&metadata_db_pool, &addresses)?;
-            let stream = stream
-                .filter_map(|gateway_info| {
-                    future::ready(handle_updated_at(
-                        gateway_info,
-                        &updated_radios,
-                        min_updated_at,
-                    ))
-                })
-                .boxed();
+            let stream = info::stream_by_addresses(&pool, addresses, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -280,7 +243,7 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        let pool = self.metadata_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
 
@@ -293,7 +256,8 @@ impl mobile_config::Gateway for GatewayService {
         );
 
         tokio::spawn(async move {
-            let stream = gateway_info::db::all_info_stream(&pool, &device_types);
+            let min_updated_at = DateTime::UNIX_EPOCH;
+            let stream = info::stream_by_types(&pool, &device_types, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -312,8 +276,7 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        let metadata_db_pool = self.metadata_pool.clone();
-        let mobile_config_db_pool = self.mobile_config_db_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
 
@@ -330,21 +293,9 @@ impl mobile_config::Gateway for GatewayService {
             let min_updated_at = Utc
                 .timestamp_opt(request.min_updated_at as i64, 0)
                 .single()
-                .ok_or(Status::invalid_argument(
-                    "Invalid min_refreshed_at argument",
-                ))?;
+                .ok_or(Status::invalid_argument("Invalid min_updated_at argument"))?;
 
-            let updated_radios = get_updated_radios(&mobile_config_db_pool, min_updated_at).await?;
-            let stream = gateway_info::db::all_info_stream(&metadata_db_pool, &device_types);
-            let stream = stream
-                .filter_map(|gateway_info| {
-                    future::ready(handle_updated_at(
-                        gateway_info,
-                        &updated_radios,
-                        min_updated_at,
-                    ))
-                })
-                .boxed();
+            let stream = info::stream_by_types(&pool, &device_types, min_updated_at);
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
@@ -363,8 +314,7 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        let metadata_db_pool = self.metadata_pool.clone();
-        let mobile_config_db_pool = self.mobile_config_db_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
 
@@ -392,57 +342,17 @@ impl mobile_config::Gateway for GatewayService {
                 )
             };
 
-            let mobile_tracker_gateways_info = get_mobile_tracker_gateways_info(
-                &mobile_config_db_pool,
+            let stream = info_v3::stream_by_types(
+                &pool,
+                &device_types,
                 min_updated_at,
                 min_location_changed_at,
-            )
-            .await?;
-            let stream = gateway_info_v3::db::all_info_stream_v3(
-                &metadata_db_pool,
-                &device_types,
-                &mobile_tracker_gateways_info,
             );
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
     }
-}
-
-fn handle_updated_at(
-    mut gateway_info: GatewayInfo,
-    updated_radios: &HashMap<PublicKeyBinary, chrono::DateTime<Utc>>,
-    min_updated_at: chrono::DateTime<Utc>,
-) -> Option<GatewayInfo> {
-    // Check mobile_radio_tracker HashMap
-    if let Some(updated_at) = updated_radios.get(&gateway_info.address) {
-        // It could be already filtered by min_updated_at but recheck won't hurt
-        if updated_at >= &min_updated_at {
-            gateway_info.updated_at = Some(*updated_at);
-            return Some(gateway_info);
-        }
-        return None;
-    }
-    // Fallback solution #1. Try to use refreshed_at as updated_at field and check
-    // min_updated_at
-    if let Some(refreshed_at) = gateway_info.refreshed_at {
-        if refreshed_at >= min_updated_at {
-            gateway_info.updated_at = Some(refreshed_at);
-            return Some(gateway_info);
-        }
-        return None;
-    }
-    // Fallback solution #2. Try to use created_at as updated_at field and check
-    // min_updated_at
-    if let Some(created_at) = gateway_info.created_at {
-        if created_at >= min_updated_at {
-            gateway_info.updated_at = Some(created_at);
-            return Some(gateway_info);
-        }
-        return None;
-    }
-    None
 }
 
 trait GatewayInfoStreamRes {
