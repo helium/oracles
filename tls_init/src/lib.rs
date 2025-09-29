@@ -22,9 +22,27 @@ pub use rustls;
 
 #[ctor::ctor]
 fn _install_tls_provider() {
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .expect("failed to install aws-lc-rs crypto provider");
+    match default_provider().as_str() {
+        // AwsLcRs already installed as default, skip
+        "AwsLcRs" => return,
+        "None" => {
+            rustls::crypto::aws_lc_rs::default_provider()
+                .install_default()
+                .expect("failed to install aws-lc-rs crypto provider");
+        }
+        other => {
+            panic!("Expected 'AwsLcRs' as default crypto provider, found: {other}");
+        }
+    }
+}
+
+fn default_provider() -> String {
+    let provider = rustls::crypto::CryptoProvider::get_default();
+    if let Some(p) = provider {
+        format!("{:?}", p.key_provider)
+    } else {
+        "None".to_string()
+    }
 }
 
 /// Include the following macro in your src/lib.rs to hopefully prevent
