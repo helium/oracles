@@ -46,6 +46,7 @@ impl Cmd {
             Self::Server(cmd) => {
                 let settings = Settings::new(config)?;
                 custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
+                tracing::info!("Settings: {}", serde_json::to_string_pretty(&settings)?);
                 cmd.run(&settings).await
             }
             Self::Check(options) => check::run(options.into()).await,
@@ -79,14 +80,15 @@ impl Server {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
+        let file_store_client = settings.file_store.connect().await;
+
         // Initialize uploader
         let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
-
-        let store_base_path = path::Path::new(&settings.cache);
+            file_upload::FileUpload::new(file_store_client.clone(), settings.output_bucket.clone())
+                .await;
 
         let (price_sink, price_sink_server) = PriceReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(Duration::from_secs(PRICE_SINK_ROLL_SECS)),

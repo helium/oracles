@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod banning;
 pub mod boosting_oracles;
 pub mod cell_type;
@@ -6,7 +8,6 @@ pub mod coverage;
 pub mod data_session;
 pub mod geofence;
 pub mod heartbeats;
-pub mod radio_threshold;
 pub mod reward_shares;
 pub mod rewarder;
 pub mod seniority;
@@ -52,8 +53,8 @@ impl GatewayResolver for mobile_config::GatewayClient {
         &self,
         address: &helium_crypto::PublicKeyBinary,
     ) -> Result<GatewayResolution, ClientError> {
-        use mobile_config::client::gateway_client::GatewayInfoResolver;
-        use mobile_config::gateway_info::{DeviceType, GatewayInfo};
+        use mobile_config::gateway::client::GatewayInfoResolver;
+        use mobile_config::gateway::service::info::{DeviceType, GatewayInfo};
 
         match self.resolve_gateway_info(address).await? {
             None => Ok(GatewayResolution::GatewayNotFound),
@@ -116,3 +117,6 @@ impl PriceInfo {
 pub fn resolve_subdao_pubkey() -> SolPubkey {
     solana::SubDao::Mobile.key()
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

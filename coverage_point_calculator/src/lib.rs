@@ -21,7 +21,6 @@
 //!   - [HIP-105][hex-limits]
 //!
 //! - [CoveredHex::boosted_multiplier]
-//!   - must meet minimum subscriber thresholds [HIP-84][provider-boosting]
 //!   - Wifi Location trust score >0.75 for boosted hex eligibility [HIP-93][wifi-aps]
 //!
 //! - [CoveragePoints::location_trust_multiplier]
@@ -49,7 +48,6 @@
 //!   - If a Hex is boosted by a Provider, the Oracle Assignment multiplier is automatically 1x.
 //!
 //! - [SPBoostedRewardEligibility]
-//!   - Radio must pass at least 1mb of data from 3 unique phones [HIP-84][provider-boosting]
 //!   - Radio must serve >25 unique connections on a rolling 7-day window [HIP-140][sp-boost-qualifiers]
 //!   - [@deprecated] Service Provider can invalidate boosted rewards of a hotspot [HIP-125][provider-banning]
 //!
@@ -247,7 +245,6 @@ impl CoveragePoints {
             SpBoostedHexStatus::Eligible => self.coverage_points.boosted,
             SpBoostedHexStatus::WifiLocationScoreBelowThreshold(_) => dec!(0),
             SpBoostedHexStatus::AverageAssertedDistanceOverLimit(_) => dec!(0),
-            SpBoostedHexStatus::RadioThresholdNotMet => dec!(0),
             SpBoostedHexStatus::NotEnoughConnections => dec!(0),
         }
     }
@@ -265,7 +262,6 @@ pub enum SpBoostedHexStatus {
     Eligible,
     WifiLocationScoreBelowThreshold(Decimal),
     AverageAssertedDistanceOverLimit(Decimal),
-    RadioThresholdNotMet,
     NotEnoughConnections,
 }
 
@@ -276,8 +272,6 @@ impl SpBoostedHexStatus {
         service_provider_boosted_reward_eligibility: SPBoostedRewardEligibility,
     ) -> Result<Self> {
         match service_provider_boosted_reward_eligibility {
-            // hip-84: if radio has not met minimum data and subscriber thresholds, no boosting
-            SPBoostedRewardEligibility::RadioThresholdNotMet => Ok(Self::RadioThresholdNotMet),
             // hip-140: radio must have enough unique connections
             SPBoostedRewardEligibility::NotEnoughConnections => Ok(Self::NotEnoughConnections),
             SPBoostedRewardEligibility::Eligible => {
@@ -319,9 +313,9 @@ impl RadioType {
                 other => return Err(Error::InvalidSignalLevel(*other, *self)),
             },
             RadioType::OutdoorWifi => match signal_level {
-                SignalLevel::High => dec!(16),
-                SignalLevel::Medium => dec!(8),
-                SignalLevel::Low => dec!(4),
+                SignalLevel::High => dec!(120),
+                SignalLevel::Medium => dec!(60),
+                SignalLevel::Low => dec!(0),
                 SignalLevel::None => dec!(0),
             },
         };
@@ -418,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn hip_84_radio_meets_minimum_subscriber_threshold_for_boosted_hexes() {
+    fn hip_84_radio_eligible_for_boosted_hexes() {
         let calculate_wifi = |eligibility: SPBoostedRewardEligibility| {
             CoveragePoints::new(
                 RadioType::IndoorWifi,
@@ -442,15 +436,19 @@ mod tests {
             .base_coverage_points(&SignalLevel::High)
             .unwrap();
 
-        // Radio meeting the threshold is eligible for boosted hexes.
+        // Radio that is eligible receives boosted hex rewards.
         // Boosted hex provides radio with more than base_points.
-        let verified_wifi = calculate_wifi(SPBoostedRewardEligibility::Eligible);
-        assert_eq!(base_points * dec!(5), verified_wifi.coverage_points_v1());
+        let eligible_wifi = calculate_wifi(SPBoostedRewardEligibility::Eligible);
+        assert_eq!(base_points * dec!(5), eligible_wifi.coverage_points_v1());
 
-        // Radio not meeting the threshold is not eligible for boosted hexes.
+        // Radio without enough connections is not eligible for boosted hexes.
         // Boost from hex is not applied, radio receives base points.
-        let unverified_wifi = calculate_wifi(SPBoostedRewardEligibility::RadioThresholdNotMet);
-        assert_eq!(base_points, unverified_wifi.coverage_points_v1());
+        let insufficient_connections_wifi =
+            calculate_wifi(SPBoostedRewardEligibility::NotEnoughConnections);
+        assert_eq!(
+            base_points,
+            insufficient_connections_wifi.coverage_points_v1()
+        );
     }
 
     #[test]
@@ -626,35 +624,35 @@ mod tests {
             location_trust_maximum(),
             vec![
                 // yellow - POI ≥ 1 Urbanized, no SP override
-                ranked_coverage(A, A, A, C), // 16
-                ranked_coverage(A, B, A, C), // 16
-                ranked_coverage(A, C, A, C), // 16
-                // 48
+                ranked_coverage(A, A, A, C), // 120
+                ranked_coverage(A, B, A, C), // 120
+                ranked_coverage(A, C, A, C), // 120
+                // 360
                 // orange - POI ≥ 1 Not Urbanized, no SP override
-                ranked_coverage(A, A, B, C), // 16
-                ranked_coverage(A, B, B, C), // 16
-                ranked_coverage(A, C, B, C), // 16
-                // 48
+                ranked_coverage(A, A, B, C), // 120
+                ranked_coverage(A, B, B, C), // 120
+                ranked_coverage(A, C, B, C), // 120
+                // 360
                 // light green - Point of Interest Urbanized, no SP override
-                ranked_coverage(B, A, A, C), // 11.2
-                ranked_coverage(B, B, A, C), // 11.2
-                ranked_coverage(B, C, A, C), // 11.2
-                ranked_coverage(B, C, A, C), // 11.2
-                ranked_coverage(B, C, A, C), // 11.2
-                // 56
+                ranked_coverage(B, A, A, C), // 84
+                ranked_coverage(B, B, A, C), // 84
+                ranked_coverage(B, C, A, C), // 84
+                ranked_coverage(B, C, A, C), // 84
+                ranked_coverage(B, C, A, C), // 84
+                // 420
                 // dark green - Point of Interest Not Urbanized, no SP override
-                ranked_coverage(B, A, B, C), // 8
-                ranked_coverage(B, B, B, C), // 8
-                ranked_coverage(B, C, B, C), // 8
-                // 24
+                ranked_coverage(B, A, B, C), // 60
+                ranked_coverage(B, B, B, C), // 60
+                ranked_coverage(B, C, B, C), // 60
+                // 180
                 // HRP-20250409 - footfall C
-                ranked_coverage(C, A, A, C), // 0.48
-                ranked_coverage(C, B, A, C), // 0.48
-                ranked_coverage(C, C, A, C), // 0.48
-                ranked_coverage(C, A, B, C), // 0.48
-                ranked_coverage(C, B, B, C), // 0.48
-                ranked_coverage(C, C, B, C), // 0.48
-                // 2.88
+                ranked_coverage(C, A, A, C), // 3.60
+                ranked_coverage(C, B, A, C), // 3.60
+                ranked_coverage(C, C, A, C), // 3.60
+                ranked_coverage(C, A, B, C), // 3.60
+                ranked_coverage(C, B, B, C), // 3.60
+                ranked_coverage(C, C, B, C), // 3.60
+                // 21.60
                 // gray - Outside of USA, no SP override
                 ranked_coverage(A, A, C, C), // 0
                 ranked_coverage(A, B, C, C), // 0
@@ -670,14 +668,14 @@ mod tests {
         )
         .expect("outdoor wifi");
 
-        // 48 + 48 + 56 + 24 + 2.88 = 178.88
-        assert_eq!(dec!(178.88), outdoor_wifi.coverage_points_v1());
+        // 360 + 360 + 420 + 180 + 21.60 = 1341.60
+        assert_eq!(dec!(1341.60), outdoor_wifi.coverage_points_v1());
     }
 
     #[rstest]
-    #[case(RadioType::OutdoorWifi, 1, dec!(16))]
-    #[case(RadioType::OutdoorWifi, 2, dec!(8))]
-    #[case(RadioType::OutdoorWifi, 3, dec!(4))]
+    #[case(RadioType::OutdoorWifi, 1, dec!(120))]
+    #[case(RadioType::OutdoorWifi, 2, dec!(60))]
+    #[case(RadioType::OutdoorWifi, 3, dec!(30))]
     #[case(RadioType::OutdoorWifi, 42, dec!(0))]
     fn outdoor_radios_consider_top_3_ranked_hexes(
         #[case] radio_type: RadioType,
@@ -812,9 +810,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case(SignalLevel::High, dec!(16))]
-    #[case(SignalLevel::Medium, dec!(8))]
-    #[case(SignalLevel::Low, dec!(4))]
+    #[case(SignalLevel::High, dec!(120))]
+    #[case(SignalLevel::Medium, dec!(60))]
+    #[case(SignalLevel::Low, dec!(0))]
     #[case(SignalLevel::None, dec!(0))]
     fn outdoor_wifi_base_coverage_points(
         #[case] signal_level: SignalLevel,

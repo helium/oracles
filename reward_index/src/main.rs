@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use file_store::{file_info_poller::LookbackBehavior, file_source, FileStore, FileType};
+use file_store::{file_info_poller::LookbackBehavior, file_source, FileType};
 use reward_index::{settings::Settings, telemetry, Indexer};
 use std::path::PathBuf;
 use task_manager::TaskManager;
@@ -11,7 +11,7 @@ use task_manager::TaskManager;
 pub struct Cli {
     /// Optional configuration file to use. If present the toml file at the
     /// given path will be loaded. Environment variables can override the
-    /// settins in the given file.
+    /// settings in the given file.
     #[clap(short = 'c')]
     config: Option<PathBuf>,
 
@@ -23,6 +23,7 @@ impl Cli {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
         custom_tracing::init(settings.log.clone(), settings.custom_tracing.clone()).await?;
+        tracing::info!("Settings: {}", serde_json::to_string_pretty(&settings)?);
         self.cmd.run(settings).await
     }
 }
@@ -55,10 +56,10 @@ impl Server {
 
         telemetry::initialize(&pool).await?;
 
-        let file_store = FileStore::from_settings(&settings.verifier).await?;
+        let file_store_client = settings.file_store.connect().await;
         let (receiver, server) = file_source::continuous_source()
             .state(pool.clone())
-            .store(file_store.clone())
+            .file_store(file_store_client.clone(), settings.input_bucket.clone())
             .prefix(FileType::RewardManifest.to_string())
             .lookback(LookbackBehavior::StartAfter(settings.start_after))
             .poll_duration(settings.interval)
@@ -67,7 +68,14 @@ impl Server {
             .await?;
 
         // Reward server
-        let indexer = Indexer::from_settings(settings, pool, file_store, receiver).await?;
+        let indexer = Indexer::from_settings(
+            settings,
+            pool,
+            file_store_client,
+            settings.input_bucket.clone(),
+            receiver,
+        )
+        .await?;
 
         TaskManager::builder()
             .add_task(server)

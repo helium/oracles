@@ -1,3 +1,5 @@
+extern crate tls_init;
+
 pub mod admin;
 pub mod admin_service;
 pub mod client;
@@ -47,6 +49,7 @@ pub async fn broadcast_update<T: std::fmt::Debug>(
     sender: broadcast::Sender<T>,
 ) -> Result<(), broadcast::error::SendError<T>> {
     while !enqueue_update(sender.len()) {
+        telemetry::route_stream_throttle();
         tokio::time::sleep(tokio::time::Duration::from_millis(25)).await
     }
     sender.send(message).map(|_| ()).map_err(|err| {
@@ -79,3 +82,6 @@ impl From<u64> for EpochInfo {
         }
     }
 }
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

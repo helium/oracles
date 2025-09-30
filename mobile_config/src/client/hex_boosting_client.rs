@@ -4,11 +4,9 @@ use chrono::{DateTime, Utc};
 use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, Sign};
-use helium_proto::{
-    services::{mobile_config, Channel},
-    Message,
-};
+use helium_proto::{services::mobile_config, Message};
 use std::{sync::Arc, time::Duration};
+use tonic::transport::Channel;
 
 #[derive(Clone)]
 pub struct HexBoostingClient {
@@ -22,8 +20,8 @@ impl HexBoostingClient {
     pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
         Ok(Self {
             client: settings.connect_hex_boosting_service_client(),
-            signing_key: settings.signing_keypair()?,
-            config_pubkey: settings.config_pubkey()?,
+            signing_key: settings.signing_keypair.clone(),
+            config_pubkey: settings.config_pubkey.clone(),
             batch_size: settings.hex_boosting_batch_size,
         })
     }

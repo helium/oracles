@@ -2,7 +2,8 @@
 FROM rust:bookworm AS base
 
 RUN apt-get update && apt-get install -y \
-    protobuf-compiler
+    protobuf-compiler \
+    cmake
 
 # BUILDER
 FROM base AS builder
@@ -13,7 +14,7 @@ COPY . .
 RUN cargo fetch
 
 ARG PACKAGE
-RUN cargo build --release -p ${PACKAGE}
+RUN AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --release -p ${PACKAGE}
 
 
 # RUNNER

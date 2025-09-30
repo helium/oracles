@@ -29,11 +29,8 @@ helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
 csv = { workspace = true }
 http = { workspace = true }
-aws-config = { workspace = true }
-aws-sdk-s3 = { workspace = true }
-aws-types = { workspace = true, optional = true }
-strum = { version = "0", features = ["derive"] }
-strum_macros = "0"
+strum = { workspace = true }
+strum_macros = { workspace = true }
 sha2 = { workspace = true }
 metrics = { workspace = true }
 blake3 = { workspace = true }
@@ -49,6 +46,13 @@ retainer = { workspace = true }
 uuid = { workspace = true }
 h3o = { workspace = true }
 task-manager = { path = "../task_manager" }
+humantime-serde = { workspace = true }
+tls-init = { path = "../tls_init" }
+bs58 = { workspace = true }
+
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-smithy-types-convert = { workspace = true }
 
 [dev-dependencies]
 hex-literal = "0"
@@ -56,5 +60,5 @@ tempfile = { workspace = true }
 
 [features]
 default = ["sqlx-postgres"]
-local = ["aws-types"]
+local = []
 sqlx-postgres = ["sqlx/postgres"]

@@ -1,17 +1,23 @@
-use helium_proto::services::{mobile_config, sub_dao, Channel, Endpoint};
+use helium_crypto::{Keypair, PublicKey};
+use helium_proto::services::{mobile_config, sub_dao};
 use humantime_serde::re::humantime;
-use serde::Deserialize;
-use std::{str::FromStr, sync::Arc, time::Duration};
+use serde::{Deserialize, Serialize};
+use std::{sync::Arc, time::Duration};
+use tonic::transport::{Channel, Endpoint};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// grpc url to the mobile config oracle server
     #[serde(with = "http_serde::uri")]
     pub url: http::Uri,
-    /// File from which to load config server signing keypair
-    pub signing_keypair: String,
+    /// Base64 encoded string of the helium keypair
+    #[serde(
+        deserialize_with = "crate::deserialize_helium_keypair",
+        skip_serializing
+    )]
+    pub signing_keypair: Arc<Keypair>,
     /// B58 encoded public key of the mobile config server for verification
-    pub config_pubkey: String,
+    pub config_pubkey: PublicKey,
     /// Connect timeout for the mobile config client in seconds. Default 5
     #[serde(with = "humantime_serde", default = "default_connect_timeout")]
     pub connect_timeout: Duration,
@@ -77,17 +83,6 @@ impl Settings {
     pub fn connect_hex_boosting_service_client(&self) -> mobile_config::HexBoostingClient<Channel> {
         let channel = connect_channel(self);
         mobile_config::HexBoostingClient::new(channel)
-    }
-
-    pub fn signing_keypair(
-        &self,
-    ) -> Result<Arc<helium_crypto::Keypair>, Box<helium_crypto::Error>> {
-        let data = std::fs::read(&self.signing_keypair).map_err(helium_crypto::Error::from)?;
-        Ok(Arc::new(helium_crypto::Keypair::try_from(&data[..])?))
-    }
-
-    pub fn config_pubkey(&self) -> Result<helium_crypto::PublicKey, helium_crypto::Error> {
-        helium_crypto::PublicKey::from_str(&self.config_pubkey)
     }
 }
 

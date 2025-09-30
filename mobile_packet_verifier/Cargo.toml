@@ -26,6 +26,7 @@ humantime-serde = { workspace = true }
 metrics = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 sha2 = { workspace = true }
 solana = { path = "../solana" }
 sqlx = { workspace = true }
@@ -42,6 +43,7 @@ file-store = { path = "../file_store" }
 mobile-config = { path = "../mobile_config" }
 poc-metrics = { path = "../metrics" }
 task-manager = { path = "../task_manager" }
+tls-init = { path = "../tls_init" }
 
 [dev-dependencies]
 reqwest = { workspace = true }

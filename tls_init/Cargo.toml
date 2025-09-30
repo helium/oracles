@@ -1,0 +1,23 @@
+[package]
+name = "tls-init"
+version = "0.1.0"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+rustls = { version = "0.23", default-features = true }
+ctor = "0.5"
+rustls-webpki = { version = "0.103", default-features = false, features = [
+    "aws-lc-rs",
+] }
+
+tokio-rustls = { version = "0.26", default-features = false, features = [
+    "aws-lc-rs",
+] }
+hyper-rustls = { version = "0.27", default-features = false, features = [
+    "http1",
+    "http2",
+    "tls12",
+    "aws-lc-rs",
+] }

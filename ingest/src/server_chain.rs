@@ -3,7 +3,7 @@ use std::{net::SocketAddr, path::Path, str::FromStr};
 use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient,
-    file_upload::FileUpload,
+    file_upload::{self, FileUpload},
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify},
 };
 use futures::{future::LocalBoxFuture, TryFutureExt};
@@ -34,7 +34,10 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
         );
     }
 
-    let (file_upload, file_upload_server) = FileUpload::from_settings_tm(&settings.output).await?;
+    let s3_client = settings.file_store.connect().await;
+    let (file_upload, file_upload_server) =
+        file_upload::FileUpload::new(s3_client, settings.output_bucket.clone()).await;
+
     let store_base_path = Path::new(&settings.cache);
 
     let (mobile_sink, mobile_sink_server) = MobileHotspotChangeReportV1::file_sink(
@@ -199,7 +202,7 @@ impl chain_rewardable_entities::ChainRewardableEntities for GrpcServer {
     }
 }
 
-fn make_span(_request: &http::request::Request<helium_proto::services::Body>) -> tracing::Span {
+fn make_span(_request: &http::request::Request<tonic::body::Body>) -> tracing::Span {
     tracing::info_span!(custom_tracing::DEFAULT_SPAN)
 }
 

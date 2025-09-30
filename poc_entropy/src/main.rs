@@ -18,7 +18,7 @@ const ENTROPY_SINK_ROLL_SECS: u64 = 2 * 60;
 pub struct Cli {
     /// Optional configuration file to use. If present the toml file at the
     /// given path will be loaded. Environment variables can override the
-    /// settins in the given file.
+    /// settings in the given file.
     #[clap(short = 'c')]
     config: Option<path::PathBuf>,
 
@@ -72,8 +72,9 @@ impl Server {
         let mut entropy_generator = EntropyGenerator::new(&settings.source).await?;
         let entropy_watch = entropy_generator.receiver();
 
+        let file_store_client = settings.file_store.connect().await;
         let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
+            file_upload::FileUpload::new(file_store_client, settings.output_bucket.clone()).await;
         let (entropy_sink, entropy_sink_server) = EntropyReportV1::file_sink(
             store_base_path,
             file_upload.clone(),

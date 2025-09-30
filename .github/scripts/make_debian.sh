@@ -108,7 +108,7 @@ gem install dotenv -v 2.8.1
 gem install fpm -v 1.14.2 # current as of 2022-11-08
 echo "ruby deps installed" 
 
-for config_path in $( find . -name 'settings-template.toml' )
+for config_path in "reward_index" "price" "ingest" "iot_config" "iot_packet_verifier" "iot_verifier" "poc_entropy"
 do
     oracle=$(echo $config_path | sed -E 's!\./([^/]+)/.+$!\1!' | sed -E 's!_!-!g')
     

@@ -1,8 +1,11 @@
+extern crate tls_init;
+
+use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
-use helium_crypto::PublicKey;
+use helium_crypto::{Keypair, PublicKey};
 use helium_proto::services::mobile_config::AdminKeyRole as ProtoKeyRole;
-use serde::Serialize;
-use std::ops::Range;
+use serde::{Deserialize, Serialize};
+use std::{ops::Range, sync::Arc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
 
@@ -10,17 +13,15 @@ pub mod admin_service;
 pub mod authorization_service;
 pub mod boosted_hex_info;
 pub mod carrier_service;
+pub mod cli;
 pub mod client;
 pub mod entity_service;
-pub mod gateway_info;
-pub mod gateway_info_v3;
-pub mod gateway_service;
+pub mod gateway;
+pub mod grpc_server;
 pub mod hex_boosting_service;
-pub mod sub_dao_epoch_reward_info;
-
 pub mod key_cache;
-pub mod mobile_radio_tracker;
 pub mod settings;
+pub mod sub_dao_epoch_reward_info;
 pub mod sub_dao_service;
 pub mod telemetry;
 
@@ -117,3 +118,20 @@ impl From<u64> for EpochInfo {
         }
     }
 }
+
+pub fn deserialize_helium_keypair<'a, D>(deserializer: D) -> Result<Arc<Keypair>, D::Error>
+where
+    D: serde::Deserializer<'a>,
+{
+    let string = String::deserialize(deserializer)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&string)
+        .map_err(serde::de::Error::custom)?;
+
+    Keypair::try_from(bytes.as_slice())
+        .map(Arc::new)
+        .map_err(serde::de::Error::custom)
+}
+
+#[cfg(test)]
+tls_init::include_tls_tests!();

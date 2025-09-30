@@ -22,29 +22,30 @@ use std::{
     str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
 };
+use tonic::transport::Channel;
 
 pub struct AdminClient {
-    client: admin_client::AdminClient<helium_proto::services::Channel>,
+    client: admin_client::AdminClient<Channel>,
     server_pubkey: PublicKey,
 }
 
 pub struct AuthClient {
-    client: authorization_client::AuthorizationClient<helium_proto::services::Channel>,
+    client: authorization_client::AuthorizationClient<Channel>,
     server_pubkey: PublicKey,
 }
 
 pub struct CarrierClient {
-    client: carrier_service_client::CarrierServiceClient<helium_proto::services::Channel>,
+    client: carrier_service_client::CarrierServiceClient<Channel>,
     server_pubkey: PublicKey,
 }
 
 pub struct EntityClient {
-    client: entity_client::EntityClient<helium_proto::services::Channel>,
+    client: entity_client::EntityClient<Channel>,
     server_pubkey: PublicKey,
 }
 
 pub struct GatewayClient {
-    client: gateway_client::GatewayClient<helium_proto::services::Channel>,
+    client: gateway_client::GatewayClient<Channel>,
     server_pubkey: PublicKey,
 }
 

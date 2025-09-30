@@ -12,7 +12,7 @@ use file_store::{
     file_source, file_upload,
     iot_packet::PacketRouterPacketReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileStore, FileType,
+    FileType,
 };
 use futures_util::TryFutureExt;
 use helium_proto::services::packet_verifier::{InvalidPacket, ValidPacket};
@@ -132,8 +132,10 @@ impl Cmd {
             solana.clone(),
         );
 
+        let file_store_client = settings.file_store.connect().await;
         let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
+            file_upload::FileUpload::new(file_store_client.clone(), settings.output_bucket.clone())
+                .await;
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
@@ -160,11 +162,9 @@ impl Cmd {
             &settings.iot_config_client,
         )?)));
 
-        let file_store = FileStore::from_settings(&settings.ingest).await?;
-
         let (report_files, report_files_server) = file_source::continuous_source()
             .state(pool.clone())
-            .store(file_store)
+            .file_store(file_store_client, settings.ingest_bucket.clone())
             .lookback(LookbackBehavior::StartAfter(settings.start_after))
             .prefix(FileType::IotPacketReport.to_string())
             .create()

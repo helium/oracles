@@ -514,10 +514,7 @@ impl<T: MsgBytes> FileSink<T> {
             active_sink.size += buf_len;
             Ok(())
         } else {
-            Err(Error::from(io::Error::new(
-                io::ErrorKind::Other,
-                "sink not available",
-            )))
+            Err(Error::from(io::Error::other("sink not available")))
         }
     }
 }

@@ -1,10 +1,10 @@
 use std::{collections::HashSet, time::Duration};
 
 use chrono::{DateTime, Utc};
-use file_store::{mobile_ban, FileStore};
+use file_store::mobile_ban;
 use helium_crypto::PublicKeyBinary;
 use humantime_serde::re::humantime;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use task_manager::{ManagedTask, TaskManager};
 
@@ -17,10 +17,10 @@ pub use ingestor::handle_verified_ban_report;
 
 pub const BAN_CLEANUP_DAYS: i64 = 7;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct BanSettings {
     /// Where do we look in s3 for ban files
-    pub input_bucket: file_store::Settings,
+    pub input_bucket: String,
     /// How often to purge expired bans
     #[serde(with = "humantime_serde", default = "default_purge_interval")]
     pub purge_interval: Duration,
@@ -39,13 +39,16 @@ fn default_ingest_start_after() -> DateTime<Utc> {
 
 pub async fn create_managed_task(
     pool: PgPool,
+    client: file_store::Client,
     settings: &BanSettings,
 ) -> anyhow::Result<impl ManagedTask> {
-    let verifier_file_store = FileStore::from_settings(&settings.input_bucket).await?;
-
-    let (ban_report_rx, ban_report_server) =
-        mobile_ban::verified_report_source(pool.clone(), verifier_file_store, settings.start_after)
-            .await?;
+    let (ban_report_rx, ban_report_server) = mobile_ban::verified_report_source(
+        pool.clone(),
+        client,
+        settings.input_bucket.clone(),
+        settings.start_after,
+    )
+    .await?;
 
     let ingestor = ingestor::BanIngestor::new(pool.clone(), ban_report_rx);
     let purger = purger::BanPurger::new(pool, settings.purge_interval);
