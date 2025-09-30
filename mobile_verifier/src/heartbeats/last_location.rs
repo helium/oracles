@@ -10,7 +10,8 @@ use super::Heartbeat;
 #[derive(Debug, sqlx::FromRow, Copy, Clone, PartialEq)]
 pub struct LastLocation {
     pub location_validation_timestamp: DateTime<Utc>,
-    pub latest_timestamp: DateTime<Utc>,
+    #[sqlx(rename = "first_timestamp")]
+    pub heartbeat_timestamp: DateTime<Utc>,
     pub lat: f64,
     pub lon: f64,
 }
@@ -18,13 +19,13 @@ pub struct LastLocation {
 impl LastLocation {
     pub fn new(
         location_validation_timestamp: DateTime<Utc>,
-        latest_timestamp: DateTime<Utc>,
+        heartbeat_timestamp: DateTime<Utc>,
         lat: f64,
         lon: f64,
     ) -> Self {
         Self {
             location_validation_timestamp,
-            latest_timestamp,
+            heartbeat_timestamp,
             lat,
             lon,
         }
@@ -113,13 +114,13 @@ impl LocationCache {
     ) -> anyhow::Result<Option<LastLocation>> {
         let last_location: Option<LastLocation> = sqlx::query_as(
             r#"
-            SELECT location_validation_timestamp, latest_timestamp, lat, lon
+            SELECT location_validation_timestamp, first_timestamp, lat, lon
             FROM wifi_heartbeats
             WHERE location_validation_timestamp IS NOT NULL
-                AND latest_timestamp >= $1
+                AND first_timestamp >= $1
                 AND hotspot_key = $2
                 AND $3 - location_validation_timestamp <= INTERVAL '24 hours'
-            ORDER BY latest_timestamp DESC
+            ORDER BY first_timestamp DESC
             LIMIT 1
             "#,
         )
@@ -193,7 +194,7 @@ mod tests {
             r#"
             INSERT INTO wifi_heartbeats
                 (
-                    hotspot_key, location_validation_timestamp, latest_timestamp,
+                    hotspot_key, location_validation_timestamp, first_timestamp,
                     truncated_timestamp, coverage_object,
 
                     -- hardcoded values
@@ -225,7 +226,7 @@ mod tests {
     ) -> LastLocation {
         LastLocation {
             location_validation_timestamp: nanos_trunc(location_validation_timestamp),
-            latest_timestamp: nanos_trunc(latest_timestamp),
+            heartbeat_timestamp: nanos_trunc(latest_timestamp),
             lat: 0.0,
             lon: 0.0,
         }
