@@ -3,11 +3,13 @@ use crate::{
     settings::Settings,
 };
 use chrono::{DateTime, Utc};
+use h3o::{error::InvalidCellIndex, CellIndex};
 use helium_crypto::PublicKey;
 use serde::Deserialize;
 use std::{
     fs::File,
     path::{Path, PathBuf},
+    str::FromStr,
     time::Instant,
 };
 
@@ -39,7 +41,7 @@ impl Import {
 
                 let updates = read_csv(self.file)?
                     .into_iter()
-                    .map(|row| row.into())
+                    .filter_map(|row| row.try_into().ok())
                     .collect::<Vec<LocationChangedAtUpdate>>();
 
                 tracing::info!("file read, updating {} records", updates.len());
@@ -62,16 +64,27 @@ struct CsvRow {
     time: DateTime<Utc>,
     // latitude: f64,
     // longitude: f64,
-    // h3: String,
+    h3: String,
     // assertion_type: String,
 }
 
-impl From<CsvRow> for LocationChangedAtUpdate {
-    fn from(row: CsvRow) -> Self {
-        Self {
+#[derive(Debug, thiserror::Error)]
+pub enum CsvRowError {
+    #[error("H3 index parse error: {0}")]
+    H3IndexParseError(#[from] InvalidCellIndex),
+}
+
+impl TryFrom<CsvRow> for LocationChangedAtUpdate {
+    type Error = CsvRowError;
+
+    fn try_from(row: CsvRow) -> Result<Self, Self::Error> {
+        let cell = CellIndex::from_str(&row.h3)?;
+
+        Ok(Self {
             address: row.public_key.into(),
             location_changed_at: row.time,
-        }
+            location: cell.into(),
+        })
     }
 }
 

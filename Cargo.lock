@@ -4972,6 +4972,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
+ "h3o",
  "helium-crypto",
  "helium-proto",
  "hextree",

@@ -100,6 +100,7 @@ pub struct Gateway {
 pub struct LocationChangedAtUpdate {
     pub address: PublicKeyBinary,
     pub location_changed_at: DateTime<Utc>,
+    pub location: u64,
 }
 
 impl Gateway {
@@ -349,31 +350,41 @@ impl Gateway {
             return Ok(0);
         }
 
-        let mut qb = QueryBuilder::<Postgres>::new(
-            "UPDATE gateways AS g \
-             SET location_changed_at = v.location_changed_at \
-             FROM (VALUES ",
-        );
+        const MAX_ROWS: usize = 20000;
+        let mut total = 0;
 
-        {
-            let mut rows = qb.separated(", ");
-            for update in updates {
-                rows.push("(");
-                rows.push_bind_unseparated(update.address.as_ref());
-                rows.push_unseparated(", ");
-                rows.push_bind_unseparated(update.location_changed_at);
-                rows.push_unseparated(")");
+        for chunk in updates.chunks(MAX_ROWS) {
+            let mut qb = QueryBuilder::<Postgres>::new(
+                "UPDATE gateways AS g \
+                SET location_changed_at = v.location_changed_at \
+                FROM (VALUES ",
+            );
+
+            {
+                let mut rows = qb.separated(", ");
+                for update in chunk {
+                    rows.push("(");
+                    rows.push_bind_unseparated(update.address.as_ref());
+                    rows.push_unseparated(", ");
+                    rows.push_bind_unseparated(update.location_changed_at);
+                    rows.push_unseparated(", ");
+                    rows.push_bind_unseparated(update.location as i64);
+                    rows.push_unseparated(")");
+                }
             }
+
+            qb.push(
+                ") AS v(address, location_changed_at, location) \
+                WHERE g.address = v.address \
+                    AND g.location_changed_at IS NULL \
+                    AND g.location = v.location",
+            );
+
+            let res = qb.build().execute(pool).await?;
+            total += res.rows_affected();
         }
 
-        qb.push(
-            ") AS v(address, location_changed_at) \
-            WHERE g.address = v.address \
-              AND g.location_changed_at IS NULL",
-        );
-
-        let res = qb.build().execute(pool).await?;
-        Ok(res.rows_affected())
+        Ok(total)
     }
 }
 
