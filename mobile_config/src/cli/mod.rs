@@ -1,5 +1,5 @@
 use crate::{
-    cli::{api::Api, server::Server},
+    cli::{api::Api, import::Import, server::Server},
     settings::Settings,
 };
 use base64::{engine::general_purpose, Engine};
@@ -9,6 +9,7 @@ use std::io::Write;
 use std::{fs::File, path::PathBuf};
 
 pub mod api;
+pub mod import;
 pub mod server;
 
 #[derive(Debug, clap::Parser)]
@@ -28,9 +29,9 @@ pub struct Cli {
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.cmd {
-            Cmd::Server(server) => {
+            Cmd::Api(api) => {
                 let settings = Settings::new(self.config)?;
-                server.run(&settings).await
+                api.run(&settings).await
             }
             Cmd::GenerateKey => {
                 let kp = Keypair::generate(KeyTag::default(), &mut OsRng);
@@ -54,9 +55,13 @@ impl Cli {
 
                 Ok(())
             }
-            Cmd::Api(api) => {
+            Cmd::Import(import) => {
                 let settings = Settings::new(self.config)?;
-                api.run(&settings).await
+                import.run(&settings).await
+            }
+            Cmd::Server(server) => {
+                let settings = Settings::new(self.config)?;
+                server.run(&settings).await
             }
         }
     }
@@ -64,7 +69,8 @@ impl Cli {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Cmd {
-    Server(Server),
-    GenerateKey,
     Api(Api),
+    GenerateKey,
+    Import(Import),
+    Server(Server),
 }

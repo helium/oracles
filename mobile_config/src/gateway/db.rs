@@ -96,6 +96,11 @@ pub struct Gateway {
     pub location_changed_at: Option<DateTime<Utc>>,
     pub location_asserts: Option<u32>,
 }
+#[derive(Debug)]
+pub struct LocationChangedAtUpdate {
+    pub address: PublicKeyBinary,
+    pub location_changed_at: DateTime<Utc>,
+}
 
 impl Gateway {
     pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {
@@ -334,6 +339,41 @@ impl Gateway {
         .fetch(db)
         .map_err(anyhow::Error::from)
         .filter_map(|res| async move { res.ok() })
+    }
+
+    pub async fn update_bulk_location_changed_at(
+        pool: &PgPool,
+        updates: &[LocationChangedAtUpdate],
+    ) -> anyhow::Result<u64> {
+        if updates.is_empty() {
+            return Ok(0);
+        }
+
+        let mut qb = QueryBuilder::<Postgres>::new(
+            "UPDATE gateways AS g \
+             SET location_changed_at = v.location_changed_at \
+             FROM (VALUES ",
+        );
+
+        {
+            let mut rows = qb.separated(", ");
+            for update in updates {
+                rows.push("(");
+                rows.push_bind_unseparated(update.address.as_ref());
+                rows.push_unseparated(", ");
+                rows.push_bind_unseparated(update.location_changed_at);
+                rows.push_unseparated(")");
+            }
+        }
+
+        qb.push(
+            ") AS v(address, location_changed_at) \
+            WHERE g.address = v.address \
+              AND g.location_changed_at IS NULL",
+        );
+
+        let res = qb.build().execute(pool).await?;
+        Ok(res.rows_affected())
     }
 }
 
