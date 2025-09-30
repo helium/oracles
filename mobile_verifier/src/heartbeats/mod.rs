@@ -556,10 +556,10 @@ impl ValidatedHeartbeat {
         let truncated_timestamp = self.truncated_timestamp()?;
         sqlx::query(
             r#"
-            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted, location_validation_timestamp, lat, lon)
+            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, first_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted, location_validation_timestamp, lat, lon)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (hotspot_key, truncated_timestamp) DO UPDATE SET
-            latest_timestamp = EXCLUDED.latest_timestamp,
+            first_timestamp = EXCLUDED.first_timestamp,
             coverage_object = EXCLUDED.coverage_object
             "#,
         )
