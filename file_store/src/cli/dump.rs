@@ -4,7 +4,7 @@ use base64::Engine;
 use bs58;
 use csv::Writer;
 use futures::stream::StreamExt;
-use helium_crypto::PublicKey;
+use helium_crypto::{PublicKey, PublicKeyBinary};
 use helium_proto::{
     services::{
         chain_rewardable_entities::{
@@ -467,7 +467,7 @@ impl Cmd {
                     let report = report.report.unwrap();
                     let change = report.change.unwrap();
                     print_json(&json!({
-                        "entity_pubkey": PublicKey::from_bytes(change.entity_pub_key.unwrap().value)?.to_string(),
+                        "entity_pubkey": PublicKeyBinary::from(change.entity_pub_key.unwrap().value),
                         "timestamp": change.timestamp_seconds,
                         "asset": bs58::encode(change.asset.unwrap().value).into_string(),
                         "block": change.block,
@@ -480,7 +480,7 @@ impl Cmd {
                     let report = report.report.unwrap();
                     let change = report.change.unwrap();
                     print_json(&json!({
-                        "entity_pubkey": PublicKey::from_bytes(change.entity_pub_key.unwrap().value)?.to_string(),
+                        "entity_pubkey": PublicKeyBinary::from(change.entity_pub_key.unwrap().value),
                         "timestamp": change.timestamp_seconds,
                         "asset": bs58::encode(change.asset.unwrap().value).into_string(),
                         "block": change.block,
