@@ -355,29 +355,26 @@ impl Gateway {
 
         for chunk in updates.chunks(MAX_ROWS) {
             let mut qb = QueryBuilder::<Postgres>::new(
-                "UPDATE gateways AS g \
-                SET location_changed_at = v.location_changed_at \
-                FROM (VALUES ",
+                r#"
+                    UPDATE gateways AS g
+                    SET location_changed_at = v.location_changed_at
+                    FROM ( 
+                "#,
             );
 
-            {
-                let mut rows = qb.separated(", ");
-                for update in chunk {
-                    rows.push("(");
-                    rows.push_bind_unseparated(update.address.as_ref());
-                    rows.push_unseparated(", ");
-                    rows.push_bind_unseparated(update.location_changed_at);
-                    rows.push_unseparated(", ");
-                    rows.push_bind_unseparated(update.location as i64);
-                    rows.push_unseparated(")");
-                }
-            }
+            qb.push_values(chunk, |mut b, update| {
+                b.push_bind(update.address.as_ref())
+                    .push_bind(update.location_changed_at)
+                    .push_bind(update.location as i64);
+            });
 
             qb.push(
-                ") AS v(address, location_changed_at, location) \
-                WHERE g.address = v.address \
-                    AND g.location_changed_at IS NULL \
-                    AND g.location = v.location",
+                r#"
+                    ) AS v(address, location_changed_at, location)
+                    WHERE g.address = v.address
+                        AND g.location_changed_at IS NULL
+                        AND g.location = v.location
+                "#,
             );
 
             let res = qb.build().execute(pool).await?;
