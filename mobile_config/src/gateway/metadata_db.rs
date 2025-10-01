@@ -132,8 +132,12 @@ impl MobileHotspotInfo {
             elevation,
             azimuth,
             location,
-            // Updated via SQL query see Gateway::insert
-            location_changed_at: None,
+            // Set to refreshed_at when hotspot has a location, None otherwise
+            location_changed_at: if location.is_some() {
+                Some(self.refreshed_at.unwrap_or_else(Utc::now))
+            } else {
+                None
+            },
             location_asserts: self.num_location_asserts.map(|n| n as u32),
         }))
     }

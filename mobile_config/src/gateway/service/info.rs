@@ -252,7 +252,8 @@ impl From<Gateway> for GatewayInfo {
             metadata,
             device_type: gateway.gateway_type.into(),
             created_at: Some(gateway.created_at),
-            updated_at: Some(gateway.updated_at),
+            // because updated_at refers to the last time the data was actually changed.
+            updated_at: Some(gateway.last_changed_at),
             refreshed_at: Some(gateway.refreshed_at),
         }
     }
