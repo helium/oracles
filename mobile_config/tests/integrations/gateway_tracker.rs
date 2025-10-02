@@ -46,7 +46,7 @@ async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(gateway1.elevation, None);
     assert_eq!(gateway1.azimuth, None);
     assert_eq!(gateway1.location, Some(hex1 as u64));
-    assert_eq!(gateway1.location_changed_at, None);
+    assert_eq!(gateway1.location_changed_at, Some(now));
     assert_eq!(gateway1.location_asserts, Some(1));
 
     Ok(())

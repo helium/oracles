@@ -96,6 +96,12 @@ pub struct Gateway {
     pub location_changed_at: Option<DateTime<Utc>>,
     pub location_asserts: Option<u32>,
 }
+#[derive(Debug)]
+pub struct LocationChangedAtUpdate {
+    pub address: PublicKeyBinary,
+    pub location_changed_at: DateTime<Utc>,
+    pub location: u64,
+}
 
 impl Gateway {
     pub async fn insert_bulk(pool: &PgPool, rows: &[Gateway]) -> anyhow::Result<u64> {
@@ -265,7 +271,7 @@ impl Gateway {
     pub fn stream_by_addresses<'a>(
         db: impl PgExecutor<'a> + 'a,
         addresses: Vec<PublicKeyBinary>,
-        min_updated_at: DateTime<Utc>,
+        min_last_changed_at: DateTime<Utc>,
     ) -> impl Stream<Item = Self> + 'a {
         let addr_array: Vec<Vec<u8>> = addresses.iter().map(|a| a.as_ref().to_vec()).collect();
 
@@ -287,11 +293,11 @@ impl Gateway {
                 location_asserts
             FROM gateways
             WHERE address = ANY($1)
-                AND (updated_at >= $2 OR refreshed_at >= $2 OR created_at >= $2)
+                AND last_changed_at >= $2
             "#,
         )
         .bind(addr_array)
-        .bind(min_updated_at)
+        .bind(min_last_changed_at)
         .fetch(db)
         .map_err(anyhow::Error::from)
         .filter_map(|res| async move { res.ok() })
@@ -300,7 +306,7 @@ impl Gateway {
     pub fn stream_by_types<'a>(
         db: impl PgExecutor<'a> + 'a,
         types: Vec<GatewayType>,
-        min_date: DateTime<Utc>,
+        min_last_changed_at: DateTime<Utc>,
         min_location_changed_at: Option<DateTime<Utc>>,
     ) -> impl Stream<Item = Self> + 'a {
         sqlx::query_as::<_, Self>(
@@ -321,7 +327,7 @@ impl Gateway {
                     location_asserts
                 FROM gateways
                 WHERE gateway_type = ANY($1)
-                AND (updated_at >= $2 OR refreshed_at >= $2 OR created_at >= $2)
+                AND last_changed_at >= $2
                 AND (
                     $3::timestamptz IS NULL
                     OR (location IS NOT NULL AND location_changed_at >= $3)
@@ -329,11 +335,53 @@ impl Gateway {
             "#,
         )
         .bind(types)
-        .bind(min_date)
+        .bind(min_last_changed_at)
         .bind(min_location_changed_at)
         .fetch(db)
         .map_err(anyhow::Error::from)
         .filter_map(|res| async move { res.ok() })
+    }
+
+    pub async fn update_bulk_location_changed_at(
+        pool: &PgPool,
+        updates: &[LocationChangedAtUpdate],
+    ) -> anyhow::Result<u64> {
+        if updates.is_empty() {
+            return Ok(0);
+        }
+
+        const MAX_ROWS: usize = 20000;
+        let mut total = 0;
+
+        for chunk in updates.chunks(MAX_ROWS) {
+            let mut qb = QueryBuilder::<Postgres>::new(
+                r#"
+                    UPDATE gateways AS g
+                    SET location_changed_at = v.location_changed_at
+                    FROM ( 
+                "#,
+            );
+
+            qb.push_values(chunk, |mut b, update| {
+                b.push_bind(update.address.as_ref())
+                    .push_bind(update.location_changed_at)
+                    .push_bind(update.location as i64);
+            });
+
+            qb.push(
+                r#"
+                    ) AS v(address, location_changed_at, location)
+                    WHERE g.address = v.address
+                        AND g.location_changed_at IS NULL
+                        AND g.location = v.location
+                "#,
+            );
+
+            let res = qb.build().execute(pool).await?;
+            total += res.rows_affected();
+        }
+
+        Ok(total)
     }
 }
 

@@ -15,8 +15,10 @@ bs58 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
+csv = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
+h3o = { workspace = true }
 helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
 helium-proto = { workspace = true }
 hextree = { workspace = true }
@@ -45,7 +47,6 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 triggered = { workspace = true }
-csv = { workspace = true }
 
 coverage-map = { path = "../coverage_map" }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
