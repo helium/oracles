@@ -3,7 +3,7 @@ use std::{net::SocketAddr, path::Path, str::FromStr};
 use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient,
-    file_upload::{self, FileUpload},
+    file_upload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify},
 };
 use futures::{future::LocalBoxFuture, TryFutureExt};
@@ -38,10 +38,8 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
     let (file_upload, file_upload_server) =
         file_upload::FileUpload::new(s3_client, settings.output_bucket.clone()).await;
 
-    let store_base_path = Path::new(&settings.cache);
-
     let (mobile_sink, mobile_sink_server) = MobileHotspotChangeReportV1::file_sink(
-        store_base_path,
+        &settings.cache,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(settings.roll_time),
@@ -50,7 +48,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
     .await?;
 
     let (iot_sink, iot_sink_server) = IotHotspotChangeReportV1::file_sink(
-        store_base_path,
+        &settings.cache,
         file_upload.clone(),
         FileSinkCommitStrategy::Automatic,
         FileSinkRollTime::Duration(settings.roll_time),
@@ -60,7 +58,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
 
     let (entity_ownership_sink, entity_ownership_sink_server) =
         EntityOwnershipChangeReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload.clone(),
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
@@ -70,7 +68,7 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
 
     let (entity_reward_destination_sink, entity_reward_destination_sink_server) =
         EntityRewardDestinationChangeReportV1::file_sink(
-            store_base_path,
+            &settings.cache,
             file_upload,
             FileSinkCommitStrategy::Automatic,
             FileSinkRollTime::Duration(settings.roll_time),
