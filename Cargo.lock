@@ -1353,7 +1353,7 @@ checksum = "89e25b6adfb930f02d1981565a6e5d9c547ac15a96606256d3b59040e5cd4ca3"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#2c7e3731563c1c4165a89aa2fa4e19206c3e16e1"
+source = "git+https://www.github.com/helium/proto.git?branch=mj%2Fchain-rewardable-entities#27dcdb5465551deef15e1083fe2d29d8131e2c29"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -2844,6 +2844,7 @@ dependencies = [
  "base64 0.22.1",
  "beacon",
  "blake3",
+ "bs58",
  "bytes",
  "chrono",
  "clap",
@@ -3503,7 +3504,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#2c7e3731563c1c4165a89aa2fa4e19206c3e16e1"
+source = "git+https://www.github.com/helium/proto.git?branch=mj%2Fchain-rewardable-entities#27dcdb5465551deef15e1083fe2d29d8131e2c29"
 dependencies = [
  "bytes",
  "prost",
@@ -4629,7 +4630,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -5414,7 +5415,7 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77e878c846a8abae00dd069496dbe8751b16ac1c3d6bd2a7283a938e8228f90d"
 dependencies = [
- "proc-macro-crate 3.3.0",
+ "proc-macro-crate 1.1.3",
  "proc-macro2",
  "quote",
  "syn 2.0.101",
@@ -11407,7 +11408,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

@@ -37,20 +37,19 @@ use std::path::Path;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_smithy_types_convert::stream::PaginationStreamExt;
+use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 pub use cli::bucket::FileFilter;
 pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};
-pub use iot_valid_poc::SCALING_PRECISION;
-pub use settings::Settings;
-
-use bytes::BytesMut;
 use futures::{
     future,
     stream::{self, BoxStream},
     FutureExt, StreamExt, TryFutureExt, TryStreamExt,
 };
+pub use iot_valid_poc::SCALING_PRECISION;
+pub use settings::Settings;
 
 pub type Client = aws_sdk_s3::Client;
 pub type Stream<T> = BoxStream<'static, Result<T>>;
@@ -76,6 +75,9 @@ pub async fn new_client(
         // would be nice to allow the "local" feature to be active, but not
         // enforce path style.
         s3_config = s3_config.force_path_style(true);
+
+        // Set a default region for local development (MinIO doesn't care about the region)
+        s3_config = s3_config.region(aws_config::Region::new("us-east-1"));
 
         if let Some((access_key_id, secret_access_key)) = _access_key_id.zip(_secret_access_key) {
             let creds = aws_sdk_s3::config::Credentials::builder()
