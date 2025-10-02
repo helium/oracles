@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::Path, str::FromStr};
+use std::{net::SocketAddr, str::FromStr};
 
 use chrono::Utc;
 use file_store::{
