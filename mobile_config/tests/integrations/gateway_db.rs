@@ -191,7 +191,7 @@ async fn gateway_bulk_upsert_updates_and_change(pool: PgPool) -> anyhow::Result<
 }
 
 #[sqlx::test]
-async fn stream_by_addresses_filters_by_min_updated(pool: PgPool) -> anyhow::Result<()> {
+async fn stream_by_addresses_filters_by_min_last_changed_at(pool: PgPool) -> anyhow::Result<()> {
     let a1 = pk_binary();
     let a2 = pk_binary();
     let t0 = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
@@ -206,15 +206,15 @@ async fn stream_by_addresses_filters_by_min_updated(pool: PgPool) -> anyhow::Res
     g2.hash = "y".into();
     g2.insert(&pool).await?;
 
-    // min_updated_at = t2 => expect empty
+    // min_last_changed_at = t2 => expect empty
     let s = Gateway::stream_by_addresses(&pool, vec![a1.clone(), a2.clone()], t2);
     pin_mut!(s);
     assert!(s.next().await.is_none());
 
-    // bump g1.updated_at to t2
+    // bump g1.last_changed_at to t2
     let mut g1b = g1.clone();
-    g1b.updated_at = t2;
-    g1b.refreshed_at = t0;
+    g1b.hash = "h1".to_string();
+    g1b.refreshed_at = t2;
     g1b.insert(&pool).await?;
 
     // now we should see g1 only

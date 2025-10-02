@@ -271,7 +271,7 @@ impl Gateway {
     pub fn stream_by_addresses<'a>(
         db: impl PgExecutor<'a> + 'a,
         addresses: Vec<PublicKeyBinary>,
-        min_updated_at: DateTime<Utc>,
+        min_last_changed_at: DateTime<Utc>,
     ) -> impl Stream<Item = Self> + 'a {
         let addr_array: Vec<Vec<u8>> = addresses.iter().map(|a| a.as_ref().to_vec()).collect();
 
@@ -293,11 +293,11 @@ impl Gateway {
                 location_asserts
             FROM gateways
             WHERE address = ANY($1)
-                AND (updated_at >= $2 OR refreshed_at >= $2 OR created_at >= $2)
+                AND last_changed_at >= $2
             "#,
         )
         .bind(addr_array)
-        .bind(min_updated_at)
+        .bind(min_last_changed_at)
         .fetch(db)
         .map_err(anyhow::Error::from)
         .filter_map(|res| async move { res.ok() })
@@ -306,7 +306,7 @@ impl Gateway {
     pub fn stream_by_types<'a>(
         db: impl PgExecutor<'a> + 'a,
         types: Vec<GatewayType>,
-        min_date: DateTime<Utc>,
+        min_last_changed_at: DateTime<Utc>,
         min_location_changed_at: Option<DateTime<Utc>>,
     ) -> impl Stream<Item = Self> + 'a {
         sqlx::query_as::<_, Self>(
@@ -327,7 +327,7 @@ impl Gateway {
                     location_asserts
                 FROM gateways
                 WHERE gateway_type = ANY($1)
-                AND (updated_at >= $2 OR refreshed_at >= $2 OR created_at >= $2)
+                AND last_changed_at >= $2
                 AND (
                     $3::timestamptz IS NULL
                     OR (location IS NOT NULL AND location_changed_at >= $3)
@@ -335,7 +335,7 @@ impl Gateway {
             "#,
         )
         .bind(types)
-        .bind(min_date)
+        .bind(min_last_changed_at)
         .bind(min_location_changed_at)
         .fetch(db)
         .map_err(anyhow::Error::from)
