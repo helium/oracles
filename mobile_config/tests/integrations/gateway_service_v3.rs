@@ -29,7 +29,7 @@ async fn gateway_stream_info_v3_basic(pool: PgPool) -> anyhow::Result<()> {
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at: now,
-        updated_at: now,
+        inserted_at: now,
         refreshed_at: now,
         last_changed_at: now_plus_10,
         hash: "".to_string(),
@@ -46,7 +46,7 @@ async fn gateway_stream_info_v3_basic(pool: PgPool) -> anyhow::Result<()> {
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiOutdoor,
         created_at: now_plus_10,
-        updated_at: now_plus_10,
+        inserted_at: now_plus_10,
         refreshed_at: now_plus_10,
         last_changed_at: now_plus_10,
         hash: "".to_string(),
@@ -107,7 +107,7 @@ async fn gateway_stream_info_v3_no_metadata(pool: PgPool) -> anyhow::Result<()> 
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at: now,
-        updated_at: now,
+        inserted_at: now,
         refreshed_at: now,
         last_changed_at: now_plus_10,
         hash: "".to_string(),
@@ -153,7 +153,7 @@ async fn gateway_stream_info_v3_no_deployment_info(pool: PgPool) -> anyhow::Resu
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at: now,
-        updated_at: now,
+        inserted_at: now,
         refreshed_at: now,
         last_changed_at: now_plus_10,
         hash: "".to_string(),
@@ -205,21 +205,21 @@ async fn gateway_stream_info_v3_updated_at(pool: PgPool) -> anyhow::Result<()> {
     let loc2 = 631711286145955327_u64;
 
     let created_at = Utc::now() - Duration::hours(5);
-    let updated_at = Utc::now() - Duration::hours(3);
+    let inserted_at = Utc::now() - Duration::hours(3);
 
     let gateway1 = Gateway {
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
-        updated_at,
-        refreshed_at: updated_at,
-        last_changed_at: updated_at,
+        inserted_at,
+        refreshed_at: inserted_at,
+        last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(18),
         elevation: Some(2),
         azimuth: Some(161),
         location: Some(loc1),
-        location_changed_at: Some(updated_at),
+        location_changed_at: Some(inserted_at),
         location_asserts: Some(1),
     };
     gateway1.insert(&pool).await?;
@@ -228,7 +228,7 @@ async fn gateway_stream_info_v3_updated_at(pool: PgPool) -> anyhow::Result<()> {
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
         created_at,
-        updated_at: created_at,
+        inserted_at: created_at,
         refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
@@ -248,7 +248,7 @@ async fn gateway_stream_info_v3_updated_at(pool: PgPool) -> anyhow::Result<()> {
         &mut client,
         &admin_key,
         &[],
-        updated_at.timestamp() as u64,
+        inserted_at.timestamp() as u64,
         0,
     )
     .await?;
@@ -299,7 +299,7 @@ async fn gateway_stream_info_v3_min_location_changed_at_zero(pool: PgPool) -> an
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at: now_minus_six,
-        updated_at: now_minus_six,
+        inserted_at: now_minus_six,
         refreshed_at: now_minus_six,
         last_changed_at: now_minus_three,
         hash: "".to_string(),
@@ -316,7 +316,7 @@ async fn gateway_stream_info_v3_min_location_changed_at_zero(pool: PgPool) -> an
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
         created_at: now_minus_six,
-        updated_at: now_minus_six,
+        inserted_at: now_minus_six,
         refreshed_at: now_minus_six,
         last_changed_at: now_minus_three,
         hash: "".to_string(),
@@ -370,7 +370,7 @@ async fn gateway_stream_info_v3_location_changed_at(pool: PgPool) -> anyhow::Res
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at: now_minus_six,
-        updated_at: now_minus_six,
+        inserted_at: now_minus_six,
         refreshed_at: now,
         last_changed_at: now_minus_three,
         hash: "".to_string(),
@@ -387,7 +387,7 @@ async fn gateway_stream_info_v3_location_changed_at(pool: PgPool) -> anyhow::Res
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
         created_at: now_minus_six,
-        updated_at: now_minus_six,
+        inserted_at: now_minus_six,
         refreshed_at: now,
         last_changed_at: now_minus_three,
         hash: "".to_string(),
@@ -449,7 +449,7 @@ async fn gateway_info_stream_v3(
     client: &mut GatewayClient<tonic::transport::Channel>,
     signer: &Keypair,
     device_types: &[DeviceTypeV2],
-    min_updated_at: u64,
+    min_inserted_at: u64,
     min_location_changed_at: u64,
 ) -> anyhow::Result<proto::GatewayInfoStreamResV3> {
     let mut req = GatewayInfoStreamReqV3 {
@@ -460,7 +460,7 @@ async fn gateway_info_stream_v3(
             .iter()
             .map(|v| DeviceTypeV2::into(*v))
             .collect(),
-        min_updated_at,
+        min_updated_at: min_inserted_at,
         min_location_changed_at,
     };
     req.signature = signer.sign(&req.encode_to_vec())?;

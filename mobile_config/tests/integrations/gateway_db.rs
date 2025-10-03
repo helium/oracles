@@ -1,10 +1,9 @@
+use crate::common;
 use chrono::{TimeZone, Utc};
 use futures::{pin_mut, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use mobile_config::gateway::db::{Gateway, GatewayType};
 use sqlx::PgPool;
-
-use crate::common;
 
 #[sqlx::test]
 async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
@@ -20,7 +19,7 @@ async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(gateway.gateway_type, GatewayType::WifiIndoor);
     assert_eq!(gateway.created_at, common::nanos_trunc(now));
-    assert_eq!(gateway.updated_at, common::nanos_trunc(now));
+    assert_eq!(gateway.inserted_at, common::nanos_trunc(now));
     assert_eq!(gateway.refreshed_at, common::nanos_trunc(now));
     assert_eq!(gateway.last_changed_at, common::nanos_trunc(now)); // first insert: equals refreshed_at
     assert_eq!(gateway.location, Some(123));
@@ -45,7 +44,7 @@ async fn gateway_upsert_last_changed_at_on_location_or_hash_change(
 
     // upsert with no change (only timestamps move)
     let mut same = gw(addr.clone(), GatewayType::WifiOutdoor, t0);
-    same.updated_at = t1;
+    same.inserted_at = t1;
     same.refreshed_at = t1;
     same.last_changed_at = t1; // should be ignored by SQL if no change
     same.insert(&pool).await?;
@@ -56,7 +55,7 @@ async fn gateway_upsert_last_changed_at_on_location_or_hash_change(
 
     // upsert with location change -> last_changed_at bumps to refreshed_at (t2)
     let mut loc = after_same.clone();
-    loc.updated_at = t2;
+    loc.inserted_at = t2;
     loc.refreshed_at = t2;
     loc.location = Some(456);
     loc.insert(&pool).await?;
@@ -67,7 +66,7 @@ async fn gateway_upsert_last_changed_at_on_location_or_hash_change(
 
     // upsert with hash change (location same) -> last_changed_at bumps again
     let mut h = after_loc.clone();
-    h.updated_at = t3;
+    h.inserted_at = t3;
     h.refreshed_at = t3;
     h.hash = "h1".into();
     h.insert(&pool).await?;
@@ -99,7 +98,7 @@ async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
             .await?
             .expect("row should exist");
         assert_eq!(got.created_at, common::nanos_trunc(now));
-        assert_eq!(got.updated_at, common::nanos_trunc(now));
+        assert_eq!(got.inserted_at, common::nanos_trunc(now));
         assert_eq!(got.refreshed_at, common::nanos_trunc(now));
         assert_eq!(got.last_changed_at, common::nanos_trunc(now));
         assert_eq!(got.location, Some(123));
@@ -124,11 +123,11 @@ async fn gateway_bulk_upsert_updates_and_change(pool: PgPool) -> anyhow::Result<
     // and change location for g2 (should bump last_changed_at)
     let t1 = Utc::now();
 
-    g1.updated_at = t1;
+    g1.inserted_at = t1;
     g1.refreshed_at = t1;
     // leave g1.location / g1.hash the same
 
-    g2.updated_at = t1;
+    g2.inserted_at = t1;
     g2.refreshed_at = t1;
     g2.location = Some(456); // change => last_changed_at should bump to t1
                              // g2.hash unchanged
@@ -141,7 +140,7 @@ async fn gateway_bulk_upsert_updates_and_change(pool: PgPool) -> anyhow::Result<
     let got1 = Gateway::get_by_address(&pool, &a1)
         .await?
         .expect("row should exist");
-    assert_eq!(got1.updated_at, common::nanos_trunc(t1));
+    assert_eq!(got1.inserted_at, common::nanos_trunc(t1));
     assert_eq!(got1.refreshed_at, common::nanos_trunc(t1));
     assert_eq!(
         got1.last_changed_at,
@@ -155,7 +154,7 @@ async fn gateway_bulk_upsert_updates_and_change(pool: PgPool) -> anyhow::Result<
     let got2 = Gateway::get_by_address(&pool, &a2)
         .await?
         .expect("row should exist");
-    assert_eq!(got2.updated_at, common::nanos_trunc(t1));
+    assert_eq!(got2.inserted_at, common::nanos_trunc(t1));
     assert_eq!(got2.refreshed_at, common::nanos_trunc(t1));
     assert_eq!(
         got2.last_changed_at,
@@ -168,7 +167,7 @@ async fn gateway_bulk_upsert_updates_and_change(pool: PgPool) -> anyhow::Result<
     // second upsert at t2: change hash only for g1, ensure bump
     let t2 = Utc::now();
 
-    g1.updated_at = t2;
+    g1.inserted_at = t2;
     g1.refreshed_at = t2;
     g1.hash = "h1".into(); // change ⇒ bump last_changed_at
 
@@ -178,7 +177,7 @@ async fn gateway_bulk_upsert_updates_and_change(pool: PgPool) -> anyhow::Result<
     let got1b = Gateway::get_by_address(&pool, &a1)
         .await?
         .expect("row should exist");
-    assert_eq!(got1b.updated_at, common::nanos_trunc(t2));
+    assert_eq!(got1b.inserted_at, common::nanos_trunc(t2));
     assert_eq!(got1b.refreshed_at, common::nanos_trunc(t2));
     assert_eq!(
         got1b.last_changed_at,
@@ -292,7 +291,7 @@ fn gw(address: PublicKeyBinary, gateway_type: GatewayType, t: chrono::DateTime<U
         address,
         gateway_type,
         created_at: t,
-        updated_at: t,
+        inserted_at: t,
         refreshed_at: t,
         last_changed_at: t, // initialize; SQL will manage on upsert
         hash: "h0".to_string(),
