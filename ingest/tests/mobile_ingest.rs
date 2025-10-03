@@ -11,11 +11,16 @@ mod common;
 const PUBKEY1: &str = "113HRxtzxFbFUjDEJJpyeMRZRtdAW38LAUnB5mshRwi6jt7uFbt";
 
 #[tokio::test]
-async fn submit_enabled_carriers_info() -> anyhow::Result<()> {
+async fn submit_enabled_carriers_info_valid() -> anyhow::Result<()> {
     let keypair = generate_keypair();
     let (mut client, trigger) = common::setup_mobile().await?;
     client
-        .submit_enabled_carriers_info(&keypair, PUBKEY1, vec![CarrierIdV2::Carrier0])
+        .submit_enabled_carriers_info(
+            &keypair,
+            PUBKEY1,
+            vec![CarrierIdV2::Carrier0],
+            Utc::now().timestamp_millis() as u64,
+        )
         .await?;
 
     let report = client.enabled_carriers_info_recv().await?;
@@ -30,6 +35,29 @@ async fn submit_enabled_carriers_info() -> anyhow::Result<()> {
         vec![CarrierIdV2::Carrier0 as i32]
     );
 
+    trigger.trigger();
+    Ok(())
+}
+
+#[tokio::test]
+async fn submit_enabled_carriers_info_expired() -> anyhow::Result<()> {
+    let keypair = generate_keypair();
+    let (mut client, trigger) = common::setup_mobile().await?;
+    let res = client
+        .submit_enabled_carriers_info(
+            &keypair,
+            PUBKEY1,
+            vec![CarrierIdV2::Carrier0],
+            Utc::now().timestamp_millis() as u64 - (610 * 1000), // 11 min
+        )
+        .await;
+
+    let binding = res.unwrap_err();
+    let err = binding.downcast_ref::<tonic::Status>().unwrap();
+    assert_eq!(
+        err.message(),
+        "The message is expired. It is generated more than 600 seconds ago"
+    );
     trigger.trigger();
     Ok(())
 }

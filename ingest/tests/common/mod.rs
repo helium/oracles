@@ -533,15 +533,15 @@ impl TestClient {
         keypair: &Keypair,
         hotspot_pubkey: &str,
         enabled_carriers: Vec<CarrierIdV2>,
+        request_timestamp: u64,
     ) -> anyhow::Result<EnabledCarriersInfoRespV1> {
         let hotspot_pubkey = PublicKeyBinary::from_str(hotspot_pubkey)?;
-        let timestamp_ms = Utc::now().timestamp_millis() as u64;
 
         let mut carrier_req = EnabledCarriersInfoReqV1 {
             hotspot_pubkey: hotspot_pubkey.into(),
             enabled_carriers: enabled_carriers.into_iter().map(|v| v.into()).collect(),
             firmware_version: "v11".to_string(),
-            timestamp_ms,
+            timestamp_ms: request_timestamp,
             signer_pubkey: keypair.public_key().into(),
             signature: vec![],
         };
