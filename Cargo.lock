@@ -3503,7 +3503,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#2c7e3731563c1c4165a89aa2fa4e19206c3e16e1"
+source = "git+https://www.github.com/helium/proto.git?branch=bbalser%2Fdata-transfer-sampling#b808dbfaa30cbf22e21cb5a2b42bdd80179ca869"
 dependencies = [
  "bytes",
  "prost",

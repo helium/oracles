@@ -409,6 +409,7 @@ fn mk_data_transfer_session(
         pub_key: pubkey.clone(),
         signature: vec![],
         carrier_id: CarrierIdV2::Carrier9,
+        sampling: false,
     }
 }
 
