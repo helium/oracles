@@ -81,8 +81,8 @@ pub struct Gateway {
     pub gateway_type: GatewayType,
     // When the record was first created from metadata DB
     pub created_at: DateTime<Utc>,
-    // When record was last updated
-    pub updated_at: DateTime<Utc>,
+    // When record was inserted
+    pub inserted_at: DateTime<Utc>,
     // When record was last updated from metadata DB (could be set to now if no metadata DB info)
     pub refreshed_at: DateTime<Utc>,
     // When location or hash last changed, set to refreshed_at (updated via SQL query see Gateway::insert)
@@ -96,6 +96,7 @@ pub struct Gateway {
     pub location_changed_at: Option<DateTime<Utc>>,
     pub location_asserts: Option<u32>,
 }
+
 #[derive(Debug)]
 pub struct LocationChangedAtUpdate {
     pub address: PublicKeyBinary,
@@ -113,7 +114,7 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                updated_at,
+                inserted_at,
                 refreshed_at,
                 last_changed_at,
                 hash,
@@ -130,7 +131,7 @@ impl Gateway {
             b.push_bind(g.address.as_ref())
                 .push_bind(g.gateway_type)
                 .push_bind(g.created_at)
-                .push_bind(g.updated_at)
+                .push_bind(g.inserted_at)
                 .push_bind(g.refreshed_at)
                 .push_bind(g.last_changed_at)
                 .push_bind(g.hash.as_str())
@@ -146,7 +147,7 @@ impl Gateway {
             " ON CONFLICT (address) DO UPDATE SET 
                 gateway_type = EXCLUDED.gateway_type,
                 created_at = EXCLUDED.created_at,
-                updated_at = EXCLUDED.updated_at,
+                inserted_at = EXCLUDED.inserted_at,
                 refreshed_at = EXCLUDED.refreshed_at,
                 last_changed_at = CASE 
                     WHEN gateways.location IS DISTINCT FROM EXCLUDED.location 
@@ -178,7 +179,7 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                updated_at,
+                inserted_at,
                 refreshed_at,
                 last_changed_at,
                 hash,
@@ -197,7 +198,7 @@ impl Gateway {
             DO UPDATE SET
                 gateway_type = EXCLUDED.gateway_type,
                 created_at = EXCLUDED.created_at,
-                updated_at = EXCLUDED.updated_at,
+                inserted_at = EXCLUDED.inserted_at,
                 refreshed_at = EXCLUDED.refreshed_at,
                 last_changed_at = CASE
                     WHEN gateways.location IS DISTINCT FROM EXCLUDED.location
@@ -221,7 +222,7 @@ impl Gateway {
         .bind(self.address.as_ref())
         .bind(self.gateway_type)
         .bind(self.created_at)
-        .bind(self.updated_at)
+        .bind(self.inserted_at)
         .bind(self.refreshed_at)
         .bind(self.last_changed_at)
         .bind(self.hash.as_str())
@@ -247,7 +248,7 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                updated_at,
+                inserted_at,
                 refreshed_at,
                 last_changed_at,
                 hash,
@@ -281,7 +282,7 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                updated_at,
+                inserted_at,
                 refreshed_at,
                 last_changed_at,
                 hash,
@@ -315,7 +316,7 @@ impl Gateway {
                     address,
                     gateway_type,
                     created_at,
-                    updated_at,
+                    inserted_at,
                     refreshed_at,
                     last_changed_at,
                     hash,
@@ -395,7 +396,7 @@ impl FromRow<'_, PgRow> for Gateway {
             address: PublicKeyBinary::from(row.try_get::<Vec<u8>, _>("address")?),
             gateway_type: row.try_get("gateway_type")?,
             created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
+            inserted_at: row.try_get("inserted_at")?,
             refreshed_at: row.try_get("refreshed_at")?,
             last_changed_at: row.try_get("last_changed_at")?,
             hash: row.try_get("hash")?,

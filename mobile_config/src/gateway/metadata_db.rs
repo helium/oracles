@@ -123,7 +123,7 @@ impl MobileHotspotInfo {
             address: self.entity_key.clone(),
             gateway_type: GatewayType::try_from(self.device_type.clone())?,
             created_at: self.created_at,
-            updated_at: Utc::now(),
+            inserted_at: Utc::now(),
             refreshed_at: self.refreshed_at.unwrap_or_else(Utc::now),
             // Updated via SQL query see Gateway::insert
             last_changed_at: Utc::now(),
