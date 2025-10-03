@@ -1,8 +1,6 @@
 use chrono::{DateTime, Utc};
 use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_source,
-    mobile_transfer::ValidDataTransferSession,
+    file_info_poller::FileInfoStream, file_source, mobile_transfer::ValidDataTransferSession,
     FileType,
 };
 use futures::{
@@ -41,7 +39,7 @@ impl DataSessionIngestor {
         let (data_session_ingest, data_session_ingest_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback(settings.start_after)
             .prefix(FileType::ValidDataTransferSession.to_string())
             .create()
             .await?;

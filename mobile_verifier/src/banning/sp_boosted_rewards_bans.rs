@@ -2,9 +2,7 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::{
-    file_info_poller::{
-        FileInfoPollerConfigBuilder, FileInfoStream, LookbackBehavior, ProstFileInfoPollerParser,
-    },
+    file_info_poller::{FileInfoPollerConfigBuilder, FileInfoStream, ProstFileInfoPollerParser},
     file_sink::FileSinkClient,
     file_upload::FileUpload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
@@ -162,7 +160,7 @@ where
             .parser(ProstFileInfoPollerParser)
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback(settings.start_after)
             .prefix(FileType::SPBoostedRewardsBannedRadioIngestReport.to_string())
             .create()
             .await?;

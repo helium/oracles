@@ -110,6 +110,18 @@ pub enum LookbackBehavior {
     Max(Duration),
 }
 
+impl From<DateTime<Utc>> for LookbackBehavior {
+    fn from(value: DateTime<Utc>) -> Self {
+        LookbackBehavior::StartAfter(value)
+    }
+}
+
+impl From<Duration> for LookbackBehavior {
+    fn from(value: Duration) -> Self {
+        LookbackBehavior::Max(value)
+    }
+}
+
 #[derive(Debug, Clone, Builder)]
 #[builder(pattern = "owned")]
 pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
@@ -119,6 +131,7 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
     store: Store,
     prefix: String,
     parser: Parser,
+    #[builder(setter(into))]
     lookback: LookbackBehavior,
     #[builder(default = "DEFAULT_OFFSET_DURATION")]
     offset: Duration,

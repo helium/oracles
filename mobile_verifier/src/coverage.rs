@@ -6,7 +6,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use file_store::{
     coverage::{self, CoverageObjectIngestReport},
-    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
@@ -99,7 +99,7 @@ impl CoverageDaemon {
         let (coverage_objs, coverage_objs_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback(settings.start_after)
             .prefix(FileType::CoverageObjectIngestReport.to_string())
             .create()
             .await?;
