@@ -2,13 +2,37 @@ use chrono::{TimeZone, Utc};
 use common::generate_keypair;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    DataTransferRadioAccessTechnology, RadioUsageCarrierTransferInfo,
+    CarrierIdV2, DataTransferRadioAccessTechnology, RadioUsageCarrierTransferInfo,
 };
 use std::str::FromStr;
 
 mod common;
 
 const PUBKEY1: &str = "113HRxtzxFbFUjDEJJpyeMRZRtdAW38LAUnB5mshRwi6jt7uFbt";
+
+#[tokio::test]
+async fn submit_enabled_carriers_info() -> anyhow::Result<()> {
+    let keypair = generate_keypair();
+    let (mut client, trigger) = common::setup_mobile().await?;
+    client
+        .submit_enabled_carriers_info(&keypair, PUBKEY1, vec![CarrierIdV2::Carrier0])
+        .await?;
+
+    let report = client.enabled_carriers_info_recv().await?;
+    let inner_report = report.report.expect("inner report");
+
+    assert_eq!(
+        PublicKeyBinary::from(inner_report.hotspot_pubkey).to_string(),
+        PUBKEY1
+    );
+    assert_eq!(
+        inner_report.enabled_carriers,
+        vec![CarrierIdV2::Carrier0 as i32]
+    );
+
+    trigger.trigger();
+    Ok(())
+}
 
 #[tokio::test]
 async fn submit_ban() -> anyhow::Result<()> {
