@@ -7,7 +7,8 @@ use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
     BanIngestReportV1, BanReqV1, BanRespV1, CarrierIdV2, CellHeartbeatReqV1, CellHeartbeatRespV1,
     DataTransferEvent, DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1,
-    DataTransferSessionReqV1, DataTransferSessionRespV1, HexUsageStatsIngestReportV1,
+    DataTransferSessionReqV1, DataTransferSessionRespV1, EnabledCarriersInfoReportV1,
+    EnabledCarriersInfoReqV1, EnabledCarriersInfoRespV1, HexUsageStatsIngestReportV1,
     HexUsageStatsReqV1, HexUsageStatsResV1, RadioUsageCarrierTransferInfo,
     RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
     UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
@@ -24,6 +25,7 @@ use mobile_config::client::authorization_client::AuthorizationVerifier;
 use mobile_config::client::ClientError;
 use prost::Message;
 use rand::rngs::OsRng;
+use std::str::FromStr;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::{net::TcpListener, sync::mpsc::Receiver, time::timeout};
@@ -78,6 +80,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let (subscriber_mapping_activity_tx, _subscriber_mapping_activity_rx) =
         tokio::sync::mpsc::channel(10);
     let (ban_tx, ban_rx) = tokio::sync::mpsc::channel(10);
+    let (enabled_carriers_tx, enabled_carriers_rx) = tokio::sync::mpsc::channel(10);
 
     tokio::spawn(async move {
         let grpc_server = GrpcServer::new(
@@ -95,6 +98,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             FileSinkClient::new(unique_connections_tx, "noop"),
             FileSinkClient::new(subscriber_mapping_activity_tx, "noop"),
             FileSinkClient::new(ban_tx, "noop"),
+            FileSinkClient::new(enabled_carriers_tx, "enabled_carriers_sink"),
             Network::MainNet,
             socket_addr,
             api_token,
@@ -114,6 +118,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
         unique_connections_rx,
         ban_rx,
         data_transfer_rx,
+        enabled_carriers_rx,
     )
     .await;
 
@@ -134,6 +139,7 @@ pub struct TestClient {
         Receiver<file_store::file_sink::Message<UniqueConnectionsIngestReportV1>>,
     ban_file_sink_rx: Receiver<file_store::file_sink::Message<BanIngestReportV1>>,
     data_transfer_rx: Receiver<file_store::file_sink::Message<DataTransferSessionIngestReportV1>>,
+    enabled_carriers_rx: Receiver<file_store::file_sink::Message<EnabledCarriersInfoReportV1>>,
 }
 
 impl TestClient {
@@ -158,6 +164,7 @@ impl TestClient {
         data_transfer_rx: Receiver<
             file_store::file_sink::Message<DataTransferSessionIngestReportV1>,
         >,
+        enabled_carriers_rx: Receiver<file_store::file_sink::Message<EnabledCarriersInfoReportV1>>,
     ) -> TestClient {
         let client = (|| PocMobileClient::connect(format!("http://{socket_addr}")))
             .retry(&ExponentialBuilder::default())
@@ -174,6 +181,7 @@ impl TestClient {
             unique_connections_file_sink_rx,
             ban_file_sink_rx,
             data_transfer_rx,
+            enabled_carriers_rx,
         }
     }
 
@@ -271,6 +279,20 @@ impl TestClient {
 
     pub async fn ban_recv(mut self) -> anyhow::Result<BanIngestReportV1> {
         match timeout(Duration::from_secs(2), self.ban_file_sink_rx.recv()).await {
+            Ok(Some(msg)) => match msg {
+                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
+                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
+                file_store::file_sink::Message::Data(_, data) => Ok(data),
+            },
+            Ok(None) => bail!("got none"),
+            Err(reason) => bail!("got error {reason}"),
+        }
+    }
+
+    pub async fn enabled_carriers_info_recv(
+        mut self,
+    ) -> anyhow::Result<EnabledCarriersInfoReportV1> {
+        match timeout(Duration::from_secs(2), self.enabled_carriers_rx.recv()).await {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
@@ -503,6 +525,33 @@ impl TestClient {
 
         let res = self.client.submit_data_transfer_session(request).await?;
 
+        Ok(res.into_inner())
+    }
+
+    pub async fn submit_enabled_carriers_info(
+        &mut self,
+        keypair: &Keypair,
+        hotspot_pubkey: &str,
+        enabled_carriers: Vec<CarrierIdV2>,
+        request_timestamp: u64,
+    ) -> anyhow::Result<EnabledCarriersInfoRespV1> {
+        let hotspot_pubkey = PublicKeyBinary::from_str(hotspot_pubkey)?;
+
+        let mut carrier_req = EnabledCarriersInfoReqV1 {
+            hotspot_pubkey: hotspot_pubkey.into(),
+            enabled_carriers: enabled_carriers.into_iter().map(|v| v.into()).collect(),
+            firmware_version: "v11".to_string(),
+            timestamp_ms: request_timestamp,
+            signer_pubkey: keypair.public_key().into(),
+            signature: vec![],
+        };
+        carrier_req.signature = keypair.sign(&carrier_req.encode_to_vec()).expect("sign");
+        let mut request = Request::new(carrier_req);
+        let metadata = request.metadata_mut();
+
+        metadata.insert("authorization", self.authorization.clone());
+
+        let res = self.client.submit_enabled_carriers_info(request).await?;
         Ok(res.into_inner())
     }
 }
