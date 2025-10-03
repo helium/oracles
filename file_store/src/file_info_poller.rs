@@ -10,10 +10,10 @@ use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
-const DEFAULT_POLL_DURATION: std::time::Duration =
-    std::time::Duration::from_secs(DEFAULT_POLL_DURATION_SECS as u64);
-const CLEAN_DURATION: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
-const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(3 * 60 * 60);
+const DEFAULT_POLL_DURATION: Duration = Duration::from_secs(DEFAULT_POLL_DURATION_SECS as u64);
+const DEFAULT_OFFSET_DURATION: Duration = Duration::from_secs(10 * 60);
+const CLEAN_DURATION: Duration = Duration::from_secs(12 * 60 * 60);
+const CACHE_TTL: Duration = Duration::from_secs(3 * 60 * 60);
 
 type MemoryFileCache = Arc<Cache<String, bool>>;
 
@@ -120,7 +120,7 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
     prefix: String,
     parser: Parser,
     lookback: LookbackBehavior,
-    #[builder(default = "Duration::from_secs(10 * 60)")]
+    #[builder(default = "DEFAULT_OFFSET_DURATION")]
     offset: Duration,
     #[builder(default = "5")]
     queue_size: usize,
@@ -291,14 +291,7 @@ where
     }
 
     fn after(&self, latest: Option<DateTime<Utc>>) -> DateTime<Utc> {
-        let latest_offset = latest.map(|lt| lt - self.config.offset);
-        match self.config.lookback {
-            LookbackBehavior::StartAfter(start_after) => latest_offset.unwrap_or(start_after),
-            LookbackBehavior::Max(max_lookback) => {
-                let max_ts = Utc::now() - max_lookback;
-                latest_offset.map(|lt| lt.max(max_ts)).unwrap_or(max_ts)
-            }
-        }
+        lookup_after(self.config.lookback.clone(), self.config.offset, latest)
     }
 
     async fn clean(&self, cache: &MemoryFileCache) -> Result {
@@ -339,6 +332,28 @@ where
                 .await
         }
     }
+}
+
+/// We should always be trying to take the latest possible value.
+///
+/// If a `start_after` configuration has been changed to be later than the
+/// `latest_timestamp` in the database, we should skip the files in between.
+///
+/// This prevents us from needing update the `files_processed` table by hand
+/// when we want to move file processing forward in time.
+fn lookup_after(
+    lookback: LookbackBehavior,
+    offset: Duration,
+    latest: Option<DateTime<Utc>>,
+) -> DateTime<Utc> {
+    let latest_offset = latest.map(|lt| lt - offset);
+
+    let lookback = match lookback {
+        LookbackBehavior::StartAfter(start_after) => start_after,
+        LookbackBehavior::Max(max_lookback) => Utc::now() - max_lookback,
+    };
+
+    latest_offset.map(|lt| lt.max(lookback)).unwrap_or(lookback)
 }
 
 pub struct MsgDecodeFileInfoPollerParser;
@@ -712,5 +727,108 @@ pub mod sqlx_postgres {
 
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::DurationRound;
+
+    use super::*;
+
+    #[test]
+    fn lookback_start_after_always_chooses_latest() {
+        // If a service updates it's `start_after` config, we want to do our
+        // best to respect what they're trying to do. When it's set to something
+        // later than the latest processed file, we should skip the in between
+        // files.
+
+        let default_offset = Duration::from_secs(10 * 60);
+        let now = Utc::now();
+
+        // No latest timestamp
+        assert_eq!(
+            lookup_after(LookbackBehavior::StartAfter(now), default_offset, None),
+            now,
+            "No latest timestamp, use now"
+        );
+
+        // Latest Timestamp same as start_after
+        assert_eq!(
+            lookup_after(LookbackBehavior::StartAfter(now), default_offset, Some(now)),
+            now,
+            "Latest timestamp same as start_after, use now"
+        );
+
+        // Latest Timestamp newer than start_after
+        assert_eq!(
+            lookup_after(
+                LookbackBehavior::StartAfter(now - chrono::Duration::minutes(12)),
+                default_offset,
+                Some(now)
+            ),
+            now - default_offset,
+            "Latest Timestamp newer than start_after, use latest - offset"
+        );
+
+        // Latest Timestamp older than start_after
+        assert_eq!(
+            lookup_after(
+                LookbackBehavior::StartAfter(now - chrono::Duration::minutes(12)),
+                default_offset,
+                Some(now - chrono::Duration::minutes(20))
+            ),
+            now - chrono::Duration::minutes(12),
+            "Latest Timestamp older than start_after, use start_after"
+        );
+    }
+
+    #[tokio::test]
+    async fn lookback_max_lookback_always_chooses_latest() {
+        let default_offset = Duration::from_secs(10 * 60);
+        let now = Utc::now();
+
+        // after() uses Utc::now() for calculating max_lookback times.
+        // round timestamps to within tolerance.
+        fn round_to_sec(value: DateTime<Utc>) -> DateTime<Utc> {
+            value.duration_round(chrono::Duration::seconds(1)).unwrap()
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        for _ in 0..10_000 {
+            // No latest timestamp
+            assert_eq!(
+                round_to_sec(lookup_after(
+                    LookbackBehavior::Max(Duration::from_secs(10)),
+                    default_offset,
+                    None
+                )),
+                round_to_sec(now - Duration::from_secs(10)),
+                "No latest timestamp, use now - max_lookback"
+            );
+        }
+
+        // Latest Timestamp with offset older than max_lookback
+        assert_eq!(
+            round_to_sec(lookup_after(
+                LookbackBehavior::Max(Duration::from_secs(10)),
+                default_offset,
+                Some(now)
+            )),
+            round_to_sec(now - Duration::from_secs(10)),
+            "Latest Timestamp with offset older than max_lookback, use now - max_lookback"
+        );
+
+        // Latest Timestamp with offset newer than max_lookback
+        assert_eq!(
+            round_to_sec(lookup_after(
+                LookbackBehavior::Max(default_offset * 2),
+                default_offset,
+                Some(now)
+            )),
+            round_to_sec(now - default_offset),
+            "Latest Timestamp with offset newer than max_lookback, use latest - offset"
+        );
     }
 }
