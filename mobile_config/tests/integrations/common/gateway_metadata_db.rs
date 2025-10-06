@@ -46,7 +46,7 @@ pub async fn insert_gateway_bulk(
                     let device_type_json: serde_json::Value =
                         serde_json::from_str(&gw.device_type).unwrap();
                     let deployment_info_json: serde_json::Value =
-                        serde_json::from_str(&gw.deployment_info.as_deref().unwrap_or("null"))
+                        serde_json::from_str(gw.deployment_info.as_deref().unwrap_or("null"))
                             .unwrap();
 
                     b.push_bind(&gw.asset)
