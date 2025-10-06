@@ -10,6 +10,7 @@ use sqlx::PgPool;
 
 #[sqlx::test]
 async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
+    // Tested with 100k
     const TOTAL: usize = 10_000;
 
     custom_tracing::init("mobile_config=debug,info".to_string(), Settings::default()).await?;

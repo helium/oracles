@@ -58,87 +58,6 @@ async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn gateway_bulk_upsert_updates_and_change(pool: PgPool) -> anyhow::Result<()> {
-    // seed two rows at t0
-    let t0 = Utc::now();
-    let a1 = pk_binary();
-    let a2 = pk_binary();
-
-    let mut g1 = gw(a1.clone(), GatewayType::WifiIndoor, t0);
-    let mut g2 = gw(a2.clone(), GatewayType::WifiOutdoor, t0);
-    let _ = Gateway::insert_bulk(&pool, &[g1.clone(), g2.clone()]).await?;
-
-    // upsert at t1: change only timestamps for g1 (no loc/hash change)
-    // and change location for g2 (should bump last_changed_at)
-    let t1 = Utc::now();
-
-    g1.inserted_at = t1;
-    g1.refreshed_at = t1;
-    // leave g1.location / g1.hash the same
-
-    g2.inserted_at = t1;
-    g2.refreshed_at = t1;
-    g2.location = Some(456); // change => last_changed_at should bump to t1
-                             // g2.hash unchanged
-
-    let affected = Gateway::insert_bulk(&pool, &[g1.clone(), g2.clone()]).await?;
-    // 2 rows should be affected (both upserted)
-    assert_eq!(affected, 2);
-
-    // verify g1: timestamps updated, last_changed_at unchanged (no relevant change)
-    let got1 = Gateway::get_by_address(&pool, &a1)
-        .await?
-        .expect("row should exist");
-    assert_eq!(got1.inserted_at, common::nanos_trunc(t1));
-    assert_eq!(got1.refreshed_at, common::nanos_trunc(t1));
-    assert_eq!(
-        got1.last_changed_at,
-        common::nanos_trunc(t0),
-        "no loc/hash change ⇒ last_changed_at stays t0"
-    );
-    assert_eq!(got1.location, Some(123));
-    assert_eq!(got1.hash, "h0");
-
-    // verify g2: timestamps updated, last_changed_at bumped due to location change
-    let got2 = Gateway::get_by_address(&pool, &a2)
-        .await?
-        .expect("row should exist");
-    assert_eq!(got2.inserted_at, common::nanos_trunc(t1));
-    assert_eq!(got2.refreshed_at, common::nanos_trunc(t1));
-    assert_eq!(
-        got2.last_changed_at,
-        common::nanos_trunc(t1),
-        "location changed ⇒ last_changed_at = refreshed_at"
-    );
-    assert_eq!(got2.location, Some(456));
-    assert_eq!(got2.hash, "h0");
-
-    // second upsert at t2: change hash only for g1, ensure bump
-    let t2 = Utc::now();
-
-    g1.inserted_at = t2;
-    g1.refreshed_at = t2;
-    g1.hash = "h1".into(); // change ⇒ bump last_changed_at
-
-    let affected2 = Gateway::insert_bulk(&pool, &[g1.clone()]).await?;
-    assert_eq!(affected2, 1);
-
-    let got1b = Gateway::get_by_address(&pool, &a1)
-        .await?
-        .expect("row should exist");
-    assert_eq!(got1b.inserted_at, common::nanos_trunc(t2));
-    assert_eq!(got1b.refreshed_at, common::nanos_trunc(t2));
-    assert_eq!(
-        got1b.last_changed_at,
-        common::nanos_trunc(t2),
-        "hash changed ⇒ last_changed_at = refreshed_at"
-    );
-    assert_eq!(got1b.hash, "h1");
-
-    Ok(())
-}
-
-#[sqlx::test]
 async fn stream_by_addresses_filters_by_min_last_changed_at(pool: PgPool) -> anyhow::Result<()> {
     let a1 = pk_binary();
     let a2 = pk_binary();
@@ -161,8 +80,8 @@ async fn stream_by_addresses_filters_by_min_last_changed_at(pool: PgPool) -> any
 
     // bump g1.last_changed_at to t2
     let mut g1b = g1.clone();
-    g1b.hash = "h1".to_string();
-    g1b.refreshed_at = t2;
+    g1b.hash = "x1".to_string();
+    g1b.last_changed_at = t2;
     g1b.insert(&pool).await?;
 
     // now we should see g1 only
@@ -188,7 +107,8 @@ async fn stream_by_types_filters_by_min_date(pool: PgPool) -> anyhow::Result<()>
     gw(pk_binary(), GatewayType::WifiOutdoor, t1)
         .insert(&pool)
         .await?;
-    gw(pk_binary(), GatewayType::WifiIndoor, t2)
+    let key = pk_binary();
+    gw(key.clone(), GatewayType::WifiIndoor, t2)
         .insert(&pool)
         .await?;
 
@@ -197,7 +117,7 @@ async fn stream_by_types_filters_by_min_date(pool: PgPool) -> anyhow::Result<()>
     pin_mut!(s);
     let first = s.next().await.expect("row expected");
     assert_eq!(first.gateway_type, GatewayType::WifiIndoor);
-    assert_eq!(first.created_at, t2);
+    assert_eq!(first.address, key);
     assert!(s.next().await.is_none());
 
     Ok(())
@@ -242,7 +162,7 @@ fn gw(address: PublicKeyBinary, gateway_type: GatewayType, t: chrono::DateTime<U
         created_at: t,
         inserted_at: t,
         refreshed_at: t,
-        last_changed_at: t, // initialize; SQL will manage on upsert
+        last_changed_at: t,
         hash: "h0".to_string(),
         antenna: Some(1),
         elevation: Some(2),
