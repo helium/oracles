@@ -2,7 +2,10 @@ use crate::gateway::{db::Gateway, metadata_db::MobileHotspotInfo};
 use futures::{stream::TryChunksError, TryFutureExt};
 use futures_util::TryStreamExt;
 use sqlx::{Pool, Postgres};
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 use task_manager::ManagedTask;
 
 const EXECUTE_DURATION_METRIC: &str =
@@ -67,11 +70,60 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
 
     let total: u64 = MobileHotspotInfo::stream(metadata)
         .map_err(anyhow::Error::from)
-        .try_filter_map(|mhi| async move { mhi.to_gateway() })
+        .try_filter_map(|mhi| async move {
+            match mhi.to_gateway() {
+                Ok(Some(gw)) => Ok(Some(gw)),
+                Ok(None) => Ok(None),
+                Err(e) => {
+                    tracing::error!(?e, "error converting gateway");
+                    Err(e)
+                }
+            }
+        })
         .try_chunks(BATCH_SIZE)
         .map_err(|TryChunksError(_gateways, err)| err)
         .try_fold(0, |total, batch| async move {
-            let affected = Gateway::insert_bulk(pool, &batch).await?;
+            let addresses: Vec<_> = batch.iter().map(|gw| gw.address.clone()).collect();
+            let existing_gateways = Gateway::get_by_addresses(pool, addresses).await?;
+            let mut existing_map = existing_gateways
+                .into_iter()
+                .map(|gw| (gw.address.clone(), gw))
+                .collect::<HashMap<_, _>>();
+
+            let mut to_insert = Vec::with_capacity(batch.len());
+
+            for mut gw in batch {
+                match existing_map.remove(&gw.address) {
+                    None => {
+                        // New gateway
+                        to_insert.push(gw);
+                    }
+                    Some(last_gw) => {
+                        // FYI hash includes location
+                        let loc_changed = gw.location != last_gw.location;
+                        let hash_changed = gw.hash != last_gw.hash;
+
+                        gw.last_changed_at = if hash_changed {
+                            gw.refreshed_at
+                        } else {
+                            last_gw.last_changed_at
+                        };
+
+                        gw.location_changed_at = if loc_changed {
+                            Some(gw.refreshed_at)
+                        } else {
+                            last_gw.location_changed_at
+                        };
+
+                        // We only add record if something changed
+                        if hash_changed {
+                            to_insert.push(gw);
+                        }
+                    }
+                }
+            }
+
+            let affected = Gateway::insert_bulk(pool, &to_insert).await?;
             Ok(total + affected)
         })
         .await?;

@@ -1,76 +1,114 @@
 use bs58;
 use chrono::{DateTime, Utc};
+use futures::{stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, QueryBuilder};
 
-#[allow(clippy::too_many_arguments)]
-pub async fn insert_gateway(
-    pool: &PgPool,
-    asset: &str,
-    location: Option<i64>,
-    device_type: &str,
-    key: PublicKeyBinary,
-    created_at: DateTime<Utc>,
-    refreshed_at: Option<DateTime<Utc>>,
-    deployment_info: Option<&str>,
-) {
-    insert_mobile_hotspot_infos(
-        pool,
-        asset,
-        location,
-        device_type,
-        created_at,
-        refreshed_at,
-        deployment_info,
-    )
-    .await;
-    insert_asset_key(pool, asset, key).await;
+pub struct GatewayInsert {
+    pub asset: String,
+    pub location: Option<i64>,
+    pub device_type: String,
+    pub key: PublicKeyBinary,
+    pub created_at: DateTime<Utc>,
+    pub refreshed_at: Option<DateTime<Utc>>,
+    pub deployment_info: Option<String>,
 }
 
-async fn insert_mobile_hotspot_infos(
+pub async fn insert_gateway_bulk(
+    pool: &PgPool,
+    gateways: &[GatewayInsert],
+    chunk_size: usize,
+) -> anyhow::Result<()> {
+    stream::iter(gateways.chunks(chunk_size))
+        .map(Ok) // convert chunks to a Result for try_for_each_concurrent
+        .try_for_each_concurrent(Some(20), |chunk| {
+            let pool = pool.clone();
+            async move {
+                let mut tx = pool.begin().await?;
+
+                // insert mobile_hotspot_infos
+                let mut qb = QueryBuilder::<Postgres>::new(
+                    r#"
+                    INSERT INTO mobile_hotspot_infos (
+                        asset, location, device_type, created_at,
+                        refreshed_at, deployment_info, num_location_asserts
+                    )
+                    "#,
+                );
+
+                qb.push_values(chunk, |mut b, gw| {
+                    let num_locations = if gw.location.is_some() {
+                        Some(1)
+                    } else {
+                        Some(0)
+                    };
+
+                    let device_type_json: serde_json::Value =
+                        serde_json::from_str(&gw.device_type).unwrap();
+                    let deployment_info_json: serde_json::Value =
+                        serde_json::from_str(&gw.deployment_info.as_deref().unwrap_or("null"))
+                            .unwrap();
+
+                    b.push_bind(&gw.asset)
+                        .push_bind(gw.location)
+                        .push_bind(device_type_json)
+                        .push_bind(gw.created_at)
+                        .push_bind(gw.refreshed_at)
+                        .push_bind(deployment_info_json)
+                        .push_bind(num_locations);
+                });
+
+                qb.build().execute(&mut *tx).await?;
+
+                // insert key_to_assets
+                let mut qb1 = QueryBuilder::<Postgres>::new(
+                    r#"
+                    INSERT INTO key_to_assets (
+                        asset, entity_key
+                    )
+                    "#,
+                );
+
+                qb1.push_values(chunk, |mut b, gw| {
+                    let b58 = bs58::decode(gw.key.to_string()).into_vec().unwrap();
+                    b.push_bind(&gw.asset).push_bind(b58);
+                });
+
+                qb1.build().execute(&mut *tx).await?;
+
+                tx.commit().await?;
+
+                Ok::<_, anyhow::Error>(())
+            }
+        })
+        .await?;
+
+    Ok(())
+}
+
+pub async fn update_gateway(
     pool: &PgPool,
     asset: &str,
-    location: Option<i64>,
-    device_type: &str,
-    created_at: DateTime<Utc>,
-    refreshed_at: Option<DateTime<Utc>>,
-    deployment_info: Option<&str>,
-) {
-    let num_locations = if location.is_some() { Some(1) } else { Some(0) };
+    location: i64,
+    refreshed_at: DateTime<Utc>,
+) -> anyhow::Result<()> {
     sqlx::query(
         r#"
-            INSERT INTO
-"mobile_hotspot_infos" ("asset", "location", "device_type", "created_at", "refreshed_at", "deployment_info", "num_location_asserts")
-            VALUES
-($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7);
-    "#,
+        UPDATE mobile_hotspot_infos
+        SET location = $1,
+            num_location_asserts = $2,
+            refreshed_at = $3
+        WHERE asset = $4
+        "#,
     )
-    .bind(asset)
     .bind(location)
-    .bind(device_type)
-    .bind(created_at)
+    .bind(2)
     .bind(refreshed_at)
-    .bind(deployment_info)
-    .bind(num_locations)
-    .execute(pool)
-    .await
-    .unwrap();
-}
-
-async fn insert_asset_key(pool: &PgPool, asset: &str, key: PublicKeyBinary) {
-    let b58 = bs58::decode(key.to_string()).into_vec().unwrap();
-    sqlx::query(
-        r#"
-    INSERT INTO
-    "key_to_assets" ("asset", "entity_key")
-    VALUES ($1, $2);
-    "#,
-    )
     .bind(asset)
-    .bind(b58)
     .execute(pool)
-    .await
-    .unwrap();
+    .await?;
+
+    Ok(())
 }
 
 pub async fn create_tables(pool: &PgPool) {

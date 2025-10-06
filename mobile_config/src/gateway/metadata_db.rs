@@ -119,14 +119,15 @@ impl MobileHotspotInfo {
             None => (None, None, None),
         };
 
+        let refreshed_at = self.refreshed_at.unwrap_or_else(Utc::now);
+
         Ok(Some(Gateway {
             address: self.entity_key.clone(),
             gateway_type: GatewayType::try_from(self.device_type.clone())?,
             created_at: self.created_at,
             inserted_at: Utc::now(),
-            refreshed_at: self.refreshed_at.unwrap_or_else(Utc::now),
-            // Updated via SQL query see Gateway::insert
-            last_changed_at: Utc::now(),
+            refreshed_at,
+            last_changed_at: refreshed_at,
             hash: self.compute_hash(),
             antenna,
             elevation,
@@ -134,7 +135,7 @@ impl MobileHotspotInfo {
             location,
             // Set to refreshed_at when hotspot has a location, None otherwise
             location_changed_at: if location.is_some() {
-                Some(self.refreshed_at.unwrap_or_else(Utc::now))
+                Some(refreshed_at)
             } else {
                 None
             },
@@ -164,7 +165,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for MobileHotspotInfo {
             )
             .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
             refreshed_at: row.get::<Option<DateTime<Utc>>, &str>("refreshed_at"),
-            created_at: row.get::<DateTime<Utc>, &str>("refreshed_at"),
+            created_at: row.get::<DateTime<Utc>, &str>("created_at"),
             location: row.get::<Option<i64>, &str>("location"),
             is_full_hotspot: row.get::<Option<bool>, &str>("is_full_hotspot"),
             num_location_asserts: row.get::<Option<i32>, &str>("num_location_asserts"),

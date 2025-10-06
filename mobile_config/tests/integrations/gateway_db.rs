@@ -28,57 +28,6 @@ async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn gateway_upsert_last_changed_at_on_location_or_hash_change(
-    pool: PgPool,
-) -> anyhow::Result<()> {
-    let addr = pk_binary();
-    let t0 = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
-    let t1 = Utc.with_ymd_and_hms(2025, 1, 2, 0, 0, 0).unwrap();
-    let t2 = Utc.with_ymd_and_hms(2025, 1, 3, 0, 0, 0).unwrap();
-    let t3 = Utc.with_ymd_and_hms(2025, 1, 4, 0, 0, 0).unwrap();
-
-    // insert baseline
-    gw(addr.clone(), GatewayType::WifiOutdoor, t0)
-        .insert(&pool)
-        .await?;
-
-    // upsert with no change (only timestamps move)
-    let mut same = gw(addr.clone(), GatewayType::WifiOutdoor, t0);
-    same.inserted_at = t1;
-    same.refreshed_at = t1;
-    same.last_changed_at = t1; // should be ignored by SQL if no change
-    same.insert(&pool).await?;
-
-    let after_same = Gateway::get_by_address(&pool, &addr).await?.unwrap();
-    assert_eq!(after_same.refreshed_at, t1);
-    assert_eq!(after_same.last_changed_at, t0); // unchanged
-
-    // upsert with location change -> last_changed_at bumps to refreshed_at (t2)
-    let mut loc = after_same.clone();
-    loc.inserted_at = t2;
-    loc.refreshed_at = t2;
-    loc.location = Some(456);
-    loc.insert(&pool).await?;
-
-    let after_loc = Gateway::get_by_address(&pool, &addr).await?.unwrap();
-    assert_eq!(after_loc.location, Some(456));
-    assert_eq!(after_loc.last_changed_at, t2);
-
-    // upsert with hash change (location same) -> last_changed_at bumps again
-    let mut h = after_loc.clone();
-    h.inserted_at = t3;
-    h.refreshed_at = t3;
-    h.hash = "h1".into();
-    h.insert(&pool).await?;
-
-    let after_hash = Gateway::get_by_address(&pool, &addr).await?.unwrap();
-    assert_eq!(after_hash.hash, "h1");
-    assert_eq!(after_hash.last_changed_at, t3);
-
-    Ok(())
-}
-
-#[sqlx::test]
 async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
     let now = Utc::now();
 

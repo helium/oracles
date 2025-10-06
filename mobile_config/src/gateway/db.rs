@@ -143,31 +143,6 @@ impl Gateway {
                 .push_bind(g.location_asserts.map(|v| v as i64));
         });
 
-        qb.push(
-            " ON CONFLICT (address) DO UPDATE SET 
-                gateway_type = EXCLUDED.gateway_type,
-                created_at = EXCLUDED.created_at,
-                inserted_at = EXCLUDED.inserted_at,
-                refreshed_at = EXCLUDED.refreshed_at,
-                last_changed_at = CASE 
-                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location 
-                      OR gateways.hash     IS DISTINCT FROM EXCLUDED.hash 
-                    THEN EXCLUDED.refreshed_at 
-                    ELSE gateways.last_changed_at 
-                END,
-                hash = EXCLUDED.hash,
-                antenna = EXCLUDED.antenna,
-                elevation = EXCLUDED.elevation,
-                azimuth = EXCLUDED.azimuth,
-                location = EXCLUDED.location,
-                location_changed_at = CASE 
-                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location 
-                    THEN EXCLUDED.refreshed_at 
-                    ELSE gateways.location_changed_at 
-                END,
-                location_asserts = EXCLUDED.location_asserts",
-        );
-
         let res = qb.build().execute(pool).await?;
         Ok(res.rows_affected())
     }
@@ -194,29 +169,6 @@ impl Gateway {
                 $1, $2, $3, $4, $5, $6, $7,
                 $8, $9, $10, $11, $12, $13
             )
-            ON CONFLICT (address)
-            DO UPDATE SET
-                gateway_type = EXCLUDED.gateway_type,
-                created_at = EXCLUDED.created_at,
-                inserted_at = EXCLUDED.inserted_at,
-                refreshed_at = EXCLUDED.refreshed_at,
-                last_changed_at = CASE
-                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location
-                        OR gateways.hash IS DISTINCT FROM EXCLUDED.hash
-                    THEN EXCLUDED.refreshed_at
-                    ELSE gateways.last_changed_at
-                END,
-                hash = EXCLUDED.hash,
-                antenna = EXCLUDED.antenna,
-                elevation = EXCLUDED.elevation,
-                azimuth = EXCLUDED.azimuth,
-                location = EXCLUDED.location,
-                location_changed_at = CASE
-                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location
-                    THEN EXCLUDED.refreshed_at
-                    ELSE gateways.location_changed_at
-                END,
-                location_asserts = EXCLUDED.location_asserts
             "#,
         )
         .bind(self.address.as_ref())
@@ -260,6 +212,8 @@ impl Gateway {
                 location_asserts
             FROM gateways
             WHERE address = $1
+            ORDER BY inserted_at DESC
+            LIMIT 1
             "#,
         )
         .bind(address.as_ref())
@@ -267,6 +221,40 @@ impl Gateway {
         .await?;
 
         Ok(gateway)
+    }
+
+    pub async fn get_by_addresses<'a>(
+        db: impl PgExecutor<'a>,
+        addresses: Vec<PublicKeyBinary>,
+    ) -> anyhow::Result<Vec<Self>> {
+        let addr_array: Vec<Vec<u8>> = addresses.iter().map(|a| a.as_ref().to_vec()).collect();
+
+        let rows = sqlx::query_as::<_, Self>(
+            r#"
+            SELECT DISTINCT ON (address)
+                address,
+                gateway_type,
+                created_at,
+                inserted_at,
+                refreshed_at,
+                last_changed_at,
+                hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
+            FROM gateways
+            WHERE address = ANY($1)
+            ORDER BY address, inserted_at DESC
+            "#,
+        )
+        .bind(addr_array)
+        .fetch_all(db)
+        .await?;
+
+        Ok(rows)
     }
 
     pub fn stream_by_addresses<'a>(
