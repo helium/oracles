@@ -514,6 +514,7 @@ impl TestClient {
             signature: vec![],
             rewardable_bytes: 0,
             carrier_id_v2: CarrierIdV2::Carrier9 as i32,
+            sampling: false,
         };
 
         data_transfer.signature = keypair.sign(&data_transfer.encode_to_vec())?;
