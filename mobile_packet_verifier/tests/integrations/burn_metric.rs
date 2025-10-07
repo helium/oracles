@@ -28,6 +28,7 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
             pub_key: PublicKeyBinary::from(vec![1]),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![1]),
                 upload_bytes: 0,
