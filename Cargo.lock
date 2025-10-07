@@ -3503,7 +3503,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://www.github.com/helium/proto.git?branch=kurotych%2Fcarrier-enablement#a76d99d7b8e64e9f1c32f848b84b85b4fd395015"
+source = "git+https://github.com/helium/proto?branch=master#896300abe6d5fda16c1652253f91b7ab6d5d1770"
 dependencies = [
  "bytes",
  "prost",
