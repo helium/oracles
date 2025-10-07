@@ -87,7 +87,7 @@ where
         let (speedtests, speedtests_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(settings.start_after)
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::CellSpeedtestIngestReport.to_string())
             .create()
             .await?;

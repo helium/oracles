@@ -131,7 +131,6 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
     store: Store,
     prefix: String,
     parser: Parser,
-    #[builder(setter(into))]
     lookback: LookbackBehavior,
     #[builder(default = "DEFAULT_OFFSET_DURATION")]
     offset: Duration,
@@ -141,6 +140,31 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
     process_name: String,
     #[builder(setter(skip))]
     p: PhantomData<Message>,
+}
+
+impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, Store, Parser> {
+    /// Set the lookback behavior to start after the given timestamp.
+    ///
+    /// `start_after` is compared to
+    /// [`latest_file_timestamp`](FileInfoPollerServer::latest_file_timestamp) -
+    /// [`offset`](Self::offset).
+    ///
+    /// The latest timestamp is used for polling.
+    pub fn lookback_start_after(self, start_after: DateTime<Utc>) -> Self {
+        self.lookback(LookbackBehavior::StartAfter(start_after))
+    }
+
+    /// Set the lookback behavior to the maximum lookback duration.
+    ///
+    /// Polling for files will lookback `Utc::now() - max_lookback` or
+    /// [`latest_file_timestamp`](FileInfoPollerServer::latest_file_timestamp) -
+    /// [`offset`](Self::offset).
+    ///
+    /// If a file comes in late, and is outside the
+    /// `max_lookback` window, it will not be retreived.
+    pub fn lookback_max(self, max_lookback: Duration) -> Self {
+        self.lookback(LookbackBehavior::Max(max_lookback))
+    }
 }
 
 impl<Message, State, Parser>
@@ -679,7 +703,7 @@ pub mod sqlx_postgres {
                     .parser(TestParser)
                     .state(pool.clone())
                     .store(TestStore(infos.clone()))
-                    .lookback(LookbackBehavior::Max(six_hours))
+                    .lookback_max(six_hours)
                     .prefix("file_type".to_string())
                     .offset(six_hours)
                     .create()

@@ -61,7 +61,7 @@ impl Server {
             .state(pool.clone())
             .file_store(file_store_client.clone(), settings.input_bucket.clone())
             .prefix(FileType::RewardManifest.to_string())
-            .lookback(settings.start_after)
+            .lookback_start_after(settings.start_after)
             .poll_duration(settings.interval)
             .offset(settings.interval * 2)
             .create()

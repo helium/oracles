@@ -39,7 +39,7 @@ impl DataSessionIngestor {
         let (data_session_ingest, data_session_ingest_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(settings.start_after)
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::ValidDataTransferSession.to_string())
             .create()
             .await?;

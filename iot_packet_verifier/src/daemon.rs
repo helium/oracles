@@ -165,7 +165,7 @@ impl Cmd {
         let (report_files, report_files_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client, settings.ingest_bucket.clone())
-            .lookback(settings.start_after)
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::IotPacketReport.to_string())
             .create()
             .await?;

@@ -306,7 +306,7 @@ pub async fn report_source<State: FileInfoPollerState>(
     crate::file_source::continuous_source()
         .state(pool)
         .file_store(client, bucket)
-        .lookback(start_after)
+        .lookback_start_after(start_after)
         .prefix(crate::FileType::MobileBanReport.to_string())
         .create()
         .await
@@ -324,7 +324,7 @@ pub async fn verified_report_source<State: FileInfoPollerState>(
     crate::file_source::continuous_source()
         .state(pool)
         .file_store(client, bucket)
-        .lookback(start_after)
+        .lookback_start_after(start_after)
         .prefix(crate::FileType::VerifiedMobileBanReport.to_string())
         .create()
         .await
