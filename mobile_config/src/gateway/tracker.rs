@@ -99,10 +99,10 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         to_insert.push(gw);
                     }
                     Some(last_gw) => {
-                        // FYI hash includes location
                         let loc_changed = gw.location != last_gw.location;
                         let hash_changed = gw.hash != last_gw.hash;
 
+                        // FYI hash includes location
                         gw.last_changed_at = if hash_changed {
                             gw.refreshed_at
                         } else {
@@ -116,6 +116,7 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         };
 
                         // We only add record if something changed
+                        // FYI hash includes location
                         if hash_changed {
                             to_insert.push(gw);
                         }

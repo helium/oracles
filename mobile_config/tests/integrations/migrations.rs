@@ -40,11 +40,11 @@ async fn gateways_historical(pool: PgPool) -> anyhow::Result<()> {
 
     assert!(pre_gw.address == gw.address);
     assert!(pre_gw.gateway_type == gw.gateway_type);
-    assert!(pre_gw.created_at == gw.created_at);
+    assert!(pre_gw.created_at == common::nanos_trunc(gw.created_at));
     // The real change is updated_at renamed to inserted_at AND inserted_at = created_at;
-    assert!(pre_gw.created_at == gw.inserted_at);
-    assert!(pre_gw.refreshed_at == gw.refreshed_at);
-    assert!(pre_gw.last_changed_at == gw.last_changed_at);
+    assert!(pre_gw.created_at == common::nanos_trunc(gw.inserted_at));
+    assert!(pre_gw.refreshed_at == common::nanos_trunc(gw.refreshed_at));
+    assert!(pre_gw.last_changed_at == common::nanos_trunc(gw.last_changed_at));
     assert!(pre_gw.hash == gw.hash);
     assert!(pre_gw.antenna == gw.antenna);
     assert!(pre_gw.elevation == gw.elevation);

@@ -19,7 +19,7 @@ async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(gateway.gateway_type, GatewayType::WifiIndoor);
     assert_eq!(gateway.created_at, common::nanos_trunc(now));
-    assert_eq!(gateway.inserted_at, common::nanos_trunc(now));
+    assert!(gateway.inserted_at > now);
     assert_eq!(gateway.refreshed_at, common::nanos_trunc(now));
     assert_eq!(gateway.last_changed_at, common::nanos_trunc(now)); // first insert: equals refreshed_at
     assert_eq!(gateway.location, Some(123));
@@ -47,7 +47,7 @@ async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
             .await?
             .expect("row should exist");
         assert_eq!(got.created_at, common::nanos_trunc(now));
-        assert_eq!(got.inserted_at, common::nanos_trunc(now));
+        assert!(got.inserted_at > now);
         assert_eq!(got.refreshed_at, common::nanos_trunc(now));
         assert_eq!(got.last_changed_at, common::nanos_trunc(now));
         assert_eq!(got.location, Some(123));

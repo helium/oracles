@@ -131,7 +131,7 @@ impl Gateway {
             b.push_bind(g.address.as_ref())
                 .push_bind(g.gateway_type)
                 .push_bind(g.created_at)
-                .push_bind(g.inserted_at)
+                .push_bind(Utc::now())
                 .push_bind(g.refreshed_at)
                 .push_bind(g.last_changed_at)
                 .push_bind(g.hash.as_str())
@@ -174,7 +174,7 @@ impl Gateway {
         .bind(self.address.as_ref())
         .bind(self.gateway_type)
         .bind(self.created_at)
-        .bind(self.inserted_at)
+        .bind(Utc::now())
         .bind(self.refreshed_at)
         .bind(self.last_changed_at)
         .bind(self.hash.as_str())
@@ -196,7 +196,20 @@ impl Gateway {
     ) -> anyhow::Result<Option<Self>> {
         let gateway = sqlx::query_as::<_, Self>(
             r#"
-            SELECT *
+            SELECT
+                address,
+                gateway_type,
+                created_at,
+                inserted_at,
+                refreshed_at,
+                last_changed_at,
+                hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
             FROM gateways
             WHERE address = $1
             ORDER BY inserted_at DESC
@@ -218,7 +231,20 @@ impl Gateway {
 
         let rows = sqlx::query_as::<_, Self>(
             r#"
-            SELECT DISTINCT ON (address) *
+            SELECT DISTINCT ON (address)
+                address,
+                gateway_type,
+                created_at,
+                inserted_at,
+                refreshed_at,
+                last_changed_at,
+                hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
             FROM gateways
             WHERE address = ANY($1)
             ORDER BY address, inserted_at DESC
@@ -240,7 +266,20 @@ impl Gateway {
 
         sqlx::query_as::<_, Self>(
             r#"
-            SELECT DISTINCT ON (address) *
+            SELECT DISTINCT ON (address)
+                address,
+                gateway_type,
+                created_at,
+                inserted_at,
+                refreshed_at,
+                last_changed_at,
+                hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
             FROM gateways
             WHERE address = ANY($1)
                 AND last_changed_at >= $2
@@ -262,7 +301,20 @@ impl Gateway {
     ) -> impl Stream<Item = Self> + 'a {
         sqlx::query_as::<_, Self>(
             r#"
-                SELECT DISTINCT ON (address) *
+                SELECT DISTINCT ON (address)
+                    address,
+                    gateway_type,
+                    created_at,
+                    inserted_at,
+                    refreshed_at,
+                    last_changed_at,
+                    hash,
+                    antenna,
+                    elevation,
+                    azimuth,
+                    location,
+                    location_changed_at,
+                    location_asserts
                 FROM gateways
                 WHERE gateway_type = ANY($1)
                 AND last_changed_at >= $2

@@ -22,3 +22,9 @@ SET
 
 -- 5. Create an index on (address, inserted_at DESC)
 CREATE INDEX IF NOT EXISTS gateways_address_inserted_idx ON gateways (address, inserted_at DESC);
+
+-- 6. Create an PK on (address, inserted_at DESC)
+ALTER TABLE
+    gateways
+ADD
+    CONSTRAINT gateways_pkey PRIMARY KEY (address, inserted_at);
