@@ -332,4 +332,7 @@ impl_file_sink!(
     chain_rewardable_entities::EntityRewardDestinationChangeReportV1,
     FileType::EntityRewardDestinationChangeReport.to_str(),
     "chain_rewardable_entities_entity_reward_destination_change_report"
+    poc_mobile::EnabledCarriersInfoReportV1,
+    FileType::EnabledCarriersInfoReport.to_str(),
+    "enabled_carriers_report"
 );

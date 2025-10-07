@@ -51,4 +51,4 @@ task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
 rand = { workspace = true }
-backon = "0"
+backon = { version = "0", features = ["tokio-sleep"] }

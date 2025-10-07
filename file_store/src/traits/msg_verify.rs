@@ -123,6 +123,7 @@ impl_msg_verify!(
     chain_rewardable_entities::EntityRewardDestinationChangeReqV1,
     signature
 );
+impl_msg_verify!(poc_mobile::EnabledCarriersInfoReqV1, signature);
 
 #[cfg(test)]
 mod test {

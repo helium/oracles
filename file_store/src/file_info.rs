@@ -182,6 +182,7 @@ pub const MOBILE_HOTSPOT_CHANGE_REPORT: &str = "mobile_hotspot_change_report";
 pub const IOT_HOTSPOT_CHANGE_REPORT: &str = "iot_hotspot_change_report";
 pub const ENTITY_OWNERSHIP_CHANGE_REPORT: &str = "entity_ownership_change_report";
 pub const ENTITY_REWARD_DESTINATION_CHANGE_REPORT: &str = "entity_reward_destination_change_report";
+pub const ENABLED_CARRIERS_REPORT: &str = "enabled_carriers_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -256,6 +257,7 @@ pub enum FileType {
     IotHotspotChangeReport,
     EntityOwnershipChangeReport,
     EntityRewardDestinationChangeReport,
+    EnabledCarriersInfoReport,
 }
 
 impl fmt::Display for FileType {
@@ -355,6 +357,7 @@ impl FileType {
             Self::IotHotspotChangeReport => IOT_HOTSPOT_CHANGE_REPORT,
             Self::EntityOwnershipChangeReport => ENTITY_OWNERSHIP_CHANGE_REPORT,
             Self::EntityRewardDestinationChangeReport => ENTITY_REWARD_DESTINATION_CHANGE_REPORT,
+            Self::EnabledCarriersInfoReport => ENABLED_CARRIERS_REPORT,
         }
     }
 }
