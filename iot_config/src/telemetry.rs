@@ -19,7 +19,6 @@ const EPOCH_CHAIN_LOOKUP_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "ep
 
 pub fn initialize() {
     metrics::gauge!(STREAM_METRIC).set(0.0);
-    metrics::counter!(STREAM_THROTTLE_COUNT_METRIC);
 }
 
 pub fn count_request(service: &'static str, rpc: &'static str) {
