@@ -38,6 +38,9 @@ async fn gateways_historical(pool: PgPool) -> anyhow::Result<()> {
         .await?
         .expect("should find gateway");
 
+    println!("pre_gw: {:?}", pre_gw);
+    println!("gw: {:?}", gw);
+
     assert!(pre_gw.address == gw.address);
     assert!(pre_gw.gateway_type == gw.gateway_type);
     assert!(pre_gw.created_at == common::nanos_trunc(gw.created_at));
