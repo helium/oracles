@@ -296,13 +296,6 @@ impl MobileRewardShareMessages {
             .map(|reward| reward.total_poc_reward())
             .sum()
     }
-
-    pub fn total_sub_discovery_amount(&self) -> u64 {
-        self.subscriber_rewards
-            .iter()
-            .map(|reward| reward.discovery_location_amount)
-            .sum()
-    }
 }
 
 trait TestTimeoutExt<T>
