@@ -21,7 +21,7 @@ use file_store::{
 use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate, SpeedtestAvg};
 use mobile_config::client::{
     hex_boosting_client::HexBoostingClient, sub_dao_client::SubDaoClient, AuthorizationClient,
-    CarrierServiceClient, GatewayClient,
+    GatewayClient,
 };
 use task_manager::TaskManager;
 
@@ -47,7 +47,6 @@ impl Cmd {
         // mobile config clients
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
-        let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
         let hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
         let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.config_client)?;
 
@@ -184,7 +183,6 @@ impl Cmd {
                     settings,
                     file_upload,
                     file_store_client.clone(),
-                    carrier_client,
                     hex_boosting_client,
                     sub_dao_rewards_client,
                     speedtests_avg,
