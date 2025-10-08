@@ -17,9 +17,7 @@ use coverage_point_calculator::{
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::{
-    poc_mobile as proto,
-};
+use helium_proto::services::poc_mobile as proto;
 use mobile_config::{boosted_hex_info::BoostedHexes, sub_dao_epoch_reward_info::EpochRewardInfo};
 use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
@@ -546,11 +544,9 @@ pub fn get_scheduled_tokens_for_poc(total_emission_pool: Decimal) -> Decimal {
     total_emission_pool * poc_percent
 }
 
-
 pub fn get_scheduled_tokens_for_service_providers(total_emission_pool: Decimal) -> Decimal {
     total_emission_pool * SERVICE_PROVIDER_PERCENT
 }
-
 
 fn eligible_for_coverage_map(
     oracle_boosting_status: OracleBoostingStatus,
@@ -590,18 +586,13 @@ mod test {
         coverage::{CoveredHexStream, HexCoverage},
         data_session::{self, HotspotDataSession, HotspotReward},
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
-        service_provider::{
-            self, ServiceProviderDCSessions, ServiceProviderPromotions, ServiceProviderRewardInfos,
-        },
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
     };
     use chrono::{Duration, Utc};
     use file_store_oracles::speedtest::CellSpeedtest;
     use futures::stream::{self, BoxStream};
-    use helium_proto::{
-        services::poc_mobile::mobile_reward_share::Reward as MobileReward, ServiceProvider,
-    };
+    use helium_proto::services::poc_mobile::mobile_reward_share::Reward as MobileReward;
     use hextree::Cell;
     use solana::Token;
     use std::collections::HashMap;
@@ -647,11 +638,6 @@ mod test {
         assert_eq!(dc_to_hnt_bones(Decimal::from(2), dec!(1.0)), dec!(0.00002));
     }
 
-    fn hnt_bones_to_dc(hnt_bones_amount: Decimal, hnt_bones_price: Decimal) -> Decimal {
-        let hnt_value = hnt_bones_amount * hnt_bones_price;
-        (hnt_value / DC_USD_PRICE).round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
-    }
-
     fn rewards_info_1_hour() -> EpochRewardInfo {
         let now = Utc::now();
         let epoch_duration = Duration::hours(1);
@@ -688,13 +674,11 @@ mod test {
         assert_eq!(dec!(70), v, "poc gets 70%");
     }
 
-
     #[test]
     fn test_service_provider_scheduled_tokens() {
         let v = get_scheduled_tokens_for_service_providers(dec!(100));
         assert_eq!(dec!(24), v, "service providers get 24%");
     }
-
 
     #[test]
     fn test_price_conversion() {
@@ -1510,179 +1494,5 @@ mod test {
         assert!(coverage_shares
             .into_rewards(reward_shares, &rewards_info.epoch_period)
             .is_none());
-    }
-
-    #[test]
-    fn service_provider_reward_amounts() {
-        let hnt_bone_price = dec!(0.00001);
-
-        let sp1 = ServiceProvider::HeliumMobile;
-
-        let rewards_info = rewards_info_1_hour();
-
-        let total_sp_rewards = service_provider::get_scheduled_tokens(rewards_info.epoch_emissions);
-        let sp_reward_infos = ServiceProviderRewardInfos::new(
-            ServiceProviderDCSessions::from([(sp1, dec!(1000))]),
-            ServiceProviderPromotions::default(),
-            total_sp_rewards,
-            hnt_bone_price,
-            rewards_info.clone(),
-        );
-
-        let mut sp_rewards = HashMap::<i32, u64>::new();
-        let mut allocated_sp_rewards = 0_u64;
-
-        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
-            if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
-                sp_rewards.insert(r.service_provider_id, r.amount);
-                assert_eq!(reward_amount, r.amount);
-                allocated_sp_rewards += reward_amount;
-            }
-        }
-
-        let sp1_reward_amount = *sp_rewards
-            .get(&(sp1 as i32))
-            .expect("Could not fetch sp1 shares");
-        assert_eq!(sp1_reward_amount, 999);
-
-        // confirm the unallocated service provider reward amounts
-        let unallocated_sp_reward_amount = (total_sp_rewards - Decimal::from(allocated_sp_rewards))
-            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 821_917_807_220);
-    }
-
-    #[test]
-    fn service_provider_reward_amounts_capped() {
-        let hnt_bone_price = dec!(1.0);
-        let sp1 = ServiceProvider::HeliumMobile;
-
-        let rewards_info = rewards_info_1_hour();
-
-        let total_sp_rewards_in_bones = dec!(1_0000_0000);
-        let total_rewards_value_in_dc = hnt_bones_to_dc(total_sp_rewards_in_bones, hnt_bone_price);
-
-        let sp_reward_infos = ServiceProviderRewardInfos::new(
-            // force the service provider to have spend more DC than total rewardable
-            ServiceProviderDCSessions::from([(sp1, total_rewards_value_in_dc * dec!(2.0))]),
-            ServiceProviderPromotions::default(),
-            total_sp_rewards_in_bones,
-            hnt_bone_price,
-            rewards_info.clone(),
-        );
-
-        let mut sp_rewards = HashMap::new();
-        let mut allocated_sp_rewards = 0_u64;
-
-        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
-            if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
-                sp_rewards.insert(r.service_provider_id, r.amount);
-                assert_eq!(reward_amount, r.amount);
-                allocated_sp_rewards += reward_amount;
-            }
-        }
-
-        let sp1_reward_amount = *sp_rewards
-            .get(&(sp1 as i32))
-            .expect("Could not fetch sp1 shares");
-
-        assert_eq!(Decimal::from(sp1_reward_amount), total_sp_rewards_in_bones);
-        assert_eq!(sp1_reward_amount, 1_0000_0000);
-
-        // confirm the unallocated service provider reward amounts
-        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones
-            - Decimal::from(allocated_sp_rewards))
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 0);
-    }
-
-    #[test]
-    fn service_provider_reward_hip87_ex1() {
-        // price from hip example and converted to bones
-        let hnt_bone_price = dec!(0.0001) / dec!(1_0000_0000);
-        let sp1 = ServiceProvider::HeliumMobile;
-
-        let rewards_info = rewards_info_1_hour();
-
-        let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_0000_0000);
-
-        let sp_reward_infos = ServiceProviderRewardInfos::new(
-            ServiceProviderDCSessions::from([(sp1, dec!(1_0000_0000))]),
-            ServiceProviderPromotions::default(),
-            total_sp_rewards_in_bones,
-            hnt_bone_price,
-            rewards_info.clone(),
-        );
-
-        let mut sp_rewards = HashMap::new();
-        let mut allocated_sp_rewards = 0_u64;
-
-        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
-            if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
-                sp_rewards.insert(r.service_provider_id, r.amount);
-                assert_eq!(reward_amount, r.amount);
-                allocated_sp_rewards += reward_amount;
-            }
-        }
-
-        let sp1_reward_amount_in_bones = *sp_rewards
-            .get(&(sp1 as i32))
-            .expect("Could not fetch sp1 shares");
-        // assert expected value in bones
-        assert_eq!(sp1_reward_amount_in_bones, 10_000_000 * 1_0000_0000);
-
-        // confirm the unallocated service provider reward amounts
-        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones
-            - Decimal::from(allocated_sp_rewards))
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 49_000_000_000_000_000);
-    }
-
-    #[test]
-    fn service_provider_reward_hip87_ex2() {
-        // price from hip example and converted to bones
-        let hnt_bone_price = dec!(0.0001) / dec!(1_0000_0000);
-        let sp1 = ServiceProvider::HeliumMobile;
-
-        let rewards_info = rewards_info_1_hour();
-        let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_0000_0000);
-
-        let sp_reward_infos = ServiceProviderRewardInfos::new(
-            ServiceProviderDCSessions::from([(sp1, dec!(100_000_000_000))]),
-            ServiceProviderPromotions::default(),
-            total_sp_rewards_in_bones,
-            hnt_bone_price,
-            rewards_info.clone(),
-        );
-
-        let mut sp_rewards = HashMap::new();
-        let mut allocated_sp_rewards = 0_u64;
-
-        for (reward_amount, reward) in sp_reward_infos.iter_rewards() {
-            if let Some(MobileReward::ServiceProviderReward(r)) = reward.reward {
-                sp_rewards.insert(r.service_provider_id, r.amount);
-                assert_eq!(reward_amount, r.amount);
-                allocated_sp_rewards += reward_amount;
-            }
-        }
-
-        let sp1_reward_amount_in_bones = *sp_rewards
-            .get(&(sp1 as i32))
-            .expect("Could not fetch sp1 shares");
-        // assert expected value in bones
-        assert_eq!(sp1_reward_amount_in_bones, 500_000_000 * 1_0000_0000);
-
-        // confirm the unallocated service provider reward amounts
-        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones
-            - Decimal::from(allocated_sp_rewards))
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 0);
     }
 }

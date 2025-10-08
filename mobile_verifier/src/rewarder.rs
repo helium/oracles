@@ -8,8 +8,7 @@ use crate::{
         CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         TransferRewards,
     },
-    service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
-    speedtests,
+    service_provider, speedtests,
     speedtests_average::SpeedtestAverages,
     telemetry, unique_connections, PriceInfo, Settings,
 };
@@ -27,13 +26,12 @@ use helium_proto::{
         UnallocatedReward, UnallocatedRewardType,
     },
     MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
+    ServiceProvider,
 };
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{
-        carrier_service_client::CarrierServiceVerifier,
-        hex_boosting_client::HexBoostingInfoResolver,
-        sub_dao_client::SubDaoEpochRewardInfoResolver,
+        hex_boosting_client::HexBoostingInfoResolver, sub_dao_client::SubDaoEpochRewardInfoResolver,
     },
     sub_dao_epoch_reward_info::EpochRewardInfo,
     EpochInfo,
@@ -52,10 +50,9 @@ mod db;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
-pub struct Rewarder<A, B, C> {
+pub struct Rewarder<B, C> {
     sub_dao: SolPubkey,
     pool: Pool<Postgres>,
-    carrier_client: A,
     hex_service_client: B,
     sub_dao_epoch_reward_client: C,
     reward_period_duration: Duration,
@@ -66,9 +63,8 @@ pub struct Rewarder<A, B, C> {
     speedtest_averages: FileSinkClient<proto::SpeedtestAvg>,
 }
 
-impl<A, B, C> Rewarder<A, B, C>
+impl<B, C> Rewarder<B, C>
 where
-    A: CarrierServiceVerifier + 'static,
     B: HexBoostingInfoResolver,
     C: SubDaoEpochRewardInfoResolver,
 {
@@ -77,7 +73,6 @@ where
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        carrier_service_verifier: A,
         hex_boosting_info_resolver: B,
         sub_dao_epoch_reward_info_resolver: C,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
@@ -104,7 +99,6 @@ where
 
         let rewarder = Rewarder::new(
             pool.clone(),
-            carrier_service_verifier,
             hex_boosting_info_resolver,
             sub_dao_epoch_reward_info_resolver,
             settings.reward_period,
@@ -126,7 +120,6 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
-        carrier_client: A,
         hex_service_client: B,
         sub_dao_epoch_reward_client: C,
         reward_period_duration: Duration,
@@ -143,7 +136,6 @@ where
         Ok(Self {
             sub_dao,
             pool,
-            carrier_client,
             hex_service_client,
             sub_dao_epoch_reward_client,
             reward_period_duration,
@@ -289,23 +281,7 @@ where
         .await?;
 
         // process rewards for service providers
-        let dc_sessions = service_provider::get_dc_sessions(
-            &self.pool,
-            &self.carrier_client,
-            &reward_info.epoch_period,
-        )
-        .await?;
-        let sp_promotions =
-            service_provider::get_promotions(&self.carrier_client, &reward_info.epoch_period.start)
-                .await?;
-        reward_service_providers(
-            dc_sessions,
-            sp_promotions.clone(),
-            self.mobile_rewards.clone(),
-            &reward_info,
-            price_info.price_per_bone,
-        )
-        .await?;
+        reward_service_providers(self.mobile_rewards.clone(), &reward_info).await?;
 
         self.speedtest_averages.commit().await?;
         let written_files = self.mobile_rewards.commit().await?.await??;
@@ -335,7 +311,7 @@ where
             boosted_poc_bones_per_reward_share: Some(helium_proto::Decimal {
                 value: poc_dc_shares.boost.to_string(),
             }),
-            service_provider_promotions: sp_promotions.into_proto(),
+            service_provider_promotions: vec![],
             token: MobileRewardToken::Hnt as i32,
         };
         self.reward_manifests
@@ -359,9 +335,8 @@ where
     }
 }
 
-impl<A, B, C> ManagedTask for Rewarder<A, B, C>
+impl<B, C> ManagedTask for Rewarder<B, C>
 where
-    A: CarrierServiceVerifier,
     B: HexBoostingInfoResolver,
     C: SubDaoEpochRewardInfoResolver,
 {
@@ -525,42 +500,27 @@ pub async fn reward_dc(
 }
 
 pub async fn reward_service_providers(
-    dc_sessions: ServiceProviderDCSessions,
-    sp_promotions: ServiceProviderPromotions,
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
-    hnt_bone_price: Decimal,
 ) -> anyhow::Result<()> {
-    use service_provider::ServiceProviderRewardInfos;
-
     let total_sp_rewards = service_provider::get_scheduled_tokens(reward_info.epoch_emissions);
-
-    let sps = ServiceProviderRewardInfos::new(
-        dc_sessions,
-        sp_promotions,
-        total_sp_rewards,
-        hnt_bone_price,
-        reward_info.clone(),
-    );
-
-    let mut unallocated_sp_rewards = total_sp_rewards
+    let sp_reward_amount = total_sp_rewards
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
 
-    for (amount, reward) in sps.iter_rewards() {
-        unallocated_sp_rewards -= amount;
-        mobile_rewards.write(reward, []).await?.await??;
-    }
-
-    // write out any unallocated service provider reward
-    write_unallocated_reward(
-        &mobile_rewards,
-        UnallocatedRewardType::ServiceProvider,
-        unallocated_sp_rewards,
-        reward_info,
-    )
-    .await?;
+    // Write a single ServiceProviderReward for HeliumMobile with the full 24% allocation
+    let sp_reward = proto::MobileRewardShare {
+        start_period: reward_info.epoch_period.start.encode_timestamp(),
+        end_period: reward_info.epoch_period.end.encode_timestamp(),
+        reward: Some(ProtoReward::ServiceProviderReward(
+            proto::ServiceProviderReward {
+                service_provider_id: ServiceProvider::HeliumMobile as i32,
+                amount: sp_reward_amount,
+            },
+        )),
+    };
+    mobile_rewards.write(sp_reward, []).await?.await??;
     Ok(())
 }
 
