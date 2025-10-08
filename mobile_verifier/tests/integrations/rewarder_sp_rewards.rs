@@ -96,14 +96,14 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     let rewards = mobile_rewards.finish().await?;
 
     let sp_reward = rewards.sp_rewards.first().expect("sp 1 reward");
-    assert_eq!(5_999, sp_reward.amount);
+    assert_eq!(6_000, sp_reward.amount);
 
     let unallocated_reward = rewards.unallocated.first().expect("unallocated");
     assert_eq!(
         UnallocatedRewardType::ServiceProvider as i32,
         unallocated_reward.reward_type
     );
-    assert_eq!(8_219_178_076_192, unallocated_reward.amount);
+    assert_eq!(16_438_356_158_383, unallocated_reward.amount);
 
     // confirm the total rewards allocated matches expectations
     let expected_sum =
@@ -115,7 +115,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     // confirm the rewarded percentage amount matches expectations
     let percent = (Decimal::from(unallocated_reward.amount) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    assert_eq!(percent, dec!(0.1));
+    assert_eq!(percent, dec!(0.2));
 
     Ok(())
 }
@@ -205,18 +205,18 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
 
     // 1 share
     let promo_reward_1 = promo_rewards.get("one").expect("promo 1");
-    assert_eq!(promo_reward_1.service_provider_amount, 1_499);
-    assert_eq!(promo_reward_1.matched_amount, 1_499);
+    assert_eq!(promo_reward_1.service_provider_amount, 1_500);
+    assert_eq!(promo_reward_1.matched_amount, 1_500);
 
     // 2 shares
     let promo_reward_2 = promo_rewards.get("two").expect("promo 2");
-    assert_eq!(promo_reward_2.service_provider_amount, 2999);
-    assert_eq!(promo_reward_2.matched_amount, 2999);
+    assert_eq!(promo_reward_2.service_provider_amount, 3_000);
+    assert_eq!(promo_reward_2.matched_amount, 3_000);
 
     // 3 shares
     let promo_reward_3 = promo_rewards.get("three").expect("promo 3");
-    assert_eq!(promo_reward_3.service_provider_amount, 4_499);
-    assert_eq!(promo_reward_3.matched_amount, 4_499);
+    assert_eq!(promo_reward_3.service_provider_amount, 4_500);
+    assert_eq!(promo_reward_3.matched_amount, 4_500);
 
     // dc_percentage * total_sp_allocation rounded down
     let sp_reward = rewards.sp_rewards.first().expect("sp 1 reward");
@@ -225,9 +225,9 @@ async fn test_service_provider_promotion_rewards(pool: PgPool) -> anyhow::Result
     let unallocated_sp_rewards = get_unallocated_sp_rewards(reward_info.epoch_emissions);
     let expected_unallocated = unallocated_sp_rewards
         - 50_999 // 85% service provider rewards rounded down
-        - 8_998 // 15% service provider promotions
-        - 8_998 // matched promotion
-        + 2; // rounding
+        - 9_000 // 15% service provider promotions
+        - 9_000 // matched promotion
+        + 0; // rounding
 
     let unallocated = rewards.unallocated.first().expect("unallocated");
     assert_eq!(unallocated.amount, expected_unallocated);
