@@ -6,12 +6,12 @@ use crate::{
     resolve_subdao_pubkey,
     reward_shares::{
         self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
-        MapperShares, TransferRewards,
+        TransferRewards,
     },
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
     speedtests,
     speedtests_average::SpeedtestAverages,
-    subscriber_mapping_activity, telemetry, unique_connections, PriceInfo, Settings,
+    telemetry, unique_connections, PriceInfo, Settings,
 };
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
@@ -288,9 +288,6 @@ where
         )
         .await?;
 
-        // process rewards for mappers
-        reward_mappers(&self.pool, self.mobile_rewards.clone(), &reward_info).await?;
-
         // process rewards for service providers
         let dc_sessions = service_provider::get_dc_sessions(
             &self.pool,
@@ -326,8 +323,6 @@ where
         )
         .await?;
         coverage::clear_coverage_objects(&mut transaction, &reward_info.epoch_period.start).await?;
-        subscriber_mapping_activity::db::clear(&mut *transaction, reward_info.epoch_period.start)
-            .await?;
         unique_connections::db::clear(&mut transaction, &reward_info.epoch_period.start).await?;
         banning::clear_bans(&mut transaction, reward_info.epoch_period.start).await?;
 
@@ -530,55 +525,6 @@ pub async fn reward_dc(
     let unallocated_dc_reward_amount =
         reward_shares.data_transfer - Decimal::from(allocated_dc_rewards);
     Ok(unallocated_dc_reward_amount)
-}
-
-pub async fn reward_mappers(
-    pool: &Pool<Postgres>,
-    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &EpochRewardInfo,
-) -> anyhow::Result<()> {
-    let rewardable_mapping_activity = subscriber_mapping_activity::db::rewardable_mapping_activity(
-        pool,
-        &reward_info.epoch_period,
-    )
-    .await?;
-
-    let mapping_shares = MapperShares::new(rewardable_mapping_activity);
-    let total_mappers_pool =
-        reward_shares::get_scheduled_tokens_for_mappers(reward_info.epoch_emissions);
-    let rewards_per_share = mapping_shares.rewards_per_share(total_mappers_pool)?;
-
-    // translate discovery mapping shares into subscriber rewards
-    let mut allocated_mapping_rewards = 0_u64;
-    let mut count_mappers_rewarded = 0;
-    for (reward_amount, mapping_share) in
-        mapping_shares.into_subscriber_rewards(&reward_info.epoch_period, rewards_per_share)
-    {
-        allocated_mapping_rewards += reward_amount;
-        count_mappers_rewarded += 1;
-        mobile_rewards
-            .write(mapping_share.clone(), [])
-            .await?
-            // Await the returned one shot to ensure that we wrote the file
-            .await??;
-    }
-    telemetry::mappers_rewarded(count_mappers_rewarded);
-
-    // write out any unallocated mapping rewards
-    let unallocated_mapping_reward_amount = total_mappers_pool
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0)
-        - allocated_mapping_rewards;
-    write_unallocated_reward(
-        &mobile_rewards,
-        UnallocatedRewardType::Mapper,
-        unallocated_mapping_reward_amount,
-        reward_info,
-    )
-    .await?;
-
-    Ok(())
 }
 
 pub async fn reward_oracles(

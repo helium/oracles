@@ -18,9 +18,7 @@ use mobile_config::{
     sub_dao_epoch_reward_info::EpochRewardInfo,
 };
 use mobile_verifier::{
-    boosting_oracles::AssignedCoverageObjects,
-    subscriber_mapping_activity::SubscriberMappingShares, GatewayResolution, GatewayResolver,
-    PriceInfo,
+    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -418,13 +416,6 @@ impl AsStringKeyedMapKey for SubscriberReward {
 impl AsStringKeyedMapKey for PromotionReward {
     fn key(&self) -> String {
         self.entity.to_owned()
-    }
-}
-impl AsStringKeyedMapKey for SubscriberMappingShares {
-    fn key(&self) -> String {
-        use prost::Message;
-        let bytes = prost::bytes::Bytes::from_owner(self.subscriber_id.clone());
-        String::decode(bytes).expect("decode subscriber id")
     }
 }
 
