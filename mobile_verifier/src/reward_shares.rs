@@ -44,10 +44,10 @@ const DC_USD_PRICE: Decimal = dec!(0.00001);
 pub const DEFAULT_PREC: u32 = 15;
 
 /// Percent of total emissions allocated for mapper rewards
-const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
+const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.1);
 
 // Percent of total emissions allocated for service provider rewards
-const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.1);
+const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.2);
 
 // Percent of total emissions allocated for oracles
 const ORACLES_PERCENT: Decimal = dec!(0.04);
@@ -769,13 +769,13 @@ mod test {
     #[test]
     fn test_mappers_scheduled_tokens() {
         let v = get_scheduled_tokens_for_mappers(dec!(100));
-        assert_eq!(dec!(20), v, "mappers get 20%");
+        assert_eq!(dec!(10), v, "mappers get 10%");
     }
 
     #[test]
     fn test_service_provider_scheduled_tokens() {
         let v = get_scheduled_tokens_for_service_providers(dec!(100));
-        assert_eq!(dec!(10), v, "service providers get 10%");
+        assert_eq!(dec!(20), v, "service providers get 20%");
     }
 
     #[test]
@@ -826,7 +826,7 @@ mod test {
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        assert_eq!(16_438_356_164_383, total_mapper_rewards);
+        assert_eq!(8_219_178_082_191, total_mapper_rewards);
 
         let expected_reward_per_subscriber = total_mapper_rewards / NUM_SUBSCRIBERS;
 
@@ -846,20 +846,20 @@ mod test {
                 );
                 // These are the same because we gave `total_reward_points: 30,` for each
                 // VerifiedMappingEventShares which is the same amount as discovery mapping
-                assert_eq!(821_917_808, r.discovery_location_amount);
-                assert_eq!(821_917_808, r.verification_mapping_amount);
+                assert_eq!(410_958_904, r.discovery_location_amount);
+                assert_eq!(410_958_904, r.verification_mapping_amount);
                 allocated_mapper_rewards += reward_amount;
             }
         }
 
         // verify the total rewards awarded for discovery mapping
-        assert_eq!(16_438_356_160_000, allocated_mapper_rewards);
+        assert_eq!(8_219_178_080_000, allocated_mapper_rewards);
 
         // confirm the unallocated service provider reward amounts
         // this should not be more than the total number of subscribers ( 10 k)
         // as we can at max drop one bone per subscriber due to rounding
         let unallocated_mapper_reward_amount = total_mapper_rewards - allocated_mapper_rewards;
-        assert_eq!(unallocated_mapper_reward_amount, 4383);
+        assert_eq!(unallocated_mapper_reward_amount, 2191);
         assert!(unallocated_mapper_reward_amount < NUM_SUBSCRIBERS);
     }
 
@@ -1692,7 +1692,7 @@ mod test {
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 342_465_752_425);
+        assert_eq!(unallocated_sp_reward_amount, 684_931_505_850);
     }
 
     #[test]

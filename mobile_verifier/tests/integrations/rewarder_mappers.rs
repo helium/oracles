@@ -38,21 +38,22 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     // subscriber 1 has two qualifying mapping criteria reports,
     // other two subscribers one qualifying mapping criteria reports
     let sub_reward_1 = subscriber_rewards.get(SUBSCRIBER_1).expect("sub 1");
-    assert_eq!(5_479_452_054_794, sub_reward_1.discovery_location_amount);
+    assert_eq!(2_739_726_027_397, sub_reward_1.discovery_location_amount);
 
     let sub_reward_2 = subscriber_rewards.get(SUBSCRIBER_2).expect("sub 2");
-    assert_eq!(5_479_452_054_794, sub_reward_2.discovery_location_amount);
+    assert_eq!(2_739_726_027_397, sub_reward_2.discovery_location_amount);
 
     let sub_reward_3 = subscriber_rewards.get(SUBSCRIBER_3).expect("sub 3");
-    assert_eq!(5_479_452_054_794, sub_reward_3.discovery_location_amount);
+    assert_eq!(2_739_726_027_397, sub_reward_3.discovery_location_amount);
 
     // confirm our unallocated amount
-    let unallocated_reward = rewards.unallocated.first().expect("unallocated");
-    assert_eq!(
-        UnallocatedRewardType::Mapper as i32,
-        unallocated_reward.reward_type
-    );
-    assert_eq!(1, unallocated_reward.amount);
+    let unallocated_amount = rewards
+        .unallocated
+        .iter()
+        .find(|r| r.reward_type == UnallocatedRewardType::Mapper as i32)
+        .map(|r| r.amount)
+        .unwrap_or(0);
+    assert_eq!(0, unallocated_amount);
 
     // confirm the total rewards allocated matches expectations
     let expected_sum = reward_shares::get_scheduled_tokens_for_mappers(reward_info.epoch_emissions)
@@ -65,7 +66,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     // confirm the rewarded percentage amount matches expectations
     let percent = (Decimal::from(subscriber_sum) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    assert_eq!(percent, dec!(0.2));
+    assert_eq!(percent, dec!(0.1));
 
     Ok(())
 }
