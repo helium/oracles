@@ -69,7 +69,7 @@ async fn test_process_map_act_ingest_report_file(pool: PgPool) {
     let (stream_receiver, stream_server) = file_source::Continuous::prost_source()
         .state(pool.clone())
         .store(awsl.file_store.clone())
-        .lookback(LookbackBehavior::StartAfter(DateTime::UNIX_EPOCH))
+        .lookback(DateTime::UNIX_EPOCH)
         .prefix(FileType::SubscriberMappingActivityIngestReport.to_string())
         .poll_duration(std::time::Duration::from_millis(300))
         .create()

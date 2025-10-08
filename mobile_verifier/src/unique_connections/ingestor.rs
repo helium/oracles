@@ -1,6 +1,6 @@
 use chrono::Utc;
 use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
@@ -77,7 +77,7 @@ where
             file_source::continuous_source()
                 .state(pool.clone())
                 .file_store(file_store_client, bucket)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
+                .lookback_start_after(settings.start_after)
                 .prefix(FileType::UniqueConnectionsReport.to_string())
                 .create()
                 .await?;

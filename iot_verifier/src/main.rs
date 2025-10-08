@@ -3,7 +3,6 @@ use crate::entropy_loader::EntropyLoader;
 use anyhow::Result;
 use clap::Parser;
 use file_store::{
-    file_info_poller::LookbackBehavior,
     file_source, file_upload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
@@ -169,7 +168,7 @@ impl Server {
             .state(pool.clone())
             .file_store(file_store_client.clone(), settings.buckets.entropy.clone())
             .prefix(FileType::EntropyReport.to_string())
-            .lookback(LookbackBehavior::Max(max_lookback_age))
+            .lookback_max(max_lookback_age)
             .poll_duration(entropy_interval)
             .offset(entropy_interval * 2)
             .create()
@@ -202,7 +201,7 @@ impl Server {
                 settings.buckets.packet_ingest.clone(),
             )
             .prefix(FileType::IotValidPacket.to_string())
-            .lookback(LookbackBehavior::Max(max_lookback_age))
+            .lookback_max(max_lookback_age)
             .poll_duration(packet_interval)
             .offset(packet_interval * 2)
             .create()

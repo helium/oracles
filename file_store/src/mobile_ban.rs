@@ -5,9 +5,7 @@ use helium_crypto::PublicKeyBinary;
 
 use crate::{
     error::DecodeError,
-    file_info_poller::{
-        FileInfoPollerServer, FileInfoPollerState, FileInfoStream, LookbackBehavior,
-    },
+    file_info_poller::{FileInfoPollerServer, FileInfoPollerState, FileInfoStream},
     file_sink::FileSinkClient,
     traits::{FileSinkWriteExt, MsgDecode, TimestampDecode, TimestampEncode},
     Error, FileSink,
@@ -308,7 +306,7 @@ pub async fn report_source<State: FileInfoPollerState>(
     crate::file_source::continuous_source()
         .state(pool)
         .file_store(client, bucket)
-        .lookback(LookbackBehavior::StartAfter(start_after))
+        .lookback_start_after(start_after)
         .prefix(crate::FileType::MobileBanReport.to_string())
         .create()
         .await
@@ -326,7 +324,7 @@ pub async fn verified_report_source<State: FileInfoPollerState>(
     crate::file_source::continuous_source()
         .state(pool)
         .file_store(client, bucket)
-        .lookback(LookbackBehavior::StartAfter(start_after))
+        .lookback_start_after(start_after)
         .prefix(crate::FileType::VerifiedMobileBanReport.to_string())
         .create()
         .await

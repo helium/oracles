@@ -7,11 +7,8 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::FileSinkClient,
-    file_source,
-    wifi_heartbeat::WifiHeartbeatIngestReport,
-    FileType,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
+    wifi_heartbeat::WifiHeartbeatIngestReport, FileType,
 };
 use futures::{stream::StreamExt, TryFutureExt};
 use helium_proto::services::poc_mobile as proto;
@@ -54,7 +51,7 @@ where
         let (wifi_heartbeats, wifi_heartbeats_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::WifiHeartbeatIngestReport.to_string())
             .create()
             .await?;

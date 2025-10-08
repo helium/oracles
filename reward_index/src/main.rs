@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use file_store::{file_info_poller::LookbackBehavior, file_source, FileType};
+use file_store::{file_source, FileType};
 use reward_index::{settings::Settings, telemetry, Indexer};
 use std::path::PathBuf;
 use task_manager::TaskManager;
@@ -61,7 +61,7 @@ impl Server {
             .state(pool.clone())
             .file_store(file_store_client.clone(), settings.input_bucket.clone())
             .prefix(FileType::RewardManifest.to_string())
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback_start_after(settings.start_after)
             .poll_duration(settings.interval)
             .offset(settings.interval * 2)
             .create()

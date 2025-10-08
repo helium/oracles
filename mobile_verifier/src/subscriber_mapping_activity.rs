@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Instant};
 
 use chrono::{DateTime, Utc};
 use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
@@ -73,7 +73,7 @@ where
         let (stream_reciever, stream_server) = file_source::Continuous::prost_source()
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::SubscriberMappingActivityIngestReport.to_string())
             .create()
             .await?;
