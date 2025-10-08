@@ -5,7 +5,7 @@ use crate::{
     heartbeats::{self, HeartbeatReward},
     resolve_subdao_pubkey,
     reward_shares::{
-        self, CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
+        CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
         TransferRewards,
     },
     service_provider::{self, ServiceProviderDCSessions, ServiceProviderPromotions},
@@ -307,9 +307,6 @@ where
         )
         .await?;
 
-        // process rewards for oracles
-        reward_oracles(self.mobile_rewards.clone(), &reward_info).await?;
-
         self.speedtest_averages.commit().await?;
         let written_files = self.mobile_rewards.commit().await?.await??;
 
@@ -525,29 +522,6 @@ pub async fn reward_dc(
     let unallocated_dc_reward_amount =
         reward_shares.data_transfer - Decimal::from(allocated_dc_rewards);
     Ok(unallocated_dc_reward_amount)
-}
-
-pub async fn reward_oracles(
-    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
-    reward_info: &EpochRewardInfo,
-) -> anyhow::Result<()> {
-    // atm 100% of oracle rewards are assigned to 'unallocated'
-    let total_oracle_rewards =
-        reward_shares::get_scheduled_tokens_for_oracles(reward_info.epoch_emissions);
-    let allocated_oracle_rewards = 0_u64;
-    let unallocated_oracle_reward_amount = total_oracle_rewards
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0)
-        - allocated_oracle_rewards;
-    write_unallocated_reward(
-        &mobile_rewards,
-        UnallocatedRewardType::Oracle,
-        unallocated_oracle_reward_amount,
-        reward_info,
-    )
-    .await?;
-    Ok(())
 }
 
 pub async fn reward_service_providers(

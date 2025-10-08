@@ -96,14 +96,14 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     let rewards = mobile_rewards.finish().await?;
 
     let sp_reward = rewards.sp_rewards.first().expect("sp 1 reward");
-    assert_eq!(6_000, sp_reward.amount);
+    assert_eq!(5_999, sp_reward.amount);
 
     let unallocated_reward = rewards.unallocated.first().expect("unallocated");
     assert_eq!(
         UnallocatedRewardType::ServiceProvider as i32,
         unallocated_reward.reward_type
     );
-    assert_eq!(16_438_356_158_383, unallocated_reward.amount);
+    assert_eq!(19_726_027_391_261, unallocated_reward.amount);
 
     // confirm the total rewards allocated matches expectations
     let expected_sum =
@@ -115,7 +115,7 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
     // confirm the rewarded percentage amount matches expectations
     let percent = (Decimal::from(unallocated_reward.amount) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    assert_eq!(percent, dec!(0.2));
+    assert_eq!(percent, dec!(0.24));
 
     Ok(())
 }

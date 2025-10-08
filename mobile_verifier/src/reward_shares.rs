@@ -43,10 +43,7 @@ const DC_USD_PRICE: Decimal = dec!(0.00001);
 pub const DEFAULT_PREC: u32 = 15;
 
 // Percent of total emissions allocated for service provider rewards
-const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.2);
-
-// Percent of total emissions allocated for oracles
-const ORACLES_PERCENT: Decimal = dec!(0.04);
+const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.24);
 
 #[derive(Debug)]
 pub struct TransferRewards {
@@ -554,9 +551,6 @@ pub fn get_scheduled_tokens_for_service_providers(total_emission_pool: Decimal) 
     total_emission_pool * SERVICE_PROVIDER_PERCENT
 }
 
-pub fn get_scheduled_tokens_for_oracles(total_emission_pool: Decimal) -> Decimal {
-    total_emission_pool * ORACLES_PERCENT
-}
 
 fn eligible_for_coverage_map(
     oracle_boosting_status: OracleBoostingStatus,
@@ -698,14 +692,9 @@ mod test {
     #[test]
     fn test_service_provider_scheduled_tokens() {
         let v = get_scheduled_tokens_for_service_providers(dec!(100));
-        assert_eq!(dec!(20), v, "service providers get 20%");
+        assert_eq!(dec!(24), v, "service providers get 24%");
     }
 
-    #[test]
-    fn test_oracles_scheduled_tokens() {
-        let v = get_scheduled_tokens_for_oracles(dec!(100));
-        assert_eq!(dec!(4), v, "oracles get 4%");
-    }
 
     #[test]
     fn test_price_conversion() {
@@ -1561,7 +1550,7 @@ mod test {
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 684_931_505_850);
+        assert_eq!(unallocated_sp_reward_amount, 821_917_807_220);
     }
 
     #[test]
