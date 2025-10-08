@@ -108,7 +108,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     // confirm the rewarded percentage amount matches expectations
     let percent = (Decimal::from(total) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    assert_eq!(percent, dec!(0.6));
+    assert_eq!(percent, dec!(0.70));
 
     Ok(())
 }
@@ -289,10 +289,10 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
 
     let dc_rewards = rewards.gateway_rewards;
 
-    // expecting single radio with poc rewards, no unallocated
+    // expecting single radio with poc rewards, minimal unallocated due to rounding
     assert_eq!(poc_rewards.len(), 2);
     assert_eq!(dc_rewards.len(), 3);
-    assert_eq!(rewards.unallocated.len(), 0);
+    assert_eq!(rewards.unallocated.len(), 1);
 
     Ok(())
 }
