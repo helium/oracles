@@ -7,7 +7,7 @@
 use crate::entropy::Entropy;
 use blake3::hash;
 use file_store::{entropy_report::EntropyReport, file_info_poller::FileInfoStream};
-use futures::{future::LocalBoxFuture, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use sqlx::PgPool;
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
@@ -29,8 +29,8 @@ impl ManagedTask for EntropyLoader {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

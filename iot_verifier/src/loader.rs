@@ -60,7 +60,7 @@ use file_store::{
     traits::{IngestId, MsgDecode},
     FileInfo, FileType,
 };
-use futures::{future::LocalBoxFuture, stream, StreamExt};
+use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use humantime_serde::re::humantime;
 use sqlx::PgPool;
@@ -103,8 +103,8 @@ impl ManagedTask for Loader {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::run(self.run(shutdown))
     }
 }
 

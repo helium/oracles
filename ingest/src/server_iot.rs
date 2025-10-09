@@ -6,10 +6,7 @@ use file_store::{
     file_upload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify},
 };
-use futures::{
-    future::{LocalBoxFuture, TryFutureExt},
-    Stream, StreamExt,
-};
+use futures::{future::TryFutureExt, Stream, StreamExt};
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_lora::{
     self, lora_stream_request_v1::Request as StreamRequest,
@@ -181,9 +178,9 @@ impl ManagedTask for GrpcServer {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+    ) -> task_manager::TaskLocalBoxFuture {
         let address = self.address;
-        Box::pin(async move {
+        task_manager::spawn(async move {
             let grpc_server = transport::Server::builder()
                 .layer(custom_tracing::grpc_layer::new_with_span(make_span))
                 .layer(poc_metrics::request_layer!("ingest_server_iot_connection"))

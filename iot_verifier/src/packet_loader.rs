@@ -9,7 +9,7 @@ use crate::{
 };
 use chrono::Utc;
 use file_store::{file_info_poller::FileInfoStream, file_sink, iot_packet::IotValidPacket};
-use futures::{future::LocalBoxFuture, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use helium_proto::services::packet_verifier::ValidPacket;
 use helium_proto::services::poc_lora::{NonRewardablePacket, NonRewardablePacketReason};
 use sqlx::PgPool;
@@ -36,8 +36,8 @@ impl ManagedTask for PacketLoader {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::run(self.run(shutdown))
     }
 }
 

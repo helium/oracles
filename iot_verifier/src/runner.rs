@@ -53,7 +53,7 @@ use file_store::{
     traits::{IngestId, MsgDecode, ReportId},
     SCALING_PRECISION,
 };
-use futures::{future::LocalBoxFuture, stream, StreamExt, TryFutureExt};
+use futures::{stream, StreamExt};
 use helium_proto::services::poc_lora::{
     InvalidDetails, InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1,
     LoraInvalidWitnessReportV1, LoraPocV1, VerificationStatus,
@@ -114,13 +114,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

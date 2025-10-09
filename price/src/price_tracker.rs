@@ -1,10 +1,7 @@
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::{FileInfo, FileType};
-use futures::{
-    future::LocalBoxFuture,
-    stream::{StreamExt, TryStreamExt},
-};
+use futures::stream::{StreamExt, TryStreamExt};
 use helium_proto::{BlockchainTokenTypeV1, Message, PriceReportV1};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -138,8 +135,8 @@ impl ManagedTask for PriceTrackerDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

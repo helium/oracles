@@ -1,5 +1,5 @@
 use crate::{Error, Result};
-use futures::{future::LocalBoxFuture, StreamExt, TryFutureExt};
+use futures::{StreamExt, TryFutureExt};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -54,14 +54,8 @@ impl ManagedTask for FileUploadServer {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown).err_into())
     }
 }
 

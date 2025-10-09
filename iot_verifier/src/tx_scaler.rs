@@ -4,7 +4,6 @@ use crate::{
     last_beacon_reciprocity::LastBeaconReciprocity,
 };
 use chrono::{DateTime, Utc};
-use futures::future::LocalBoxFuture;
 use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
 use std::{collections::HashMap, time::Duration};
@@ -34,8 +33,8 @@ impl ManagedTask for Server {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

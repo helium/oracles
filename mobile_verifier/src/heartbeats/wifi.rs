@@ -10,7 +10,7 @@ use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     wifi_heartbeat::WifiHeartbeatIngestReport, FileType,
 };
-use futures::{stream::StreamExt, TryFutureExt};
+use futures::stream::StreamExt;
 use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
 use sqlx::{Pool, Postgres};
@@ -181,12 +181,7 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
