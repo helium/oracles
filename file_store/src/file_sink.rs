@@ -2,7 +2,7 @@ use crate::{file_upload::FileUpload, traits::MsgBytes, Error, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{future::LocalBoxFuture, SinkExt, TryFutureExt};
+use futures::{SinkExt, TryFutureExt};
 use metrics::Label;
 use std::time::Duration;
 use std::{
@@ -290,14 +290,8 @@ impl<T: MsgBytes + Send + Sync + 'static> ManagedTask for FileSink<T> {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown).err_into())
     }
 }
 

@@ -1,5 +1,5 @@
 use file_store::mobile_ban::{VerifiedBanReport, VerifiedBanReportSource, VerifiedBanReportStream};
-use futures::{FutureExt, StreamExt};
+use futures::StreamExt;
 use sqlx::{PgConnection, PgPool};
 use task_manager::ManagedTask;
 
@@ -14,8 +14,8 @@ impl ManagedTask for BanIngestor {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        self.run(shutdown).boxed_local()
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

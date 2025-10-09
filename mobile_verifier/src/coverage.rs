@@ -15,7 +15,7 @@ use file_store::{
 };
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
-    TryFutureExt, TryStreamExt,
+    TryStreamExt,
 };
 use h3o::{CellIndex, LatLng};
 use helium_proto::services::{
@@ -190,13 +190,8 @@ impl ManagedTask for CoverageDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

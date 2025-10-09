@@ -6,7 +6,6 @@ use crate::{
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
-use futures::future::LocalBoxFuture;
 use helium_proto::{
     reward_manifest::RewardData::IotRewardData,
     services::poc_lora::{
@@ -57,8 +56,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

@@ -2,7 +2,7 @@ use crate::{traits::MsgDecode, Error, FileInfo, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
-use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
+use futures::{stream::BoxStream, StreamExt};
 use futures_util::TryFutureExt;
 use retainer::Cache;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
@@ -235,14 +235,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown).err_into())
     }
 }
 

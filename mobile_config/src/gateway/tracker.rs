@@ -1,5 +1,5 @@
 use crate::gateway::{db::Gateway, metadata_db::MobileHotspotInfo};
-use futures::{stream::TryChunksError, TryFutureExt};
+use futures::stream::TryChunksError;
 use futures_util::TryStreamExt;
 use sqlx::{Pool, Postgres};
 use std::time::{Duration, Instant};
@@ -18,13 +18,8 @@ impl ManagedTask for Tracker {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

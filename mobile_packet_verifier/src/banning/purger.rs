@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use futures::FutureExt;
 use sqlx::PgPool;
 use task_manager::ManagedTask;
 
@@ -14,8 +13,8 @@ impl ManagedTask for BanPurger {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        self.run(shutdown).boxed_local()
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 
