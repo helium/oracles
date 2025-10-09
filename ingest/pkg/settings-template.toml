@@ -12,7 +12,7 @@ mode = "iot"
 #
 # token = "api-token"
 
-# Listen addres for public grpc. Default below
+# Listen address for public grpc. Default below
 #
 # listen = "0.0.0.0:9081"
 

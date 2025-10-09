@@ -6,7 +6,7 @@
 # Source URL for entropy. Required
 source = "https://entropy.source.url"
 
-# Listen addres for public api. Default below
+# Listen address for public api. Default below
 #
 # listen = "0.0.0.0:8080"
 
