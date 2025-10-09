@@ -4,7 +4,7 @@ use crate::{
         confirm_pending_txns, Burn, ConfirmPendingError, PendingTables, PendingTablesTransaction,
     },
 };
-use futures::{future::LocalBoxFuture, TryFutureExt};
+use futures::TryFutureExt;
 use solana::{burn::SolanaNetwork, GetSignature, SolanaRpcError};
 use std::time::Duration;
 use task_manager::ManagedTask;
@@ -25,14 +25,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown).err_into())
     }
 }
 

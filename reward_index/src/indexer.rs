@@ -9,7 +9,7 @@ use file_store::{
     },
     FileInfo, Stream,
 };
-use futures::{future::LocalBoxFuture, stream, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{stream, StreamExt, TryStreamExt};
 use helium_proto::Message;
 use poc_metrics::record_duration;
 use prost::bytes::BytesMut;
@@ -60,13 +60,8 @@ impl task_manager::ManagedTask for Indexer {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|res| async move { res }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

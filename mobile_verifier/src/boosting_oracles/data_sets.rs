@@ -15,7 +15,7 @@ use file_store::{
         TimestampEncode,
     },
 };
-use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
+use futures_util::{Stream, StreamExt, TryStreamExt};
 use helium_proto::services::poc_mobile::{self as proto, OracleBoostingReportV1};
 use hextree::disktree::DiskTreeMap;
 use regex::Regex;
@@ -257,20 +257,14 @@ impl ManagedTask for DataSetDownloaderDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures::prelude::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(async move {
-            #[rustfmt::skip]
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(async move {
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => Ok(()),
                 result = self.run() => result,
             }
-        });
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+        })
     }
 }
 

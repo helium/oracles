@@ -6,11 +6,30 @@ use crate::select_all::select_all;
 use futures::{future::LocalBoxFuture, Future, FutureExt, StreamExt};
 use tokio::signal;
 
+pub type TaskLocalBoxFuture = LocalBoxFuture<'static, anyhow::Result<()>>;
+
+/// Helper for starting tasks that can be spawned into their own tokio task.
+pub fn spawn<F>(fut: F) -> TaskLocalBoxFuture
+where
+    F: Future<Output = anyhow::Result<()>> + Send + 'static,
+{
+    let handle = tokio::spawn(fut);
+    Box::pin(async move { handle.await? })
+}
+
+/// Helper for tasks that do not satisfy the `Send` requirement of `spawn`.
+///
+/// The aim should be to have tasks spawned in their own tasks, unless there's a
+/// good reason for them not to be.
+pub fn run<F>(fut: F) -> TaskLocalBoxFuture
+where
+    F: Future<Output = anyhow::Result<()>> + 'static,
+{
+    Box::pin(fut)
+}
+
 pub trait ManagedTask {
-    fn start_task(
-        self: Box<Self>,
-        shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>>;
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskLocalBoxFuture;
 }
 
 pub struct TaskManager {
@@ -18,11 +37,8 @@ pub struct TaskManager {
 }
 
 impl ManagedTask for TaskManager {
-    fn start_task(
-        self: Box<Self>,
-        shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.do_start(Box::pin(shutdown)))
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskLocalBoxFuture {
+        crate::run(self.do_start(Box::pin(shutdown)))
     }
 }
 

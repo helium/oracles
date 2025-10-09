@@ -14,10 +14,7 @@ use file_store::{
     iot_witness_report::IotWitnessIngestReport,
     traits::{IngestId, MsgDecode},
 };
-use futures::{
-    future::LocalBoxFuture,
-    stream::{self, StreamExt},
-};
+use futures::stream::{self, StreamExt};
 use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
 };
@@ -51,8 +48,8 @@ impl ManagedTask for Purger {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

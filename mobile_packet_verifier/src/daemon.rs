@@ -66,8 +66,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures::future::LocalBoxFuture<'static, Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::run(self.run(shutdown))
     }
 }
 
