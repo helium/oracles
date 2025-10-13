@@ -1,7 +1,7 @@
 use crate::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::{
-    iot_config, mobile_config,
+    chain_rewardable_entities, iot_config, mobile_config,
     poc_lora::{LoraBeaconReportReqV1, LoraStreamSessionInitV1, LoraWitnessReportReqV1},
     poc_mobile::{self, ServiceProviderBoostedRewardsBannedRadioReqV1},
     sub_dao,
@@ -110,6 +110,19 @@ impl_msg_verify!(poc_mobile::RadioUsageStatsReqV1, signature);
 impl_msg_verify!(poc_mobile::UniqueConnectionsReqV1, signature);
 impl_msg_verify!(poc_mobile::SubscriberMappingActivityReqV1, signature);
 impl_msg_verify!(poc_mobile::BanReqV1, signature);
+impl_msg_verify!(chain_rewardable_entities::IotHotspotChangeReqV1, signature);
+impl_msg_verify!(
+    chain_rewardable_entities::MobileHotspotChangeReqV1,
+    signature
+);
+impl_msg_verify!(
+    chain_rewardable_entities::EntityOwnershipChangeReqV1,
+    signature
+);
+impl_msg_verify!(
+    chain_rewardable_entities::EntityRewardDestinationChangeReqV1,
+    signature
+);
 impl_msg_verify!(poc_mobile::EnabledCarriersInfoReqV1, signature);
 
 #[cfg(test)]

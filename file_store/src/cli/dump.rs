@@ -1,29 +1,17 @@
-use crate::{
-    cli::print_json,
-    coverage::CoverageObject,
-    file_source,
-    iot_packet::IotValidPacket,
-    mobile_radio_invalidated_threshold::VerifiedInvalidatedRadioThresholdIngestReport,
-    mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
-    mobile_session::{
-        DataTransferSessionIngestReport, InvalidDataTransferIngestReport,
-        VerifiedDataTransferIngestReport,
-    },
-    mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
-    reward_manifest::RewardManifest,
-    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
-    traits::{MsgDecode, TimestampDecode},
-    unique_connections::UniqueConnectionReq,
-    usage_counts::{HexUsageCountsIngestReport, RadioUsageCountsIngestReport},
-    wifi_heartbeat::WifiHeartbeatIngestReport,
-    FileType, Result,
-};
+use std::{io, path::PathBuf};
+
 use base64::Engine;
+use bs58;
 use csv::Writer;
 use futures::stream::StreamExt;
-use helium_crypto::PublicKey;
+use helium_crypto::{PublicKey, PublicKeyBinary};
 use helium_proto::{
     services::{
+        chain_rewardable_entities::{
+            entity_reward_destination_change_v1::RewardsDestination,
+            split_recipient_info_v1::RewardAmount, EntityOwnershipChangeReportV1,
+            EntityRewardDestinationChangeReportV1,
+        },
         packet_verifier::ValidDataTransferSession as ValidDataTransferSessionProto,
         poc_lora::{
             iot_reward_share::Reward as IotReward, IotRewardShare as IotRewardShareProto,
@@ -44,8 +32,27 @@ use helium_proto::{
     RewardManifest as RewardManifestProto, SubnetworkRewards,
 };
 use serde_json::json;
-use std::io;
-use std::path::PathBuf;
+
+use crate::{
+    cli::print_json,
+    coverage::CoverageObject,
+    file_source,
+    iot_packet::IotValidPacket,
+    mobile_radio_invalidated_threshold::VerifiedInvalidatedRadioThresholdIngestReport,
+    mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
+    mobile_session::{
+        DataTransferSessionIngestReport, InvalidDataTransferIngestReport,
+        VerifiedDataTransferIngestReport,
+    },
+    mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
+    reward_manifest::RewardManifest,
+    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    traits::{MsgDecode, TimestampDecode},
+    unique_connections::UniqueConnectionReq,
+    usage_counts::{HexUsageCountsIngestReport, RadioUsageCountsIngestReport},
+    wifi_heartbeat::WifiHeartbeatIngestReport,
+    FileType, Result,
+};
 
 /// Print information about a given store file.
 #[derive(Debug, clap::Args)]
@@ -453,6 +460,55 @@ impl Cmd {
                         "unique_connections": req.unique_connections,
                         "timestamp": req.timestamp,
                         "carrier_key": req.carrier_key,
+                    }))?;
+                }
+                FileType::EntityOwnershipChangeReport => {
+                    let report = EntityOwnershipChangeReportV1::decode(msg)?;
+                    let report = report.report.unwrap();
+                    let change = report.change.unwrap();
+                    print_json(&json!({
+                        "entity_pubkey": PublicKeyBinary::from(change.entity_pub_key.unwrap().value),
+                        "timestamp": change.timestamp_seconds,
+                        "asset": bs58::encode(change.asset.unwrap().value).into_string(),
+                        "block": change.block,
+                        "owner": bs58::encode(change.owner.clone().unwrap().wallet.unwrap().value).into_string(),
+                        "owner_type": change.owner.unwrap().r#type(),
+                    }))?;
+                }
+                FileType::EntityRewardDestinationChangeReport => {
+                    let report = EntityRewardDestinationChangeReportV1::decode(msg)?;
+                    let report = report.report.unwrap();
+                    let change = report.change.unwrap();
+                    print_json(&json!({
+                        "entity_pubkey": PublicKeyBinary::from(change.entity_pub_key.unwrap().value),
+                        "timestamp": change.timestamp_seconds,
+                        "asset": bs58::encode(change.asset.unwrap().value).into_string(),
+                        "block": change.block,
+                        "rewards_destination": match change.rewards_destination.unwrap() {
+                            RewardsDestination::RewardsRecipient(recipient) => json!({
+                                "recipient": bs58::encode(recipient.value).into_string(),
+                            }),
+                            RewardsDestination::RewardsSplitV1(split) => json!({
+                                "pubkey": bs58::encode(split.pub_key.unwrap().value).into_string(),
+                                "total_shares": split.total_shares,
+                                "recipients": split.recipients.iter().map(|r| {
+                                    json!({
+                                        "pubkey": bs58::encode(r.recipient.clone().unwrap().value).into_string(),
+                                        "reward_amount": match r.reward_amount.unwrap() {
+                                            RewardAmount::FixedAmount(amount) => json!({
+                                                "type": "fixed_amount",
+                                                "amount": amount,
+                                            }),
+                                            RewardAmount::Shares(shares) => json!({
+                                                "type": "shares",
+                                                "shares": shares,
+                                            }),
+                                        },
+                                        "authority": r.authority.clone().map(|a| bs58::encode(a.value).into_string()),
+                                    })
+                                }).collect::<Vec<_>>(),
+                            }),
+                        },
                     }))?;
                 }
                 missing_filetype => println!("No dump for {missing_filetype}"),

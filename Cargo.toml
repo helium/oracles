@@ -159,13 +159,14 @@ anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madnin
 
 # When attempting to test proto changes without needing to push a branch you can
 # patch the github url to point to your local proto repo.
-# 
+#
 # Patching for beacon must point directly to the crate, it will not look in the
 # repo for sibling crates.
-# 
+#
 # [patch.'https://github.com/helium/proto']
 # helium-proto = { path = "../proto" }
 # beacon = { path = "../proto/beacon" }
+
 
 # [patch.'https://github.com/helium/proto']
 # helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "kurotych/carrier-enablement" }

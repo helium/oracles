@@ -8,7 +8,7 @@ use crate::{
 };
 use helium_proto::{
     self as proto,
-    services::{packet_verifier, poc_lora, poc_mobile},
+    services::{chain_rewardable_entities, packet_verifier, poc_lora, poc_mobile},
     Message,
 };
 
@@ -312,6 +312,26 @@ impl_file_sink!(
     poc_mobile::VerifiedSubscriberMappingActivityReportV1,
     FileType::VerifiedSubscriberMappingActivityReport.to_str(),
     "verified_subscriber_mapping_activity_report"
+);
+impl_file_sink!(
+    chain_rewardable_entities::MobileHotspotChangeReportV1,
+    FileType::MobileHotspotChangeReport.to_str(),
+    "chain_rewardable_entities_mobile_hotspot_change_report"
+);
+impl_file_sink!(
+    chain_rewardable_entities::IotHotspotChangeReportV1,
+    FileType::IotHotspotChangeReport.to_str(),
+    "chain_rewardable_entities_iot_hotspot_change_report"
+);
+impl_file_sink!(
+    chain_rewardable_entities::EntityOwnershipChangeReportV1,
+    FileType::EntityOwnershipChangeReport.to_str(),
+    "chain_rewardable_entities_entity_ownership_change_report"
+);
+impl_file_sink!(
+    chain_rewardable_entities::EntityRewardDestinationChangeReportV1,
+    FileType::EntityRewardDestinationChangeReport.to_str(),
+    "chain_rewardable_entities_entity_reward_destination_change_report"
 );
 impl_file_sink!(
     poc_mobile::EnabledCarriersInfoReportV1,
