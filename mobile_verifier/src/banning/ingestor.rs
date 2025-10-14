@@ -7,7 +7,7 @@ use file_store::{
     },
     traits::{FileSinkCommitStrategy, FileSinkRollTime},
 };
-use futures::{StreamExt, TryFutureExt};
+use futures::StreamExt;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use sqlx::{PgConnection, PgPool};
@@ -28,13 +28,8 @@ impl ManagedTask for BanIngestor {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

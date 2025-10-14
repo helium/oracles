@@ -118,7 +118,7 @@ impl ManagedTask for GrpcServer {
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+        task_manager::spawn(self.run(shutdown))
     }
 }
 
