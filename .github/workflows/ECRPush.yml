@@ -11,7 +11,9 @@ on:
         default: 'all'
         options:
           - all
-          - ingest
+          - ingest-chain
+          - ingest-iot
+          - ingest-mobile
           - iot-config
           - iot-packet-verifier
           - iot-verifier
@@ -45,7 +47,7 @@ jobs:
         id: set-packages
         run: |
           if [ "${{ inputs.package }}" = "all" ]; then
-            echo 'packages=["ingest","mobile-config","mobile-packet-verifier","mobile-verifier","poc-entropy","price","reward-index"]' >> $GITHUB_OUTPUT
+            echo 'packages=["ingest-chain","ingest-iot","ingest-mobile","mobile-config","mobile-packet-verifier","mobile-verifier","poc-entropy","price","reward-index"]' >> $GITHUB_OUTPUT
           else
             echo "packages=[\"${{ inputs.package }}\"]" >> $GITHUB_OUTPUT
           fi
@@ -77,7 +79,9 @@ jobs:
       - name: Set ECR URL
         run: |
           case "${{ matrix.package }}" in
-            ingest)                   echo "ECR_URL=${{ vars.INGEST_ECR_URL }}" >> $GITHUB_ENV ;;
+            ingest-chain)             echo "ECR_URL=${{ vars.INGEST_CHAIN_ECR_URL }}" >> $GITHUB_ENV ;;
+            ingest-iot)               echo "ECR_URL=${{ vars.INGEST_IOT_ECR_URL }}" >> $GITHUB_ENV ;;
+            ingest-mobile)            echo "ECR_URL=${{ vars.INGEST_MOBILE_ECR_URL }}" >> $GITHUB_ENV ;;
             iot-config)               echo "ECR_URL=${{ vars.IOT_CONFIG_ECR_URL }}" >> $GITHUB_ENV ;;
             iot-packet-verifier)      echo "ECR_URL=${{ vars.IOT_PACKET_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;
             iot-verifier)             echo "ECR_URL=${{ vars.IOT_VERIFIER_ECR_URL }}" >> $GITHUB_ENV ;;

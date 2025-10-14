@@ -108,10 +108,9 @@ gem install dotenv -v 2.8.1
 gem install fpm -v 1.14.2 # current as of 2022-11-08
 echo "ruby deps installed" 
 
-for config_path in "reward_index" "price" "ingest" "iot_config" "iot_packet_verifier" "iot_verifier" "poc_entropy"
+for config_path in "reward_index" "price" "ingest_chain" "ingest_iot" "ingest_mobile" "iot_config" "iot_packet_verifier" "iot_verifier" "poc_entropy"
 do
     oracle=$(echo $config_path | sed -E 's!\./([^/]+)/.+$!\1!' | sed -E 's!_!-!g')
-    
     echo "starting  $oracle $config_path $VERSION"
     write_unit_template $oracle
     echo "write_unit_template  $oracle done"
