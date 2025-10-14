@@ -1,0 +1,76 @@
+
+# log settings for the application (RUST_LOG format). Default below
+#
+# log = "ingest=debug,poc_store=info"
+
+# Listen address for public grpc. Default below
+#
+# listen_addr = "0.0.0.0:9081"
+
+# Cache folder to use. Default below
+#
+# cache = "/opt/ingest/data"
+
+# Network required by all public keys: mainnet | testnet
+#
+network = "mainnet"
+
+# Roll time for file uploads. Default is 15 minutes
+#
+# roll_time = "15 minutes"
+
+# Token for ingest grpc endpoint bearer authentication. Required for mobile mode
+#
+token = "api-token"
+
+# Output bucket name. Required
+#
+output_bucket = "ingest-mobile-bucket"
+
+# File store settings for S3/object storage
+#
+# [file_store]
+# region = "us-west-2"
+# endpoint = "https://s3.us-west-2.amazonaws.com"
+
+[config_client]
+
+# Mobile config client settings. Required
+
+# grpc url to the mobile config oracle server
+#
+url = "http://mobile-config-service:50051"
+
+# Base64 encoded string of the helium keypair for signing
+#
+signing_keypair = "base64-encoded-keypair"
+
+# B58 encoded public key of the mobile config server for verification
+#
+config_pubkey = "b58-encoded-public-key"
+
+# Connect timeout for the mobile config client. Default is 5 seconds
+#
+# connect_timeout = "5 seconds"
+
+# RPC timeout for mobile config client. Default is 5 seconds
+#
+# rpc_timeout = "5 seconds"
+
+# Batch size for hotspot metadata stream results. Default is 100
+#
+# batch_size = 100
+
+# Batch size for hex boosting stream results. Default is 100
+#
+# hex_boosting_batch_size = 100
+
+# Cache TTL for mobile config client. Default is 1 hour
+#
+# cache_ttl = "1 hour"
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+# endpoint = "127.0.0.1:19000"
