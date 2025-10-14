@@ -4119,6 +4119,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "ingest-iot"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "backon 1.5.2",
+ "bs58",
+ "chrono",
+ "clap",
+ "config",
+ "custom-tracing",
+ "file-store",
+ "futures",
+ "helium-crypto",
+ "helium-proto",
+ "http 1.3.1",
+ "humantime-serde",
+ "poc-metrics",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "task-manager",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
 name = "inotify"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

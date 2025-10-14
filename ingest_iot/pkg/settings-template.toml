@@ -1,0 +1,40 @@
+
+# log settings for the application (RUST_LOG format). Default below
+#
+# log = "ingest=debug,poc_store=info"
+
+# Listen address for public grpc. Default below
+#
+# listen_addr = "0.0.0.0:9081"
+
+# Cache folder to use. Default below
+#
+# cache = "/opt/ingest/data"
+
+# Network required by all public keys: mainnet | testnet
+#
+network = "mainnet"
+
+# Session key offer timeout. Default is 5 seconds
+#
+# session_key_offer_timeout = "5 seconds"
+
+# Session key timeout. Default is 30 minutes
+#
+# session_key_timeout = "30 minutes"
+
+# Output bucket name. Required
+#
+output_bucket = "ingest-iot-bucket"
+
+# File store settings for S3/object storage
+#
+# [file_store]
+# region = "us-west-2"
+# endpoint = "https://s3.us-west-2.amazonaws.com"
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+# endpoint = "127.0.0.1:19000"

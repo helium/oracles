@@ -11,6 +11,7 @@ members = [
   "file_store",
   "ingest",
   "ingest_chain",
+  "ingest_iot",
   "iot_config",
   "iot_packet_verifier",
   "iot_verifier",
