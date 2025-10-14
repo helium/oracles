@@ -4093,6 +4093,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ingest-chain"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "config",
+ "custom-tracing",
+ "file-store",
+ "futures",
+ "helium-crypto",
+ "helium-proto",
+ "http 1.3.1",
+ "humantime-serde",
+ "poc-metrics",
+ "serde",
+ "serde_json",
+ "task-manager",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
 name = "inotify"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
