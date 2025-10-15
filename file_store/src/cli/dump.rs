@@ -1,8 +1,7 @@
-use std::{io, path::PathBuf};
+use std::path::PathBuf;
 
 use base64::Engine;
 use bs58;
-use csv::Writer;
 use futures::stream::StreamExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use helium_proto::{
@@ -22,7 +21,7 @@ use helium_proto::{
             mobile_reward_share::Reward as MobileReward, CoverageObjectV1, Heartbeat,
             HexUsageStatsIngestReportV1, InvalidDataTransferIngestReportV1, MobileRewardShare,
             OracleBoostingReportV1, RadioRewardShare, RadioUsageStatsIngestReportV1, SpeedtestAvg,
-            SpeedtestIngestReportV1, SpeedtestReqV1, UniqueConnectionsIngestReportV1,
+            SpeedtestIngestReportV1, UniqueConnectionsIngestReportV1,
             VerifiedDataTransferIngestReportV1, VerifiedInvalidatedRadioThresholdIngestReportV1,
             VerifiedRadioThresholdIngestReportV1, VerifiedUniqueConnectionsIngestReportV1,
         },
@@ -69,7 +68,6 @@ impl Cmd {
     pub async fn run(&self) -> Result {
         let mut file_stream = file_source::source([&self.in_path]);
 
-        let mut wtr = Writer::from_writer(io::stdout());
         while let Some(result) = file_stream.next().await {
             let msg = result?;
             match self.file_type {
@@ -120,8 +118,16 @@ impl Cmd {
                     print_json(&json)?;
                 }
                 FileType::CellSpeedtest => {
-                    let dec_msg = SpeedtestReqV1::decode(msg)?;
-                    wtr.serialize(CellSpeedtest::try_from(dec_msg)?)?;
+                    // let dec_msg = SpeedtestReqV1::decode(msg)?;
+                    let msg = CellSpeedtest::decode(msg)?;
+                    print_json(&json!({
+                        "pubkey": msg.pubkey,
+                        "serial": msg.serial,
+                        "timestamp": msg.timestamp,
+                        "upload_speed": msg.upload_speed,
+                        "download_speed": msg.download_speed,
+                        "latency": msg.latency,
+                    }))?;
                 }
                 FileType::CellSpeedtestIngestReport => {
                     let dec_msg = SpeedtestIngestReportV1::decode(msg)?;
@@ -514,8 +520,6 @@ impl Cmd {
                 missing_filetype => println!("No dump for {missing_filetype}"),
             }
         }
-
-        wtr.flush()?;
 
         Ok(())
     }

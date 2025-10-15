@@ -17,8 +17,6 @@ pub enum Error {
     NotFound(String),
     #[error("crypto error")]
     Crypto(Box<helium_crypto::Error>),
-    #[error("csv error")]
-    Csv(#[from] csv::Error),
     #[error("aws error")]
     Aws(#[source] Box<aws_sdk_s3::Error>),
     #[error("config error")]
