@@ -230,6 +230,7 @@ pub struct DataTransferSessionReq {
     pub pub_key: PublicKeyBinary,
     pub signature: Vec<u8>,
     pub carrier_id: CarrierIdV2,
+    pub sampling: bool,
 }
 
 impl MsgDecode for DataTransferSessionReq {
@@ -251,6 +252,7 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
                 .try_into()?,
             pub_key: v.pub_key.into(),
             carrier_id,
+            sampling: v.sampling,
         })
     }
 }
@@ -265,6 +267,7 @@ impl From<DataTransferSessionReq> for DataTransferSessionReqV1 {
             pub_key: v.pub_key.into(),
             signature: v.signature,
             carrier_id_v2: v.carrier_id.into(),
+            sampling: v.sampling,
             ..Default::default()
         }
     }
