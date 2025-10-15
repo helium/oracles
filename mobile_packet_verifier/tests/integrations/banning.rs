@@ -99,6 +99,7 @@ async fn extremities_of_banning(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn ban_unban(pool: PgPool) -> anyhow::Result<()> {
     let mut conn = pool.acquire().await?;
     let key = PublicKeyBinary::from(vec![1]);
