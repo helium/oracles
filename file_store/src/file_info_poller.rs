@@ -247,20 +247,6 @@ where
     Parser: FileInfoPollerParser<Message>,
     Store: FileInfoPollerStore + Send + Sync + 'static,
 {
-    pub async fn start(
-        self,
-        shutdown: triggered::Listener,
-    ) -> Result<impl std::future::Future<Output = Result>> {
-        let join_handle = tokio::spawn(async move { self.run(shutdown).await });
-        Ok(async move {
-            match join_handle.await {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(err)) => Err(err),
-                Err(err) => Err(Error::from(err)),
-            }
-        })
-    }
-
     async fn get_next_file(&mut self) -> Result<FileInfo> {
         loop {
             if let Some(file_info) = self.file_queue.pop_front() {
