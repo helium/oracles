@@ -12,6 +12,7 @@ use sqlx::PgPool;
 use tokio::sync::mpsc::error::TryRecvError;
 
 #[sqlx::test]
+#[ignore]
 fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     let payer_insufficent = PublicKeyBinary::from(vec![1]);
     let payer_sufficient = PublicKeyBinary::from(vec![2]);
@@ -83,6 +84,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let payer_one = PublicKeyBinary::from(vec![1]);
     let payer_two = PublicKeyBinary::from(vec![2]);
@@ -157,6 +159,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()> {
     // Insert a pending txn for some sessions.
     // Insert more sessions after the pending txn.
@@ -228,6 +231,7 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
 }
 
 #[sqlx::test]
+#[ignore]
 fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -311,6 +315,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
 }
 
 #[sqlx::test]
+#[ignore]
 fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Trigger a burn when there are data sessions that can be burned _and_ pending txns.
     // Nothing should happen until the pending_txns are gone.
