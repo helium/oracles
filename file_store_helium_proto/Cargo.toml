@@ -1,0 +1,20 @@
+[package]
+name = "file-store-helium-proto"
+version = "0.1.0"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+helium-crypto = { workspace = true }
+helium-proto = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+h3o = { workspace = true }
+beacon = { workspace = true }
+blake3 = { workspace = true }
+rust_decimal = { workspace = true }
+
+file-store-shared = { path = "../file_store_shared" }

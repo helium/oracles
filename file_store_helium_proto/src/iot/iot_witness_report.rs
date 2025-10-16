@@ -1,14 +1,11 @@
-use crate::{
-    error::DecodeError,
-    traits::MsgDecode,
-    traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
-    Error, Result,
-};
 use chrono::{DateTime, Utc};
+use file_store_shared::{error::DecodeError, traits::MsgDecode, Error, Result};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{LoraWitnessIngestReportV1, LoraWitnessReportReqV1};
 use helium_proto::DataRate;
 use serde::Serialize;
+
+use crate::traits::{MsgTimestamp, TimestampDecode, TimestampEncode};
 
 #[derive(Serialize, Clone, Debug)]
 pub struct IotWitnessReport {

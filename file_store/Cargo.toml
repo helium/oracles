@@ -53,6 +53,9 @@ aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 aws-smithy-types-convert = { workspace = true }
 
+file-store-helium-proto = { path = "../file_store_helium_proto" }
+file-store-shared = { path = "../file_store_shared" }
+
 [dev-dependencies]
 hex-literal = "0"
 tempfile = { workspace = true }

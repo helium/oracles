@@ -1,12 +1,11 @@
-use file_store::{
+use file_store::{traits::MsgDecode, Client, FileInfoStream, FileType, Settings};
+use file_store_helium_proto::{
     iot_beacon_report::IotBeaconIngestReport,
     iot_valid_poc::IotPoc,
     iot_witness_report::IotWitnessIngestReport,
     mobile_radio_invalidated_threshold::VerifiedInvalidatedRadioThresholdIngestReport,
     mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
     speedtest::{cli::SpeedtestAverage, CellSpeedtest},
-    traits::MsgDecode,
-    Client, FileInfoStream, FileType, Settings,
 };
 
 use chrono::{NaiveDateTime, TimeZone, Utc};

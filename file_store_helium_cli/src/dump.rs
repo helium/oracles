@@ -32,8 +32,12 @@ use serde_json::json;
 
 use file_store::{
     cli::print_json,
-    coverage::CoverageObject,
     file_source,
+    traits::{MsgDecode, TimestampDecode},
+    FileType,
+};
+use file_store_helium_proto::{
+    coverage::CoverageObject,
     iot_packet::IotValidPacket,
     mobile_radio_invalidated_threshold::VerifiedInvalidatedRadioThresholdIngestReport,
     mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
@@ -44,11 +48,9 @@ use file_store::{
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     reward_manifest::RewardManifest,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
-    traits::{MsgDecode, TimestampDecode},
     unique_connections::UniqueConnectionReq,
     usage_counts::{HexUsageCountsIngestReport, RadioUsageCountsIngestReport},
     wifi_heartbeat::WifiHeartbeatIngestReport,
-    FileType,
 };
 
 /// Print information about a given store file.

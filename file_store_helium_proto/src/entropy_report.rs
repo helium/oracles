@@ -1,10 +1,9 @@
-use crate::{
-    traits::{MsgDecode, MsgTimestamp, TimestampDecode, TimestampEncode},
-    Error, Result,
-};
 use chrono::{DateTime, Utc};
+use file_store_shared::{traits::MsgDecode, Error, Result};
 use helium_proto::EntropyReportV1;
 use serde::Serialize;
+
+use crate::traits::{MsgTimestamp, TimestampDecode, TimestampEncode};
 
 #[derive(Serialize, Clone, Debug)]
 pub struct EntropyReport {
@@ -33,7 +32,7 @@ impl TryFrom<EntropyReportV1> for EntropyReport {
     type Error = Error;
 
     fn try_from(v: EntropyReportV1) -> Result<Self> {
-        let timestamp = v.timestamp()?;
+        let timestamp = v.timestamp.to_timestamp()?;
         Ok(Self {
             data: v.data,
             version: v.version,

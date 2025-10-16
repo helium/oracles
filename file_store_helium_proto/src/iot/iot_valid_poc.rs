@@ -1,20 +1,19 @@
-use crate::{
-    error::DecodeError,
-    iot_beacon_report::IotBeaconReport,
-    iot_witness_report::IotWitnessReport,
-    traits::{MsgDecode, MsgTimestamp, TimestampDecode, TimestampEncode},
-    Error, Result,
-};
 use chrono::{DateTime, Utc};
+use file_store_shared::{error::DecodeError, traits::MsgDecode, Error, Result};
 use helium_proto::services::poc_lora::{
     InvalidDetails, InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraPocV1,
     LoraValidBeaconReportV1, LoraVerifiedWitnessReportV1, LoraWitnessReportReqV1,
     VerificationStatus,
 };
 
-use rust_decimal::{prelude::ToPrimitive, Decimal};
-use rust_decimal_macros::dec;
+use rust_decimal::{dec, prelude::ToPrimitive, Decimal};
 use serde::Serialize;
+
+use crate::{
+    iot_beacon_report::IotBeaconReport,
+    iot_witness_report::IotWitnessReport,
+    traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
+};
 
 const SCALE_MULTIPLIER: Decimal = dec!(10000);
 pub const SCALING_PRECISION: u32 = 4;

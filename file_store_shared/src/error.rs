@@ -1,4 +1,4 @@
-use helium_proto::UnknownEnumValue;
+use prost::UnknownEnumValue;
 use thiserror::Error;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -25,9 +25,9 @@ pub enum Error {
     NoManifest,
     #[error("send timeout")]
     SendTimeout,
-    #[error("error building file info poller")]
-    FileInfoPollerError(#[from] crate::file_info_poller::FileInfoPollerConfigBuilderError),
-    #[cfg(feature = "sqlx-postgres")]
+    // #[error("error building file info poller")]
+    // FileInfoPollerError(#[from] crate::file_info_poller::FileInfoPollerConfigBuilderError),
+    // #[cfg(feature = "sqlx-postgres")]
     #[error("db error")]
     DbError(#[from] sqlx::Error),
     #[error("channel send error")]

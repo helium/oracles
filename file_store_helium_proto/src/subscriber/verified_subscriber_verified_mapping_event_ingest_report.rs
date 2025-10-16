@@ -1,14 +1,15 @@
-use crate::{
-    subscriber_verified_mapping_event_ingest_report::SubscriberVerifiedMappingEventIngestReport,
-    traits::{MsgDecode, MsgTimestamp, TimestampDecode, TimestampEncode},
-    Error, Result,
-};
 use chrono::{DateTime, Utc};
+use file_store_shared::{traits::MsgDecode, Error, Result};
 use helium_proto::services::poc_mobile::{
     SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventVerificationStatus,
     VerifiedSubscriberVerifiedMappingEventIngestReportV1,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    subscriber_verified_mapping_event_ingest_report::SubscriberVerifiedMappingEventIngestReport,
+    traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
+};
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct VerifiedSubscriberVerifiedMappingEventIngestReport {

@@ -1,5 +1,5 @@
-use crate::{error::DecodeError, Result};
 use chrono::{DateTime, TimeZone, Utc};
+use file_store_shared::{error::DecodeError, Result};
 
 pub trait MsgTimestamp<R> {
     fn timestamp(&self) -> R;

@@ -10,6 +10,8 @@ members = [
   "denylist",
   "file_store",
   "file_store_helium_cli",
+  "file_store_helium_proto",
+  "file_store_shared",
   "ingest",
   "iot_config",
   "iot_packet_verifier",
@@ -87,7 +89,7 @@ tracing-subscriber = { version = "0", default-features = false, features = [
   "registry",
   "fmt",
 ] }
-rust_decimal = "1"
+rust_decimal = { version = "1", features = ["macros"] }
 rust_decimal_macros = "1"
 base64 = ">=0.21"
 sha2 = "0.10"

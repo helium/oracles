@@ -2,10 +2,9 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    traits::{MsgDecode, TimestampDecode},
-    Error,
-};
+use file_store_shared::{traits::MsgDecode, Error};
+
+use crate::traits::TimestampDecode;
 
 pub mod proto {
     pub use helium_proto::services::poc_mobile::{
@@ -109,6 +108,8 @@ impl From<VerifiedUniqueConnectionsIngestReport>
 
 #[cfg(test)]
 mod tests {
+
+    use crate::traits::TimestampDecode;
 
     use super::*;
 

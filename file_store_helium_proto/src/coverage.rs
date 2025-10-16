@@ -1,9 +1,5 @@
-use crate::{
-    error::DecodeError,
-    traits::{MsgDecode, TimestampDecode},
-    Error, Result,
-};
 use chrono::{DateTime, Utc};
+use file_store_shared::{error::DecodeError, traits::MsgDecode, Error, Result};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     coverage_object_req_v1, CoverageObjectIngestReportV1, CoverageObjectReqV1,
@@ -11,6 +7,8 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::traits::TimestampDecode;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RadioHexSignalLevel {

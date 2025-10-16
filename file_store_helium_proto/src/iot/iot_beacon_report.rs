@@ -1,11 +1,7 @@
-use crate::{
-    error::DecodeError,
-    traits::MsgDecode,
-    traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
-    Error, Result,
-};
+use crate::msg_timestamp::{MsgTimestamp, TimestampDecode, TimestampEncode};
 use beacon;
 use chrono::{DateTime, Utc};
+use file_store_shared::{error::DecodeError, traits::MsgDecode, Error, Result};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{LoraBeaconIngestReportV1, LoraBeaconReportReqV1};
 use helium_proto::DataRate;

@@ -1,0 +1,22 @@
+[package]
+name = "file-store-shared"
+version = "0.1.0"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+chrono = { workspace = true }
+bytes = { workspace = true }
+prost = { workspace = true }
+helium-crypto = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+helium-proto = { workspace = true }
+serde_json = { workspace = true }
+h3o = { workspace = true }
+tokio = { workspace = true }
+http = { workspace = true }
+rust_decimal = { workspace = true }
+uuid = { workspace = true }
+sqlx = { workspace = true }

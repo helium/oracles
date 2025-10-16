@@ -22,3 +22,4 @@ prost = { workspace = true }
 uuid = { workspace = true }
 
 file-store = { path = "../file_store" }
+file-store-helium-proto = { path = "../file_store_helium_proto" }

@@ -1,15 +1,13 @@
-use crate::{
-    error::DecodeError,
-    traits::{MsgDecode, MsgTimestamp, TimestampDecode, TimestampEncode},
-    Error, Result,
-};
 use chrono::{DateTime, Utc};
+use file_store_shared::{error::DecodeError, traits::MsgDecode, Error, Result};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     SubscriberLocationIngestReportV1, SubscriberLocationReqV1, SubscriberReportVerificationStatus,
     VerifiedSubscriberLocationIngestReportV1,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::traits::{MsgTimestamp, TimestampDecode, TimestampEncode};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SubscriberLocationReq {

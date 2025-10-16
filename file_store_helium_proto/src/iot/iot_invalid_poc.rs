@@ -1,16 +1,16 @@
-use crate::{
-    error::DecodeError,
-    iot_beacon_report::IotBeaconReport,
-    iot_witness_report::IotWitnessReport,
-    traits::{MsgDecode, MsgTimestamp, TimestampDecode, TimestampEncode},
-    Error, Result,
-};
 use chrono::{DateTime, Utc};
+use file_store_shared::{error::DecodeError, traits::MsgDecode, Error, Result};
 use helium_proto::services::poc_lora::{
     InvalidDetails, InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1,
     LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1, LoraWitnessReportReqV1,
 };
 use serde::Serialize;
+
+use crate::{
+    iot_beacon_report::IotBeaconReport,
+    iot_witness_report::IotWitnessReport,
+    traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
+};
 
 #[derive(Serialize, Clone)]
 pub struct IotInvalidBeaconReport {

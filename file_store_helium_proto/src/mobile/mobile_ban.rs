@@ -1,14 +1,10 @@
-use std::str::FromStr;
-
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 
-use crate::{
+use file_store_shared::{
     error::DecodeError,
-    file_info_poller::{FileInfoPollerServer, FileInfoPollerState, FileInfoStream},
-    file_sink::FileSinkClient,
-    traits::{FileSinkWriteExt, MsgDecode, TimestampDecode, TimestampEncode},
-    Error, FileSink,
+    traits::MsgDecode,
+    Error, // FileSink,
 };
 
 pub mod proto {
@@ -21,12 +17,14 @@ pub mod proto {
 // Re-export proto enums
 pub use proto::{BanReason, VerifiedBanIngestReportStatus};
 
-pub type BanReportStream = FileInfoStream<BanReport>;
-pub type BanReportSource = tokio::sync::mpsc::Receiver<BanReportStream>;
+use crate::traits::{TimestampDecode, TimestampEncode};
 
-pub type VerifiedBanReportSink = FileSinkClient<proto::VerifiedBanIngestReportV1>;
-pub type VerifiedBanReportStream = FileInfoStream<VerifiedBanReport>;
-pub type VerifiedBanReportSource = tokio::sync::mpsc::Receiver<VerifiedBanReportStream>;
+// pub type BanReportStream = FileInfoStream<BanReport>;
+// pub type BanReportSource = tokio::sync::mpsc::Receiver<BanReportStream>;
+
+// pub type VerifiedBanReportSink = FileSinkClient<proto::VerifiedBanIngestReportV1>;
+// pub type VerifiedBanReportStream = FileInfoStream<VerifiedBanReport>;
+// pub type VerifiedBanReportSource = tokio::sync::mpsc::Receiver<VerifiedBanReportStream>;
 
 #[derive(Clone)]
 pub struct VerifiedBanReport {
@@ -277,85 +275,85 @@ impl From<BanType> for i32 {
 
 // === Helpers
 
-pub async fn verified_report_sink(
-    target_path: &std::path::Path,
-    file_upload: crate::file_upload::FileUpload,
-    commit_strategy: crate::traits::FileSinkCommitStrategy,
-    roll_time: crate::traits::FileSinkRollTime,
-    metric_prefix: &str,
-) -> crate::Result<(
-    VerifiedBanReportSink,
-    FileSink<proto::VerifiedBanIngestReportV1>,
-)> {
-    proto::VerifiedBanIngestReportV1::file_sink(
-        target_path,
-        file_upload,
-        commit_strategy,
-        roll_time,
-        metric_prefix,
-    )
-    .await
-}
+// pub async fn verified_report_sink(
+//     target_path: &std::path::Path,
+//     file_upload: crate::file_upload::FileUpload,
+//     commit_strategy: crate::traits::FileSinkCommitStrategy,
+//     roll_time: crate::traits::FileSinkRollTime,
+//     metric_prefix: &str,
+// ) -> crate::Result<(
+//     VerifiedBanReportSink,
+//     FileSink<proto::VerifiedBanIngestReportV1>,
+// )> {
+//     proto::VerifiedBanIngestReportV1::file_sink(
+//         target_path,
+//         file_upload,
+//         commit_strategy,
+//         roll_time,
+//         metric_prefix,
+//     )
+//     .await
+// }
 
-pub async fn report_source<State: FileInfoPollerState>(
-    pool: State,
-    client: crate::Client,
-    bucket: String,
-    start_after: DateTime<Utc>,
-) -> crate::Result<(BanReportSource, FileInfoPollerServer<BanReport, State>)> {
-    crate::file_source::continuous_source()
-        .state(pool)
-        .file_store(client, bucket)
-        .lookback_start_after(start_after)
-        .prefix(crate::FileType::MobileBanReport.to_string())
-        .create()
-        .await
-}
+// pub async fn report_source<State: FileInfoPollerState>(
+//     pool: State,
+//     client: crate::Client,
+//     bucket: String,
+//     start_after: DateTime<Utc>,
+// ) -> crate::Result<(BanReportSource, FileInfoPollerServer<BanReport, State>)> {
+//     crate::file_source::continuous_source()
+//         .state(pool)
+//         .file_store(client, bucket)
+//         .lookback_start_after(start_after)
+//         .prefix(crate::FileType::MobileBanReport.to_string())
+//         .create()
+//         .await
+// }
 
-pub async fn verified_report_source<State: FileInfoPollerState>(
-    pool: State,
-    client: crate::Client,
-    bucket: String,
-    start_after: DateTime<Utc>,
-) -> crate::Result<(
-    VerifiedBanReportSource,
-    FileInfoPollerServer<VerifiedBanReport, State>,
-)> {
-    crate::file_source::continuous_source()
-        .state(pool)
-        .file_store(client, bucket)
-        .lookback_start_after(start_after)
-        .prefix(crate::FileType::VerifiedMobileBanReport.to_string())
-        .create()
-        .await
-}
+// pub async fn verified_report_source<State: FileInfoPollerState>(
+//     pool: State,
+//     client: crate::Client,
+//     bucket: String,
+//     start_after: DateTime<Utc>,
+// ) -> crate::Result<(
+//     VerifiedBanReportSource,
+//     FileInfoPollerServer<VerifiedBanReport, State>,
+// )> {
+//     crate::file_source::continuous_source()
+//         .state(pool)
+//         .file_store(client, bucket)
+//         .lookback_start_after(start_after)
+//         .prefix(crate::FileType::VerifiedMobileBanReport.to_string())
+//         .create()
+//         .await
+// }
 
-impl VerifiedBanReport {
-    pub fn is_valid(&self) -> bool {
-        matches!(self.status, proto::VerifiedBanIngestReportStatus::Valid)
-    }
+// impl VerifiedBanReport {
+//     pub fn is_valid(&self) -> bool {
+//         matches!(self.status, proto::VerifiedBanIngestReportStatus::Valid)
+//     }
 
-    pub fn hotspot_pubkey(&self) -> &PublicKeyBinary {
-        &self.report.report.hotspot_pubkey
-    }
-}
+//     pub fn hotspot_pubkey(&self) -> &PublicKeyBinary {
+//         &self.report.report.hotspot_pubkey
+//     }
+// }
 
-impl BanType {
-    pub fn as_str_name(&self) -> &'static str {
-        proto::BanType::from(*self).as_str_name()
-    }
-}
+// impl BanType {
+//     pub fn as_str_name(&self) -> &'static str {
+//         proto::BanType::from(*self).as_str_name()
+//     }
+// }
 
-#[derive(Debug, thiserror::Error)]
-#[error("invalid ban type string: {0}")]
-pub struct BanTypeParseError(String);
+// #[derive(Debug, thiserror::Error)]
+// #[error("invalid ban type string: {0}")]
+// pub struct BanTypeParseError(String);
 
-impl FromStr for BanType {
-    type Err = BanTypeParseError;
+// impl FromStr for BanType {
+//     type Err = BanTypeParseError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        proto::BanType::from_str_name(s)
-            .ok_or_else(|| BanTypeParseError(s.to_string()))
-            .map(BanType::from)
-    }
-}
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         proto::BanType::from_str_name(s)
+//             .ok_or_else(|| BanTypeParseError(s.to_string()))
+//             .map(BanType::from)
+//     }
+// }

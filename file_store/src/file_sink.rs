@@ -1,4 +1,5 @@
-use crate::{file_upload::FileUpload, traits::MsgBytes, Error, Result};
+use crate::traits::MsgBytes;
+use crate::{file_upload::FileUpload, Error, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
