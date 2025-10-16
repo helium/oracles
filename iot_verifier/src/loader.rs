@@ -55,10 +55,11 @@ use crate::{
 use chrono::DateTime;
 use chrono::Utc;
 use file_store::{
-    iot_beacon_report::IotBeaconIngestReport,
-    iot_witness_report::IotWitnessIngestReport,
     traits::{IngestId, MsgDecode},
     FileInfo, FileType,
+};
+use file_store_helium_proto::{
+    iot_beacon_report::IotBeaconIngestReport, iot_witness_report::IotWitnessIngestReport,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;

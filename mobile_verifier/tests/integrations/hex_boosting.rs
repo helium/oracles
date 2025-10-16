@@ -3,7 +3,7 @@ use crate::common::{
     RadioRewardV2Ext,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
-use file_store::{
+use file_store_helium_proto::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     speedtest::CellSpeedtest,
     unique_connections::{UniqueConnectionReq, UniqueConnectionsIngestReport},

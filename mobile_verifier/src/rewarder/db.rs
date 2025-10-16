@@ -69,7 +69,7 @@ mod tests {
     use crate::{cell_type, heartbeats, speedtests, unique_connections};
 
     mod file_store {
-        pub use file_store::{
+        pub use file_store_helium_proto::{
             speedtest::CellSpeedtest,
             unique_connections::{UniqueConnectionReq, UniqueConnectionsIngestReport},
         };

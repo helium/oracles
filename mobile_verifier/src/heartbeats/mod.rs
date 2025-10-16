@@ -10,7 +10,8 @@ use crate::{
 };
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
-use file_store::{file_sink::FileSinkClient, wifi_heartbeat::WifiHeartbeatIngestReport};
+use file_store::file_sink::FileSinkClient;
+use file_store_helium_proto::wifi_heartbeat::WifiHeartbeatIngestReport;
 use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
@@ -644,7 +645,7 @@ mod test {
     use crate::seniority::SeniorityUpdateAction;
 
     use super::*;
-    use file_store::wifi_heartbeat::WifiHeartbeat;
+    use file_store_helium_proto::wifi_heartbeat::WifiHeartbeat;
     use proto::SeniorityUpdateReason::*;
 
     #[test]

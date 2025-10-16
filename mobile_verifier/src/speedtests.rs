@@ -8,10 +8,10 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
-    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
+use file_store_helium_proto::speedtest::{CellSpeedtest, CellSpeedtestIngestReport};
 use futures::stream::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{

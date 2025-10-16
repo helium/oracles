@@ -1,8 +1,6 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    file_info_poller::FileInfoStream, file_source, mobile_transfer::ValidDataTransferSession,
-    FileType,
-};
+use file_store::{file_info_poller::FileInfoStream, file_source, FileType};
+use file_store_helium_proto::mobile_transfer::ValidDataTransferSession;
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,

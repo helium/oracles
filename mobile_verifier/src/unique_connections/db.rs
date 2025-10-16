@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use chrono::{DateTime, Utc};
-use file_store::unique_connections::UniqueConnectionsIngestReport;
+use file_store_helium_proto::unique_connections::UniqueConnectionsIngestReport;
 use futures::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
@@ -91,7 +91,7 @@ pub async fn clear(
 
 #[cfg(test)]
 mod tests {
-    use file_store::unique_connections::UniqueConnectionReq;
+    use file_store_helium_proto::unique_connections::UniqueConnectionReq;
     use helium_crypto::{KeyTag, Keypair};
     use rand::rngs::OsRng;
 

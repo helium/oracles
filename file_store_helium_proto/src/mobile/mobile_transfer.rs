@@ -1,11 +1,10 @@
-use crate::{
-    traits::{MsgDecode, TimestampDecode},
-    Error, Result,
-};
 use chrono::{DateTime, Utc};
+use file_store_shared::{traits::MsgDecode, Error, Result};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier as proto;
 use serde::Serialize;
+
+use crate::traits::TimestampDecode;
 
 #[derive(Serialize, Clone)]
 pub struct ValidDataTransferSession {

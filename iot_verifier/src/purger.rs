@@ -8,11 +8,12 @@
 use crate::{entropy::Entropy, poc_report::Report, telemetry};
 use file_store::{
     file_sink::FileSinkClient,
-    iot_beacon_report::IotBeaconIngestReport,
-    iot_invalid_poc::IotInvalidBeaconReport,
-    iot_invalid_poc::IotInvalidWitnessReport,
-    iot_witness_report::IotWitnessIngestReport,
     traits::{IngestId, MsgDecode},
+};
+use file_store_helium_proto::{
+    iot_beacon_report::IotBeaconIngestReport,
+    iot_invalid_poc::{IotInvalidBeaconReport, IotInvalidWitnessReport},
+    iot_witness_report::IotWitnessIngestReport,
 };
 use futures::stream::{self, StreamExt};
 use helium_proto::services::poc_lora::{

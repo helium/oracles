@@ -275,85 +275,18 @@ impl From<BanType> for i32 {
 
 // === Helpers
 
-// pub async fn verified_report_sink(
-//     target_path: &std::path::Path,
-//     file_upload: crate::file_upload::FileUpload,
-//     commit_strategy: crate::traits::FileSinkCommitStrategy,
-//     roll_time: crate::traits::FileSinkRollTime,
-//     metric_prefix: &str,
-// ) -> crate::Result<(
-//     VerifiedBanReportSink,
-//     FileSink<proto::VerifiedBanIngestReportV1>,
-// )> {
-//     proto::VerifiedBanIngestReportV1::file_sink(
-//         target_path,
-//         file_upload,
-//         commit_strategy,
-//         roll_time,
-//         metric_prefix,
-//     )
-//     .await
-// }
+impl VerifiedBanReport {
+    pub fn is_valid(&self) -> bool {
+        matches!(self.status, proto::VerifiedBanIngestReportStatus::Valid)
+    }
 
-// pub async fn report_source<State: FileInfoPollerState>(
-//     pool: State,
-//     client: crate::Client,
-//     bucket: String,
-//     start_after: DateTime<Utc>,
-// ) -> crate::Result<(BanReportSource, FileInfoPollerServer<BanReport, State>)> {
-//     crate::file_source::continuous_source()
-//         .state(pool)
-//         .file_store(client, bucket)
-//         .lookback_start_after(start_after)
-//         .prefix(crate::FileType::MobileBanReport.to_string())
-//         .create()
-//         .await
-// }
+    pub fn hotspot_pubkey(&self) -> &PublicKeyBinary {
+        &self.report.report.hotspot_pubkey
+    }
+}
 
-// pub async fn verified_report_source<State: FileInfoPollerState>(
-//     pool: State,
-//     client: crate::Client,
-//     bucket: String,
-//     start_after: DateTime<Utc>,
-// ) -> crate::Result<(
-//     VerifiedBanReportSource,
-//     FileInfoPollerServer<VerifiedBanReport, State>,
-// )> {
-//     crate::file_source::continuous_source()
-//         .state(pool)
-//         .file_store(client, bucket)
-//         .lookback_start_after(start_after)
-//         .prefix(crate::FileType::VerifiedMobileBanReport.to_string())
-//         .create()
-//         .await
-// }
-
-// impl VerifiedBanReport {
-//     pub fn is_valid(&self) -> bool {
-//         matches!(self.status, proto::VerifiedBanIngestReportStatus::Valid)
-//     }
-
-//     pub fn hotspot_pubkey(&self) -> &PublicKeyBinary {
-//         &self.report.report.hotspot_pubkey
-//     }
-// }
-
-// impl BanType {
-//     pub fn as_str_name(&self) -> &'static str {
-//         proto::BanType::from(*self).as_str_name()
-//     }
-// }
-
-// #[derive(Debug, thiserror::Error)]
-// #[error("invalid ban type string: {0}")]
-// pub struct BanTypeParseError(String);
-
-// impl FromStr for BanType {
-//     type Err = BanTypeParseError;
-
-//     fn from_str(s: &str) -> Result<Self, Self::Err> {
-//         proto::BanType::from_str_name(s)
-//             .ok_or_else(|| BanTypeParseError(s.to_string()))
-//             .map(BanType::from)
-//     }
-// }
+impl BanType {
+    pub fn as_str_name(&self) -> &'static str {
+        proto::BanType::from(*self).as_str_name()
+    }
+}

@@ -1,11 +1,14 @@
 use chrono::Utc;
 use file_store::{
+    file_info_poller::FileInfoStream,
+    file_sink::FileSinkClient,
+    file_source,
     file_upload::FileUpload,
-    mobile_ban::{
-        self, BanReport, BanReportSource, BanReportStream, VerifiedBanIngestReportStatus,
-        VerifiedBanReport, VerifiedBanReportSink,
-    },
-    traits::{FileSinkCommitStrategy, FileSinkRollTime},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
+    FileType,
+};
+use file_store_helium_proto::mobile_ban::{
+    proto, BanReport, VerifiedBanIngestReportStatus, VerifiedBanReport,
 };
 use futures::StreamExt;
 use helium_proto::services::mobile_config::NetworkKeyRole;
@@ -16,6 +19,13 @@ use task_manager::{ManagedTask, TaskManager};
 use crate::Settings;
 
 use super::db;
+
+pub type BanReportStream = FileInfoStream<BanReport>;
+pub type BanReportSource = tokio::sync::mpsc::Receiver<BanReportStream>;
+
+pub type VerifiedBanReportSink = FileSinkClient<proto::VerifiedBanIngestReportV1>;
+pub type VerifiedBanReportStream = FileInfoStream<VerifiedBanReport>;
+pub type VerifiedBanReportSource = tokio::sync::mpsc::Receiver<VerifiedBanReportStream>;
 
 pub struct BanIngestor {
     pool: PgPool,
@@ -42,7 +52,7 @@ impl BanIngestor {
         auth_verifier: AuthorizationClient,
         settings: &Settings,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (verified_sink, verified_sink_server) = mobile_ban::verified_report_sink(
+        let (verified_sink, verified_sink_server) = proto::VerifiedBanIngestReportV1::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
@@ -51,13 +61,13 @@ impl BanIngestor {
         )
         .await?;
 
-        let (report_rx, ingest_server) = mobile_ban::report_source(
-            pool.clone(),
-            file_store_client,
-            bucket,
-            settings.start_after,
-        )
-        .await?;
+        let (report_rx, ingest_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .file_store(file_store_client, bucket)
+            .lookback_start_after(settings.start_after)
+            .prefix(FileType::MobileBanReport.to_string())
+            .create()
+            .await?;
 
         let ingestor = Self {
             pool,

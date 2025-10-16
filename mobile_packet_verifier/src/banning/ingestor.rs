@@ -1,13 +1,19 @@
-use file_store::mobile_ban::{VerifiedBanReport, VerifiedBanReportSource, VerifiedBanReportStream};
+use file_store::{file_info_poller::FileInfoStream, file_sink::FileSinkClient};
+use file_store_helium_proto::mobile_ban::{proto, VerifiedBanReport};
 use futures::StreamExt;
 use sqlx::{PgConnection, PgPool};
 use task_manager::ManagedTask;
+use tokio::sync::mpsc::Receiver;
+
+pub type VerifiedBanReportSink = FileSinkClient<proto::VerifiedBanIngestReportV1>;
+pub type VerifiedBanReportStream = FileInfoStream<VerifiedBanReport>;
+pub type VerifiedBanReportSource = tokio::sync::mpsc::Receiver<VerifiedBanReportStream>;
 
 use super::db;
 
 pub struct BanIngestor {
     pool: PgPool,
-    report_rx: VerifiedBanReportSource,
+    report_rx: Receiver<FileInfoStream<VerifiedBanReport>>,
 }
 
 impl ManagedTask for BanIngestor {

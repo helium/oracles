@@ -12,6 +12,7 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
 file-store = { path = "../file_store" }
+file-store-helium-proto = { path = "../file_store_helium_proto" }
 futures = { workspace = true }
 helium-crypto = { workspace = true }
 itertools = { workspace = true }

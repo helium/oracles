@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
-use file_store::mobile_session::{
+use file_store_helium_proto::mobile_session::{
     DataTransferSessionIngestReport, VerifiedDataTransferIngestReport,
 };
 use futures::{Stream, StreamExt};
-use helium_proto::services::poc_mobile::DataTransferRadioAccessTechnology;
 use helium_proto::services::poc_mobile::{
-    verified_data_transfer_ingest_report_v1::ReportStatus, VerifiedDataTransferIngestReportV1,
+    verified_data_transfer_ingest_report_v1::ReportStatus, DataTransferRadioAccessTechnology,
+    VerifiedDataTransferIngestReportV1,
 };
 use sqlx::{Postgres, Transaction};
 

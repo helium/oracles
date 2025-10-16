@@ -10,10 +10,10 @@ use file_store::{
     file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
     file_source, file_upload,
-    iot_packet::PacketRouterPacketReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
+use file_store_helium_proto::iot_packet::PacketRouterPacketReport;
 use futures_util::TryFutureExt;
 use helium_proto::services::packet_verifier::{InvalidPacket, ValidPacket};
 use iot_config::client::{org_client::Orgs, OrgClient};

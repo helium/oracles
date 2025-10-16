@@ -275,7 +275,7 @@ const fn mbps(mbps: u64) -> u64 {
 #[cfg(test)]
 mod test {
     use super::*;
-    use file_store::speedtest::CellSpeedtest;
+    use file_store_helium_proto::speedtest::CellSpeedtest;
 
     impl SpeedtestAverage {
         pub fn tier(&self) -> SpeedtestTier {

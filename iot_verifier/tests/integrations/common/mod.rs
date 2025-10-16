@@ -2,9 +2,11 @@ use blake3::hash;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
+    traits::{IngestId, MsgTimestamp},
+};
+use file_store_helium_proto::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
     iot_witness_report::{IotWitnessIngestReport, IotWitnessReport},
-    traits::{IngestId, MsgTimestamp},
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{

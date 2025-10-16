@@ -5,10 +5,10 @@ use file_store::{
     file_source,
     file_upload::FileUpload,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    unique_connections::{
-        UniqueConnectionReq, UniqueConnectionsIngestReport, VerifiedUniqueConnectionsIngestReport,
-    },
     FileType,
+};
+use file_store_helium_proto::unique_connections::{
+    UniqueConnectionReq, UniqueConnectionsIngestReport, VerifiedUniqueConnectionsIngestReport,
 };
 use futures::StreamExt;
 use helium_crypto::PublicKeyBinary;
