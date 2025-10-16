@@ -2866,6 +2866,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "file_store_helium_cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.21.7",
+ "bs58",
+ "bytes",
+ "chrono",
+ "clap",
+ "file-store",
+ "futures",
+ "helium-crypto",
+ "helium-proto",
+ "prost",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"

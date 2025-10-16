@@ -1,4 +1,4 @@
-use crate::{
+use file_store::{
     iot_beacon_report::IotBeaconIngestReport,
     iot_valid_poc::IotPoc,
     iot_witness_report::IotWitnessIngestReport,
@@ -6,7 +6,7 @@ use crate::{
     mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
     speedtest::{cli::SpeedtestAverage, CellSpeedtest},
     traits::MsgDecode,
-    FileInfoStream, FileType, Settings,
+    Client, FileInfoStream, FileType, Settings,
 };
 
 use chrono::{NaiveDateTime, TimeZone, Utc};
@@ -76,8 +76,8 @@ pub struct FileFilter {
 }
 
 impl FileFilter {
-    fn list(&self, client: &aws_sdk_s3::Client, bucket: &str) -> FileInfoStream {
-        crate::list_files(
+    fn list(&self, client: &Client, bucket: &str) -> FileInfoStream {
+        file_store::list_files(
             client,
             bucket,
             &self.prefix,
@@ -123,7 +123,7 @@ impl Put {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = settings.connect().await;
         for file in self.files.iter() {
-            crate::put_file(&client, &self.bucket, file).await?;
+            file_store::put_file(&client, &self.bucket, file).await?;
         }
         Ok(())
     }
@@ -142,7 +142,7 @@ impl Remove {
     pub async fn run(&self, settings: &Settings) -> Result {
         let client = settings.connect().await;
         for key in self.keys.iter() {
-            crate::remove_file(&client, &self.bucket, key).await?;
+            file_store::remove_file(&client, &self.bucket, key).await?;
         }
         Ok(())
     }
@@ -172,7 +172,7 @@ impl Get {
                     .open(&self.dest.join(Path::new(&info.key)))
                     .await?;
 
-                let stream = crate::get_raw_file(&client, &bucket, &info.key).await?;
+                let stream = file_store::get_raw_file(&client, &bucket, &info.key).await?;
                 let mut reader = tokio::io::BufReader::new(stream.into_async_read());
                 tokio::io::copy(&mut reader, &mut file).await?;
 
@@ -198,7 +198,7 @@ impl Locate {
         let client = settings.connect().await;
         let file_infos = self.filter.list(&client, &self.bucket);
 
-        let mut events = crate::source_files(&client, &self.bucket, file_infos);
+        let mut events = file_store::source_files(&client, &self.bucket, file_infos);
 
         let mut ser = serde_json::Serializer::new(io::stdout());
         let mut seq = ser.serialize_seq(None)?;

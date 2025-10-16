@@ -39,7 +39,6 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_smithy_types_convert::stream::PaginationStreamExt;
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
-pub use cli::bucket::FileFilter;
 pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};

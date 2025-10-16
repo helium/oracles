@@ -30,7 +30,7 @@ use helium_proto::{
 };
 use serde_json::json;
 
-use crate::{
+use file_store::{
     cli::print_json,
     coverage::CoverageObject,
     file_source,

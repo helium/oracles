@@ -1,11 +1,11 @@
-use crate::{
+use bytes::BytesMut;
+use chrono::{DateTime, Utc};
+use file_store::{
     cli::print_json,
     file_source,
     traits::{MsgTimestamp, TimestampDecode},
     FileInfo, FileType,
 };
-use bytes::BytesMut;
-use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use helium_proto::services::poc_lora::{
     LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1,
@@ -69,13 +69,6 @@ impl Cmd {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for PriceReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
-        let ts = self.timestamp.to_timestamp()?;
-        Ok(ts)
-    }
-}
-
 fn get_timestamp(file_type: &str, buf: &[u8]) -> Result<DateTime<Utc>> {
     let result = match FileType::from_str(file_type)? {
         FileType::CellSpeedtest => {
@@ -110,7 +103,7 @@ fn get_timestamp(file_type: &str, buf: &[u8]) -> Result<DateTime<Utc>> {
         }
         FileType::PriceReport => {
             let entry = PriceReportV1::decode(buf)?;
-            entry.timestamp()?
+            entry.timestamp.to_timestamp()?
         }
 
         _ => Utc::now(),

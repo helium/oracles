@@ -1,5 +1,9 @@
+mod bucket;
+mod dump;
+mod dump_mobile_rewards;
+mod info;
+
 use clap::Parser;
-use file_store::cli::{bucket, dump, dump_mobile_rewards, info};
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
