@@ -190,38 +190,6 @@ jobs:
           tags: ghcr.io/${{ github.repository }}/${{ matrix.package }}:${{ github.ref_name }}
           build-args: |
             PACKAGE=${{ matrix.package }}
-  build-for-iot:
-    runs-on: ubuntu-latest
-    container:
-      image: ubuntu:20.04
-    concurrency: 
-      group: ${{ github.workflow }}-${{ github.ref }}-build-release
-      cancel-in-progress: true
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - name: Install Dependencies
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y tzdata curl build-essential pkg-config libssl-dev clang lld cmake unzip
-          ln -fs /usr/share/zoneinfo/UTC /etc/localtime
-          dpkg-reconfigure -f noninteractive tzdata
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Rust install
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          cache-shared-key: release
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Release
-        run: AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --all --release
   upload-iot-releases:
     needs: [build-for-iot, fmt, clippy, tests]
     runs-on: ubuntu-latest
@@ -258,7 +226,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Release
-        run: cargo build --all --release
+        run: AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --all --release
 
       - name: Debian packaging
         env:
