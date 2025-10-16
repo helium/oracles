@@ -1,13 +1,12 @@
-use file_store::cli::print_json;
 use file_store::file_source;
 use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
-use helium_proto::services::poc_mobile::mobile_reward_share::Reward::*;
-// use helium_proto::services::poc_mobile::promotion_reward::Entity;
-use helium_proto::services::poc_mobile::MobileRewardShare;
+use helium_proto::services::poc_mobile::{mobile_reward_share::Reward::*, MobileRewardShare};
 use prost::Message;
 use serde_json::json;
 use std::path::PathBuf;
+
+use crate::print_json;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {

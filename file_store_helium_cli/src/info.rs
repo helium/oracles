@@ -1,7 +1,6 @@
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use file_store::{
-    cli::print_json,
     file_source,
     traits::{MsgTimestamp, TimestampDecode},
     FileInfo, FileType,
@@ -16,6 +15,8 @@ use helium_proto::{
 };
 use serde_json::json;
 use std::{path::PathBuf, str::FromStr};
+
+use crate::print_json;
 
 type Result<T = ()> = anyhow::Result<T>;
 

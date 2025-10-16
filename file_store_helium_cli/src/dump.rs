@@ -31,7 +31,6 @@ use helium_proto::{
 use serde_json::json;
 
 use file_store::{
-    cli::print_json,
     file_source,
     traits::{MsgDecode, TimestampDecode},
     FileType,
@@ -52,6 +51,8 @@ use file_store_helium_proto::{
     usage_counts::{HexUsageCountsIngestReport, RadioUsageCountsIngestReport},
     wifi_heartbeat::WifiHeartbeatIngestReport,
 };
+
+use crate::print_json;
 
 /// Print information about a given store file.
 #[derive(Debug, clap::Args)]
