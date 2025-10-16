@@ -19,16 +19,14 @@ use helium_proto::{
         },
         poc_mobile::{
             mobile_reward_share::Reward as MobileReward, CoverageObjectV1, Heartbeat,
-            HexUsageStatsIngestReportV1, InvalidDataTransferIngestReportV1, MobileRewardShare,
-            OracleBoostingReportV1, RadioRewardShare, RadioUsageStatsIngestReportV1, SpeedtestAvg,
+            MobileRewardShare, OracleBoostingReportV1, RadioRewardShare, SpeedtestAvg,
             SpeedtestIngestReportV1, UniqueConnectionsIngestReportV1,
-            VerifiedDataTransferIngestReportV1, VerifiedInvalidatedRadioThresholdIngestReportV1,
-            VerifiedRadioThresholdIngestReportV1, VerifiedUniqueConnectionsIngestReportV1,
+            VerifiedUniqueConnectionsIngestReportV1,
         },
         router::PacketRouterPacketReportV1,
     },
     BlockchainTxn, BoostedHexUpdateV1 as BoostedHexUpdateProto, Message, PriceReportV1,
-    RewardManifest as RewardManifestProto, SubnetworkRewards,
+    SubnetworkRewards,
 };
 use serde_json::json;
 
@@ -50,7 +48,7 @@ use crate::{
     unique_connections::UniqueConnectionReq,
     usage_counts::{HexUsageCountsIngestReport, RadioUsageCountsIngestReport},
     wifi_heartbeat::WifiHeartbeatIngestReport,
-    FileType, Result,
+    FileType,
 };
 
 /// Print information about a given store file.
@@ -65,30 +63,26 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self) -> anyhow::Result<()> {
         let mut file_stream = file_source::source([&self.in_path]);
 
         while let Some(result) = file_stream.next().await {
             let msg = result?;
             match self.file_type {
                 FileType::HexUsageStatsIngestReport => {
-                    let dec_msg = HexUsageStatsIngestReportV1::decode(msg)?;
-                    let report = HexUsageCountsIngestReport::try_from(dec_msg)?;
+                    let report = HexUsageCountsIngestReport::decode(msg)?;
                     print_json(&report)?;
                 }
                 FileType::RadioUsageStatsIngestReport => {
-                    let dec_msg = RadioUsageStatsIngestReportV1::decode(msg)?;
-                    let report = RadioUsageCountsIngestReport::try_from(dec_msg)?;
+                    let report = RadioUsageCountsIngestReport::decode(msg)?;
                     print_json(&report)?;
                 }
                 FileType::VerifiedRadioThresholdIngestReport => {
-                    let dec_msg = VerifiedRadioThresholdIngestReportV1::decode(msg)?;
-                    let report = VerifiedRadioThresholdIngestReport::try_from(dec_msg)?;
+                    let report = VerifiedRadioThresholdIngestReport::decode(msg)?;
                     print_json(&report)?;
                 }
                 FileType::VerifiedInvalidatedRadioThresholdIngestReport => {
-                    let dec_msg = VerifiedInvalidatedRadioThresholdIngestReportV1::decode(msg)?;
-                    let report = VerifiedInvalidatedRadioThresholdIngestReport::try_from(dec_msg)?;
+                    let report = VerifiedInvalidatedRadioThresholdIngestReport::decode(msg)?;
                     print_json(&report)?;
                 }
                 FileType::BoostedHexUpdate => {
@@ -114,11 +108,9 @@ impl Cmd {
                         "operation_mode": msg.report.operation_mode,
                         "location_validation_timestamp": msg.report.location_validation_timestamp,
                     });
-                    // print_json(&msg)?;
                     print_json(&json)?;
                 }
                 FileType::CellSpeedtest => {
-                    // let dec_msg = SpeedtestReqV1::decode(msg)?;
                     let msg = CellSpeedtest::decode(msg)?;
                     print_json(&json!({
                         "pubkey": msg.pubkey,
@@ -149,8 +141,7 @@ impl Cmd {
                     }))?;
                 }
                 FileType::InvalidDataTransferSessionIngestReport => {
-                    let msg: InvalidDataTransferIngestReport =
-                        InvalidDataTransferIngestReportV1::decode(msg)?.try_into()?;
+                    let msg = InvalidDataTransferIngestReport::decode(msg)?;
                     print_json(&json!({
                         "invalid_reason": msg.reason,
                         "invalid_timestamp": msg.timestamp,
@@ -179,71 +170,53 @@ impl Cmd {
                     }))?;
                 }
                 FileType::VerifiedDataTransferSession => {
-                    let report: VerifiedDataTransferIngestReport =
-                        VerifiedDataTransferIngestReportV1::decode(msg)?.try_into()?;
+                    let report = VerifiedDataTransferIngestReport::decode(msg)?;
                     let report = report.report;
                     let req = report.report;
-                    let data_transfer_usage = json!({
-                        "pub_key": PublicKey::try_from(req.data_transfer_usage.pub_key)?,
-                        "upload_bytes": req.data_transfer_usage.upload_bytes,
-                        "download_bytes": req.data_transfer_usage.download_bytes,
-                        "radio_access_technology": req.data_transfer_usage.radio_access_technology,
-                        "event_id": req.data_transfer_usage.event_id,
-                        "payer": req.data_transfer_usage.payer,
-                        "timestamp": req.data_transfer_usage.timestamp,
-                    });
                     print_json(&json!({
                         "rewardable_bytes": req.rewardable_bytes,
                         "pub_key": PublicKey::try_from(req.pub_key)?,
                         "received_timestamp": report.received_timestamp,
-                        "data_transfer_usage": data_transfer_usage,
+                        "data_transfer_usage": {
+                            "pub_key": PublicKey::try_from(req.data_transfer_usage.pub_key)?,
+                            "upload_bytes": req.data_transfer_usage.upload_bytes,
+                            "download_bytes": req.data_transfer_usage.download_bytes,
+                            "radio_access_technology": req.data_transfer_usage.radio_access_technology,
+                            "event_id": req.data_transfer_usage.event_id,
+                            "payer": req.data_transfer_usage.payer,
+                            "timestamp": req.data_transfer_usage.timestamp,
+                        },
                     }))?;
                 }
                 FileType::IotBeaconIngestReport => {
                     let dec_msg = LoraBeaconIngestReportV1::decode(msg)?;
-                    let json = json!({
+                    print_json(&json!({
                         "received_timestamp": dec_msg.received_timestamp,
                         "report":  dec_msg.report,
-                    });
-                    // TODO: tmp dump out as json
-                    // printing to json here as csv serializing failing due on header generation from struct
-                    print_json(&json)?;
-                    // wtr.serialize(IotBeaconIngestReport::try_from(dec_msg)?)?;
+                    }))?;
                 }
                 FileType::IotWitnessIngestReport => {
                     let dec_msg = LoraWitnessIngestReportV1::decode(msg)?;
-                    let json = json!({
+                    print_json(&json!({
                         "received_timestamp": dec_msg.received_timestamp,
                         "report":  dec_msg.report,
-                    });
-                    // TODO: tmp dump out as json
-                    // printing to json here as csv serializing failing due on header generation from struct
-                    print_json(&json)?;
-                    // wtr.serialize(IotWitnessIngestReport::try_from(dec_msg)?)?;
+                    }))?;
                 }
                 FileType::IotInvalidWitnessReport => {
                     let dec_msg = LoraInvalidWitnessReportV1::decode(msg)?;
-                    let json = json!({
+                    print_json(&json!({
                         "received_timestamp": dec_msg.received_timestamp,
                         "reason":  dec_msg.reason
-                    });
-                    // TODO: tmp dump out as json
-                    // printing to json here as csv serializing failing due on header generation from struct
-                    print_json(&json)?;
-                    // wtr.serialize(IotWitnessIngestReport::try_from(dec_msg)?)?;
+                    }))?;
                 }
                 FileType::IotPoc => {
                     let dec_msg = LoraPocV1::decode(msg)?;
-                    let json = json!({
+                    print_json(&json!({
                         "poc_id": dec_msg.poc_id,
                         "beacon_report":  dec_msg.beacon_report,
                         "selected_witnesses": dec_msg.selected_witnesses,
                         "unselected_witnesses": dec_msg.unselected_witnesses,
-                    });
-                    // TODO: tmp dump out as json
-                    // printing to json here as csv serializing failing due on header generation from struct
-                    print_json(&json)?;
-                    // wtr.serialize(IotValidPoc::try_from(dec_msg)?)?;
+                    }))?;
                 }
                 FileType::SubnetworkRewards => {
                     let proto_rewards = SubnetworkRewards::decode(msg)?.rewards;
@@ -309,30 +282,33 @@ impl Cmd {
                 }
                 FileType::MobileRewardShare => {
                     let reward = MobileRewardShare::decode(msg)?;
-                    match reward.reward {
-                        Some(MobileReward::GatewayReward(reward)) => print_json(&json!({
+                    let reward = reward.reward.expect("no reward found");
+                    match reward {
+                        MobileReward::GatewayReward(reward) => print_json(&json!({
                             "hotspot_key": PublicKey::try_from(reward.hotspot_key)?,
                             "dc_transfer_reward": reward.dc_transfer_reward,
                         }))?,
-                        Some(MobileReward::RadioReward(reward)) => print_json(&json!({
+                        MobileReward::RadioReward(reward) => print_json(&json!({
                             "hotspot_key":  PublicKey::try_from(reward.hotspot_key)?,
                             "cbsd_id": reward.cbsd_id,
                             "poc_reward": reward.poc_reward,
                             "boosted_hexes": reward.boosted_hexes,
                         }))?,
-                        Some(MobileReward::SubscriberReward(reward)) => print_json(&json!({
+                        MobileReward::SubscriberReward(reward) => print_json(&json!({
                             "subscriber_id": reward.subscriber_id,
                             "discovery_location_amount": reward.discovery_location_amount,
                             "verification_mapping_amount": reward.verification_mapping_amount,
                         }))?,
-                        Some(MobileReward::ServiceProviderReward(reward)) => print_json(&json!({
+                        MobileReward::ServiceProviderReward(reward) => print_json(&json!({
                             "service_provider": reward.service_provider_id,
                             "amount": reward.amount,
                         }))?,
-                        Some(MobileReward::UnallocatedReward(reward)) => print_json(&json!({
+                        MobileReward::UnallocatedReward(reward) => print_json(&json!({
                             "unallocated_reward_type": reward.reward_type,
                             "amount": reward.amount,
                         }))?,
+                        // MobileReward::RadioRewardV2(radio_reward_v2) => todo!(),
+                        // MobileReward::PromotionReward(promotion_reward) => todo!(),
                         _ => (),
                     }
                 }
@@ -348,8 +324,7 @@ impl Cmd {
                     }))?;
                 }
                 FileType::RewardManifest => {
-                    let manifest = RewardManifestProto::decode(msg)?;
-                    let report = RewardManifest::try_from(manifest)?;
+                    let report = RewardManifest::decode(msg)?;
                     print_json(&report)?;
                 }
                 FileType::SignedPocReceiptTxn => {
@@ -362,7 +337,8 @@ impl Cmd {
                     let packet_report = PacketRouterPacketReportV1::decode(msg)?;
                     print_json(&json!({
                         "oui": packet_report.oui,
-                        "timestamp": packet_report.gateway_tmst}))?;
+                        "timestamp": packet_report.gateway_tmst
+                    }))?;
                 }
                 FileType::PriceReport => {
                     let manifest = PriceReportV1::decode(msg)?;
@@ -428,9 +404,9 @@ impl Cmd {
                         .collect();
 
                     print_json(&json!({
-                    "coverage_object": uuid::Uuid::from_slice(report.coverage_object.as_slice()).unwrap(),
-                    "assignments": assignments,
-                    "timestamp": report.timestamp.to_timestamp()?,
+                        "coverage_object": uuid::Uuid::from_slice(report.coverage_object.as_slice()).unwrap(),
+                        "assignments": assignments,
+                        "timestamp": report.timestamp.to_timestamp()?,
                     }))?
                 }
                 FileType::CoverageObject => {

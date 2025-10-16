@@ -133,6 +133,10 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedDataTransferIngestReportV1 
     }
 }
 
+impl MsgDecode for VerifiedDataTransferIngestReport {
+    type Msg = VerifiedDataTransferIngestReportV1;
+}
+
 impl TryFrom<VerifiedDataTransferIngestReportV1> for VerifiedDataTransferIngestReport {
     type Error = Error;
     fn try_from(v: VerifiedDataTransferIngestReportV1) -> Result<Self> {

@@ -2,7 +2,7 @@ use crate::{
     cli::print_json,
     file_source,
     traits::{MsgTimestamp, TimestampDecode},
-    Error, FileInfo, FileType, Result,
+    FileInfo, FileType,
 };
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
@@ -17,6 +17,8 @@ use helium_proto::{
 use serde_json::json;
 use std::{path::PathBuf, str::FromStr};
 
+type Result<T = ()> = anyhow::Result<T>;
+
 /// Print information about a given store file.
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
@@ -30,11 +32,14 @@ impl Cmd {
         let mut file_stream = file_source::source([&self.path]);
 
         let mut count = 1;
+
         let buf = match file_stream.next().await {
             Some(Ok(buf)) => buf,
-            Some(Err(err)) => return Err(err),
+            Some(Err(err)) => {
+                anyhow::bail!("error streaming file {}: {err:?}", self.path.display());
+            }
             None => {
-                return Err(Error::not_found("no message found in file source"));
+                anyhow::bail!("no message found in file source")
             }
         };
 
@@ -66,43 +71,47 @@ impl Cmd {
 
 impl MsgTimestamp<Result<DateTime<Utc>>> for PriceReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
-        self.timestamp.to_timestamp()
+        let ts = self.timestamp.to_timestamp()?;
+        Ok(ts)
     }
 }
 
 fn get_timestamp(file_type: &str, buf: &[u8]) -> Result<DateTime<Utc>> {
     let result = match FileType::from_str(file_type)? {
-        FileType::CellSpeedtest => SpeedtestReqV1::decode(buf)
-            .map_err(Error::from)
-            .and_then(|entry| entry.timestamp())?,
-        FileType::CellSpeedtestIngestReport => SpeedtestIngestReportV1::decode(buf)
-            .map_err(Error::from)
-            .and_then(|ingest_report| {
-                ingest_report.report.ok_or_else(|| {
-                    Error::not_found("SpeedtestIngestReportV1 does not contain a SpeedtestReqV1")
-                })
-            })
-            .and_then(|speedtest_req| speedtest_req.timestamp())?,
-        FileType::EntropyReport => EntropyReportV1::decode(buf)
-            .map_err(Error::from)
-            .and_then(|entry| entry.timestamp())?,
-        FileType::IotBeaconIngestReport => LoraBeaconIngestReportV1::decode(buf)
-            .map_err(Error::from)
-            .and_then(|entry| entry.timestamp())?,
-        FileType::IotWitnessIngestReport => LoraWitnessIngestReportV1::decode(buf)
-            .map_err(Error::from)
-            .and_then(|entry| entry.timestamp())?,
-        FileType::IotPoc => LoraPocV1::decode(buf)
-            .map_err(Error::from)
-            .and_then(|report| {
-                report.beacon_report.ok_or_else(|| {
-                    Error::not_found("IotValidPocV1 does not contain a IotBeaconIngestReportV1")
-                })
-            })
-            .and_then(|beacon_report| beacon_report.timestamp())?,
-        FileType::PriceReport => PriceReportV1::decode(buf)
-            .map_err(Error::from)
-            .and_then(|entry| entry.timestamp())?,
+        FileType::CellSpeedtest => {
+            let entry = SpeedtestReqV1::decode(buf)?;
+            entry.timestamp()?
+        }
+        FileType::CellSpeedtestIngestReport => {
+            let entry = SpeedtestIngestReportV1::decode(buf)?;
+            let Some(speedtest_req) = entry.report else {
+                anyhow::bail!("SpeedtestIngestReportV1 does not contain a SpeedtestReqV1");
+            };
+            speedtest_req.timestamp()?
+        }
+        FileType::EntropyReport => {
+            let entry = EntropyReportV1::decode(buf)?;
+            entry.timestamp()?
+        }
+        FileType::IotBeaconIngestReport => {
+            let entry = LoraBeaconIngestReportV1::decode(buf)?;
+            entry.timestamp()?
+        }
+        FileType::IotWitnessIngestReport => {
+            let entry = LoraWitnessIngestReportV1::decode(buf)?;
+            entry.timestamp()?
+        }
+        FileType::IotPoc => {
+            let entry = LoraPocV1::decode(buf)?;
+            let Some(beacon_report) = entry.beacon_report else {
+                anyhow::bail!("IotValidPocV1 does not contain a IotBeaconIngestReportV1");
+            };
+            beacon_report.timestamp()?
+        }
+        FileType::PriceReport => {
+            let entry = PriceReportV1::decode(buf)?;
+            entry.timestamp()?
+        }
 
         _ => Utc::now(),
     };
