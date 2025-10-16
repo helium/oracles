@@ -1,9 +1,7 @@
 use crate::speedtests::{self, Speedtest};
 use chrono::{DateTime, Utc};
-use file_store::{
-    file_sink::FileSinkClient,
-    traits::{MsgTimestamp, TimestampEncode},
-};
+use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
+use file_store_helium_proto::traits::MsgTimestamp;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;

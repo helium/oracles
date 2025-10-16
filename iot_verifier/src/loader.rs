@@ -50,14 +50,11 @@ use crate::{
     meta::Meta,
     poc_report::{InsertBindings, IotStatus, Report, ReportType},
     telemetry::LoaderMetricTracker,
-    Settings,
+    IngestId, Settings,
 };
 use chrono::DateTime;
 use chrono::Utc;
-use file_store::{
-    traits::{IngestId, MsgDecode},
-    FileInfo, FileType,
-};
+use file_store::{traits::MsgDecode, FileInfo, FileType};
 use file_store_helium_proto::{
     iot_beacon_report::IotBeaconIngestReport, iot_witness_report::IotWitnessIngestReport,
 };

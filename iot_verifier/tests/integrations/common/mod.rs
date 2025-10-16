@@ -1,12 +1,10 @@
 use blake3::hash;
 use chrono::{DateTime, Duration, Utc};
-use file_store::{
-    file_sink::{FileSinkClient, Message as SinkMessage},
-    traits::{IngestId, MsgTimestamp},
-};
+use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
 use file_store_helium_proto::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
     iot_witness_report::{IotWitnessIngestReport, IotWitnessReport},
+    traits::MsgTimestamp,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
@@ -26,7 +24,7 @@ use iot_verifier::{
     last_beacon_reciprocity::LastBeaconReciprocity,
     last_witness::LastWitness,
     poc_report::{InsertBindings, IotStatus, Report, ReportType},
-    PriceInfo,
+    IngestId, PriceInfo,
 };
 
 use iot_config::sub_dao_epoch_reward_info::EpochRewardInfo;

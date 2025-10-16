@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use base64::Engine;
 use bs58;
+use file_store_shared::traits::TimestampDecode;
 use futures::stream::StreamExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use helium_proto::{
@@ -30,11 +31,7 @@ use helium_proto::{
 };
 use serde_json::json;
 
-use file_store::{
-    file_source,
-    traits::{MsgDecode, TimestampDecode},
-    FileType,
-};
+use file_store::{file_source, traits::MsgDecode, FileType};
 use file_store_helium_proto::{
     coverage::CoverageObject,
     iot_packet::IotValidPacket,

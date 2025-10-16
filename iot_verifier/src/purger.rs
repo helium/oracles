@@ -5,11 +5,8 @@
 // Entropy data is purged without writing an invalid report as this data has no downstream value
 //
 
-use crate::{entropy::Entropy, poc_report::Report, telemetry};
-use file_store::{
-    file_sink::FileSinkClient,
-    traits::{IngestId, MsgDecode},
-};
+use crate::{entropy::Entropy, poc_report::Report, telemetry, IngestId};
+use file_store::{file_sink::FileSinkClient, traits::MsgDecode};
 use file_store_helium_proto::{
     iot_beacon_report::IotBeaconIngestReport,
     iot_invalid_poc::{IotInvalidBeaconReport, IotInvalidWitnessReport},

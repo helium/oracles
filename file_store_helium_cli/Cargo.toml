@@ -23,3 +23,4 @@ uuid = { workspace = true }
 
 file-store = { path = "../file_store" }
 file-store-helium-proto = { path = "../file_store_helium_proto" }
+file-store-shared = { path = "../file_store_shared" }

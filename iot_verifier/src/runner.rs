@@ -40,14 +40,11 @@ use crate::{
     reward_share::GatewayPocShare,
     telemetry,
     witness_updater::WitnessUpdater,
-    Settings,
+    IngestId, ReportId, Settings,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use denylist::DenyList;
-use file_store::{
-    file_sink::FileSinkClient,
-    traits::{IngestId, MsgDecode, ReportId},
-};
+use file_store::{file_sink::FileSinkClient, traits::MsgDecode};
 use file_store_helium_proto::{
     iot_beacon_report::IotBeaconIngestReport,
     iot_invalid_poc::{IotInvalidBeaconReport, IotInvalidWitnessReport},

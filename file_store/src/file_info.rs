@@ -1,5 +1,6 @@
-use crate::{error::DecodeError, traits::TimestampDecode, Error, Result};
+use crate::{error::DecodeError, Error, Result};
 use chrono::{DateTime, Utc};
+use file_store_shared::traits::TimestampDecode;
 use regex::Regex;
 use serde::Serialize;
 use std::{fmt, io, os::unix::fs::MetadataExt, path::Path, str::FromStr, sync::LazyLock};

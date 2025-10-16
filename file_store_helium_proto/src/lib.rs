@@ -12,10 +12,4 @@ pub use mobile::*;
 mod subscriber;
 pub use subscriber::*;
 
-mod msg_timestamp;
-mod report_id;
-
-pub mod traits {
-    pub use crate::msg_timestamp::*;
-    pub use crate::report_id::*;
-}
+pub mod traits;
