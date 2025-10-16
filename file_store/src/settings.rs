@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use config::{Config, File};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -18,12 +17,11 @@ impl Settings {
     /// Load Settings from a given path.
     ///
     /// Environment overrides are not supported for file_store cli commands
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, config::ConfigError> {
         Config::builder()
             .add_source(File::with_name(&path.as_ref().to_string_lossy()))
             .build()
             .and_then(|config| config.try_deserialize())
-            .map_err(Error::from)
     }
 
     pub async fn connect(&self) -> crate::Client {

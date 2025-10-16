@@ -19,8 +19,6 @@ pub enum Error {
     Crypto(Box<helium_crypto::Error>),
     #[error("aws error")]
     Aws(#[source] Box<aws_sdk_s3::Error>),
-    #[error("config error")]
-    Config(#[from] config::ConfigError),
     #[error("mpsc channel error")]
     Channel,
     #[error("no manifest")]
