@@ -191,7 +191,7 @@ jobs:
           build-args: |
             PACKAGE=${{ matrix.package }}
   upload-iot-releases:
-    needs: [build-for-iot, fmt, clippy, tests]
+    needs: [fmt, clippy, tests]
     runs-on: ubuntu-latest
     container:
       image: ubuntu:20.04
