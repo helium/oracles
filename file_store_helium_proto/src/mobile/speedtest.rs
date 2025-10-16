@@ -1,5 +1,5 @@
 use chrono::{DateTime, TimeZone, Utc};
-use file_store_shared::{error::DecodeError, traits::MsgDecode, Error, Result};
+use file_store_shared::{traits::MsgDecode, DecodeError, Error, Result};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     Speedtest, SpeedtestAvg, SpeedtestAvgValidity, SpeedtestIngestReportV1, SpeedtestReqV1,

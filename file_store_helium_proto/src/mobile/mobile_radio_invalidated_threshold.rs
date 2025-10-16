@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use file_store_shared::{error::DecodeError, traits::MsgDecode, Error, Result};
+use file_store_shared::{DecodeError, traits::MsgDecode, Error, Result};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,

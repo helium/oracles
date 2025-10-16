@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use file_store_shared::{error::DecodeError, traits::MsgDecode, Error, Result};
+use file_store_shared::{DecodeError, traits::MsgDecode, Error, Result};
 use helium_proto::services::poc_lora::{
     InvalidDetails, InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1,
     LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1, LoraWitnessReportReqV1,

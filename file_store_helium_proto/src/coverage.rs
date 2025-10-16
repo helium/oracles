@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use file_store_shared::{error::DecodeError, traits::MsgDecode, Error, Result};
+use file_store_shared::{traits::MsgDecode, DecodeError, Error, Result};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     coverage_object_req_v1, CoverageObjectIngestReportV1, CoverageObjectReqV1,

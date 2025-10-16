@@ -1,8 +1,8 @@
-pub mod error;
-pub mod msg_decode;
-pub mod timestamp;
+mod error;
+mod msg_decode;
+mod timestamp;
 
-pub use error::{Error, Result};
+pub use error::{DecodeError, EncodeError, Error, Result};
 pub mod traits {
     pub use crate::msg_decode::MsgDecode;
     pub use crate::timestamp::{TimestampDecode, TimestampEncode};

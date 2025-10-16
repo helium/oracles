@@ -2,7 +2,7 @@ extern crate tls_init;
 
 // pub use file_store_helium_proto;
 
-pub use file_store_shared::error;
+pub use file_store_shared::{DecodeError, EncodeError, Error, Result};
 
 pub mod file_info;
 pub mod file_info_poller;
@@ -19,7 +19,6 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_smithy_types_convert::stream::PaginationStreamExt;
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
-pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};
 // pub use file_store_helium_proto::iot_valid_poc::SCALING_PRECISION;

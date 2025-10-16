@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 
 use file_store_shared::{
-    error::DecodeError,
+    DecodeError,
     traits::MsgDecode,
     Error, // FileSink,
 };

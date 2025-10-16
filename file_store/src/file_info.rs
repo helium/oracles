@@ -1,4 +1,4 @@
-use crate::{error::DecodeError, Error, Result};
+use crate::{DecodeError, Error, Result};
 use chrono::{DateTime, Utc};
 use file_store_shared::traits::TimestampDecode;
 use regex::Regex;
