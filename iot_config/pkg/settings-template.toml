@@ -3,7 +3,7 @@
 # log = "iot-config=debug,poc_store=info"
 
 
-# Listen addres for public grpc. Default below
+# Listen address for public grpc. Default below
 #
 # listen = "0.0.0.0:8080"
 
