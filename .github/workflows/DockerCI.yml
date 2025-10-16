@@ -221,7 +221,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Release
-        run: cargo build --all --release
+        run: AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --all --release
   upload-iot-releases:
     needs: [build-for-iot, fmt, clippy, tests]
     runs-on: ubuntu-latest
