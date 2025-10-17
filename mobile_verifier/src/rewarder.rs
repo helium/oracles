@@ -16,11 +16,8 @@ use crate::{
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
-use file_store::{
-    file_sink::FileSinkClient,
-    file_upload::FileUpload,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
-};
+use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
+use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
 use helium_proto::{

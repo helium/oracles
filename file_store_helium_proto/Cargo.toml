@@ -16,5 +16,9 @@ h3o = { workspace = true }
 beacon = { workspace = true }
 blake3 = { workspace = true }
 rust_decimal = { workspace = true }
+async-trait = { workspace = true }
+bytes = "*"
+prost = { workspace = true }
 
 file-store-shared = { path = "../file_store_shared" }
+file-store = { path = "../file_store" }

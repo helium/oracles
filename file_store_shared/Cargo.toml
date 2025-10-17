@@ -12,7 +12,6 @@ bytes = { workspace = true }
 prost = { workspace = true }
 helium-crypto = { workspace = true }
 aws-sdk-s3 = { workspace = true }
-helium-proto = { workspace = true }
 serde_json = { workspace = true }
 h3o = { workspace = true }
 tokio = { workspace = true }

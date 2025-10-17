@@ -13,3 +13,8 @@ mod subscriber;
 pub use subscriber::*;
 
 pub mod traits;
+
+mod file_sink_write;
+pub use file_sink_write::{
+    FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, DEFAULT_ROLL_TIME,
+};

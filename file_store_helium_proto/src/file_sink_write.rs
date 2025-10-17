@@ -1,15 +1,13 @@
 use std::{path::Path, time::Duration};
 
-use crate::{
+use file_store::{
     file_sink::{FileSinkClient, DEFAULT_SINK_ROLL_SECS},
     file_upload::FileUpload,
-    traits::msg_bytes::MsgBytes,
+    traits::MsgBytes,
     FileSink, FileSinkBuilder, FileType, Result,
 };
 use helium_proto::{
-    self as proto,
-    services::{chain_rewardable_entities, packet_verifier, poc_lora, poc_mobile},
-    Message,
+    self as proto, services::{chain_rewardable_entities, packet_verifier, poc_lora, poc_mobile},
 };
 
 pub const DEFAULT_ROLL_TIME: Duration = Duration::from_secs(DEFAULT_SINK_ROLL_SECS);
@@ -77,12 +75,6 @@ macro_rules! impl_file_sink {
         impl FileSinkWriteExt for $msg_type {
             const FILE_PREFIX: &'static str = $file_prefix;
             const METRIC_SUFFIX: &'static str = $metric_suffix;
-        }
-
-        impl MsgBytes for $msg_type {
-            fn as_bytes(&self) -> bytes::Bytes {
-                bytes::Bytes::from(self.encode_to_vec())
-            }
         }
     };
 }

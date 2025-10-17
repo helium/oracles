@@ -34,6 +34,7 @@ chrono = { workspace = true }
 helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
 file-store = { path = "../file_store" }
+file-store-helium-proto = { path = "../file_store_helium_proto" }
 poc-metrics = { path = "../metrics" }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 tls-init = { path = "../tls_init" }

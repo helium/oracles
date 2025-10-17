@@ -6,12 +6,10 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
-    traits::{
-        FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampDecode,
-        TimestampEncode,
-    },
+    traits::{TimestampDecode, TimestampEncode},
     FileType,
 };
+use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{

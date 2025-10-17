@@ -1,11 +1,8 @@
 use crate::Settings;
 use anyhow::{Error, Result};
 use chrono::Utc;
-use file_store::{
-    file_sink::FileSinkClient,
-    file_upload,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify},
-};
+use file_store::{file_sink::FileSinkClient, file_upload, traits::MsgVerify};
+use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures::{future::TryFutureExt, Stream, StreamExt};
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_lora::{

@@ -4,13 +4,10 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient,
-    file_source,
-    file_upload::FileUpload,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-    FileType,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
+    file_upload::FileUpload, FileType,
 };
+use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use file_store_helium_proto::speedtest::{CellSpeedtest, CellSpeedtestIngestReport};
 use futures::stream::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;

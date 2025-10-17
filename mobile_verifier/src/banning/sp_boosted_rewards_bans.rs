@@ -5,9 +5,9 @@ use file_store::{
     file_info_poller::{FileInfoPollerConfigBuilder, FileInfoStream, ProstFileInfoPollerParser},
     file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
+use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
