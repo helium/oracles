@@ -1,5 +1,5 @@
 use crate::common::{make_keypair, spawn_gateway_service};
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::services::mobile_config::{
@@ -16,14 +16,14 @@ use mobile_config::{
 };
 use prost::Message;
 use sqlx::PgPool;
-use std::{sync::Arc, vec};
+use std::{sync::Arc, time, vec};
 use tokio::net::TcpListener;
 use tonic::{transport, Code};
 
 #[sqlx::test]
 async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     // NOTE(mj): The information we're requesting does not exist in the DB for
-    // this test. But we're only interested in Authization Errors.
+    // this test. But we're only interested in Authorization Errors.
 
     let admin_key = make_keypair(); // unlimited access
     let gw_key = make_keypair(); // access to self
@@ -812,6 +812,104 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[sqlx::test]
+async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
+    let admin_key = make_keypair();
+
+    let address = make_keypair().public_key().clone();
+    let loc_original = 631711281837647359_u64;
+
+    let created_at = Utc::now() - Duration::hours(5);
+    let refreshed_at = Utc::now() - Duration::hours(3);
+
+    let gateway_original = Gateway {
+        address: address.clone().into(),
+        gateway_type: GatewayType::WifiIndoor,
+        created_at,
+        inserted_at: refreshed_at,
+        refreshed_at,
+        last_changed_at: refreshed_at,
+        hash: "".to_string(),
+        antenna: Some(18),
+        elevation: Some(2),
+        azimuth: Some(161),
+        location: Some(loc_original),
+        location_changed_at: Some(refreshed_at),
+        location_asserts: Some(1),
+    };
+    gateway_original.insert(&pool).await?;
+
+    let query_time_original = Utc::now() + Duration::milliseconds(800);
+    tokio::time::sleep(time::Duration::from_millis(800)).await;
+
+    let loc_recent = 631711281837647358_u64;
+
+    let gateway_recent = Gateway {
+        address: address.clone().into(),
+        gateway_type: GatewayType::WifiIndoor,
+        created_at,
+        inserted_at: created_at,
+        refreshed_at: created_at,
+        last_changed_at: created_at,
+        hash: "".to_string(),
+        antenna: Some(18),
+        elevation: Some(2),
+        azimuth: Some(161),
+        location: Some(loc_recent),
+        location_changed_at: Some(created_at),
+        location_asserts: Some(1),
+    };
+    gateway_recent.insert(&pool).await?;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await?;
+
+    // Get most recent gateway info
+    let query_time = Utc::now() + Duration::minutes(10);
+    let res = info_historical_request(&mut client, &address, &admin_key, &query_time).await;
+
+    let gw_info = res?.info.unwrap();
+    assert_eq!(gw_info.address, address.to_vec());
+    let deployment_info = gw_info.metadata.clone().unwrap().deployment_info.unwrap();
+    match deployment_info {
+        DeploymentInfo::WifiDeploymentInfo(v) => {
+            assert_eq!(v.antenna, 18);
+            assert_eq!(v.azimuth, 161);
+            assert_eq!(v.elevation, 2);
+        }
+        DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
+    };
+
+    // Assert that recent gateway was returned
+    assert_eq!(
+        u64::from_str_radix(&gw_info.metadata.clone().unwrap().location, 16).unwrap(),
+        loc_recent
+    );
+
+    // Get original gateway info by using an earlier inserted_at condition
+    let res = info_historical_request(&mut client, &address, &admin_key, &query_time_original).await;
+
+    let gw_info = res?.info.unwrap();
+    assert_eq!(gw_info.address, address.to_vec());
+    let deployment_info = gw_info.metadata.clone().unwrap().deployment_info.unwrap();
+    match deployment_info {
+        DeploymentInfo::WifiDeploymentInfo(v) => {
+            assert_eq!(v.antenna, 18);
+            assert_eq!(v.azimuth, 161);
+            assert_eq!(v.elevation, 2);
+        }
+        DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
+    };
+
+    // Assert that original gateway was returned
+    assert_eq!(
+        u64::from_str_radix(&gw_info.metadata.clone().unwrap().location, 16).unwrap(),
+        loc_original
+    );
+
+    Ok(())
+}
+
 fn make_signed_info_request(address: &PublicKey, signer: &Keypair) -> proto::GatewayInfoReqV1 {
     let mut req = proto::GatewayInfoReqV1 {
         address: address.to_vec(),
@@ -834,6 +932,23 @@ async fn info_request_v2(
     };
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
     let res = client.info_v2(req).await?.into_inner();
+    Ok(res)
+}
+
+async fn info_historical_request(
+    client: &mut GatewayClient<tonic::transport::Channel>,
+    address: &PublicKey,
+    signer: &Keypair,
+    query_time: &DateTime<Utc>
+) -> anyhow::Result<proto::GatewayInfoResV2> {
+    let mut req = proto::GatewayInfoHistoricalReq {
+        address: address.to_vec(),
+        signer: signer.public_key().to_vec(),
+        signature: vec![],
+        query_time: query_time.timestamp() as u64,
+    };
+    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+    let res = client.info_historical(req).await?.into_inner();
     Ok(res)
 }
 

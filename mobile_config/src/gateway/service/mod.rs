@@ -15,6 +15,7 @@ use helium_proto::{
         self, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoResV2,
         GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamReqV3,
         GatewayInfoStreamResV1, GatewayInfoStreamResV2, GatewayInfoStreamResV3, GatewayInfoV2,
+        GatewayInfoHistoricalReq
     },
     Message,
 };
@@ -52,6 +53,18 @@ impl GatewayService {
     }
 
     fn verify_request_signature_for_info(&self, request: &GatewayInfoReqV1) -> Result<(), Status> {
+        let signer = verify_public_key(&request.signer)?;
+        let address = verify_public_key(&request.address)?;
+
+        if address == signer && request.verify(&signer).is_ok() {
+            tracing::debug!(%signer, "self authorized");
+            return Ok(());
+        }
+
+        self.verify_request_signature(&signer, request)
+    }
+
+    fn verify_request_signature_for_historical_info(&self, request: &GatewayInfoHistoricalReq) -> Result<(), Status> {
         let signer = verify_public_key(&request.signer)?;
         let address = verify_public_key(&request.address)?;
 
@@ -142,6 +155,57 @@ impl mobile_config::Gateway for GatewayService {
                     let info: GatewayInfoV2 = info
                         .try_into()
                         .map_err(|_| Status::internal("error serializing gateway info (v2)"))?;
+
+                    let mut res = GatewayInfoResV2 {
+                        info: Some(info),
+                        timestamp: Utc::now().encode_timestamp(),
+                        signer: self.signing_key.public_key().into(),
+                        signature: vec![],
+                    };
+                    res.signature = self.sign_response(&res.encode_to_vec())?;
+                    Ok(Response::new(res))
+                },
+            )
+    }
+
+    async fn info_historical(&self, request: Request<GatewayInfoHistoricalReq>) -> GrpcResult<GatewayInfoResV2> {
+        let request = request.into_inner();
+        telemetry::count_request("gateway", "info-v2");
+        custom_tracing::record_b58("pub_key", &request.address);
+        custom_tracing::record_b58("signer", &request.signer);
+
+        self.verify_request_signature_for_historical_info(&request)?;
+
+        let pubkey: PublicKeyBinary = request.address.into();
+        tracing::debug!(pubkey = pubkey.to_string(), "fetching historical gateway info (v2)");
+
+        let query_time = Utc
+            .timestamp_opt(request.query_time as i64, 0)
+            .single()
+            .ok_or(Status::invalid_argument("Invalid query_time argument"))?;
+
+        info::get_by_address_and_inserted_at(&self.pool, &pubkey, &query_time)
+            .await
+            .map_err(|_| {
+                println!("error fetching historical gateway info (v2)");
+                Status::internal("error fetching historical gateway info")
+            })?
+            .map_or_else(
+                || {
+                    telemetry::count_gateway_chain_lookup("not-found");
+                    println!("Could not find in db");
+                    Err(Status::not_found(pubkey.to_string()))
+                },
+                |info| {
+                    if info.metadata.is_some() {
+                        telemetry::count_gateway_chain_lookup("asserted");
+                    } else {
+                        telemetry::count_gateway_chain_lookup("not-asserted");
+                    };
+
+                    let info: GatewayInfoV2 = info
+                        .try_into()
+                        .map_err(|_| Status::internal("error serializing historical gateway info (v2)"))?;
 
                     let mut res = GatewayInfoResV2 {
                         info: Some(info),

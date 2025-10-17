@@ -12,13 +12,11 @@ UPDATE
 SET
     inserted_at = created_at;
 
--- 4. Ensure inserted_at is NOT NULL
+-- 4. Ensure inserted_at is NOT NULL and has a default value of now()
 ALTER TABLE
     gateways
-ALTER COLUMN
-    inserted_at
-SET
-    NOT NULL;
+ALTER COLUMN inserted_at SET DEFAULT now(),
+ALTER COLUMN inserted_at SET NOT NULL;
 
 -- 5. Create an index on (address, inserted_at DESC)
 CREATE INDEX IF NOT EXISTS gateways_address_inserted_idx ON gateways (address, inserted_at DESC);
