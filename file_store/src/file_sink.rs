@@ -1,4 +1,3 @@
-use crate::traits::MsgBytes;
 use crate::{file_upload::FileUpload, Error, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
@@ -123,7 +122,7 @@ impl FileSinkBuilder {
 
     pub async fn create<T>(self) -> Result<(FileSinkClient<T>, FileSink<T>)>
     where
-        T: MsgBytes,
+        T: prost::Message,
     {
         let (tx, rx) = message_channel(50);
 
@@ -287,7 +286,7 @@ impl ActiveSink {
     }
 }
 
-impl<T: MsgBytes + Send + Sync + 'static> ManagedTask for FileSink<T> {
+impl<T: prost::Message + Send + Sync + 'static> ManagedTask for FileSink<T> {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -296,7 +295,7 @@ impl<T: MsgBytes + Send + Sync + 'static> ManagedTask for FileSink<T> {
     }
 }
 
-impl<T: MsgBytes> FileSink<T> {
+impl<T: prost::Message> FileSink<T> {
     async fn init(&mut self) -> Result {
         fs::create_dir_all(&self.target_path).await?;
         fs::create_dir_all(&self.tmp_path).await?;
@@ -359,7 +358,8 @@ impl<T: MsgBytes> FileSink<T> {
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
                     Some(Message::Data(on_write_tx, item)) => {
-                        let res = match self.write(item.as_bytes()).await {
+                        let bytes = bytes::Bytes::from(item.encode_to_vec());
+                        let res = match self.write(bytes).await {
                             Ok(_) => Ok(()),
                             Err(err) => {
                                 tracing::error!("failed to store {}: {err:?}", &self.prefix);

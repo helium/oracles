@@ -3,11 +3,11 @@ use std::{path::Path, time::Duration};
 use file_store::{
     file_sink::{FileSinkClient, DEFAULT_SINK_ROLL_SECS},
     file_upload::FileUpload,
-    traits::MsgBytes,
     FileSink, FileSinkBuilder, FileType, Result,
 };
 use helium_proto::{
-    self as proto, services::{chain_rewardable_entities, packet_verifier, poc_lora, poc_mobile},
+    self as proto,
+    services::{chain_rewardable_entities, packet_verifier, poc_lora, poc_mobile},
 };
 
 pub const DEFAULT_ROLL_TIME: Duration = Duration::from_secs(DEFAULT_SINK_ROLL_SECS);
@@ -31,7 +31,7 @@ pub enum FileSinkRollTime {
 #[async_trait::async_trait]
 pub trait FileSinkWriteExt
 where
-    Self: Sized + MsgBytes + Send,
+    Self: Sized + prost::Message + Send,
 {
     const FILE_PREFIX: &'static str;
     const METRIC_SUFFIX: &'static str;
