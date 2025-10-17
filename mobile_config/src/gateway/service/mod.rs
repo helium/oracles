@@ -22,6 +22,7 @@ use helium_proto::{
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
+use crate::gateway::service::info::GatewayInfo;
 
 pub mod info;
 pub mod info_v3;
@@ -52,21 +53,12 @@ impl GatewayService {
         Err(Status::permission_denied("unauthorized request signature"))
     }
 
-    fn verify_request_signature_for_info(&self, request: &GatewayInfoReqV1) -> Result<(), Status> {
-        let signer = verify_public_key(&request.signer)?;
-        let address = verify_public_key(&request.address)?;
-
-        if address == signer && request.verify(&signer).is_ok() {
-            tracing::debug!(%signer, "self authorized");
-            return Ok(());
-        }
-
-        self.verify_request_signature(&signer, request)
-    }
-
-    fn verify_request_signature_for_historical_info(&self, request: &GatewayInfoHistoricalReqV1) -> Result<(), Status> {
-        let signer = verify_public_key(&request.signer)?;
-        let address = verify_public_key(&request.address)?;
+    fn verify_request_signature_for_info<R>(&self, request: &R, signer: &Vec<u8>, address: &Vec<u8>) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        let signer = verify_public_key(signer)?;
+        let address = verify_public_key(address)?;
 
         if address == signer && request.verify(&signer).is_ok() {
             tracing::debug!(%signer, "self authorized");
@@ -81,6 +73,30 @@ impl GatewayService {
             .sign(response)
             .map_err(|_| Status::internal("response signing error"))
     }
+
+    fn map_info_v2_response(
+        &self,
+        info: GatewayInfo
+    ) -> GrpcResult<GatewayInfoResV2> {
+        if info.metadata.is_some() {
+            telemetry::count_gateway_chain_lookup("asserted");
+        } else {
+            telemetry::count_gateway_chain_lookup("not-asserted");
+        };
+
+        let info: GatewayInfoV2 = info
+            .try_into()
+            .map_err(|_| Status::internal("error serializing historical gateway info (v2)"))?;
+
+        let mut res = GatewayInfoResV2 {
+            info: Some(info),
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        res.signature = self.sign_response(&res.encode_to_vec())?;
+        Ok(Response::new(res))
+    }
 }
 
 #[tonic::async_trait]
@@ -92,7 +108,7 @@ impl mobile_config::Gateway for GatewayService {
         custom_tracing::record_b58("pub_key", &request.address);
         custom_tracing::record_b58("signer", &request.signer);
 
-        self.verify_request_signature_for_info(&request)?;
+        self.verify_request_signature_for_info(&request, &request.signer, &request.address)?;
 
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info");
@@ -132,7 +148,7 @@ impl mobile_config::Gateway for GatewayService {
         custom_tracing::record_b58("pub_key", &request.address);
         custom_tracing::record_b58("signer", &request.signer);
 
-        self.verify_request_signature_for_info(&request)?;
+        self.verify_request_signature_for_info(&request, &request.signer, &request.address)?;
 
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info (v2)");
@@ -145,26 +161,7 @@ impl mobile_config::Gateway for GatewayService {
                     telemetry::count_gateway_chain_lookup("not-found");
                     Err(Status::not_found(pubkey.to_string()))
                 },
-                |info| {
-                    if info.metadata.is_some() {
-                        telemetry::count_gateway_chain_lookup("asserted");
-                    } else {
-                        telemetry::count_gateway_chain_lookup("not-asserted");
-                    };
-
-                    let info: GatewayInfoV2 = info
-                        .try_into()
-                        .map_err(|_| Status::internal("error serializing gateway info (v2)"))?;
-
-                    let mut res = GatewayInfoResV2 {
-                        info: Some(info),
-                        timestamp: Utc::now().encode_timestamp(),
-                        signer: self.signing_key.public_key().into(),
-                        signature: vec![],
-                    };
-                    res.signature = self.sign_response(&res.encode_to_vec())?;
-                    Ok(Response::new(res))
-                },
+                |info| self.map_info_v2_response(info),
             )
     }
 
@@ -174,7 +171,7 @@ impl mobile_config::Gateway for GatewayService {
         custom_tracing::record_b58("pub_key", &request.address);
         custom_tracing::record_b58("signer", &request.signer);
 
-        self.verify_request_signature_for_historical_info(&request)?;
+        self.verify_request_signature_for_info(&request, &request.signer, &request.address)?;
 
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching historical gateway info (v2)");
@@ -196,26 +193,7 @@ impl mobile_config::Gateway for GatewayService {
                     println!("Could not find in db");
                     Err(Status::not_found(pubkey.to_string()))
                 },
-                |info| {
-                    if info.metadata.is_some() {
-                        telemetry::count_gateway_chain_lookup("asserted");
-                    } else {
-                        telemetry::count_gateway_chain_lookup("not-asserted");
-                    };
-
-                    let info: GatewayInfoV2 = info
-                        .try_into()
-                        .map_err(|_| Status::internal("error serializing historical gateway info (v2)"))?;
-
-                    let mut res = GatewayInfoResV2 {
-                        info: Some(info),
-                        timestamp: Utc::now().encode_timestamp(),
-                        signer: self.signing_key.public_key().into(),
-                        signature: vec![],
-                    };
-                    res.signature = self.sign_response(&res.encode_to_vec())?;
-                    Ok(Response::new(res))
-                },
+                |info| self.map_info_v2_response(info),
             )
     }
 
