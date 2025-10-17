@@ -1,6 +1,6 @@
 use crate::pending::AddPendingBurn;
 use async_trait::async_trait;
-use file_store::file_sink::{FileSinkClient, InternalMsgBytes};
+use file_store::file_sink::FileSinkClient;
 use file_store_helium_proto::{iot_packet::PacketRouterPacketReport, traits::MsgTimestamp};
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -319,7 +319,7 @@ pub trait PacketWriter<T> {
 }
 
 #[async_trait]
-impl<T: InternalMsgBytes + Send + Sync + 'static> PacketWriter<T> for FileSinkClient<T> {
+impl<T: prost::Message + Send + Sync + 'static> PacketWriter<T> for FileSinkClient<T> {
     async fn write(&mut self, packet: T) -> Result<(), file_store::Error> {
         (*self).write(packet, []).await?;
         Ok(())
