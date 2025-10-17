@@ -15,7 +15,7 @@ use helium_proto::{
         self, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoResV2,
         GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamReqV3,
         GatewayInfoStreamResV1, GatewayInfoStreamResV2, GatewayInfoStreamResV3, GatewayInfoV2,
-        GatewayInfoHistoricalReq
+        GatewayInfoHistoricalReqV1
     },
     Message,
 };
@@ -64,7 +64,7 @@ impl GatewayService {
         self.verify_request_signature(&signer, request)
     }
 
-    fn verify_request_signature_for_historical_info(&self, request: &GatewayInfoHistoricalReq) -> Result<(), Status> {
+    fn verify_request_signature_for_historical_info(&self, request: &GatewayInfoHistoricalReqV1) -> Result<(), Status> {
         let signer = verify_public_key(&request.signer)?;
         let address = verify_public_key(&request.address)?;
 
@@ -168,7 +168,7 @@ impl mobile_config::Gateway for GatewayService {
             )
     }
 
-    async fn info_historical(&self, request: Request<GatewayInfoHistoricalReq>) -> GrpcResult<GatewayInfoResV2> {
+    async fn info_historical(&self, request: Request<GatewayInfoHistoricalReqV1>) -> GrpcResult<GatewayInfoResV2> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "info-v2");
         custom_tracing::record_b58("pub_key", &request.address);

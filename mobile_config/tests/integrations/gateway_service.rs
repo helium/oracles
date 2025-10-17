@@ -941,7 +941,7 @@ async fn info_historical_request(
     signer: &Keypair,
     query_time: &DateTime<Utc>
 ) -> anyhow::Result<proto::GatewayInfoResV2> {
-    let mut req = proto::GatewayInfoHistoricalReq {
+    let mut req = proto::GatewayInfoHistoricalReqV1 {
         address: address.to_vec(),
         signer: signer.public_key().to_vec(),
         signature: vec![],
