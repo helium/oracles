@@ -28,6 +28,37 @@ async fn gateway_insert_and_get_by_address(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+async fn gateway_get_by_address_and_inserted_at(pool: PgPool) -> anyhow::Result<()> {
+    let addr = pk_binary();
+    let now = Utc::now();
+
+    // Insert gateway first time
+    let gateway = gw(addr.clone(), GatewayType::WifiIndoor, now);
+    gateway.insert(&pool).await?;
+
+    // Insert gateway second time with different type
+    let gateway = gw(addr.clone(), GatewayType::WifiDataOnly, now);
+    gateway.insert(&pool).await?;
+
+    let later = now + chrono::Duration::minutes(10);
+
+    let gateway = Gateway::get_by_address_and_inserted_at(&pool, &addr, &later)
+        .await?
+        .expect("gateway should exist");
+
+    // Assert most recent gateway was returned
+    assert_eq!(gateway.gateway_type, GatewayType::WifiDataOnly);
+    assert_eq!(gateway.created_at, common::nanos_trunc(now));
+    assert!(gateway.inserted_at > now);
+    assert_eq!(gateway.refreshed_at, common::nanos_trunc(now));
+    assert_eq!(gateway.last_changed_at, common::nanos_trunc(now));
+    assert_eq!(gateway.location, Some(123));
+    assert_eq!(gateway.hash, "h0");
+
+    Ok(())
+}
+
+#[sqlx::test]
 async fn gateway_bulk_insert_and_get(pool: PgPool) -> anyhow::Result<()> {
     let now = Utc::now();
 

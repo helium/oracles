@@ -114,7 +114,6 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                inserted_at,
                 refreshed_at,
                 last_changed_at,
                 hash,
@@ -131,7 +130,6 @@ impl Gateway {
             b.push_bind(g.address.as_ref())
                 .push_bind(g.gateway_type)
                 .push_bind(g.created_at)
-                .push_bind(Utc::now())
                 .push_bind(g.refreshed_at)
                 .push_bind(g.last_changed_at)
                 .push_bind(g.hash.as_str())
@@ -154,7 +152,6 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                inserted_at,
                 refreshed_at,
                 last_changed_at,
                 hash,
@@ -167,14 +164,13 @@ impl Gateway {
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
-                $8, $9, $10, $11, $12, $13
+                $8, $9, $10, $11, $12
             )
             "#,
         )
         .bind(self.address.as_ref())
         .bind(self.gateway_type)
         .bind(self.created_at)
-        .bind(Utc::now())
         .bind(self.refreshed_at)
         .bind(self.last_changed_at)
         .bind(self.hash.as_str())
@@ -255,6 +251,42 @@ impl Gateway {
         .await?;
 
         Ok(rows)
+    }
+
+    pub async fn get_by_address_and_inserted_at<'a>(
+        db: impl PgExecutor<'a>,
+        address: &PublicKeyBinary,
+        inserted_at_max: &DateTime<Utc>,
+    ) -> anyhow::Result<Option<Self>> {
+        let gateway = sqlx::query_as::<_, Self>(
+            r#"
+            SELECT
+                address,
+                gateway_type,
+                created_at,
+                inserted_at,
+                refreshed_at,
+                last_changed_at,
+                hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
+            FROM gateways
+            WHERE address = $1
+            AND inserted_at <= $2
+            ORDER BY inserted_at DESC
+            LIMIT 1
+            "#,
+        )
+            .bind(address.as_ref())
+            .bind(inserted_at_max)
+            .fetch_optional(db)
+            .await?;
+
+        Ok(gateway)
     }
 
     pub fn stream_by_addresses<'a>(
