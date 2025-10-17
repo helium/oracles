@@ -529,7 +529,7 @@ pub fn file_name(path_buf: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{file_source, file_upload, FileInfo, FileType};
+    use crate::{file_source, file_upload, FileInfo};
     use futures::stream::StreamExt;
     use std::str::FromStr;
     use tempfile::TempDir;
@@ -544,16 +544,13 @@ mod tests {
             sender: file_upload_tx,
         };
 
-        let (file_sink_client, file_sink_server) = FileSinkBuilder::new(
-            FileType::EntropyReport,
-            tmp_dir.path(),
-            file_upload,
-            "fake_metric",
-        )
-        .roll_time(Duration::from_millis(100))
-        .create()
-        .await
-        .expect("failed to create file sink");
+        let file_prefix = "entropy_report";
+        let (file_sink_client, file_sink_server) =
+            FileSinkBuilder::new(file_prefix, tmp_dir.path(), file_upload, "fake_metric")
+                .roll_time(Duration::from_millis(100))
+                .create()
+                .await
+                .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
             file_sink_server
@@ -566,10 +563,7 @@ mod tests {
 
         file_sink_client
             .sender
-            .try_send(Message::Data(
-                on_write_tx,
-                String::into_bytes("hello".to_string()),
-            ))
+            .try_send(Message::Data(on_write_tx, "hello".to_string()))
             .expect("failed to send bytes to file sink");
 
         tokio::time::sleep(time::Duration::from_millis(200)).await;
@@ -577,7 +571,7 @@ mod tests {
         shutdown_trigger.trigger();
         sink_thread.await.expect("file sink did not complete");
 
-        let entropy_file = get_entropy_file(&tmp_dir)
+        let entropy_file = get_entropy_file(&tmp_dir, file_prefix)
             .await
             .expect("no entropy available");
         assert_eq!("hello", read_file(&entropy_file).await);
@@ -592,17 +586,15 @@ mod tests {
             sender: file_upload_tx,
         };
 
-        let (file_sink_client, file_sink_server) = FileSinkBuilder::new(
-            FileType::EntropyReport,
-            tmp_dir.path(),
-            file_upload,
-            "fake_metric",
-        )
-        .roll_time(Duration::from_millis(100))
-        .auto_commit(false)
-        .create()
-        .await
-        .expect("failed to create file sink");
+        let file_prefix = "entropy_report";
+
+        let (file_sink_client, file_sink_server) =
+            FileSinkBuilder::new(file_prefix, tmp_dir.path(), file_upload, "fake_metric")
+                .roll_time(Duration::from_millis(100))
+                .auto_commit(false)
+                .create()
+                .await
+                .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
             file_sink_server
@@ -622,7 +614,7 @@ mod tests {
 
         tokio::time::sleep(time::Duration::from_millis(200)).await;
 
-        assert!(get_entropy_file(&tmp_dir).await.is_err());
+        assert!(get_entropy_file(&tmp_dir, file_prefix).await.is_err());
         assert_eq!(
             Err(tokio::sync::mpsc::error::TryRecvError::Empty),
             file_upload_rx.try_recv()
@@ -633,7 +625,7 @@ mod tests {
 
         assert!(file_upload_rx.try_recv().is_ok());
 
-        let entropy_file = get_entropy_file(&tmp_dir)
+        let entropy_file = get_entropy_file(&tmp_dir, file_prefix)
             .await
             .expect("no entropy available");
         assert_eq!("hello", read_file(&entropy_file).await);
@@ -642,21 +634,25 @@ mod tests {
         sink_thread.await.expect("file sink did not complete");
     }
 
-    async fn read_file(entry: &DirEntry) -> bytes::BytesMut {
-        file_source::source([entry.path()])
+    async fn read_file(entry: &DirEntry) -> String {
+        let bytes = file_source::source([entry.path()])
             .next()
             .await
             .unwrap()
-            .expect("invalid data in file")
+            .expect("invalid data in file");
+        prost::Message::decode(bytes).expect("encoded string")
     }
 
-    async fn get_entropy_file(tmp_dir: &TempDir) -> std::result::Result<DirEntry, String> {
+    async fn get_entropy_file(
+        tmp_dir: &TempDir,
+        prefix: &'static str,
+    ) -> std::result::Result<DirEntry, String> {
         let mut entries = fs::read_dir(tmp_dir.path())
             .await
             .expect("failed to read tmp dir");
 
         while let Some(entry) = entries.next_entry().await.unwrap() {
-            if is_entropy_file(&entry) {
+            if is_entropy_file(&entry, prefix) {
                 return Ok(entry);
             }
         }
@@ -664,14 +660,11 @@ mod tests {
         Err("no entropy available".to_string())
     }
 
-    fn is_entropy_file(entry: &DirEntry) -> bool {
+    fn is_entropy_file(entry: &DirEntry, prefix: &'static str) -> bool {
         entry
             .file_name()
             .to_str()
             .and_then(|file_name| FileInfo::from_str(file_name).ok())
-            .is_some_and(|file_info| {
-                FileType::from_str(&file_info.prefix).expect("entropy report prefix")
-                    == FileType::EntropyReport
-            })
+            .is_some_and(|file_info| file_info.prefix == prefix)
     }
 }
