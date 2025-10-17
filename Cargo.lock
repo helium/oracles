@@ -4922,6 +4922,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "task-manager",
+ "tempfile",
  "thiserror 1.0.69",
  "tls-init",
  "tokio",
