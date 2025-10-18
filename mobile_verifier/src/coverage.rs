@@ -10,9 +10,8 @@ use file_store::{
     file_source,
     file_upload::FileUpload,
     traits::TimestampEncode,
-    FileType,
 };
-use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
+use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, FileType};
 use file_store_helium_proto::coverage::CoverageObjectIngestReport;
 use futures::{
     stream::{BoxStream, Stream, StreamExt},

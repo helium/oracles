@@ -19,7 +19,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_smithy_types_convert::stream::PaginationStreamExt;
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
-pub use file_info::{FileInfo, FileType};
+pub use file_info::FileInfo;
 pub use file_sink::{FileSink, FileSinkBuilder};
 // pub use file_store_helium_proto::iot_valid_poc::SCALING_PRECISION;
 use futures::{

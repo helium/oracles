@@ -1,9 +1,9 @@
 use chrono::Utc;
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
-    file_upload::FileUpload, FileType,
+    file_upload::FileUpload,
 };
-use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
+use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, FileType};
 use file_store_helium_proto::mobile_ban::{
     proto, BanReport, VerifiedBanIngestReportStatus, VerifiedBanReport,
 };

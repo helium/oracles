@@ -7,8 +7,9 @@ use crate::{
 };
 use anyhow::{bail, Result};
 use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload, FileType,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
 };
+use file_store_helium_proto::FileType;
 use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use file_store_helium_proto::iot_packet::PacketRouterPacketReport;
 use futures_util::TryFutureExt;

@@ -37,6 +37,7 @@ async fn test_mapper_rewards(pool: PgPool) -> anyhow::Result<()> {
     // requirement is 1 qualifying mapping criteria report per epoch
     // subscriber 1 has two qualifying mapping criteria reports,
     // other two subscribers one qualifying mapping criteria reports
+    println!("{subscriber_rewards:?}");
     let sub_reward_1 = subscriber_rewards.get(SUBSCRIBER_1).expect("sub 1");
     assert_eq!(5_479_452_054_794, sub_reward_1.discovery_location_amount);
 

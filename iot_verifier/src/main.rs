@@ -2,8 +2,8 @@ use crate::entropy_loader::EntropyLoader;
 
 use anyhow::Result;
 use clap::Parser;
-use file_store::{file_source, file_upload, FileType};
-use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
+use file_store::{file_source, file_upload};
+use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, FileType};
 use helium_proto::{
     services::poc_lora::{
         IotRewardShare, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1, LoraPocV1,

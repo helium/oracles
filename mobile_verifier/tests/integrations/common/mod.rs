@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
-    traits::{MsgBytes, TimestampEncode},
+    traits::TimestampEncode,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -409,8 +409,9 @@ impl AsStringKeyedMapKey for RadioRewardV2 {
 
 impl AsStringKeyedMapKey for SubscriberReward {
     fn key(&self) -> String {
-        use helium_proto::Message;
-        String::decode(self.subscriber_id.as_bytes()).expect("decode subscriber id")
+        use prost::Message;
+        let bytes = prost::bytes::Bytes::from_owner(self.subscriber_id.clone());
+        String::decode(bytes).expect("decode subscriber id")
     }
 }
 
@@ -421,8 +422,9 @@ impl AsStringKeyedMapKey for PromotionReward {
 }
 impl AsStringKeyedMapKey for SubscriberMappingShares {
     fn key(&self) -> String {
-        use helium_proto::Message;
-        String::decode(self.subscriber_id.as_bytes()).expect("decode subscriber id")
+        use prost::Message;
+        let bytes = prost::bytes::Bytes::from_owner(self.subscriber_id.clone());
+        String::decode(bytes).expect("decode subscriber id")
     }
 }
 

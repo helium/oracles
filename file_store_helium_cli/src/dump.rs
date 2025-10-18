@@ -31,7 +31,7 @@ use helium_proto::{
 };
 use serde_json::json;
 
-use file_store::{file_source, traits::MsgDecode, FileType};
+use file_store::{file_source, traits::MsgDecode};
 use file_store_helium_proto::{
     coverage::CoverageObject,
     iot_packet::IotValidPacket,
@@ -47,6 +47,7 @@ use file_store_helium_proto::{
     unique_connections::UniqueConnectionReq,
     usage_counts::{HexUsageCountsIngestReport, RadioUsageCountsIngestReport},
     wifi_heartbeat::WifiHeartbeatIngestReport,
+    FileType,
 };
 
 use crate::print_json;

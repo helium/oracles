@@ -8,7 +8,6 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true }
 config = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -28,16 +27,12 @@ chrono = { workspace = true }
 helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
 http = { workspace = true }
-strum = { workspace = true }
-strum_macros = { workspace = true }
 sha2 = { workspace = true }
 metrics = { workspace = true }
-blake3 = { workspace = true }
 poc-metrics = { path = "../metrics" }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 base64 = { workspace = true }
-beacon = { workspace = true }
 sqlx = { workspace = true, optional = true }
 async-trait = { workspace = true }
 derive_builder = { workspace = true }
@@ -45,7 +40,6 @@ retainer = { workspace = true }
 uuid = { workspace = true }
 h3o = { workspace = true }
 task-manager = { path = "../task_manager" }
-humantime-serde = { workspace = true }
 tls-init = { path = "../tls_init" }
 bs58 = { workspace = true }
 
@@ -56,7 +50,6 @@ aws-smithy-types-convert = { workspace = true }
 file-store-shared = { path = "../file_store_shared" }
 
 [dev-dependencies]
-hex-literal = "0"
 tempfile = { workspace = true }
 
 [features]

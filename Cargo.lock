@@ -2824,12 +2824,9 @@ dependencies = [
  "aws-sdk-s3",
  "aws-smithy-types-convert",
  "base64 0.21.7",
- "beacon",
- "blake3",
  "bs58",
  "bytes",
  "chrono",
- "clap",
  "config",
  "derive_builder",
  "file-store-shared",
@@ -2838,9 +2835,7 @@ dependencies = [
  "h3o",
  "helium-crypto",
  "helium-proto",
- "hex-literal",
  "http 1.3.1",
- "humantime-serde",
  "metrics",
  "poc-metrics",
  "prost",
@@ -2852,8 +2847,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx",
- "strum",
- "strum_macros",
  "task-manager",
  "tempfile",
  "thiserror 1.0.69",
@@ -2884,6 +2877,7 @@ dependencies = [
  "prost",
  "rust_decimal",
  "serde",
+ "strum",
  "uuid",
 ]
 
@@ -3606,12 +3600,6 @@ dependencies = [
  "sqlx",
  "tls-init",
 ]
-
-[[package]]
-name = "hex-literal"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hextree"

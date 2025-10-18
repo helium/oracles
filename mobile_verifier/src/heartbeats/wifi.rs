@@ -7,9 +7,9 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, FileType,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
 };
-use file_store_helium_proto::wifi_heartbeat::WifiHeartbeatIngestReport;
+use file_store_helium_proto::{wifi_heartbeat::WifiHeartbeatIngestReport, FileType};
 use futures::stream::StreamExt;
 use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;

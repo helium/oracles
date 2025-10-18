@@ -3,12 +3,14 @@ use std::{path::Path, time::Duration};
 use file_store::{
     file_sink::{FileSinkClient, DEFAULT_SINK_ROLL_SECS},
     file_upload::FileUpload,
-    FileSink, FileSinkBuilder, FileType, Result,
+    FileSink, FileSinkBuilder, Result,
 };
 use helium_proto::{
     self as proto,
     services::{chain_rewardable_entities, packet_verifier, poc_lora, poc_mobile},
 };
+
+use crate::FileType;
 
 pub const DEFAULT_ROLL_TIME: Duration = Duration::from_secs(DEFAULT_SINK_ROLL_SECS);
 
