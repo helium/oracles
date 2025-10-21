@@ -1,7 +1,8 @@
 use std::{net::SocketAddr, str::FromStr};
 
 use chrono::Utc;
-use file_store::{file_sink::FileSinkClient, file_upload, traits::MsgVerify};
+use file_store::{file_sink::FileSinkClient, file_upload};
+use file_store_helium_proto::traits::MsgVerify;
 use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_crypto::PublicKey;

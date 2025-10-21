@@ -2,7 +2,8 @@ use crate::{
     key_cache::KeyCache, sub_dao_epoch_reward_info, telemetry, verify_public_key, GrpcResult,
 };
 use chrono::Utc;
-use file_store::traits::{MsgVerify, TimestampEncode};
+use file_store::traits::TimestampEncode;
+use file_store_helium_proto::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::sub_dao::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},

@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use file_store::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::{
     chain_rewardable_entities, iot_config, mobile_config,
