@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
-use file_store::{traits::MsgDecode, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode},
+    Error, Result,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     LocationSource, WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1,
@@ -7,7 +10,7 @@ use helium_proto::services::poc_mobile::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::traits::{MsgTimestamp, TimestampDecode};
+use crate::traits::MsgTimestamp;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WifiHeartbeat {

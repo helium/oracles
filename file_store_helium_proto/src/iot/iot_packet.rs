@@ -1,6 +1,9 @@
 use blake3::Hasher;
 use chrono::{DateTime, Utc};
-use file_store::{traits::MsgDecode, DecodeError, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode, TimestampEncode},
+    DecodeError, Error, Result,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::{
@@ -11,7 +14,7 @@ use helium_proto::{
 };
 use serde::Serialize;
 
-use crate::traits::{MsgTimestamp, TimestampDecode, TimestampEncode};
+use crate::traits::MsgTimestamp;
 
 #[derive(Serialize, Clone)]
 pub struct PacketRouterPacketReport {

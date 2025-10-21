@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
-use file_store::{traits::MsgDecode, DecodeError, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode, TimestampEncode},
+    DecodeError, Error, Result,
+};
 use helium_proto::services::poc_lora::{
     InvalidDetails, InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1,
     LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1, LoraWitnessReportReqV1,
@@ -7,9 +10,7 @@ use helium_proto::services::poc_lora::{
 use serde::Serialize;
 
 use crate::{
-    iot_beacon_report::IotBeaconReport,
-    iot_witness_report::IotWitnessReport,
-    traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
+    iot_beacon_report::IotBeaconReport, iot_witness_report::IotWitnessReport, traits::MsgTimestamp,
 };
 
 #[derive(Serialize, Clone)]

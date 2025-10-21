@@ -1,7 +1,10 @@
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 
-use file_store::{traits::MsgDecode, DecodeError, Error};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode, TimestampEncode},
+    DecodeError, Error,
+};
 
 pub mod proto {
     pub use helium_proto::services::poc_mobile::{
@@ -12,8 +15,6 @@ pub mod proto {
 
 // Re-export proto enums
 pub use proto::{BanReason, VerifiedBanIngestReportStatus};
-
-use crate::traits::{TimestampDecode, TimestampEncode};
 
 #[derive(Clone)]
 pub struct VerifiedBanReport {

@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use file_store::{traits::MsgDecode, DecodeError, Error, Result};
+use file_store::{traits::{MsgDecode,TimestampDecode, TimestampEncode}, DecodeError, Error, Result};
 use helium_proto::services::poc_lora::{
     InvalidDetails, InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraPocV1,
     LoraValidBeaconReportV1, LoraVerifiedWitnessReportV1, LoraWitnessReportReqV1,
@@ -12,7 +12,7 @@ use serde::Serialize;
 use crate::{
     iot_beacon_report::IotBeaconReport,
     iot_witness_report::IotWitnessReport,
-    traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
+    traits::{MsgTimestamp, },
 };
 
 const SCALE_MULTIPLIER: Decimal = dec!(10000);

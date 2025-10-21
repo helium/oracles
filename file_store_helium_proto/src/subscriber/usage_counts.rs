@@ -1,7 +1,10 @@
 use std::convert::TryFrom;
 
 use chrono::{DateTime, Utc};
-use file_store::{DecodeError, traits::MsgDecode, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode, TimestampEncode},
+    DecodeError, Error, Result,
+};
 use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
@@ -10,7 +13,7 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::traits::{MsgTimestamp, TimestampDecode, TimestampEncode};
+use crate::traits::MsgTimestamp;
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct HexUsageStatsReq {

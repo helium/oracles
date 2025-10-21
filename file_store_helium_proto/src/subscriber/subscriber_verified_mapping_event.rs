@@ -1,10 +1,13 @@
 use chrono::{DateTime, Utc};
-use file_store::{traits::MsgDecode, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode, TimestampEncode},
+    Error, Result,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::SubscriberVerifiedMappingEventReqV1;
 use serde::{Deserialize, Serialize};
 
-use crate::traits::{MsgTimestamp, TimestampDecode, TimestampEncode};
+use crate::traits::MsgTimestamp;
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct SubscriberVerifiedMappingEvent {

@@ -1,13 +1,15 @@
 use chrono::{DateTime, Utc};
-use file_store::{traits::MsgDecode, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode, TimestampEncode},
+    Error, Result,
+};
 use helium_proto::services::poc_mobile::{
     SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventReqV1,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    subscriber_verified_mapping_event::SubscriberVerifiedMappingEvent,
-    traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
+    subscriber_verified_mapping_event::SubscriberVerifiedMappingEvent, traits::MsgTimestamp,
 };
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]

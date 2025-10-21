@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
-use file_store::{traits::MsgDecode, DecodeError, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode},
+    DecodeError, Error, Result,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     coverage_object_req_v1, CoverageObjectIngestReportV1, CoverageObjectReqV1,
@@ -7,8 +10,6 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-use crate::traits::TimestampDecode;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RadioHexSignalLevel {

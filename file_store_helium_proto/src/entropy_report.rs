@@ -1,9 +1,12 @@
 use chrono::{DateTime, Utc};
-use file_store::{traits::MsgDecode, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode, TimestampEncode},
+    Error, Result,
+};
 use helium_proto::EntropyReportV1;
 use serde::Serialize;
 
-use crate::traits::{MsgTimestamp, TimestampDecode, TimestampEncode};
+use crate::traits::MsgTimestamp;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct EntropyReport {
