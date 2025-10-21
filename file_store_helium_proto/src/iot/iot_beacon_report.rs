@@ -1,7 +1,7 @@
 use beacon;
 use chrono::{DateTime, Utc};
-use file_store_shared::traits::{TimestampDecode, TimestampEncode};
-use file_store_shared::{traits::MsgDecode, DecodeError, Error, Result};
+use file_store::traits::{TimestampDecode, TimestampEncode};
+use file_store::{traits::MsgDecode, DecodeError, Error, Result};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{LoraBeaconIngestReportV1, LoraBeaconReportReqV1};
 use helium_proto::DataRate;

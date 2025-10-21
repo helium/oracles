@@ -1,11 +1,7 @@
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 
-use file_store_shared::{
-    DecodeError,
-    traits::MsgDecode,
-    Error, // FileSink,
-};
+use file_store::{traits::MsgDecode, DecodeError, Error};
 
 pub mod proto {
     pub use helium_proto::services::poc_mobile::{
@@ -18,13 +14,6 @@ pub mod proto {
 pub use proto::{BanReason, VerifiedBanIngestReportStatus};
 
 use crate::traits::{TimestampDecode, TimestampEncode};
-
-// pub type BanReportStream = FileInfoStream<BanReport>;
-// pub type BanReportSource = tokio::sync::mpsc::Receiver<BanReportStream>;
-
-// pub type VerifiedBanReportSink = FileSinkClient<proto::VerifiedBanIngestReportV1>;
-// pub type VerifiedBanReportStream = FileInfoStream<VerifiedBanReport>;
-// pub type VerifiedBanReportSource = tokio::sync::mpsc::Receiver<VerifiedBanReportStream>;
 
 #[derive(Clone)]
 pub struct VerifiedBanReport {

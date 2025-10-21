@@ -1,8 +1,8 @@
 extern crate tls_init;
 
-// pub use file_store_helium_proto;
+mod error;
 
-pub use file_store_shared::{DecodeError, EncodeError, Error, Result};
+pub use error::{DecodeError, EncodeError, Error, Result};
 
 pub mod file_info;
 pub mod file_info_poller;
@@ -21,7 +21,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 pub use file_info::FileInfo;
 pub use file_sink::{FileSink, FileSinkBuilder};
-// pub use file_store_helium_proto::iot_valid_poc::SCALING_PRECISION;
+
 use futures::{
     future,
     stream::{self, BoxStream},

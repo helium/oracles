@@ -1,4 +1,4 @@
-use file_store_shared::Error;
+use file_store::Error;
 use serde::Serialize;
 use std::{fmt, io, str::FromStr};
 
@@ -263,7 +263,7 @@ impl FileType {
 
 impl FromStr for FileType {
     type Err = Error;
-    fn from_str(s: &str) -> file_store_shared::Result<Self> {
+    fn from_str(s: &str) -> file_store::Result<Self> {
         let result = match s {
             INVALIDATED_RADIO_THRESHOLD_REQ => Self::InvalidatedRadioThresholdReq,
             INVALIDATED_RADIO_THRESHOLD_INGEST_REPORT => {

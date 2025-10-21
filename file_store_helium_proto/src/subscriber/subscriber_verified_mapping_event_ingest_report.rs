@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use file_store_shared::{traits::MsgDecode, Error, Result};
+use file_store::{traits::MsgDecode, Error, Result};
 use helium_proto::services::poc_mobile::{
     SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventReqV1,
 };

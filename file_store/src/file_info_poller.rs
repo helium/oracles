@@ -206,7 +206,7 @@ where
     )> {
         let config = self
             .build()
-            .map_err(|e| file_store_shared::Error::ExternalError(Box::new(e)))?;
+            .map_err(|e| Error::ExternalError(Box::new(e)))?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
         let latest_file_timestamp = config
             .state

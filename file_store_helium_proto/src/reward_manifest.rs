@@ -1,5 +1,5 @@
 use chrono::{DateTime, TimeZone, Utc};
-use file_store_shared::{traits::MsgDecode, DecodeError, Error};
+use file_store::{traits::MsgDecode, DecodeError, Error};
 use helium_proto as proto;
 use helium_proto::{IotRewardToken, MobileRewardToken};
 use rust_decimal::Decimal;

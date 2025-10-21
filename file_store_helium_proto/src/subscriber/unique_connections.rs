@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use serde::{Deserialize, Serialize};
 
-use file_store_shared::{traits::MsgDecode, Error};
+use file_store::{traits::MsgDecode, Error};
 
 use crate::traits::TimestampDecode;
 

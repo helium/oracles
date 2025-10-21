@@ -2829,7 +2829,6 @@ dependencies = [
  "chrono",
  "config",
  "derive_builder",
- "file-store-shared",
  "futures",
  "futures-util",
  "h3o",
@@ -2865,60 +2864,23 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.21.7",
  "beacon",
  "blake3",
- "bytes",
- "chrono",
- "file-store",
- "file-store-shared",
- "h3o",
- "helium-crypto",
- "helium-proto",
- "prost",
- "rust_decimal",
- "serde",
- "strum",
- "uuid",
-]
-
-[[package]]
-name = "file-store-shared"
-version = "0.1.0"
-dependencies = [
- "aws-sdk-s3",
- "bytes",
- "chrono",
- "h3o",
- "helium-crypto",
- "http 1.3.1",
- "prost",
- "rust_decimal",
- "serde_json",
- "sqlx",
- "thiserror 1.0.69",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "file_store_helium_cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.21.7",
  "bs58",
  "bytes",
  "chrono",
  "clap",
  "file-store",
- "file-store-helium-proto",
- "file-store-shared",
  "futures",
+ "h3o",
  "helium-crypto",
  "helium-proto",
  "prost",
+ "rust_decimal",
  "serde",
  "serde_json",
+ "strum",
  "tokio",
  "uuid",
 ]

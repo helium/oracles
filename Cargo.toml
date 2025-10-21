@@ -11,7 +11,6 @@ members = [
   "file_store",
   "file_store_helium_cli",
   "file_store_helium_proto",
-  "file_store_shared",
   "ingest",
   "iot_config",
   "iot_packet_verifier",

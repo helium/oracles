@@ -47,8 +47,6 @@ aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 aws-smithy-types-convert = { workspace = true }
 
-file-store-shared = { path = "../file_store_shared" }
-
 [dev-dependencies]
 tempfile = { workspace = true }
 

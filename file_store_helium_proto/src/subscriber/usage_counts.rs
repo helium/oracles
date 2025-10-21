@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use chrono::{DateTime, Utc};
-use file_store_shared::{DecodeError, traits::MsgDecode, Error, Result};
+use file_store::{DecodeError, traits::MsgDecode, Error, Result};
 use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
