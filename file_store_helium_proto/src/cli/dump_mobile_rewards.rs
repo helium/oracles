@@ -6,7 +6,7 @@ use prost::Message;
 use serde_json::json;
 use std::path::PathBuf;
 
-use crate::print_json;
+use super::print_json;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {

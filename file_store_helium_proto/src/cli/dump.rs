@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use base64::Engine;
 use bs58;
-use file_store_shared::traits::TimestampDecode;
+use file_store::traits::TimestampDecode;
 use futures::stream::StreamExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use helium_proto::{
@@ -50,7 +50,7 @@ use file_store_helium_proto::{
     FileType,
 };
 
-use crate::print_json;
+use super::print_json;
 
 /// Print information about a given store file.
 #[derive(Debug, clap::Args)]

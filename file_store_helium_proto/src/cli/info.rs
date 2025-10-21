@@ -2,7 +2,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use file_store::{file_source, FileInfo};
 use file_store_helium_proto::{traits::MsgTimestamp, FileType};
-use file_store_shared::traits::TimestampDecode;
+use file_store::traits::TimestampDecode;
 use futures::StreamExt;
 use helium_proto::services::poc_lora::{
     LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1,
@@ -14,7 +14,7 @@ use helium_proto::{
 use serde_json::json;
 use std::{path::PathBuf, str::FromStr};
 
-use crate::print_json;
+use super::print_json;
 
 type Result<T = ()> = anyhow::Result<T>;
 

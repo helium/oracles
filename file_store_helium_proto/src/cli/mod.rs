@@ -1,5 +1,12 @@
-use clap::Parser;
-use file_store_helium_cli::{bucket, dump, dump_mobile_rewards, info};
+pub mod bucket;
+pub mod dump;
+pub mod dump_mobile_rewards;
+pub mod info;
+
+pub fn print_json<T: ?Sized + serde::Serialize>(value: &T) -> anyhow::Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
+}
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -32,10 +39,4 @@ impl Cmd {
             Cmd::DumpMobileRewards(cmd) => cmd.run().await,
         }
     }
-}
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    cli.run().await
 }
