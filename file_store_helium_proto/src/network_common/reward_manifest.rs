@@ -1,7 +1,6 @@
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::{traits::MsgDecode, DecodeError, Error};
-use helium_proto as proto;
-use helium_proto::{IotRewardToken, MobileRewardToken};
+use helium_proto::{self as proto, IotRewardToken, MobileRewardToken};
 use rust_decimal::Decimal;
 use serde::Serialize;
 

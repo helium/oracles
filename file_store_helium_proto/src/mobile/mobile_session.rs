@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
-use file_store::{traits::{MsgDecode, TimestampDecode, TimestampEncode}, DecodeError, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode, TimestampEncode},
+    DecodeError, Error, Result,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
@@ -8,10 +11,9 @@ use helium_proto::services::poc_mobile::{
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, InvalidDataTransferIngestReportV1,
     VerifiedDataTransferIngestReportV1,
 };
-
 use serde::Serialize;
 
-use crate::traits::{MsgTimestamp, };
+use crate::traits::MsgTimestamp;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct DataTransferSessionIngestReport {

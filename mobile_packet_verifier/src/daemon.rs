@@ -11,11 +11,10 @@ use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
 };
 use file_store_helium_proto::{
+    mobile_session::DataTransferSessionIngestReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
-
-use file_store_helium_proto::mobile_session::DataTransferSessionIngestReport;
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::VerifiedDataTransferIngestReportV1,
 };

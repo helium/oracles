@@ -1,7 +1,7 @@
 mod cli;
 
-use cli::Cli;
 use clap::Parser;
+use cli::Cli;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

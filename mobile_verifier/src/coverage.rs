@@ -8,8 +8,8 @@ use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload, traits::TimestampEncode,
 };
-use file_store_helium_proto::mobile::coverage::CoverageObjectIngestReport;
 use file_store_helium_proto::{
+    mobile::coverage::CoverageObjectIngestReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };

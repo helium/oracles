@@ -663,7 +663,6 @@ async fn ban_radio(
     ban_type: mobile_ban::BanType,
     timestamp: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    use file_store_helium_proto::mobile_ban;
     banning::db::update_hotspot_ban(
         txn,
         &mobile_ban::VerifiedBanReport {

@@ -1,10 +1,11 @@
 use chrono::{DateTime, Utc};
-use file_store::{traits::{MsgDecode, TimestampDecode}, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode},
+    Error, Result,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier as proto;
 use serde::Serialize;
-
-
 
 #[derive(Serialize, Clone)]
 pub struct ValidDataTransferSession {

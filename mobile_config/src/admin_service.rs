@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use chrono::Utc;
-use file_store::traits::{ TimestampEncode};
+use file_store::traits::TimestampEncode;
 use file_store_helium_proto::traits::MsgVerify;
 use futures::future::TryFutureExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};

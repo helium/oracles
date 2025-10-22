@@ -4,7 +4,7 @@ use crate::{
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
 use chrono::{DateTime, Utc};
-use file_store::traits::{ TimestampDecode, TimestampEncode};
+use file_store::traits::{TimestampDecode, TimestampEncode};
 use file_store_helium_proto::traits::MsgVerify;
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},

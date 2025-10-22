@@ -1,10 +1,9 @@
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKeyBinary;
-
 use file_store::{
     traits::{MsgDecode, TimestampDecode, TimestampEncode},
     DecodeError, Error,
 };
+use helium_crypto::PublicKeyBinary;
 
 pub mod proto {
     pub use helium_proto::services::poc_mobile::{

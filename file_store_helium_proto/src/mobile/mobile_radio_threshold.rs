@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
-use file_store::{traits::{MsgDecode, TimestampDecode, TimestampEncode}, DecodeError, Error, Result};
+use file_store::{
+    traits::{MsgDecode, TimestampDecode, TimestampEncode},
+    DecodeError, Error, Result,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
@@ -7,7 +10,7 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::traits::{MsgTimestamp};
+use crate::traits::MsgTimestamp;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RadioThresholdReportReq {
