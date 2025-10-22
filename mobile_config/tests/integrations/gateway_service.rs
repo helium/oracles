@@ -861,12 +861,14 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
     };
     gateway_recent.insert(&pool).await?;
 
-    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let (addr, _handle) =
+        spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await?;
 
     // Get most recent gateway info
     let query_time = Utc::now() + Duration::minutes(10);
-    let res = info_historical_request(&mut client, &address, &admin_key, &query_time).await;
+    let res =
+        info_historical_request(&mut client, &address, &admin_key, &query_time).await;
 
     let gw_info = res?.info.unwrap();
     assert_eq!(gw_info.address, address.to_vec());
@@ -887,7 +889,8 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
     );
 
     // Get original gateway info by using an earlier inserted_at condition
-    let res = info_historical_request(&mut client, &address, &admin_key, &query_time_original).await;
+    let res =
+        info_historical_request(&mut client, &address, &admin_key, &query_time_original).await;
 
     let gw_info = res?.info.unwrap();
     assert_eq!(gw_info.address, address.to_vec());
@@ -939,7 +942,7 @@ async fn info_historical_request(
     client: &mut GatewayClient<tonic::transport::Channel>,
     address: &PublicKey,
     signer: &Keypair,
-    query_time: &DateTime<Utc>
+    query_time: &DateTime<Utc>,
 ) -> anyhow::Result<proto::GatewayInfoResV2> {
     let mut req = proto::GatewayInfoHistoricalReqV1 {
         address: address.to_vec(),

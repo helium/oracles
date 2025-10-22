@@ -1,5 +1,5 @@
 use crate::{
-    gateway::service::{info::DeviceType, info_v3::DeviceTypeV2},
+    gateway::service::{info::DeviceType, info_v3::DeviceTypeV2, info::GatewayInfo},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -12,17 +12,16 @@ use futures::{
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{
-        self, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoResV2,
-        GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamReqV3,
-        GatewayInfoStreamResV1, GatewayInfoStreamResV2, GatewayInfoStreamResV3, GatewayInfoV2,
-        GatewayInfoHistoricalReqV1
+        self, GatewayInfoBatchReqV1, GatewayInfoHistoricalReqV1, GatewayInfoReqV1,
+        GatewayInfoResV1, GatewayInfoResV2, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2,
+        GatewayInfoStreamReqV3, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
+        GatewayInfoStreamResV3, GatewayInfoV2,
     },
     Message,
 };
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
-use crate::gateway::service::info::GatewayInfo;
 
 pub mod info;
 pub mod info_v3;
@@ -53,7 +52,12 @@ impl GatewayService {
         Err(Status::permission_denied("unauthorized request signature"))
     }
 
-    fn verify_request_signature_for_info<R>(&self, request: &R, signer: &Vec<u8>, address: &Vec<u8>) -> Result<(), Status>
+    fn verify_request_signature_for_info<R>(
+        &self,
+        request: &R,
+        signer: &Vec<u8>,
+        address: &[u8]
+    ) -> Result<(), Status>
     where
         R: MsgVerify,
     {
@@ -74,10 +78,7 @@ impl GatewayService {
             .map_err(|_| Status::internal("response signing error"))
     }
 
-    fn map_info_v2_response(
-        &self,
-        info: GatewayInfo
-    ) -> GrpcResult<GatewayInfoResV2> {
+    fn map_info_v2_response(&self, info: GatewayInfo) -> GrpcResult<GatewayInfoResV2> {
         if info.metadata.is_some() {
             telemetry::count_gateway_chain_lookup("asserted");
         } else {
@@ -184,13 +185,11 @@ impl mobile_config::Gateway for GatewayService {
         info::get_by_address_and_inserted_at(&self.pool, &pubkey, &query_time)
             .await
             .map_err(|_| {
-                println!("error fetching historical gateway info (v2)");
                 Status::internal("error fetching historical gateway info")
             })?
             .map_or_else(
                 || {
                     telemetry::count_gateway_chain_lookup("not-found");
-                    println!("Could not find in db");
                     Err(Status::not_found(pubkey.to_string()))
                 },
                 |info| self.map_info_v2_response(info),

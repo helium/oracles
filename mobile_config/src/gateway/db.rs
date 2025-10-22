@@ -281,10 +281,10 @@ impl Gateway {
             LIMIT 1
             "#,
         )
-            .bind(address.as_ref())
-            .bind(inserted_at_max)
-            .fetch_optional(db)
-            .await?;
+        .bind(address.as_ref())
+        .bind(inserted_at_max)
+        .fetch_optional(db)
+        .await?;
 
         Ok(gateway)
     }
