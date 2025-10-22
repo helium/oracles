@@ -816,23 +816,23 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
 async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
     let admin_key = make_keypair();
 
-    let address = make_keypair().public_key().clone();
+    let address_original = make_keypair().public_key().clone();
     let loc_original = 631711281837647359_u64;
 
     let created_at = Utc::now() - Duration::hours(5);
     let refreshed_at = Utc::now() - Duration::hours(3);
 
     let gateway_original = Gateway {
-        address: address.clone().into(),
+        address: address_original.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at: refreshed_at,
         refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
-        antenna: Some(18),
-        elevation: Some(2),
-        azimuth: Some(161),
+        antenna: Some(10),
+        elevation: Some(4),
+        azimuth: Some(168),
         location: Some(loc_original),
         location_changed_at: Some(refreshed_at),
         location_asserts: Some(1),
@@ -842,10 +842,11 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
     let query_time_original = Utc::now() + Duration::milliseconds(800);
     tokio::time::sleep(time::Duration::from_millis(800)).await;
 
+    let address_recent = make_keypair().public_key().clone();
     let loc_recent = 631711281837647358_u64;
 
     let gateway_recent = Gateway {
-        address: address.clone().into(),
+        address: address_recent.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
         inserted_at: created_at,
@@ -868,10 +869,11 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
     // Get most recent gateway info
     let query_time = Utc::now() + Duration::minutes(10);
     let res =
-        info_historical_request(&mut client, &address, &admin_key, &query_time).await;
+        info_historical_request(&mut client, &address_recent, &admin_key, &query_time).await;
 
+    // Assert that recent gateway was returned
     let gw_info = res?.info.unwrap();
-    assert_eq!(gw_info.address, address.to_vec());
+    assert_eq!(gw_info.address, address_recent.to_vec());
     let deployment_info = gw_info.metadata.clone().unwrap().deployment_info.unwrap();
     match deployment_info {
         DeploymentInfo::WifiDeploymentInfo(v) => {
@@ -881,8 +883,6 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
         }
         DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
     };
-
-    // Assert that recent gateway was returned
     assert_eq!(
         u64::from_str_radix(&gw_info.metadata.clone().unwrap().location, 16).unwrap(),
         loc_recent
@@ -890,21 +890,21 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
 
     // Get original gateway info by using an earlier inserted_at condition
     let res =
-        info_historical_request(&mut client, &address, &admin_key, &query_time_original).await;
+        info_historical_request(&mut client, &address_original, &admin_key, &query_time_original).await;
 
+    // Assert that original gateway was returned
     let gw_info = res?.info.unwrap();
-    assert_eq!(gw_info.address, address.to_vec());
+    assert_eq!(gw_info.address, address_original.to_vec());
     let deployment_info = gw_info.metadata.clone().unwrap().deployment_info.unwrap();
     match deployment_info {
         DeploymentInfo::WifiDeploymentInfo(v) => {
-            assert_eq!(v.antenna, 18);
-            assert_eq!(v.azimuth, 161);
-            assert_eq!(v.elevation, 2);
+            assert_eq!(v.antenna, 10);
+            assert_eq!(v.azimuth, 168);
+            assert_eq!(v.elevation, 4);
         }
         DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
     };
 
-    // Assert that original gateway was returned
     assert_eq!(
         u64::from_str_radix(&gw_info.metadata.clone().unwrap().location, 16).unwrap(),
         loc_original
