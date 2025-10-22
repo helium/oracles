@@ -3,9 +3,12 @@ use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload,
 };
-use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, FileType};
 use file_store_helium_proto::mobile_ban::{
     proto, BanReport, VerifiedBanIngestReportStatus, VerifiedBanReport,
+};
+use file_store_helium_proto::{
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
+    FileType,
 };
 use futures::StreamExt;
 use helium_proto::services::mobile_config::NetworkKeyRole;

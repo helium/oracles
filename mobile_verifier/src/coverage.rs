@@ -5,14 +5,14 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient,
-    file_source,
-    file_upload::FileUpload,
-    traits::TimestampEncode,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
+    file_upload::FileUpload, traits::TimestampEncode,
 };
-use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, FileType};
 use file_store_helium_proto::mobile::coverage::CoverageObjectIngestReport;
+use file_store_helium_proto::{
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
+    FileType,
+};
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
     TryStreamExt,

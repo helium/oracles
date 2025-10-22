@@ -18,4 +18,3 @@ pub use subscriber::*;
 
 // Re-exports
 pub use file_type::FileType;
-pub use traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, DEFAULT_ROLL_TIME};

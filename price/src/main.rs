@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use file_store::file_upload;
-use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
+use file_store_helium_proto::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use helium_proto::PriceReportV1;
 use price::{cli::check, PriceGenerator, Settings};
 use std::{

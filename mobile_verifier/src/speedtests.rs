@@ -7,8 +7,11 @@ use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload,
 };
-use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, FileType};
-use file_store_helium_proto::speedtest::{CellSpeedtest, CellSpeedtestIngestReport};
+use file_store_helium_proto::{
+    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
+    FileType,
+};
 use futures::stream::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{

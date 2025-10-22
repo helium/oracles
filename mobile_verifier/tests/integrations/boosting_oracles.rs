@@ -2,10 +2,10 @@ use crate::common::{self, GatewayClientAllOwnersValid, MockHexBoostDataColl};
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use file_store::file_upload::{self, FileUpload};
-use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use file_store_helium_proto::{
     coverage::RadioHexSignalLevel,
     speedtest::CellSpeedtest,
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     wifi_heartbeat::{WifiHeartbeat, WifiHeartbeatIngestReport},
 };
 use futures::stream::{self, StreamExt};
