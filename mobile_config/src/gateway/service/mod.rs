@@ -1,5 +1,5 @@
 use crate::{
-    gateway::service::{info::DeviceType, info_v3::DeviceTypeV2, info::GatewayInfo},
+    gateway::service::{info::DeviceType, info::GatewayInfo, info_v3::DeviceTypeV2},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -56,7 +56,7 @@ impl GatewayService {
         &self,
         request: &R,
         signer: &Vec<u8>,
-        address: &[u8]
+        address: &[u8],
     ) -> Result<(), Status>
     where
         R: MsgVerify,
@@ -166,7 +166,10 @@ impl mobile_config::Gateway for GatewayService {
             )
     }
 
-    async fn info_historical(&self, request: Request<GatewayInfoHistoricalReqV1>) -> GrpcResult<GatewayInfoResV2> {
+    async fn info_historical(
+        &self,
+        request: Request<GatewayInfoHistoricalReqV1>,
+    ) -> GrpcResult<GatewayInfoResV2> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "info-v2");
         custom_tracing::record_b58("pub_key", &request.address);
@@ -175,7 +178,10 @@ impl mobile_config::Gateway for GatewayService {
         self.verify_request_signature_for_info(&request, &request.signer, &request.address)?;
 
         let pubkey: PublicKeyBinary = request.address.into();
-        tracing::debug!(pubkey = pubkey.to_string(), "fetching historical gateway info (v2)");
+        tracing::debug!(
+            pubkey = pubkey.to_string(),
+            "fetching historical gateway info (v2)"
+        );
 
         let query_time = Utc
             .timestamp_opt(request.query_time as i64, 0)
@@ -184,9 +190,7 @@ impl mobile_config::Gateway for GatewayService {
 
         info::get_by_address_and_inserted_at(&self.pool, &pubkey, &query_time)
             .await
-            .map_err(|_| {
-                Status::internal("error fetching historical gateway info")
-            })?
+            .map_err(|_| Status::internal("error fetching historical gateway info"))?
             .map_or_else(
                 || {
                     telemetry::count_gateway_chain_lookup("not-found");
