@@ -1,3 +1,5 @@
+pub mod coverage;
+pub mod hex_boost;
 pub mod mobile_ban;
 pub mod mobile_radio_invalidated_threshold;
 pub mod mobile_radio_threshold;

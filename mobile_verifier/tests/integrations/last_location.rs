@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Duration, Utc};
-use file_store_helium_proto::coverage::RadioHexSignalLevel;
+use file_store_helium_proto::mobile::coverage::RadioHexSignalLevel;
 use h3o::LatLng;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{self as proto, LocationSource};

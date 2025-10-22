@@ -1,22 +1,21 @@
-pub mod coverage;
-pub mod entropy_report;
+// Infrastructure
 pub mod file_type;
-pub mod hex_boost;
-pub mod reward_manifest;
-
-mod iot;
-pub use iot::*;
-
-mod mobile;
-pub use mobile::*;
-
-mod subscriber;
-pub use subscriber::*;
-
 pub mod traits;
 
-mod file_sink_write;
-pub use file_sink_write::{
-    FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, DEFAULT_ROLL_TIME,
-};
+// Cross-network shared types
+pub mod network_common;
+pub use network_common::*;
+
+// Network-specific types
+pub mod iot;
+pub use iot::*;
+
+pub mod mobile;
+pub use mobile::*;
+
+pub mod subscriber;
+pub use subscriber::*;
+
+// Re-exports
 pub use file_type::FileType;
+pub use traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, DEFAULT_ROLL_TIME};

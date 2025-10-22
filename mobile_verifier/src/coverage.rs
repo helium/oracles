@@ -12,7 +12,7 @@ use file_store::{
     traits::TimestampEncode,
 };
 use file_store_helium_proto::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, FileType};
-use file_store_helium_proto::coverage::CoverageObjectIngestReport;
+use file_store_helium_proto::mobile::coverage::CoverageObjectIngestReport;
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
     TryStreamExt,
