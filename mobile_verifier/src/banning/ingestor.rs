@@ -4,7 +4,7 @@ use file_store::{
     file_upload::FileUpload,
 };
 use file_store_helium_proto::mobile_ban::{
-    proto, BanReport, VerifiedBanIngestReportStatus, VerifiedBanReport,
+    proto::VerifiedBanIngestReportV1, BanReport, VerifiedBanIngestReportStatus, VerifiedBanReport,
 };
 use file_store_helium_proto::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
@@ -15,23 +15,17 @@ use helium_proto::services::mobile_config::NetworkKeyRole;
 use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use sqlx::{PgConnection, PgPool};
 use task_manager::{ManagedTask, TaskManager};
+use tokio::sync::mpsc::Receiver;
 
 use crate::Settings;
 
 use super::db;
 
-pub type BanReportStream = FileInfoStream<BanReport>;
-pub type BanReportSource = tokio::sync::mpsc::Receiver<BanReportStream>;
-
-pub type VerifiedBanReportSink = FileSinkClient<proto::VerifiedBanIngestReportV1>;
-pub type VerifiedBanReportStream = FileInfoStream<VerifiedBanReport>;
-pub type VerifiedBanReportSource = tokio::sync::mpsc::Receiver<VerifiedBanReportStream>;
-
 pub struct BanIngestor {
     pool: PgPool,
     auth_verifier: AuthorizationClient,
-    report_rx: BanReportSource,
-    verified_sink: VerifiedBanReportSink,
+    report_rx: Receiver<FileInfoStream<BanReport>>,
+    verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
 }
 
 impl ManagedTask for BanIngestor {
@@ -52,7 +46,7 @@ impl BanIngestor {
         auth_verifier: AuthorizationClient,
         settings: &Settings,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (verified_sink, verified_sink_server) = proto::VerifiedBanIngestReportV1::file_sink(
+        let (verified_sink, verified_sink_server) = VerifiedBanIngestReportV1::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
@@ -86,8 +80,8 @@ impl BanIngestor {
     pub fn new(
         pool: PgPool,
         auth_verifier: AuthorizationClient,
-        report_rx: BanReportSource,
-        verified_sink: VerifiedBanReportSink,
+        report_rx: Receiver<FileInfoStream<BanReport>>,
+        verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
     ) -> Self {
         Self {
             pool,
@@ -118,7 +112,10 @@ impl BanIngestor {
         Ok(())
     }
 
-    async fn process_file(&self, file_info_stream: BanReportStream) -> anyhow::Result<()> {
+    async fn process_file(
+        &self,
+        file_info_stream: FileInfoStream<BanReport>,
+    ) -> anyhow::Result<()> {
         let file = &file_info_stream.file_info.key;
         tracing::info!(file, "processing");
 

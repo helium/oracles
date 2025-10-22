@@ -1,15 +1,9 @@
 use file_store::file_info_poller::FileInfoStream;
 use file_store_helium_proto::mobile_ban::VerifiedBanReport;
-use file_store::{file_info_poller::FileInfoStream, file_sink::FileSinkClient};
-use file_store_helium_proto::mobile_ban::{proto, VerifiedBanReport};
 use futures::StreamExt;
 use sqlx::{PgConnection, PgPool};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
-
-pub type VerifiedBanReportSink = FileSinkClient<proto::VerifiedBanIngestReportV1>;
-pub type VerifiedBanReportStream = FileInfoStream<VerifiedBanReport>;
-pub type VerifiedBanReportSource = tokio::sync::mpsc::Receiver<VerifiedBanReportStream>;
 
 use super::db;
 
@@ -28,7 +22,7 @@ impl ManagedTask for BanIngestor {
 }
 
 impl BanIngestor {
-    pub fn new(pool: PgPool, report_rx: VerifiedBanReportSource) -> Self {
+    pub fn new(pool: PgPool, report_rx: Receiver<FileInfoStream<VerifiedBanReport>>) -> Self {
         Self { pool, report_rx }
     }
 
@@ -55,7 +49,7 @@ impl BanIngestor {
 
     async fn handle_ban_report_file(
         &self,
-        file_info_stream: VerifiedBanReportStream,
+        file_info_stream: FileInfoStream<VerifiedBanReport>,
     ) -> anyhow::Result<()> {
         let file = &file_info_stream.file_info.key;
         tracing::info!(file, "processing");
