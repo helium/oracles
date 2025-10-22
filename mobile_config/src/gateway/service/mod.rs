@@ -55,7 +55,7 @@ impl GatewayService {
     fn verify_request_signature_for_info<R>(
         &self,
         request: &R,
-        signer: &Vec<u8>,
+        signer: &[u8],
         address: &[u8],
     ) -> Result<(), Status>
     where

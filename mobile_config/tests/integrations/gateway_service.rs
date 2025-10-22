@@ -839,8 +839,8 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
     };
     gateway_original.insert(&pool).await?;
 
-    let query_time_original = Utc::now() + Duration::milliseconds(800);
-    tokio::time::sleep(time::Duration::from_millis(800)).await;
+    let query_time_original = Utc::now() + Duration::milliseconds(1200);
+    tokio::time::sleep(time::Duration::from_millis(1500)).await;
 
     let address_recent = make_keypair().public_key().clone();
     let loc_recent = 631711281837647358_u64;
