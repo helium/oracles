@@ -892,7 +892,8 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
         &address_original,
         &admin_key,
         &query_time_original,
-    ).await;
+    )
+    .await;
 
     // Assert that original gateway was returned
     let gw_info = res?.info.unwrap();
