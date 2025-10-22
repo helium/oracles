@@ -20,8 +20,6 @@ use std::{
 };
 use tokio::fs;
 
-type Result<T = ()> = anyhow::Result<T>;
-
 /// Commands on remote buckets
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
@@ -42,14 +40,14 @@ pub enum BucketCmd {
 }
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self) -> anyhow::Result<()> {
         let settings = Settings::new(&self.config)?;
         self.cmd.run(&settings).await
     }
 }
 
 impl BucketCmd {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         match self {
             Self::Ls(cmd) => cmd.run(settings).await,
             Self::Rm(cmd) => cmd.run(settings).await,
@@ -97,7 +95,7 @@ pub struct List {
 }
 
 impl List {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let client = settings.connect().await;
         let mut file_infos = self.filter.list(&client, &self.bucket);
         let mut ser = serde_json::Serializer::new(io::stdout());
@@ -120,7 +118,7 @@ pub struct Put {
 }
 
 impl Put {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let client = settings.connect().await;
         for file in self.files.iter() {
             file_store::put_file(&client, &self.bucket, file).await?;
@@ -139,7 +137,7 @@ pub struct Remove {
 }
 
 impl Remove {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let client = settings.connect().await;
         for key in self.keys.iter() {
             file_store::remove_file(&client, &self.bucket, key).await?;
@@ -159,7 +157,7 @@ pub struct Get {
 }
 
 impl Get {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let client = settings.connect().await;
         let file_infos = self.filter.list(&client, &self.bucket);
         file_infos
@@ -194,7 +192,7 @@ pub struct Locate {
 }
 
 impl Locate {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let client = settings.connect().await;
         let file_infos = self.filter.list(&client, &self.bucket);
 
@@ -215,7 +213,11 @@ impl Locate {
     }
 }
 
-fn locate(prefix: &str, gateway: &PublicKey, buf: &[u8]) -> Result<Option<serde_json::Value>> {
+fn locate(
+    prefix: &str,
+    gateway: &PublicKey,
+    buf: &[u8],
+) -> anyhow::Result<Option<serde_json::Value>> {
     let pub_key = gateway.to_vec();
 
     match FileType::from_str(prefix)? {
@@ -238,13 +240,16 @@ fn locate(prefix: &str, gateway: &PublicKey, buf: &[u8]) -> Result<Option<serde_
 }
 
 trait ToValue {
-    fn decode_to_value_if(buf: &[u8], gateway: Vec<u8>) -> Result<Option<serde_json::Value>>;
+    fn decode_to_value_if(
+        buf: &[u8],
+        gateway: Vec<u8>,
+    ) -> anyhow::Result<Option<serde_json::Value>>;
 }
 
 macro_rules! impl_to_value {
     ($type:ty, $($path:tt)+) => {
         impl ToValue for $type {
-            fn decode_to_value_if(buf: &[u8], gateway: Vec<u8>) -> Result<Option<serde_json::Value>> {
+            fn decode_to_value_if(buf: &[u8], gateway: Vec<u8>) -> anyhow::Result<Option<serde_json::Value>> {
                 let event = Self::decode(buf).map_err(anyhow::Error::from)?;
 
                 if event.$($path)+.as_ref() == gateway {

@@ -1,8 +1,8 @@
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
+use file_store::traits::TimestampDecode;
 use file_store::{file_source, FileInfo};
 use file_store_helium_proto::{traits::MsgTimestamp, FileType};
-use file_store::traits::TimestampDecode;
 use futures::StreamExt;
 use helium_proto::services::poc_lora::{
     LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1,
@@ -16,8 +16,6 @@ use std::{path::PathBuf, str::FromStr};
 
 use super::print_json;
 
-type Result<T = ()> = anyhow::Result<T>;
-
 /// Print information about a given store file.
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
@@ -26,7 +24,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self) -> anyhow::Result<()> {
         let file_info = FileInfo::try_from(self.path.as_path())?;
         let mut file_stream = file_source::source([&self.path]);
 
@@ -68,7 +66,7 @@ impl Cmd {
     }
 }
 
-fn get_timestamp(file_type: &str, buf: &[u8]) -> Result<DateTime<Utc>> {
+fn get_timestamp(file_type: &str, buf: &[u8]) -> anyhow::Result<DateTime<Utc>> {
     let result = match FileType::from_str(file_type)? {
         FileType::CellSpeedtest => {
             let entry = SpeedtestReqV1::decode(buf)?;
