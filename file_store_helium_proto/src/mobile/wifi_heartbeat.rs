@@ -91,73 +91,73 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for WifiHeartbeatIngestReportV1 {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use chrono::TimeZone;
-//     use hex_literal::hex;
-//     use prost::Message;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+    use hex_literal::hex;
+    use prost::Message;
 
-//     const PK_BYTES: [u8; 33] =
-//         hex!("008f23e96ab6bbff48c8923cac831dc97111bcf33dba9f5a8539c00f9d93551af1");
+    const PK_BYTES: [u8; 33] =
+        hex!("008f23e96ab6bbff48c8923cac831dc97111bcf33dba9f5a8539c00f9d93551af1");
 
-//     #[test]
-//     fn decode_proto_heartbeat_ingest_report_to_internal_struct() {
-//         let now = Utc::now().timestamp_millis();
-//         let report1 = WifiHeartbeatIngestReportV1 {
-//             received_timestamp: now as u64,
-//             report: Some(WifiHeartbeatReqV1 {
-//                 pub_key: PK_BYTES.to_vec(),
-//                 lat: 72.63,
-//                 lon: 72.53,
-//                 operation_mode: true,
-//                 coverage_object: vec![],
-//                 timestamp: Utc::now().timestamp() as u64,
-//                 location_validation_timestamp: now as u64,
-//                 location_source: LocationSource::Skyhook.into(),
-//                 signature: vec![],
-//             }),
-//         };
-//         let report2 = WifiHeartbeatIngestReportV1 {
-//             received_timestamp: now as u64,
-//             report: Some(WifiHeartbeatReqV1 {
-//                 pub_key: PK_BYTES.to_vec(),
-//                 lat: 72.63,
-//                 lon: 72.53,
-//                 operation_mode: true,
-//                 coverage_object: vec![],
-//                 timestamp: Utc::now().timestamp() as u64,
-//                 location_validation_timestamp: 0,
-//                 location_source: LocationSource::Gps.into(),
-//                 signature: vec![],
-//             }),
-//         };
+    #[test]
+    fn decode_proto_heartbeat_ingest_report_to_internal_struct() {
+        let now = Utc::now().timestamp_millis();
+        let report1 = WifiHeartbeatIngestReportV1 {
+            received_timestamp: now as u64,
+            report: Some(WifiHeartbeatReqV1 {
+                pub_key: PK_BYTES.to_vec(),
+                lat: 72.63,
+                lon: 72.53,
+                operation_mode: true,
+                coverage_object: vec![],
+                timestamp: Utc::now().timestamp() as u64,
+                location_validation_timestamp: now as u64,
+                location_source: LocationSource::Skyhook.into(),
+                signature: vec![],
+            }),
+        };
+        let report2 = WifiHeartbeatIngestReportV1 {
+            received_timestamp: now as u64,
+            report: Some(WifiHeartbeatReqV1 {
+                pub_key: PK_BYTES.to_vec(),
+                lat: 72.63,
+                lon: 72.53,
+                operation_mode: true,
+                coverage_object: vec![],
+                timestamp: Utc::now().timestamp() as u64,
+                location_validation_timestamp: 0,
+                location_source: LocationSource::Gps.into(),
+                signature: vec![],
+            }),
+        };
 
-//         let buffer1 = report1.encode_to_vec();
-//         let buffer2 = report2.encode_to_vec();
+        let buffer1 = report1.encode_to_vec();
+        let buffer2 = report2.encode_to_vec();
 
-//         let wifiheartbeatreport1 = WifiHeartbeatIngestReport::decode(buffer1.as_slice())
-//             .expect("unable to decode into WifiHeartbeat");
+        let wifiheartbeatreport1 = WifiHeartbeatIngestReport::decode(buffer1.as_slice())
+            .expect("unable to decode into WifiHeartbeat");
 
-//         assert_eq!(
-//             wifiheartbeatreport1.received_timestamp,
-//             Utc.timestamp_millis_opt(now).unwrap()
-//         );
-//         assert_eq!(
-//             report1.timestamp().expect("timestamp"),
-//             wifiheartbeatreport1.received_timestamp
-//         );
-//         assert!(wifiheartbeatreport1
-//             .report
-//             .location_validation_timestamp
-//             .is_some());
+        assert_eq!(
+            wifiheartbeatreport1.received_timestamp,
+            Utc.timestamp_millis_opt(now).unwrap()
+        );
+        assert_eq!(
+            report1.timestamp().expect("timestamp"),
+            wifiheartbeatreport1.received_timestamp
+        );
+        assert!(wifiheartbeatreport1
+            .report
+            .location_validation_timestamp
+            .is_some());
 
-//         let wifiheartbeatreport2 = WifiHeartbeatIngestReport::decode(buffer2.as_slice())
-//             .expect("unable to decode into WifiHeartbeat");
+        let wifiheartbeatreport2 = WifiHeartbeatIngestReport::decode(buffer2.as_slice())
+            .expect("unable to decode into WifiHeartbeat");
 
-//         assert!(wifiheartbeatreport2
-//             .report
-//             .location_validation_timestamp
-//             .is_none());
-//     }
-// }
+        assert!(wifiheartbeatreport2
+            .report
+            .location_validation_timestamp
+            .is_none());
+    }
+}
