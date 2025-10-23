@@ -16,7 +16,7 @@ use mobile_config::{
 };
 use prost::Message;
 use sqlx::PgPool;
-use std::{sync::Arc, time, vec};
+use std::{sync::Arc, vec};
 use tokio::net::TcpListener;
 use tonic::{transport, Code};
 
@@ -892,13 +892,8 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
     );
 
     // Get original gateway info by using an earlier inserted_at condition
-    let res = info_historical_request(
-        &mut client,
-        &address,
-        &admin_key,
-        &query_time_original,
-    )
-    .await;
+    let res =
+        info_historical_request(&mut client, &address, &admin_key, &query_time_original).await;
 
     // Assert that original gateway was returned
     let gw_info = res?.info.unwrap();
@@ -1049,18 +1044,17 @@ async fn info_batch_v2(
     Ok(stream)
 }
 
-
 async fn update_gateway_inserted_at(
     pool: &PgPool,
     address: &PublicKeyBinary,
-    new_inserted_at: &DateTime<Utc>
+    new_inserted_at: &DateTime<Utc>,
 ) -> anyhow::Result<()> {
     sqlx::query(
         r#"
         UPDATE gateways
         SET inserted_at = $1
         WHERE address = $2;
-        "#
+        "#,
     )
     .bind(new_inserted_at)
     .bind(address.as_ref())

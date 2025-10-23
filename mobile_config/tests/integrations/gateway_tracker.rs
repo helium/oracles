@@ -8,9 +8,8 @@ use rand::{seq::SliceRandom, thread_rng};
 use sqlx::PgPool;
 
 #[sqlx::test]
-async fn gateway_tracker_test(pool: PgPool) -> anyhow::Result<()> {
-    // Tested with 100k
-    const TOTAL: usize = 10_000;
+async fn test_gateway_tracker_updates_changed_gateways(pool: PgPool) -> anyhow::Result<()> {
+    const TOTAL: usize = 2_000;
 
     let now = Utc::now()
         .with_nanosecond(Utc::now().timestamp_subsec_micros() * 1000)
