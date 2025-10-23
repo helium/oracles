@@ -847,7 +847,6 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
     update_gateway_inserted_at(&pool, &pubkey, &new_inserted_at).await?;
 
     let query_time_original = Utc::now();
-    println!("query time original: {:?}", query_time_original);
 
     let gateway_recent = Gateway {
         address: address.clone().into(),
@@ -871,7 +870,6 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
 
     // Get most recent gateway info
     let query_time_recent = Utc::now() + Duration::minutes(10);
-    println!("query_time_recent: {:?}", query_time_recent);
     let res = info_historical_request(&mut client, &address, &admin_key, &query_time_recent).await;
 
     // Assert that recent gateway was returned
@@ -1058,7 +1056,7 @@ async fn update_gateway_inserted_at(
     )
     .bind(new_inserted_at)
     .bind(address.as_ref())
-    .fetch_optional(pool)
+    .execute(pool)
     .await?;
 
     Ok(())

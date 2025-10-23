@@ -51,7 +51,7 @@ impl PartialMigrator {
     }
 
     pub async fn run_skipped(&self) -> anyhow::Result<()> {
-        tracing::info!("Re applaying skipped migrations... {:?}", self.versions);
+        tracing::info!("Re applying skipped migrations... {:?}", self.versions);
 
         // Delete skipped migrations first
         self.delete_skipped().await?;
