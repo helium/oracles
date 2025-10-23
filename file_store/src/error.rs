@@ -25,6 +25,8 @@ pub enum Error {
     NoManifest,
     #[error("send timeout")]
     SendTimeout,
+    #[error("error building file info poller: {0}")]
+    FileInfoPollerError(#[from] crate::file_info_poller::FileInfoPollerConfigBuilderError),
     #[cfg(feature = "sqlx-postgres")]
     #[error("db error")]
     DbError(#[from] sqlx::Error),

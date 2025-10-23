@@ -204,9 +204,7 @@ where
         FileInfoStreamReceiver<Message>,
         FileInfoPollerServer<Message, State, Store, Parser>,
     )> {
-        let config = self
-            .build()
-            .map_err(|e| Error::ExternalError(Box::new(e)))?;
+        let config = self.build()?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
         let latest_file_timestamp = config
             .state
