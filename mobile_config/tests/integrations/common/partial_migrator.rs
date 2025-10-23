@@ -3,33 +3,28 @@ use sqlx::{
     migrate::{Migration, Migrator},
     PgPool,
 };
-use std::path::Path;
 
 pub struct PartialMigrator {
     pool: PgPool,
     versions: Vec<i64>,
-    path: String,
+    migrator: Migrator,
 }
 
 impl PartialMigrator {
-    pub async fn new(
-        pool: PgPool,
-        versions: Vec<i64>,
-        path: Option<String>,
-    ) -> anyhow::Result<Self> {
-        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM _sqlx_migrations")
+    pub async fn new(pool: PgPool, versions: Vec<i64>) -> anyhow::Result<Self> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
             .fetch_one(&pool)
             .await
-            .unwrap_or((0,));
+            .unwrap_or(0);
 
-        if count.0 > 0 {
+        if count > 0 {
             anyhow::bail!("PartialMigrator: database already has applied migrations. Did you forget `migrations = false`?");
         }
 
         Ok(Self {
             pool,
             versions,
-            path: path.unwrap_or_else(|| "./migrations".to_string()),
+            migrator: sqlx::migrate!(),
         })
     }
 
@@ -41,32 +36,28 @@ impl PartialMigrator {
             tmp_migrator.run(&self.pool).await?;
         }
 
-        let migrator = Migrator::new(Path::new(&self.path)).await?;
-
         // Mark skipped migrations as applied first
-        for m in migrator.iter() {
+        for m in self.migrator.iter() {
             if self.versions.contains(&m.version) {
-                println!("⏭️ Skipping migration {} {}", m.version, m.description);
+                tracing::info!("⏭️ Skipping migration {} {}", m.version, m.description);
                 self.skip_migration(m).await?;
             }
         }
 
         // Now run the migrator normally
-        migrator.run(&self.pool).await?;
+        self.migrator.run(&self.pool).await?;
 
         Ok(())
     }
 
     pub async fn run_skipped(&self) -> anyhow::Result<()> {
-        let migrator = Migrator::new(Path::new(&self.path)).await?;
-
-        println!("Re applaying skipped migrations... {:?}", self.versions);
+        tracing::info!("Re applaying skipped migrations... {:?}", self.versions);
 
         // Delete skipped migrations first
         self.delete_skipped().await?;
 
         // Now run the migrator normally
-        migrator.run(&self.pool).await?;
+        self.migrator.run(&self.pool).await?;
 
         Ok(())
     }

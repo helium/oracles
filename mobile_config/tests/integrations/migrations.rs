@@ -6,7 +6,7 @@ use sqlx::PgPool;
 
 #[sqlx::test(migrations = false)]
 async fn gateways_historical(pool: PgPool) -> anyhow::Result<()> {
-    let partial_migrator = PartialMigrator::new(pool.clone(), vec![20251003000000], None).await?;
+    let partial_migrator = PartialMigrator::new(pool.clone(), vec![20251003000000]).await?;
 
     partial_migrator.run_partial().await?;
 
@@ -38,26 +38,35 @@ async fn gateways_historical(pool: PgPool) -> anyhow::Result<()> {
         .await?
         .expect("should find gateway");
 
-    println!("pre_gw: {:?}", pre_gw);
-    println!("gw: {:?}", gw);
-
-    assert!(pre_gw.address == gw.address);
-    assert!(pre_gw.gateway_type == gw.gateway_type);
-    assert!(common::nanos_trunc(pre_gw.created_at) == common::nanos_trunc(gw.created_at));
-    // The real change is updated_at renamed to inserted_at AND inserted_at = created_at;
-    assert!(common::nanos_trunc(pre_gw.created_at) == common::nanos_trunc(gw.inserted_at));
-    assert!(common::nanos_trunc(pre_gw.refreshed_at) == common::nanos_trunc(gw.refreshed_at));
-    assert!(common::nanos_trunc(pre_gw.last_changed_at) == common::nanos_trunc(gw.last_changed_at));
-    assert!(pre_gw.hash == gw.hash);
-    assert!(pre_gw.antenna == gw.antenna);
-    assert!(pre_gw.elevation == gw.elevation);
-    assert!(pre_gw.azimuth == gw.azimuth);
-    assert!(pre_gw.location == gw.location);
-    assert!(
-        common::nanos_trunc(pre_gw.location_changed_at.unwrap())
-            == common::nanos_trunc(gw.location_changed_at.unwrap())
+    assert_eq!(pre_gw.address, gw.address);
+    assert_eq!(pre_gw.gateway_type, gw.gateway_type);
+    assert_eq!(
+        common::nanos_trunc(pre_gw.created_at),
+        common::nanos_trunc(gw.created_at)
     );
-    assert!(pre_gw.location_asserts == gw.location_asserts);
+    // The real change is updated_at renamed to inserted_at AND inserted_at = created_at;
+    assert_eq!(
+        common::nanos_trunc(pre_gw.created_at),
+        common::nanos_trunc(gw.inserted_at)
+    );
+    assert_eq!(
+        common::nanos_trunc(pre_gw.refreshed_at),
+        common::nanos_trunc(gw.refreshed_at)
+    );
+    assert_eq!(
+        common::nanos_trunc(pre_gw.last_changed_at),
+        common::nanos_trunc(gw.last_changed_at)
+    );
+    assert_eq!(pre_gw.hash, gw.hash);
+    assert_eq!(pre_gw.antenna, gw.antenna);
+    assert_eq!(pre_gw.elevation, gw.elevation);
+    assert_eq!(pre_gw.azimuth, gw.azimuth);
+    assert_eq!(pre_gw.location, gw.location);
+    assert_eq!(
+        common::nanos_trunc(pre_gw.location_changed_at.unwrap()),
+        common::nanos_trunc(gw.location_changed_at.unwrap())
+    );
+    assert_eq!(pre_gw.location_asserts, gw.location_asserts);
 
     Ok(())
 }

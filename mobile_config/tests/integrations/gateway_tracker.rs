@@ -1,6 +1,5 @@
 use crate::common::{gateway_metadata_db, make_keypair};
 use chrono::{Timelike, Utc};
-use custom_tracing::Settings;
 use mobile_config::gateway::{
     db::{Gateway, GatewayType},
     tracker,
@@ -9,11 +8,9 @@ use rand::{seq::SliceRandom, thread_rng};
 use sqlx::PgPool;
 
 #[sqlx::test]
-async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
+async fn gateway_tracker_test(pool: PgPool) -> anyhow::Result<()> {
     // Tested with 100k
     const TOTAL: usize = 10_000;
-
-    custom_tracing::init("mobile_config=debug,info".to_string(), Settings::default()).await?;
 
     let now = Utc::now()
         .with_nanosecond(Utc::now().timestamp_subsec_micros() * 1000)
@@ -80,7 +77,7 @@ async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
         assert_eq!(gateway.location_asserts, gw_insert.location.map(|_| 1));
 
         // Update sample gateways
-        gateway_metadata_db::update_gateway(&pool, &gw_insert.asset, new_loc, now).await?;
+        gateway_metadata_db::update_gateway(&pool, &gw_insert.asset, new_loc, now, 2).await?;
     }
 
     // now run the tracker again after updates
@@ -112,7 +109,7 @@ async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
 }
 
 async fn count_gateways(pool: &PgPool) -> anyhow::Result<i64> {
-    let count: (i64,) = sqlx::query_as(
+    let count = sqlx::query_scalar(
         r#"
         SELECT COUNT(*) FROM gateways;
         "#,
@@ -120,5 +117,5 @@ async fn count_gateways(pool: &PgPool) -> anyhow::Result<i64> {
     .fetch_one(pool)
     .await?;
 
-    Ok(count.0)
+    Ok(count)
 }

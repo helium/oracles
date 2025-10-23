@@ -21,11 +21,9 @@ pub async fn insert_gateway_bulk(
 ) -> anyhow::Result<()> {
     stream::iter(gateways.chunks(chunk_size))
         .map(Ok) // convert chunks to a Result for try_for_each_concurrent
-        .try_for_each_concurrent(Some(20), |chunk| {
+        .try_for_each_concurrent(20, |chunk| {
             let pool = pool.clone();
             async move {
-                let mut tx = pool.begin().await?;
-
                 // insert mobile_hotspot_infos
                 let mut qb = QueryBuilder::<Postgres>::new(
                     r#"
@@ -58,7 +56,7 @@ pub async fn insert_gateway_bulk(
                         .push_bind(num_locations);
                 });
 
-                qb.build().execute(&mut *tx).await?;
+                qb.build().execute(&pool).await?;
 
                 // insert key_to_assets
                 let mut qb1 = QueryBuilder::<Postgres>::new(
@@ -74,9 +72,7 @@ pub async fn insert_gateway_bulk(
                     b.push_bind(&gw.asset).push_bind(b58);
                 });
 
-                qb1.build().execute(&mut *tx).await?;
-
-                tx.commit().await?;
+                qb1.build().execute(&pool).await?;
 
                 Ok::<_, anyhow::Error>(())
             }
@@ -91,6 +87,7 @@ pub async fn update_gateway(
     asset: &str,
     location: i64,
     refreshed_at: DateTime<Utc>,
+    num_location_asserts: i32,
 ) -> anyhow::Result<()> {
     sqlx::query(
         r#"
@@ -102,7 +99,7 @@ pub async fn update_gateway(
         "#,
     )
     .bind(location)
-    .bind(2)
+    .bind(num_location_asserts)
     .bind(refreshed_at)
     .bind(asset)
     .execute(pool)
