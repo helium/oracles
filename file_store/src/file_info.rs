@@ -52,23 +52,14 @@ impl From<FileInfo> for String {
     }
 }
 
-impl From<(FileType, DateTime<Utc>)> for FileInfo {
-    fn from(v: (FileType, DateTime<Utc>)) -> Self {
+impl<T: Into<String>> From<(T, DateTime<Utc>)> for FileInfo {
+    fn from(value: (T, DateTime<Utc>)) -> Self {
+        let (prefix, timestamp) = value;
+        let prefix = prefix.into();
         Self {
-            key: format!("{}.{}.gz", &v.0, v.1.timestamp_millis()),
-            prefix: v.0.to_string(),
-            timestamp: v.1,
-            size: 0,
-        }
-    }
-}
-
-impl From<(String, DateTime<Utc>)> for FileInfo {
-    fn from(v: (String, DateTime<Utc>)) -> Self {
-        Self {
-            key: format!("{}.{}.gz", &v.0, v.1.timestamp_millis()),
-            prefix: v.0,
-            timestamp: v.1,
+            key: format!("{}.{}.gz", &prefix, timestamp.timestamp_millis()),
+            prefix,
+            timestamp,
             size: 0,
         }
     }
