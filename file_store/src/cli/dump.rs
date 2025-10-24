@@ -51,7 +51,7 @@ use crate::{
     unique_connections::UniqueConnectionReq,
     usage_counts::{HexUsageCountsIngestReport, RadioUsageCountsIngestReport},
     wifi_heartbeat::WifiHeartbeatIngestReport,
-    FileType, Result,
+    FileType,
 };
 
 /// Print information about a given store file.
@@ -66,7 +66,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self) -> anyhow::Result<()> {
         let mut file_stream = file_source::source([&self.in_path]);
 
         let mut wtr = Writer::from_writer(io::stdout());

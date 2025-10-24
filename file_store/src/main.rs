@@ -1,8 +1,5 @@
 use clap::Parser;
-use file_store::{
-    cli::{bucket, dump, dump_mobile_rewards, info},
-    Result,
-};
+use file_store::cli::{bucket, dump, dump_mobile_rewards, info};
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -13,7 +10,7 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn run(self) -> Result {
+    pub async fn run(self) -> anyhow::Result<()> {
         self.cmd.run().await
     }
 }
@@ -27,7 +24,7 @@ pub enum Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self) -> anyhow::Result<()> {
         match self {
             Cmd::Info(cmd) => cmd.run().await,
             Cmd::Dump(cmd) => cmd.run().await,
@@ -38,7 +35,7 @@ impl Cmd {
 }
 
 #[tokio::main]
-async fn main() -> Result {
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     cli.run().await
 }

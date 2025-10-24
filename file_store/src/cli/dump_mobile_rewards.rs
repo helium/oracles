@@ -1,9 +1,8 @@
 use crate::cli::print_json;
-use crate::{file_source, Result};
+use crate::file_source;
 use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile::mobile_reward_share::Reward::*;
-// use helium_proto::services::poc_mobile::promotion_reward::Entity;
 use helium_proto::services::poc_mobile::MobileRewardShare;
 use prost::Message;
 use serde_json::json;
@@ -15,7 +14,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self) -> anyhow::Result<()> {
         let mut file_stream = file_source::source([&self.path]);
 
         let mut radio_reward = vec![];

@@ -6,12 +6,12 @@ use crate::{
     mobile_radio_threshold::VerifiedRadioThresholdIngestReport,
     speedtest::{cli::SpeedtestAverage, CellSpeedtest},
     traits::MsgDecode,
-    Error, FileInfoStream, FileType, Result, Settings,
+    Error, FileInfoStream, FileType, Settings,
 };
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
 use helium_crypto::PublicKey;
-use serde::{ser::SerializeSeq, Serializer};
+use serde::{ser::SerializeSeq, Serialize, Serializer};
 use std::{
     io,
     path::{Path, PathBuf},
@@ -39,14 +39,14 @@ pub enum BucketCmd {
 }
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self) -> anyhow::Result<()> {
         let settings = Settings::new(&self.config)?;
         self.cmd.run(&settings).await
     }
 }
 
 impl BucketCmd {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         match self {
             Self::Ls(cmd) => cmd.run(settings).await,
             Self::Rm(cmd) => cmd.run(settings).await,
@@ -94,7 +94,7 @@ pub struct List {
 }
 
 impl List {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let client = settings.connect().await;
         let mut file_infos = self.filter.list(&client, &self.bucket);
         let mut ser = serde_json::Serializer::new(io::stdout());
@@ -117,7 +117,7 @@ pub struct Put {
 }
 
 impl Put {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let client = settings.connect().await;
         for file in self.files.iter() {
             crate::put_file(&client, &self.bucket, file).await?;
@@ -136,7 +136,7 @@ pub struct Remove {
 }
 
 impl Remove {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let client = settings.connect().await;
         for key in self.keys.iter() {
             crate::remove_file(&client, &self.bucket, key).await?;
@@ -156,7 +156,7 @@ pub struct Get {
 }
 
 impl Get {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let client = settings.connect().await;
         let file_infos = self.filter.list(&client, &self.bucket);
         file_infos
@@ -198,128 +198,87 @@ pub struct Locate {
 }
 
 impl Locate {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let client = settings.connect().await;
         let file_infos = self.filter.list(&client, &self.bucket);
-        let prefix = self.filter.prefix.clone();
-        let gateway = &self.gateway.clone();
-        let mut events = crate::source_files(&client, &self.bucket, file_infos)
-            .map_ok(|buf| (buf, gateway))
-            .try_filter_map(|(buf, gateway)| {
-                let prefix = prefix.clone();
-                async move { locate(&prefix, gateway, &buf) }
-            })
-            .boxed();
+
+        let mut events = crate::source_files(&client, &self.bucket, file_infos);
+
         let mut ser = serde_json::Serializer::new(io::stdout());
         let mut seq = ser.serialize_seq(None)?;
-        while let Some(event) = events.try_next().await? {
-            seq.serialize_element(&event)?;
+
+        while let Some(buf) = events.next().await {
+            let buf = buf?;
+            if let Ok(Some(val)) = locate(&self.filter.prefix, &self.gateway, &buf) {
+                seq.serialize_element(&val)?
+            }
         }
+
         seq.end()?;
         Ok(())
     }
 }
 
-fn locate(prefix: &str, gateway: &PublicKey, buf: &[u8]) -> Result<Option<serde_json::Value>> {
+fn locate(
+    prefix: &str,
+    gateway: &PublicKey,
+    buf: &[u8],
+) -> anyhow::Result<Option<serde_json::Value>> {
     let pub_key = gateway.to_vec();
+
     match FileType::from_str(prefix)? {
-        FileType::SpeedtestAvg => {
-            SpeedtestAverage::decode(buf).and_then(|event| event.to_value_if(pub_key))
-        }
-        FileType::CellSpeedtest => {
-            CellSpeedtest::decode(buf).and_then(|event| event.to_value_if(pub_key))
-        }
-        FileType::IotBeaconIngestReport => {
-            IotBeaconIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
-        }
+        FileType::SpeedtestAvg => SpeedtestAverage::decode_to_value_if(buf, pub_key),
+        FileType::CellSpeedtest => CellSpeedtest::decode_to_value_if(buf, pub_key),
+        FileType::IotBeaconIngestReport => IotBeaconIngestReport::decode_to_value_if(buf, pub_key),
         FileType::IotWitnessIngestReport => {
-            IotWitnessIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
+            IotWitnessIngestReport::decode_to_value_if(buf, pub_key)
         }
         FileType::VerifiedRadioThresholdIngestReport => {
-            VerifiedRadioThresholdIngestReport::decode(buf)
-                .and_then(|event| event.to_value_if(pub_key))
+            VerifiedRadioThresholdIngestReport::decode_to_value_if(buf, pub_key)
         }
         FileType::VerifiedInvalidatedRadioThresholdIngestReport => {
-            VerifiedInvalidatedRadioThresholdIngestReport::decode(buf)
-                .and_then(|event| event.to_value_if(pub_key))
+            VerifiedInvalidatedRadioThresholdIngestReport::decode_to_value_if(buf, pub_key)
         }
 
-        FileType::IotPoc => IotPoc::decode(buf).and_then(|event| event.to_value_if(pub_key)),
+        FileType::IotPoc => IotPoc::decode_to_value_if(buf, pub_key),
         _ => Ok(None),
     }
 }
 
 trait ToValue {
-    fn to_value(self) -> Result<serde_json::Value>
-    where
-        Self: serde::Serialize;
-
-    fn to_value_if(self, gateway: Vec<u8>) -> Result<Option<serde_json::Value>>
-    where
-        Self: Gateway,
-        Self: serde::Serialize + Sized,
-    {
-        (self.has_pubkey(&gateway))
-            .then(|| self.to_value())
-            .transpose()
-    }
+    fn decode_to_value_if(
+        buf: &[u8],
+        gateway: Vec<u8>,
+    ) -> anyhow::Result<Option<serde_json::Value>>;
 }
 
-trait Gateway {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool;
+macro_rules! impl_to_value {
+    ($type:ty, $($path:tt)+) => {
+        impl ToValue for $type {
+            fn decode_to_value_if(buf: &[u8], gateway: Vec<u8>) -> anyhow::Result<Option<serde_json::Value>> {
+                let event = Self::decode(buf).map_err(anyhow::Error::from)?;
+
+                if event.$($path)+.as_ref() == gateway {
+                    let val = event.serialize(serde_json::value::Serializer)?;
+                    Ok(Some(val))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    };
 }
 
-impl<T> ToValue for T
-where
-    T: serde::Serialize,
-{
-    fn to_value(self) -> Result<serde_json::Value>
-    where
-        Self: serde::Serialize,
-    {
-        self.serialize(serde_json::value::Serializer)
-            .map_err(Error::from)
-    }
-}
-
-impl Gateway for CellSpeedtest {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
-        self.pubkey.as_ref() == pub_key
-    }
-}
-
-impl Gateway for IotBeaconIngestReport {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
-        self.report.pub_key.as_ref() == pub_key
-    }
-}
-
-impl Gateway for IotWitnessIngestReport {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
-        self.report.pub_key.as_ref() == pub_key
-    }
-}
-
-impl Gateway for IotPoc {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
-        self.beacon_report.report.pub_key.as_ref() == pub_key
-    }
-}
-
-impl Gateway for SpeedtestAverage {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
-        self.pub_key.as_ref() == pub_key
-    }
-}
-
-impl Gateway for VerifiedRadioThresholdIngestReport {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
-        self.report.report.hotspot_pubkey.as_ref() == pub_key
-    }
-}
-
-impl Gateway for VerifiedInvalidatedRadioThresholdIngestReport {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
-        self.report.report.hotspot_pubkey.as_ref() == pub_key
-    }
-}
+impl_to_value!(CellSpeedtest, pubkey);
+impl_to_value!(IotBeaconIngestReport, report.pub_key);
+impl_to_value!(IotWitnessIngestReport, report.pub_key);
+impl_to_value!(IotPoc, beacon_report.report.pub_key);
+impl_to_value!(SpeedtestAverage, pub_key);
+impl_to_value!(
+    VerifiedRadioThresholdIngestReport,
+    report.report.hotspot_pubkey
+);
+impl_to_value!(
+    VerifiedInvalidatedRadioThresholdIngestReport,
+    report.report.hotspot_pubkey
+);
