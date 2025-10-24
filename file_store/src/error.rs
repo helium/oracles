@@ -1,4 +1,3 @@
-use helium_proto::UnknownEnumValue;
 use thiserror::Error;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -12,7 +11,7 @@ pub enum Error {
     #[error("decode error")]
     Decode(#[from] DecodeError),
     #[error("unknown enum value")]
-    UnknownEnumValue(#[from] UnknownEnumValue),
+    UnknownEnumValue(#[from] prost::UnknownEnumValue),
     #[error("not found")]
     NotFound(String),
     #[error("crypto error")]
@@ -49,7 +48,7 @@ pub enum Error {
 #[derive(Error, Debug)]
 pub enum DecodeError {
     #[error("prost error")]
-    Prost(#[from] helium_proto::DecodeError),
+    Prost(#[from] prost::DecodeError),
     #[error("file info error")]
     FileInfo(String),
     #[error("uri error")]
@@ -89,7 +88,7 @@ pub enum DecodeError {
 #[derive(Error, Debug)]
 pub enum EncodeError {
     #[error("prost error")]
-    Prost(#[from] helium_proto::EncodeError),
+    Prost(#[from] prost::EncodeError),
     #[error("json error")]
     Json(#[from] serde_json::Error),
 }
