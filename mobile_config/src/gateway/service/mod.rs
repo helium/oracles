@@ -12,7 +12,7 @@ use futures::{
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{
-        self, GatewayInfoBatchReqV1, GatewayInfoHistoricalReqV1, GatewayInfoReqV1,
+        self, GatewayInfoAtTimestampReqV1, GatewayInfoBatchReqV1, GatewayInfoReqV1,
         GatewayInfoResV1, GatewayInfoResV2, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2,
         GatewayInfoStreamReqV3, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
         GatewayInfoStreamResV3, GatewayInfoV2,
@@ -166,9 +166,9 @@ impl mobile_config::Gateway for GatewayService {
             )
     }
 
-    async fn info_historical(
+    async fn info_at_timestamp(
         &self,
-        request: Request<GatewayInfoHistoricalReqV1>,
+        request: Request<GatewayInfoAtTimestampReqV1>,
     ) -> GrpcResult<GatewayInfoResV2> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "info-v2");
@@ -180,7 +180,7 @@ impl mobile_config::Gateway for GatewayService {
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(
             pubkey = pubkey.to_string(),
-            "fetching historical gateway info (v2)"
+            "fetching gateway info at timestamp"
         );
 
         let query_time = Utc
@@ -190,7 +190,7 @@ impl mobile_config::Gateway for GatewayService {
 
         info::get_by_address_and_inserted_at(&self.pool, &pubkey, &query_time)
             .await
-            .map_err(|_| Status::internal("error fetching historical gateway info"))?
+            .map_err(|_| Status::internal("error fetching gateway info at timestamp"))?
             .map_or_else(
                 || {
                     telemetry::count_gateway_chain_lookup("not-found");

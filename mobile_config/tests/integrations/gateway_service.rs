@@ -813,7 +813,7 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
+async fn gateway_info_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
     let admin_key = make_keypair();
 
     let address = make_keypair().public_key().clone();
@@ -870,7 +870,8 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
 
     // Get most recent gateway info
     let query_time_recent = Utc::now() + Duration::minutes(10);
-    let res = info_historical_request(&mut client, &address, &admin_key, &query_time_recent).await;
+    let res =
+        info_at_timestamp_request(&mut client, &address, &admin_key, &query_time_recent).await;
 
     // Assert that recent gateway was returned
     let gw_info = res?.info.unwrap();
@@ -891,7 +892,7 @@ async fn gateway_historical_info(pool: PgPool) -> anyhow::Result<()> {
 
     // Get original gateway info by using an earlier inserted_at condition
     let res =
-        info_historical_request(&mut client, &address, &admin_key, &query_time_original).await;
+        info_at_timestamp_request(&mut client, &address, &admin_key, &query_time_original).await;
 
     // Assert that original gateway was returned
     let gw_info = res?.info.unwrap();
@@ -939,20 +940,20 @@ async fn info_request_v2(
     Ok(res)
 }
 
-async fn info_historical_request(
+async fn info_at_timestamp_request(
     client: &mut GatewayClient<tonic::transport::Channel>,
     address: &PublicKey,
     signer: &Keypair,
     query_time: &DateTime<Utc>,
 ) -> anyhow::Result<proto::GatewayInfoResV2> {
-    let mut req = proto::GatewayInfoHistoricalReqV1 {
+    let mut req = proto::GatewayInfoAtTimestampReqV1 {
         address: address.to_vec(),
         signer: signer.public_key().to_vec(),
         signature: vec![],
         query_time: query_time.timestamp() as u64,
     };
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
-    let res = client.info_historical(req).await?.into_inner();
+    let res = client.info_at_timestamp(req).await?.into_inner();
     Ok(res)
 }
 

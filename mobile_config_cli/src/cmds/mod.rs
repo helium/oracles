@@ -168,7 +168,7 @@ pub enum GatewayCommands {
     /// requested by list of Public Key Binaries
     InfoBatch(GetHotspotBatch),
     /// Retrieve the on-chain registered info for the hotspot at a timestamp
-    InfoHistorical(GetHotspotHistorical),
+    InfoAtTimestamp(GetHotspotAtTimestamp),
 }
 
 #[derive(Debug, Args)]
@@ -198,7 +198,7 @@ pub struct GetHotspotBatch {
 }
 
 #[derive(Debug, Args)]
-pub struct GetHotspotHistorical {
+pub struct GetHotspotAtTimestamp {
     #[arg(long)]
     pub hotspot: PublicKey,
     #[arg(long)]
