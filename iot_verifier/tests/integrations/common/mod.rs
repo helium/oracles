@@ -61,8 +61,7 @@ pub fn default_price_info() -> PriceInfo {
     price_info
 }
 
-pub fn create_file_sink<T: file_store::traits::MsgBytes>(
-) -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
+pub fn create_file_sink<T: prost::Message>() -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
     let (tx, rx) = tokio::sync::mpsc::channel(10);
 
     (

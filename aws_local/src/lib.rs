@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client;
 use chrono::Utc;
-use file_store::traits::MsgBytes;
 use file_store::{file_sink, file_upload, Settings};
 use std::env;
 use std::path::Path;
@@ -73,7 +72,7 @@ impl AwsLocal {
         self.fs_settings.clone()
     }
 
-    pub async fn put_proto_to_aws<T: prost::Message + MsgBytes>(
+    pub async fn put_proto_to_aws<T: prost::Message>(
         &self,
         items: Vec<T>,
         file_type: impl ToString,

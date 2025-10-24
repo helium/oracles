@@ -1,14 +1,14 @@
 use chrono::{DateTime, Duration, DurationRound, Utc};
-use file_store::{traits::MsgBytes, BytesMutStream};
+use file_store::BytesMutStream;
 use futures::{stream, StreamExt};
-use prost::bytes::BytesMut;
+use prost::bytes::{Bytes, BytesMut};
 use reward_index::indexer::RewardType;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Row};
 
-pub fn bytes_mut_stream<T: MsgBytes + Send + 'static>(els: Vec<T>) -> BytesMutStream {
+pub fn bytes_mut_stream<T: prost::Message + Send + 'static>(els: Vec<T>) -> BytesMutStream {
     BytesMutStream::from(
         stream::iter(els)
-            .map(|el| el.as_bytes())
+            .map(|el| Bytes::from(el.encode_to_vec()))
             .map(|el| BytesMut::from(el.as_ref()))
             .map(Ok)
             .boxed(),
@@ -49,7 +49,7 @@ pub async fn get_reward(
     let reward: DbReward = sqlx::query_as(
         r#"
             SELECT *
-            FROM reward_index 
+            FROM reward_index
             WHERE address = $1 AND reward_type = $2
             "#,
     )
