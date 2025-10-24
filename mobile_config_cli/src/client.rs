@@ -12,8 +12,8 @@ use helium_proto::{
         AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1, AuthorizationListReqV1,
         AuthorizationListResV1, AuthorizationVerifyReqV1, AuthorizationVerifyResV1,
         CarrierIncentivePromotionListReqV1, CarrierIncentivePromotionListResV1, EntityVerifyReqV1,
-        EntityVerifyResV1, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV2,
-        GatewayInfoStreamResV2,
+        EntityVerifyResV1, GatewayInfoBatchReqV1, GatewayInfoHistoricalReqV1, GatewayInfoReqV1,
+        GatewayInfoResV2, GatewayInfoStreamResV2,
     },
     Message,
 };
@@ -269,6 +269,27 @@ impl GatewayClient {
 
         Ok(stream)
     }
+
+    pub async fn info_historical(
+        &mut self,
+        gateway: &PublicKey,
+        query_time: u64,
+        keypair: &Keypair,
+    ) -> Result<GatewayInfo> {
+        let mut request = GatewayInfoHistoricalReqV1 {
+            address: gateway.into(),
+            query_time,
+            signer: keypair.public_key().into(),
+            signature: vec![],
+        };
+        request.signature = request.sign(keypair)?;
+        let response = self.client.info_historical(request).await?.into_inner();
+        response.verify(&self.server_pubkey)?;
+        let info = response
+            .info
+            .ok_or_else(|| anyhow::anyhow!("gateway not found"))?;
+        GatewayInfo::try_from(info)
+    }
 }
 
 pub trait MsgSign: Message + std::clone::Clone {
@@ -296,6 +317,7 @@ impl_sign!(AuthorizationListReqV1, signature);
 impl_sign!(EntityVerifyReqV1, signature);
 impl_sign!(GatewayInfoReqV1, signature);
 impl_sign!(GatewayInfoBatchReqV1, signature);
+impl_sign!(GatewayInfoHistoricalReqV1, signature);
 impl_sign!(CarrierIncentivePromotionListReqV1, signature);
 
 pub trait MsgVerify: Message + std::clone::Clone {
