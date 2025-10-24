@@ -22,8 +22,6 @@ pub enum Error {
     Channel,
     #[error("no manifest")]
     NoManifest,
-    #[error("tokio join error")]
-    JoinError(#[from] tokio::task::JoinError),
     #[error("send timeout")]
     SendTimeout,
     #[error("shutting down")]
