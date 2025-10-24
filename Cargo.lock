@@ -2831,7 +2831,6 @@ dependencies = [
  "chrono",
  "clap",
  "config",
- "csv",
  "derive_builder",
  "futures",
  "futures-util",
