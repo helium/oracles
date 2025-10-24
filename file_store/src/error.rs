@@ -89,8 +89,6 @@ pub enum DecodeError {
 pub enum EncodeError {
     #[error("prost error")]
     Prost(#[from] prost::EncodeError),
-    #[error("json error")]
-    Json(#[from] serde_json::Error),
 }
 
 macro_rules! from_err {
@@ -105,7 +103,6 @@ macro_rules! from_err {
 
 // Encode Errors
 from_err!(EncodeError, prost::EncodeError);
-from_err!(EncodeError, serde_json::Error);
 
 // Decode Errors
 from_err!(DecodeError, prost::DecodeError);
