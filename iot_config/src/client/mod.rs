@@ -1,4 +1,4 @@
-use crate::gateway_info::{self, GatewayInfo, GatewayInfoStream};
+use crate::gateway::service::info::{self as gateway_info, GatewayInfo, GatewayInfoStream};
 use file_store_oracles::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};

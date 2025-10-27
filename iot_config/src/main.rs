@@ -8,7 +8,7 @@ use helium_proto::services::{
 use iot_config::sub_dao_service::SubDaoService;
 use iot_config::{
     admin::AuthCache, admin_service::AdminService, db_cleaner::DbCleaner,
-    gateway_service::GatewayService, org, org_service::OrgService, region_map::RegionMapReader,
+    gateway::service::GatewayService, org, org_service::OrgService, region_map::RegionMapReader,
     route_service::RouteService, settings::Settings, telemetry,
 };
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
