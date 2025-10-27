@@ -12,7 +12,7 @@ use helium_proto::Region as ProtoRegion;
 use iot_config::client::ClientError;
 use iot_config::{
     client::{Gateways, RegionParamsInfo},
-    gateway_info::{GatewayInfo, GatewayInfoStream},
+    gateway::service::info::{GatewayInfo, GatewayInfoStream},
 };
 use iot_verifier::witness_updater::WitnessUpdater;
 use iot_verifier::{
