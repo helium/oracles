@@ -1,8 +1,5 @@
 use crate::{
-    admin::AuthCache,
-    gateway_info::{self, GatewayInfo},
-    org,
-    region_map::RegionMapReader,
+    admin::AuthCache, gateway::service::info::GatewayInfo, org, region_map::RegionMapReader,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult, Settings,
 };
 use anyhow::Result;
@@ -25,6 +22,8 @@ use sqlx::{Pool, Postgres};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::watch;
 use tonic::{Request, Response, Status};
+
+pub mod info;
 
 const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
 const CACHE_TTL: Duration = Duration::from_secs(60 * 60 * 3);
@@ -104,7 +103,7 @@ impl GatewayService {
             Some(gateway) => Ok(gateway.value().clone()),
             None => {
                 let metadata = tokio::select! {
-                    query_result = gateway_info::db::get_info(&self.metadata_pool, pubkey) => {
+                    query_result = info::db::get_info(&self.metadata_pool, pubkey) => {
                         query_result.map_err(|_| Status::internal("error fetching gateway info"))?
                             .ok_or_else(|| {
                                 telemetry::count_gateway_info_lookup("not-found");
@@ -318,7 +317,7 @@ async fn stream_all_gateways_info(
 ) -> anyhow::Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
-    let mut stream = gateway_info::db::all_info_stream(pool).chunks(batch_size as usize);
+    let mut stream = info::db::all_info_stream(pool).chunks(batch_size as usize);
     while let Some(infos) = stream.next().await {
         let gateway_infos = infos
             .into_iter()
