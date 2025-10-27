@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
 use file_store::file_sink::{FileSinkClient, MessageReceiver};
-use file_store_helium_proto::{
+use file_store_oracles::{
     mobile_ban::{
         BanAction, BanDetails, BanReason, BanReport, BanRequest, BanType,
         VerifiedBanIngestReportStatus, VerifiedBanReport,

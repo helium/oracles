@@ -3,7 +3,7 @@ use crate::entropy_loader::EntropyLoader;
 use anyhow::Result;
 use clap::Parser;
 use file_store::{file_source, file_upload};
-use file_store_helium_proto::{
+use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };

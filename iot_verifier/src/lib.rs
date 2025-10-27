@@ -26,7 +26,7 @@ pub mod witness_updater;
 use blake3::Hasher;
 use chrono::{DateTime, Utc};
 use file_store::traits::TimestampEncode;
-use file_store_helium_proto::{
+use file_store_oracles::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
     iot_witness_report::{IotWitnessIngestReport, IotWitnessReport},
 };

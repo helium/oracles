@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use file_store_helium_proto::mobile_ban::{BanAction, BanType, VerifiedBanReport};
+use file_store_oracles::mobile_ban::{BanAction, BanType, VerifiedBanReport};
 use futures::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use sqlx::{PgConnection, Row};

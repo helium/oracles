@@ -1,7 +1,7 @@
 use crate::pending::AddPendingBurn;
 use async_trait::async_trait;
 use file_store::file_sink::FileSinkClient;
-use file_store_helium_proto::{iot_packet::PacketRouterPacketReport, traits::MsgTimestamp};
+use file_store_oracles::{iot_packet::PacketRouterPacketReport, traits::MsgTimestamp};
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{

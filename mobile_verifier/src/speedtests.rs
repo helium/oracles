@@ -7,7 +7,7 @@ use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload,
 };
-use file_store_helium_proto::{
+use file_store_oracles::{
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
@@ -250,12 +250,12 @@ pub async fn get_latest_speedtests_for_pubkey(
 ) -> Result<Vec<Speedtest>, sqlx::Error> {
     let speedtests = sqlx::query_as::<_, Speedtest>(
         r#"
-        SELECT * 
-        FROM speedtests 
-        WHERE pubkey = $1 
+        SELECT *
+        FROM speedtests
+        WHERE pubkey = $1
             AND timestamp >= $2
             AND timestamp <= $3
-        ORDER BY timestamp DESC 
+        ORDER BY timestamp DESC
         LIMIT $4
         "#,
     )

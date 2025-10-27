@@ -2,7 +2,7 @@ use std::{collections::HashSet, time::Duration};
 
 use chrono::{DateTime, Utc};
 use file_store::file_source;
-use file_store_helium_proto::FileType;
+use file_store_oracles::FileType;
 use helium_crypto::PublicKeyBinary;
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};

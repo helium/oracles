@@ -1,5 +1,5 @@
 use file_store::{traits::MsgDecode, Client, FileInfoStream, Settings};
-use file_store_helium_proto::{
+use file_store_oracles::{
     iot_beacon_report::IotBeaconIngestReport,
     iot_valid_poc::IotPoc,
     iot_witness_report::IotWitnessIngestReport,

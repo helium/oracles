@@ -1,7 +1,7 @@
 use crate::common;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, FileInfo};
-use file_store_helium_proto::speedtest::{CellSpeedtest, CellSpeedtestIngestReport};
+use file_store_oracles::speedtest::{CellSpeedtest, CellSpeedtestIngestReport};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::DeviceType as MobileDeviceType, poc_mobile::SpeedtestAvgValidity,

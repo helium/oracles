@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_helium_proto::traits::MsgVerify;
+use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::mobile_config::{self, EntityVerifyReqV1, EntityVerifyResV1},

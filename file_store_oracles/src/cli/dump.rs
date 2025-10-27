@@ -32,7 +32,7 @@ use helium_proto::{
 use serde_json::json;
 
 use file_store::{file_source, traits::MsgDecode};
-use file_store_helium_proto::{
+use file_store_oracles::{
     coverage::CoverageObject,
     iot_packet::IotValidPacket,
     mobile_radio_invalidated_threshold::VerifiedInvalidatedRadioThresholdIngestReport,

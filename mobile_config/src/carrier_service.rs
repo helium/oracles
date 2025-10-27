@@ -3,7 +3,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_helium_proto::traits::MsgVerify;
+use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     service_provider_promotions::Promotion,
@@ -82,13 +82,13 @@ impl CarrierService {
 
         let rows = sqlx::query_as::<_, Local>(
             r#"
-                SELECT 
-                    c.name as carrier_name, c.incentive_escrow_fund_bps, 
+                SELECT
+                    c.name as carrier_name, c.incentive_escrow_fund_bps,
                     iep.carrier, iep.start_ts::bigint, iep.stop_ts::bigint, CAST(iep.shares AS integer), iep.name as promo_name
                 FROM carriers c
-                JOIN incentive_escrow_programs iep 
+                JOIN incentive_escrow_programs iep
                     on c.address = iep.carrier
-                WHERE 
+                WHERE
                     iep.start_ts < $1
                     AND iep.stop_ts > $1
             "#,

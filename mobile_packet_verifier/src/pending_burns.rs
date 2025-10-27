@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use file_store::traits::TimestampEncode;
-use file_store_helium_proto::mobile_session::DataTransferSessionReq;
+use file_store_oracles::mobile_session::DataTransferSessionReq;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
 use sqlx::{prelude::FromRow, Pool, Postgres, Row, Transaction};

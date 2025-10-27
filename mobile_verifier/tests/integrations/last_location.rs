@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Duration, Utc};
-use file_store_helium_proto::mobile::coverage::RadioHexSignalLevel;
+use file_store_oracles::mobile::coverage::RadioHexSignalLevel;
 use h3o::LatLng;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{self as proto, LocationSource};
@@ -289,10 +289,10 @@ async fn coverage_object(
     transaction: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<CoverageObject> {
     let coverage_object = CoverageObject {
-        coverage_object: file_store_helium_proto::coverage::CoverageObject {
+        coverage_object: file_store_oracles::coverage::CoverageObject {
             pub_key: hotspot.clone(),
             uuid: Uuid::new_v4(),
-            key_type: file_store_helium_proto::coverage::KeyType::HotspotKey(hotspot.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hotspot.clone()),
             coverage_claim_time: Utc::now(),
             coverage: vec![signal_level("8c2681a3064d9ff", proto::SignalLevel::High)?],
             indoor: true,

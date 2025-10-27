@@ -8,7 +8,7 @@ use file_store::{
     file_upload::FileUpload,
     traits::{TimestampDecode, TimestampEncode},
 };
-use file_store_helium_proto::{
+use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };

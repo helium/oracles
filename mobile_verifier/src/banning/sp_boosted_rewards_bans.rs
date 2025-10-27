@@ -6,7 +6,7 @@ use file_store::{
     file_sink::FileSinkClient,
     file_upload::FileUpload,
 };
-use file_store_helium_proto::{
+use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
@@ -311,7 +311,7 @@ pub mod db {
                 FROM sp_boosted_rewards_bans
                 WHERE ban_type = $1
                     AND received_timestamp <= $2
-                    AND until > $2 
+                    AND until > $2
                     AND COALESCE(invalidated_at > $2, TRUE)
                     AND radio_type != 'cbrs'
             "#,

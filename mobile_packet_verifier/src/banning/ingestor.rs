@@ -1,5 +1,5 @@
 use file_store::file_info_poller::FileInfoStream;
-use file_store_helium_proto::mobile_ban::VerifiedBanReport;
+use file_store_oracles::mobile_ban::VerifiedBanReport;
 use futures::StreamExt;
 use sqlx::{PgConnection, PgPool};
 use task_manager::ManagedTask;

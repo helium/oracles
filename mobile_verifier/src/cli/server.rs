@@ -16,7 +16,7 @@ use crate::{
 };
 use anyhow::Result;
 use file_store::file_upload;
-use file_store_helium_proto::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
+use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate, SpeedtestAvg};
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient,

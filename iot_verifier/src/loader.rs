@@ -55,7 +55,7 @@ use crate::{
 use chrono::DateTime;
 use chrono::Utc;
 use file_store::{traits::MsgDecode, FileInfo};
-use file_store_helium_proto::{
+use file_store_oracles::{
     iot_beacon_report::IotBeaconIngestReport, iot_witness_report::IotWitnessIngestReport, FileType,
 };
 use futures::{stream, StreamExt};

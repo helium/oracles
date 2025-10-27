@@ -1,7 +1,7 @@
 use crate::speedtests::{self, Speedtest};
 use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
-use file_store_helium_proto::traits::MsgTimestamp;
+use file_store_oracles::traits::MsgTimestamp;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;
@@ -273,7 +273,7 @@ const fn mbps(mbps: u64) -> u64 {
 #[cfg(test)]
 mod test {
     use super::*;
-    use file_store_helium_proto::speedtest::CellSpeedtest;
+    use file_store_oracles::speedtest::CellSpeedtest;
 
     impl SpeedtestAverage {
         pub fn tier(&self) -> SpeedtestTier {

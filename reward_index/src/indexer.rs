@@ -2,7 +2,7 @@ use crate::{db, extract, settings, telemetry, Settings};
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, FileInfo, Stream};
-use file_store_helium_proto::network_common::reward_manifest::{
+use file_store_oracles::network_common::reward_manifest::{
     RewardData::{self, IotRewardData, MobileRewardData},
     RewardManifest,
 };

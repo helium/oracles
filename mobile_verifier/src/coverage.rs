@@ -8,7 +8,7 @@ use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload, traits::TimestampEncode,
 };
-use file_store_helium_proto::{
+use file_store_oracles::{
     mobile::coverage::CoverageObjectIngestReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
@@ -222,14 +222,14 @@ pub fn new_coverage_object_notification_channel(
 
 #[derive(Clone)]
 pub struct CoverageObject {
-    pub coverage_object: file_store_helium_proto::coverage::CoverageObject,
+    pub coverage_object: file_store_oracles::coverage::CoverageObject,
     pub validity: CoverageObjectValidity,
 }
 
 impl CoverageObject {
     /// Validate a coverage object
     pub async fn validate(
-        coverage_object: file_store_helium_proto::coverage::CoverageObject,
+        coverage_object: file_store_oracles::coverage::CoverageObject,
         auth_client: &impl IsAuthorized,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -260,7 +260,7 @@ impl CoverageObject {
 
     pub fn key(&self) -> KeyType<'_> {
         match self.coverage_object.key_type {
-            file_store_helium_proto::coverage::KeyType::HotspotKey(ref hotspot_key) => {
+            file_store_oracles::coverage::KeyType::HotspotKey(ref hotspot_key) => {
                 KeyType::Wifi(hotspot_key)
             }
         }

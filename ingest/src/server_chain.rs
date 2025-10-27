@@ -2,7 +2,7 @@ use std::{net::SocketAddr, str::FromStr};
 
 use chrono::Utc;
 use file_store::{file_sink::FileSinkClient, file_upload};
-use file_store_helium_proto::traits::{
+use file_store_oracles::traits::{
     FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify,
 };
 use futures::{future::LocalBoxFuture, TryFutureExt};

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
-use file_store_helium_proto::mobile_session::{
+use file_store_oracles::mobile_session::{
     DataTransferSessionIngestReport, VerifiedDataTransferIngestReport,
 };
 use futures::{Stream, StreamExt};

@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::FileInfo;
-use file_store_helium_proto::FileType;
+use file_store_oracles::FileType;
 use futures::stream::{StreamExt, TryStreamExt};
 use helium_proto::{BlockchainTokenTypeV1, Message, PriceReportV1};
 use serde::{Deserialize, Serialize};

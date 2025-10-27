@@ -2,7 +2,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use file_store::traits::TimestampDecode;
 use file_store::{file_source, FileInfo};
-use file_store_helium_proto::{traits::MsgTimestamp, FileType};
+use file_store_oracles::{traits::MsgTimestamp, FileType};
 use futures::StreamExt;
 use helium_proto::services::poc_lora::{
     LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1,
