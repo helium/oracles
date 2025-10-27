@@ -6,7 +6,7 @@ use sqlx::{PgConnection, Row};
 
 use super::{BannedRadios, BAN_CLEANUP_DAYS};
 
-// When retreiving banned radios, we want to get the
+// When retrieving banned radios, we want to get the
 // latest ban for a radio at the given time.
 //
 // If a radio was banned for POC yesterday,
