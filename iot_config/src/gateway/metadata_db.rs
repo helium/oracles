@@ -47,20 +47,20 @@ impl IOTHotspotInfo {
     pub fn stream(pool: &Pool<Postgres>) -> impl Stream<Item = Result<Self, sqlx::Error>> + '_ {
         sqlx::query_as::<_, Self>(
             r#"
-                SELECT
-                    DISTINCT ON (kta.entity_key)
-                    kta.entity_key,
-                    infos.location::bigint,
-                    CAST(infos.elevation AS integer,
-                    CAST(infos.gain as integer),
-                    infos.is_full_hotspot,
-                    infos.num_location_asserts,
-                    infos.is_active,
-                    infos.dc_onboarding_fee_paid::bigint,
-                    infos.refreshed_at,
-                    infos.created_at
-                FROM iot_hotspot_infos infos
-                JOIN key_to_assets kta ON infos.asset = kta.asset
+            SELECT DISTINCT ON (kta.entity_key)
+                kta.entity_key,
+                infos.location::bigint,
+                infos.elevation::integer,
+                infos.gain::integer,
+                infos.is_full_hotspot,
+                infos.num_location_asserts,
+                infos.is_active,
+                infos.dc_onboarding_fee_paid::bigint,
+                infos.refreshed_at,
+                infos.created_at
+            FROM iot_hotspot_infos AS infos
+            JOIN key_to_assets AS kta ON infos.asset = kta.asset
+            ORDER BY kta.entity_key, infos.refreshed_at DESC
             "#,
         )
         .fetch(pool)
@@ -101,14 +101,14 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for IOTHotspotInfo {
             )
             .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
             location: row.get::<Option<i64>, &str>("location"),
-            elevation: row.get::<Option<i32>, &str>("location"),
-            gain: row.get::<Option<i32>, &str>("location"),
+            elevation: row.get::<Option<i32>, &str>("elevation"),
+            gain: row.get::<Option<i32>, &str>("gain"),
             is_full_hotspot: row.get::<Option<bool>, &str>("is_full_hotspot"),
             num_location_asserts: row.get::<Option<i32>, &str>("num_location_asserts"),
             is_active: row.get::<Option<bool>, &str>("is_active"),
             dc_onboarding_fee_paid: row.get::<Option<i64>, &str>("dc_onboarding_fee_paid"),
             refreshed_at: row.get::<Option<DateTime<Utc>>, &str>("refreshed_at"),
-            created_at: row.get::<DateTime<Utc>, &str>("refreshed_at"),
+            created_at: row.get::<DateTime<Utc>, &str>("created_at"),
         })
     }
 }

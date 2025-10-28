@@ -10,6 +10,8 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tonic::transport;
 
+pub mod gateway_metadata_db;
+
 pub fn make_keypair() -> Keypair {
     Keypair::generate(KeyTag::default(), &mut rand::rngs::OsRng)
 }

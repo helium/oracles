@@ -2,9 +2,11 @@ extern crate tls_init;
 
 pub mod admin;
 pub mod admin_service;
+pub mod cli;
 pub mod client;
 pub mod db_cleaner;
 pub mod gateway;
+pub mod grpc_server;
 mod helium_netids;
 pub mod lora_field;
 pub mod org;
