@@ -22,6 +22,7 @@ pub mod unique_connections;
 pub use settings::Settings;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use mobile_config::client::ClientError;
 use rust_decimal::Decimal;
 use solana::SolPubkey;
@@ -44,6 +45,7 @@ pub trait GatewayResolver: Clone + Send + Sync + 'static {
     async fn resolve_gateway(
         &self,
         address: &helium_crypto::PublicKeyBinary,
+        gateway_query_timestamp: &DateTime<Utc>,
     ) -> Result<GatewayResolution, ClientError>;
 }
 
@@ -52,11 +54,15 @@ impl GatewayResolver for mobile_config::GatewayClient {
     async fn resolve_gateway(
         &self,
         address: &helium_crypto::PublicKeyBinary,
+        gateway_query_timestamp: &DateTime<Utc>,
     ) -> Result<GatewayResolution, ClientError> {
         use mobile_config::gateway::client::GatewayInfoResolver;
         use mobile_config::gateway::service::info::{DeviceType, GatewayInfo};
 
-        match self.resolve_gateway_info(address).await? {
+        match self
+            .resolve_gateway_info(address, gateway_query_timestamp)
+            .await?
+        {
             None => Ok(GatewayResolution::GatewayNotFound),
             Some(GatewayInfo {
                 device_type: DeviceType::WifiDataOnly,
