@@ -71,7 +71,7 @@
 //! [anti-gaming]:             https://github.com/helium/HIP/blob/main/0131-bridging-gap-between-verification-mappers-and-anti-gaming-measures.md
 //! [carrier-offload]:         https://github.com/helium/HIP/blob/main/0134-reward-mobile-carrier-offload-hotspots.md
 //! [sp-boost-qualifiers]:     https://github.com/helium/HIP/blob/main/0140-adjust-service-provider-boost-qualifiers.md
-//! [urban-area-adjustment]    https://github.com/helium/helium-release-proposals/blob/main/releases/20250409-core-devs.md#1-hip-103-urban-area-multiplier-adjustment
+//! [urban-area-adjustment]:   https://github.com/helium/helium-release-proposals/blob/main/releases/20250409-core-devs.md#1-hip-103-urban-area-multiplier-adjustment
 //!
 pub use crate::{
     hexes::{CoveredHex, HexPoints},
