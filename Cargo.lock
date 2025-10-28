@@ -4156,6 +4156,7 @@ dependencies = [
  "file-store-oracles",
  "futures",
  "futures-util",
+ "h3o",
  "helium-crypto",
  "helium-proto",
  "hextree",
