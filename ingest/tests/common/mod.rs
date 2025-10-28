@@ -2,7 +2,7 @@ use anyhow::bail;
 use backon::{ExponentialBuilder, Retryable};
 use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
-use file_store::mobile_ban::proto::{BanAction, BanDetailsV1, BanReason};
+use file_store_oracles::mobile_ban::proto::{BanAction, BanDetailsV1, BanReason};
 use helium_crypto::{KeyTag, Keypair, Network, PublicKeyBinary, Sign};
 use helium_proto::services::poc_mobile::{
     BanIngestReportV1, BanReqV1, BanRespV1, CarrierIdV2, CellHeartbeatReqV1, CellHeartbeatRespV1,

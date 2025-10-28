@@ -7,7 +7,8 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, TimeZone, Utc};
-use file_store::traits::{MsgVerify, TimestampEncode};
+use file_store::traits::TimestampEncode;
+use file_store_oracles::traits::MsgVerify;
 use futures::{
     future::TryFutureExt,
     stream::{StreamExt, TryStreamExt},

@@ -11,7 +11,7 @@ use crate::{
 use beacon;
 use chrono::{DateTime, DurationRound, Utc};
 use denylist::denylist::DenyList;
-use file_store::{
+use file_store_oracles::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
     iot_valid_poc::IotVerifiedWitnessReport,
     iot_witness_report::IotWitnessIngestReport,
@@ -1028,12 +1028,11 @@ impl VerifyBeaconResult {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
-    use crate::last_beacon::LastBeacon;
     use chrono::{Duration, TimeZone};
     use denylist::DenyList;
-    use file_store::iot_beacon_report::IotBeaconReport;
-    use file_store::iot_witness_report::IotWitnessReport;
+    use file_store_oracles::iot_witness_report::IotWitnessReport;
     use helium_proto::DataRate;
     use std::str::FromStr;
 

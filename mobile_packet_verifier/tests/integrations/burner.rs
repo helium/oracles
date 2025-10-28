@@ -1,9 +1,7 @@
 use anyhow::Context;
 use chrono::Utc;
-use file_store::{
-    file_sink::FileSinkClient,
-    mobile_session::{DataTransferEvent, DataTransferSessionReq},
-};
+use file_store::file_sink::FileSinkClient;
+use file_store_oracles::mobile_session::{DataTransferEvent, DataTransferSessionReq};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::CarrierIdV2;
 use mobile_packet_verifier::{burner::Burner, bytes_to_dc, pending_burns, pending_txns};

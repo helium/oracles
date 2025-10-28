@@ -7,9 +7,9 @@ use crate::{
 };
 use anyhow::{bail, Result};
 use file_store::{
-    file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient,
-    file_source, file_upload,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
+};
+use file_store_oracles::{
     iot_packet::PacketRouterPacketReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,

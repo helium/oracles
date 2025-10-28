@@ -674,7 +674,7 @@ mod test {
         speedtests_average::SpeedtestAverage,
     };
     use chrono::{Duration, Utc};
-    use file_store::speedtest::CellSpeedtest;
+    use file_store_oracles::speedtest::CellSpeedtest;
     use futures::stream::{self, BoxStream};
     use helium_proto::{
         services::poc_mobile::mobile_reward_share::Reward as MobileReward, ServiceProvider,

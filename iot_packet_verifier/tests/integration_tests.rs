@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use file_store::iot_packet::PacketRouterPacketReport;
+use file_store_oracles::iot_packet::PacketRouterPacketReport;
 use futures_util::stream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{

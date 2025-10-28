@@ -6,7 +6,8 @@
 
 use crate::entropy::Entropy;
 use blake3::hash;
-use file_store::{entropy_report::EntropyReport, file_info_poller::FileInfoStream};
+use file_store::file_info_poller::FileInfoStream;
+use file_store_oracles::network_common::entropy_report::EntropyReport;
 use futures::{StreamExt, TryStreamExt};
 use sqlx::PgPool;
 use task_manager::ManagedTask;

@@ -1,10 +1,9 @@
 use std::{net::SocketAddr, str::FromStr};
 
 use chrono::Utc;
-use file_store::{
-    file_sink::FileSinkClient,
-    file_upload,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify},
+use file_store::{file_sink::FileSinkClient, file_upload};
+use file_store_oracles::traits::{
+    FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify,
 };
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_crypto::PublicKey;

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
-use file_store::{file_source, FileType};
+use file_store::file_source;
+use file_store_oracles::FileType;
 use reward_index::{settings::Settings, telemetry, Indexer};
 use std::path::PathBuf;
 use task_manager::TaskManager;

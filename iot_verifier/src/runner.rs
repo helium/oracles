@@ -40,18 +40,16 @@ use crate::{
     reward_share::GatewayPocShare,
     telemetry,
     witness_updater::WitnessUpdater,
-    Settings,
+    IngestId, ReportId, Settings,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use denylist::DenyList;
-use file_store::{
-    file_sink::FileSinkClient,
+use file_store::{file_sink::FileSinkClient, traits::MsgDecode};
+use file_store_oracles::{
     iot_beacon_report::IotBeaconIngestReport,
     iot_invalid_poc::{IotInvalidBeaconReport, IotInvalidWitnessReport},
-    iot_valid_poc::{IotPoc, IotValidBeaconReport, IotVerifiedWitnessReport},
+    iot_valid_poc::{IotPoc, IotValidBeaconReport, IotVerifiedWitnessReport, SCALING_PRECISION},
     iot_witness_report::IotWitnessIngestReport,
-    traits::{IngestId, MsgDecode, ReportId},
-    SCALING_PRECISION,
 };
 use futures::{stream, StreamExt};
 use helium_proto::services::poc_lora::{
@@ -738,7 +736,7 @@ fn fire_invalid_witness_metric(invalid_reasons: Vec<InvalidReason>) {
 mod tests {
     use super::*;
     use chrono::Duration as ChronoDuration;
-    use file_store::iot_witness_report::IotWitnessReport;
+    use file_store_oracles::iot_witness_report::IotWitnessReport;
     use helium_crypto::PublicKeyBinary;
     use helium_proto::services::poc_lora::InvalidReason;
     use helium_proto::DataRate;

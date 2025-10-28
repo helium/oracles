@@ -40,6 +40,7 @@ humantime-serde = { workspace = true }
 custom-tracing = { path = "../custom_tracing" }
 db-store = { path = "../db_store" }
 file-store = { path = "../file_store" }
+file-store-oracles = { path = "../file_store_oracles" }
 poc-metrics = { path = "../metrics" }
 task-manager = { path = "../task_manager" }
 tls-init = { path = "../tls_init" }

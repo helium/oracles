@@ -1,9 +1,7 @@
 use anyhow::{Error, Result};
 use clap::Parser;
-use file_store::{
-    file_upload,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-};
+use file_store::file_upload;
+use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures_util::TryFutureExt;
 use helium_proto::EntropyReportV1;
 use poc_entropy::{entropy_generator::EntropyGenerator, server::ApiServer, Settings};

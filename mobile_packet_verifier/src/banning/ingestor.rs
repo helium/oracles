@@ -1,13 +1,15 @@
-use file_store::mobile_ban::{VerifiedBanReport, VerifiedBanReportSource, VerifiedBanReportStream};
+use file_store::file_info_poller::FileInfoStream;
+use file_store_oracles::mobile_ban::VerifiedBanReport;
 use futures::StreamExt;
 use sqlx::{PgConnection, PgPool};
 use task_manager::ManagedTask;
+use tokio::sync::mpsc::Receiver;
 
 use super::db;
 
 pub struct BanIngestor {
     pool: PgPool,
-    report_rx: VerifiedBanReportSource,
+    report_rx: Receiver<FileInfoStream<VerifiedBanReport>>,
 }
 
 impl ManagedTask for BanIngestor {
@@ -20,7 +22,7 @@ impl ManagedTask for BanIngestor {
 }
 
 impl BanIngestor {
-    pub fn new(pool: PgPool, report_rx: VerifiedBanReportSource) -> Self {
+    pub fn new(pool: PgPool, report_rx: Receiver<FileInfoStream<VerifiedBanReport>>) -> Self {
         Self { pool, report_rx }
     }
 
@@ -47,7 +49,7 @@ impl BanIngestor {
 
     async fn handle_ban_report_file(
         &self,
-        file_info_stream: VerifiedBanReportStream,
+        file_info_stream: FileInfoStream<VerifiedBanReport>,
     ) -> anyhow::Result<()> {
         let file = &file_info_stream.file_info.key;
         tracing::info!(file, "processing");

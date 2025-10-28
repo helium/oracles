@@ -8,7 +8,8 @@ use crate::{
     Settings,
 };
 use chrono::Utc;
-use file_store::{file_info_poller::FileInfoStream, file_sink, iot_packet::IotValidPacket};
+use file_store::{file_info_poller::FileInfoStream, file_sink};
+use file_store_oracles::iot_packet::IotValidPacket;
 use futures::{StreamExt, TryStreamExt};
 use helium_proto::services::packet_verifier::ValidPacket;
 use helium_proto::services::poc_lora::{NonRewardablePacket, NonRewardablePacketReason};

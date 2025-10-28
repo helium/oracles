@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use chrono::{DateTime, Duration, Utc};
-use file_store::mobile_ban::{BanAction, BanType, VerifiedBanReport};
+use file_store_oracles::mobile_ban::{BanAction, BanType, VerifiedBanReport};
 use futures::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use sqlx::{PgConnection, PgPool, Row};

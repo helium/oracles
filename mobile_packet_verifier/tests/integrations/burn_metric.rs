@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
 use chrono::Utc;
-use file_store::{
-    file_sink::{FileSinkClient, MessageReceiver},
-    mobile_session::{DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq},
+use file_store::file_sink::{FileSinkClient, MessageReceiver};
+use file_store_oracles::mobile_session::{
+    DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{

@@ -5,14 +5,12 @@
 // Entropy data is purged without writing an invalid report as this data has no downstream value
 //
 
-use crate::{entropy::Entropy, poc_report::Report, telemetry};
-use file_store::{
-    file_sink::FileSinkClient,
+use crate::{entropy::Entropy, poc_report::Report, telemetry, IngestId};
+use file_store::{file_sink::FileSinkClient, traits::MsgDecode};
+use file_store_oracles::{
     iot_beacon_report::IotBeaconIngestReport,
-    iot_invalid_poc::IotInvalidBeaconReport,
-    iot_invalid_poc::IotInvalidWitnessReport,
+    iot_invalid_poc::{IotInvalidBeaconReport, IotInvalidWitnessReport},
     iot_witness_report::IotWitnessIngestReport,
-    traits::{IngestId, MsgDecode},
 };
 use futures::stream::{self, StreamExt};
 use helium_proto::services::poc_lora::{

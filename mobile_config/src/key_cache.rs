@@ -1,6 +1,6 @@
 use crate::{settings::Settings, KeyRole};
 use anyhow::anyhow;
-use file_store::traits::MsgVerify;
+use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use std::collections::HashSet;
 use tokio::sync::watch;

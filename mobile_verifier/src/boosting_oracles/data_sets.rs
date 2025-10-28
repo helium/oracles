@@ -10,11 +10,9 @@ use chrono::{DateTime, Utc};
 use file_store::{
     file_sink::FileSinkClient,
     file_upload::FileUpload,
-    traits::{
-        FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampDecode,
-        TimestampEncode,
-    },
+    traits::{TimestampDecode, TimestampEncode},
 };
+use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures_util::{Stream, StreamExt, TryStreamExt};
 use helium_proto::services::poc_mobile::{self as proto, OracleBoostingReportV1};
 use hextree::disktree::DiskTreeMap;

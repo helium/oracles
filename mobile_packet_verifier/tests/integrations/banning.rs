@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use file_store::mobile_ban::{
+use file_store_oracles::mobile_ban::{
     BanAction, BanDetails, BanReason, BanReport, BanRequest, BanType, UnbanDetails,
     VerifiedBanIngestReportStatus, VerifiedBanReport,
 };

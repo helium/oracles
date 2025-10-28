@@ -1,13 +1,10 @@
 use crate::{db, extract, settings, telemetry, Settings};
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
-use file_store::{
-    file_info_poller::FileInfoStream,
-    reward_manifest::{
-        RewardData::{self, IotRewardData, MobileRewardData},
-        RewardManifest,
-    },
-    FileInfo, Stream,
+use file_store::{file_info_poller::FileInfoStream, FileInfo, Stream};
+use file_store_oracles::network_common::reward_manifest::{
+    RewardData::{self, IotRewardData, MobileRewardData},
+    RewardManifest,
 };
 use futures::{stream, StreamExt, TryStreamExt};
 use helium_proto::Message;

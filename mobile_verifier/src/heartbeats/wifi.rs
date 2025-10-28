@@ -6,10 +6,8 @@ use crate::{
     GatewayResolver, Settings,
 };
 use chrono::{DateTime, Duration, Utc};
-use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
-    wifi_heartbeat::WifiHeartbeatIngestReport, FileType,
-};
+use file_store::{file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source};
+use file_store_oracles::{wifi_heartbeat::WifiHeartbeatIngestReport, FileType};
 use futures::stream::StreamExt;
 use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;

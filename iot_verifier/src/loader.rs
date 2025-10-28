@@ -50,15 +50,13 @@ use crate::{
     meta::Meta,
     poc_report::{InsertBindings, IotStatus, Report, ReportType},
     telemetry::LoaderMetricTracker,
-    Settings,
+    IngestId, Settings,
 };
 use chrono::DateTime;
 use chrono::Utc;
-use file_store::{
-    iot_beacon_report::IotBeaconIngestReport,
-    iot_witness_report::IotWitnessIngestReport,
-    traits::{IngestId, MsgDecode},
-    FileInfo, FileType,
+use file_store::{traits::MsgDecode, FileInfo};
+use file_store_oracles::{
+    iot_beacon_report::IotBeaconIngestReport, iot_witness_report::IotWitnessIngestReport, FileType,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;

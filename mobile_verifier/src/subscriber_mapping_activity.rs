@@ -6,10 +6,10 @@ use file_store::{
     file_sink::FileSinkClient,
     file_source,
     file_upload::FileUpload,
-    traits::{
-        FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampDecode,
-        TimestampEncode,
-    },
+    traits::{TimestampDecode, TimestampEncode},
+};
+use file_store_oracles::{
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
 use futures::{StreamExt, TryStreamExt};
