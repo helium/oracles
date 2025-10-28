@@ -41,7 +41,6 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
     let mut transaction = pool.begin().await?;
     let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
     transaction.commit().await?;
-    let gateway_query_timestamp = Utc::now();
 
     let validated_heartbeat_1 = ValidatedHeartbeat::validate(
         heartbeat(&hotspot, &coverage_object)
@@ -53,7 +52,6 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
         u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
-        &gateway_query_timestamp,
     )
     .await?;
 
@@ -72,7 +70,6 @@ async fn heartbeat_uses_last_good_location_when_invalid_location(
         u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
-        &gateway_query_timestamp,
     )
     .await?;
 
@@ -106,7 +103,6 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
     let mut transaction = pool.begin().await?;
     let coverage_object = coverage_object(&hotspot, &mut transaction).await?;
     transaction.commit().await?;
-    let gateway_query_timestamp = Utc::now();
 
     let validated_heartbeat_1 = ValidatedHeartbeat::validate(
         heartbeat(&hotspot, &coverage_object)
@@ -118,7 +114,6 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
         u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
-        &gateway_query_timestamp,
     )
     .await?;
 
@@ -142,7 +137,6 @@ async fn heartbeat_will_use_last_good_location_from_db(pool: PgPool) -> anyhow::
         u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
-        &gateway_query_timestamp,
     )
     .await?;
 
@@ -180,7 +174,6 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_24_hours(
     transaction.commit().await?;
 
     let location_validation_timestamp = Utc::now();
-    let gateway_query_timestamp = Utc::now();
 
     let validated_heartbeat_1 = ValidatedHeartbeat::validate(
         heartbeat(&hotspot, &coverage_object)
@@ -194,7 +187,6 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_24_hours(
         u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
-        &gateway_query_timestamp,
     )
     .await?;
 
@@ -215,7 +207,6 @@ async fn heartbeat_does_not_use_last_good_location_when_more_than_24_hours(
         u32::MAX,
         &(epoch_start..epoch_end),
         &MockGeofence,
-        &gateway_query_timestamp,
     )
     .await?;
 

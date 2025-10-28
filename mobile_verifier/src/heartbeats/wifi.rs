@@ -152,7 +152,6 @@ where
             .into_stream(&mut transaction)
             .await?
             .map(Heartbeat::from);
-        let gateway_query_timestamp = Utc::now();
         process_validated_heartbeats(
             ValidatedHeartbeat::validate_heartbeats(
                 heartbeats,
@@ -162,7 +161,6 @@ where
                 self.max_distance_to_coverage,
                 &epoch,
                 &self.geofence,
-                &gateway_query_timestamp,
             ),
             heartbeat_cache,
             coverage_claim_time_cache,

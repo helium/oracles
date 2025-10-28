@@ -27,7 +27,6 @@ impl GatewayInfoResolver for MockGatewayInfoResolver {
     async fn resolve_gateway_info(
         &self,
         address: &PublicKeyBinary,
-        _gateway_query_timestamp: &DateTime<Utc>,
     ) -> Result<Option<GatewayInfo>, ClientError> {
         Ok(Some(GatewayInfo {
             address: address.clone(),

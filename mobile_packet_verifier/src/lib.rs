@@ -1,6 +1,5 @@
 extern crate tls_init;
 
-use chrono::Utc;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use mobile_config::{
@@ -51,12 +50,7 @@ pub trait MobileConfigResolverExt {
 #[async_trait::async_trait]
 impl MobileConfigResolverExt for MobileConfigClients {
     async fn is_gateway_known(&self, public_key: &PublicKeyBinary) -> bool {
-        let gateway_query_timestamp = Utc::now();
-        match self
-            .gateway_client
-            .resolve_gateway_info(public_key, &gateway_query_timestamp)
-            .await
-        {
+        match self.gateway_client.resolve_gateway_info(public_key).await {
             Ok(res) => res.is_some(),
             Err(_err) => false,
         }

@@ -1,6 +1,5 @@
 use crate::client::{call_with_retry, ClientError, Settings};
 use crate::gateway::service::info::{GatewayInfo, GatewayInfoStream};
-use chrono::{DateTime, Utc};
 use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
@@ -50,7 +49,6 @@ pub trait GatewayInfoResolver: Clone + Send + Sync + 'static {
     async fn resolve_gateway_info(
         &self,
         address: &PublicKeyBinary,
-        gateway_query_timestamp: &DateTime<Utc>,
     ) -> Result<Option<GatewayInfo>, ClientError>;
 
     async fn stream_gateways_info(
@@ -64,30 +62,27 @@ impl GatewayInfoResolver for GatewayClient {
     async fn resolve_gateway_info(
         &self,
         address: &PublicKeyBinary,
-        gateway_query_timestamp: &DateTime<Utc>,
     ) -> Result<Option<GatewayInfo>, ClientError> {
         if let Some(cached_response) = self.cache.get(address).await {
             return Ok(cached_response.value().clone());
         }
 
-        let mut request = mobile_config::GatewayInfoAtTimestampReqV1 {
+        let mut request = mobile_config::GatewayInfoReqV1 {
             address: address.clone().into(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
-            query_time: gateway_query_timestamp.clone().timestamp() as u64,
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
         tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
-        let response =
-            match call_with_retry!(self.client.clone().info_at_timestamp(request.clone())) {
-                Ok(info_res) => {
-                    let response = info_res.into_inner();
-                    response.verify(&self.config_pubkey)?;
-                    response.info.map(GatewayInfo::try_from).transpose()?
-                }
-                Err(status) if status.code() == tonic::Code::NotFound => None,
-                Err(status) => Err(status)?,
-            };
+        let response = match call_with_retry!(self.client.clone().info_v2(request.clone())) {
+            Ok(info_res) => {
+                let response = info_res.into_inner();
+                response.verify(&self.config_pubkey)?;
+                response.info.map(GatewayInfo::try_from).transpose()?
+            }
+            Err(status) if status.code() == tonic::Code::NotFound => None,
+            Err(status) => Err(status)?,
+        };
 
         self.cache
             .insert(address.clone(), response.clone(), self.cache_ttl)
