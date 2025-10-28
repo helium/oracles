@@ -165,7 +165,7 @@ async fn insert_gateway(
         gateway.created_at,                         // created_at
         gateway.refreshed_at,                       // refreshed_at
         Some(0),                                    // last_block
-        gateway.address.clone().into(),             // key (PublicKeyBinary)
+        gateway.address.clone(),                    // key (PublicKeyBinary)
     )
     .await?;
 
