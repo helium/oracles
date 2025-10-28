@@ -385,7 +385,8 @@ pub struct MsgDecodeFileInfoPollerParser;
 #[async_trait::async_trait]
 impl<T> FileInfoPollerParser<T> for MsgDecodeFileInfoPollerParser
 where
-    T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
+    T: MsgDecode + Send + Sync + 'static,
+    <T as TryFrom<T::Msg>>::Error: std::error::Error,
 {
     async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
         Ok(crate::stream_source(byte_stream)
