@@ -74,7 +74,7 @@ impl Daemon {
         let signing_keypair = Arc::new(settings.signing_keypair()?);
 
         let gateway_svc = GatewayService::new(
-            settings,
+            signing_keypair.clone(),
             metadata_pool.clone(),
             region_map.clone(),
             auth_cache.clone(),

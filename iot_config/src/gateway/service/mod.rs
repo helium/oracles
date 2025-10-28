@@ -1,6 +1,6 @@
 use crate::{
     admin::AuthCache, gateway::service::info::GatewayInfo, org, region_map::RegionMapReader,
-    telemetry, verify_public_key, GrpcResult, GrpcStreamResult, Settings,
+    telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
 use anyhow::Result;
 use chrono::Utc;
@@ -39,7 +39,7 @@ pub struct GatewayService {
 
 impl GatewayService {
     pub fn new(
-        settings: &Settings,
+        signing_key: Arc<Keypair>,
         metadata_pool: Pool<Postgres>,
         region_map: RegionMapReader,
         auth_cache: AuthCache,
@@ -54,7 +54,7 @@ impl GatewayService {
             gateway_cache,
             metadata_pool,
             region_map,
-            signing_key: Arc::new(settings.signing_keypair()?),
+            signing_key,
             delegate_cache,
         })
     }
