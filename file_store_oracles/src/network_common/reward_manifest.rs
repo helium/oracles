@@ -1,8 +1,29 @@
-use chrono::{DateTime, TimeZone, Utc};
-use file_store::{traits::MsgDecode, DecodeError, Error};
-use helium_proto::{self as proto, IotRewardToken, MobileRewardToken};
+use chrono::{DateTime, Utc};
+use file_store::traits::{MsgDecode, TimestampDecode, TimestampDecodeError};
+use helium_proto as proto;
+use helium_proto::{IotRewardToken, MobileRewardToken};
 use rust_decimal::Decimal;
 use serde::Serialize;
+
+use crate::prost_enum;
+
+#[derive(thiserror::Error, Debug)]
+pub enum RewardManifestError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported mobile token type: {0}")]
+    MobileTokenType(prost::UnknownEnumValue),
+
+    #[error("unsupported iot token type: {0}")]
+    IotTokenType(prost::UnknownEnumValue),
+
+    #[error("error parsing decimal: {0}")]
+    Decimal(#[from] rust_decimal::Error),
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct RewardManifest {
@@ -34,82 +55,59 @@ impl MsgDecode for RewardManifest {
 }
 
 impl TryFrom<proto::RewardManifest> for RewardManifest {
-    type Error = Error;
+    type Error = RewardManifestError;
 
     fn try_from(value: proto::RewardManifest) -> Result<Self, Self::Error> {
         Ok(RewardManifest {
             written_files: value.written_files,
-            start_timestamp: Utc
-                .timestamp_opt(value.start_timestamp as i64, 0)
-                .single()
-                .ok_or(Error::Decode(DecodeError::InvalidTimestamp(
-                    value.start_timestamp,
-                )))?,
-            end_timestamp: Utc
-                .timestamp_opt(value.end_timestamp as i64, 0)
-                .single()
-                .ok_or(Error::Decode(DecodeError::InvalidTimestamp(
-                    value.end_timestamp,
-                )))?,
+            start_timestamp: value.start_timestamp.to_timestamp()?,
+            end_timestamp: value.end_timestamp.to_timestamp()?,
             epoch: value.epoch,
             price: value.price,
             reward_data: match value.reward_data {
                 Some(proto::reward_manifest::RewardData::MobileRewardData(reward_data)) => {
-                    let token = MobileRewardToken::try_from(reward_data.token).map_err(|_| {
-                        DecodeError::unsupported_token_type(
-                            "mobile_reward_manifest",
-                            reward_data.token,
-                        )
-                    })?;
                     Some(RewardData::MobileRewardData {
                         poc_bones_per_reward_share: reward_data
                             .poc_bones_per_reward_share
-                            .ok_or(DecodeError::empty_field("poc_bones_per_reward_share"))?
-                            .value
-                            .parse()
-                            .map_err(DecodeError::from)?,
-                        boosted_poc_bones_per_reward_share: reward_data
-                            .boosted_poc_bones_per_reward_share
-                            .ok_or(DecodeError::empty_field(
-                                "boosted_poc_bones_per_reward_share",
+                            .ok_or(RewardManifestError::MissingField(
+                                "mobile_reward_data.poc_bones_per_reward_share",
                             ))?
                             .value
-                            .parse()
-                            .map_err(DecodeError::from)?,
-                        token,
+                            .parse()?,
+                        boosted_poc_bones_per_reward_share: reward_data
+                            .boosted_poc_bones_per_reward_share
+                            .ok_or(RewardManifestError::MissingField(
+                                "mobile_reward_data.boosted_poc_bones_per_reward_share",
+                            ))?
+                            .value
+                            .parse()?,
+                        token: prost_enum(reward_data.token, RewardManifestError::MobileTokenType)?,
                     })
                 }
                 Some(proto::reward_manifest::RewardData::IotRewardData(reward_data)) => {
-                    let token = IotRewardToken::try_from(reward_data.token).map_err(|_| {
-                        DecodeError::unsupported_token_type(
-                            "iot_reward_manifest",
-                            reward_data.token,
-                        )
-                    })?;
                     Some(RewardData::IotRewardData {
                         poc_bones_per_beacon_reward_share: reward_data
                             .poc_bones_per_beacon_reward_share
-                            .ok_or(DecodeError::empty_field(
-                                "poc_bones_per_beacon_reward_share",
+                            .ok_or(RewardManifestError::MissingField(
+                                "iot_reward_data.poc_bones_per_beacon_reward_share",
                             ))?
                             .value
-                            .parse()
-                            .map_err(DecodeError::from)?,
+                            .parse()?,
                         poc_bones_per_witness_reward_share: reward_data
                             .poc_bones_per_witness_reward_share
-                            .ok_or(DecodeError::empty_field(
-                                "poc_bones_per_witness_reward_share",
+                            .ok_or(RewardManifestError::MissingField(
+                                "iot_reward_data.poc_bones_per_witness_reward_share",
                             ))?
                             .value
-                            .parse()
-                            .map_err(DecodeError::from)?,
+                            .parse()?,
                         dc_bones_per_share: reward_data
                             .dc_bones_per_share
-                            .ok_or(DecodeError::empty_field("dc_bones_per_share"))?
+                            .ok_or(RewardManifestError::MissingField(
+                                "iot_reward_data.dc_bones_per_share",
+                            ))?
                             .value
-                            .parse()
-                            .map_err(DecodeError::from)?,
-                        token,
+                            .parse()?,
+                        token: prost_enum(reward_data.token, RewardManifestError::IotTokenType)?,
                     })
                 }
                 None => None,

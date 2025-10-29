@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::{error::ChannelError, Result};
 use futures::{StreamExt, TryFutureExt};
 use std::{
     path::{Path, PathBuf},
@@ -16,7 +16,8 @@ pub fn message_channel() -> (MessageSender, MessageReceiver) {
 }
 
 pub async fn upload_file(tx: &MessageSender, file: &Path) -> Result {
-    tx.send(file.to_path_buf()).map_err(|_| Error::channel())
+    tx.send(file.to_path_buf())
+        .map_err(|_| ChannelError::upload_closed(file))
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +47,7 @@ impl FileUpload {
     pub async fn upload_file(&self, file: &Path) -> Result {
         self.sender
             .send(file.to_path_buf())
-            .map_err(|_| Error::channel())
+            .map_err(|_| ChannelError::upload_closed(file))
     }
 }
 

@@ -18,3 +18,14 @@ pub use subscriber::*;
 
 // Re-exports
 pub use file_type::FileType;
+
+/// Useful in TryFrom implementations when going from a proto field to a rust
+/// type that uses the proto enum as a member. It can automatically convert from
+/// the underying i32 to the enum type or fallback to a provided error type.
+pub fn prost_enum<Enum, Op, Err>(value: i32, map_err: Op) -> Result<Enum, Err>
+where
+    Enum: TryFrom<i32, Error = prost::UnknownEnumValue>,
+    Op: FnOnce(prost::UnknownEnumValue) -> Err,
+{
+    Enum::try_from(value).map_err(map_err)
+}

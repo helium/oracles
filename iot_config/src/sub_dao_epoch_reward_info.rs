@@ -1,6 +1,6 @@
 use crate::EpochInfo;
 use chrono::{DateTime, Utc};
-use file_store::traits::{TimestampDecode, TimestampEncode};
+use file_store::traits::{TimestampDecode, TimestampDecodeError, TimestampEncode};
 use helium_proto::services::sub_dao::SubDaoEpochRewardInfo as SubDaoEpochRewardInfoProto;
 use rust_decimal::prelude::*;
 use std::ops::Range;
@@ -27,8 +27,8 @@ pub struct RawSubDaoEpochRewardInfo {
 
 #[derive(thiserror::Error, Debug)]
 pub enum SubDaoRewardInfoParseError {
-    #[error("file_store: {0}")]
-    FileStore(#[from] file_store::Error),
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
 }
 
 impl From<RawSubDaoEpochRewardInfo> for SubDaoEpochRewardInfoProto {

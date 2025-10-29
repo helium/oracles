@@ -1,11 +1,14 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode},
-    Error, Result,
-};
+use file_store::traits::{MsgDecode, TimestampDecode, TimestampDecodeError};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier as proto;
 use serde::Serialize;
+
+#[derive(thiserror::Error, Debug)]
+pub enum ValidDataTransferError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+}
 
 #[derive(Serialize, Clone)]
 pub struct ValidDataTransferSession {
@@ -25,8 +28,9 @@ impl MsgDecode for ValidDataTransferSession {
 }
 
 impl TryFrom<proto::ValidDataTransferSession> for ValidDataTransferSession {
-    type Error = Error;
-    fn try_from(v: proto::ValidDataTransferSession) -> Result<Self> {
+    type Error = ValidDataTransferError;
+
+    fn try_from(v: proto::ValidDataTransferSession) -> Result<Self, Self::Error> {
         Ok(Self {
             payer: v.payer.into(),
             pub_key: v.pub_key.into(),

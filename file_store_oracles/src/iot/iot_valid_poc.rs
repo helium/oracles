@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_proto::services::poc_lora::{
     InvalidDetails, InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraPocV1,
@@ -12,11 +11,38 @@ use rust_decimal::{dec, prelude::ToPrimitive, Decimal};
 use serde::Serialize;
 
 use crate::{
-    iot_beacon_report::IotBeaconReport, iot_witness_report::IotWitnessReport, traits::MsgTimestamp,
+    iot_beacon_report::{IotBeaconError, IotBeaconReport},
+    iot_witness_report::{IotWitnessError, IotWitnessReport},
+    prost_enum,
+    traits::MsgTimestamp,
 };
 
 const SCALE_MULTIPLIER: Decimal = dec!(10000);
 pub const SCALING_PRECISION: u32 = 4;
+
+#[derive(thiserror::Error, Debug)]
+pub enum IotPocError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("invalid witness report: {0}")]
+    WitnessReport(#[from] IotWitnessError),
+
+    #[error("invalid beacon report: {0}")]
+    BeaconReport(#[from] IotBeaconError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported verification status: {0}")]
+    VerificationStatus(prost::UnknownEnumValue),
+
+    #[error("unsupported invalid reason: {0}")]
+    InvalidReason(prost::UnknownEnumValue),
+
+    #[error("unsupported participant side: {0}")]
+    ParticipantSide(prost::UnknownEnumValue),
+}
 
 #[derive(Serialize, Clone, Debug)]
 pub struct IotValidBeaconReport {
@@ -65,8 +91,8 @@ impl MsgDecode for IotPoc {
     type Msg = LoraPocV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for LoraValidBeaconReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for LoraValidBeaconReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -77,8 +103,8 @@ impl MsgTimestamp<u64> for IotValidBeaconReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for LoraVerifiedWitnessReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for LoraVerifiedWitnessReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -90,24 +116,25 @@ impl MsgTimestamp<u64> for IotVerifiedWitnessReport {
 }
 
 impl TryFrom<LoraPocV1> for IotPoc {
-    type Error = Error;
-    fn try_from(v: LoraPocV1) -> Result<Self> {
+    type Error = IotPocError;
+
+    fn try_from(v: LoraPocV1) -> Result<Self, Self::Error> {
         let selected_witnesses = v
             .selected_witnesses
             .into_iter()
             .map(IotVerifiedWitnessReport::try_from)
-            .collect::<Result<Vec<IotVerifiedWitnessReport>>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
         let unselected_witnesses = v
             .unselected_witnesses
             .into_iter()
             .map(IotVerifiedWitnessReport::try_from)
-            .collect::<Result<Vec<IotVerifiedWitnessReport>>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             poc_id: v.poc_id,
             beacon_report: v
                 .beacon_report
-                .ok_or_else(|| Error::not_found("iot poc v1"))?
+                .ok_or(IotPocError::MissingField("iot_poc.beacon_report"))?
                 .try_into()?,
             selected_witnesses,
             unselected_witnesses,
@@ -129,8 +156,9 @@ impl From<IotPoc> for LoraPocV1 {
 }
 
 impl TryFrom<LoraValidBeaconReportV1> for IotValidBeaconReport {
-    type Error = Error;
-    fn try_from(v: LoraValidBeaconReportV1) -> Result<Self> {
+    type Error = IotPocError;
+
+    fn try_from(v: LoraValidBeaconReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             location: v.location.parse().ok(),
@@ -139,7 +167,7 @@ impl TryFrom<LoraValidBeaconReportV1> for IotValidBeaconReport {
             hex_scale: Decimal::new(v.hex_scale as i64, SCALING_PRECISION),
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("iot valid beacon report v1"))?
+                .ok_or(IotPocError::MissingField("iot_valid_beacon_report.report"))?
                 .try_into()?,
             reward_unit: Decimal::new(v.reward_unit as i64, SCALING_PRECISION),
         })
@@ -164,39 +192,25 @@ impl From<IotValidBeaconReport> for LoraValidBeaconReportV1 {
 }
 
 impl TryFrom<LoraVerifiedWitnessReportV1> for IotVerifiedWitnessReport {
-    type Error = Error;
-    fn try_from(v: LoraVerifiedWitnessReportV1) -> Result<Self> {
-        let received_timestamp = v.timestamp()?;
-        let status = VerificationStatus::try_from(v.status).map_err(|_| {
-            DecodeError::unsupported_status_reason("iot_verified_witness_report_v1", v.status)
-        })?;
-        let invalid_reason = InvalidReason::try_from(v.invalid_reason).map_err(|_| {
-            DecodeError::unsupported_invalid_reason(
-                "iot_verified_witness_report_v1",
-                v.invalid_reason,
-            )
-        })?;
-        let participant_side =
-            InvalidParticipantSide::try_from(v.participant_side).map_err(|_| {
-                DecodeError::unsupported_participant_side(
-                    "iot_verified_witness_report_v1",
-                    v.participant_side,
-                )
-            })?;
+    type Error = IotPocError;
+
+    fn try_from(v: LoraVerifiedWitnessReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
-            received_timestamp,
-            status,
+            received_timestamp: v.timestamp()?,
+            status: prost_enum(v.status, IotPocError::VerificationStatus)?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("iot valid witness port v1"))?
+                .ok_or(IotPocError::MissingField(
+                    "iot_verified_witness_report.report",
+                ))?
                 .try_into()?,
             location: v.location.parse().ok(),
             gain: v.gain,
             elevation: v.elevation,
             hex_scale: Decimal::new(v.hex_scale as i64, SCALING_PRECISION),
             reward_unit: Decimal::new(v.reward_unit as i64, SCALING_PRECISION),
-            invalid_reason,
-            participant_side,
+            invalid_reason: prost_enum(v.invalid_reason, IotPocError::InvalidReason)?,
+            participant_side: prost_enum(v.participant_side, IotPocError::ParticipantSide)?,
             invalid_details: v.invalid_details,
         })
     }

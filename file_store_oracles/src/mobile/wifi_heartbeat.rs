@@ -1,8 +1,5 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode},
-    Error, Result,
-};
+use file_store::traits::{MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     LocationSource, WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1,
@@ -10,7 +7,19 @@ use helium_proto::services::poc_mobile::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::traits::MsgTimestamp;
+use crate::{prost_enum, traits::MsgTimestamp};
+
+#[derive(thiserror::Error, Debug)]
+pub enum WifiHeartbeatError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported location source: {0}")]
+    LocationSource(prost::UnknownEnumValue),
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WifiHeartbeat {
@@ -45,14 +54,15 @@ impl MsgDecode for WifiHeartbeatIngestReport {
 }
 
 impl TryFrom<WifiHeartbeatReqV1> for WifiHeartbeat {
-    type Error = Error;
-    fn try_from(v: WifiHeartbeatReqV1) -> Result<Self> {
+    type Error = WifiHeartbeatError;
+
+    fn try_from(v: WifiHeartbeatReqV1) -> Result<Self, Self::Error> {
         let location_validation_timestamp = if v.location_validation_timestamp == 0 {
             None
         } else {
             v.location_validation_timestamp.to_timestamp().ok()
         };
-        let location_source = v.location_source();
+
         Ok(Self {
             pubkey: v.pub_key.into(),
             lat: v.lat,
@@ -61,32 +71,35 @@ impl TryFrom<WifiHeartbeatReqV1> for WifiHeartbeat {
             coverage_object: v.coverage_object,
             timestamp: v.timestamp.to_timestamp()?,
             location_validation_timestamp,
-            location_source,
+            location_source: prost_enum(v.location_source, WifiHeartbeatError::LocationSource)?,
         })
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for WifiHeartbeatReqV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for WifiHeartbeatReqV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp()
     }
 }
 
 impl TryFrom<WifiHeartbeatIngestReportV1> for WifiHeartbeatIngestReport {
-    type Error = Error;
-    fn try_from(v: WifiHeartbeatIngestReportV1) -> Result<Self> {
+    type Error = WifiHeartbeatError;
+
+    fn try_from(v: WifiHeartbeatIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("ingest wifi heartbeat report"))?
+                .ok_or(WifiHeartbeatError::MissingField(
+                    "wifi_heartbeat_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for WifiHeartbeatIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for WifiHeartbeatIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
