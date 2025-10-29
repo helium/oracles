@@ -1,4 +1,4 @@
-use super::{GetHotspot, GetHotspotBatch, PathBufKeypair};
+use super::{GetHotspot, GetHotspotAtTimestamp, GetHotspotBatch, PathBufKeypair};
 use crate::{client, Msg, PrettyJson, Result};
 use angry_purple_tiger::AnimalName;
 use futures::StreamExt;
@@ -54,6 +54,20 @@ pub async fn info_batch(args: GetHotspotBatch) -> Result<Msg> {
         }
         Err(err) => Msg::err(format!(
             "failed to retrieve {:?} info: {}",
+            &args.hotspot, err
+        )),
+    }
+}
+
+pub async fn info_at_timestamp(args: GetHotspotAtTimestamp) -> Result<Msg> {
+    let mut client = client::GatewayClient::new(&args.config_host, &args.config_pubkey).await?;
+    match client
+        .info_at_timestamp(&args.hotspot, args.query_time, &args.keypair.to_keypair()?)
+        .await
+    {
+        Ok(info) => Msg::ok(info.pretty_json()?),
+        Err(err) => Msg::err(format!(
+            "failed to retrieve {} info: {}",
             &args.hotspot, err
         )),
     }

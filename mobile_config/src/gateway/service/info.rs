@@ -453,3 +453,12 @@ pub fn stream_by_types<'a>(
 
     Gateway::stream_by_types(db, gateway_types, min_date, None).map(|gateway| gateway.into())
 }
+
+pub async fn get_by_address_and_inserted_at(
+    db: impl PgExecutor<'_>,
+    pubkey_bin: &PublicKeyBinary,
+    inserted_at_max: &DateTime<Utc>,
+) -> anyhow::Result<Option<GatewayInfo>> {
+    let gateway = Gateway::get_by_address_and_inserted_at(db, pubkey_bin, inserted_at_max).await?;
+    Ok(gateway.map(|g| g.into()))
+}
