@@ -74,6 +74,10 @@ pub async fn new_client(
 
     if let Some(endpoint) = endpoint {
         s3_config = s3_config.endpoint_url(endpoint);
+        // NOTE(mj): If you see something like a DNS error, this is probably
+        // the culprit. Need to find a way to make this configurable. It
+        // would be nice to allow the "local" feature to be active, but not
+        // enforce path style.
         s3_config = s3_config.force_path_style(true);
     }
 
