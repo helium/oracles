@@ -175,6 +175,80 @@ async fn gateway_info_stream_v1(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[sqlx::test]
+async fn gateway_info_stream_v2(pool: PgPool) -> anyhow::Result<()> {
+    let admin_key = make_keypair();
+    let pub_key1 = make_keypair().public_key().clone();
+    let pub_key2 = make_keypair().public_key().clone();
+    let now_min_15 = Utc::now() - chrono::Duration::minutes(15);
+    let now_min_10 = Utc::now() - chrono::Duration::minutes(10);
+
+    let gateway1 = insert_gateway(&pool, now_min_15, pub_key1.clone().into()).await?;
+    let gateway2 = insert_gateway(&pool, now_min_10, pub_key2.clone().into()).await?;
+
+    let (addr, _) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await?;
+
+    let mut client = GatewayClient::connect(addr).await?;
+
+    // Get them ALL
+    let res = req_gateway_info_stream_v2(&mut client, &admin_key, 0, 0).await?;
+
+    assert_eq!(res.gateways.len(), 2);
+
+    let info: &GatewayInfo = res.gateways.first().unwrap();
+
+    assert_eq!(info.address, pub_key1.to_vec());
+    assert_eq!(info.is_full_hotspot, gateway1.is_full_hotspot.unwrap());
+    assert!(info.metadata.is_some());
+
+    let metadata = info.metadata.clone().unwrap();
+    let cell = Cell::from_raw(gateway1.location.unwrap() as u64)?;
+    assert_eq!(metadata.location, cell.to_string());
+    assert_eq!(metadata.region, Region::Us915 as i32);
+    assert_eq!(metadata.gain, gateway1.gain.unwrap() as i32);
+    assert_eq!(metadata.elevation, gateway1.elevation.unwrap() as i32);
+
+    // Get min_updated_at = now_min_10
+    let res = req_gateway_info_stream_v2(&mut client, &admin_key, now_min_10.timestamp() as u64, 0)
+        .await?;
+
+    assert_eq!(res.gateways.len(), 1);
+
+    let info: &GatewayInfo = res.gateways.first().unwrap();
+
+    assert_eq!(info.address, pub_key2.to_vec());
+    assert_eq!(info.is_full_hotspot, gateway2.is_full_hotspot.unwrap());
+    assert!(info.metadata.is_some());
+
+    let metadata = info.metadata.clone().unwrap();
+    let cell = Cell::from_raw(gateway2.location.unwrap() as u64)?;
+    assert_eq!(metadata.location, cell.to_string());
+    assert_eq!(metadata.region, Region::Us915 as i32);
+    assert_eq!(metadata.gain, gateway2.gain.unwrap() as i32);
+    assert_eq!(metadata.elevation, gateway2.elevation.unwrap() as i32);
+
+    // Get min_location_changed_at = now_min_10
+    let res = req_gateway_info_stream_v2(&mut client, &admin_key, 0, now_min_10.timestamp() as u64)
+        .await?;
+
+    assert_eq!(res.gateways.len(), 1);
+
+    let info: &GatewayInfo = res.gateways.first().unwrap();
+
+    assert_eq!(info.address, pub_key2.to_vec());
+    assert_eq!(info.is_full_hotspot, gateway2.is_full_hotspot.unwrap());
+    assert!(info.metadata.is_some());
+
+    let metadata = info.metadata.clone().unwrap();
+    let cell = Cell::from_raw(gateway2.location.unwrap() as u64)?;
+    assert_eq!(metadata.location, cell.to_string());
+    assert_eq!(metadata.region, Region::Us915 as i32);
+    assert_eq!(metadata.gain, gateway2.gain.unwrap() as i32);
+    assert_eq!(metadata.elevation, gateway2.elevation.unwrap() as i32);
+
+    Ok(())
+}
+
 fn make_signed_info_request(address: &PublicKey, signer: &Keypair) -> proto::GatewayInfoReqV1 {
     let mut req = proto::GatewayInfoReqV1 {
         address: address.to_vec(),
@@ -249,6 +323,33 @@ async fn req_gateway_info_stream_v1(
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
 
     let mut stream = client.info_stream(req).await?.into_inner();
+
+    let first = stream
+        .next()
+        .await
+        .transpose()? // map tonic Status into Err
+        .ok_or_else(|| anyhow::Error::msg("no response"))?;
+
+    Ok(first)
+}
+
+async fn req_gateway_info_stream_v2(
+    client: &mut GatewayClient<tonic::transport::Channel>,
+    signer: &Keypair,
+    min_updated_at: u64,
+    min_location_changed_at: u64,
+) -> anyhow::Result<proto::GatewayInfoStreamResV1> {
+    let mut req = proto::GatewayInfoStreamReqV2 {
+        batch_size: 10_000,
+        min_updated_at,
+        min_location_changed_at,
+        signer: signer.public_key().to_vec(),
+        signature: vec![],
+    };
+
+    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+
+    let mut stream = client.info_stream_v2(req).await?.into_inner();
 
     let first = stream
         .next()

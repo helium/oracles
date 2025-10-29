@@ -3,16 +3,16 @@ use crate::{
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use file_store::traits::TimestampEncode;
 use file_store_oracles::traits::MsgVerify;
 use futures::stream::StreamExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::iot_config::{
-        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1, GatewayInfoStreamResV1,
-        GatewayLocationReqV1, GatewayLocationResV1, GatewayRegionParamsReqV1,
-        GatewayRegionParamsResV1,
+        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2,
+        GatewayInfoStreamResV1, GatewayLocationReqV1, GatewayLocationResV1,
+        GatewayRegionParamsReqV1, GatewayRegionParamsResV1,
     },
     Message, Region,
 };
@@ -293,6 +293,7 @@ impl iot_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         tokio::spawn(async move {
+            let epoch: DateTime<Utc> = "1970-01-01T00:00:00Z".parse().unwrap();
             tokio::select! {
                 _ = stream_all_gateways_info(
                     &pool,
@@ -300,6 +301,63 @@ impl iot_config::Gateway for GatewayService {
                     &signing_key,
                     region_map.clone(),
                     batch_size,
+                    epoch,
+                    None,
+                ) => (),
+            }
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
+
+    type info_stream_v2Stream = GrpcStreamResult<GatewayInfoStreamResV1>;
+    async fn info_stream_v2(
+        &self,
+        request: Request<GatewayInfoStreamReqV2>,
+    ) -> GrpcResult<Self::info_stream_v2Stream> {
+        let request = request.into_inner();
+        telemetry::count_request("gateway", "info-stream");
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        tracing::debug!("fetching all gateways' info");
+
+        let pool = self.pool.clone();
+        let signing_key = self.signing_key.clone();
+        let batch_size = request.batch_size;
+        let min_last_changed_at = Utc
+            .timestamp_opt(request.min_updated_at as i64, 0)
+            .single()
+            .ok_or(Status::invalid_argument(
+                "Invalid min_refreshed_at argument",
+            ))?;
+
+        let min_location_changed_at = if request.min_location_changed_at == 0 {
+            None
+        } else {
+            Some(
+                Utc.timestamp_opt(request.min_location_changed_at as i64, 0)
+                    .single()
+                    .ok_or(Status::invalid_argument(
+                        "Invalid min_location_changed_at argument",
+                    ))?,
+            )
+        };
+        let region_map = self.region_map.clone();
+
+        let (tx, rx) = tokio::sync::mpsc::channel(20);
+
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = stream_all_gateways_info(
+                    &pool,
+                    tx.clone(),
+                    &signing_key,
+                    region_map.clone(),
+                    batch_size,
+                    min_last_changed_at,
+                    min_location_changed_at,
                 ) => (),
             }
         });
@@ -314,13 +372,14 @@ async fn stream_all_gateways_info(
     signing_key: &Keypair,
     region_map: RegionMapReader,
     batch_size: u32,
+    min_last_changed_at: DateTime<Utc>,
+    min_location_changed_at: Option<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
 
-    let epoch: DateTime<Utc> = "1970-01-01T00:00:00Z".parse().unwrap();
-
-    let mut stream = info::stream(pool, epoch, None).chunks(batch_size as usize);
+    let mut stream = info::stream(pool, min_last_changed_at, min_location_changed_at)
+        .chunks(batch_size as usize);
     while let Some(infos) = stream.next().await {
         let gateway_infos = infos
             .into_iter()
