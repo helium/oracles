@@ -69,8 +69,8 @@ pub async fn new_client(
 
     let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
 
-    let mut s3_config = aws_sdk_s3::config::Builder::from(&config)
-        .region(region.map(|r| aws_config::Region::new(r)));
+    let mut s3_config =
+        aws_sdk_s3::config::Builder::from(&config).region(region.map(aws_config::Region::new));
 
     if let Some(endpoint) = endpoint {
         s3_config = s3_config.endpoint_url(endpoint);

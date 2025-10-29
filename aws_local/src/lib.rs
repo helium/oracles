@@ -55,6 +55,7 @@ impl AwsLocal {
 
     pub async fn new(endpoint: &str, bucket: &str) -> AwsLocal {
         let settings = Settings {
+            region: None,
             endpoint: Some(endpoint.into()),
             access_key_id: Some("random".into()),
             secret_access_key: Some("random2".into()),
