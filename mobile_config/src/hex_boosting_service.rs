@@ -4,7 +4,8 @@ use crate::{
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
 use chrono::{DateTime, Utc};
-use file_store::traits::{MsgVerify, TimestampDecode, TimestampEncode};
+use file_store::traits::{TimestampDecode, TimestampEncode};
+use file_store_oracles::traits::MsgVerify;
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,

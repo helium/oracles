@@ -1,17 +1,21 @@
 use chrono::Utc;
 use file_store::{
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload,
-    mobile_ban::{
-        self, BanReport, BanReportSource, BanReportStream, VerifiedBanIngestReportStatus,
-        VerifiedBanReport, VerifiedBanReportSink,
-    },
-    traits::{FileSinkCommitStrategy, FileSinkRollTime},
 };
-use futures::{StreamExt, TryFutureExt};
+use file_store_oracles::mobile_ban::{
+    proto::VerifiedBanIngestReportV1, BanReport, VerifiedBanIngestReportStatus, VerifiedBanReport,
+};
+use file_store_oracles::{
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
+    FileType,
+};
+use futures::StreamExt;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use sqlx::{PgConnection, PgPool};
 use task_manager::{ManagedTask, TaskManager};
+use tokio::sync::mpsc::Receiver;
 
 use crate::Settings;
 
@@ -20,21 +24,16 @@ use super::db;
 pub struct BanIngestor {
     pool: PgPool,
     auth_verifier: AuthorizationClient,
-    report_rx: BanReportSource,
-    verified_sink: VerifiedBanReportSink,
+    report_rx: Receiver<FileInfoStream<BanReport>>,
+    verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
 }
 
 impl ManagedTask for BanIngestor {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 
@@ -47,7 +46,7 @@ impl BanIngestor {
         auth_verifier: AuthorizationClient,
         settings: &Settings,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (verified_sink, verified_sink_server) = mobile_ban::verified_report_sink(
+        let (verified_sink, verified_sink_server) = VerifiedBanIngestReportV1::file_sink(
             settings.store_base_path(),
             file_upload.clone(),
             FileSinkCommitStrategy::Manual,
@@ -56,13 +55,13 @@ impl BanIngestor {
         )
         .await?;
 
-        let (report_rx, ingest_server) = mobile_ban::report_source(
-            pool.clone(),
-            file_store_client,
-            bucket,
-            settings.start_after,
-        )
-        .await?;
+        let (report_rx, ingest_server) = file_source::continuous_source()
+            .state(pool.clone())
+            .file_store(file_store_client, bucket)
+            .lookback_start_after(settings.start_after)
+            .prefix(FileType::MobileBanReport.to_string())
+            .create()
+            .await?;
 
         let ingestor = Self {
             pool,
@@ -81,8 +80,8 @@ impl BanIngestor {
     pub fn new(
         pool: PgPool,
         auth_verifier: AuthorizationClient,
-        report_rx: BanReportSource,
-        verified_sink: VerifiedBanReportSink,
+        report_rx: Receiver<FileInfoStream<BanReport>>,
+        verified_sink: FileSinkClient<VerifiedBanIngestReportV1>,
     ) -> Self {
         Self {
             pool,
@@ -113,7 +112,10 @@ impl BanIngestor {
         Ok(())
     }
 
-    async fn process_file(&self, file_info_stream: BanReportStream) -> anyhow::Result<()> {
+    async fn process_file(
+        &self,
+        file_info_stream: FileInfoStream<BanReport>,
+    ) -> anyhow::Result<()> {
         let file = &file_info_stream.file_info.key;
         tracing::info!(file, "processing");
 

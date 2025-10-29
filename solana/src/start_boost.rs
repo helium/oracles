@@ -1,6 +1,6 @@
 use crate::{send_with_retry, GetSignature, SolanaRpcError};
 use async_trait::async_trait;
-use file_store::hex_boost::BoostedHexActivation;
+use file_store_oracles::mobile::hex_boost::BoostedHexActivation;
 use helium_lib::{
     anchor_client::RequestBuilder,
     anchor_lang::{InstructionData, ToAccountMetas},

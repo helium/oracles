@@ -2,7 +2,7 @@
 // responsible for updating the gateway info cache at a set interval
 //
 
-use futures::{future::LocalBoxFuture, stream::StreamExt, TryFutureExt};
+use futures::stream::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use iot_config::client::ClientError;
 use iot_config::{client::Gateways, gateway_info::GatewayInfo};
@@ -36,13 +36,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

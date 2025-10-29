@@ -1,6 +1,6 @@
 use crate::{Error, Result};
 use bytes::Buf;
-use helium_proto::Message;
+use prost::Message;
 
 pub trait MsgDecode {
     type Msg: Message + Default;

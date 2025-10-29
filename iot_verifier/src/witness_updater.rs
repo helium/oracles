@@ -8,8 +8,6 @@
 //
 
 use crate::last_witness::LastWitness;
-use futures::future::LocalBoxFuture;
-use futures_util::TryFutureExt;
 use helium_crypto::PublicKeyBinary;
 use metrics::Gauge;
 use sqlx::PgPool;
@@ -65,13 +63,8 @@ impl ManagedTask for WitnessUpdaterServer {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

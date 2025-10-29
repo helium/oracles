@@ -7,9 +7,9 @@ use crate::{
 };
 use anyhow::{bail, Result};
 use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::FileSinkClient,
-    file_source, file_upload,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
+};
+use file_store_oracles::{
     iot_packet::PacketRouterPacketReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
@@ -41,8 +41,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 
@@ -165,7 +165,7 @@ impl Cmd {
         let (report_files, report_files_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client, settings.ingest_bucket.clone())
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::IotPacketReport.to_string())
             .create()
             .await?;

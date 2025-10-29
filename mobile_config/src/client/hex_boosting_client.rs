@@ -1,7 +1,7 @@
 use super::{call_with_retry, ClientError, Settings};
 use crate::boosted_hex_info::{self, BoostedHexInfoStream};
 use chrono::{DateTime, Utc};
-use file_store::traits::MsgVerify;
+use file_store_oracles::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{services::mobile_config, Message};

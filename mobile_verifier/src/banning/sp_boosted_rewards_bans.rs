@@ -2,15 +2,15 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::{
-    file_info_poller::{
-        FileInfoPollerConfigBuilder, FileInfoStream, LookbackBehavior, ProstFileInfoPollerParser,
-    },
+    file_info_poller::{FileInfoPollerConfigBuilder, FileInfoStream, ProstFileInfoPollerParser},
     file_sink::FileSinkClient,
     file_upload::FileUpload,
+};
+use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
-use futures::{prelude::future::LocalBoxFuture, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -125,13 +125,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 
@@ -162,7 +157,7 @@ where
             .parser(ProstFileInfoPollerParser)
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::SPBoostedRewardsBannedRadioIngestReport.to_string())
             .create()
             .await?;
@@ -316,7 +311,7 @@ pub mod db {
                 FROM sp_boosted_rewards_bans
                 WHERE ban_type = $1
                     AND received_timestamp <= $2
-                    AND until > $2 
+                    AND until > $2
                     AND COALESCE(invalidated_at > $2, TRUE)
                     AND radio_type != 'cbrs'
             "#,

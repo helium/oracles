@@ -2,7 +2,7 @@ use crate::{metrics::Metrics, Settings};
 use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::file_sink;
-use futures::{future::LocalBoxFuture, TryFutureExt};
+use futures::TryFutureExt;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -49,8 +49,8 @@ impl ManagedTask for PriceGenerator {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

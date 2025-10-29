@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use futures::TryFutureExt;
 use sqlx::{PgConnection, Pool, Postgres, Transaction};
 use std::time::Duration;
 use task_manager::ManagedTask;
@@ -15,12 +14,8 @@ impl ManagedTask for DbCleaner {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(
-            tokio::spawn(self.run(shutdown))
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

@@ -1,10 +1,10 @@
 use blake3::hash;
 use chrono::{DateTime, Duration, Utc};
-use file_store::{
-    file_sink::{FileSinkClient, Message as SinkMessage},
+use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
+use file_store_oracles::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
     iot_witness_report::{IotWitnessIngestReport, IotWitnessReport},
-    traits::{IngestId, MsgTimestamp},
+    traits::MsgTimestamp,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
@@ -24,7 +24,7 @@ use iot_verifier::{
     last_beacon_reciprocity::LastBeaconReciprocity,
     last_witness::LastWitness,
     poc_report::{InsertBindings, IotStatus, Report, ReportType},
-    PriceInfo,
+    IngestId, PriceInfo,
 };
 
 use iot_config::sub_dao_epoch_reward_info::EpochRewardInfo;
@@ -61,8 +61,7 @@ pub fn default_price_info() -> PriceInfo {
     price_info
 }
 
-pub fn create_file_sink<T: file_store::traits::MsgBytes>(
-) -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
+pub fn create_file_sink<T: prost::Message>() -> (FileSinkClient<T>, MockFileSinkReceiver<T>) {
     let (tx, rx) = tokio::sync::mpsc::channel(10);
 
     (

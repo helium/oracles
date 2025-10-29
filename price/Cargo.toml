@@ -31,6 +31,7 @@ humantime-serde = { workspace = true }
 
 custom-tracing = { path = "../custom_tracing" }
 file-store = { path = "../file_store" }
+file-store-oracles = { path = "../file_store_oracles" }
 poc-metrics = { path = "../metrics" }
 solana = { path = "../solana" }
 task-manager = { path = "../task_manager" }

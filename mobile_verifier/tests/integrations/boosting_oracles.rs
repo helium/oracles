@@ -1,9 +1,9 @@
 use crate::common::{self, GatewayClientAllOwnersValid, MockHexBoostDataColl};
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
-use file_store::{
+use file_store::file_upload::{self, FileUpload};
+use file_store_oracles::{
     coverage::RadioHexSignalLevel,
-    file_upload::{self, FileUpload},
     speedtest::CellSpeedtest,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     wifi_heartbeat::{WifiHeartbeat, WifiHeartbeatIngestReport},
@@ -287,10 +287,10 @@ async fn test_footfall_and_urbanization_report(pool: PgPool) -> anyhow::Result<(
         ]
     };
 
-    let coverage_object = file_store::coverage::CoverageObject {
+    let coverage_object = file_store_oracles::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
         uuid,
-        key_type: file_store::coverage::KeyType::HotspotKey(PublicKeyBinary::from(vec![1])),
+        key_type: file_store_oracles::coverage::KeyType::HotspotKey(PublicKeyBinary::from(vec![1])),
         coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
         indoor: true,
         signature: Vec::new(),
@@ -445,10 +445,10 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     let uuid = Uuid::new_v4();
 
     let pub_key = PublicKeyBinary::from(vec![1]);
-    let coverage_object = file_store::coverage::CoverageObject {
+    let coverage_object = file_store_oracles::coverage::CoverageObject {
         pub_key: pub_key.clone(),
         uuid,
-        key_type: file_store::coverage::KeyType::HotspotKey(pub_key.clone()),
+        key_type: file_store_oracles::coverage::KeyType::HotspotKey(pub_key.clone()),
         coverage_claim_time: start,
         indoor: true,
         signature: Vec::new(),

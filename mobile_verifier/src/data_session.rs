@@ -1,10 +1,6 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_source,
-    mobile_transfer::ValidDataTransferSession,
-    FileType,
-};
+use file_store::{file_info_poller::FileInfoStream, file_source};
+use file_store_oracles::{mobile_transfer::ValidDataTransferSession, FileType};
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
@@ -41,7 +37,7 @@ impl DataSessionIngestor {
         let (data_session_ingest, data_session_ingest_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::ValidDataTransferSession.to_string())
             .create()
             .await?;
@@ -119,13 +115,8 @@ impl ManagedTask for DataSessionIngestor {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

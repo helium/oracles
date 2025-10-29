@@ -1,21 +1,21 @@
 use chrono::{DateTime, Duration, DurationRound, Utc};
-use file_store::{traits::MsgBytes, BytesMutStream};
+use file_store::BytesMutStream;
 use futures::{stream, StreamExt};
-use prost::bytes::BytesMut;
+use prost::bytes::{Bytes, BytesMut};
 use reward_index::indexer::RewardType;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Row};
 
-pub fn bytes_mut_stream<T: MsgBytes + Send + 'static>(els: Vec<T>) -> BytesMutStream {
+pub fn bytes_mut_stream<T: prost::Message + Send + 'static>(els: Vec<T>) -> BytesMutStream {
     BytesMutStream::from(
         stream::iter(els)
-            .map(|el| el.as_bytes())
+            .map(|el| Bytes::from(el.encode_to_vec()))
             .map(|el| BytesMut::from(el.as_ref()))
             .map(Ok)
             .boxed(),
     )
 }
 
-// When retreiving a timestamp from DB, depending on the version of postgres
+// When retrieving a timestamp from DB, depending on the version of postgres
 // the timestamp may be truncated. When comparing datetimes, to ones generated
 // in a test with `Utc::now()`, you should truncate it.
 pub fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {

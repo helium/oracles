@@ -1,6 +1,7 @@
 use crate::{poc_report::ReportType as PocReportType, PriceInfo};
 use chrono::{DateTime, Utc};
-use file_store::{iot_packet::IotValidPacket, iot_valid_poc::IotPoc, traits::TimestampEncode};
+use file_store::traits::TimestampEncode;
+use file_store_oracles::{iot_packet::IotValidPacket, iot_valid_poc::IotPoc};
 use futures::stream::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora as proto;

@@ -1,16 +1,16 @@
 use chrono::Utc;
 use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::FileSinkClient,
-    file_source,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload,
+};
+use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     unique_connections::{
         UniqueConnectionReq, UniqueConnectionsIngestReport, VerifiedUniqueConnectionsIngestReport,
     },
     FileType,
 };
-use futures::{StreamExt, TryFutureExt};
+use futures::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
@@ -41,13 +41,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 
@@ -77,7 +72,7 @@ where
             file_source::continuous_source()
                 .state(pool.clone())
                 .file_store(file_store_client, bucket)
-                .lookback(LookbackBehavior::StartAfter(settings.start_after))
+                .lookback_start_after(settings.start_after)
                 .prefix(FileType::UniqueConnectionsReport.to_string())
                 .create()
                 .await?;

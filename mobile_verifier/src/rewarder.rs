@@ -16,12 +16,8 @@ use crate::{
 use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
-use file_store::{
-    file_sink::FileSinkClient,
-    file_upload::FileUpload,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
-};
-use futures_util::TryFutureExt;
+use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
+use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
 use helium_proto::{
@@ -382,13 +378,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

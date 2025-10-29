@@ -18,7 +18,7 @@ blake3 = { workspace = true }
 http = { workspace = true }
 tonic = { workspace = true }
 hyper = "0"
-jsonrpsee = { version = "0", features = ["async-client", "http-client"] }
+jsonrpsee = { version = "0.19", features = ["async-client", "http-client"] }
 tower = { version = "0.4" }
 triggered = { workspace = true }
 futures = { workspace = true }
@@ -34,6 +34,7 @@ chrono = { workspace = true }
 helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
 file-store = { path = "../file_store" }
+file-store-oracles = { path = "../file_store_oracles" }
 poc-metrics = { path = "../metrics" }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 tls-init = { path = "../tls_init" }

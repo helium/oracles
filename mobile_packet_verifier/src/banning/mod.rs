@@ -1,7 +1,8 @@
 use std::{collections::HashSet, time::Duration};
 
 use chrono::{DateTime, Utc};
-use file_store::mobile_ban;
+use file_store::file_source;
+use file_store_oracles::FileType;
 use helium_crypto::PublicKeyBinary;
 use humantime_serde::re::humantime;
 use serde::{Deserialize, Serialize};
@@ -42,13 +43,13 @@ pub async fn create_managed_task(
     client: file_store::Client,
     settings: &BanSettings,
 ) -> anyhow::Result<impl ManagedTask> {
-    let (ban_report_rx, ban_report_server) = mobile_ban::verified_report_source(
-        pool.clone(),
-        client,
-        settings.input_bucket.clone(),
-        settings.start_after,
-    )
-    .await?;
+    let (ban_report_rx, ban_report_server) = file_source::continuous_source()
+        .state(pool.clone())
+        .file_store(client, settings.input_bucket.clone())
+        .lookback_start_after(settings.start_after)
+        .prefix(FileType::VerifiedMobileBanReport.to_string())
+        .create()
+        .await?;
 
     let ingestor = ingestor::BanIngestor::new(pool.clone(), ban_report_rx);
     let purger = purger::BanPurger::new(pool, settings.purge_interval);

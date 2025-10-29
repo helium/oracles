@@ -4,7 +4,7 @@ use crate::common::{
     self, default_price_info, reward_info_24_hours, MockHexBoostingClient, RadioRewardV2Ext,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use file_store::{
+use file_store_oracles::{
     coverage::{CoverageObject as FSCoverageObject, KeyType, RadioHexSignalLevel},
     mobile_ban,
     speedtest::CellSpeedtest,
@@ -663,7 +663,6 @@ async fn ban_radio(
     ban_type: mobile_ban::BanType,
     timestamp: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    use file_store::mobile_ban;
     banning::db::update_hotspot_ban(
         txn,
         &mobile_ban::VerifiedBanReport {

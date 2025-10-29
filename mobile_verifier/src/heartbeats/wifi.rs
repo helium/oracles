@@ -6,14 +6,9 @@ use crate::{
     GatewayResolver, Settings,
 };
 use chrono::{DateTime, Duration, Utc};
-use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::FileSinkClient,
-    file_source,
-    wifi_heartbeat::WifiHeartbeatIngestReport,
-    FileType,
-};
-use futures::{stream::StreamExt, TryFutureExt};
+use file_store::{file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source};
+use file_store_oracles::{wifi_heartbeat::WifiHeartbeatIngestReport, FileType};
+use futures::stream::StreamExt;
 use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
 use sqlx::{Pool, Postgres};
@@ -54,7 +49,7 @@ where
         let (wifi_heartbeats, wifi_heartbeats_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::WifiHeartbeatIngestReport.to_string())
             .create()
             .await?;
@@ -184,12 +179,7 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }

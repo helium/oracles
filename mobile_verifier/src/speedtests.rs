@@ -4,18 +4,15 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::FileSinkClient,
-    file_source,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload,
+};
+use file_store_oracles::{
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
-use futures::{
-    stream::{StreamExt, TryStreamExt},
-    TryFutureExt,
-};
+use futures::stream::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     SpeedtestAvg as SpeedtestAvgProto, SpeedtestIngestReportV1,
@@ -87,7 +84,7 @@ where
         let (speedtests, speedtests_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::CellSpeedtestIngestReport.to_string())
             .create()
             .await?;
@@ -219,13 +216,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 
@@ -258,12 +250,12 @@ pub async fn get_latest_speedtests_for_pubkey(
 ) -> Result<Vec<Speedtest>, sqlx::Error> {
     let speedtests = sqlx::query_as::<_, Speedtest>(
         r#"
-        SELECT * 
-        FROM speedtests 
-        WHERE pubkey = $1 
+        SELECT *
+        FROM speedtests
+        WHERE pubkey = $1
             AND timestamp >= $2
             AND timestamp <= $3
-        ORDER BY timestamp DESC 
+        ORDER BY timestamp DESC
         LIMIT $4
         "#,
     )

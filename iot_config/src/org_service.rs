@@ -8,7 +8,8 @@ use crate::{
 };
 use anyhow::Result;
 use chrono::Utc;
-use file_store::traits::{MsgVerify, TimestampEncode};
+use file_store::traits::TimestampEncode;
+use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{

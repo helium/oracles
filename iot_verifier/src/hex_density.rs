@@ -1,4 +1,4 @@
-use file_store::SCALING_PRECISION;
+use file_store_oracles::iot_valid_poc::SCALING_PRECISION;
 use h3o::{CellIndex, Resolution};
 use itertools::Itertools;
 use rust_decimal::Decimal;
