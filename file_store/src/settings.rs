@@ -4,6 +4,7 @@ use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Settings {
+    pub region: Option<String>,
     /// Optional api endpoint for the bucket. Default none
     pub endpoint: Option<String>,
     /// Should only be used for local testing
@@ -26,6 +27,7 @@ impl Settings {
 
     pub async fn connect(&self) -> crate::Client {
         crate::new_client(
+            self.region.clone(),
             self.endpoint.clone(),
             self.access_key_id.clone(),
             self.secret_access_key.clone(),

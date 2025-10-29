@@ -3,6 +3,7 @@ extern crate tls_init;
 mod error;
 
 pub use error::{DecodeError, EncodeError, Error, Result};
+use tokio::sync::Mutex;
 
 pub mod file_info;
 pub mod file_info_poller;
@@ -12,7 +13,7 @@ pub mod file_upload;
 mod settings;
 pub mod traits;
 
-use std::path::Path;
+use std::{collections::HashMap, path::Path, sync::OnceLock};
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::primitives::ByteStream;
@@ -34,40 +35,60 @@ pub type Stream<T> = BoxStream<'static, Result<T>>;
 pub type FileInfoStream = Stream<FileInfo>;
 pub type BytesMutStream = Stream<BytesMut>;
 
+static CLIENT_MAP: OnceLock<Mutex<HashMap<ClientKey, Client>>> = OnceLock::new();
+
+#[derive(PartialEq, Eq, Hash)]
+struct ClientKey {
+    region: Option<String>,
+    endpoint: Option<String>,
+    access_key_id: Option<String>,
+    secret_access_key: Option<String>,
+}
+
 pub async fn new_client(
+    region: Option<String>,
     endpoint: Option<String>,
     _access_key_id: Option<String>,
     _secret_access_key: Option<String>,
 ) -> Client {
+    let mut client_map = CLIENT_MAP
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .await;
+
+    let key = ClientKey {
+        region: region.clone(),
+        endpoint: endpoint.clone(),
+        access_key_id: _access_key_id.clone(),
+        secret_access_key: _secret_access_key.clone(),
+    };
+
+    if let Some(client) = client_map.get(&key) {
+        return client.clone();
+    }
+
     let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
 
-    let mut s3_config = aws_sdk_s3::config::Builder::from(&config);
+    let mut s3_config = aws_sdk_s3::config::Builder::from(&config)
+        .region(region.map(|r| aws_config::Region::new(r)));
+
     if let Some(endpoint) = endpoint {
         s3_config = s3_config.endpoint_url(endpoint);
-    }
-
-    #[cfg(feature = "local")]
-    {
-        // NOTE(mj): If you see something like a DNS error, this is probably
-        // the culprit. Need to find a way to make this configurable. It
-        // would be nice to allow the "local" feature to be active, but not
-        // enforce path style.
         s3_config = s3_config.force_path_style(true);
-
-        // Set a default region for local development (MinIO doesn't care about the region)
-        s3_config = s3_config.region(aws_config::Region::new("us-east-1"));
-
-        if let Some((access_key_id, secret_access_key)) = _access_key_id.zip(_secret_access_key) {
-            let creds = aws_sdk_s3::config::Credentials::builder()
-                .provider_name("Static")
-                .access_key_id(access_key_id)
-                .secret_access_key(secret_access_key);
-
-            s3_config = s3_config.credentials_provider(creds.build());
-        }
     }
 
-    Client::from_conf(s3_config.build())
+    if let Some((access_key_id, secret_access_key)) = _access_key_id.zip(_secret_access_key) {
+        let creds = aws_sdk_s3::config::Credentials::builder()
+            .provider_name("Static")
+            .access_key_id(access_key_id)
+            .secret_access_key(secret_access_key);
+
+        s3_config = s3_config.credentials_provider(creds.build());
+    }
+
+    let client = Client::from_conf(s3_config.build());
+    client_map.insert(key, client.clone());
+    client
 }
 
 pub fn list_files<A, B>(
