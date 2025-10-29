@@ -1,7 +1,4 @@
-use crate::common::{
-    gateway_metadata_db::{self, create_tables},
-    make_keypair, spawn_gateway_service,
-};
+use crate::common::{make_keypair, spawn_gateway_service};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use h3o::{LatLng, Resolution};
@@ -74,8 +71,6 @@ async fn gateway_location_v1(pool: PgPool) -> anyhow::Result<()> {
     let pub_key = make_keypair().public_key().clone();
     let now = Utc::now();
 
-    create_tables(&pool).await?;
-
     let gateway = insert_gateway(&pool, now, pub_key.clone().into()).await?;
 
     let (addr, _) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await?;
@@ -96,8 +91,6 @@ async fn gateway_region_params_v1(pool: PgPool) -> anyhow::Result<()> {
     let keypair = make_keypair();
     let pub_key = keypair.public_key().clone();
     let now = Utc::now();
-
-    create_tables(&pool).await?;
 
     let gateway = insert_gateway(&pool, now, pub_key.clone().into()).await?;
 
@@ -124,8 +117,6 @@ async fn gateway_info_v1(pool: PgPool) -> anyhow::Result<()> {
     let admin_key = make_keypair();
     let pub_key = make_keypair().public_key().clone();
     let now = Utc::now();
-
-    create_tables(&pool).await?;
 
     let gateway = insert_gateway(&pool, now, pub_key.clone().into()).await?;
 
@@ -157,8 +148,6 @@ async fn gateway_info_stream_v1(pool: PgPool) -> anyhow::Result<()> {
     let admin_key = make_keypair();
     let pub_key = make_keypair().public_key().clone();
     let now = Utc::now();
-
-    create_tables(&pool).await?;
 
     let gateway = insert_gateway(&pool, now, pub_key.clone().into()).await?;
 
@@ -295,24 +284,7 @@ async fn insert_gateway(
         updated_at: now,
     };
 
-    // Insert test data into iot_hotspot_infos
-    gateway_metadata_db::insert_gateway(
-        pool,
-        "address1",                                 // address (PRIMARY KEY)
-        "asset1",                                   // asset
-        Some(gateway.location.unwrap() as i64),     // location
-        gateway.elevation.map(|v| v as i64),        // elevation
-        gateway.gain.map(|v| v as i64),             // gain
-        gateway.is_full_hotspot,                    // is_full_hotspot
-        gateway.location_asserts.map(|v| v as i32), // num_location_asserts
-        gateway.is_active,                          // is_active
-        Some(0),                                    // dc_onboarding_fee_paid
-        gateway.created_at,                         // created_at
-        gateway.refreshed_at,                       // refreshed_at
-        Some(0),                                    // last_block
-        gateway.address.clone(),                    // key (PublicKeyBinary)
-    )
-    .await?;
+    Gateway::insert_bulk(pool, std::slice::from_ref(&gateway)).await?;
 
     let loc_bytes = h3_index.to_le_bytes();
     let mut encoder = Encoder::new(Vec::new())?;

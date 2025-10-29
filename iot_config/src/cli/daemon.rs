@@ -36,7 +36,7 @@ impl Daemon {
 
         let gateway_svc = GatewayService::new(
             signing_keypair.clone(),
-            metadata_pool.clone(),
+            pool.clone(),
             region_map.clone(),
             auth_cache.clone(),
             delegate_key_cache,

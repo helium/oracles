@@ -3,7 +3,7 @@ use crate::{
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use file_store::traits::TimestampEncode;
 use file_store_oracles::traits::MsgVerify;
 use futures::stream::StreamExt;
@@ -31,7 +31,7 @@ const CACHE_TTL: Duration = Duration::from_secs(60 * 60 * 3);
 pub struct GatewayService {
     auth_cache: AuthCache,
     gateway_cache: Arc<Cache<PublicKeyBinary, GatewayInfo>>,
-    metadata_pool: Pool<Postgres>,
+    pool: Pool<Postgres>,
     region_map: RegionMapReader,
     signing_key: Arc<Keypair>,
     delegate_cache: watch::Receiver<org::DelegateCache>,
@@ -40,7 +40,7 @@ pub struct GatewayService {
 impl GatewayService {
     pub fn new(
         signing_key: Arc<Keypair>,
-        metadata_pool: Pool<Postgres>,
+        pool: Pool<Postgres>,
         region_map: RegionMapReader,
         auth_cache: AuthCache,
         delegate_cache: watch::Receiver<org::DelegateCache>,
@@ -52,7 +52,7 @@ impl GatewayService {
         Ok(Self {
             auth_cache,
             gateway_cache,
-            metadata_pool,
+            pool,
             region_map,
             signing_key,
             delegate_cache,
@@ -103,7 +103,7 @@ impl GatewayService {
             Some(gateway) => Ok(gateway.value().clone()),
             None => {
                 let metadata = tokio::select! {
-                    query_result = info::db::get_info(&self.metadata_pool, pubkey) => {
+                    query_result = info::get(&self.pool, pubkey) => {
                         query_result.map_err(|_| Status::internal("error fetching gateway info"))?
                             .ok_or_else(|| {
                                 telemetry::count_gateway_info_lookup("not-found");
@@ -285,7 +285,7 @@ impl iot_config::Gateway for GatewayService {
 
         tracing::debug!("fetching all gateways' info");
 
-        let pool = self.metadata_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
         let region_map = self.region_map.clone();
@@ -317,7 +317,10 @@ async fn stream_all_gateways_info(
 ) -> anyhow::Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
-    let mut stream = info::db::all_info_stream(pool).chunks(batch_size as usize);
+
+    let epoch: DateTime<Utc> = "1970-01-01T00:00:00Z".parse().unwrap();
+
+    let mut stream = info::stream(pool, epoch, None).chunks(batch_size as usize);
     while let Some(infos) = stream.next().await {
         let gateway_infos = infos
             .into_iter()
