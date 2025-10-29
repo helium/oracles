@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_proto::services::poc_lora::{
     InvalidDetails, InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1,
@@ -10,8 +9,32 @@ use helium_proto::services::poc_lora::{
 use serde::Serialize;
 
 use crate::{
-    iot_beacon_report::IotBeaconReport, iot_witness_report::IotWitnessReport, traits::MsgTimestamp,
+    iot_beacon_report::{IotBeaconError, IotBeaconReport},
+    iot_witness_report::{IotWitnessError, IotWitnessReport},
+    prost_enum,
+    traits::MsgTimestamp,
 };
+
+#[derive(thiserror::Error, Debug)]
+pub enum IotInvalidBeaconError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported reason: {0}")]
+    InvalidReason(prost::UnknownEnumValue),
+
+    #[error("unsupported participant side: {0}")]
+    InvalidParticipantSide(prost::UnknownEnumValue),
+
+    #[error("invalid witness: {0}")]
+    InvalidWitness(#[from] IotWitnessError),
+
+    #[error("invalid beacon: {0}")]
+    InvalidBeacon(#[from] IotBeaconError),
+}
 
 #[derive(Serialize, Clone)]
 pub struct IotInvalidBeaconReport {
@@ -41,8 +64,8 @@ impl MsgDecode for IotInvalidWitnessReport {
     type Msg = LoraInvalidWitnessReportV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for LoraInvalidBeaconReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for LoraInvalidBeaconReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -53,8 +76,8 @@ impl MsgTimestamp<u64> for IotInvalidBeaconReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for LoraInvalidWitnessReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for LoraInvalidWitnessReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -66,18 +89,17 @@ impl MsgTimestamp<u64> for IotInvalidWitnessReport {
 }
 
 impl TryFrom<LoraInvalidBeaconReportV1> for IotInvalidBeaconReport {
-    type Error = Error;
-    fn try_from(v: LoraInvalidBeaconReportV1) -> Result<Self> {
-        let inv_reason = v.reason;
-        let invalid_reason: InvalidReason = InvalidReason::try_from(inv_reason).map_err(|_| {
-            DecodeError::unsupported_invalid_reason("iot_invalid_beacon_report_v1", inv_reason)
-        })?;
+    type Error = IotInvalidBeaconError;
+
+    fn try_from(v: LoraInvalidBeaconReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
-            reason: invalid_reason,
+            reason: prost_enum(v.reason, IotInvalidBeaconError::InvalidReason)?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("iot invalid beacon report v1"))?
+                .ok_or(IotInvalidBeaconError::MissingField(
+                    "iot_invalid_beacon_report.report",
+                ))?
                 .try_into()?,
             location: v.location.parse().ok(),
             gain: v.gain,
@@ -104,29 +126,22 @@ impl From<IotInvalidBeaconReport> for LoraInvalidBeaconReportV1 {
 }
 
 impl TryFrom<LoraInvalidWitnessReportV1> for IotInvalidWitnessReport {
-    type Error = Error;
-    fn try_from(v: LoraInvalidWitnessReportV1) -> Result<Self> {
-        let inv_reason = v.reason;
-        let invalid_reason: InvalidReason = InvalidReason::try_from(inv_reason).map_err(|_| {
-            DecodeError::unsupported_invalid_reason("iot_invalid_witness_report_v1", inv_reason)
-        })?;
-        let participant_side = v.participant_side;
-        let side: InvalidParticipantSide = InvalidParticipantSide::try_from(participant_side)
-            .map_err(|_| {
-                DecodeError::unsupported_participant_side(
-                    "iot_invalid_witness_report_v1",
-                    participant_side,
-                )
-            })?;
-        let received_timestamp = v.timestamp()?;
+    type Error = IotInvalidBeaconError;
 
+    fn try_from(v: LoraInvalidWitnessReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
-            received_timestamp,
-            reason: invalid_reason,
-            participant_side: side,
+            received_timestamp: v.timestamp()?,
+            reason: prost_enum(v.reason, IotInvalidBeaconError::InvalidReason)?,
+            participant_side: prost_enum(
+                v.participant_side,
+                IotInvalidBeaconError::InvalidParticipantSide,
+            )?,
+
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("iot invalid witness report"))?
+                .ok_or(IotInvalidBeaconError::MissingField(
+                    "iot_invalid_witness_report.report",
+                ))?
                 .try_into()?,
             invalid_details: v.invalid_details,
         })
