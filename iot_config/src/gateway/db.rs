@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use futures::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use sqlx::{postgres::PgRow, FromRow, PgExecutor, PgPool, Postgres, QueryBuilder, Row};
 
@@ -121,6 +122,42 @@ impl Gateway {
         .await?;
 
         Ok(gateway)
+    }
+
+    pub fn stream<'a>(
+        db: impl PgExecutor<'a> + 'a,
+        min_last_changed_at: DateTime<Utc>,
+        min_location_changed_at: Option<DateTime<Utc>>,
+    ) -> impl Stream<Item = Self> + 'a {
+        sqlx::query_as::<_, Self>(
+            r#"
+                SELECT
+                    address,
+                    created_at,
+                    elevation,
+                    gain,
+                    hash,
+                    is_active,
+                    is_full_hotspot,
+                    last_changed_at,
+                    location,
+                    location_asserts,
+                    location_changed_at,
+                    refreshed_at,
+                    updated_at
+                FROM gateways
+                WHERE last_changed_at >= $1
+                AND (
+                    $2::timestamptz IS NULL
+                    OR (location IS NOT NULL AND location_changed_at >= $2)
+                )
+            "#,
+        )
+        .bind(min_last_changed_at)
+        .bind(min_location_changed_at)
+        .fetch(db)
+        .map_err(anyhow::Error::from)
+        .filter_map(|res| async move { res.ok() })
     }
 }
 
