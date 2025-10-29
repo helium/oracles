@@ -5,7 +5,7 @@
 use futures::stream::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use iot_config::client::ClientError;
-use iot_config::{client::Gateways, gateway_info::GatewayInfo};
+use iot_config::{client::Gateways, gateway::service::info::GatewayInfo};
 use std::{collections::HashMap, time::Duration};
 use task_manager::ManagedTask;
 use tokio::sync::watch;

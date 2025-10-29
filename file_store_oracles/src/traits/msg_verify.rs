@@ -73,6 +73,7 @@ impl_msg_verify!(iot_config::AdminLoadRegionReqV1, signature);
 impl_msg_verify!(iot_config::AdminRemoveKeyReqV1, signature);
 impl_msg_verify!(iot_config::GatewayInfoReqV1, signature);
 impl_msg_verify!(iot_config::GatewayInfoStreamReqV1, signature);
+impl_msg_verify!(iot_config::GatewayInfoStreamReqV2, signature);
 impl_msg_verify!(iot_config::RegionParamsReqV1, signature);
 impl_msg_verify!(iot_config::GatewayInfoResV1, signature);
 impl_msg_verify!(iot_config::GatewayInfoStreamResV1, signature);
