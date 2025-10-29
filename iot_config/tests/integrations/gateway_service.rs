@@ -3,10 +3,11 @@ use crate::common::{
     make_keypair, spawn_gateway_service,
 };
 use chrono::{DateTime, Utc};
+use futures::StreamExt;
 use h3o::{LatLng, Resolution};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
-    services::iot_config::{self as proto, GatewayClient},
+    services::iot_config::{self as proto, GatewayClient, GatewayInfo},
     BlockchainRegionParamsV1, Region,
 };
 use hextree::Cell;
@@ -18,8 +19,10 @@ use std::io::Write;
 use std::vec;
 use tonic::Code;
 
+const DEFAULT_REGION: Region = Region::Us915;
+
 #[sqlx::test]
-async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
+async fn gateway_info_v1_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     // NOTE: The information we're requesting does not exist in the DB for
     // this test. But we're only interested in Authization Errors.
 
@@ -66,7 +69,7 @@ async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn gateway_info(pool: PgPool) -> anyhow::Result<()> {
+async fn gateway_location_v1(pool: PgPool) -> anyhow::Result<()> {
     let admin_key = make_keypair();
     let pub_key = make_keypair().public_key().clone();
     let now = Utc::now();
@@ -79,7 +82,58 @@ async fn gateway_info(pool: PgPool) -> anyhow::Result<()> {
 
     let mut client = GatewayClient::connect(addr).await?;
 
-    let res = gateway_info_v1(&mut client, &pub_key, &admin_key).await?;
+    let res = req_gateway_location_v1(&mut client, &pub_key, &admin_key).await?;
+
+    let cell = Cell::from_raw(gateway.location.unwrap() as u64)?;
+    assert_eq!(res.location, cell.to_string());
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn gateway_region_params_v1(pool: PgPool) -> anyhow::Result<()> {
+    let admin_key = make_keypair();
+    let keypair = make_keypair();
+    let pub_key = keypair.public_key().clone();
+    let now = Utc::now();
+
+    create_tables(&pool).await?;
+
+    let gateway = insert_gateway(&pool, now, pub_key.clone().into()).await?;
+
+    let (addr, _) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await?;
+
+    let mut client = GatewayClient::connect(addr).await?;
+
+    let res = req_gateway_region_params_v1(&mut client, &pub_key, &keypair).await?;
+
+    assert_eq!(res.region, DEFAULT_REGION as i32);
+    assert_eq!(
+        res.params,
+        Some(BlockchainRegionParamsV1 {
+            region_params: vec![],
+        })
+    );
+    assert_eq!(res.gain, gateway.gain.unwrap() as u64);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn gateway_info_v1(pool: PgPool) -> anyhow::Result<()> {
+    let admin_key = make_keypair();
+    let pub_key = make_keypair().public_key().clone();
+    let now = Utc::now();
+
+    create_tables(&pool).await?;
+
+    let gateway = insert_gateway(&pool, now, pub_key.clone().into()).await?;
+
+    let (addr, _) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await?;
+
+    let mut client = GatewayClient::connect(addr).await?;
+
+    let res = req_gateway_info_v1(&mut client, &pub_key, &admin_key).await?;
 
     assert!(res.info.is_some());
 
@@ -89,6 +143,40 @@ async fn gateway_info(pool: PgPool) -> anyhow::Result<()> {
     assert!(info.metadata.is_some());
 
     let metadata = info.metadata.unwrap();
+    let cell = Cell::from_raw(gateway.location.unwrap() as u64)?;
+    assert_eq!(metadata.location, cell.to_string());
+    assert_eq!(metadata.region, Region::Us915 as i32);
+    assert_eq!(metadata.gain, gateway.gain.unwrap() as i32);
+    assert_eq!(metadata.elevation, gateway.elevation.unwrap() as i32);
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn gateway_info_stream_v1(pool: PgPool) -> anyhow::Result<()> {
+    let admin_key = make_keypair();
+    let pub_key = make_keypair().public_key().clone();
+    let now = Utc::now();
+
+    create_tables(&pool).await?;
+
+    let gateway = insert_gateway(&pool, now, pub_key.clone().into()).await?;
+
+    let (addr, _) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await?;
+
+    let mut client = GatewayClient::connect(addr).await?;
+
+    let res = req_gateway_info_stream_v1(&mut client, &admin_key).await?;
+
+    assert_eq!(res.gateways.len(), 1);
+
+    let info: &GatewayInfo = res.gateways.first().unwrap();
+
+    assert_eq!(info.address, pub_key.to_vec());
+    assert_eq!(info.is_full_hotspot, gateway.is_full_hotspot.unwrap());
+    assert!(info.metadata.is_some());
+
+    let metadata = info.metadata.clone().unwrap();
     let cell = Cell::from_raw(gateway.location.unwrap() as u64)?;
     assert_eq!(metadata.location, cell.to_string());
     assert_eq!(metadata.region, Region::Us915 as i32);
@@ -108,7 +196,41 @@ fn make_signed_info_request(address: &PublicKey, signer: &Keypair) -> proto::Gat
     req
 }
 
-async fn gateway_info_v1(
+async fn req_gateway_location_v1(
+    client: &mut GatewayClient<tonic::transport::Channel>,
+    address: &PublicKey,
+    signer: &Keypair,
+) -> anyhow::Result<proto::GatewayLocationResV1> {
+    let mut req = proto::GatewayLocationReqV1 {
+        gateway: address.to_vec(),
+        signer: signer.public_key().to_vec(),
+        signature: vec![],
+    };
+
+    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+
+    let res = client.location(req).await?.into_inner();
+    Ok(res)
+}
+
+async fn req_gateway_region_params_v1(
+    client: &mut GatewayClient<tonic::transport::Channel>,
+    address: &PublicKey,
+    signer: &Keypair,
+) -> anyhow::Result<proto::GatewayRegionParamsResV1> {
+    let mut req = proto::GatewayRegionParamsReqV1 {
+        region: 0,
+        address: address.to_vec(),
+        signature: vec![],
+    };
+
+    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+
+    let res = client.region_params(req).await?.into_inner();
+    Ok(res)
+}
+
+async fn req_gateway_info_v1(
     client: &mut GatewayClient<tonic::transport::Channel>,
     address: &PublicKey,
     signer: &Keypair,
@@ -123,6 +245,29 @@ async fn gateway_info_v1(
 
     let res = client.info(req).await?.into_inner();
     Ok(res)
+}
+
+async fn req_gateway_info_stream_v1(
+    client: &mut GatewayClient<tonic::transport::Channel>,
+    signer: &Keypair,
+) -> anyhow::Result<proto::GatewayInfoStreamResV1> {
+    let mut req = proto::GatewayInfoStreamReqV1 {
+        batch_size: 10_000,
+        signer: signer.public_key().to_vec(),
+        signature: vec![],
+    };
+
+    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+
+    let mut stream = client.info_stream(req).await?.into_inner();
+
+    let first = stream
+        .next()
+        .await
+        .transpose()? // map tonic Status into Err
+        .ok_or_else(|| anyhow::Error::msg("no response"))?;
+
+    Ok(first)
 }
 
 async fn insert_gateway(
@@ -175,7 +320,7 @@ async fn insert_gateway(
     let compressed = encoder.finish().into_result()?;
 
     region_map::update_region(
-        Region::Us915,
+        DEFAULT_REGION,
         &BlockchainRegionParamsV1 {
             region_params: vec![],
         },
