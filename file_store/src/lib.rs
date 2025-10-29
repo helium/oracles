@@ -37,7 +37,7 @@ pub type BytesMutStream = Stream<BytesMut>;
 
 static CLIENT_MAP: OnceLock<Mutex<HashMap<ClientKey, Client>>> = OnceLock::new();
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Debug)]
 struct ClientKey {
     region: Option<String>,
     endpoint: Option<String>,
@@ -64,6 +64,7 @@ pub async fn new_client(
     };
 
     if let Some(client) = client_map.get(&key) {
+        tracing::debug!(params = ?key, "Using existing file-store s3 client");
         return client.clone();
     }
 
@@ -90,6 +91,7 @@ pub async fn new_client(
         s3_config = s3_config.credentials_provider(creds.build());
     }
 
+    tracing::debug!(params = ?key, "Creating new file-store s3 client");
     let client = Client::from_conf(s3_config.build());
     client_map.insert(key, client.clone());
     client
