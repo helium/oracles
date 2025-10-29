@@ -174,7 +174,9 @@ mod tests {
 
     impl MsgVerify for VerifiedBad {
         fn verify(&self, _verifier: &helium_crypto::PublicKey) -> file_store::Result {
-            Err(file_store::Error::NotFound("not found".to_string()))
+            Err(file_store::Error::ExternalError(
+                "testing bad verification".into(),
+            ))
         }
     }
 
