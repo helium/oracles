@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
@@ -10,7 +9,19 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::traits::MsgTimestamp;
+use crate::{prost_enum, traits::MsgTimestamp};
+
+#[derive(thiserror::Error, Debug)]
+pub enum SubscriberLocationError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported status reason: {0}")]
+    StatusReason(prost::UnknownEnumValue),
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SubscriberLocationReq {
@@ -45,8 +56,9 @@ impl MsgDecode for VerifiedSubscriberLocationIngestReport {
 }
 
 impl TryFrom<SubscriberLocationReqV1> for SubscriberLocationReq {
-    type Error = Error;
-    fn try_from(v: SubscriberLocationReqV1) -> Result<Self> {
+    type Error = SubscriberLocationError;
+
+    fn try_from(v: SubscriberLocationReqV1) -> Result<Self, Self::Error> {
         Ok(Self {
             subscriber_id: v.subscriber_id,
             timestamp: v.timestamp.to_timestamp()?,
@@ -67,8 +79,8 @@ impl From<SubscriberLocationReq> for SubscriberLocationReqV1 {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for SubscriberLocationReqV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for SubscriberLocationReqV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp()
     }
 }
@@ -79,8 +91,8 @@ impl MsgTimestamp<u64> for SubscriberLocationReq {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for SubscriberLocationIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for SubscriberLocationIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -91,8 +103,8 @@ impl MsgTimestamp<u64> for SubscriberLocationIngestReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedSubscriberLocationIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for VerifiedSubscriberLocationIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp_millis()
     }
 }
@@ -104,13 +116,16 @@ impl MsgTimestamp<u64> for VerifiedSubscriberLocationIngestReport {
 }
 
 impl TryFrom<SubscriberLocationIngestReportV1> for SubscriberLocationIngestReport {
-    type Error = Error;
-    fn try_from(v: SubscriberLocationIngestReportV1) -> Result<Self> {
+    type Error = SubscriberLocationError;
+
+    fn try_from(v: SubscriberLocationIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("ingest subscriber location report"))?
+                .ok_or(SubscriberLocationError::MissingField(
+                    "subscriber_location_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }
@@ -128,20 +143,17 @@ impl From<SubscriberLocationIngestReport> for SubscriberLocationIngestReportV1 {
 }
 
 impl TryFrom<VerifiedSubscriberLocationIngestReportV1> for VerifiedSubscriberLocationIngestReport {
-    type Error = Error;
-    fn try_from(v: VerifiedSubscriberLocationIngestReportV1) -> Result<Self> {
-        let status = SubscriberReportVerificationStatus::try_from(v.status).map_err(|_| {
-            DecodeError::unsupported_status_reason(
-                "verified_subscriber_location_ingest_report_v1",
-                v.status,
-            )
-        })?;
+    type Error = SubscriberLocationError;
+
+    fn try_from(v: VerifiedSubscriberLocationIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("ingest subscriber location ingest report"))?
+                .ok_or(SubscriberLocationError::MissingField(
+                    "verified_subscriber_location_ingest_report.report",
+                ))?
                 .try_into()?,
-            status,
+            status: prost_enum(v.status, SubscriberLocationError::StatusReason)?,
             timestamp: v.timestamp.to_timestamp()?,
         })
     }
