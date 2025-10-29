@@ -147,11 +147,7 @@ impl From<IotBeaconReport> for LoraBeaconReportReqV1 {
 }
 
 impl IotBeaconReport {
-    pub fn to_beacon(
-        &self,
-        entropy_start: DateTime<Utc>,
-        entropy_version: u32,
-    ) -> Result<beacon::Beacon> {
+    pub fn to_beacon(&self, entropy_start: DateTime<Utc>, entropy_version: u32) -> beacon::Beacon {
         let remote_entropy = beacon::Entropy {
             timestamp: entropy_start.timestamp(),
             data: self.remote_entropy.clone(),
@@ -162,13 +158,13 @@ impl IotBeaconReport {
             data: self.local_entropy.clone(),
             version: entropy_version,
         };
-        Ok(beacon::Beacon {
+        beacon::Beacon {
             data: self.data.clone(),
             frequency: self.frequency,
             datarate: self.datarate,
             remote_entropy,
             local_entropy,
             conducted_power: self.tx_power as u32,
-        })
+        }
     }
 }

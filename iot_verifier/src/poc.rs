@@ -660,21 +660,7 @@ fn verify_beacon_payload(
     tracing::debug!("generated beacon {:?}", generated_beacon);
 
     // cast the received beaconers report into a beacon
-    let reported_beacon: beacon::Beacon =
-        match beacon_report.to_beacon(entropy_start, entropy_version) {
-            Ok(res) => res,
-            Err(e) => {
-                tracing::warn!(
-                    "failed to cast report to beacon, reason: {:?}, pub_key: {:?}",
-                    e,
-                    beacon_report.pub_key
-                );
-                return Err(InvalidResponse {
-                    reason: InvalidReason::InvalidPacket,
-                    details: None,
-                });
-            }
-        };
+    let reported_beacon = beacon_report.to_beacon(entropy_start, entropy_version);
     tracing::debug!("reported beacon {:?}", reported_beacon);
 
     // compare reports
