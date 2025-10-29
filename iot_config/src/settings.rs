@@ -21,6 +21,8 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_deleted_entry_retention")]
     pub deleted_entry_retention: Duration,
     pub database: db_store::Settings,
+    #[serde(with = "humantime_serde", default = "default_gateway_tracker_interval")]
+    pub gateway_tracker_interval: std::time::Duration,
     /// Settings passed to the db_store crate for connecting to
     /// the database for Solana on-chain data
     pub metadata: db_store::Settings,
@@ -37,6 +39,10 @@ fn default_listen_addr() -> SocketAddr {
 
 fn default_deleted_entry_retention() -> Duration {
     humantime::parse_duration("48 hours").unwrap()
+}
+
+fn default_gateway_tracker_interval() -> std::time::Duration {
+    humantime::parse_duration("1 hour").unwrap()
 }
 
 impl Settings {
