@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::gateway::tracker::Tracker;
 use crate::grpc_server::GrpcServer;
 use crate::sub_dao_service::SubDaoService;
 use crate::{
@@ -61,7 +62,7 @@ impl Daemon {
             region_updater,
         )?;
 
-        let subdao_svc = SubDaoService::new(settings, auth_cache, metadata_pool)?;
+        let subdao_svc = SubDaoService::new(settings, auth_cache, metadata_pool.clone())?;
 
         let listen_addr = settings.listen;
         let pubkey = settings
@@ -69,6 +70,12 @@ impl Daemon {
             .map(|keypair| keypair.public_key().to_string())?;
         tracing::debug!("listening on {listen_addr}");
         tracing::debug!("signing as {pubkey}");
+
+        let tracker = Tracker::new(
+            pool.clone(),
+            metadata_pool.clone(),
+            settings.gateway_tracker_interval,
+        );
 
         let grpc_server = GrpcServer::new(
             listen_addr,
@@ -82,6 +89,7 @@ impl Daemon {
         let db_cleaner = DbCleaner::new(pool.clone(), settings.deleted_entry_retention);
 
         TaskManager::builder()
+            .add_task(tracker)
             .add_task(grpc_server)
             .add_task(db_cleaner)
             .build()
