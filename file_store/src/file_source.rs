@@ -83,7 +83,9 @@ mod test {
     use std::str::FromStr;
 
     fn infos(names: &'static [&str]) -> FileInfoStream {
-        futures::stream::iter(names.iter().map(|v| FileInfo::from_str(v))).boxed()
+        futures::stream::iter(names.iter().map(|v| FileInfo::from_str(v)))
+            .err_into()
+            .boxed()
     }
 
     #[tokio::test]
