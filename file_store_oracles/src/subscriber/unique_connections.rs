@@ -1,17 +1,22 @@
 use chrono::{DateTime, Utc};
+use file_store::traits::{MsgDecode, TimestampDecode, TimestampDecodeError};
 use helium_crypto::PublicKeyBinary;
 use serde::{Deserialize, Serialize};
-
-use file_store::{
-    traits::{MsgDecode, TimestampDecode},
-    Error,
-};
 
 pub mod proto {
     pub use helium_proto::services::poc_mobile::{
         UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1,
         VerifiedUniqueConnectionsIngestReportStatus, VerifiedUniqueConnectionsIngestReportV1,
     };
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum UniqueConnectionsError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -43,14 +48,16 @@ impl MsgDecode for UniqueConnectionsIngestReport {
 }
 
 impl TryFrom<proto::UniqueConnectionsIngestReportV1> for UniqueConnectionsIngestReport {
-    type Error = Error;
+    type Error = UniqueConnectionsError;
 
     fn try_from(value: proto::UniqueConnectionsIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: value.received_timestamp.to_timestamp_millis()?,
             report: value
                 .report
-                .ok_or_else(|| Error::not_found("ingest unique connections"))?
+                .ok_or(UniqueConnectionsError::MissingField(
+                    "unique_connections_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }
@@ -66,7 +73,7 @@ impl From<UniqueConnectionsIngestReport> for proto::UniqueConnectionsIngestRepor
 }
 
 impl TryFrom<proto::UniqueConnectionsReqV1> for UniqueConnectionReq {
-    type Error = Error;
+    type Error = UniqueConnectionsError;
 
     fn try_from(value: proto::UniqueConnectionsReqV1) -> Result<Self, Self::Error> {
         Ok(Self {
