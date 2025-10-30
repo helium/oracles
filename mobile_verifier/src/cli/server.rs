@@ -36,12 +36,9 @@ impl Cmd {
 
         telemetry::initialize(&pool).await?;
 
-        let file_store_client = settings.file_store.connect().await;
-        let (file_upload, file_upload_server) = file_upload::FileUpload::new(
-            file_store_client.clone(),
-            settings.buckets.output.clone(),
-        )
-        .await;
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_bucket_client(settings.buckets.output.connect().await)
+                .await;
 
         // mobile config clients
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
@@ -93,6 +90,8 @@ impl Cmd {
         let (new_coverage_obj_notifier, new_coverage_obj_notification) =
             new_coverage_object_notification_channel();
 
+        let ingest_bucket_client = settings.buckets.ingest.connect().await;
+
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(valid_heartbeats_server)
@@ -102,8 +101,7 @@ impl Cmd {
                 WifiHeartbeatDaemon::create_managed_task(
                     pool.clone(),
                     settings,
-                    file_store_client.clone(),
-                    settings.buckets.ingest.clone(),
+                    ingest_bucket_client.clone(),
                     gateway_client.clone(),
                     valid_heartbeats,
                     seniority_updates.clone(),
@@ -116,8 +114,7 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     file_upload.clone(),
-                    file_store_client.clone(),
-                    settings.buckets.ingest.clone(),
+                    ingest_bucket_client.clone(),
                     speedtests_avg.clone(),
                     gateway_client.clone(),
                 )
@@ -129,8 +126,7 @@ impl Cmd {
                     settings,
                     auth_client.clone(),
                     entity_client.clone(),
-                    file_store_client.clone(),
-                    settings.buckets.ingest.clone(),
+                    ingest_bucket_client.clone(),
                     file_upload.clone(),
                 )
                 .await?,
@@ -140,8 +136,7 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     file_upload.clone(),
-                    file_store_client.clone(),
-                    settings.buckets.ingest.clone(),
+                    ingest_bucket_client.clone(),
                     auth_client.clone(),
                     new_coverage_obj_notifier,
                 )
@@ -152,8 +147,7 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     file_upload.clone(),
-                    file_store_client.clone(),
-                    settings.buckets.data_sets.clone(),
+                    settings.buckets.data_sets.connect().await,
                     new_coverage_obj_notification,
                 )
                 .await?,
@@ -163,8 +157,7 @@ impl Cmd {
                     pool.clone(),
                     settings,
                     file_upload.clone(),
-                    file_store_client.clone(),
-                    settings.buckets.ingest.clone(),
+                    ingest_bucket_client.clone(),
                     auth_client.clone(),
                 )
                 .await?,
@@ -173,8 +166,7 @@ impl Cmd {
                 DataSessionIngestor::create_managed_task(
                     pool.clone(),
                     settings,
-                    file_store_client.clone(),
-                    settings.buckets.data_transfer.clone(),
+                    settings.buckets.data_transfer.connect().await,
                 )
                 .await?,
             )
@@ -182,8 +174,7 @@ impl Cmd {
                 banning::create_managed_task(
                     pool.clone(),
                     file_upload.clone(),
-                    file_store_client.clone(),
-                    settings.buckets.ingest.clone(),
+                    ingest_bucket_client.clone(),
                     auth_client,
                     settings,
                     seniority_updates,
@@ -195,7 +186,6 @@ impl Cmd {
                     pool,
                     settings,
                     file_upload,
-                    file_store_client.clone(),
                     carrier_client,
                     hex_boosting_client,
                     sub_dao_rewards_client,

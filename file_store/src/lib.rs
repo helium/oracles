@@ -5,6 +5,7 @@ mod error;
 pub use error::{DecodeError, EncodeError, Error, Result};
 use tokio::sync::Mutex;
 
+pub mod bucket_client;
 pub mod file_info;
 pub mod file_info_poller;
 pub mod file_sink;
@@ -23,12 +24,13 @@ use chrono::{DateTime, Utc};
 pub use file_info::FileInfo;
 pub use file_sink::{FileSink, FileSinkBuilder};
 
+pub use bucket_client::BucketClient;
 use futures::{
     future,
     stream::{self, BoxStream},
     FutureExt, StreamExt, TryFutureExt, TryStreamExt,
 };
-pub use settings::Settings;
+pub use settings::{BucketSettings, Settings};
 
 pub type Client = aws_sdk_s3::Client;
 pub type Stream<T> = BoxStream<'static, Result<T>>;
@@ -50,7 +52,7 @@ pub async fn new_client(
     endpoint: Option<String>,
     _access_key_id: Option<String>,
     _secret_access_key: Option<String>,
-) -> Client {
+) -> aws_sdk_s3::Client {
     let mut client_map = CLIENT_MAP
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()

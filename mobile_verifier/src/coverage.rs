@@ -6,7 +6,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
-    file_upload::FileUpload, traits::TimestampEncode,
+    file_upload::FileUpload, traits::TimestampEncode, BucketClient,
 };
 use file_store_oracles::{
     mobile::coverage::CoverageObjectIngestReport,
@@ -82,8 +82,7 @@ impl CoverageDaemon {
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
         auth_client: AuthorizationClient,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -98,7 +97,7 @@ impl CoverageDaemon {
 
         let (coverage_objs, coverage_objs_server) = file_source::continuous_source()
             .state(pool.clone())
-            .file_store(file_store_client, bucket)
+            .bucket_client(bucket_client)
             .lookback_start_after(settings.start_after)
             .prefix(FileType::CoverageObjectIngestReport.to_string())
             .create()

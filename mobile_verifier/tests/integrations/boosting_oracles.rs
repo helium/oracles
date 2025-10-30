@@ -1,7 +1,10 @@
 use crate::common::{self, GatewayClientAllOwnersValid, MockHexBoostDataColl};
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
-use file_store::file_upload::{self, FileUpload};
+use file_store::{
+    file_upload::{self, FileUpload},
+    BucketClient,
+};
 use file_store_oracles::{
     coverage::RadioHexSignalLevel,
     speedtest::CellSpeedtest,
@@ -146,8 +149,10 @@ pub async fn create_data_set_downloader(
     let mut data_set_downloader = DataSetDownloaderDaemon::new(
         pool,
         HexBoostData::default(),
-        file_store,
-        bucket_name.clone(),
+        BucketClient {
+            client: file_store,
+            bucket: bucket_name.clone(),
+        },
         oracle_boosting_reports,
         data_set_directory.clone(),
         new_coverage_object_notification,
