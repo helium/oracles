@@ -7,6 +7,7 @@ use file_store::{
     file_source,
     file_upload::FileUpload,
     traits::{TimestampDecode, TimestampEncode},
+    BucketClient,
 };
 use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
@@ -66,13 +67,12 @@ where
         settings: &Settings,
         authorization_verifier: AV,
         entity_verifier: EV,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
         file_upload: FileUpload,
     ) -> anyhow::Result<impl ManagedTask> {
         let (stream_reciever, stream_server) = file_source::Continuous::prost_source()
             .state(pool.clone())
-            .file_store(file_store_client, bucket)
+            .bucket_client(bucket_client)
             .lookback_start_after(settings.start_after)
             .prefix(FileType::SubscriberMappingActivityIngestReport.to_string())
             .create()

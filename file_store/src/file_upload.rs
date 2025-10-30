@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::{BucketClient, Error, Result};
 use futures::{StreamExt, TryFutureExt};
 use std::{
     path::{Path, PathBuf},
@@ -41,6 +41,10 @@ impl FileUpload {
                 bucket,
             },
         )
+    }
+
+    pub async fn from_bucket_client(bucket_client: BucketClient) -> (Self, FileUploadServer) {
+        Self::new(bucket_client.client.clone(), bucket_client.bucket.clone()).await
     }
 
     pub async fn upload_file(&self, file: &Path) -> Result {

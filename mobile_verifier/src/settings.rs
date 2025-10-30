@@ -9,10 +9,10 @@ use std::{
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Buckets {
-    pub ingest: String,
-    pub data_transfer: String,
-    pub data_sets: String,
-    pub output: String,
+    pub ingest: file_store::BucketSettings,
+    pub data_transfer: file_store::BucketSettings,
+    pub data_sets: file_store::BucketSettings,
+    pub output: file_store::BucketSettings,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -23,8 +23,6 @@ pub struct Settings {
     pub log: String,
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
-    #[serde(default)]
-    pub file_store: file_store::Settings,
     pub buckets: Buckets,
     /// Cache location for generated verified reports
     #[serde(default = "default_cache")]

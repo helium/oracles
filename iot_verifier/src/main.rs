@@ -101,8 +101,7 @@ impl Server {
         // *
         // setup the price tracker requirements
         // *
-        let (price_tracker, price_daemon) =
-            PriceTracker::new(&settings.price_tracker, file_store_client.clone()).await?;
+        let (price_tracker, price_daemon) = PriceTracker::new(&settings.price_tracker).await?;
 
         // *
         // setup the loader requirements

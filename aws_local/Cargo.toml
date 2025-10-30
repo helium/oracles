@@ -16,4 +16,4 @@ prost = { workspace = true }
 anyhow = { workspace = true }
 uuid = { workspace = true }
 tempfile = { workspace = true }
-file-store = { path = "../file_store", features = ["local"] }
+file-store = { path = "../file_store"}

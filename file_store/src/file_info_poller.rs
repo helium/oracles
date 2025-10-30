@@ -1,4 +1,4 @@
-use crate::{traits::MsgDecode, Error, FileInfo, Result};
+use crate::{traits::MsgDecode, BucketClient, Error, FileInfo, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
@@ -172,6 +172,13 @@ impl<Message, State, Parser>
 {
     pub fn file_store(self, client: crate::Client, bucket: impl Into<String>) -> Self {
         self.store(FileStoreInfoPollerStore::new(client, bucket))
+    }
+
+    pub fn bucket_client(self, bucket_client: BucketClient) -> Self {
+        self.store(FileStoreInfoPollerStore::new(
+            bucket_client.client,
+            bucket_client.bucket,
+        ))
     }
 }
 

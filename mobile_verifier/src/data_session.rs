@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use file_store::{file_info_poller::FileInfoStream, file_source};
+use file_store::{file_info_poller::FileInfoStream, file_source, BucketClient};
 use file_store_oracles::{mobile_transfer::ValidDataTransferSession, FileType};
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
@@ -30,13 +30,12 @@ impl DataSessionIngestor {
     pub async fn create_managed_task(
         pool: Pool<Postgres>,
         settings: &Settings,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
     ) -> anyhow::Result<impl ManagedTask> {
         // data transfers
         let (data_session_ingest, data_session_ingest_server) = file_source::continuous_source()
             .state(pool.clone())
-            .file_store(file_store_client, bucket)
+            .bucket_client(bucket_client)
             .lookback_start_after(settings.start_after)
             .prefix(FileType::ValidDataTransferSession.to_string())
             .create()

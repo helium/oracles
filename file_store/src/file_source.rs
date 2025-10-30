@@ -100,6 +100,7 @@ mod test {
         //
 
         let settings = Settings {
+            region: None,
             endpoint: None,
             access_key_id: None,
             secret_access_key: None,

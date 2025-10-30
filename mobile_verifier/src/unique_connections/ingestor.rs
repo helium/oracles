@@ -1,7 +1,7 @@
 use chrono::Utc;
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
-    file_upload::FileUpload,
+    file_upload::FileUpload, BucketClient,
 };
 use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
@@ -54,8 +54,7 @@ where
         pool: PgPool,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
         authorization_verifier: AV,
     ) -> anyhow::Result<impl ManagedTask> {
         let (verified_unique_connections, verified_unique_conections_server) =
@@ -71,7 +70,7 @@ where
         let (unique_connections_ingest, unique_connections_server) =
             file_source::continuous_source()
                 .state(pool.clone())
-                .file_store(file_store_client, bucket)
+                .bucket_client(bucket_client)
                 .lookback_start_after(settings.start_after)
                 .prefix(FileType::UniqueConnectionsReport.to_string())
                 .create()

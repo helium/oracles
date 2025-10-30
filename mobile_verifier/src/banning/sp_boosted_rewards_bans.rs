@@ -5,6 +5,7 @@ use file_store::{
     file_info_poller::{FileInfoPollerConfigBuilder, FileInfoStream, ProstFileInfoPollerParser},
     file_sink::FileSinkClient,
     file_upload::FileUpload,
+    BucketClient,
 };
 use file_store_oracles::{
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
@@ -137,8 +138,7 @@ where
     pub async fn create_managed_task(
         pool: PgPool,
         file_upload: FileUpload,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
         authorization_verifier: AV,
         settings: &Settings,
         seniority_update_sink: FileSinkClient<SeniorityUpdateProto>,
@@ -156,7 +156,7 @@ where
         let (receiver, ingest_server) = FileInfoPollerConfigBuilder::default()
             .parser(ProstFileInfoPollerParser)
             .state(pool.clone())
-            .file_store(file_store_client, bucket)
+            .bucket_client(bucket_client)
             .lookback_start_after(settings.start_after)
             .prefix(FileType::SPBoostedRewardsBannedRadioIngestReport.to_string())
             .create()

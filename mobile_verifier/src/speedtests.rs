@@ -5,7 +5,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
-    file_upload::FileUpload,
+    file_upload::FileUpload, BucketClient,
 };
 use file_store_oracles::{
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
@@ -67,8 +67,7 @@ where
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
         speedtests_avg: FileSinkClient<SpeedtestAvgProto>,
         gateway_resolver: GIR,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -83,7 +82,7 @@ where
 
         let (speedtests, speedtests_server) = file_source::continuous_source()
             .state(pool.clone())
-            .file_store(file_store_client, bucket)
+            .bucket_client(bucket_client)
             .lookback_start_after(settings.start_after)
             .prefix(FileType::CellSpeedtestIngestReport.to_string())
             .create()

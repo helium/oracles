@@ -11,6 +11,7 @@ use file_store::{
     file_sink::FileSinkClient,
     file_upload::FileUpload,
     traits::{TimestampDecode, TimestampEncode},
+    BucketClient,
 };
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures_util::{Stream, StreamExt, TryStreamExt};
@@ -60,18 +61,12 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
 
     async fn check_for_available_data_sets(
         &self,
-        file_store_client: &file_store::Client,
-        bucket: &str,
+        bucket_client: &BucketClient,
         pool: &PgPool,
     ) -> anyhow::Result<()> {
         tracing::info!("Checking for new {} data sets", Self::TYPE.to_prefix());
-        let mut new_data_sets = file_store::list_files(
-            file_store_client,
-            bucket,
-            Self::TYPE.to_prefix(),
-            self.timestamp(),
-            None,
-        );
+        let mut new_data_sets =
+            bucket_client.list_files(Self::TYPE.to_prefix(), self.timestamp(), None);
         while let Some(new_data_set) = new_data_sets.next().await.transpose()? {
             db::insert_new_data_set(pool, &new_data_set.key, Self::TYPE, new_data_set.timestamp)
                 .await?;
@@ -81,12 +76,11 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
 
     async fn fetch_next_available_data_set(
         &mut self,
-        file_store_client: &file_store::Client,
-        bucket: &str,
+        bucket_client: &BucketClient,
         pool: &PgPool,
         data_set_directory: &Path,
     ) -> anyhow::Result<Option<NewDataSet>> {
-        self.check_for_available_data_sets(file_store_client, bucket, pool)
+        self.check_for_available_data_sets(bucket_client, pool)
             .await?;
 
         let latest_unprocessed_data_set =
@@ -103,13 +97,7 @@ pub trait DataSet: HexAssignment + Send + Sync + 'static {
         );
 
         if !latest_unprocessed_data_set.status.is_downloaded() {
-            download_data_set(
-                file_store_client,
-                bucket,
-                &latest_unprocessed_data_set.filename,
-                &path,
-            )
-            .await?;
+            download_data_set(bucket_client, &latest_unprocessed_data_set.filename, &path).await?;
             latest_unprocessed_data_set.mark_as_downloaded(pool).await?;
             tracing::info!(
                 data_set = latest_unprocessed_data_set.filename,
@@ -209,8 +197,7 @@ pub fn is_hex_boost_data_ready(h: &HexBoostData) -> bool {
 pub struct DataSetDownloaderDaemon {
     pool: PgPool,
     data_sets: HexBoostData,
-    file_store_client: file_store::Client,
-    bucket: String,
+    bucket_client: BucketClient,
     data_set_processor: FileSinkClient<proto::OracleBoostingReportV1>,
     data_set_directory: PathBuf,
     new_coverage_object_notification: NewCoverageObjectNotification,
@@ -271,8 +258,7 @@ impl DataSetDownloaderDaemon {
         pool: PgPool,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
         new_coverage_object_notification: NewCoverageObjectNotification,
     ) -> anyhow::Result<impl ManagedTask> {
         tracing::info!("Creating data set downloader task");
@@ -289,8 +275,7 @@ impl DataSetDownloaderDaemon {
         let data_set_downloader = Self::new(
             pool,
             HexBoostData::default(),
-            file_store_client,
-            bucket,
+            bucket_client,
             oracle_boosting_reports,
             settings.data_sets_directory.clone(),
             new_coverage_object_notification,
@@ -309,8 +294,7 @@ impl DataSetDownloaderDaemon {
     pub fn new(
         pool: PgPool,
         data_sets: HexBoostData,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
         data_set_processor: FileSinkClient<proto::OracleBoostingReportV1>,
         data_set_directory: PathBuf,
         new_coverage_object_notification: NewCoverageObjectNotification,
@@ -319,8 +303,7 @@ impl DataSetDownloaderDaemon {
         Self {
             pool,
             data_sets,
-            file_store_client,
-            bucket,
+            bucket_client,
             data_set_processor,
             data_set_directory,
             new_coverage_object_notification,
@@ -333,8 +316,7 @@ impl DataSetDownloaderDaemon {
             .data_sets
             .urbanization
             .fetch_next_available_data_set(
-                &self.file_store_client,
-                &self.bucket,
+                &self.bucket_client,
                 &self.pool,
                 &self.data_set_directory,
             )
@@ -343,8 +325,7 @@ impl DataSetDownloaderDaemon {
             .data_sets
             .footfall
             .fetch_next_available_data_set(
-                &self.file_store_client,
-                &self.bucket,
+                &self.bucket_client,
                 &self.pool,
                 &self.data_set_directory,
             )
@@ -353,8 +334,7 @@ impl DataSetDownloaderDaemon {
             .data_sets
             .landtype
             .fetch_next_available_data_set(
-                &self.file_store_client,
-                &self.bucket,
+                &self.bucket_client,
                 &self.pool,
                 &self.data_set_directory,
             )
@@ -363,8 +343,7 @@ impl DataSetDownloaderDaemon {
             .data_sets
             .service_provider_override
             .fetch_next_available_data_set(
-                &self.file_store_client,
-                &self.bucket,
+                &self.bucket_client,
                 &self.pool,
                 &self.data_set_directory,
             )
@@ -523,13 +502,12 @@ async fn delete_old_data_sets(
 }
 
 async fn download_data_set(
-    file_store_client: &file_store::Client,
-    bucket: &str,
+    bucket_client: &BucketClient,
     in_file_name: &str,
     out_path: &Path,
 ) -> anyhow::Result<()> {
     tracing::info!("Downloading new data set: {}", out_path.to_string_lossy());
-    let stream = file_store::get_raw_file(file_store_client, bucket, in_file_name).await?;
+    let stream = bucket_client.get_raw_file(in_file_name).await?;
     let mut bytes = tokio_util::codec::FramedRead::new(
         async_compression::tokio::bufread::GzipDecoder::new(tokio::io::BufReader::new(
             stream.into_async_read(),
