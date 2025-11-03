@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use file_store::FileInfo;
+use file_store::{BucketClient, BucketSettings, FileInfo};
 use file_store_oracles::FileType;
 use futures::stream::{StreamExt, TryStreamExt};
 use helium_proto::{BlockchainTokenTypeV1, Message, PriceReportV1};
@@ -55,7 +55,7 @@ type Prices = HashMap<BlockchainTokenTypeV1, Price>;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
     price_duration_minutes: u64,
-    bucket: String,
+    bucket: BucketSettings,
 }
 
 impl Settings {
@@ -72,16 +72,13 @@ pub struct PriceTracker {
 }
 
 impl PriceTracker {
-    pub async fn new(
-        settings: &Settings,
-        client: file_store::Client,
-    ) -> anyhow::Result<(Self, PriceTrackerDaemon)> {
+    pub async fn new(settings: &Settings) -> anyhow::Result<(Self, PriceTrackerDaemon)> {
         let price_duration = settings.price_duration();
+        let bucket_client = settings.bucket.connect().await;
         let (price_sender, price_receiver) = watch::channel(Prices::new());
         let (task_kill_sender, task_kill_receiver) = mpsc::channel(1);
         let initial_timestamp =
-            calculate_initial_prices(&client, &settings.bucket, price_duration, &price_sender)
-                .await?;
+            calculate_initial_prices(&bucket_client, price_duration, &price_sender).await?;
 
         Ok((
             Self {
@@ -90,8 +87,7 @@ impl PriceTracker {
                 task_killer: task_kill_sender,
             },
             PriceTrackerDaemon {
-                client,
-                bucket: settings.bucket.clone(),
+                bucket_client,
                 price_sender,
                 task_killer: task_kill_receiver,
                 after: initial_timestamp,
@@ -125,8 +121,7 @@ impl PriceTracker {
 }
 
 pub struct PriceTrackerDaemon {
-    client: file_store::Client,
-    bucket: String,
+    bucket_client: BucketClient,
     price_sender: watch::Sender<Prices>,
     task_killer: mpsc::Receiver<String>,
     after: DateTime<Utc>,
@@ -150,7 +145,7 @@ impl PriceTrackerDaemon {
             tokio::select! {
                 _ = shutdown => break,
                 _ = trigger.tick() => {
-                    let timestamp = process_files(&self.client, &self.bucket, &self.price_sender, self.after).await?;
+                    let timestamp = process_files(&self.bucket_client, &self.price_sender, self.after).await?;
                     self.after = timestamp.unwrap_or(self.after);
                 }
                 msg = self.task_killer.recv() => if let Some(error) = msg {
@@ -164,40 +159,39 @@ impl PriceTrackerDaemon {
 }
 
 async fn calculate_initial_prices(
-    client: &file_store::Client,
-    bucket: &str,
+    bucket_client: &BucketClient,
     price_duration: Duration,
     sender: &watch::Sender<Prices>,
 ) -> Result<DateTime<Utc>, PriceTrackerError> {
     tracing::debug!("PriceTracker: Updating initial prices");
-    process_files(client, bucket, sender, Utc::now() - price_duration)
+    process_files(bucket_client, sender, Utc::now() - price_duration)
         .await?
         .ok_or(PriceTrackerError::PriceNotAvailable)
 }
 
 async fn process_files(
-    client: &file_store::Client,
-    bucket: &str,
+    bucket_client: &BucketClient,
     sender: &watch::Sender<Prices>,
     after: DateTime<Utc>,
 ) -> Result<Option<DateTime<Utc>>, PriceTrackerError> {
-    file_store::list_files(client, bucket, FileType::PriceReport.to_str(), after, None)
+    bucket_client
+        .list_files(FileType::PriceReport.to_str(), after, None)
         .map_err(PriceTrackerError::from)
-        .and_then(|file| process_file(client, bucket, file, sender))
+        .and_then(|file| process_file(bucket_client, file, sender))
         .try_fold(None, |_old, ts| async move { Ok(Some(ts)) })
         .await
 }
 
 async fn process_file(
-    client: &file_store::Client,
-    bucket: &str,
+    bucket_client: &BucketClient,
     file: FileInfo,
     sender: &watch::Sender<Prices>,
 ) -> Result<DateTime<Utc>, PriceTrackerError> {
     tracing::debug!("PriceTracker: processing pricing report file {}", file.key);
     let timestamp = file.timestamp;
 
-    file_store::stream_single_file(client, bucket, file)
+    bucket_client
+        .stream_single_file(file)
         .await?
         .map_err(PriceTrackerError::from)
         .and_then(|buf| async { PriceReportV1::decode(buf).map_err(PriceTrackerError::from) })

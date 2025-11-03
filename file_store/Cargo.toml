@@ -52,5 +52,4 @@ tempfile = { workspace = true }
 
 [features]
 default = ["sqlx-postgres"]
-local = []
 sqlx-postgres = ["sqlx/postgres"]

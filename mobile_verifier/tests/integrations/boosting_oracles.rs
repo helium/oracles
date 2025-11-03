@@ -1,7 +1,10 @@
 use crate::common::{self, GatewayClientAllOwnersValid, MockHexBoostDataColl};
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
-use file_store::file_upload::{self, FileUpload};
+use file_store::{
+    file_upload::{self, FileUpload},
+    BucketClient,
+};
 use file_store_oracles::{
     coverage::RadioHexSignalLevel,
     speedtest::CellSpeedtest,
@@ -118,7 +121,7 @@ pub async fn create_data_set_downloader(
     let bucket_name = gen_bucket_name();
 
     let endpoint = aws_local_default_endpoint();
-    let awsl = AwsLocal::new(endpoint.as_str(), &bucket_name).await;
+    let awsl = AwsLocal::new("us-east-1", endpoint.as_str(), &bucket_name).await;
 
     for file_path in file_paths {
         awsl.put_file_to_aws(&file_path).await.unwrap();
@@ -146,8 +149,10 @@ pub async fn create_data_set_downloader(
     let mut data_set_downloader = DataSetDownloaderDaemon::new(
         pool,
         HexBoostData::default(),
-        file_store,
-        bucket_name.clone(),
+        BucketClient {
+            client: file_store,
+            bucket: bucket_name.clone(),
+        },
         oracle_boosting_reports,
         data_set_directory.clone(),
         new_coverage_object_notification,
@@ -212,7 +217,7 @@ async fn test_dataset_downloader(pool: PgPool) {
     assert!(hex_assignment_file_exist(&pool, "service_provider_override.1739404800000.gz").await);
 
     let endpoint = aws_local_default_endpoint();
-    let awsl = AwsLocal::new(endpoint.as_str(), &bucket_name).await;
+    let awsl = AwsLocal::new("us-east-1", endpoint.as_str(), &bucket_name).await;
     awsl.put_file_to_aws(
         &PathBuf::from_str("./tests/integrations/fixtures/footfall.1732895200000.gz").unwrap(),
     )
