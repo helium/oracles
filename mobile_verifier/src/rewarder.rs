@@ -77,14 +77,12 @@ where
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store_client: file_store::Client,
         carrier_service_verifier: A,
         hex_boosting_info_resolver: B,
         sub_dao_epoch_reward_info_resolver: C,
         speedtests_avg: FileSinkClient<proto::SpeedtestAvg>,
     ) -> anyhow::Result<impl ManagedTask> {
-        let (price_tracker, price_daemon) =
-            PriceTracker::new(&settings.price_tracker, file_store_client).await?;
+        let (price_tracker, price_daemon) = PriceTracker::new(&settings.price_tracker).await?;
 
         let (mobile_rewards, mobile_rewards_server) = MobileRewardShare::file_sink(
             settings.store_base_path(),

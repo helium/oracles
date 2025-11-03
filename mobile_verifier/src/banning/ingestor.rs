@@ -1,4 +1,5 @@
 use chrono::Utc;
+use file_store::BucketClient;
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload,
@@ -41,8 +42,7 @@ impl BanIngestor {
     pub async fn create_managed_task(
         pool: PgPool,
         file_upload: FileUpload,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
         auth_verifier: AuthorizationClient,
         settings: &Settings,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -57,7 +57,7 @@ impl BanIngestor {
 
         let (report_rx, ingest_server) = file_source::continuous_source()
             .state(pool.clone())
-            .file_store(file_store_client, bucket)
+            .bucket_client(bucket_client)
             .lookback_start_after(settings.start_after)
             .prefix(FileType::MobileBanReport.to_string())
             .create()
