@@ -203,7 +203,7 @@ mod tests {
                 (
                     $1, $2, $3, $4, $5,
 
-                    -- harcoded values
+                    -- hardcoded values
                     0.0, 0.0, 'novagenericwifiindoor', 0, 1000
                 )
             "#,
