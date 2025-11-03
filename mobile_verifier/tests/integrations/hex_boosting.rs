@@ -59,7 +59,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    // seed HBs where we have a coverage reports for a singluar hex location per radio
+    // seed HBs where we have a coverage reports for a singular hex location per radio
     seed_heartbeats_v1(reward_info.epoch_period.start, &mut txn).await?;
     seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
     seed_unique_connections(reward_info.epoch_period.start, &mut txn).await?;
@@ -212,7 +212,7 @@ async fn test_poc_boosted_hexes_unique_connections_not_seeded(pool: PgPool) -> a
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    // seed HBs where we have a coverage reports for a singluar hex location per radio
+    // seed HBs where we have a coverage reports for a singular hex location per radio
     seed_heartbeats_v1(epoch.start, &mut txn).await?;
     seed_speedtests(epoch.end, &mut txn).await?;
     txn.commit().await?;
