@@ -515,7 +515,7 @@ pub async fn reward_service_providers(
         end_period: reward_info.epoch_period.end.encode_timestamp(),
         reward: Some(ProtoReward::ServiceProviderReward(
             proto::ServiceProviderReward {
-                service_provider_id: ServiceProvider::HeliumMobile as i32,
+                service_provider_id: ServiceProvider::HeliumMobile.into(),
                 amount: sp_reward_amount,
             },
         )),
