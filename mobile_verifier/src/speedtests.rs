@@ -3,6 +3,7 @@ use crate::{
     Settings,
 };
 use chrono::{DateTime, Utc};
+use coverage_point_calculator::speedtest::BYTES_PER_MEGABIT;
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
     file_upload::FileUpload, BucketClient,
@@ -28,6 +29,10 @@ use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
+// The limit must be 300 megabits per second.
+// Values in proto are in bytes/sec format.
+// Convert 300 megabits per second to bytes per second.
+const SPEEDTEST_MAX_BYTES_PER_SECOND: u64 = 300 * BYTES_PER_MEGABIT;
 
 pub type EpochSpeedTests = HashMap<PublicKeyBinary, Vec<Speedtest>>;
 
@@ -173,11 +178,15 @@ where
         &self,
         speedtest: &CellSpeedtestIngestReport,
     ) -> anyhow::Result<SpeedtestResult> {
-        let pubkey = speedtest.report.pubkey.clone();
+        if speedtest.report.upload_speed > SPEEDTEST_MAX_BYTES_PER_SECOND
+            || speedtest.report.download_speed > SPEEDTEST_MAX_BYTES_PER_SECOND
+        {
+            return Ok(SpeedtestResult::SpeedtestValueOutOfBounds);
+        }
 
         match self
             .gateway_info_resolver
-            .resolve_gateway_info(&pubkey)
+            .resolve_gateway_info(&speedtest.report.pubkey)
             .await?
         {
             Some(gw_info) if gw_info.is_data_only() => {

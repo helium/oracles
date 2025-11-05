@@ -3513,7 +3513,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#2217e1a917583ddccb6668a7bd185f3d39bcede0"
+source = "git+https://www.github.com/helium/proto.git?branch=kurotych%2Fspeedtest-bounds#0abba3b0a353ed94d8837c15698de48e1dca7e9f"
 dependencies = [
  "bytes",
  "prost",
