@@ -1,8 +1,7 @@
 use crate::gateway_info::{self, GatewayInfo, GatewayInfoStream};
-use file_store_oracles::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
-use helium_proto::{services::iot_config, BlockchainRegionParamV1, Message, Region};
+use helium_proto::{services::iot_config, traits::msg_verify::MsgVerify, BlockchainRegionParamV1, Message, Region};
 use std::{sync::Arc, time::Duration};
 use tonic::transport::{Channel, Endpoint};
 
@@ -25,6 +24,8 @@ pub enum ClientError {
     UndefinedRegionParams(String),
     #[error("Invalid SubDaoRewardInfo proto response {0}")]
     InvalidSubDaoRewardInfoProto(#[from] SubDaoRewardInfoParseError),
+    #[error("error verifying request signature: {0}")]
+    RequestVerification(#[from] helium_proto::traits::msg_verify::MsgVerifyError),
 }
 
 #[async_trait::async_trait]

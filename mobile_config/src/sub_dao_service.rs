@@ -3,10 +3,10 @@ use crate::{
 };
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::sub_dao::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},
+    traits::msg_verify::MsgVerify,
     Message,
 };
 use sqlx::{Pool, Postgres};

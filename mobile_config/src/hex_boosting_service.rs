@@ -5,7 +5,6 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use file_store::traits::{TimestampDecode, TimestampEncode};
-use file_store_oracles::traits::MsgVerify;
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
@@ -16,6 +15,7 @@ use helium_proto::{
         self, BoostedHexInfoStreamReqV1, BoostedHexInfoStreamResV1,
         BoostedHexModifiedInfoStreamReqV1,
     },
+    traits::msg_verify::MsgVerify,
     BoostedHexInfoV1, Message,
 };
 use sqlx::{Pool, Postgres};

@@ -8,7 +8,6 @@ use crate::{
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use futures::{
     future::TryFutureExt,
     stream::{StreamExt, TryStreamExt},
@@ -23,6 +22,7 @@ use helium_proto::{
         RouteSkfUpdateResV1, RouteStreamReqV1, RouteStreamResV1, RouteUpdateDevaddrRangesReqV1,
         RouteUpdateEuisReqV1, RouteUpdateReqV1, RouteV1, SkfV1,
     },
+    traits::msg_verify::MsgVerify,
     Message,
 };
 use sqlx::{Pool, Postgres};

@@ -3,27 +3,30 @@ use anyhow::{bail, Error, Result};
 use chrono::Utc;
 use file_store::{file_sink::FileSinkClient, file_upload};
 use file_store_oracles::traits::{
-    FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify,
+    FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt,
 };
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey, PublicKeyBinary};
-use helium_proto::services::poc_mobile::{
-    self, BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
-    CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
-    DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
-    DataTransferSessionRespV1, EnabledCarriersInfoReportV1, EnabledCarriersInfoReqV1,
-    EnabledCarriersInfoRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
-    InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
-    InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
-    RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
-    RadioUsageStatsResV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
-    ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
-    SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
-    SubscriberLocationReqV1, SubscriberLocationRespV1, SubscriberMappingActivityIngestReportV1,
-    SubscriberMappingActivityReqV1, SubscriberMappingActivityResV1,
-    SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventReqV1,
-    SubscriberVerifiedMappingEventResV1, UniqueConnectionsIngestReportV1,
-    WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1, WifiHeartbeatRespV1,
+use helium_proto::{
+    traits::msg_verify::MsgVerify,
+    services::poc_mobile::{
+        self, BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
+        CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
+        DataTransferRadioAccessTechnology, DataTransferSessionIngestReportV1, DataTransferSessionReqV1,
+        DataTransferSessionRespV1, EnabledCarriersInfoReportV1, EnabledCarriersInfoReqV1,
+        EnabledCarriersInfoRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
+        InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
+        InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
+        RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
+        RadioUsageStatsResV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+        ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
+        SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
+        SubscriberLocationReqV1, SubscriberLocationRespV1, SubscriberMappingActivityIngestReportV1,
+        SubscriberMappingActivityReqV1, SubscriberMappingActivityResV1,
+        SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventReqV1,
+        SubscriberVerifiedMappingEventResV1, UniqueConnectionsIngestReportV1,
+        WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1, WifiHeartbeatRespV1,
+    }
 };
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,

@@ -1,8 +1,7 @@
 use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
 use async_trait::async_trait;
-use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
-use helium_proto::{services::mobile_config, Message};
+use helium_proto::{services::mobile_config, traits::msg_verify::MsgVerify, Message};
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 use tonic::transport::Channel;

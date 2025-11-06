@@ -3,7 +3,6 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     service_provider_promotions::Promotion,
@@ -11,6 +10,7 @@ use helium_proto::{
         self, CarrierIncentivePromotionListReqV1, CarrierIncentivePromotionListResV1,
         CarrierKeyToEntityReqV1, CarrierKeyToEntityResV1,
     },
+    traits::msg_verify::MsgVerify,
     Message, ServiceProvider, ServiceProviderPromotions,
 };
 use sqlx::{prelude::FromRow, Pool, Postgres};
