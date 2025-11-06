@@ -126,10 +126,11 @@ aws-smithy-types-convert = { version = "0.60.9", features = [
 url = "2.5.4"
 
 ### Protobuf
-helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
+helium-proto = { path = "/Users/connormckenzie/Helium/proto", features = [
   "services",
+  "verify"
 ] }
-beacon = { git = "https://github.com/helium/proto", branch = "master" }
+beacon = { path = "/Users/connormckenzie/Helium/proto/beacon" }
 # Pickup versions from above
 prost = "*"
 tonic = { version = "*", features = ["tls-aws-lc", "tls-native-roots"] }

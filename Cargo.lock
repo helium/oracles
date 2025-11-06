@@ -1321,17 +1321,16 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#60e0047b6e0e38b8119a055b37a7043cb02dbc82"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "byteorder",
- "helium-proto",
+ "helium-proto 0.1.0",
  "prost",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
+ "rand 0.7.3",
+ "rand_chacha 0.2.2",
  "rust_decimal",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.9.9",
  "thiserror 1.0.69",
 ]
 
@@ -1362,7 +1361,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2831,8 +2830,9 @@ dependencies = [
  "derive_builder",
  "futures",
  "futures-util",
+ "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "http 1.3.1",
  "metrics",
  "poc-metrics",
@@ -2874,14 +2874,13 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "hex-literal",
  "prost",
  "rust_decimal",
  "serde",
  "serde_json",
  "strum",
- "thiserror 1.0.69",
  "tokio",
  "uuid",
 ]
@@ -3485,7 +3484,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
  "hex",
  "itertools 0.14.0",
  "jsonrpc_client",
@@ -3513,7 +3512,26 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#60e0047b6e0e38b8119a055b37a7043cb02dbc82"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "helium-crypto",
+ "prost",
+ "prost-build",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.17",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+]
+
+[[package]]
+name = "helium-proto"
+version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=master#2217e1a917583ddccb6668a7bd185f3d39bcede0"
 dependencies = [
  "bytes",
  "prost",
@@ -3556,7 +3574,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto",
+ "helium-proto 0.1.0",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -4083,7 +4101,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "http 1.3.1",
  "humantime-serde",
  "metrics",
@@ -4166,7 +4184,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "hextree",
  "http 1.3.1",
  "http-serde",
@@ -4212,7 +4230,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "http 1.3.1",
  "http-serde",
  "humantime-serde",
@@ -4255,7 +4273,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -4926,7 +4944,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "hextree",
  "http 1.3.1",
  "http-serde",
@@ -4947,7 +4965,6 @@ dependencies = [
  "strum",
  "strum_macros",
  "task-manager",
- "tempfile",
  "thiserror 1.0.69",
  "tls-init",
  "tokio",
@@ -4973,7 +4990,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5002,7 +5019,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "http 1.3.1",
  "http-serde",
  "humantime-serde",
@@ -5050,7 +5067,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "hex-assignments",
  "hextree",
  "http-serde",
@@ -5368,7 +5385,7 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77e878c846a8abae00dd069496dbe8751b16ac1c3d6bd2a7283a938e8228f90d"
 dependencies = [
- "proc-macro-crate 1.1.3",
+ "proc-macro-crate 3.4.0",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -5679,7 +5696,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "http 1.3.1",
  "hyper 0.14.32",
  "jsonrpsee",
@@ -5794,7 +5811,7 @@ dependencies = [
  "file-store-oracles",
  "futures",
  "futures-util",
- "helium-proto",
+ "helium-proto 0.1.0",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -5923,7 +5940,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "once_cell",
@@ -5945,7 +5962,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -6447,7 +6464,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -11515,7 +11532,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

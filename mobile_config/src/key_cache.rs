@@ -1,7 +1,7 @@
 use crate::{settings::Settings, KeyRole};
 use anyhow::anyhow;
-use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{PublicKey, PublicKeyBinary};
+use helium_proto::traits::msg_verify::MsgVerify;
 use std::collections::HashSet;
 use tokio::sync::watch;
 
@@ -165,7 +165,7 @@ mod tests {
     struct VerifiedGood;
 
     impl MsgVerify for VerifiedGood {
-        fn verify(&self, _verifier: &helium_crypto::PublicKey) -> file_store::Result {
+        fn verify(&self, _verifier: &PublicKey) -> Result<(), helium_proto::traits::msg_verify::MsgVerifyError> {
             Ok(())
         }
     }
@@ -173,10 +173,12 @@ mod tests {
     struct VerifiedBad;
 
     impl MsgVerify for VerifiedBad {
-        fn verify(&self, _verifier: &helium_crypto::PublicKey) -> file_store::Result {
-            Err(file_store::Error::ExternalError(
-                "testing bad verification".into(),
-            ))
+        fn verify(&self, _verifier: &PublicKey) -> Result<(), helium_proto::traits::msg_verify::MsgVerifyError> {
+            Err(
+                helium_proto::traits::msg_verify::MsgVerifyError::Crypto(
+                    helium_crypto::Error::InvalidNetwork
+                )
+            )
         }
     }
 

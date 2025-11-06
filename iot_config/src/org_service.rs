@@ -9,7 +9,6 @@ use crate::{
 use anyhow::Result;
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
@@ -17,6 +16,7 @@ use helium_proto::{
         OrgCreateRoamerReqV1, OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1, OrgEnableResV1,
         OrgGetReqV1, OrgListReqV1, OrgListResV1, OrgResV1, OrgUpdateReqV1, OrgV1, RouteStreamResV1,
     },
+    traits::msg_verify::MsgVerify,
     Message,
 };
 use sqlx::{Pool, Postgres};

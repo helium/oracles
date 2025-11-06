@@ -34,6 +34,8 @@ pub enum ClientError {
     InvalidSubDaoRewardInfoProto(
         #[from] crate::sub_dao_epoch_reward_info::SubDaoRewardInfoParseError,
     ),
+    #[error("error verifying request signature {0}")]
+    SignatureVerificationError(#[from] helium_proto::traits::msg_verify::MsgVerifyError),
 }
 
 macro_rules! call_with_retry {

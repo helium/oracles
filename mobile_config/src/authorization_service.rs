@@ -3,13 +3,13 @@ use std::sync::Arc;
 use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult, KeyRole};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::mobile_config::{
         self, AuthorizationListReqV1, AuthorizationListResV1, AuthorizationVerifyReqV1,
         AuthorizationVerifyResV1, NetworkKeyRole,
     },
+    traits::msg_verify::MsgVerify,
     Message,
 };
 use tonic::{Request, Response, Status};
