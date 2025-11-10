@@ -77,7 +77,7 @@ pub struct MockFileSinkReceiver<T> {
 impl<T: std::fmt::Debug> MockFileSinkReceiver<T> {
     pub async fn receive(&mut self) -> Option<T> {
         match timeout(seconds(2), self.receiver.recv()).await {
-            Ok(Some(SinkMessage::Data(on_write_tx, msg))) => {
+            Ok(Some(SinkMessage::Data(on_write_tx, msg, _))) => {
                 let _ = on_write_tx.send(Ok(()));
                 Some(msg)
             }

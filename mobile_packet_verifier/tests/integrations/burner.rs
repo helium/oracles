@@ -382,7 +382,7 @@ fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let total_rewardable = written_sessions
         .iter()
         .map(|x| match x {
-            file_store::file_sink::Message::Data(_confirm, session) => session.rewardable_bytes,
+            file_store::file_sink::Message::Data(_confirm, session, _) => session.rewardable_bytes,
             _ => panic!("wrong type of Message"),
         })
         .sum::<u64>();

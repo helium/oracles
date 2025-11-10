@@ -360,7 +360,7 @@ impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
         tokio::spawn(async move {
             while let Some(msg) = receiver.recv().await {
                 match msg {
-                    SinkMessage::Data(sender, msg) => {
+                    SinkMessage::Data(sender, msg, _) => {
                         sender.send(Ok(())).expect("ack file data");
                         inner_msgs.write().await.push(msg);
                     }
