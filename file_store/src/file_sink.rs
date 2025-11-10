@@ -49,6 +49,7 @@ pub enum Message<T> {
     Data(oneshot::Sender<Result>, T),
     Commit(oneshot::Sender<Result<FileManifest>>),
     Rollback(oneshot::Sender<Result<FileManifest>>),
+    NewSink(oneshot::Sender<Result>, String),
 }
 
 pub type MessageSender<T> = mpsc::Sender<Message<T>>;
@@ -218,6 +219,25 @@ impl<T> FileSinkClient<T> {
         Ok(last_oneshot)
     }
 
+    /// Creates new sink (file) with custom suffix
+    /// WARNING! Do not use the same suffix for different files.
+    /// Files with the same name will be overwritten in the S3 bucket.
+    pub async fn new_sink(&self, suffix: String) -> Result<oneshot::Receiver<Result<()>>> {
+        let (new_sink_tx, new_sink_rx) = oneshot::channel();
+
+        self.sender
+            .send(Message::NewSink(new_sink_tx, suffix))
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "file_sink failed to commit for {:?} with {e:?}",
+                    self.metric
+                );
+                Error::channel()
+            })
+            .map(|_| new_sink_rx)
+    }
+
     pub async fn commit(&self) -> Result<oneshot::Receiver<Result<FileManifest>>> {
         let (on_commit_tx, on_commit_rx) = oneshot::channel();
         self.sender
@@ -376,6 +396,14 @@ impl<T: prost::Message> FileSink<T> {
                         let res = self.rollback().await;
                         let _ = on_rollback_tx.send(res);
                     }
+                    Some(Message::NewSink(on_new_sink_tx, suffix)) => {
+                        if self.active_sink.is_some() {
+                            let _ = on_new_sink_tx.send(Err(Error::SinkAlreadyExists));
+                        } else {
+                            let res = self.new_sink(Some(suffix)).await;
+                            let _ = on_new_sink_tx.send(res);
+                        }
+                    }
                     None => {
                         break
                     }
@@ -390,9 +418,15 @@ impl<T: prost::Message> FileSink<T> {
         Ok(())
     }
 
-    async fn new_sink(&mut self) -> Result {
+    async fn new_sink(&mut self, file_suffix: Option<String>) -> Result {
         let sink_time = Utc::now();
-        let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
+
+        let filename = if let Some(fsuf) = file_suffix {
+            format!("{}.{}.gz", self.prefix, fsuf)
+        } else {
+            format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis())
+        };
+
         let new_path = self.tmp_path.join(filename);
         let writer = GzipEncoder::new(BufWriter::new(
             OpenOptions::new()
@@ -495,12 +529,12 @@ impl<T: prost::Message> FileSink<T> {
                     if self.auto_commit {
                         self.commit().await?;
                     }
-                    self.new_sink().await?;
+                    self.new_sink(None).await?;
                 }
             }
             // No sink, make a new one
             None => {
-                self.new_sink().await?;
+                self.new_sink(None).await?;
             }
         }
 
@@ -666,5 +700,215 @@ mod tests {
             .to_str()
             .and_then(|file_name| FileInfo::from_str(file_name).ok())
             .is_some_and(|file_info| file_info.prefix == prefix)
+    }
+
+    #[tokio::test]
+    async fn new_sink_creates_file_with_custom_suffix() {
+        let tmp_dir = TempDir::new().expect("Unable to create temp dir");
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let (file_upload_tx, _file_upload_rx) = file_upload::message_channel();
+        let file_upload = FileUpload {
+            sender: file_upload_tx,
+        };
+
+        let file_prefix = "test_report";
+        let custom_suffix = "custom_suffix_123";
+
+        let (file_sink_client, file_sink_server) =
+            FileSinkBuilder::new(file_prefix, tmp_dir.path(), file_upload, "fake_metric")
+                .auto_commit(false)
+                .create::<String>()
+                .await
+                .expect("failed to create file sink");
+
+        let sink_thread = tokio::spawn(async move {
+            file_sink_server
+                .run(shutdown_listener.clone())
+                .await
+                .expect("failed to complete file sink");
+        });
+
+        // Test 1: Create a new sink with custom suffix
+        let new_sink_rx = file_sink_client
+            .new_sink(custom_suffix.to_string())
+            .await
+            .expect("failed to send new_sink message");
+
+        let result = new_sink_rx.await.expect("new_sink oneshot failed");
+        assert!(result.is_ok(), "new_sink should succeed");
+
+        // Write some data to the new sink
+        let (on_write_tx, _on_write_rx) = oneshot::channel();
+        file_sink_client
+            .sender
+            .try_send(Message::Data(on_write_tx, "test data".to_string()))
+            .expect("failed to send data to file sink");
+
+        // Commit to finalize the file
+        let commit_rx = file_sink_client.commit().await.expect("commit failed");
+        let manifest = commit_rx
+            .await
+            .expect("commit oneshot failed")
+            .expect("commit should succeed");
+
+        // Verify the file was created with the custom suffix
+        assert_eq!(manifest.len(), 1, "should have exactly one file");
+        let expected_filename = format!("{}.{}.gz", file_prefix, custom_suffix);
+        assert_eq!(
+            manifest[0], expected_filename,
+            "file should have custom suffix"
+        );
+
+        // Verify the file exists in the target directory
+        let file_path = tmp_dir.path().join(&expected_filename);
+        assert!(file_path.exists(), "file should exist in target directory");
+
+        shutdown_trigger.trigger();
+        sink_thread.await.expect("file sink did not complete");
+    }
+
+    #[tokio::test]
+    async fn new_sink_returns_error_when_sink_already_exists() {
+        let tmp_dir = TempDir::new().expect("Unable to create temp dir");
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let (file_upload_tx, _file_upload_rx) = file_upload::message_channel();
+        let file_upload = FileUpload {
+            sender: file_upload_tx,
+        };
+
+        let file_prefix = "test_report";
+
+        let (file_sink_client, file_sink_server) =
+            FileSinkBuilder::new(file_prefix, tmp_dir.path(), file_upload, "fake_metric")
+                .auto_commit(false)
+                .create::<String>()
+                .await
+                .expect("failed to create file sink");
+
+        let sink_thread = tokio::spawn(async move {
+            file_sink_server
+                .run(shutdown_listener.clone())
+                .await
+                .expect("failed to complete file sink");
+        });
+
+        // Create the first sink
+        let new_sink_rx1 = file_sink_client
+            .new_sink("suffix1".to_string())
+            .await
+            .expect("failed to send first new_sink message");
+
+        let result1 = new_sink_rx1.await.expect("first new_sink oneshot failed");
+        assert!(result1.is_ok(), "first new_sink should succeed");
+
+        // Try to create a second sink while the first one is still active
+        let new_sink_rx2 = file_sink_client
+            .new_sink("suffix2".to_string())
+            .await
+            .expect("failed to send second new_sink message");
+
+        let result2 = new_sink_rx2.await.expect("second new_sink oneshot failed");
+        assert!(
+            result2.is_err(),
+            "second new_sink should fail when sink already exists"
+        );
+
+        // Verify the error is SinkAlreadyExists
+        match result2 {
+            Err(Error::SinkAlreadyExists) => {
+                // Expected error
+            }
+            _ => panic!("expected SinkAlreadyExists error"),
+        }
+
+        shutdown_trigger.trigger();
+        sink_thread.await.expect("file sink did not complete");
+    }
+
+    #[tokio::test]
+    async fn new_sink_can_create_multiple_sinks_sequentially() {
+        let tmp_dir = TempDir::new().expect("Unable to create temp dir");
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let (file_upload_tx, _file_upload_rx) = file_upload::message_channel();
+        let file_upload = FileUpload {
+            sender: file_upload_tx,
+        };
+
+        let file_prefix = "test_report";
+
+        let (file_sink_client, file_sink_server) =
+            FileSinkBuilder::new(file_prefix, tmp_dir.path(), file_upload, "fake_metric")
+                .auto_commit(false)
+                .create::<String>()
+                .await
+                .expect("failed to create file sink");
+
+        let sink_thread = tokio::spawn(async move {
+            file_sink_server
+                .run(shutdown_listener.clone())
+                .await
+                .expect("failed to complete file sink");
+        });
+
+        // Create first sink
+        let new_sink_rx1 = file_sink_client
+            .new_sink("suffix1".to_string())
+            .await
+            .expect("failed to send first new_sink message");
+        new_sink_rx1
+            .await
+            .expect("first new_sink oneshot failed")
+            .expect("first new_sink should succeed");
+
+        // Write data and commit to close the first sink
+        let (on_write_tx, _on_write_rx) = oneshot::channel();
+        file_sink_client
+            .sender
+            .try_send(Message::Data(on_write_tx, "data1".to_string()))
+            .expect("failed to send data");
+
+        let commit_rx1 = file_sink_client
+            .commit()
+            .await
+            .expect("first commit failed");
+        let manifest1 = commit_rx1
+            .await
+            .expect("first commit oneshot failed")
+            .expect("first commit should succeed");
+
+        assert_eq!(manifest1.len(), 1);
+        assert_eq!(manifest1[0], format!("{}.suffix1.gz", file_prefix));
+
+        // Create second sink after the first one is committed
+        let new_sink_rx2 = file_sink_client
+            .new_sink("suffix2".to_string())
+            .await
+            .expect("failed to send second new_sink message");
+        new_sink_rx2
+            .await
+            .expect("second new_sink oneshot failed")
+            .expect("second new_sink should succeed");
+
+        // Write data and commit the second sink
+        let (on_write_tx2, _on_write_rx2) = oneshot::channel();
+        file_sink_client
+            .sender
+            .try_send(Message::Data(on_write_tx2, "data2".to_string()))
+            .expect("failed to send data");
+
+        let commit_rx2 = file_sink_client
+            .commit()
+            .await
+            .expect("second commit failed");
+        let manifest2 = commit_rx2
+            .await
+            .expect("second commit oneshot failed")
+            .expect("second commit should succeed");
+
+        assert_eq!(manifest2.len(), 1);
+        assert_eq!(manifest2[0], format!("{}.suffix2.gz", file_prefix));
+
+        shutdown_trigger.trigger();
+        sink_thread.await.expect("file sink did not complete");
     }
 }

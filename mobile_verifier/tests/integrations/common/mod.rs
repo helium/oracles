@@ -366,6 +366,7 @@ impl<T: Send + Sync + 'static> FileSinkReceiver<T> {
                     }
                     SinkMessage::Commit(_sender) => (),
                     SinkMessage::Rollback(_sender) => todo!(),
+                    SinkMessage::NewSink(_sender, _) => (),
                 }
             }
             closer.notify_one();
