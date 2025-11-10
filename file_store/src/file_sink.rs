@@ -46,7 +46,7 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
 
 #[derive(Debug)]
 pub enum Message<T> {
-    Data(oneshot::Sender<Result>, T),
+    Data(oneshot::Sender<Result>, T, Option<DateTime<Utc>>),
     Commit(oneshot::Sender<Result<FileManifest>>),
     Rollback(oneshot::Sender<Result<FileManifest>>),
 }
@@ -169,6 +169,45 @@ impl<T> FileSinkClient<T> {
         }
     }
 
+    // TODO onecase function
+    pub async fn write_custom(
+        &self,
+        item: impl Into<T>,
+        labels: impl IntoIterator<Item = &(&'static str, &'static str)>,
+        file_timestamp: Option<DateTime<Utc>>,
+    ) -> Result<oneshot::Receiver<Result>> {
+        let (on_write_tx, on_write_rx) = oneshot::channel();
+        let labels = labels.into_iter().map(Label::from);
+        tokio::select! {
+            result = self.sender.send_timeout(Message::Data(on_write_tx, item.into(), file_timestamp), SEND_TIMEOUT) => match result {
+                Ok(_) => {
+                    metrics::counter!(
+                        self.metric.clone(),
+                        labels
+                            .chain(std::iter::once(OK_LABEL))
+                            .collect::<Vec<Label>>()
+                    ).increment(1);
+                    tracing::debug!("file_sink write succeeded for {:?}", self.metric);
+                    Ok(on_write_rx)
+                }
+                Err(SendTimeoutError::Closed(_)) => {
+                    metrics::counter!(
+                        self.metric.clone(),
+                        labels
+                            .chain(std::iter::once(ERROR_LABEL))
+                            .collect::<Vec<Label>>()
+                    ).increment(1);
+                    tracing::error!("file_sink write failed for {:?} channel closed", self.metric);
+                    Err(Error::channel())
+                }
+                Err(SendTimeoutError::Timeout(_)) => {
+                    tracing::error!("file_sink write failed for {:?} due to send timeout", self.metric);
+                    Err(Error::SendTimeout)
+                }
+            },
+        }
+    }
+
     pub async fn write(
         &self,
         item: impl Into<T>,
@@ -177,7 +216,7 @@ impl<T> FileSinkClient<T> {
         let (on_write_tx, on_write_rx) = oneshot::channel();
         let labels = labels.into_iter().map(Label::from);
         tokio::select! {
-            result = self.sender.send_timeout(Message::Data(on_write_tx, item.into()), SEND_TIMEOUT) => match result {
+            result = self.sender.send_timeout(Message::Data(on_write_tx, item.into(), None), SEND_TIMEOUT) => match result {
                 Ok(_) => {
                     metrics::counter!(
                         self.metric.clone(),
@@ -357,9 +396,9 @@ impl<T: prost::Message> FileSink<T> {
                 _ = shutdown.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
-                    Some(Message::Data(on_write_tx, item)) => {
+                    Some(Message::Data(on_write_tx, item, file_timestamp)) => {
                         let bytes = bytes::Bytes::from(item.encode_to_vec());
-                        let res = match self.write(bytes).await {
+                        let res = match self.write(bytes, file_timestamp).await {
                             Ok(_) => Ok(()),
                             Err(err) => {
                                 tracing::error!("failed to store {}: {err:?}", &self.prefix);
@@ -390,9 +429,16 @@ impl<T: prost::Message> FileSink<T> {
         Ok(())
     }
 
-    async fn new_sink(&mut self) -> Result {
+    async fn new_sink(&mut self, file_timestamp: Option<DateTime<Utc>>) -> Result {
         let sink_time = Utc::now();
-        let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
+
+        let filename = if let Some(fts) = file_timestamp {
+            format!("{}.{}.gz", self.prefix, fts.timestamp_millis())
+        } else {
+            format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis())
+        };
+
+        // format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
         let new_path = self.tmp_path.join(filename);
         let writer = GzipEncoder::new(BufWriter::new(
             OpenOptions::new()
@@ -482,7 +528,7 @@ impl<T: prost::Message> FileSink<T> {
         Ok(())
     }
 
-    pub async fn write(&mut self, buf: Bytes) -> Result {
+    pub async fn write(&mut self, buf: Bytes, file_timestamp: Option<DateTime<Utc>>) -> Result {
         let buf_len = buf.len();
 
         match self.active_sink.as_mut() {
@@ -495,12 +541,12 @@ impl<T: prost::Message> FileSink<T> {
                     if self.auto_commit {
                         self.commit().await?;
                     }
-                    self.new_sink().await?;
+                    self.new_sink(file_timestamp).await?;
                 }
             }
             // No sink, make a new one
             None => {
-                self.new_sink().await?;
+                self.new_sink(file_timestamp).await?;
             }
         }
 
