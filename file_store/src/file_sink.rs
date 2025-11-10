@@ -49,6 +49,7 @@ pub enum Message<T> {
     Data(oneshot::Sender<Result>, T),
     Commit(oneshot::Sender<Result<FileManifest>>),
     Rollback(oneshot::Sender<Result<FileManifest>>),
+    NewSink(oneshot::Sender<Result>, String),
 }
 
 pub type MessageSender<T> = mpsc::Sender<Message<T>>;
@@ -218,6 +219,25 @@ impl<T> FileSinkClient<T> {
         Ok(last_oneshot)
     }
 
+    /// Creates new sink (file) with custom suffix
+    /// WARNING! Do not use the same suffix for different files.
+    /// Files with the same name will be overwritten in the S3 bucket.
+    pub async fn new_sink(&self, suffix: String) -> Result<oneshot::Receiver<Result<()>>> {
+        let (new_sink_tx, new_sink_rx) = oneshot::channel();
+
+        self.sender
+            .send(Message::NewSink(new_sink_tx, suffix))
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "file_sink failed to commit for {:?} with {e:?}",
+                    self.metric
+                );
+                Error::channel()
+            })
+            .map(|_| new_sink_rx)
+    }
+
     pub async fn commit(&self) -> Result<oneshot::Receiver<Result<FileManifest>>> {
         let (on_commit_tx, on_commit_rx) = oneshot::channel();
         self.sender
@@ -376,6 +396,14 @@ impl<T: prost::Message> FileSink<T> {
                         let res = self.rollback().await;
                         let _ = on_rollback_tx.send(res);
                     }
+                    Some(Message::NewSink(on_new_sink_tx, suffix)) => {
+                        if self.active_sink.is_some() {
+                            let _ = on_new_sink_tx.send(Err(Error::SinkAlreadyExists));
+                        } else {
+                            let res = self.new_sink(Some(suffix)).await;
+                            let _ = on_new_sink_tx.send(res);
+                        }
+                    }
                     None => {
                         break
                     }
@@ -390,9 +418,15 @@ impl<T: prost::Message> FileSink<T> {
         Ok(())
     }
 
-    async fn new_sink(&mut self) -> Result {
+    async fn new_sink(&mut self, file_suffix: Option<String>) -> Result {
         let sink_time = Utc::now();
-        let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
+
+        let filename = if let Some(fsuf) = file_suffix {
+            format!("{}.{}.gz", self.prefix, fsuf)
+        } else {
+            format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis())
+        };
+
         let new_path = self.tmp_path.join(filename);
         let writer = GzipEncoder::new(BufWriter::new(
             OpenOptions::new()
@@ -495,12 +529,12 @@ impl<T: prost::Message> FileSink<T> {
                     if self.auto_commit {
                         self.commit().await?;
                     }
-                    self.new_sink().await?;
+                    self.new_sink(None).await?;
                 }
             }
             // No sink, make a new one
             None => {
-                self.new_sink().await?;
+                self.new_sink(None).await?;
             }
         }
 
