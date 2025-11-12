@@ -282,7 +282,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     assert_eq!(txn_count, 1, "there should be a single pending txn");
 
     // Fail the pending txn.
-    // Adding a random confirmed txn wll cause other txns to not be considered finalized
+    // Adding a random confirmed txn will cause other txns to not be considered finalized
     let solana_network = TestSolanaClientMap::default();
     solana_network.add_confirmed(Signature::new_unique()).await;
 

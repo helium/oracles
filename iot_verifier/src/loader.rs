@@ -203,7 +203,7 @@ impl Loader {
         after: DateTime<Utc>,
         before: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        // create the inital xor data vec
+        // create the initial xor data vec
         // wrapped in a mutex to allow for concurrent access
         let xor_data = Mutex::new(Vec::<u64>::new());
 
