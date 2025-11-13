@@ -40,12 +40,12 @@ fn default_ingest_start_after() -> DateTime<Utc> {
 
 pub async fn create_managed_task(
     pool: PgPool,
-    client: file_store::Client,
+    client: file_store::BucketClient,
     settings: &BanSettings,
 ) -> anyhow::Result<impl ManagedTask> {
     let (ban_report_rx, ban_report_server) = file_source::continuous_source()
         .state(pool.clone())
-        .file_store(client, settings.input_bucket.clone())
+        .bucket_client(client)
         .lookback_start_after(settings.start_after)
         .prefix(FileType::VerifiedMobileBanReport.to_string())
         .create()

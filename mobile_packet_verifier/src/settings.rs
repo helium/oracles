@@ -10,13 +10,22 @@ use std::{
 use crate::banning;
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct Buckets {
+    pub ingest: file_store::BucketSettings,
+    pub output: file_store::BucketSettings,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
-    /// RUST_LOG compatible settings string. Defsault to
+    /// RUST_LOG compatible settings string. Default to
     /// "mobile_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
+    #[serde(default)]
+    pub file_store: file_store::Settings,
+    pub buckets: Buckets,
     /// Cache location for generated verified reports
     #[serde(default = "default_cache")]
     pub cache: PathBuf,
@@ -27,8 +36,6 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_min_burn_period")]
     pub min_burn_period: Duration,
     pub database: db_store::Settings,
-    #[serde(default)]
-    pub file_store: file_store::Settings,
     pub ingest_bucket: String,
     pub output_bucket: String,
     #[serde(default)]

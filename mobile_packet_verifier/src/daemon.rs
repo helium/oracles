@@ -156,9 +156,8 @@ impl Cmd {
             None
         };
 
-        let file_store_client = settings.file_store.connect().await;
         let (file_upload, file_upload_server) =
-            file_upload::FileUpload::new(file_store_client.clone(), settings.output_bucket.clone())
+            file_upload::FileUpload::from_bucket_client(settings.buckets.output.connect().await)
                 .await;
 
         let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
@@ -187,9 +186,11 @@ impl Cmd {
             settings.txn_confirmation_check_interval,
         );
 
+        let ingest_bucket_client = settings.buckets.ingest.connect().await;
+
         let (reports, reports_server) = file_source::continuous_source()
             .state(pool.clone())
-            .file_store(file_store_client.clone(), settings.ingest_bucket.clone())
+            .bucket_client(ingest_bucket_client.clone())
             .prefix(FileType::DataTransferSessionIngestReport.to_string())
             .lookback_start_after(settings.start_after)
             .create()
@@ -208,7 +209,7 @@ impl Cmd {
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
         let banning =
-            banning::create_managed_task(pool, file_store_client, &settings.banning).await?;
+            banning::create_managed_task(pool, ingest_bucket_client, &settings.banning).await?;
 
         TaskManager::builder()
             .add_task(file_upload_server)
