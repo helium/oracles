@@ -186,11 +186,9 @@ impl Cmd {
             settings.txn_confirmation_check_interval,
         );
 
-        let ingest_bucket_client = settings.buckets.ingest.connect().await;
-
         let (reports, reports_server) = file_source::continuous_source()
             .state(pool.clone())
-            .bucket_client(ingest_bucket_client.clone())
+            .bucket_client(settings.buckets.ingest.connect().await)
             .prefix(FileType::DataTransferSessionIngestReport.to_string())
             .lookback_start_after(settings.start_after)
             .create()
@@ -208,8 +206,12 @@ impl Cmd {
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
-        let banning =
-            banning::create_managed_task(pool, ingest_bucket_client, &settings.banning).await?;
+        let banning = banning::create_managed_task(
+            pool,
+            settings.buckets.banning.connect().await,
+            &settings.banning,
+        )
+        .await?;
 
         TaskManager::builder()
             .add_task(file_upload_server)

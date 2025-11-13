@@ -13,6 +13,7 @@ use crate::banning;
 pub struct Buckets {
     pub ingest: file_store::BucketSettings,
     pub output: file_store::BucketSettings,
+    pub banning: file_store::BucketSettings,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
