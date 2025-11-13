@@ -208,7 +208,6 @@ impl Cmd {
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
         let banning = banning::create_managed_task(
             pool,
-            settings.buckets.banning.connect().await,
             &settings.banning,
         )
         .await?;

@@ -13,7 +13,6 @@ use crate::banning;
 pub struct Buckets {
     pub ingest: file_store::BucketSettings,
     pub output: file_store::BucketSettings,
-    pub banning: file_store::BucketSettings,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -37,8 +36,6 @@ pub struct Settings {
     #[serde(with = "humantime_serde", default = "default_min_burn_period")]
     pub min_burn_period: Duration,
     pub database: db_store::Settings,
-    pub ingest_bucket: String,
-    pub output_bucket: String,
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
     #[serde(default)]
