@@ -1,9 +1,7 @@
 extern crate tls_init;
 
 mod error;
-
-pub use error::{DecodeError, EncodeError, Error, Result};
-use tokio::sync::Mutex;
+mod settings;
 
 pub mod bucket_client;
 pub mod file_info;
@@ -11,26 +9,28 @@ pub mod file_info_poller;
 pub mod file_sink;
 pub mod file_source;
 pub mod file_upload;
-mod settings;
 pub mod traits;
 
-use std::{collections::HashMap, path::Path, sync::OnceLock};
+// Re-exports
+pub use bucket_client::BucketClient;
+pub use error::{AwsError, ChannelError, Error, Result};
+pub use file_info::FileInfo;
+pub use file_sink::{FileSink, FileSinkBuilder};
+pub use settings::{BucketSettings, Settings};
 
+// Client functions
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_smithy_types_convert::stream::PaginationStreamExt;
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
-pub use file_info::FileInfo;
-pub use file_sink::{FileSink, FileSinkBuilder};
-
-pub use bucket_client::BucketClient;
 use futures::{
     future,
     stream::{self, BoxStream},
     FutureExt, StreamExt, TryFutureExt, TryStreamExt,
 };
-pub use settings::{BucketSettings, Settings};
+use std::{collections::HashMap, path::Path, sync::OnceLock};
+use tokio::sync::Mutex;
 
 pub type Client = aws_sdk_s3::Client;
 pub type Stream<T> = BoxStream<'static, Result<T>>;
@@ -128,7 +128,9 @@ where
         .map_ok(|page| stream::iter(page.contents.unwrap_or_default()).map(Ok))
         .map_err(|err| Error::from(aws_sdk_s3::Error::from(err)))
         .try_flatten()
-        .try_filter_map(|file| future::ready(FileInfo::try_from(&file).map(Some)))
+        .try_filter_map(|file| {
+            future::ready(FileInfo::try_from(&file).map(Some).map_err(Error::from))
+        })
         .try_filter(move |info| future::ready(after.is_none_or(|v| info.timestamp > v)))
         .try_filter(move |info| future::ready(before.is_none_or(|v| info.timestamp <= v)))
         .boxed()
@@ -151,9 +153,8 @@ where
 }
 
 pub async fn put_file(client: &Client, bucket: impl Into<String>, file: &Path) -> Result {
-    let byte_stream = ByteStream::from_path(&file)
-        .await
-        .map_err(|_| Error::not_found(format!("could not open {}", file.display())))?;
+    let byte_stream = ByteStream::from_path(&file).await?;
+
     poc_metrics::record_duration!(
         "file_store_put_duration",
         client
@@ -164,7 +165,7 @@ pub async fn put_file(client: &Client, bucket: impl Into<String>, file: &Path) -
             .content_type("application/octet-stream")
             .send()
             .map_ok(|_| ())
-            .map_err(Error::s3_error)
+            .map_err(AwsError::s3_error)
             .await
     )
 }
@@ -182,7 +183,7 @@ pub async fn remove_file(
             .key(key)
             .send()
             .map_ok(|_| ())
-            .map_err(Error::s3_error)
+            .map_err(AwsError::s3_error)
             .await
     )
 }
@@ -275,7 +276,7 @@ async fn get_byte_stream(
         .key(key)
         .send()
         .map_ok(|output| output.body)
-        .map_err(Error::s3_error)
+        .map_err(AwsError::s3_error)
         .fuse()
         .await
 }

@@ -1,8 +1,8 @@
-use crate::{traits::TimestampDecode, DecodeError, Error, Result};
+use crate::traits::{TimestampDecode, TimestampDecodeError};
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::Serialize;
-use std::{fmt, os::unix::fs::MetadataExt, path::Path, str::FromStr, sync::LazyLock};
+use std::{fmt, io, os::unix::fs::MetadataExt, path::Path, str::FromStr, sync::LazyLock};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FileInfo {
@@ -14,17 +14,35 @@ pub struct FileInfo {
 
 static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([a-z,\d,_]+)\.(\d+)(\.gz)?").unwrap());
 
+#[derive(thiserror::Error, Debug)]
+pub enum FileInfoError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("invalid timestamp string: {0}")]
+    TimestampStr(#[from] std::num::ParseIntError),
+
+    #[error("filename did not match regex: {0}")]
+    Regex(String),
+
+    #[error("no file name found")]
+    MissingFilename,
+
+    #[error("IO: {0}")]
+    Io(#[from] io::Error),
+}
+
 impl FromStr for FileInfo {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Self> {
+    type Err = FileInfoError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let key = s.to_string();
         let cap = RE
             .captures(s)
-            .ok_or_else(|| DecodeError::file_info("failed to decode file info"))?;
+            .ok_or_else(|| FileInfoError::Regex(key.clone()))?;
         let prefix = cap[1].to_owned();
-        let timestamp = u64::from_str(&cap[2])
-            .map_err(|_| DecodeError::file_info("failed to decode timestamp"))?
-            .to_timestamp_millis()?;
+
+        let timestamp = u64::from_str(&cap[2])?.to_timestamp_millis()?;
         Ok(Self {
             key,
             prefix,
@@ -66,13 +84,11 @@ impl<T: Into<String>> From<(T, DateTime<Utc>)> for FileInfo {
 }
 
 impl TryFrom<&aws_sdk_s3::types::Object> for FileInfo {
-    type Error = Error;
-    fn try_from(value: &aws_sdk_s3::types::Object) -> Result<Self> {
+    type Error = FileInfoError;
+
+    fn try_from(value: &aws_sdk_s3::types::Object) -> std::result::Result<Self, Self::Error> {
         let size = value.size().unwrap_or_default() as usize;
-        let key = value
-            .key
-            .as_ref()
-            .ok_or_else(|| Error::not_found("no file name found"))?;
+        let key = value.key.as_ref().ok_or(FileInfoError::MissingFilename)?;
         let mut info = Self::from_str(key)?;
         info.size = size;
         Ok(info)
@@ -80,8 +96,9 @@ impl TryFrom<&aws_sdk_s3::types::Object> for FileInfo {
 }
 
 impl TryFrom<&Path> for FileInfo {
-    type Error = Error;
-    fn try_from(value: &Path) -> Result<Self> {
+    type Error = FileInfoError;
+
+    fn try_from(value: &Path) -> std::result::Result<Self, Self::Error> {
         let mut info = Self::from_str(&value.to_string_lossy())?;
         info.size = value.metadata()?.size() as usize;
         Ok(info)

@@ -1,7 +1,6 @@
-use chrono::{DateTime, TimeZone, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error, Result,
+use chrono::{DateTime, Utc};
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
@@ -10,7 +9,22 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::traits::MsgTimestamp;
+use crate::{prost_enum, traits::MsgTimestamp};
+
+#[derive(thiserror::Error, Debug)]
+pub enum SpeedtestError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported status reason: {0}")]
+    StatusReason(prost::UnknownEnumValue),
+
+    #[error("unsupported verification result: {0}")]
+    VerificationResult(prost::UnknownEnumValue),
+}
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct CellSpeedtest {
@@ -40,8 +54,8 @@ impl MsgDecode for VerifiedSpeedtest {
     type Msg = VerifiedSpeedtestProto;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for SpeedtestReqV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for SpeedtestReqV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp()
     }
 }
@@ -52,8 +66,8 @@ impl MsgTimestamp<u64> for CellSpeedtest {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for SpeedtestIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for SpeedtestIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -70,8 +84,8 @@ impl MsgTimestamp<u64> for VerifiedSpeedtest {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedSpeedtestProto {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for VerifiedSpeedtestProto {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp_millis()
     }
 }
@@ -92,8 +106,9 @@ impl From<CellSpeedtest> for SpeedtestReqV1 {
 }
 
 impl TryFrom<SpeedtestReqV1> for CellSpeedtest {
-    type Error = Error;
-    fn try_from(value: SpeedtestReqV1) -> Result<Self> {
+    type Error = SpeedtestError;
+
+    fn try_from(value: SpeedtestReqV1) -> Result<Self, Self::Error> {
         let timestamp = value.timestamp()?;
         Ok(Self {
             pubkey: value.pub_key.into(),
@@ -107,13 +122,16 @@ impl TryFrom<SpeedtestReqV1> for CellSpeedtest {
 }
 
 impl TryFrom<SpeedtestIngestReportV1> for CellSpeedtestIngestReport {
-    type Error = Error;
-    fn try_from(v: SpeedtestIngestReportV1) -> Result<Self> {
+    type Error = SpeedtestError;
+
+    fn try_from(v: SpeedtestIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("ingest speedtest report"))?
+                .ok_or(SpeedtestError::MissingField(
+                    "cell_speedtest_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }
@@ -138,18 +156,16 @@ pub struct VerifiedSpeedtest {
 }
 
 impl TryFrom<VerifiedSpeedtestProto> for VerifiedSpeedtest {
-    type Error = Error;
-    fn try_from(v: VerifiedSpeedtestProto) -> Result<Self> {
-        let result = SpeedtestVerificationResult::try_from(v.result).map_err(|_| {
-            DecodeError::unsupported_status_reason("verified_speedtest_proto", v.result)
-        })?;
+    type Error = SpeedtestError;
+
+    fn try_from(v: VerifiedSpeedtestProto) -> Result<Self, Self::Error> {
         Ok(Self {
             timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("ingest verified speedtest report"))?
+                .ok_or(SpeedtestError::MissingField("verified_speedtest.report"))?
                 .try_into()?,
-            result,
+            result: prost_enum(v.result, SpeedtestError::VerificationResult)?,
         })
     }
 }
@@ -178,17 +194,14 @@ pub mod cli {
     }
 
     impl TryFrom<Speedtest> for SpeedtestAverageEntry {
-        type Error = Error;
+        type Error = SpeedtestError;
 
-        fn try_from(v: Speedtest) -> Result<Self> {
+        fn try_from(v: Speedtest) -> Result<Self, Self::Error> {
             Ok(Self {
                 upload_speed_bps: v.upload_speed_bps,
                 download_speed_bps: v.download_speed_bps,
                 latency_ms: v.latency_ms,
-                timestamp: Utc
-                    .timestamp_opt(v.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| DecodeError::invalid_timestamp(v.timestamp))?,
+                timestamp: v.timestamp.to_timestamp()?,
             })
         }
     }
@@ -206,9 +219,9 @@ pub mod cli {
     }
 
     impl TryFrom<SpeedtestAvg> for SpeedtestAverage {
-        type Error = Error;
+        type Error = SpeedtestError;
 
-        fn try_from(v: SpeedtestAvg) -> Result<Self> {
+        fn try_from(v: SpeedtestAvg) -> Result<Self, Self::Error> {
             Ok(Self {
                 pub_key: v.pub_key.clone().into(),
                 upload_speed_avg_bps: v.upload_speed_avg_bps,
@@ -219,11 +232,8 @@ pub mod cli {
                     .speedtests
                     .into_iter()
                     .map(SpeedtestAverageEntry::try_from)
-                    .collect::<Result<Vec<_>>>()?,
-                timestamp: Utc
-                    .timestamp_opt(v.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| DecodeError::invalid_timestamp(v.timestamp))?,
+                    .collect::<Result<Vec<_>, _>>()?,
+                timestamp: v.timestamp.to_timestamp()?,
                 reward_multiplier: v.reward_multiplier,
             })
         }
