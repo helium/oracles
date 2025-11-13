@@ -1,4 +1,4 @@
-use helium_proto::UnknownEnumValue;
+use prost::UnknownEnumValue;
 use thiserror::Error;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -17,23 +17,15 @@ pub enum Error {
     NotFound(String),
     #[error("crypto error")]
     Crypto(Box<helium_crypto::Error>),
-    #[error("csv error")]
-    Csv(#[from] csv::Error),
     #[error("aws error")]
     Aws(#[source] Box<aws_sdk_s3::Error>),
-    #[error("config error")]
-    Config(#[from] config::ConfigError),
     #[error("mpsc channel error")]
     Channel,
     #[error("no manifest")]
     NoManifest,
-    #[error("tokio join error")]
-    JoinError(#[from] tokio::task::JoinError),
     #[error("send timeout")]
     SendTimeout,
-    #[error("shutting down")]
-    Shutdown,
-    #[error("error building file info poller")]
+    #[error("error building file info poller: {0}")]
     FileInfoPollerError(#[from] crate::file_info_poller::FileInfoPollerConfigBuilderError),
     #[cfg(feature = "sqlx-postgres")]
     #[error("db error")]
@@ -49,7 +41,7 @@ pub enum Error {
 #[derive(Error, Debug)]
 pub enum DecodeError {
     #[error("prost error")]
-    Prost(#[from] helium_proto::DecodeError),
+    Prost(#[from] prost::DecodeError),
     #[error("file info error")]
     FileInfo(String),
     #[error("uri error")]
@@ -89,7 +81,7 @@ pub enum DecodeError {
 #[derive(Error, Debug)]
 pub enum EncodeError {
     #[error("prost error")]
-    Prost(#[from] helium_proto::EncodeError),
+    Prost(#[from] prost::EncodeError),
     #[error("json error")]
     Json(#[from] serde_json::Error),
 }

@@ -1,6 +1,6 @@
 use super::{call_with_retry, ClientError, Settings};
 use crate::sub_dao_epoch_reward_info::EpochRewardInfo;
-use file_store::traits::MsgVerify;
+use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::sub_dao::{self, SubDaoEpochRewardInfoReqV1},

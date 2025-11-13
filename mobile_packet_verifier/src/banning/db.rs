@@ -1,12 +1,12 @@
 use chrono::{DateTime, Duration, Utc};
-use file_store::mobile_ban::{BanType, VerifiedBanReport};
+use file_store_oracles::mobile_ban::{BanAction, BanType, VerifiedBanReport};
 use futures::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use sqlx::{PgConnection, Row};
 
 use super::{BannedRadios, BAN_CLEANUP_DAYS};
 
-// When retreiving banned radios, we want to get the
+// When retrieving banned radios, we want to get the
 // latest ban for a radio at the given time.
 //
 // If a radio was banned for POC yesterday,
@@ -65,8 +65,6 @@ pub async fn update_hotspot_ban(
     conn: &mut PgConnection,
     ban_report: VerifiedBanReport,
 ) -> anyhow::Result<()> {
-    use file_store::mobile_ban::BanAction;
-
     match &ban_report.report.report.ban_action {
         BanAction::Ban(ban_details) => {
             insert_ban(

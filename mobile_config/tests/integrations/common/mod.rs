@@ -44,7 +44,7 @@ pub async fn spawn_gateway_service(
     (format!("http://{addr}"), handle)
 }
 
-// When retreiving a timestamp from DB, depending on the version of postgres
+// When retrieving a timestamp from DB, depending on the version of postgres
 // the timestamp may be truncated. When comparing datetimes, to ones generated
 // in a test with `Utc::now()`, you should truncate it.
 pub fn nanos_trunc(ts: DateTime<Utc>) -> DateTime<Utc> {

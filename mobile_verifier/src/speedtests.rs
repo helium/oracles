@@ -3,19 +3,17 @@ use crate::{
     Settings,
 };
 use chrono::{DateTime, Utc};
+use coverage_point_calculator::speedtest::BYTES_PER_MEGABIT;
 use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::FileSinkClient,
-    file_source,
-    file_upload::FileUpload,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
+    file_upload::FileUpload, BucketClient,
+};
+use file_store_oracles::{
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
-use futures::{
-    stream::{StreamExt, TryStreamExt},
-    TryFutureExt,
-};
+use futures::stream::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     SpeedtestAvg as SpeedtestAvgProto, SpeedtestIngestReportV1,
@@ -31,6 +29,10 @@ use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
+// The limit must be 300 megabits per second.
+// Values in proto are in bytes/sec format.
+// Convert 300 megabits per second to bytes per second.
+const SPEEDTEST_MAX_BYTES_PER_SECOND: u64 = 300 * BYTES_PER_MEGABIT;
 
 pub type EpochSpeedTests = HashMap<PublicKeyBinary, Vec<Speedtest>>;
 
@@ -70,8 +72,7 @@ where
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
         speedtests_avg: FileSinkClient<SpeedtestAvgProto>,
         gateway_resolver: GIR,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -86,8 +87,8 @@ where
 
         let (speedtests, speedtests_server) = file_source::continuous_source()
             .state(pool.clone())
-            .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .bucket_client(bucket_client)
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::CellSpeedtestIngestReport.to_string())
             .create()
             .await?;
@@ -182,11 +183,15 @@ where
         speedtest: &CellSpeedtestIngestReport,
         gateway_query_timestamp: &DateTime<Utc>,
     ) -> anyhow::Result<SpeedtestResult> {
-        let pubkey = speedtest.report.pubkey.clone();
+        if speedtest.report.upload_speed > SPEEDTEST_MAX_BYTES_PER_SECOND
+            || speedtest.report.download_speed > SPEEDTEST_MAX_BYTES_PER_SECOND
+        {
+            return Ok(SpeedtestResult::SpeedtestValueOutOfBounds);
+        }
 
         match self
             .gateway_info_resolver
-            .resolve_gateway_info(&pubkey, gateway_query_timestamp)
+            .resolve_gateway_info(&speedtest.report.pubkey, gateway_query_timestamp)
             .await?
         {
             Some(gw_info) if gw_info.is_data_only() => {
@@ -224,13 +229,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 
@@ -263,12 +263,12 @@ pub async fn get_latest_speedtests_for_pubkey(
 ) -> Result<Vec<Speedtest>, sqlx::Error> {
     let speedtests = sqlx::query_as::<_, Speedtest>(
         r#"
-        SELECT * 
-        FROM speedtests 
-        WHERE pubkey = $1 
+        SELECT *
+        FROM speedtests
+        WHERE pubkey = $1
             AND timestamp >= $2
             AND timestamp <= $3
-        ORDER BY timestamp DESC 
+        ORDER BY timestamp DESC
         LIMIT $4
         "#,
     )

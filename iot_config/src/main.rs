@@ -1,6 +1,5 @@
 use anyhow::{Error, Result};
 use clap::Parser;
-use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_proto::services::{
     iot_config::{AdminServer, GatewayServer, OrgServer, RouteServer},
@@ -144,8 +143,8 @@ impl ManagedTask for GrpcServer {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(async move {
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(async move {
             let grpc_server = transport::Server::builder()
                 .http2_keepalive_interval(Some(Duration::from_secs(250)))
                 .http2_keepalive_timeout(Some(Duration::from_secs(60)))

@@ -1,5 +1,5 @@
-use crate::{Error, Result};
-use futures::{future::LocalBoxFuture, StreamExt, TryFutureExt};
+use crate::{BucketClient, Error, Result};
+use futures::{StreamExt, TryFutureExt};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -43,6 +43,10 @@ impl FileUpload {
         )
     }
 
+    pub async fn from_bucket_client(bucket_client: BucketClient) -> (Self, FileUploadServer) {
+        Self::new(bucket_client.client.clone(), bucket_client.bucket.clone()).await
+    }
+
     pub async fn upload_file(&self, file: &Path) -> Result {
         self.sender
             .send(file.to_path_buf())
@@ -54,14 +58,8 @@ impl ManagedTask for FileUploadServer {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown).err_into())
     }
 }
 

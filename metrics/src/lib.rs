@@ -52,7 +52,7 @@ macro_rules! record_duration {
 ///    Incrementing a corresponding Prometheus gauge when the request is
 ///    received and decrementing it when it has been responded to.
 /// 2. Request handling duration.
-///    Starting a timer before calling the handler and stoping after the
+///    Starting a timer before calling the handler and stopping after the
 ///    handler returns.
 #[derive(Clone)]
 pub struct RequestsLayer {

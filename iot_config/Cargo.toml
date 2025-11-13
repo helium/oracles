@@ -46,9 +46,10 @@ tls-init = { path = "../tls_init" }
 custom-tracing = { path = "../custom_tracing", features = ["grpc"] }
 db-store = { path = "../db_store" }
 file-store = { path = "../file_store" }
+file-store-oracles = { path = "../file_store_oracles" }
 poc-metrics = { path = "../metrics" }
 task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
 rand = { workspace = true }
-backon = "0"
+backon = { version = "0", features = ["tokio-sleep"] }

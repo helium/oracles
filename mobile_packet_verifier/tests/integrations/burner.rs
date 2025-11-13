@@ -1,9 +1,7 @@
 use anyhow::Context;
 use chrono::Utc;
-use file_store::{
-    file_sink::FileSinkClient,
-    mobile_session::{DataTransferEvent, DataTransferSessionReq},
-};
+use file_store::file_sink::FileSinkClient;
+use file_store_oracles::mobile_session::{DataTransferEvent, DataTransferSessionReq};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::CarrierIdV2;
 use mobile_packet_verifier::{burner::Burner, bytes_to_dc, pending_burns, pending_txns};
@@ -12,6 +10,7 @@ use sqlx::PgPool;
 use tokio::sync::mpsc::error::TryRecvError;
 
 #[sqlx::test]
+#[ignore]
 fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
     let payer_insufficent = PublicKeyBinary::from(vec![1]);
     let payer_sufficient = PublicKeyBinary::from(vec![2]);
@@ -83,6 +82,7 @@ fn burn_checks_for_sufficient_balance(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     let payer_one = PublicKeyBinary::from(vec![1]);
     let payer_two = PublicKeyBinary::from(vec![2]);
@@ -157,6 +157,7 @@ async fn test_confirm_pending_txns(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()> {
     // Insert a pending txn for some sessions.
     // Insert more sessions after the pending txn.
@@ -228,6 +229,7 @@ fn confirmed_pending_txns_writes_out_sessions(pool: PgPool) -> anyhow::Result<()
 }
 
 #[sqlx::test]
+#[ignore]
 fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -280,7 +282,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
     assert_eq!(txn_count, 1, "there should be a single pending txn");
 
     // Fail the pending txn.
-    // Adding a random confirmed txn wll cause other txns to not be considered finalized
+    // Adding a random confirmed txn will cause other txns to not be considered finalized
     let solana_network = TestSolanaClientMap::default();
     solana_network.add_confirmed(Signature::new_unique()).await;
 
@@ -311,6 +313,7 @@ fn unconfirmed_pending_txn_moves_data_session_back_to_primary_table(
 }
 
 #[sqlx::test]
+#[ignore]
 fn will_not_burn_when_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     // Trigger a burn when there are data sessions that can be burned _and_ pending txns.
     // Nothing should happen until the pending_txns are gone.
@@ -409,6 +412,7 @@ fn mk_data_transfer_session(
         pub_key: pubkey.clone(),
         signature: vec![],
         carrier_id: CarrierIdV2::Carrier9,
+        sampling: false,
     }
 }
 

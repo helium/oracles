@@ -50,17 +50,15 @@ use crate::{
     meta::Meta,
     poc_report::{InsertBindings, IotStatus, Report, ReportType},
     telemetry::LoaderMetricTracker,
-    Settings,
+    IngestId, Settings,
 };
 use chrono::DateTime;
 use chrono::Utc;
-use file_store::{
-    iot_beacon_report::IotBeaconIngestReport,
-    iot_witness_report::IotWitnessIngestReport,
-    traits::{IngestId, MsgDecode},
-    FileInfo, FileType,
+use file_store::{traits::MsgDecode, FileInfo};
+use file_store_oracles::{
+    iot_beacon_report::IotBeaconIngestReport, iot_witness_report::IotWitnessIngestReport, FileType,
 };
-use futures::{future::LocalBoxFuture, stream, StreamExt};
+use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use humantime_serde::re::humantime;
 use sqlx::PgPool;
@@ -103,8 +101,8 @@ impl ManagedTask for Loader {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::run(self.run(shutdown))
     }
 }
 
@@ -205,7 +203,7 @@ impl Loader {
         after: DateTime<Utc>,
         before: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        // create the inital xor data vec
+        // create the initial xor data vec
         // wrapped in a mutex to allow for concurrent access
         let xor_data = Mutex::new(Vec::<u64>::new());
 

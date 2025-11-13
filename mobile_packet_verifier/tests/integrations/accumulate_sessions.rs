@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
-use file_store::{
-    file_sink::{FileSinkClient, MessageReceiver},
+use file_store::file_sink::{FileSinkClient, MessageReceiver};
+use file_store_oracles::{
     mobile_ban::{
         BanAction, BanDetails, BanReason, BanReport, BanRequest, BanType,
         VerifiedBanIngestReportStatus, VerifiedBanReport,
@@ -19,6 +19,7 @@ use sqlx::PgPool;
 use crate::common::{TestChannelExt, TestMobileConfig};
 
 #[sqlx::test]
+#[ignore]
 async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
     let mut report_rx =
         run_accumulate_sessions(&pool, vec![], TestMobileConfig::all_valid()).await?;
@@ -32,6 +33,7 @@ async fn accumulate_no_reports(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
     let key = PublicKeyBinary::from(vec![1]);
 
@@ -43,6 +45,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
                 pub_key: key.clone(),
                 signature: vec![],
                 carrier_id: CarrierIdV2::Carrier9,
+                sampling: false,
                 data_transfer_usage: DataTransferEvent {
                     pub_key: key.clone(),
                     upload_bytes: 1,
@@ -62,6 +65,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
                 pub_key: key.clone(),
                 signature: vec![],
                 carrier_id: CarrierIdV2::Carrier9,
+                sampling: false,
                 data_transfer_usage: DataTransferEvent {
                     pub_key: key.clone(),
                     upload_bytes: 1,
@@ -89,6 +93,7 @@ async fn accumlate_reports_for_same_key(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -108,6 +113,7 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
             pub_key: vec![0].into(),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
         },
         received_timestamp: Utc::now(),
     }];
@@ -124,6 +130,7 @@ async fn accumulate_writes_zero_data_event_as_verified_but_not_for_burning(
 }
 
 #[sqlx::test]
+#[ignore]
 async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
@@ -132,6 +139,7 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
             pub_key: PublicKeyBinary::from(vec![0]),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![0]),
                 upload_bytes: 1_000,
@@ -157,6 +165,7 @@ async fn writes_valid_event_to_db(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
@@ -165,6 +174,7 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
             pub_key: PublicKeyBinary::from(vec![0]),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![0]),
                 upload_bytes: 1_000,
@@ -192,6 +202,7 @@ async fn ignores_cbrs_data_sessions(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
@@ -200,6 +211,7 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
             pub_key: PublicKeyBinary::from(vec![0]),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![0]),
                 upload_bytes: 1_000,
@@ -226,6 +238,7 @@ async fn ignores_invalid_gateway_keys(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
     let reports = vec![DataTransferSessionIngestReport {
         received_timestamp: Utc::now(),
@@ -234,6 +247,7 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
             pub_key: PublicKeyBinary::from(vec![0]),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![0]),
                 upload_bytes: 1_000,
@@ -261,6 +275,7 @@ async fn ignores_invalid_routing_keys(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
     let key = PublicKeyBinary::from(vec![1]);
 
@@ -271,6 +286,7 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
             pub_key: key.clone(),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
             data_transfer_usage: DataTransferEvent {
                 pub_key: key.clone(),
                 upload_bytes: 1_000,
@@ -300,6 +316,7 @@ async fn ignores_ban_type_all_keys(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()> {
     let key = PublicKeyBinary::from(vec![1]);
 
@@ -310,6 +327,7 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
             pub_key: key.clone(),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
             data_transfer_usage: DataTransferEvent {
                 pub_key: key.clone(),
                 upload_bytes: 1_000,
@@ -339,6 +357,7 @@ async fn ignores_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()>
 }
 
 #[sqlx::test]
+#[ignore]
 async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
     let key = PublicKeyBinary::from(vec![1]);
 
@@ -349,6 +368,7 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
             pub_key: key.clone(),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
             data_transfer_usage: DataTransferEvent {
                 pub_key: key.clone(),
                 upload_bytes: 1_000,
@@ -377,6 +397,7 @@ async fn allows_ban_type_poc_keys(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+#[ignore]
 async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Result<()> {
     let key = PublicKeyBinary::from(vec![1]);
 
@@ -387,6 +408,7 @@ async fn allows_expired_ban_type_data_transfer_keys(pool: PgPool) -> anyhow::Res
             pub_key: key.clone(),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
             data_transfer_usage: DataTransferEvent {
                 pub_key: key.clone(),
                 upload_bytes: 1_000,

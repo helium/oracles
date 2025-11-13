@@ -1,7 +1,7 @@
 use crate::client::{call_with_retry, ClientError, Settings};
 use crate::gateway::service::info::{GatewayInfo, GatewayInfoStream};
 use chrono::{DateTime, Utc};
-use file_store::traits::MsgVerify;
+use file_store_oracles::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{

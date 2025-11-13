@@ -51,6 +51,7 @@ custom-tracing = { path = "../custom_tracing" }
 db-store = { path = "../db_store" }
 denylist = { path = "../denylist" }
 file-store = { path = "../file_store" }
+file-store-oracles = { path = "../file_store_oracles" }
 iot-config = { path = "../iot_config" }
 poc-metrics = { path = "../metrics" }
 price = { path = "../price" }

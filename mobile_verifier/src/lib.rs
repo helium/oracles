@@ -15,7 +15,6 @@ pub mod service_provider;
 mod settings;
 pub mod speedtests;
 pub mod speedtests_average;
-pub mod subscriber_mapping_activity;
 pub mod telemetry;
 pub mod unique_connections;
 

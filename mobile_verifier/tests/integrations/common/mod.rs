@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_sink::{FileSinkClient, Message as SinkMessage},
-    traits::{MsgBytes, TimestampEncode},
+    traits::TimestampEncode,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -18,9 +18,7 @@ use mobile_config::{
     sub_dao_epoch_reward_info::EpochRewardInfo,
 };
 use mobile_verifier::{
-    boosting_oracles::AssignedCoverageObjects,
-    subscriber_mapping_activity::SubscriberMappingShares, GatewayResolution, GatewayResolver,
-    PriceInfo,
+    boosting_oracles::AssignedCoverageObjects, GatewayResolution, GatewayResolver, PriceInfo,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -299,13 +297,6 @@ impl MobileRewardShareMessages {
             .map(|reward| reward.total_poc_reward())
             .sum()
     }
-
-    pub fn total_sub_discovery_amount(&self) -> u64 {
-        self.subscriber_rewards
-            .iter()
-            .map(|reward| reward.discovery_location_amount)
-            .sum()
-    }
 }
 
 trait TestTimeoutExt<T>
@@ -410,20 +401,15 @@ impl AsStringKeyedMapKey for RadioRewardV2 {
 
 impl AsStringKeyedMapKey for SubscriberReward {
     fn key(&self) -> String {
-        use helium_proto::Message;
-        String::decode(self.subscriber_id.as_bytes()).expect("decode subscriber id")
+        use prost::Message;
+        let bytes = prost::bytes::Bytes::from_owner(self.subscriber_id.clone());
+        String::decode(bytes).expect("decode subscriber id")
     }
 }
 
 impl AsStringKeyedMapKey for PromotionReward {
     fn key(&self) -> String {
         self.entity.to_owned()
-    }
-}
-impl AsStringKeyedMapKey for SubscriberMappingShares {
-    fn key(&self) -> String {
-        use helium_proto::Message;
-        String::decode(self.subscriber_id.as_bytes()).expect("decode subscriber id")
     }
 }
 

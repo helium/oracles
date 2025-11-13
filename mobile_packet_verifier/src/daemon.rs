@@ -7,16 +7,14 @@ use crate::{
     MobileConfigClients, MobileConfigResolverExt,
 };
 use anyhow::{bail, Result};
-use chrono::{TimeZone, Utc};
 use file_store::{
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::FileSinkClient,
-    file_source, file_upload,
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
+};
+use file_store_oracles::{
     mobile_session::DataTransferSessionIngestReport,
     traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
-
 use helium_proto::services::{
     packet_verifier::ValidDataTransferSession, poc_mobile::VerifiedDataTransferIngestReportV1,
 };
@@ -67,8 +65,8 @@ where
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures::future::LocalBoxFuture<'static, Result<()>> {
-        Box::pin(self.run(shutdown))
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::run(self.run(shutdown))
     }
 }
 
@@ -192,11 +190,8 @@ impl Cmd {
         let (reports, reports_server) = file_source::continuous_source()
             .state(pool.clone())
             .file_store(file_store_client.clone(), settings.ingest_bucket.clone())
-            .lookback(LookbackBehavior::StartAfter(
-                Utc.timestamp_millis_opt(0).unwrap(),
-            ))
             .prefix(FileType::DataTransferSessionIngestReport.to_string())
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .lookback_start_after(settings.start_after)
             .create()
             .await?;
 

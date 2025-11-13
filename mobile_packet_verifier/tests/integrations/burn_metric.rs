@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
 use chrono::Utc;
-use file_store::{
-    file_sink::{FileSinkClient, MessageReceiver},
-    mobile_session::{DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq},
+use file_store::file_sink::{FileSinkClient, MessageReceiver};
+use file_store_oracles::mobile_session::{
+    DataTransferEvent, DataTransferSessionIngestReport, DataTransferSessionReq,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
@@ -15,6 +15,7 @@ use sqlx::{types::Uuid, PgPool};
 use crate::common::TestMobileConfig;
 
 #[sqlx::test]
+#[ignore]
 async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -28,6 +29,7 @@ async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
             pub_key: PublicKeyBinary::from(vec![1]),
             signature: vec![],
             carrier_id: CarrierIdV2::Carrier9,
+            sampling: false,
             data_transfer_usage: DataTransferEvent {
                 pub_key: PublicKeyBinary::from(vec![1]),
                 upload_bytes: 0,

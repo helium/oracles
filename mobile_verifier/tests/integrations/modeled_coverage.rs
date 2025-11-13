@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use file_store::{
+use file_store_oracles::{
     coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
     speedtest::CellSpeedtest,
     wifi_heartbeat::{WifiHeartbeat, WifiHeartbeatIngestReport},
@@ -64,27 +64,27 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     assert!(cache.fetch_coverage_object(&uuid, key).await?.is_none());
 
-    let co = file_store::coverage::CoverageObject {
+    let co = file_store_oracles::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
         uuid,
-        key_type: file_store::coverage::KeyType::HotspotKey(
+        key_type: file_store_oracles::coverage::KeyType::HotspotKey(
             "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
                 .parse()
                 .unwrap(),
         ),
         coverage_claim_time,
         coverage: vec![
-            file_store::coverage::RadioHexSignalLevel {
+            file_store_oracles::coverage::RadioHexSignalLevel {
                 location: "8a1fb46622dffff".parse().unwrap(),
                 signal_level: SignalLevel::High,
                 signal_power: 1000,
             },
-            file_store::coverage::RadioHexSignalLevel {
+            file_store_oracles::coverage::RadioHexSignalLevel {
                 location: "8a1fb46632dffff".parse().unwrap(),
                 signal_level: SignalLevel::High,
                 signal_power: 1000,
             },
-            file_store::coverage::RadioHexSignalLevel {
+            file_store_oracles::coverage::RadioHexSignalLevel {
                 location: "8a1fb46642dffff".parse().unwrap(),
                 signal_level: SignalLevel::High,
                 signal_power: 1000,
@@ -131,12 +131,12 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
 
     assert!(cache.fetch_coverage_object(&uuid, key).await?.is_none());
 
-    let co1 = file_store::coverage::CoverageObject {
+    let co1 = file_store_oracles::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
         uuid,
-        key_type: file_store::coverage::KeyType::HotspotKey(bkey.clone()),
+        key_type: file_store_oracles::coverage::KeyType::HotspotKey(bkey.clone()),
         coverage_claim_time,
-        coverage: vec![file_store::coverage::RadioHexSignalLevel {
+        coverage: vec![file_store_oracles::coverage::RadioHexSignalLevel {
             location: "8a1fb46622dffff".parse().unwrap(),
             signal_level: SignalLevel::High,
             signal_power: 1000,
@@ -154,12 +154,12 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
     co1.save(&mut transaction).await?;
     transaction.commit().await?;
 
-    let co2 = file_store::coverage::CoverageObject {
+    let co2 = file_store_oracles::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
         uuid,
-        key_type: file_store::coverage::KeyType::HotspotKey(bkey),
+        key_type: file_store_oracles::coverage::KeyType::HotspotKey(bkey),
         coverage_claim_time,
-        coverage: vec![file_store::coverage::RadioHexSignalLevel {
+        coverage: vec![file_store_oracles::coverage::RadioHexSignalLevel {
             location: "8a1fb46622dffff".parse().unwrap(),
             signal_level: SignalLevel::Low,
             signal_power: 5,
@@ -373,10 +373,10 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
 
     let coverage_object = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: pub_key.clone(),
             uuid,
-            key_type: file_store::coverage::KeyType::HotspotKey(pub_key.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(pub_key.clone()),
             coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -450,10 +450,10 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
 
     let coverage_object_1 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_1,
-            key_type: file_store::coverage::KeyType::HotspotKey(hs_pubkey_1.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pubkey_1.clone()),
             // older then in co2
             coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
@@ -468,10 +468,10 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     };
     let coverage_object_2 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_2,
-            key_type: file_store::coverage::KeyType::HotspotKey(hs_pubkey_2.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pubkey_2.clone()),
             coverage_claim_time: "2022-01-31 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -575,10 +575,10 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     let expected_base_cp_co1 = dec!(240);
     let coverage_object_1 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_1,
-            key_type: file_store::coverage::KeyType::HotspotKey(hs_pub_key_1.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pub_key_1.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -595,10 +595,10 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     let expected_base_cp_co2 = dec!(120);
     let coverage_object_2 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_2,
-            key_type: file_store::coverage::KeyType::HotspotKey(hs_pub_key_2.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pub_key_2.clone()),
             coverage_claim_time: "2022-02-02 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -615,10 +615,10 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     let expected_base_cp_co3 = dec!(60);
     let coverage_object_3 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_3,
-            key_type: file_store::coverage::KeyType::HotspotKey(hs_pub_key_3.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pub_key_3.clone()),
             coverage_claim_time: "2022-02-03 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -633,10 +633,10 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
 
     let coverage_object_4 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_4,
-            key_type: file_store::coverage::KeyType::HotspotKey(hs_pub_key_4.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pub_key_4.clone()),
             coverage_claim_time: "2022-02-04 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -652,10 +652,10 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
 
     let coverage_object_5 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_5,
-            key_type: file_store::coverage::KeyType::HotspotKey(hs_pub_key_5.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(hs_pub_key_5.clone()),
             coverage_claim_time: "2022-02-05 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -871,10 +871,10 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
 
     let coverage_object_1 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: pub_key_1.clone(),
             uuid: uuid_1,
-            key_type: file_store::coverage::KeyType::HotspotKey(pub_key_1.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(pub_key_1.clone()),
             coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -885,10 +885,10 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
 
     let coverage_object_2 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: pub_key_2.clone(),
             uuid: uuid_2,
-            key_type: file_store::coverage::KeyType::HotspotKey(pub_key_2.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(pub_key_2.clone()),
             coverage_claim_time: "2022-01-02 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -972,10 +972,10 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         .unwrap();
     let coverage_object_uuid = Uuid::new_v4();
 
-    let coverage_object = file_store::coverage::CoverageObject {
+    let coverage_object = file_store_oracles::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
         uuid: coverage_object_uuid,
-        key_type: file_store::coverage::KeyType::HotspotKey(owner_1.clone()),
+        key_type: file_store_oracles::coverage::KeyType::HotspotKey(owner_1.clone()),
         coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
         indoor: true,
         signature: Vec::new(),
@@ -1078,10 +1078,10 @@ async fn eligible_for_coverage_map_bad_speedtest(pool: PgPool) -> anyhow::Result
     // All coverage objects share the same hexes
     let coverage_object_1 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: good_hotspot.clone(),
             uuid: uuid_1,
-            key_type: file_store::coverage::KeyType::HotspotKey(good_hotspot.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(good_hotspot.clone()),
             coverage_claim_time: "2022-02-01 12:00:00.000000000 UTC".parse()?, // Later
             indoor: true,
             signature: Vec::new(),
@@ -1092,10 +1092,12 @@ async fn eligible_for_coverage_map_bad_speedtest(pool: PgPool) -> anyhow::Result
 
     let coverage_object_2 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: bad_speedtest_hotspot.clone(),
             uuid: uuid_2,
-            key_type: file_store::coverage::KeyType::HotspotKey(bad_speedtest_hotspot.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(
+                bad_speedtest_hotspot.clone(),
+            ),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?, // Earlier
             indoor: true,
             signature: Vec::new(),
@@ -1191,10 +1193,10 @@ async fn eligible_for_coverage_map_bad_trust_score(pool: PgPool) -> anyhow::Resu
     // All coverage objects share the same hexes
     let coverage_object_1 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: good_hotspot.clone(),
             uuid: uuid_1,
-            key_type: file_store::coverage::KeyType::HotspotKey(good_hotspot.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(good_hotspot.clone()),
             coverage_claim_time: "2022-02-01 12:00:00.000000000 UTC".parse()?, // Later
             indoor: true,
             signature: Vec::new(),
@@ -1205,10 +1207,12 @@ async fn eligible_for_coverage_map_bad_trust_score(pool: PgPool) -> anyhow::Resu
 
     let coverage_object_2 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: bad_location_hotspot.clone(),
             uuid: uuid_2,
-            key_type: file_store::coverage::KeyType::HotspotKey(bad_location_hotspot.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(
+                bad_location_hotspot.clone(),
+            ),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?, // Earlier
             indoor: true,
             signature: Vec::new(),
@@ -1298,10 +1302,10 @@ async fn eligible_for_coverage_map_banned(pool: PgPool) -> anyhow::Result<()> {
     // All coverage objects share the same hexes
     let coverage_object_1 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: good_hotspot.clone(),
             uuid: uuid_1,
-            key_type: file_store::coverage::KeyType::HotspotKey(good_hotspot.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(good_hotspot.clone()),
             coverage_claim_time: "2022-02-01 12:00:00.000000000 UTC".parse()?, // Later
             indoor: true,
             signature: Vec::new(),
@@ -1312,10 +1316,10 @@ async fn eligible_for_coverage_map_banned(pool: PgPool) -> anyhow::Result<()> {
 
     let coverage_object_2 = CoverageObjectIngestReport {
         received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
+        report: file_store_oracles::coverage::CoverageObject {
             pub_key: banned_hotspot.clone(),
             uuid: uuid_2,
-            key_type: file_store::coverage::KeyType::HotspotKey(banned_hotspot.clone()),
+            key_type: file_store_oracles::coverage::KeyType::HotspotKey(banned_hotspot.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?, // Earlier
             indoor: true,
             signature: Vec::new(),

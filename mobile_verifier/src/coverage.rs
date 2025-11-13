@@ -5,17 +5,17 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use file_store::{
-    coverage::{self, CoverageObjectIngestReport},
-    file_info_poller::{FileInfoStream, LookbackBehavior},
-    file_sink::FileSinkClient,
-    file_source,
-    file_upload::FileUpload,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, TimestampEncode},
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source,
+    file_upload::FileUpload, traits::TimestampEncode, BucketClient,
+};
+use file_store_oracles::{
+    mobile::coverage::CoverageObjectIngestReport,
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
     FileType,
 };
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
-    TryFutureExt, TryStreamExt,
+    TryStreamExt,
 };
 use h3o::{CellIndex, LatLng};
 use helium_proto::services::{
@@ -82,8 +82,7 @@ impl CoverageDaemon {
         pool: Pool<Postgres>,
         settings: &Settings,
         file_upload: FileUpload,
-        file_store_client: file_store::Client,
-        bucket: String,
+        bucket_client: BucketClient,
         auth_client: AuthorizationClient,
         new_coverage_object_notifier: NewCoverageObjectNotifier,
     ) -> anyhow::Result<impl ManagedTask> {
@@ -98,8 +97,8 @@ impl CoverageDaemon {
 
         let (coverage_objs, coverage_objs_server) = file_source::continuous_source()
             .state(pool.clone())
-            .file_store(file_store_client, bucket)
-            .lookback(LookbackBehavior::StartAfter(settings.start_after))
+            .bucket_client(bucket_client)
+            .lookback_start_after(settings.start_after)
             .prefix(FileType::CoverageObjectIngestReport.to_string())
             .create()
             .await?;
@@ -190,13 +189,8 @@ impl ManagedTask for CoverageDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result }),
-        )
+    ) -> task_manager::TaskLocalBoxFuture {
+        task_manager::spawn(self.run(shutdown))
     }
 }
 
@@ -227,14 +221,14 @@ pub fn new_coverage_object_notification_channel(
 
 #[derive(Clone)]
 pub struct CoverageObject {
-    pub coverage_object: file_store::coverage::CoverageObject,
+    pub coverage_object: file_store_oracles::coverage::CoverageObject,
     pub validity: CoverageObjectValidity,
 }
 
 impl CoverageObject {
     /// Validate a coverage object
     pub async fn validate(
-        coverage_object: file_store::coverage::CoverageObject,
+        coverage_object: file_store_oracles::coverage::CoverageObject,
         auth_client: &impl IsAuthorized,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -265,7 +259,9 @@ impl CoverageObject {
 
     pub fn key(&self) -> KeyType<'_> {
         match self.coverage_object.key_type {
-            coverage::KeyType::HotspotKey(ref hotspot_key) => KeyType::Wifi(hotspot_key),
+            file_store_oracles::coverage::KeyType::HotspotKey(ref hotspot_key) => {
+                KeyType::Wifi(hotspot_key)
+            }
         }
     }
 
