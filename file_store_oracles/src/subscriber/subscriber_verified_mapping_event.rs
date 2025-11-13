@@ -1,13 +1,18 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::SubscriberVerifiedMappingEventReqV1;
 use serde::{Deserialize, Serialize};
 
 use crate::traits::MsgTimestamp;
+
+#[derive(thiserror::Error, Debug)]
+pub enum SubscriberMappingError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+}
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct SubscriberVerifiedMappingEvent {
@@ -21,8 +26,8 @@ impl MsgDecode for SubscriberVerifiedMappingEvent {
     type Msg = SubscriberVerifiedMappingEventReqV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for SubscriberVerifiedMappingEventReqV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for SubscriberVerifiedMappingEventReqV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp()
     }
 }
@@ -47,8 +52,9 @@ impl From<SubscriberVerifiedMappingEvent> for SubscriberVerifiedMappingEventReqV
 }
 
 impl TryFrom<SubscriberVerifiedMappingEventReqV1> for SubscriberVerifiedMappingEvent {
-    type Error = Error;
-    fn try_from(v: SubscriberVerifiedMappingEventReqV1) -> Result<Self> {
+    type Error = SubscriberMappingError;
+
+    fn try_from(v: SubscriberVerifiedMappingEventReqV1) -> Result<Self, Self::Error> {
         let timestamp = v.timestamp()?;
         Ok(Self {
             subscriber_id: v.subscriber_id,

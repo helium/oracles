@@ -1,4 +1,4 @@
-use crate::{traits::MsgDecode, BucketClient, Error, FileInfo, Result};
+use crate::{error::ChannelError, traits::MsgDecode, BucketClient, Error, FileInfo, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
@@ -284,6 +284,7 @@ where
     async fn run(mut self, shutdown: triggered::Listener) -> Result {
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
         let process_name = self.config.process_name.clone();
+        let prefix = self.config.prefix.clone();
 
         tracing::info!(
             r#type = self.config.prefix,
@@ -300,7 +301,7 @@ where
                     break;
                 }
                 _ = cleanup_trigger.tick() => self.clean(&self.cache).await?,
-                result = futures::future::try_join(sender.reserve().map_err(Error::from), self.get_next_file()) => {
+                result = futures::future::try_join(sender.reserve().map_err(|_| ChannelError::poller_send_error(&prefix, &process_name)), self.get_next_file()) => {
                     let (permit, file) = result?;
                     let byte_stream = self.config.store.get_raw(file.clone()).await?;
                     let data = self.config.parser.parse(byte_stream).await?;
@@ -385,7 +386,8 @@ pub struct MsgDecodeFileInfoPollerParser;
 #[async_trait::async_trait]
 impl<T> FileInfoPollerParser<T> for MsgDecodeFileInfoPollerParser
 where
-    T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
+    T: MsgDecode + Send + Sync + 'static,
+    <T as TryFrom<T::Msg>>::Error: std::error::Error,
 {
     async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
         Ok(crate::stream_source(byte_stream)

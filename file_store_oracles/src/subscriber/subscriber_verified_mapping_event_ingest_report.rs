@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_proto::services::poc_mobile::{
     SubscriberVerifiedMappingEventIngestReportV1, SubscriberVerifiedMappingEventReqV1,
@@ -9,8 +8,21 @@ use helium_proto::services::poc_mobile::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    subscriber_verified_mapping_event::SubscriberVerifiedMappingEvent, traits::MsgTimestamp,
+    subscriber_verified_mapping_event::{SubscriberMappingError, SubscriberVerifiedMappingEvent},
+    traits::MsgTimestamp,
 };
+
+#[derive(thiserror::Error, Debug)]
+pub enum SubscriberIngestReportError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("subscriber location: {0}")]
+    SubscriberLocation(#[from] SubscriberMappingError),
+}
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct SubscriberVerifiedMappingEventIngestReport {
@@ -22,8 +34,8 @@ impl MsgDecode for SubscriberVerifiedMappingEventIngestReport {
     type Msg = SubscriberVerifiedMappingEventIngestReportV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for SubscriberVerifiedMappingEventIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for SubscriberVerifiedMappingEventIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -50,15 +62,16 @@ impl From<SubscriberVerifiedMappingEventIngestReport>
 impl TryFrom<SubscriberVerifiedMappingEventIngestReportV1>
     for SubscriberVerifiedMappingEventIngestReport
 {
-    type Error = Error;
-    fn try_from(v: SubscriberVerifiedMappingEventIngestReportV1) -> Result<Self> {
+    type Error = SubscriberIngestReportError;
+
+    fn try_from(v: SubscriberVerifiedMappingEventIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| {
-                    Error::not_found("ingest SubscriberVerifiedMappingEventIngestReport report")
-                })?
+                .ok_or(SubscriberIngestReportError::MissingField(
+                    "subscriber_verified_mapping_event_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }

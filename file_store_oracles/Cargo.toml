@@ -7,19 +7,20 @@ edition.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-chrono = { workspace = true }
-helium-crypto = { workspace = true }
-helium-proto = { workspace = true }
-serde = { workspace = true }
-uuid = { workspace = true }
-h3o = { workspace = true }
+async-trait = { workspace = true }
 beacon = { workspace = true }
 blake3 = { workspace = true }
-rust_decimal = { workspace = true }
-async-trait = { workspace = true }
 bytes = { workspace = true }
+chrono = { workspace = true }
+h3o = { workspace = true }
+helium-crypto = { workspace = true }
+helium-proto = { workspace = true }
 prost = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
 strum = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
 
 # cli deps
 base64 = { workspace = true }

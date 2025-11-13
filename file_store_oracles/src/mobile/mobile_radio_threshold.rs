@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
@@ -10,7 +9,19 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::traits::MsgTimestamp;
+use crate::{prost_enum, traits::MsgTimestamp};
+
+#[derive(thiserror::Error, Debug)]
+pub enum RadioThresholdError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported verification status: {0}")]
+    VerificationStatus(prost::UnknownEnumValue),
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RadioThresholdReportReq {
@@ -47,8 +58,9 @@ impl MsgDecode for VerifiedRadioThresholdIngestReport {
 }
 
 impl TryFrom<RadioThresholdReportReqV1> for RadioThresholdReportReq {
-    type Error = Error;
-    fn try_from(v: RadioThresholdReportReqV1) -> Result<Self> {
+    type Error = RadioThresholdError;
+
+    fn try_from(v: RadioThresholdReportReqV1) -> Result<Self, Self::Error> {
         Ok(Self {
             hotspot_pubkey: v.hotspot_pubkey.into(),
             bytes_threshold: v.bytes_threshold,
@@ -74,8 +86,8 @@ impl From<RadioThresholdReportReq> for RadioThresholdReportReqV1 {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for RadioThresholdReportReqV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for RadioThresholdReportReqV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.threshold_timestamp.to_timestamp()
     }
 }
@@ -86,8 +98,8 @@ impl MsgTimestamp<u64> for RadioThresholdReportReq {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for RadioThresholdIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for RadioThresholdIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -98,8 +110,8 @@ impl MsgTimestamp<u64> for RadioThresholdIngestReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedRadioThresholdIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for VerifiedRadioThresholdIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp_millis()
     }
 }
@@ -111,13 +123,16 @@ impl MsgTimestamp<u64> for VerifiedRadioThresholdIngestReport {
 }
 
 impl TryFrom<RadioThresholdIngestReportV1> for RadioThresholdIngestReport {
-    type Error = Error;
-    fn try_from(v: RadioThresholdIngestReportV1) -> Result<Self> {
+    type Error = RadioThresholdError;
+
+    fn try_from(v: RadioThresholdIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("ingest radio threshold ingest report"))?
+                .ok_or(RadioThresholdError::MissingField(
+                    "radio_threshold_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }
@@ -135,20 +150,17 @@ impl From<RadioThresholdIngestReport> for RadioThresholdIngestReportV1 {
 }
 
 impl TryFrom<VerifiedRadioThresholdIngestReportV1> for VerifiedRadioThresholdIngestReport {
-    type Error = Error;
-    fn try_from(v: VerifiedRadioThresholdIngestReportV1) -> Result<Self> {
-        let status = RadioThresholdReportVerificationStatus::try_from(v.status).map_err(|_| {
-            DecodeError::unsupported_status_reason(
-                "verified_radio_threshold_ingest_report_v1",
-                v.status,
-            )
-        })?;
+    type Error = RadioThresholdError;
+
+    fn try_from(v: VerifiedRadioThresholdIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("ingest radio threshold ingest report"))?
+                .ok_or(RadioThresholdError::MissingField(
+                    "verified_radio_threshold_ingest_report.report",
+                ))?
                 .try_into()?,
-            status,
+            status: prost_enum(v.status, RadioThresholdError::VerificationStatus)?,
             timestamp: v.timestamp.to_timestamp()?,
         })
     }
