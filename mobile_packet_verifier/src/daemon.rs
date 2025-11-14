@@ -206,11 +206,7 @@ impl Cmd {
         );
 
         let event_id_purger = EventIdPurger::from_settings(pool.clone(), settings);
-        let banning = banning::create_managed_task(
-            pool,
-            &settings.banning,
-        )
-        .await?;
+        let banning = banning::create_managed_task(pool, &settings.banning).await?;
 
         TaskManager::builder()
             .add_task(file_upload_server)
