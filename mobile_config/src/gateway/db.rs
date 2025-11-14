@@ -81,8 +81,8 @@ pub struct Gateway {
     pub gateway_type: GatewayType,
     // When the record was first created from metadata DB
     pub created_at: DateTime<Utc>,
-    // When record was last updated
-    pub updated_at: DateTime<Utc>,
+    // When record was inserted
+    pub inserted_at: DateTime<Utc>,
     // When record was last updated from metadata DB (could be set to now if no metadata DB info)
     pub refreshed_at: DateTime<Utc>,
     // When location or hash last changed, set to refreshed_at (updated via SQL query see Gateway::insert)
@@ -96,6 +96,7 @@ pub struct Gateway {
     pub location_changed_at: Option<DateTime<Utc>>,
     pub location_asserts: Option<u32>,
 }
+
 #[derive(Debug)]
 pub struct LocationChangedAtUpdate {
     pub address: PublicKeyBinary,
@@ -113,7 +114,6 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                updated_at,
                 refreshed_at,
                 last_changed_at,
                 hash,
@@ -130,7 +130,6 @@ impl Gateway {
             b.push_bind(g.address.as_ref())
                 .push_bind(g.gateway_type)
                 .push_bind(g.created_at)
-                .push_bind(g.updated_at)
                 .push_bind(g.refreshed_at)
                 .push_bind(g.last_changed_at)
                 .push_bind(g.hash.as_str())
@@ -141,31 +140,6 @@ impl Gateway {
                 .push_bind(g.location_changed_at)
                 .push_bind(g.location_asserts.map(|v| v as i64));
         });
-
-        qb.push(
-            " ON CONFLICT (address) DO UPDATE SET 
-                gateway_type = EXCLUDED.gateway_type,
-                created_at = EXCLUDED.created_at,
-                updated_at = EXCLUDED.updated_at,
-                refreshed_at = EXCLUDED.refreshed_at,
-                last_changed_at = CASE 
-                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location 
-                      OR gateways.hash     IS DISTINCT FROM EXCLUDED.hash 
-                    THEN EXCLUDED.refreshed_at 
-                    ELSE gateways.last_changed_at 
-                END,
-                hash = EXCLUDED.hash,
-                antenna = EXCLUDED.antenna,
-                elevation = EXCLUDED.elevation,
-                azimuth = EXCLUDED.azimuth,
-                location = EXCLUDED.location,
-                location_changed_at = CASE 
-                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location 
-                    THEN EXCLUDED.refreshed_at 
-                    ELSE gateways.location_changed_at 
-                END,
-                location_asserts = EXCLUDED.location_asserts",
-        );
 
         let res = qb.build().execute(pool).await?;
         Ok(res.rows_affected())
@@ -178,7 +152,6 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                updated_at,
                 refreshed_at,
                 last_changed_at,
                 hash,
@@ -191,37 +164,13 @@ impl Gateway {
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
-                $8, $9, $10, $11, $12, $13
+                $8, $9, $10, $11, $12
             )
-            ON CONFLICT (address)
-            DO UPDATE SET
-                gateway_type = EXCLUDED.gateway_type,
-                created_at = EXCLUDED.created_at,
-                updated_at = EXCLUDED.updated_at,
-                refreshed_at = EXCLUDED.refreshed_at,
-                last_changed_at = CASE
-                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location
-                        OR gateways.hash IS DISTINCT FROM EXCLUDED.hash
-                    THEN EXCLUDED.refreshed_at
-                    ELSE gateways.last_changed_at
-                END,
-                hash = EXCLUDED.hash,
-                antenna = EXCLUDED.antenna,
-                elevation = EXCLUDED.elevation,
-                azimuth = EXCLUDED.azimuth,
-                location = EXCLUDED.location,
-                location_changed_at = CASE
-                    WHEN gateways.location IS DISTINCT FROM EXCLUDED.location
-                    THEN EXCLUDED.refreshed_at
-                    ELSE gateways.location_changed_at
-                END,
-                location_asserts = EXCLUDED.location_asserts
             "#,
         )
         .bind(self.address.as_ref())
         .bind(self.gateway_type)
         .bind(self.created_at)
-        .bind(self.updated_at)
         .bind(self.refreshed_at)
         .bind(self.last_changed_at)
         .bind(self.hash.as_str())
@@ -247,7 +196,7 @@ impl Gateway {
                 address,
                 gateway_type,
                 created_at,
-                updated_at,
+                inserted_at,
                 refreshed_at,
                 last_changed_at,
                 hash,
@@ -259,9 +208,81 @@ impl Gateway {
                 location_asserts
             FROM gateways
             WHERE address = $1
+            ORDER BY inserted_at DESC
+            LIMIT 1
             "#,
         )
         .bind(address.as_ref())
+        .fetch_optional(db)
+        .await?;
+
+        Ok(gateway)
+    }
+
+    pub async fn get_by_addresses<'a>(
+        db: impl PgExecutor<'a>,
+        addresses: Vec<PublicKeyBinary>,
+    ) -> anyhow::Result<Vec<Self>> {
+        let addr_array: Vec<Vec<u8>> = addresses.iter().map(|a| a.as_ref().to_vec()).collect();
+
+        let rows = sqlx::query_as::<_, Self>(
+            r#"
+            SELECT DISTINCT ON (address)
+                address,
+                gateway_type,
+                created_at,
+                inserted_at,
+                refreshed_at,
+                last_changed_at,
+                hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
+            FROM gateways
+            WHERE address = ANY($1)
+            ORDER BY address, inserted_at DESC
+            "#,
+        )
+        .bind(addr_array)
+        .fetch_all(db)
+        .await?;
+
+        Ok(rows)
+    }
+
+    pub async fn get_by_address_and_inserted_at<'a>(
+        db: impl PgExecutor<'a>,
+        address: &PublicKeyBinary,
+        inserted_at_max: &DateTime<Utc>,
+    ) -> anyhow::Result<Option<Self>> {
+        let gateway = sqlx::query_as::<_, Self>(
+            r#"
+            SELECT
+                address,
+                gateway_type,
+                created_at,
+                inserted_at,
+                refreshed_at,
+                last_changed_at,
+                hash,
+                antenna,
+                elevation,
+                azimuth,
+                location,
+                location_changed_at,
+                location_asserts
+            FROM gateways
+            WHERE address = $1
+            AND inserted_at <= $2
+            ORDER BY inserted_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(address.as_ref())
+        .bind(inserted_at_max)
         .fetch_optional(db)
         .await?;
 
@@ -277,11 +298,11 @@ impl Gateway {
 
         sqlx::query_as::<_, Self>(
             r#"
-            SELECT
+            SELECT DISTINCT ON (address)
                 address,
                 gateway_type,
                 created_at,
-                updated_at,
+                inserted_at,
                 refreshed_at,
                 last_changed_at,
                 hash,
@@ -294,6 +315,7 @@ impl Gateway {
             FROM gateways
             WHERE address = ANY($1)
                 AND last_changed_at >= $2
+            ORDER BY address, inserted_at DESC
             "#,
         )
         .bind(addr_array)
@@ -311,11 +333,11 @@ impl Gateway {
     ) -> impl Stream<Item = Self> + 'a {
         sqlx::query_as::<_, Self>(
             r#"
-                SELECT
+                SELECT DISTINCT ON (address)
                     address,
                     gateway_type,
                     created_at,
-                    updated_at,
+                    inserted_at,
                     refreshed_at,
                     last_changed_at,
                     hash,
@@ -332,6 +354,7 @@ impl Gateway {
                     $3::timestamptz IS NULL
                     OR (location IS NOT NULL AND location_changed_at >= $3)
                 )
+                ORDER BY address, inserted_at DESC
             "#,
         )
         .bind(types)
@@ -395,7 +418,7 @@ impl FromRow<'_, PgRow> for Gateway {
             address: PublicKeyBinary::from(row.try_get::<Vec<u8>, _>("address")?),
             gateway_type: row.try_get("gateway_type")?,
             created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
+            inserted_at: row.try_get("inserted_at")?,
             refreshed_at: row.try_get("refreshed_at")?,
             last_changed_at: row.try_get("last_changed_at")?,
             hash: row.try_get("hash")?,
