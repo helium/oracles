@@ -1,7 +1,7 @@
 use crate::common::{make_keypair, spawn_gateway_service};
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
-use helium_crypto::{Keypair, PublicKey, Sign};
+use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::services::mobile_config::{
     self as proto, gateway_metadata_v2::DeploymentInfo, DeviceType, GatewayClient,
     GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
@@ -23,7 +23,7 @@ use tonic::{transport, Code};
 #[sqlx::test]
 async fn gateway_info_authorization_errors(pool: PgPool) -> anyhow::Result<()> {
     // NOTE(mj): The information we're requesting does not exist in the DB for
-    // this test. But we're only interested in Authization Errors.
+    // this test. But we're only interested in Authorization Errors.
 
     let admin_key = make_keypair(); // unlimited access
     let gw_key = make_keypair(); // access to self
@@ -117,7 +117,7 @@ async fn gateway_stream_info_v1(pool: PgPool) -> anyhow::Result<()> {
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at: now,
-        updated_at: now,
+        inserted_at: now,
         refreshed_at: now,
         last_changed_at: now,
         hash: "".to_string(),
@@ -134,7 +134,7 @@ async fn gateway_stream_info_v1(pool: PgPool) -> anyhow::Result<()> {
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
         created_at: now_plus_10,
-        updated_at: now_plus_10,
+        inserted_at: now_plus_10,
         refreshed_at: now_plus_10,
         last_changed_at: now_plus_10,
         hash: "".to_string(),
@@ -182,7 +182,7 @@ async fn gateway_stream_info_v2_by_type(pool: PgPool) -> anyhow::Result<()> {
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at: now,
-        updated_at: now,
+        inserted_at: now,
         refreshed_at: now,
         last_changed_at: now,
         hash: "".to_string(),
@@ -199,7 +199,7 @@ async fn gateway_stream_info_v2_by_type(pool: PgPool) -> anyhow::Result<()> {
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
         created_at: now_plus_10,
-        updated_at: now_plus_10,
+        inserted_at: now_plus_10,
         refreshed_at: now_plus_10,
         last_changed_at: now_plus_10,
         hash: "".to_string(),
@@ -247,21 +247,21 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
     let loc4 = 0x8c44a82aed527ff_u64;
 
     let created_at = Utc::now() - Duration::hours(5);
-    let updated_at = Utc::now() - Duration::hours(3);
+    let inserted_at = Utc::now() - Duration::hours(3);
 
     let gateway1 = Gateway {
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
-        updated_at,
-        refreshed_at: updated_at,
-        last_changed_at: updated_at,
+        inserted_at,
+        refreshed_at: inserted_at,
+        last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: None,
         elevation: None,
         azimuth: None,
         location: Some(loc1),
-        location_changed_at: Some(updated_at),
+        location_changed_at: Some(inserted_at),
         location_asserts: Some(1),
     };
     gateway1.insert(&pool).await?;
@@ -270,15 +270,15 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
-        updated_at,
-        refreshed_at: updated_at,
-        last_changed_at: updated_at,
+        inserted_at,
+        refreshed_at: inserted_at,
+        last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(1),
         elevation: None,
         azimuth: None,
         location: Some(loc2),
-        location_changed_at: Some(updated_at),
+        location_changed_at: Some(inserted_at),
         location_asserts: Some(1),
     };
     gateway2.insert(&pool).await?;
@@ -287,15 +287,15 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         address: address3.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
         created_at,
-        updated_at,
-        refreshed_at: updated_at,
-        last_changed_at: updated_at,
+        inserted_at,
+        refreshed_at: inserted_at,
+        last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(1),
         elevation: Some(2),
         azimuth: Some(3),
         location: Some(loc3),
-        location_changed_at: Some(updated_at),
+        location_changed_at: Some(inserted_at),
         location_asserts: Some(1),
     };
     gateway3.insert(&pool).await?;
@@ -304,7 +304,7 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         address: address4.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
         created_at,
-        updated_at: created_at,
+        inserted_at: created_at,
         refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
@@ -320,8 +320,8 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
     let mut client = GatewayClient::connect(addr).await?;
 
-    let res =
-        gateway_info_stream_v2(&mut client, &admin_key, &[], updated_at.timestamp() as u64).await?;
+    let res = gateway_info_stream_v2(&mut client, &admin_key, &[], inserted_at.timestamp() as u64)
+        .await?;
     assert_eq!(res.gateways.len(), 3);
 
     let gateways = res.gateways;
@@ -335,7 +335,7 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         u64::from_str_radix(&gw1.metadata.clone().unwrap().location, 16).unwrap(),
         loc1
     );
-    assert_eq!(gw1.updated_at, updated_at.timestamp() as u64);
+    assert_eq!(gw1.updated_at, inserted_at.timestamp() as u64);
     assert_eq!(gw1.metadata.clone().unwrap().deployment_info, None);
 
     let gw2 = gateways
@@ -347,7 +347,7 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         u64::from_str_radix(&gw2.metadata.clone().unwrap().location, 16).unwrap(),
         loc2
     );
-    assert_eq!(gw2.updated_at, updated_at.timestamp() as u64);
+    assert_eq!(gw2.updated_at, inserted_at.timestamp() as u64);
     let deployment_info = gw2.metadata.clone().unwrap().deployment_info.unwrap();
     match deployment_info {
         DeploymentInfo::WifiDeploymentInfo(v) => {
@@ -369,7 +369,7 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
         u64::from_str_radix(&gw3.metadata.clone().unwrap().location, 16).unwrap(),
         loc3
     );
-    assert_eq!(gw3.updated_at, updated_at.timestamp() as u64);
+    assert_eq!(gw3.updated_at, inserted_at.timestamp() as u64);
     let deployment_info = gw3.metadata.clone().unwrap().deployment_info.unwrap();
     match deployment_info {
         DeploymentInfo::WifiDeploymentInfo(v) => {
@@ -399,21 +399,21 @@ async fn gateway_info_batch_v1(pool: PgPool) -> anyhow::Result<()> {
     let loc2 = 631711286145955327_u64;
 
     let created_at = Utc::now() - Duration::hours(5);
-    let updated_at = Utc::now() - Duration::hours(3);
+    let inserted_at = Utc::now() - Duration::hours(3);
 
     let gateway1 = Gateway {
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
-        updated_at,
-        refreshed_at: updated_at,
-        last_changed_at: updated_at,
+        inserted_at,
+        refreshed_at: inserted_at,
+        last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(18),
         elevation: Some(2),
         azimuth: Some(161),
         location: Some(loc1),
-        location_changed_at: Some(updated_at),
+        location_changed_at: Some(inserted_at),
         location_asserts: Some(1),
     };
     gateway1.insert(&pool).await?;
@@ -422,7 +422,7 @@ async fn gateway_info_batch_v1(pool: PgPool) -> anyhow::Result<()> {
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
         created_at,
-        updated_at: created_at,
+        inserted_at: created_at,
         refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
@@ -485,21 +485,21 @@ async fn gateway_info_batch_v2(pool: PgPool) -> anyhow::Result<()> {
     let loc2 = 631711286145955327_u64;
 
     let created_at = Utc::now() - Duration::hours(5);
-    let updated_at = Utc::now() - Duration::hours(3);
+    let inserted_at = Utc::now() - Duration::hours(3);
 
     let gateway1 = Gateway {
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
-        updated_at,
-        refreshed_at: updated_at,
-        last_changed_at: updated_at,
+        inserted_at,
+        refreshed_at: inserted_at,
+        last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(18),
         elevation: Some(2),
         azimuth: Some(161),
         location: Some(loc1),
-        location_changed_at: Some(updated_at),
+        location_changed_at: Some(inserted_at),
         location_asserts: Some(1),
     };
     gateway1.insert(&pool).await?;
@@ -508,7 +508,7 @@ async fn gateway_info_batch_v2(pool: PgPool) -> anyhow::Result<()> {
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
         created_at,
-        updated_at: created_at,
+        inserted_at: created_at,
         refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
@@ -594,13 +594,13 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
 
     let created_at = Utc::now() - Duration::hours(5);
     let refreshed_at = Utc::now() - Duration::hours(3);
-    let updated_at = Utc::now() - Duration::hours(4);
+    let inserted_at = Utc::now() - Duration::hours(4);
 
     let gateway1 = Gateway {
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
-        updated_at: refreshed_at,
+        inserted_at: refreshed_at,
         refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
@@ -617,7 +617,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
-        updated_at: created_at,
+        inserted_at: created_at,
         refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
@@ -634,15 +634,15 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         address: address3.clone().into(),
         gateway_type: GatewayType::WifiDataOnly,
         created_at,
-        updated_at,
+        inserted_at,
         refreshed_at,
-        last_changed_at: updated_at,
+        last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(18),
         elevation: Some(2),
         azimuth: Some(161),
         location: Some(loc3),
-        location_changed_at: Some(updated_at),
+        location_changed_at: Some(inserted_at),
         location_asserts: Some(1),
     };
     gateway3.insert(&pool).await?;
@@ -651,9 +651,9 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         address: address4.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
-        updated_at,
+        inserted_at,
         refreshed_at: created_at,
-        last_changed_at: updated_at,
+        last_changed_at: inserted_at,
         hash: "".to_string(),
         antenna: Some(18),
         elevation: Some(2),
@@ -707,7 +707,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
             .find(|v| v.address == address3.to_vec())
             .unwrap()
             .updated_at,
-        updated_at.timestamp() as u64
+        inserted_at.timestamp() as u64
     );
 
     Ok(())
@@ -730,7 +730,7 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
         address: address1.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
-        updated_at: refreshed_at,
+        inserted_at: refreshed_at,
         refreshed_at,
         last_changed_at: refreshed_at,
         hash: "".to_string(),
@@ -747,7 +747,7 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
         address: address2.clone().into(),
         gateway_type: GatewayType::WifiIndoor,
         created_at,
-        updated_at: created_at,
+        inserted_at: created_at,
         refreshed_at: created_at,
         last_changed_at: created_at,
         hash: "".to_string(),
@@ -812,6 +812,109 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[sqlx::test]
+async fn gateway_info_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
+    let admin_key = make_keypair();
+
+    let address = make_keypair().public_key().clone();
+    let loc_original = 631711281837647359_u64;
+    let loc_recent = 631711281837647358_u64;
+
+    let created_at = Utc::now() - Duration::hours(5);
+    let refreshed_at = Utc::now() - Duration::hours(3);
+
+    let gateway_original = Gateway {
+        address: address.clone().into(),
+        gateway_type: GatewayType::WifiIndoor,
+        created_at,
+        inserted_at: refreshed_at,
+        refreshed_at,
+        last_changed_at: refreshed_at,
+        hash: "".to_string(),
+        antenna: Some(10),
+        elevation: Some(4),
+        azimuth: Some(168),
+        location: Some(loc_original),
+        location_changed_at: Some(refreshed_at),
+        location_asserts: Some(1),
+    };
+    gateway_original.insert(&pool).await?;
+
+    let pubkey = address.clone().into();
+
+    // Change original gateway's inserted_at value to 10 minutes ago
+    let new_inserted_at = Utc::now() - Duration::minutes(10);
+    update_gateway_inserted_at(&pool, &pubkey, &new_inserted_at).await?;
+
+    let query_time_original = Utc::now();
+
+    let gateway_recent = Gateway {
+        address: address.clone().into(),
+        gateway_type: GatewayType::WifiIndoor,
+        created_at,
+        inserted_at: created_at,
+        refreshed_at: created_at,
+        last_changed_at: created_at,
+        hash: "".to_string(),
+        antenna: Some(18),
+        elevation: Some(2),
+        azimuth: Some(161),
+        location: Some(loc_recent),
+        location_changed_at: Some(created_at),
+        location_asserts: Some(1),
+    };
+    gateway_recent.insert(&pool).await?;
+
+    let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
+    let mut client = GatewayClient::connect(addr).await?;
+
+    // Get most recent gateway info
+    let query_time_recent = Utc::now() + Duration::minutes(10);
+    let res =
+        info_at_timestamp_request(&mut client, &address, &admin_key, &query_time_recent).await;
+
+    // Assert that recent gateway was returned
+    let gw_info = res?.info.unwrap();
+    assert_eq!(gw_info.address, address.to_vec());
+    let deployment_info = gw_info.metadata.clone().unwrap().deployment_info.unwrap();
+    match deployment_info {
+        DeploymentInfo::WifiDeploymentInfo(v) => {
+            assert_eq!(v.antenna, 18);
+            assert_eq!(v.azimuth, 161);
+            assert_eq!(v.elevation, 2);
+        }
+        DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
+    };
+    assert_eq!(
+        u64::from_str_radix(&gw_info.metadata.clone().unwrap().location, 16).unwrap(),
+        loc_recent
+    );
+
+    // Get original gateway info by using an earlier inserted_at condition
+    let res =
+        info_at_timestamp_request(&mut client, &address, &admin_key, &query_time_original).await;
+
+    // Assert that original gateway was returned
+    let gw_info = res?.info.unwrap();
+    assert_eq!(gw_info.address, address.to_vec());
+    let deployment_info = gw_info.metadata.clone().unwrap().deployment_info.unwrap();
+    match deployment_info {
+        DeploymentInfo::WifiDeploymentInfo(v) => {
+            assert_eq!(v.antenna, 10);
+            assert_eq!(v.azimuth, 168);
+            assert_eq!(v.elevation, 4);
+        }
+        DeploymentInfo::CbrsDeploymentInfo(_) => panic!(),
+    };
+
+    assert_eq!(
+        u64::from_str_radix(&gw_info.metadata.clone().unwrap().location, 16).unwrap(),
+        loc_original
+    );
+
+    Ok(())
+}
+
 fn make_signed_info_request(address: &PublicKey, signer: &Keypair) -> proto::GatewayInfoReqV1 {
     let mut req = proto::GatewayInfoReqV1 {
         address: address.to_vec(),
@@ -834,6 +937,23 @@ async fn info_request_v2(
     };
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
     let res = client.info_v2(req).await?.into_inner();
+    Ok(res)
+}
+
+async fn info_at_timestamp_request(
+    client: &mut GatewayClient<tonic::transport::Channel>,
+    address: &PublicKey,
+    signer: &Keypair,
+    query_time: &DateTime<Utc>,
+) -> anyhow::Result<proto::GatewayInfoResV2> {
+    let mut req = proto::GatewayInfoAtTimestampReqV1 {
+        address: address.to_vec(),
+        signer: signer.public_key().to_vec(),
+        signature: vec![],
+        query_time: query_time.timestamp() as u64,
+    };
+    req.signature = signer.sign(&req.encode_to_vec()).unwrap();
+    let res = client.info_at_timestamp(req).await?.into_inner();
     Ok(res)
 }
 
@@ -866,14 +986,14 @@ async fn gateway_info_stream_v2(
     client: &mut GatewayClient<tonic::transport::Channel>,
     signer: &Keypair,
     device_types: &[DeviceType],
-    min_updated_at: u64,
+    min_inserted_at: u64,
 ) -> anyhow::Result<proto::GatewayInfoStreamResV2> {
     let mut req = GatewayInfoStreamReqV2 {
         batch_size: 10000,
         signer: signer.public_key().to_vec(),
         signature: vec![],
         device_types: device_types.iter().map(|v| DeviceType::into(*v)).collect(),
-        min_updated_at,
+        min_updated_at: min_inserted_at,
     };
 
     req.signature = signer.sign(&req.encode_to_vec()).unwrap();
@@ -921,4 +1041,24 @@ async fn info_batch_v2(
     let stream = client.info_batch_v2(req).await?.into_inner();
 
     Ok(stream)
+}
+
+async fn update_gateway_inserted_at(
+    pool: &PgPool,
+    address: &PublicKeyBinary,
+    new_inserted_at: &DateTime<Utc>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE gateways
+        SET inserted_at = $1
+        WHERE address = $2;
+        "#,
+    )
+    .bind(new_inserted_at)
+    .bind(address.as_ref())
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }

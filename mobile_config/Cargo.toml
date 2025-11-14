@@ -61,3 +61,4 @@ tls-init = { path = "../tls_init" }
 [dev-dependencies]
 rand = { workspace = true }
 tokio-stream = { workspace = true, features = ["net"] }
+tempfile = "3"

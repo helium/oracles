@@ -1,5 +1,5 @@
 use crate::{
-    gateway::service::{info::DeviceType, info_v3::DeviceTypeV2},
+    gateway::service::{info::DeviceType, info::GatewayInfo, info_v3::DeviceTypeV2},
     key_cache::KeyCache,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
@@ -13,9 +13,10 @@ use futures::{
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{
-        self, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoResV2,
-        GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamReqV3,
-        GatewayInfoStreamResV1, GatewayInfoStreamResV2, GatewayInfoStreamResV3, GatewayInfoV2,
+        self, GatewayInfoAtTimestampReqV1, GatewayInfoBatchReqV1, GatewayInfoReqV1,
+        GatewayInfoResV1, GatewayInfoResV2, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2,
+        GatewayInfoStreamReqV3, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
+        GatewayInfoStreamResV3, GatewayInfoV2,
     },
     Message,
 };
@@ -52,9 +53,17 @@ impl GatewayService {
         Err(Status::permission_denied("unauthorized request signature"))
     }
 
-    fn verify_request_signature_for_info(&self, request: &GatewayInfoReqV1) -> Result<(), Status> {
-        let signer = verify_public_key(&request.signer)?;
-        let address = verify_public_key(&request.address)?;
+    fn verify_request_signature_for_info<R>(
+        &self,
+        request: &R,
+        signer: &[u8],
+        address: &[u8],
+    ) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        let signer = verify_public_key(signer)?;
+        let address = verify_public_key(address)?;
 
         if address == signer && request.verify(&signer).is_ok() {
             tracing::debug!(%signer, "self authorized");
@@ -69,6 +78,27 @@ impl GatewayService {
             .sign(response)
             .map_err(|_| Status::internal("response signing error"))
     }
+
+    fn map_info_v2_response(&self, info: GatewayInfo) -> GrpcResult<GatewayInfoResV2> {
+        if info.metadata.is_some() {
+            telemetry::count_gateway_chain_lookup("asserted");
+        } else {
+            telemetry::count_gateway_chain_lookup("not-asserted");
+        };
+
+        let info: GatewayInfoV2 = info
+            .try_into()
+            .map_err(|_| Status::internal("error serializing historical gateway info (v2)"))?;
+
+        let mut res = GatewayInfoResV2 {
+            info: Some(info),
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        res.signature = self.sign_response(&res.encode_to_vec())?;
+        Ok(Response::new(res))
+    }
 }
 
 #[tonic::async_trait]
@@ -80,7 +110,7 @@ impl mobile_config::Gateway for GatewayService {
         custom_tracing::record_b58("pub_key", &request.address);
         custom_tracing::record_b58("signer", &request.signer);
 
-        self.verify_request_signature_for_info(&request)?;
+        self.verify_request_signature_for_info(&request, &request.signer, &request.address)?;
 
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info");
@@ -120,7 +150,7 @@ impl mobile_config::Gateway for GatewayService {
         custom_tracing::record_b58("pub_key", &request.address);
         custom_tracing::record_b58("signer", &request.signer);
 
-        self.verify_request_signature_for_info(&request)?;
+        self.verify_request_signature_for_info(&request, &request.signer, &request.address)?;
 
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info (v2)");
@@ -133,26 +163,41 @@ impl mobile_config::Gateway for GatewayService {
                     telemetry::count_gateway_chain_lookup("not-found");
                     Err(Status::not_found(pubkey.to_string()))
                 },
-                |info| {
-                    if info.metadata.is_some() {
-                        telemetry::count_gateway_chain_lookup("asserted");
-                    } else {
-                        telemetry::count_gateway_chain_lookup("not-asserted");
-                    };
+                |info| self.map_info_v2_response(info),
+            )
+    }
 
-                    let info: GatewayInfoV2 = info
-                        .try_into()
-                        .map_err(|_| Status::internal("error serializing gateway info (v2)"))?;
+    async fn info_at_timestamp(
+        &self,
+        request: Request<GatewayInfoAtTimestampReqV1>,
+    ) -> GrpcResult<GatewayInfoResV2> {
+        let request = request.into_inner();
+        telemetry::count_request("gateway", "info-at-timestamp");
+        custom_tracing::record_b58("pub_key", &request.address);
+        custom_tracing::record_b58("signer", &request.signer);
 
-                    let mut res = GatewayInfoResV2 {
-                        info: Some(info),
-                        timestamp: Utc::now().encode_timestamp(),
-                        signer: self.signing_key.public_key().into(),
-                        signature: vec![],
-                    };
-                    res.signature = self.sign_response(&res.encode_to_vec())?;
-                    Ok(Response::new(res))
+        self.verify_request_signature_for_info(&request, &request.signer, &request.address)?;
+
+        let pubkey: PublicKeyBinary = request.address.into();
+        tracing::debug!(
+            pubkey = pubkey.to_string(),
+            "fetching gateway info at timestamp"
+        );
+
+        let query_time = Utc
+            .timestamp_opt(request.query_time as i64, 0)
+            .single()
+            .ok_or(Status::invalid_argument("Invalid query_time argument"))?;
+
+        info::get_by_address_and_inserted_at(&self.pool, &pubkey, &query_time)
+            .await
+            .map_err(|_| Status::internal("error fetching gateway info at timestamp"))?
+            .map_or_else(
+                || {
+                    telemetry::count_gateway_chain_lookup("not-found");
+                    Err(Status::not_found(pubkey.to_string()))
                 },
+                |info| self.map_info_v2_response(info),
             )
     }
 

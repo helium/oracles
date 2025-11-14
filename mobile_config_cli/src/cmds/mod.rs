@@ -167,6 +167,8 @@ pub enum GatewayCommands {
     /// Retrieve the on-chain registered info for the batch of hotspots
     /// requested by list of Public Key Binaries
     InfoBatch(GetHotspotBatch),
+    /// Retrieve the on-chain registered info for the hotspot at a timestamp
+    InfoAtTimestamp(GetHotspotAtTimestamp),
 }
 
 #[derive(Debug, Args)]
@@ -187,6 +189,20 @@ pub struct GetHotspotBatch {
     pub hotspot: Vec<PublicKey>,
     #[arg(short, long, default_value = "5")]
     pub batch_size: u32,
+    #[arg(from_global)]
+    pub keypair: PathBuf,
+    #[arg(from_global)]
+    pub config_host: String,
+    #[arg(from_global)]
+    pub config_pubkey: String,
+}
+
+#[derive(Debug, Args)]
+pub struct GetHotspotAtTimestamp {
+    #[arg(long)]
+    pub hotspot: PublicKey,
+    #[arg(long)]
+    pub query_time: u64,
     #[arg(from_global)]
     pub keypair: PathBuf,
     #[arg(from_global)]

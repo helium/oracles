@@ -102,6 +102,7 @@ impl_msg_verify!(mobile_config::GatewayInfoStreamResV3, signature);
 impl_msg_verify!(mobile_config::BoostedHexInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexModifiedInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::BoostedHexInfoStreamResV1, signature);
+impl_msg_verify!(mobile_config::GatewayInfoAtTimestampReqV1, signature);
 impl_msg_verify!(sub_dao::SubDaoEpochRewardInfoReqV1, signature);
 impl_msg_verify!(sub_dao::SubDaoEpochRewardInfoResV1, signature);
 impl_msg_verify!(poc_mobile::SubscriberVerifiedMappingEventReqV1, signature);
