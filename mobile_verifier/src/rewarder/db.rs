@@ -13,7 +13,7 @@ pub async fn no_wifi_heartbeats(
     reward_period: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<bool> {
     let count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM wifi_heartbeats WHERE latest_timestamp >= $1",
+        "SELECT COUNT(*) FROM wifi_heartbeats WHERE first_timestamp >= $1",
     )
     .bind(reward_period.end)
     .fetch_one(pool)
