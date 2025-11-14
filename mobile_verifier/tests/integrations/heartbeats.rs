@@ -57,7 +57,7 @@ async fn only_fetch_latest_hotspot(pool: PgPool) -> anyhow::Result<()> {
         "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp".parse()?;
     sqlx::query(
         r#"
-INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted)
+INSERT INTO wifi_heartbeats (hotspot_key, cell_type, first_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted)
 VALUES
     ($2, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', $3, 1.0, 0),
     ($2, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', $3, 1.0, 0),
@@ -118,7 +118,7 @@ async fn ensure_minimum_count(pool: PgPool) -> anyhow::Result<()> {
 
     sqlx::query(
         r#"
-INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted)
+INSERT INTO wifi_heartbeats (hotspot_key, cell_type, first_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted)
 VALUES
     ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', $2, 1.0, 0),
     ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', $2, 1.0, 0),
@@ -157,7 +157,7 @@ async fn ensure_wifi_hotspots_are_rewarded(pool: PgPool) -> anyhow::Result<()> {
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     sqlx::query(
         r#"
-INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted)
+INSERT INTO wifi_heartbeats (hotspot_key, cell_type, first_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted)
 VALUES
     ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', $2, 1.0, 0),
     ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', $2, 1.0, 0),
@@ -206,7 +206,7 @@ async fn ensure_wifi_hotspots_use_average_location_trust_score(pool: PgPool) -> 
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     sqlx::query(
         r#"
-INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted)
+INSERT INTO wifi_heartbeats (hotspot_key, cell_type, first_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted)
 VALUES
     ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', $2, 1.0, 0),
     ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', $2, 1.0, 0),
