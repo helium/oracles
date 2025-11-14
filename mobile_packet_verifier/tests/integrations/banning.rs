@@ -85,7 +85,7 @@ async fn extremities_of_banning(pool: PgPool) -> anyhow::Result<()> {
 
     assert!(banned.contains(&banned_before), "banned before");
     assert!(banned.contains(&banned_on_start), "banned on start");
-    assert!(banned.contains(&banned_within), "banned wthin");
+    assert!(banned.contains(&banned_within), "banned within");
     assert!(!banned.contains(&banned_on_end), "banned on end");
     assert!(!banned.contains(&banned_after), "banned after");
 

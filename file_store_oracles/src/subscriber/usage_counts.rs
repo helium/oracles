@@ -1,9 +1,8 @@
 use std::convert::TryFrom;
 
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
@@ -14,6 +13,18 @@ use helium_proto::services::poc_mobile::{
 use serde::{Deserialize, Serialize};
 
 use crate::traits::MsgTimestamp;
+
+#[derive(thiserror::Error, Debug)]
+pub enum UniqueCountsError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("invalid cell index: {0}")]
+    InvalidCellIndex(#[from] h3o::error::InvalidCellIndex),
+}
 
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub struct HexUsageStatsReq {
@@ -52,8 +63,8 @@ impl MsgDecode for RadioUsageStatsReq {
     type Msg = RadioUsageStatsReqV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for HexUsageStatsReqV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for HexUsageStatsReqV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp_millis()
     }
 }
@@ -64,8 +75,8 @@ impl MsgTimestamp<u64> for HexUsageStatsReq {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for RadioUsageStatsReqV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for RadioUsageStatsReqV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp_millis()
     }
 }
@@ -77,14 +88,14 @@ impl MsgTimestamp<u64> for RadioUsageStatsReq {
 }
 
 impl TryFrom<HexUsageStatsReqV1> for HexUsageStatsReq {
-    type Error = Error;
-    fn try_from(v: HexUsageStatsReqV1) -> Result<Self> {
+    type Error = UniqueCountsError;
+
+    fn try_from(v: HexUsageStatsReqV1) -> Result<Self, Self::Error> {
         let timestamp = v.timestamp()?;
         let epoch_start_timestamp = v.epoch_start_timestamp.to_timestamp_millis()?;
         let epoch_end_timestamp = v.epoch_end_timestamp.to_timestamp_millis()?;
-        let hex = CellIndex::try_from(v.hex).map_err(|_| {
-            DecodeError::FileStreamTryDecode(format!("invalid CellIndex {}", v.hex))
-        })?;
+        let hex = CellIndex::try_from(v.hex)?;
+
         Ok(Self {
             hex,
             service_provider_user_count: v.service_provider_user_count,
@@ -123,8 +134,9 @@ impl From<HexUsageStatsReq> for HexUsageStatsReqV1 {
 }
 
 impl TryFrom<RadioUsageStatsReqV1> for RadioUsageStatsReq {
-    type Error = Error;
-    fn try_from(v: RadioUsageStatsReqV1) -> Result<Self> {
+    type Error = UniqueCountsError;
+
+    fn try_from(v: RadioUsageStatsReqV1) -> Result<Self, Self::Error> {
         let timestamp = v.timestamp()?;
         let epoch_start_timestamp = v.epoch_start_timestamp.to_timestamp_millis()?;
         let epoch_end_timestamp = v.epoch_end_timestamp.to_timestamp_millis()?;
@@ -188,8 +200,8 @@ impl MsgDecode for RadioUsageCountsIngestReport {
     type Msg = RadioUsageStatsIngestReportV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for HexUsageStatsIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for HexUsageStatsIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -200,8 +212,8 @@ impl MsgTimestamp<u64> for HexUsageCountsIngestReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for RadioUsageStatsIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for RadioUsageStatsIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -213,15 +225,17 @@ impl MsgTimestamp<u64> for RadioUsageCountsIngestReport {
 }
 
 impl TryFrom<HexUsageStatsIngestReportV1> for HexUsageCountsIngestReport {
-    type Error = Error;
-    fn try_from(v: HexUsageStatsIngestReportV1) -> Result<Self> {
+    type Error = UniqueCountsError;
+
+    fn try_from(v: HexUsageStatsIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
-            report: v
-                .clone()
-                .report
-                .ok_or_else(|| Error::not_found("ingest HexUsageStatsIngestReport report"))?
-                .try_into()?,
             received_timestamp: v.timestamp()?,
+            report: v
+                .report
+                .ok_or(UniqueCountsError::MissingField(
+                    "hex_usage_counts_ingest_report.report",
+                ))?
+                .try_into()?,
         })
     }
 }
@@ -238,15 +252,17 @@ impl From<HexUsageCountsIngestReport> for HexUsageStatsIngestReportV1 {
 }
 
 impl TryFrom<RadioUsageStatsIngestReportV1> for RadioUsageCountsIngestReport {
-    type Error = Error;
-    fn try_from(v: RadioUsageStatsIngestReportV1) -> Result<Self> {
+    type Error = UniqueCountsError;
+
+    fn try_from(v: RadioUsageStatsIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
-            report: v
-                .clone()
-                .report
-                .ok_or_else(|| Error::not_found("ingest RadioUsageCountsIngestReport report"))?
-                .try_into()?,
             received_timestamp: v.timestamp()?,
+            report: v
+                .report
+                .ok_or(UniqueCountsError::MissingField(
+                    "hex_usage_stats_ingest_report_v_1.report",
+                ))?
+                .try_into()?,
         })
     }
 }

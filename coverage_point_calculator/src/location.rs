@@ -27,8 +27,8 @@ pub fn asserted_distance_to_trust_multiplier(
             _ => dec!(0.00),
         },
         RadioType::OutdoorWifi => match meters_to_asserted {
-            0..=100 => dec!(1.00),
-            101..=150 => dec!(0.25),
+            0..=300 => dec!(1.00),
+            301..=400 => dec!(0.25),
             _ => dec!(0.00),
         },
     }

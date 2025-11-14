@@ -1,8 +1,7 @@
 use blake3::Hasher;
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
@@ -14,7 +13,22 @@ use helium_proto::{
 };
 use serde::Serialize;
 
-use crate::traits::MsgTimestamp;
+use crate::{prost_enum, traits::MsgTimestamp};
+
+#[derive(thiserror::Error, Debug)]
+pub enum IotPacketError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("unsupported datarate: {0}")]
+    DataRate(prost::UnknownEnumValue),
+
+    #[error("unsupported region: {0}")]
+    Region(prost::UnknownEnumValue),
+
+    #[error("unsupported packet type: {0}")]
+    PacketType(prost::UnknownEnumValue),
+}
 
 #[derive(Serialize, Clone)]
 pub struct PacketRouterPacketReport {
@@ -49,8 +63,8 @@ impl MsgTimestamp<u64> for PacketRouterPacketReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for PacketRouterPacketReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for PacketRouterPacketReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -61,8 +75,8 @@ impl MsgTimestamp<u64> for IotValidPacket {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for ValidPacket {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for ValidPacket {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.packet_timestamp.to_timestamp_millis()
     }
 }
@@ -76,40 +90,31 @@ impl MsgDecode for IotValidPacket {
 }
 
 impl TryFrom<PacketRouterPacketReportV1> for PacketRouterPacketReport {
-    type Error = Error;
+    type Error = IotPacketError;
 
-    fn try_from(v: PacketRouterPacketReportV1) -> Result<Self> {
-        let data_rate = DataRate::try_from(v.datarate).map_err(|_| {
-            DecodeError::unsupported_datarate("iot_packet_router_packet_report_v1", v.datarate)
-        })?;
-        let region = Region::try_from(v.region).map_err(|_| {
-            DecodeError::unsupported_region("iot_packet_router_packet_report_v1", v.region)
-        })?;
-        let packet_type = PacketType::try_from(v.r#type).map_err(|_| {
-            DecodeError::unsupported_packet_type("iot_packet_router_packet_report_v1", v.r#type)
-        })?;
-        let received_timestamp = v.timestamp()?;
+    fn try_from(v: PacketRouterPacketReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
-            received_timestamp,
+            received_timestamp: v.timestamp()?,
             oui: v.oui,
             net_id: v.net_id,
             rssi: v.rssi,
             free: v.free,
             frequency: v.frequency,
             snr: v.snr,
-            data_rate,
-            region,
+            data_rate: prost_enum(v.datarate, IotPacketError::DataRate)?,
+            region: prost_enum(v.region, IotPacketError::Region)?,
             gateway: v.gateway.into(),
             payload_hash: v.payload_hash,
             payload_size: v.payload_size,
-            packet_type,
+            packet_type: prost_enum(v.r#type, IotPacketError::PacketType)?,
         })
     }
 }
 
 impl TryFrom<ValidPacket> for IotValidPacket {
-    type Error = Error;
-    fn try_from(v: ValidPacket) -> Result<Self> {
+    type Error = IotPacketError;
+
+    fn try_from(v: ValidPacket) -> Result<Self, Self::Error> {
         let ts = v.timestamp()?;
         Ok(Self {
             gateway: v.gateway.into(),

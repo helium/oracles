@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
@@ -11,7 +10,22 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::traits::MsgTimestamp;
+use crate::{prost_enum, traits::MsgTimestamp};
+
+#[derive(thiserror::Error, Debug)]
+pub enum MobileBanInvalidatedThresholdError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported reason: {0}")]
+    Reason(prost::UnknownEnumValue),
+
+    #[error("unsupported status: {0}")]
+    Status(prost::UnknownEnumValue),
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct InvalidatedRadioThresholdReportReq {
@@ -47,18 +61,13 @@ impl MsgDecode for VerifiedInvalidatedRadioThresholdIngestReport {
 }
 
 impl TryFrom<InvalidatedRadioThresholdReportReqV1> for InvalidatedRadioThresholdReportReq {
-    type Error = Error;
-    fn try_from(v: InvalidatedRadioThresholdReportReqV1) -> Result<Self> {
-        let reason = InvalidatedThresholdReason::try_from(v.reason).map_err(|_| {
-            DecodeError::unsupported_invalidated_reason(
-                "invalidated_radio_threshold_report_req_v1",
-                v.reason,
-            )
-        })?;
+    type Error = MobileBanInvalidatedThresholdError;
+
+    fn try_from(v: InvalidatedRadioThresholdReportReqV1) -> Result<Self, Self::Error> {
         Ok(Self {
+            reason: prost_enum(v.reason, MobileBanInvalidatedThresholdError::Reason)?,
+            timestamp: v.timestamp()?,
             hotspot_pubkey: v.hotspot_pubkey.into(),
-            reason,
-            timestamp: v.timestamp.to_timestamp()?,
             carrier_pub_key: v.carrier_pub_key.into(),
         })
     }
@@ -66,20 +75,19 @@ impl TryFrom<InvalidatedRadioThresholdReportReqV1> for InvalidatedRadioThreshold
 
 impl From<InvalidatedRadioThresholdReportReq> for InvalidatedRadioThresholdReportReqV1 {
     fn from(v: InvalidatedRadioThresholdReportReq) -> Self {
-        let timestamp = v.timestamp.timestamp() as u64;
         Self {
             cbsd_id: String::default(),
+            timestamp: v.timestamp(),
             hotspot_pubkey: v.hotspot_pubkey.into(),
             reason: v.reason as i32,
-            timestamp,
             carrier_pub_key: v.carrier_pub_key.into(),
             signature: vec![],
         }
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for InvalidatedRadioThresholdReportReqV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for InvalidatedRadioThresholdReportReqV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp()
     }
 }
@@ -90,8 +98,8 @@ impl MsgTimestamp<u64> for InvalidatedRadioThresholdReportReq {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for InvalidatedRadioThresholdIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for InvalidatedRadioThresholdIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -102,8 +110,8 @@ impl MsgTimestamp<u64> for InvalidatedRadioThresholdIngestReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedInvalidatedRadioThresholdIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for VerifiedInvalidatedRadioThresholdIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp_millis()
     }
 }
@@ -115,15 +123,16 @@ impl MsgTimestamp<u64> for VerifiedInvalidatedRadioThresholdIngestReport {
 }
 
 impl TryFrom<InvalidatedRadioThresholdIngestReportV1> for InvalidatedRadioThresholdIngestReport {
-    type Error = Error;
-    fn try_from(v: InvalidatedRadioThresholdIngestReportV1) -> Result<Self> {
+    type Error = MobileBanInvalidatedThresholdError;
+
+    fn try_from(v: InvalidatedRadioThresholdIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| {
-                    Error::not_found("ingest invalidated radio threshold ingest report")
-                })?
+                .ok_or(MobileBanInvalidatedThresholdError::MissingField(
+                    "invalidated_radio_threshold_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }
@@ -143,23 +152,18 @@ impl From<InvalidatedRadioThresholdIngestReport> for InvalidatedRadioThresholdIn
 impl TryFrom<VerifiedInvalidatedRadioThresholdIngestReportV1>
     for VerifiedInvalidatedRadioThresholdIngestReport
 {
-    type Error = Error;
-    fn try_from(v: VerifiedInvalidatedRadioThresholdIngestReportV1) -> Result<Self> {
-        let status = InvalidatedRadioThresholdReportVerificationStatus::try_from(v.status)
-            .map_err(|_| {
-                DecodeError::unsupported_status_reason(
-                    "verified_invalidated_radio_threshold_ingest_report_v1",
-                    v.status,
-                )
-            })?;
-        let report = v
-            .report
-            .ok_or_else(|| Error::not_found("ingest invalidated radio threshold ingest report"))?
-            .try_into()?;
+    type Error = MobileBanInvalidatedThresholdError;
+
+    fn try_from(v: VerifiedInvalidatedRadioThresholdIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
-            report,
-            status,
-            timestamp: v.timestamp.to_timestamp()?,
+            status: prost_enum(v.status, MobileBanInvalidatedThresholdError::Status)?,
+            timestamp: v.timestamp()?,
+            report: v
+                .report
+                .ok_or(MobileBanInvalidatedThresholdError::MissingField(
+                    "verified_invalidated_radio_threshold_ingest_report.report",
+                ))?
+                .try_into()?,
         })
     }
 }

@@ -1,8 +1,5 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error,
-};
+use file_store::traits::{MsgDecode, TimestampDecode, TimestampDecodeError, TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 
 pub mod proto {
@@ -14,6 +11,26 @@ pub mod proto {
 
 // Re-export proto enums
 pub use proto::{BanReason, VerifiedBanIngestReportStatus};
+
+use crate::prost_enum;
+
+#[derive(thiserror::Error, Debug)]
+pub enum BanReportError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported status: {0}")]
+    Status(prost::UnknownEnumValue),
+
+    #[error("unsupported ban type: {0}")]
+    BanType(prost::UnknownEnumValue),
+
+    #[error("unsupported reason: {0}")]
+    Reason(prost::UnknownEnumValue),
+}
 
 #[derive(Clone)]
 pub struct VerifiedBanReport {
@@ -77,37 +94,36 @@ impl MsgDecode for VerifiedBanReport {
 // === Conversion :: proto -> struct
 
 impl TryFrom<proto::VerifiedBanIngestReportV1> for VerifiedBanReport {
-    type Error = Error;
+    type Error = BanReportError;
 
     fn try_from(value: proto::VerifiedBanIngestReportV1) -> Result<Self, Self::Error> {
-        let status = value.status();
         Ok(Self {
             verified_timestamp: value.verified_timestamp_ms.to_timestamp_millis()?,
             report: value
                 .report
-                .ok_or_else(|| Error::not_found("verified ban report missing"))?
+                .ok_or(BanReportError::MissingField("verified_ban_report.report"))?
                 .try_into()?,
-            status,
+            status: prost_enum(value.status, BanReportError::Status)?,
         })
     }
 }
 
 impl TryFrom<proto::BanIngestReportV1> for BanReport {
-    type Error = Error;
+    type Error = BanReportError;
 
     fn try_from(value: proto::BanIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: value.received_timestamp_ms.to_timestamp_millis()?,
             report: value
                 .report
-                .ok_or_else(|| Error::not_found("ban report missing"))?
+                .ok_or(BanReportError::MissingField("ban_report.report"))?
                 .try_into()?,
         })
     }
 }
 
 impl TryFrom<proto::BanReqV1> for BanRequest {
-    type Error = Error;
+    type Error = BanReportError;
 
     fn try_from(value: proto::BanReqV1) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -121,18 +137,18 @@ impl TryFrom<proto::BanReqV1> for BanRequest {
 }
 
 impl TryFrom<Option<proto::BanAction>> for BanAction {
-    type Error = Error;
+    type Error = BanReportError;
 
     fn try_from(value: Option<proto::BanAction>) -> Result<Self, Self::Error> {
         match value {
             Some(action) => Ok(action.try_into()?),
-            None => Err(DecodeError::empty_field("ban_action")),
+            None => Err(BanReportError::MissingField("ban_action")),
         }
     }
 }
 
 impl TryFrom<proto::BanAction> for BanAction {
-    type Error = Error;
+    type Error = BanReportError;
     fn try_from(value: proto::BanAction) -> Result<Self, Self::Error> {
         let action = match value {
             proto::BanAction::Ban(details) => Self::Ban(details.try_into()?),
@@ -143,18 +159,16 @@ impl TryFrom<proto::BanAction> for BanAction {
 }
 
 impl TryFrom<proto::BanDetailsV1> for BanDetails {
-    type Error = Error;
+    type Error = BanReportError;
 
     fn try_from(value: proto::BanDetailsV1) -> Result<Self, Self::Error> {
-        let reason = value.reason();
-        let ban_type = value.ban_type().into();
         let expiration_timestamp = match value.expiration_timestamp_ms {
             0 => None,
             val => Some(val.to_timestamp_millis()?),
         };
         Ok(Self {
-            reason,
-            ban_type,
+            reason: prost_enum(value.reason, BanReportError::Reason)?,
+            ban_type: prost_enum(value.ban_type, BanReportError::BanType)?,
             hotspot_serial: value.hotspot_serial,
             message: value.message,
             expiration_timestamp,
@@ -168,6 +182,16 @@ impl From<proto::UnbanDetailsV1> for UnbanDetails {
             hotspot_serial: value.hotspot_serial,
             message: value.message,
         }
+    }
+}
+
+// Helper to use map_enum that goes through the proto type into our own.
+impl TryFrom<i32> for BanType {
+    type Error = prost::UnknownEnumValue;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        let val = proto::BanType::try_from(value)?;
+        Ok(val.into())
     }
 }
 

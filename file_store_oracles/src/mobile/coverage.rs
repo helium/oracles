@@ -1,8 +1,5 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode},
-    DecodeError, Error, Result,
-};
+use file_store::traits::{MsgDecode, TimestampDecode, TimestampDecodeError};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     coverage_object_req_v1, CoverageObjectIngestReportV1, CoverageObjectReqV1,
@@ -10,6 +7,32 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::prost_enum;
+
+#[derive(thiserror::Error, Debug)]
+pub enum CoverageError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("invalid cell index: {0}")]
+    InvalidCellIndex(#[from] h3o::error::InvalidCellIndex),
+
+    #[error("uuid: {0}")]
+    Uuid(#[from] uuid::Error),
+
+    #[error("unsupported keytype CbsdId")]
+    UnsupportedCsbdId,
+
+    #[error("missing key_type")]
+    MissingKeyType,
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported signal level: {0}")]
+    SignalLevel(prost::UnknownEnumValue),
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RadioHexSignalLevel {
@@ -58,42 +81,41 @@ impl MsgDecode for CoverageObjectIngestReport {
 }
 
 impl TryFrom<CoverageObjectIngestReportV1> for CoverageObjectIngestReport {
-    type Error = Error;
+    type Error = CoverageError;
 
-    fn try_from(v: CoverageObjectIngestReportV1) -> Result<Self> {
+    fn try_from(v: CoverageObjectIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.received_timestamp.to_timestamp_millis()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("ingest coverage object report"))?
+                .ok_or(CoverageError::MissingField(
+                    "coverage_object_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }
 }
 
 impl TryFrom<CoverageObjectReqV1> for CoverageObject {
-    type Error = Error;
+    type Error = CoverageError;
 
-    fn try_from(v: CoverageObjectReqV1) -> Result<Self> {
-        let coverage: Result<Vec<RadioHexSignalLevel>> = v
+    fn try_from(v: CoverageObjectReqV1) -> Result<Self, Self::Error> {
+        let coverage: Result<Vec<RadioHexSignalLevel>, CoverageError> = v
             .coverage
             .into_iter()
             .map(RadioHexSignalLevel::try_from)
             .collect();
         Ok(Self {
             pub_key: v.pub_key.into(),
-            uuid: Uuid::from_slice(&v.uuid).map_err(DecodeError::from)?,
+            uuid: Uuid::from_slice(&v.uuid)?,
             key_type: match v.key_type {
                 Some(coverage_object_req_v1::KeyType::HotspotKey(key)) => {
                     KeyType::HotspotKey(key.into())
                 }
                 Some(coverage_object_req_v1::KeyType::CbsdId(_id)) => {
-                    return Err(Error::NotFound(
-                        "coverage objects with KeyType CbsdId are not supported anymore"
-                            .to_string(),
-                    ))
+                    return Err(CoverageError::UnsupportedCsbdId);
                 }
-                None => return Err(Error::NotFound("key_type".to_string())),
+                None => return Err(CoverageError::MissingKeyType),
             },
             coverage_claim_time: v.coverage_claim_time.to_timestamp()?,
             coverage: coverage?,
@@ -105,15 +127,13 @@ impl TryFrom<CoverageObjectReqV1> for CoverageObject {
 }
 
 impl TryFrom<RadioHexSignalLevelProto> for RadioHexSignalLevel {
-    type Error = Error;
+    type Error = CoverageError;
 
-    fn try_from(v: RadioHexSignalLevelProto) -> Result<Self> {
+    fn try_from(v: RadioHexSignalLevelProto) -> Result<Self, Self::Error> {
         Ok(Self {
-            signal_level: SignalLevel::try_from(v.signal_level).map_err(|_| {
-                DecodeError::unsupported_signal_level("coverage_object_req_v1", v.signal_level)
-            })?,
+            signal_level: prost_enum(v.signal_level, CoverageError::SignalLevel)?,
             signal_power: v.signal_power,
-            location: v.location.parse().map_err(DecodeError::from)?,
+            location: v.location.parse()?,
         })
     }
 }

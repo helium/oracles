@@ -9,7 +9,6 @@ use crate::{
     heartbeats::wifi::WifiHeartbeatDaemon,
     rewarder::Rewarder,
     speedtests::SpeedtestDaemon,
-    subscriber_mapping_activity::SubscriberMappingActivityDaemon,
     telemetry,
     unique_connections::ingestor::UniqueConnectionsIngestor,
     Settings,
@@ -19,8 +18,8 @@ use file_store::file_upload;
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use helium_proto::services::poc_mobile::{Heartbeat, SeniorityUpdate, SpeedtestAvg};
 use mobile_config::client::{
-    entity_client::EntityClient, hex_boosting_client::HexBoostingClient,
-    sub_dao_client::SubDaoClient, AuthorizationClient, CarrierServiceClient, GatewayClient,
+    hex_boosting_client::HexBoostingClient, sub_dao_client::SubDaoClient, AuthorizationClient,
+    GatewayClient,
 };
 use task_manager::TaskManager;
 
@@ -43,8 +42,6 @@ impl Cmd {
         // mobile config clients
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
-        let entity_client = EntityClient::from_settings(&settings.config_client)?;
-        let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
         let hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
         let sub_dao_rewards_client = SubDaoClient::from_settings(&settings.config_client)?;
 
@@ -121,17 +118,6 @@ impl Cmd {
                 .await?,
             )
             .add_task(
-                SubscriberMappingActivityDaemon::create_managed_task(
-                    pool.clone(),
-                    settings,
-                    auth_client.clone(),
-                    entity_client.clone(),
-                    ingest_bucket_client.clone(),
-                    file_upload.clone(),
-                )
-                .await?,
-            )
-            .add_task(
                 CoverageDaemon::create_managed_task(
                     pool.clone(),
                     settings,
@@ -186,7 +172,6 @@ impl Cmd {
                     pool,
                     settings,
                     file_upload,
-                    carrier_client,
                     hex_boosting_client,
                     sub_dao_rewards_client,
                     speedtests_avg,

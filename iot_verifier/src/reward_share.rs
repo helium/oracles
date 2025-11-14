@@ -21,7 +21,7 @@ static DATA_TRANSFER_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.50);
 static OPERATIONS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
 // Oracles fund is allocated 7% of daily rewards
 static ORACLES_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
-// dc remainer distributed at ration of 4:1 in favour of witnesses
+// dc remainder distributed at ration of 4:1 in favour of witnesses
 // ie WITNESS_REWARDS_PER_DAY_PERCENT:BEACON_REWARDS_PER_DAY_PERCENT
 static WITNESS_DC_REMAINER_PERCENT: Decimal = dec!(0.80);
 static BEACON_DC_REMAINER_PERCENT: Decimal = dec!(0.20);
@@ -283,7 +283,7 @@ impl GatewayShares {
         // the rewards distributed to gateways will be equal to this
         // up to a max cap of total_dc_transfer_rewards
         // if the dc transfer rewards is less than total_dc_transfer_rewards
-        // then the remainer will be added to the POC rewards allocation
+        // then the remainder will be added to the POC rewards allocation
         let total_dc_transfer_rewards_used =
             dc_to_hnt_bones(total_dc_shares, price_info.price_per_bone);
         let (dc_transfer_rewards_unused, total_dc_transfer_rewards_capped) =

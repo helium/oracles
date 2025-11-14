@@ -59,7 +59,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    // seed HBs where we have a coverage reports for a singluar hex location per radio
+    // seed HBs where we have a coverage reports for a singular hex location per radio
     seed_heartbeats_v1(reward_info.epoch_period.start, &mut txn).await?;
     seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
     seed_unique_connections(reward_info.epoch_period.start, &mut txn).await?;
@@ -212,7 +212,7 @@ async fn test_poc_boosted_hexes_unique_connections_not_seeded(pool: PgPool) -> a
 
     // seed all the things
     let mut txn = pool.clone().begin().await?;
-    // seed HBs where we have a coverage reports for a singluar hex location per radio
+    // seed HBs where we have a coverage reports for a singular hex location per radio
     seed_heartbeats_v1(epoch.start, &mut txn).await?;
     seed_speedtests(epoch.end, &mut txn).await?;
     txn.commit().await?;
@@ -304,9 +304,9 @@ async fn test_poc_boosted_hexes_unique_connections_not_seeded(pool: PgPool) -> a
     let hotspot_2 = poc_rewards.get(HOTSPOT_2).expect("hotspot 2");
     let hotspot_3 = poc_rewards.get(HOTSPOT_3).expect("hotspot 3");
 
-    assert_eq!(16_438_356_164_383, hotspot_1.total_poc_reward());
-    assert_eq!(16_438_356_164_383, hotspot_2.total_poc_reward());
-    assert_eq!(16_438_356_164_383, hotspot_3.total_poc_reward());
+    assert_eq!(19_178_082_191_780, hotspot_1.total_poc_reward());
+    assert_eq!(19_178_082_191_780, hotspot_2.total_poc_reward());
+    assert_eq!(19_178_082_191_780, hotspot_3.total_poc_reward());
 
     // assert the number of boosted hexes for each radio
     assert_eq!(0, hotspot_1.boosted_hexes_len());
@@ -571,9 +571,9 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(poc_rewards.len(), 3);
 
     // assert poc reward outputs
-    assert_eq!(16_438_356_164_383, hotspot_1.total_poc_reward());
-    assert_eq!(16_438_356_164_383, hotspot_2.total_poc_reward());
-    assert_eq!(16_438_356_164_383, hotspot_3.total_poc_reward());
+    assert_eq!(19_178_082_191_780, hotspot_1.total_poc_reward());
+    assert_eq!(19_178_082_191_780, hotspot_2.total_poc_reward());
+    assert_eq!(19_178_082_191_780, hotspot_3.total_poc_reward());
 
     // assert the number of boosted hexes for each radio
     // all will be zero as the boost period has expired for the single boosted hex
@@ -1528,7 +1528,7 @@ async fn save_seniority_object(
 fn get_poc_allocation_buckets(total_emissions: Decimal) -> Decimal {
     // To not deal with percentages of percentages, let's start with the
     // total emissions and work from there.
-    let data_transfer = total_emissions * dec!(0.6);
+    let data_transfer = total_emissions * dec!(0.7);
     let regular_poc = total_emissions * dec!(0.0);
 
     // There is no data transfer in this test to be rewarded, so we know
@@ -1551,5 +1551,5 @@ fn assert_total_matches_emissions(total: u64, reward_info: &EpochRewardInfo) {
     // confirm the rewarded percentage amount matches expectations
     let percent = (Decimal::from(total) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    assert_eq!(percent, dec!(0.6), "POC and DC is always 60%");
+    assert_eq!(percent, dec!(0.70), "POC and DC is always 70%");
 }

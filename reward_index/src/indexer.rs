@@ -142,7 +142,7 @@ impl Indexer {
             manifest
                 .written_files
                 .into_iter()
-                .map(|file_name| FileInfo::from_str(&file_name)),
+                .map(|file_name| FileInfo::from_str(&file_name).map_err(file_store::Error::from)),
         )
         .boxed();
 
