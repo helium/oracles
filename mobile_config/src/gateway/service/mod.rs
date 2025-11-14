@@ -172,7 +172,7 @@ impl mobile_config::Gateway for GatewayService {
         request: Request<GatewayInfoAtTimestampReqV1>,
     ) -> GrpcResult<GatewayInfoResV2> {
         let request = request.into_inner();
-        telemetry::count_request("gateway", "info-v2");
+        telemetry::count_request("gateway", "info-at-timestamp");
         custom_tracing::record_b58("pub_key", &request.address);
         custom_tracing::record_b58("signer", &request.signer);
 
