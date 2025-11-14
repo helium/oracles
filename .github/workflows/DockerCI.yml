@@ -13,17 +13,21 @@ permissions:
   packages: write
 
 jobs:
-  cleanup:
+  free-disk-space:
     runs-on: ubuntu-latest
     steps:
-      - name: Check disk usage
-        run: df -h
-      - name: Removed unused Docker images
-        run: docker system prune -af
-      - name: Clean up temporary files
-        run: sudo rm -rf /tmp/*
+    - name: Free Disk Space
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: true
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
   compute-base-build-tag:
-    needs: cleanup
+    needs: free-disk-space
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.out.outputs.tag }}
