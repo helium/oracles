@@ -15,7 +15,6 @@ use sqlx::{types::Uuid, PgPool};
 use crate::common::TestMobileConfig;
 
 #[sqlx::test]
-#[ignore]
 async fn burn_metric_reports_0_after_successful_accumulate_and_burn(
     pool: PgPool,
 ) -> anyhow::Result<()> {
