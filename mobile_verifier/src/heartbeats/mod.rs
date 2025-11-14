@@ -297,6 +297,7 @@ impl ValidatedHeartbeat {
         max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
         geofence: &impl GeofenceValidator,
+        gateway_query_timestamp: &DateTime<Utc>,
     ) -> anyhow::Result<Self> {
         let Some(coverage_object) = heartbeat.coverage_object else {
             return Ok(Self::new(
@@ -378,7 +379,7 @@ impl ValidatedHeartbeat {
         }
 
         match gateway_info_resolver
-            .resolve_gateway(&heartbeat.hotspot_key)
+            .resolve_gateway(&heartbeat.hotspot_key, gateway_query_timestamp)
             .await?
         {
             GatewayResolution::DataOnly => Ok(Self::new(
@@ -489,6 +490,7 @@ impl ValidatedHeartbeat {
         max_distance_to_coverage: u32,
         epoch: &'a Range<DateTime<Utc>>,
         geofence: &'a impl GeofenceValidator,
+        gateway_query_timestamp: &'a DateTime<Utc>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
             Self::validate(
@@ -499,6 +501,7 @@ impl ValidatedHeartbeat {
                 max_distance_to_coverage,
                 epoch,
                 geofence,
+                gateway_query_timestamp,
             )
             .await
         })
