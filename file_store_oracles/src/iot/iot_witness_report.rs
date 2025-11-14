@@ -1,14 +1,26 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{LoraWitnessIngestReportV1, LoraWitnessReportReqV1};
 use helium_proto::DataRate;
 use serde::Serialize;
 
+use crate::prost_enum;
 use crate::traits::MsgTimestamp;
+
+#[derive(thiserror::Error, Debug)]
+pub enum IotWitnessError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported datarate: {0}")]
+    DataRate(prost::UnknownEnumValue),
+}
 
 #[derive(Serialize, Clone, Debug)]
 pub struct IotWitnessReport {
@@ -35,8 +47,9 @@ impl MsgDecode for IotWitnessIngestReport {
 }
 
 impl TryFrom<LoraWitnessReportReqV1> for IotWitnessIngestReport {
-    type Error = Error;
-    fn try_from(v: LoraWitnessReportReqV1) -> Result<Self> {
+    type Error = IotWitnessError;
+
+    fn try_from(v: LoraWitnessReportReqV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: Utc::now(),
             report: v.try_into()?,
@@ -45,13 +58,16 @@ impl TryFrom<LoraWitnessReportReqV1> for IotWitnessIngestReport {
 }
 
 impl TryFrom<LoraWitnessIngestReportV1> for IotWitnessIngestReport {
-    type Error = Error;
-    fn try_from(v: LoraWitnessIngestReportV1) -> Result<Self> {
+    type Error = IotWitnessError;
+
+    fn try_from(v: LoraWitnessIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("iot witness ingest report v1"))?
+                .ok_or(IotWitnessError::MissingField(
+                    "iot_witness_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }
@@ -75,29 +91,25 @@ impl From<IotWitnessIngestReport> for LoraWitnessReportReqV1 {
 }
 
 impl TryFrom<LoraWitnessReportReqV1> for IotWitnessReport {
-    type Error = Error;
-    fn try_from(v: LoraWitnessReportReqV1) -> Result<Self> {
-        let dr = v.datarate;
-        let data_rate: DataRate = DataRate::try_from(dr)
-            .map_err(|_| DecodeError::unsupported_datarate("iot_witness_report_req_v1", dr))?;
-        let timestamp = v.timestamp()?;
+    type Error = IotWitnessError;
 
+    fn try_from(v: LoraWitnessReportReqV1) -> Result<Self, Self::Error> {
         Ok(Self {
+            datarate: prost_enum(v.datarate, IotWitnessError::DataRate)?,
+            timestamp: v.timestamp()?,
             pub_key: v.pub_key.into(),
             data: v.data,
-            timestamp,
             signal: v.signal,
             snr: v.snr,
             frequency: v.frequency,
-            datarate: data_rate,
             signature: v.signature,
             tmst: v.tmst,
         })
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for LoraWitnessReportReqV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for LoraWitnessReportReqV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp_nanos()
     }
 }
@@ -108,8 +120,8 @@ impl MsgTimestamp<u64> for IotWitnessReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for LoraWitnessIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for LoraWitnessIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }

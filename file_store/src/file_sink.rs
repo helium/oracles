@@ -1,3 +1,4 @@
+use crate::error::ChannelError;
 use crate::{file_upload::FileUpload, Error, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
@@ -176,6 +177,7 @@ impl<T> FileSinkClient<T> {
     ) -> Result<oneshot::Receiver<Result>> {
         let (on_write_tx, on_write_rx) = oneshot::channel();
         let labels = labels.into_iter().map(Label::from);
+
         tokio::select! {
             result = self.sender.send_timeout(Message::Data(on_write_tx, item.into()), SEND_TIMEOUT) => match result {
                 Ok(_) => {
@@ -196,11 +198,11 @@ impl<T> FileSinkClient<T> {
                             .collect::<Vec<Label>>()
                     ).increment(1);
                     tracing::error!("file_sink write failed for {:?} channel closed", self.metric);
-                    Err(Error::channel())
+                    Err(ChannelError::sink_closed(&self.metric))
                 }
                 Err(SendTimeoutError::Timeout(_)) => {
                     tracing::error!("file_sink write failed for {:?} due to send timeout", self.metric);
-                    Err(Error::SendTimeout)
+                    Err(ChannelError::sink_timeout(&self.metric))
                 }
             },
         }
@@ -228,7 +230,7 @@ impl<T> FileSinkClient<T> {
                     "file_sink failed to commit for {:?} with {e:?}",
                     self.metric
                 );
-                Error::channel()
+                ChannelError::sink_closed(&self.metric)
             })
             .map(|_| on_commit_rx)
     }
@@ -243,7 +245,7 @@ impl<T> FileSinkClient<T> {
                     "file_sink failed to rollback for {:?} with {e:?}",
                     self.metric
                 );
-                Error::channel()
+                ChannelError::sink_closed(&self.metric)
             })
             .map(|_| on_rollback_rx)
     }

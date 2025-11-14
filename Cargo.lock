@@ -1321,7 +1321,7 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#db80ad554e92bde5aaa37b8dce583a8787d1727b"
+source = "git+https://github.com/helium/proto?branch=master#60e0047b6e0e38b8119a055b37a7043cb02dbc82"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -2831,7 +2831,6 @@ dependencies = [
  "derive_builder",
  "futures",
  "futures-util",
- "h3o",
  "helium-crypto",
  "helium-proto",
  "http 1.3.1",
@@ -2882,6 +2881,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
+ "thiserror 1.0.69",
  "tokio",
  "uuid",
 ]
@@ -3513,7 +3513,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#db80ad554e92bde5aaa37b8dce583a8787d1727b"
+source = "git+https://github.com/helium/proto?branch=master#60e0047b6e0e38b8119a055b37a7043cb02dbc82"
 dependencies = [
  "bytes",
  "prost",

@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    traits::{MsgDecode, TimestampDecode, TimestampEncode},
-    DecodeError, Error, Result,
+use file_store::traits::{
+    MsgDecode, TimestampDecode, TimestampDecodeError, TimestampDecodeResult, TimestampEncode,
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
@@ -13,7 +12,25 @@ use helium_proto::services::poc_mobile::{
 };
 use serde::Serialize;
 
-use crate::traits::MsgTimestamp;
+use crate::{prost_enum, traits::MsgTimestamp};
+
+#[derive(thiserror::Error, Debug)]
+pub enum DataTransferError {
+    #[error("invalid timestamp: {0}")]
+    Timestamp(#[from] TimestampDecodeError),
+
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+
+    #[error("unsupported status reason: {0}")]
+    StatusReason(prost::UnknownEnumValue),
+
+    #[error("unsupported carrier id v2: {0}")]
+    CarrierIdV2(prost::UnknownEnumValue),
+
+    #[error("unsupported radio access technology: {0}")]
+    RadioAccessTechnology(prost::UnknownEnumValue),
+}
 
 #[derive(Serialize, Clone, Debug)]
 pub struct DataTransferSessionIngestReport {
@@ -25,8 +42,8 @@ impl MsgDecode for DataTransferSessionIngestReport {
     type Msg = DataTransferSessionIngestReportV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for DataTransferSessionIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for DataTransferSessionIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.received_timestamp.to_timestamp_millis()
     }
 }
@@ -38,14 +55,16 @@ impl MsgTimestamp<u64> for DataTransferSessionIngestReport {
 }
 
 impl TryFrom<DataTransferSessionIngestReportV1> for DataTransferSessionIngestReport {
-    type Error = Error;
+    type Error = DataTransferError;
 
-    fn try_from(v: DataTransferSessionIngestReportV1) -> Result<Self> {
+    fn try_from(v: DataTransferSessionIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("data transfer session report"))?
+                .ok_or(DataTransferError::MissingField(
+                    "data_transfer_session_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }
@@ -73,8 +92,8 @@ impl MsgDecode for InvalidDataTransferIngestReport {
     type Msg = InvalidDataTransferIngestReportV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for InvalidDataTransferIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for InvalidDataTransferIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp_millis()
     }
 }
@@ -86,18 +105,18 @@ impl MsgTimestamp<u64> for InvalidDataTransferIngestReport {
 }
 
 impl TryFrom<InvalidDataTransferIngestReportV1> for InvalidDataTransferIngestReport {
-    type Error = Error;
-    fn try_from(v: InvalidDataTransferIngestReportV1) -> Result<Self> {
-        let reason = DataTransferIngestReportStatus::try_from(v.reason).map_err(|_| {
-            DecodeError::unsupported_status_reason("invalid_data_transfer_session_reason", v.reason)
-        })?;
+    type Error = DataTransferError;
+
+    fn try_from(v: InvalidDataTransferIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
             timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("data transfer session ingest report"))?
+                .ok_or(DataTransferError::MissingField(
+                    "invalid_data_transfer_ingest_report.report",
+                ))?
                 .try_into()?,
-            reason,
+            reason: prost_enum(v.reason, DataTransferError::StatusReason)?,
         })
     }
 }
@@ -127,8 +146,8 @@ impl MsgTimestamp<u64> for VerifiedDataTransferIngestReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for VerifiedDataTransferIngestReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for VerifiedDataTransferIngestReportV1 {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp_millis()
     }
 }
@@ -138,14 +157,17 @@ impl MsgDecode for VerifiedDataTransferIngestReport {
 }
 
 impl TryFrom<VerifiedDataTransferIngestReportV1> for VerifiedDataTransferIngestReport {
-    type Error = Error;
-    fn try_from(v: VerifiedDataTransferIngestReportV1) -> Result<Self> {
+    type Error = DataTransferError;
+
+    fn try_from(v: VerifiedDataTransferIngestReportV1) -> Result<Self, Self::Error> {
         Ok(Self {
-            status: v.status(),
+            status: prost_enum(v.status, DataTransferError::StatusReason)?,
             timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("data transfer session ingest report"))?
+                .ok_or(DataTransferError::MissingField(
+                    "verified_data_transfer_ingest_report.report",
+                ))?
                 .try_into()?,
         })
     }
@@ -175,8 +197,8 @@ pub struct DataTransferEvent {
     pub signature: Vec<u8>,
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for DataTransferEventProto {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+impl MsgTimestamp<TimestampDecodeResult> for DataTransferEventProto {
+    fn timestamp(&self) -> TimestampDecodeResult {
         self.timestamp.to_timestamp()
     }
 }
@@ -192,17 +214,19 @@ impl MsgDecode for DataTransferEvent {
 }
 
 impl TryFrom<DataTransferEventProto> for DataTransferEvent {
-    type Error = Error;
+    type Error = DataTransferError;
 
-    fn try_from(v: DataTransferEventProto) -> Result<Self> {
+    fn try_from(v: DataTransferEventProto) -> Result<Self, Self::Error> {
         let timestamp = v.timestamp()?;
-        let radio_access_technology = v.radio_access_technology();
 
         Ok(Self {
             pub_key: v.pub_key.into(),
             upload_bytes: v.upload_bytes,
             download_bytes: v.download_bytes,
-            radio_access_technology,
+            radio_access_technology: prost_enum(
+                v.radio_access_technology,
+                DataTransferError::RadioAccessTechnology,
+            )?,
             event_id: v.event_id,
             payer: v.payer.into(),
             timestamp,
@@ -242,20 +266,20 @@ impl MsgDecode for DataTransferSessionReq {
 }
 
 impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
-    type Error = Error;
+    type Error = DataTransferError;
 
-    fn try_from(v: DataTransferSessionReqV1) -> Result<Self> {
-        let carrier_id = v.carrier_id_v2();
-
+    fn try_from(v: DataTransferSessionReqV1) -> Result<Self, Self::Error> {
         Ok(Self {
             rewardable_bytes: v.rewardable_bytes,
-            signature: v.signature,
             data_transfer_usage: v
                 .data_transfer_usage
-                .ok_or_else(|| Error::not_found("data transfer usage"))?
+                .ok_or(DataTransferError::MissingField(
+                    "data_transfer_session_req.data_transfer_usage",
+                ))?
                 .try_into()?,
+            signature: v.signature,
             pub_key: v.pub_key.into(),
-            carrier_id,
+            carrier_id: prost_enum(v.carrier_id_v2, DataTransferError::CarrierIdV2)?,
             sampling: v.sampling,
         })
     }
