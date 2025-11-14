@@ -18,6 +18,12 @@ jobs:
     outputs:
       image_tag: ${{ steps.out.outputs.tag }}
     steps:
+      - name: Cleanup Disk
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /user/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
       - name: Checkout Repository
         uses: actions/checkout@v4
       - name: Create Tag
