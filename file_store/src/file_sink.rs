@@ -47,7 +47,7 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
 
 #[derive(Debug)]
 pub enum Message<T> {
-    Data(oneshot::Sender<Result>, T),
+    Data(oneshot::Sender<Result>, T, Option<String>),
     Commit(oneshot::Sender<Result<FileManifest>>),
     Rollback(oneshot::Sender<Result<FileManifest>>),
 }
@@ -170,16 +170,39 @@ impl<T> FileSinkClient<T> {
         }
     }
 
+    // The suffix will only be used if a new sink was created during this operation.
+    // Therefore, it is strongly recommended to use it only after the commit operation.
+    // WARNING! Do not use the same suffix for different files. Files with the same name will be overwritten
+    // in the S3 bucket.
+    // It is not recommended to use this with auto_commit enabled.
+    pub async fn write_with_suffix(
+        &self,
+        item: impl Into<T>,
+        labels: impl IntoIterator<Item = &(&'static str, &'static str)>,
+        suffix: String,
+    ) -> Result<oneshot::Receiver<Result>> {
+        self._write(item, labels, Some(suffix)).await
+    }
+
     pub async fn write(
         &self,
         item: impl Into<T>,
         labels: impl IntoIterator<Item = &(&'static str, &'static str)>,
     ) -> Result<oneshot::Receiver<Result>> {
+        self._write(item, labels, None).await
+    }
+
+    async fn _write(
+        &self,
+        item: impl Into<T>,
+        labels: impl IntoIterator<Item = &(&'static str, &'static str)>,
+        suffix: Option<String>,
+    ) -> Result<oneshot::Receiver<Result>> {
         let (on_write_tx, on_write_rx) = oneshot::channel();
         let labels = labels.into_iter().map(Label::from);
 
         tokio::select! {
-            result = self.sender.send_timeout(Message::Data(on_write_tx, item.into()), SEND_TIMEOUT) => match result {
+            result = self.sender.send_timeout(Message::Data(on_write_tx, item.into(), suffix), SEND_TIMEOUT) => match result {
                 Ok(_) => {
                     metrics::counter!(
                         self.metric.clone(),
@@ -359,9 +382,9 @@ impl<T: prost::Message> FileSink<T> {
                 _ = shutdown.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
-                    Some(Message::Data(on_write_tx, item)) => {
+                    Some(Message::Data(on_write_tx, item, file_suffix)) => {
                         let bytes = bytes::Bytes::from(item.encode_to_vec());
-                        let res = match self.write(bytes).await {
+                        let res = match self.write(bytes, file_suffix).await {
                             Ok(_) => Ok(()),
                             Err(err) => {
                                 tracing::error!("failed to store {}: {err:?}", &self.prefix);
@@ -392,9 +415,16 @@ impl<T: prost::Message> FileSink<T> {
         Ok(())
     }
 
-    async fn new_sink(&mut self) -> Result {
+    async fn new_sink(&mut self, file_suffix: Option<String>) -> Result {
         let sink_time = Utc::now();
-        let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
+
+        let filename = if let Some(fsuf) = file_suffix {
+            format!("{}.{}.gz", self.prefix, fsuf)
+        } else {
+            format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis())
+        };
+
+        // format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
         let new_path = self.tmp_path.join(filename);
         let writer = GzipEncoder::new(BufWriter::new(
             OpenOptions::new()
@@ -484,7 +514,7 @@ impl<T: prost::Message> FileSink<T> {
         Ok(())
     }
 
-    pub async fn write(&mut self, buf: Bytes) -> Result {
+    pub async fn write(&mut self, buf: Bytes, file_suffix: Option<String>) -> Result {
         let buf_len = buf.len();
 
         match self.active_sink.as_mut() {
@@ -497,12 +527,12 @@ impl<T: prost::Message> FileSink<T> {
                     if self.auto_commit {
                         self.commit().await?;
                     }
-                    self.new_sink().await?;
+                    self.new_sink(file_suffix).await?;
                 }
             }
             // No sink, make a new one
             None => {
-                self.new_sink().await?;
+                self.new_sink(file_suffix).await?;
             }
         }
 
@@ -565,7 +595,7 @@ mod tests {
 
         file_sink_client
             .sender
-            .try_send(Message::Data(on_write_tx, "hello".to_string()))
+            .try_send(Message::Data(on_write_tx, "hello".to_string(), None))
             .expect("failed to send bytes to file sink");
 
         tokio::time::sleep(time::Duration::from_millis(200)).await;
@@ -611,6 +641,7 @@ mod tests {
             .try_send(Message::Data(
                 on_write_tx,
                 String::into_bytes("hello".to_string()),
+                None,
             ))
             .expect("failed to send bytes to file sink");
 
