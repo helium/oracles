@@ -3513,16 +3513,13 @@ dependencies = [
 name = "helium-proto"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
  "bytes",
- "helium-crypto",
+ "msg-signature",
  "prost",
  "prost-build",
  "serde",
- "serde_json",
  "strum",
  "strum_macros",
- "thiserror 2.0.17",
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
@@ -3543,6 +3540,16 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+]
+
+[[package]]
+name = "helium-proto-crypto"
+version = "0.1.0"
+dependencies = [
+ "helium-crypto",
+ "msg-signature",
+ "prost",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -4102,6 +4109,7 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto 0.1.0",
+ "helium-proto-crypto",
  "http 1.3.1",
  "humantime-serde",
  "metrics",
@@ -4185,6 +4193,7 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto 0.1.0",
+ "helium-proto-crypto",
  "hextree",
  "http 1.3.1",
  "http-serde",
@@ -4945,6 +4954,7 @@ dependencies = [
  "h3o",
  "helium-crypto",
  "helium-proto 0.1.0",
+ "helium-proto-crypto",
  "hextree",
  "http 1.3.1",
  "http-serde",
@@ -5103,6 +5113,21 @@ dependencies = [
  "tracing-subscriber",
  "triggered",
  "uuid",
+]
+
+[[package]]
+name = "msg-signature"
+version = "0.1.0"
+dependencies = [
+ "msg-verify-macro",
+]
+
+[[package]]
+name = "msg-verify-macro"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]

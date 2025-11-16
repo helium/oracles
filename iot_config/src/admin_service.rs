@@ -13,9 +13,9 @@ use helium_proto::{
         self, AdminAddKeyReqV1, AdminKeyResV1, AdminLoadRegionReqV1, AdminLoadRegionResV1,
         AdminRemoveKeyReqV1, RegionParamsReqV1, RegionParamsResV1,
     },
-    traits::msg_verify::MsgVerify,
     Message, Region,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres};
 use tokio::sync::watch;
 use tonic::{Request, Response, Status};

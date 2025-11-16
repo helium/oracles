@@ -10,9 +10,9 @@ use helium_proto::{
         self, CarrierIncentivePromotionListReqV1, CarrierIncentivePromotionListResV1,
         CarrierKeyToEntityReqV1, CarrierKeyToEntityResV1,
     },
-    traits::msg_verify::MsgVerify,
     Message, ServiceProvider, ServiceProviderPromotions,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{prelude::FromRow, Pool, Postgres};
 use tonic::{Request, Response, Status};
 

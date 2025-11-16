@@ -9,9 +9,9 @@ use helium_proto::{
         self, AuthorizationListReqV1, AuthorizationListResV1, AuthorizationVerifyReqV1,
         AuthorizationVerifyResV1, NetworkKeyRole,
     },
-    traits::msg_verify::MsgVerify,
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use tonic::{Request, Response, Status};
 
 pub struct AuthorizationService {

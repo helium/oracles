@@ -8,7 +8,6 @@ use file_store_oracles::traits::{
 use futures::{future::TryFutureExt, Stream, StreamExt};
 use helium_crypto::{Network, PublicKey};
 use helium_proto::{
-    traits::msg_verify::MsgVerify,
     services::poc_lora::{
         self, lora_stream_request_v1::Request as StreamRequest,
         lora_stream_response_v1::Response as StreamResponse, LoraBeaconIngestReportV1,
@@ -17,6 +16,7 @@ use helium_proto::{
         LoraWitnessReportReqV1, LoraWitnessReportRespV1,
     }
 };
+use helium_proto_crypto::MsgVerify;
 use std::{convert::TryFrom, net::SocketAddr, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{sync::mpsc::Sender, time::Instant};

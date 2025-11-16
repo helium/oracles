@@ -3,7 +3,8 @@ use crate::boosted_hex_info::{self, BoostedHexInfoStream};
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, Sign};
-use helium_proto::{services::mobile_config, traits::msg_verify::MsgVerify, Message};
+use helium_proto::{services::mobile_config, Message};
+use helium_proto_crypto::MsgVerify;
 use std::{sync::Arc, time::Duration};
 use tonic::transport::Channel;
 

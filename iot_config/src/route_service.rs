@@ -22,9 +22,9 @@ use helium_proto::{
         RouteSkfUpdateResV1, RouteStreamReqV1, RouteStreamResV1, RouteUpdateDevaddrRangesReqV1,
         RouteUpdateEuisReqV1, RouteUpdateReqV1, RouteV1, SkfV1,
     },
-    traits::msg_verify::MsgVerify,
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres};
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::{broadcast, mpsc};

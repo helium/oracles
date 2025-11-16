@@ -3,9 +3,9 @@ use crate::sub_dao_epoch_reward_info::EpochRewardInfo;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::sub_dao::{self, SubDaoEpochRewardInfoReqV1},
-    traits::msg_verify::MsgVerify,
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use std::{error::Error, sync::Arc, time::Duration};
 use tonic::transport::{Channel, Endpoint};
 
