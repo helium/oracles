@@ -2,8 +2,8 @@ use anyhow::anyhow;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use helium_proto::{
     services::iot_config::admin_add_key_req_v1::KeyTypeV1 as ProtoKeyType,
-    traits::msg_verify::MsgVerify,
 };
+use helium_proto_crypto::MsgVerify;
 use serde::Serialize;
 use sqlx::Row;
 use std::collections::HashMap;

@@ -4,9 +4,9 @@ use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{self, DeviceType},
-    traits::msg_verify::MsgVerify,
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 use tonic::transport::Channel;

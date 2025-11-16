@@ -15,9 +15,9 @@ use helium_proto::{
         self, BoostedHexInfoStreamReqV1, BoostedHexInfoStreamResV1,
         BoostedHexModifiedInfoStreamReqV1,
     },
-    traits::msg_verify::MsgVerify,
     BoostedHexInfoV1, Message,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};

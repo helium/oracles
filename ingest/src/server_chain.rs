@@ -8,7 +8,6 @@ use file_store_oracles::traits::{
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_crypto::PublicKey;
 use helium_proto::{
-    traits::msg_verify::MsgVerify,
     services::chain_rewardable_entities::{
         self, EntityOwnershipChangeReportV1, EntityOwnershipChangeReqV1, EntityOwnershipChangeRespV1,
         EntityRewardDestinationChangeReportV1, EntityRewardDestinationChangeReqV1,
@@ -17,6 +16,7 @@ use helium_proto::{
         MobileHotspotChangeRespV1,
     }
 };
+use helium_proto_crypto::MsgVerify;
 use task_manager::{ManagedTask, TaskManager};
 use tonic::{transport::Server, Request, Response, Status};
 

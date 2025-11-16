@@ -6,9 +6,9 @@ use file_store::traits::TimestampEncode;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::mobile_config::{self, EntityVerifyReqV1, EntityVerifyResV1},
-    traits::msg_verify::MsgVerify,
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres, Row};
 use tonic::{Request, Response, Status};
 

@@ -16,9 +16,9 @@ use helium_proto::{
         OrgCreateRoamerReqV1, OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1, OrgEnableResV1,
         OrgGetReqV1, OrgListReqV1, OrgListResV1, OrgResV1, OrgUpdateReqV1, OrgV1, RouteStreamResV1,
     },
-    traits::msg_verify::MsgVerify,
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres};
 use tokio::sync::{broadcast, watch};
 use tonic::{Request, Response, Status};

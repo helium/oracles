@@ -8,7 +8,6 @@ use file_store_oracles::traits::{
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey, PublicKeyBinary};
 use helium_proto::{
-    traits::msg_verify::MsgVerify,
     services::poc_mobile::{
         self, BanIngestReportV1, BanReqV1, BanRespV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
         CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
@@ -32,6 +31,7 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{UniqueConnectionsReqV1, UniqueConnectionsRespV1},
 };
+use helium_proto_crypto::MsgVerify;
 use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use std::net::SocketAddr;
 use task_manager::{ManagedTask, TaskManager};

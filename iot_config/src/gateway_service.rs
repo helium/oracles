@@ -16,9 +16,9 @@ use helium_proto::{
         GatewayLocationReqV1, GatewayLocationResV1, GatewayRegionParamsReqV1,
         GatewayRegionParamsResV1,
     },
-    traits::msg_verify::MsgVerify,
     Message, Region,
 };
+use helium_proto_crypto::MsgVerify;
 use hextree::Cell;
 use retainer::Cache;
 use sqlx::{Pool, Postgres};

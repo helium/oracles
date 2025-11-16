@@ -6,9 +6,9 @@ use file_store::traits::TimestampEncode;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::sub_dao::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},
-    traits::msg_verify::MsgVerify,
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
