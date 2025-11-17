@@ -153,9 +153,7 @@ where
         let mut speedtests = file.into_stream(&mut transaction).await?;
 
         while let Some(speedtest_report) = speedtests.next().await {
-            let result = self
-                .validate_speedtest(&speedtest_report)
-                .await?;
+            let result = self.validate_speedtest(&speedtest_report).await?;
             if result == SpeedtestResult::SpeedtestValid {
                 save_speedtest(&speedtest_report.report, &mut transaction).await?;
                 let latest_speedtests = get_latest_speedtests_for_pubkey(

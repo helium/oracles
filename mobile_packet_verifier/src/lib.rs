@@ -61,7 +61,7 @@ impl MobileConfigResolverExt for MobileConfigClients {
     ) -> bool {
         match self
             .gateway_client
-            .resolve_gateway_info(public_key, &gateway_query_time)
+            .resolve_gateway_info(public_key, gateway_query_time)
             .await
         {
             Ok(res) => res.is_some(),
