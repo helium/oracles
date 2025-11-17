@@ -17,8 +17,6 @@ pub struct Settings {
     pub log: String,
     #[serde(default)]
     pub custom_tracing: custom_tracing::Settings,
-    #[serde(default)]
-    pub file_store: file_store::Settings,
     /// Cache location for generated verified reports
     #[serde(default = "default_cache")]
     pub cache: PathBuf,
