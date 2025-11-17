@@ -10,12 +10,6 @@ use std::{
 use crate::banning;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Buckets {
-    pub ingest: file_store::BucketSettings,
-    pub output: file_store::BucketSettings,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Default to
     /// "mobile_verifier=debug,poc_store=info"
@@ -25,7 +19,6 @@ pub struct Settings {
     pub custom_tracing: custom_tracing::Settings,
     #[serde(default)]
     pub file_store: file_store::Settings,
-    pub buckets: Buckets,
     /// Cache location for generated verified reports
     #[serde(default = "default_cache")]
     pub cache: PathBuf,
@@ -38,6 +31,8 @@ pub struct Settings {
     pub database: db_store::Settings,
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
+    pub ingest_bucket: file_store::BucketSettings,
+    pub output_bucket: file_store::BucketSettings,
     #[serde(default)]
     pub enable_solana_integration: bool,
     pub solana: Option<solana::burn::Settings>,

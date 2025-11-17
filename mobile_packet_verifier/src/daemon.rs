@@ -157,7 +157,7 @@ impl Cmd {
         };
 
         let (file_upload, file_upload_server) =
-            file_upload::FileUpload::from_bucket_client(settings.buckets.output.connect().await)
+            file_upload::FileUpload::from_bucket_client(settings.output_bucket.connect().await)
                 .await;
 
         let (valid_sessions, valid_sessions_server) = ValidDataTransferSession::file_sink(
@@ -188,7 +188,7 @@ impl Cmd {
 
         let (reports, reports_server) = file_source::continuous_source()
             .state(pool.clone())
-            .bucket_client(settings.buckets.ingest.connect().await)
+            .bucket_client(settings.ingest_bucket.connect().await)
             .prefix(FileType::DataTransferSessionIngestReport.to_string())
             .lookback_start_after(settings.start_after)
             .create()
