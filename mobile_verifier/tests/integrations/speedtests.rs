@@ -119,10 +119,8 @@ async fn speedtest_upload_exceeds_300megabits_ps_limit(pool: Pool<Postgres>) -> 
         },
     };
 
-    let gateway_query_timestamp = Utc::now();
-
     let result = daemon
-        .validate_speedtest(&speedtest_report, &gateway_query_timestamp)
+        .validate_speedtest(&speedtest_report)
         .await?;
     assert_eq!(result, SpeedtestResult::SpeedtestValueOutOfBounds);
 
@@ -162,10 +160,8 @@ async fn speedtest_download_exceeds_300_megabits_ps_limit(
         },
     };
 
-    let gateway_query_timestamp = Utc::now();
-
     let result = daemon
-        .validate_speedtest(&speedtest_report, &gateway_query_timestamp)
+        .validate_speedtest(&speedtest_report)
         .await?;
     assert_eq!(result, SpeedtestResult::SpeedtestValueOutOfBounds);
 
@@ -205,10 +201,8 @@ async fn speedtest_both_speeds_exceed_300_megabits_ps_limit(
         },
     };
 
-    let gateway_query_timestamp = Utc::now();
-
     let result = daemon
-        .validate_speedtest(&speedtest_report, &gateway_query_timestamp)
+        .validate_speedtest(&speedtest_report)
         .await?;
     assert_eq!(result, SpeedtestResult::SpeedtestValueOutOfBounds);
 
@@ -248,10 +242,8 @@ async fn speedtest_within_300_megabits_ps_limit_should_be_valid(
         },
     };
 
-    let gateway_query_timestamp = Utc::now();
-
     let result = daemon
-        .validate_speedtest(&speedtest_report, &gateway_query_timestamp)
+        .validate_speedtest(&speedtest_report)
         .await?;
     assert_eq!(result, SpeedtestResult::SpeedtestValid);
 
@@ -290,10 +282,9 @@ async fn speedtest_exactly_300_megabits_ps_limit_should_be_valid(
             latency: 10,
         },
     };
-    let gateway_query_timestamp = Utc::now();
 
     let result = daemon
-        .validate_speedtest(&speedtest_report, &gateway_query_timestamp)
+        .validate_speedtest(&speedtest_report)
         .await?;
     assert_eq!(result, SpeedtestResult::SpeedtestValid);
 

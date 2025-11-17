@@ -151,11 +151,10 @@ where
         tracing::info!("Processing speedtest file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
         let mut speedtests = file.into_stream(&mut transaction).await?;
-        let gateway_query_timestamp = Utc::now();
 
         while let Some(speedtest_report) = speedtests.next().await {
             let result = self
-                .validate_speedtest(&speedtest_report, &gateway_query_timestamp)
+                .validate_speedtest(&speedtest_report)
                 .await?;
             if result == SpeedtestResult::SpeedtestValid {
                 save_speedtest(&speedtest_report.report, &mut transaction).await?;
@@ -181,7 +180,6 @@ where
     pub async fn validate_speedtest(
         &self,
         speedtest: &CellSpeedtestIngestReport,
-        gateway_query_timestamp: &DateTime<Utc>,
     ) -> anyhow::Result<SpeedtestResult> {
         if speedtest.report.upload_speed > SPEEDTEST_MAX_BYTES_PER_SECOND
             || speedtest.report.download_speed > SPEEDTEST_MAX_BYTES_PER_SECOND
@@ -191,7 +189,7 @@ where
 
         match self
             .gateway_info_resolver
-            .resolve_gateway_info(&speedtest.report.pubkey, gateway_query_timestamp)
+            .resolve_gateway_info(&speedtest.report.pubkey, &speedtest.received_timestamp)
             .await?
         {
             Some(gw_info) if gw_info.is_data_only() => {

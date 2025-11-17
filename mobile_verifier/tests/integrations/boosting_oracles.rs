@@ -483,7 +483,6 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
     let location_cache = LocationCache::new(&pool);
 
     let epoch = start..end;
-    let gateway_query_timestamp = Utc::now();
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
         stream::iter(heartbeats.map(Heartbeat::from)),
         &GatewayClientAllOwnersValid,
@@ -492,7 +491,6 @@ async fn test_footfall_and_urbanization_and_landtype_and_service_provider_overri
         2000,
         &epoch,
         &MockGeofence,
-        &gateway_query_timestamp,
     ));
     let mut transaction = pool.begin().await?;
     while let Some(heartbeat) = heartbeats.next().await.transpose()? {

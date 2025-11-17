@@ -329,7 +329,6 @@ async fn process_wifi_input(
     .await?;
 
     let mut transaction = pool.begin().await?;
-    let gateway_query_timestamp = Utc::now();
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
         stream::iter(heartbeats.map(Heartbeat::from)),
         &GatewayClientAllOwnersValid,
@@ -338,7 +337,6 @@ async fn process_wifi_input(
         2000,
         epoch,
         &MockGeofence,
-        &gateway_query_timestamp,
     ));
     while let Some(heartbeat) = heartbeats.next().await.transpose()? {
         let coverage_claim_time = coverage_claim_time_cache
@@ -992,7 +990,6 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     let max_covered_distance = 5_000;
     let coverage_object_cache = CoverageObjectCache::new(&pool);
     let location_cache = LocationCache::new(&pool);
-    let gateway_query_timestamp = Utc::now();
 
     let mk_heartbeat = |latlng: LatLng| WifiHeartbeatIngestReport {
         report: WifiHeartbeat {
@@ -1017,7 +1014,6 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
             max_covered_distance,
             &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
             &MockGeofence,
-            &gateway_query_timestamp,
         )
     };
 

@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use mobile_packet_verifier::MobileConfigResolverExt;
 
@@ -22,7 +23,11 @@ pub struct TestMobileConfig {
 
 #[async_trait::async_trait]
 impl MobileConfigResolverExt for TestMobileConfig {
-    async fn is_gateway_known(&self, public_key: &PublicKeyBinary) -> bool {
+    async fn is_gateway_known(
+        &self,
+        public_key: &PublicKeyBinary,
+        _gateway_query_time: &DateTime<Utc>,
+    ) -> bool {
         self.valid_gateways.is_valid(public_key)
     }
 
