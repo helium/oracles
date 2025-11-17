@@ -3514,7 +3514,7 @@ name = "helium-proto"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "msg-signature",
+ "msg-signature 0.1.0",
  "prost",
  "prost-build",
  "serde",
@@ -3547,7 +3547,7 @@ name = "helium-proto-crypto"
 version = "0.1.0"
 dependencies = [
  "helium-crypto",
- "msg-signature",
+ "msg-signature 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
  "prost",
  "thiserror 1.0.69",
 ]
@@ -5119,12 +5119,29 @@ dependencies = [
 name = "msg-signature"
 version = "0.1.0"
 dependencies = [
- "msg-verify-macro",
+ "msg-signature-macro 0.1.0",
 ]
 
 [[package]]
-name = "msg-verify-macro"
+name = "msg-signature"
 version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify#b7e2a24241a06b2afe02d1944a732c4ccb3c2014"
+dependencies = [
+ "msg-signature-macro 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+]
+
+[[package]]
+name = "msg-signature-macro"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
+name = "msg-signature-macro"
+version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify#b7e2a24241a06b2afe02d1944a732c4ccb3c2014"
 dependencies = [
  "quote",
  "syn 2.0.106",
