@@ -2,19 +2,15 @@ use std::{net::SocketAddr, str::FromStr};
 
 use chrono::Utc;
 use file_store::{file_sink::FileSinkClient, file_upload};
-use file_store_oracles::traits::{
-    FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt,
-};
+use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_crypto::PublicKey;
-use helium_proto::{
-    services::chain_rewardable_entities::{
-        self, EntityOwnershipChangeReportV1, EntityOwnershipChangeReqV1, EntityOwnershipChangeRespV1,
-        EntityRewardDestinationChangeReportV1, EntityRewardDestinationChangeReqV1,
-        EntityRewardDestinationChangeRespV1, IotHotspotChangeReportV1, IotHotspotChangeReqV1,
-        IotHotspotChangeRespV1, MobileHotspotChangeReportV1, MobileHotspotChangeReqV1,
-        MobileHotspotChangeRespV1,
-    }
+use helium_proto::services::chain_rewardable_entities::{
+    self, EntityOwnershipChangeReportV1, EntityOwnershipChangeReqV1, EntityOwnershipChangeRespV1,
+    EntityRewardDestinationChangeReportV1, EntityRewardDestinationChangeReqV1,
+    EntityRewardDestinationChangeRespV1, IotHotspotChangeReportV1, IotHotspotChangeReqV1,
+    IotHotspotChangeRespV1, MobileHotspotChangeReportV1, MobileHotspotChangeReqV1,
+    MobileHotspotChangeRespV1,
 };
 use helium_proto_crypto::MsgVerify;
 use task_manager::{ManagedTask, TaskManager};
