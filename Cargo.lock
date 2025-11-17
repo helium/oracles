@@ -1322,7 +1322,7 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=macpie%2Finfo_stream_v2#537f9bdbd89e786d508c16dffbcb6beb8eedf5b4"
+source = "git+https://github.com/helium/proto?branch=macpie%2Finfo_stream_v2#75dcaf05ade17591280fdedc37096308ba2fa440"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -3504,7 +3504,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=macpie%2Finfo_stream_v2#537f9bdbd89e786d508c16dffbcb6beb8eedf5b4"
+source = "git+https://github.com/helium/proto?branch=macpie%2Finfo_stream_v2#75dcaf05ade17591280fdedc37096308ba2fa440"
 dependencies = [
  "bytes",
  "prost",
