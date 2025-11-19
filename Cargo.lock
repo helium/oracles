@@ -2831,7 +2831,6 @@ dependencies = [
  "derive_builder",
  "futures",
  "futures-util",
- "h3o",
  "helium-crypto",
  "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
  "http 1.3.1",
@@ -2882,6 +2881,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
+ "thiserror 1.0.69",
  "tokio",
  "uuid",
 ]
@@ -4978,6 +4978,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "task-manager",
+ "tempfile",
  "thiserror 1.0.69",
  "tls-init",
  "tokio",
