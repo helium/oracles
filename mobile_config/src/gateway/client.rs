@@ -1,12 +1,12 @@
 use crate::client::{call_with_retry, ClientError, Settings};
 use crate::gateway::service::info::{GatewayInfo, GatewayInfoStream};
-use file_store_oracles::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{self, DeviceType},
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 use tonic::transport::Channel;

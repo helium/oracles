@@ -30,6 +30,7 @@ tracing-subscriber = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
+helium-proto-crypto = { workspace = true }
 file-store = { path = "../file_store" }
 file-store-oracles = { path = "../file_store_oracles" }
 poc-metrics = { path = "../metrics" }

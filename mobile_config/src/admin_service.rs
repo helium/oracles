@@ -8,13 +8,13 @@ use crate::{
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use futures::future::TryFutureExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{self, AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1},
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres};
 use tokio::sync::watch;
 use tonic::{Request, Response, Status};

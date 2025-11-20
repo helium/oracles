@@ -8,7 +8,6 @@ use crate::{
 use anyhow::Result;
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use futures::stream::StreamExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
@@ -19,6 +18,7 @@ use helium_proto::{
     },
     Message, Region,
 };
+use helium_proto_crypto::MsgVerify;
 use hextree::Cell;
 use retainer::Cache;
 use sqlx::{Pool, Postgres};

@@ -9,7 +9,6 @@ use crate::{
 use anyhow::Result;
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
@@ -19,6 +18,7 @@ use helium_proto::{
     },
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres};
 use tokio::sync::{broadcast, watch};
 use tonic::{Request, Response, Status};

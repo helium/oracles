@@ -8,7 +8,6 @@ use crate::{
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use futures::{
     future::TryFutureExt,
     stream::{StreamExt, TryStreamExt},
@@ -25,6 +24,7 @@ use helium_proto::{
     },
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres};
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::{broadcast, mpsc};

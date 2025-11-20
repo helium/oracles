@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult, KeyRole};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::mobile_config::{
@@ -12,6 +11,7 @@ use helium_proto::{
     },
     Message,
 };
+use helium_proto_crypto::MsgVerify;
 use tonic::{Request, Response, Status};
 
 pub struct AuthorizationService {

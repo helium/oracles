@@ -5,7 +5,6 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use file_store::traits::{TimestampDecode, TimestampEncode};
-use file_store_oracles::traits::MsgVerify;
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
@@ -18,6 +17,7 @@ use helium_proto::{
     },
     BoostedHexInfoV1, Message,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
