@@ -10,7 +10,8 @@ use helium_proto::services::poc_mobile::{
     DataTransferSessionReqV1, DataTransferSessionRespV1, EnabledCarriersInfoReportV1,
     EnabledCarriersInfoReqV1, EnabledCarriersInfoRespV1, HexUsageStatsIngestReportV1,
     HexUsageStatsReqV1, HexUsageStatsResV1, RadioUsageCarrierTransferInfo,
-    RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1, RadioUsageStatsResV1,
+    RadioUsageStatsIngestReportV1, RadioUsageStatsIngestReportV2, RadioUsageStatsReqV1,
+    RadioUsageStatsReqV2, RadioUsageStatsResV1, RadioUsageStatsResV2,
     UniqueConnectionsIngestReportV1, UniqueConnectionsReqV1, UniqueConnectionsRespV1,
 };
 use helium_proto::services::{
@@ -76,6 +77,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
     let (subscriber_mapping_tx, subscriber_mapping_rx) = tokio::sync::mpsc::channel(10);
     let (hex_usage_stat_tx, hex_usage_stat_rx) = tokio::sync::mpsc::channel(10);
     let (radio_usage_stat_tx, radio_usage_stat_rx) = tokio::sync::mpsc::channel(10);
+    let (radio_usage_stat_tx_v2, radio_usage_stat_rx_v2) = tokio::sync::mpsc::channel(10);
     let (unique_connections_tx, unique_connections_rx) = tokio::sync::mpsc::channel(10);
     let (subscriber_mapping_activity_tx, _subscriber_mapping_activity_rx) =
         tokio::sync::mpsc::channel(10);
@@ -95,6 +97,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
             FileSinkClient::new(subscriber_mapping_tx, "test_file_sink"),
             FileSinkClient::new(hex_usage_stat_tx, "hex_usage_test_file_sink"),
             FileSinkClient::new(radio_usage_stat_tx, "radio_usage_test_file_sink"),
+            FileSinkClient::new(radio_usage_stat_tx_v2, "radio_usage_test_file_sink_v2"),
             FileSinkClient::new(unique_connections_tx, "noop"),
             FileSinkClient::new(subscriber_mapping_activity_tx, "noop"),
             FileSinkClient::new(ban_tx, "noop"),
@@ -115,6 +118,7 @@ pub async fn setup_mobile() -> anyhow::Result<(TestClient, Trigger)> {
         subscriber_mapping_rx,
         hex_usage_stat_rx,
         radio_usage_stat_rx,
+        radio_usage_stat_rx_v2,
         unique_connections_rx,
         ban_rx,
         data_transfer_rx,
@@ -135,6 +139,8 @@ pub struct TestClient {
         Receiver<file_store::file_sink::Message<HexUsageStatsIngestReportV1>>,
     radio_usage_stats_file_sink_rx:
         Receiver<file_store::file_sink::Message<RadioUsageStatsIngestReportV1>>,
+    radio_usage_stats_file_sink_rx_v2:
+        Receiver<file_store::file_sink::Message<RadioUsageStatsIngestReportV2>>,
     unique_connections_file_sink_rx:
         Receiver<file_store::file_sink::Message<UniqueConnectionsIngestReportV1>>,
     ban_file_sink_rx: Receiver<file_store::file_sink::Message<BanIngestReportV1>>,
@@ -157,6 +163,9 @@ impl TestClient {
         radio_usage_stats_file_sink_rx: Receiver<
             file_store::file_sink::Message<RadioUsageStatsIngestReportV1>,
         >,
+        radio_usage_stats_file_sink_rx_v2: Receiver<
+            file_store::file_sink::Message<RadioUsageStatsIngestReportV2>,
+        >,
         unique_connections_file_sink_rx: Receiver<
             file_store::file_sink::Message<UniqueConnectionsIngestReportV1>,
         >,
@@ -178,6 +187,7 @@ impl TestClient {
             subscriber_mapping_file_sink_rx,
             hex_usage_stats_file_sink_rx,
             radio_usage_stats_file_sink_rx,
+            radio_usage_stats_file_sink_rx_v2,
             unique_connections_file_sink_rx,
             ban_file_sink_rx,
             data_transfer_rx,
@@ -264,6 +274,70 @@ impl TestClient {
         match timeout(
             Duration::from_secs(2),
             self.radio_usage_stats_file_sink_rx.recv(),
+        )
+        .await
+        {
+            Ok(Some(msg)) => match msg {
+                file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
+                file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
+                file_store::file_sink::Message::Data(_, data) => Ok(data),
+            },
+            Ok(None) => bail!("got none"),
+            Err(reason) => bail!("got error {reason}"),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_radio_usage_req_v2(
+        &mut self,
+        hotspot_pubkey: PublicKeyBinary,
+        user_count_total: u64,
+        rewarded_bytes_transferred_total: u64,
+        unrewarded_bytes_transferred_total: u64,
+        sampling_user_count_total: u64,
+        sampling_bytes_transferred_total: u64,
+        carrier_transfer_info: Vec<
+            helium_proto::services::poc_mobile::RadioUsageCarrierDataTransferInfoV2,
+        >,
+        sampling_carrier_transfer_info: Vec<
+            helium_proto::services::poc_mobile::RadioUsageSamplingCarrierDataTransferInfoV1,
+        >,
+    ) -> anyhow::Result<RadioUsageStatsResV2> {
+        let mut req = RadioUsageStatsReqV2 {
+            hotspot_pubkey: hotspot_pubkey.into(),
+            user_count_total,
+            rewarded_bytes_transferred_total,
+            unrewarded_bytes_transferred_total,
+            sampling_user_count_total,
+            sampling_bytes_transferred_total,
+            carrier_transfer_info,
+            sampling_carrier_transfer_info,
+            epoch_start_timestamp_ms: 0,
+            epoch_end_timestamp_ms: 0,
+            timestamp_ms: 0,
+            carrier_pubkey: self.key_pair.public_key().to_vec(),
+            signature: vec![],
+        };
+
+        req.signature = self.key_pair.sign(&req.encode_to_vec()).expect("sign");
+
+        let mut request = Request::new(req);
+        let metadata = request.metadata_mut();
+
+        metadata.insert("authorization", self.authorization.clone());
+
+        let res = self
+            .client
+            .submit_radio_usage_stats_report_v2(request)
+            .await?;
+
+        Ok(res.into_inner())
+    }
+
+    pub async fn radio_usage_recv_v2(mut self) -> anyhow::Result<RadioUsageStatsIngestReportV2> {
+        match timeout(
+            Duration::from_secs(2),
+            self.radio_usage_stats_file_sink_rx_v2.recv(),
         )
         .await
         {
@@ -423,7 +497,7 @@ impl TestClient {
         Ok(res.into_inner())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, deprecated)]
     pub async fn submit_radio_usage_req(
         &mut self,
         hotspot_pubkey: PublicKeyBinary,

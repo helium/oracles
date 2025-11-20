@@ -258,6 +258,11 @@ impl_file_sink!(
     "hotspot_usage_counts_ingest_report"
 );
 impl_file_sink!(
+    poc_mobile::RadioUsageStatsIngestReportV2,
+    FileType::RadioUsageStatsIngestReportV2.to_str(),
+    "hotspot_usage_counts_ingest_report_v2"
+);
+impl_file_sink!(
     poc_mobile::UniqueConnectionsIngestReportV1,
     FileType::UniqueConnectionsReport.to_str(),
     "unique_connections_report"
