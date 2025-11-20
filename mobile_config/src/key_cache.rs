@@ -174,11 +174,9 @@ mod tests {
 
     impl MsgVerify for VerifiedBad {
         fn verify(&self, _verifier: &PublicKey) -> Result<(), helium_proto_crypto::MsgVerifyError> {
-            Err(
-                helium_proto_crypto::MsgVerifyError::Crypto(
-                    helium_crypto::Error::InvalidNetwork,
-                )
-            )
+            Err(helium_proto_crypto::MsgVerifyError::Crypto(
+                helium_crypto::Error::InvalidNetwork,
+            ))
         }
     }
 
