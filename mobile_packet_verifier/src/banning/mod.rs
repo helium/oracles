@@ -21,7 +21,7 @@ pub const BAN_CLEANUP_DAYS: i64 = 7;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct BanSettings {
     /// Where do we look in s3 for ban files
-    pub input_bucket: String,
+    pub input_bucket: file_store::BucketSettings,
     /// How often to purge expired bans
     #[serde(with = "humantime_serde", default = "default_purge_interval")]
     pub purge_interval: Duration,
@@ -40,12 +40,11 @@ fn default_ingest_start_after() -> DateTime<Utc> {
 
 pub async fn create_managed_task(
     pool: PgPool,
-    client: file_store::Client,
     settings: &BanSettings,
 ) -> anyhow::Result<impl ManagedTask> {
     let (ban_report_rx, ban_report_server) = file_source::continuous_source()
         .state(pool.clone())
-        .file_store(client, settings.input_bucket.clone())
+        .bucket_client(settings.input_bucket.connect().await)
         .lookback_start_after(settings.start_after)
         .prefix(FileType::VerifiedMobileBanReport.to_string())
         .create()

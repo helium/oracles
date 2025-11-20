@@ -378,7 +378,7 @@ impl ValidatedHeartbeat {
         }
 
         match gateway_info_resolver
-            .resolve_gateway(&heartbeat.hotspot_key)
+            .resolve_gateway(&heartbeat.hotspot_key, &heartbeat.timestamp)
             .await?
         {
             GatewayResolution::DataOnly => Ok(Self::new(
