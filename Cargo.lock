@@ -3513,7 +3513,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#60e0047b6e0e38b8119a055b37a7043cb02dbc82"
+source = "git+https://www.github.com/helium/proto.git?branch=dcyoung%2Fradio-usage-stats-req-v2#56bbc4155546d7abfbd106568da24b7b723708b9"
 dependencies = [
  "bytes",
  "prost",
