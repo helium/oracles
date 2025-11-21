@@ -188,7 +188,7 @@ impl TestClient {
     pub async fn data_transfer_recv(mut self) -> anyhow::Result<DataTransferSessionIngestReportV1> {
         match timeout(Duration::from_secs(2), self.data_transfer_rx.recv()).await {
             Ok(Some(msg)) => match msg {
-                file_store::file_sink::Message::Data(_, data) => Ok(data),
+                file_store::file_sink::Message::Data(_, data, _) => Ok(data),
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
             },
@@ -215,7 +215,7 @@ impl TestClient {
         .await
         {
             Ok(Some(msg)) => match msg {
-                file_store::file_sink::Message::Data(_, data) => Ok(data),
+                file_store::file_sink::Message::Data(_, data, _) => Ok(data),
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
             },
@@ -236,7 +236,7 @@ impl TestClient {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
-                file_store::file_sink::Message::Data(_, data) => Ok(data),
+                file_store::file_sink::Message::Data(_, data, _) => Ok(data),
             },
             Ok(None) => bail!("got none"),
             Err(reason) => bail!("got error {reason}"),
@@ -253,7 +253,7 @@ impl TestClient {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
-                file_store::file_sink::Message::Data(_, data) => Ok(data),
+                file_store::file_sink::Message::Data(_, data, _) => Ok(data),
             },
             Ok(None) => bail!("got none"),
             Err(reason) => bail!("got error {reason}"),
@@ -270,7 +270,7 @@ impl TestClient {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
-                file_store::file_sink::Message::Data(_, data) => Ok(data),
+                file_store::file_sink::Message::Data(_, data, _) => Ok(data),
             },
             Ok(None) => bail!("got none"),
             Err(reason) => bail!("got error {reason}"),
@@ -282,7 +282,7 @@ impl TestClient {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
-                file_store::file_sink::Message::Data(_, data) => Ok(data),
+                file_store::file_sink::Message::Data(_, data, _) => Ok(data),
             },
             Ok(None) => bail!("got none"),
             Err(reason) => bail!("got error {reason}"),
@@ -296,7 +296,7 @@ impl TestClient {
             Ok(Some(msg)) => match msg {
                 file_store::file_sink::Message::Commit(_) => bail!("got Commit"),
                 file_store::file_sink::Message::Rollback(_) => bail!("got Rollback"),
-                file_store::file_sink::Message::Data(_, data) => Ok(data),
+                file_store::file_sink::Message::Data(_, data, _) => Ok(data),
             },
             Ok(None) => bail!("got none"),
             Err(reason) => bail!("got error {reason}"),
