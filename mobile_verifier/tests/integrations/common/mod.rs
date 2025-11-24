@@ -214,6 +214,7 @@ impl GatewayResolver for GatewayClientAllOwnersValid {
     async fn resolve_gateway(
         &self,
         _address: &PublicKeyBinary,
+        _gateway_query_timestamp: &DateTime<Utc>,
     ) -> Result<GatewayResolution, ClientError> {
         Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
     }

@@ -79,7 +79,10 @@ async fn verify_report(
         return Ok(ReportStatus::Banned);
     }
 
-    if !mobile_config.is_gateway_known(gw_pub_key).await {
+    if !mobile_config
+        .is_gateway_known(gw_pub_key, &report.received_timestamp)
+        .await
+    {
         return Ok(ReportStatus::InvalidGatewayKey);
     }
 

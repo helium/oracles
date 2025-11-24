@@ -151,6 +151,7 @@ where
         tracing::info!("Processing speedtest file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
         let mut speedtests = file.into_stream(&mut transaction).await?;
+
         while let Some(speedtest_report) = speedtests.next().await {
             let result = self.validate_speedtest(&speedtest_report).await?;
             if result == SpeedtestResult::SpeedtestValid {
@@ -186,7 +187,7 @@ where
 
         match self
             .gateway_info_resolver
-            .resolve_gateway_info(&speedtest.report.pubkey)
+            .resolve_gateway_info(&speedtest.report.pubkey, &speedtest.received_timestamp)
             .await?
         {
             Some(gw_info) if gw_info.is_data_only() => {
