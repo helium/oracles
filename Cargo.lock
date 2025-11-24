@@ -1321,16 +1321,17 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "beacon"
 version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#c323a52533dc21b2759328eb7c6b81557aff1e83"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "prost",
- "rand 0.7.3",
- "rand_chacha 0.2.2",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
 ]
 
@@ -1361,7 +1362,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2348,7 +2349,7 @@ dependencies = [
 name = "denylist"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "bincode",
  "bytes",
  "chrono",
@@ -2721,7 +2722,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2822,7 +2823,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "aws-smithy-types-convert",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "bytes",
  "chrono",
@@ -2831,7 +2832,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "http 1.3.1",
  "metrics",
  "poc-metrics",
@@ -2862,7 +2863,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "beacon",
  "blake3",
  "bs58",
@@ -2873,7 +2874,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "hex-literal",
  "prost",
  "rust_decimal",
@@ -3450,7 +3451,7 @@ version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3ae6081be123db88474f4c5f12f9b0d3d90b9f5ce15171dee64fe92e3cae2dd"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "byteorder",
  "ed25519-compact",
@@ -3477,7 +3478,7 @@ dependencies = [
  "anchor-spl",
  "angry-purple-tiger",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bincode",
  "bytemuck",
  "chrono",
@@ -3512,6 +3513,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#c323a52533dc21b2759328eb7c6b81557aff1e83"
 dependencies = [
  "bytes",
  "msg-signature",
@@ -3545,6 +3547,7 @@ dependencies = [
 [[package]]
 name = "helium-proto-crypto"
 version = "0.1.0"
+source = "git+https://github.com/helium/helium-wallet-rs?branch=connor%2Fmsg-sign-trait#2e696fa894042dbe9de1b914720dea041955b93f"
 dependencies = [
  "helium-crypto",
  "msg-signature",
@@ -3581,7 +3584,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -3881,7 +3884,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -4097,7 +4100,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "backon 1.5.2",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "chrono",
  "clap",
@@ -4108,7 +4111,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "helium-proto-crypto",
  "http 1.3.1",
  "humantime-serde",
@@ -4180,7 +4183,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "backon 0.5.0",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "chrono",
  "clap",
@@ -4192,7 +4195,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "helium-proto-crypto",
  "hextree",
  "http 1.3.1",
@@ -4239,7 +4242,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "http 1.3.1",
  "http-serde",
  "humantime-serde",
@@ -4266,7 +4269,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "beacon",
  "blake3",
  "chrono",
@@ -4282,7 +4285,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -4937,7 +4940,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "blake3",
  "bs58",
  "chrono",
@@ -4953,7 +4956,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "helium-proto-crypto",
  "hextree",
  "http 1.3.1",
@@ -4994,14 +4997,14 @@ version = "0.1.0"
 dependencies = [
  "angry-purple-tiger",
  "anyhow",
- "base64 0.22.1",
+ "base64 0.21.7",
  "clap",
  "custom-tracing",
  "dialoguer",
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5030,7 +5033,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "http 1.3.1",
  "http-serde",
  "humantime-serde",
@@ -5062,7 +5065,7 @@ dependencies = [
  "async-compression",
  "async-trait",
  "aws-local",
- "base64 0.22.1",
+ "base64 0.21.7",
  "chrono",
  "clap",
  "config",
@@ -5078,7 +5081,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "hex-assignments",
  "hextree",
  "http-serde",
@@ -5119,6 +5122,7 @@ dependencies = [
 [[package]]
 name = "msg-signature"
 version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#c323a52533dc21b2759328eb7c6b81557aff1e83"
 dependencies = [
  "msg-signature-macro",
 ]
@@ -5126,6 +5130,7 @@ dependencies = [
 [[package]]
 name = "msg-signature-macro"
 version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#c323a52533dc21b2759328eb7c6b81557aff1e83"
 dependencies = [
  "quote",
  "syn 2.0.106",
@@ -5710,7 +5715,7 @@ name = "poc-entropy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.21.7",
  "blake3",
  "bs58",
  "chrono",
@@ -5722,7 +5727,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "http 1.3.1",
  "hyper 0.14.32",
  "jsonrpsee",
@@ -5837,7 +5842,7 @@ dependencies = [
  "file-store-oracles",
  "futures",
  "futures-util",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -5966,7 +5971,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "log",
  "multimap",
  "once_cell",
@@ -5988,7 +5993,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -6086,7 +6091,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.32",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -6125,7 +6130,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -6478,7 +6483,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "chrono",
  "clap",
@@ -6490,7 +6495,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -6748,7 +6753,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -10519,7 +10524,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -11558,7 +11563,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -12005,7 +12010,7 @@ version = "0.7.0"
 source = "git+https://github.com/helium/xorf-generator?branch=main#0d23ba2dcac2e2823d842566436df406f5ce923c"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bincode",
  "bytes",
  "clap",
