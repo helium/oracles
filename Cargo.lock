@@ -1321,11 +1321,10 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify#b7e2a24241a06b2afe02d1944a732c4ccb3c2014"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "prost",
  "rand 0.7.3",
  "rand_chacha 0.2.2",
@@ -2832,7 +2831,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "http 1.3.1",
  "metrics",
  "poc-metrics",
@@ -2874,7 +2873,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "hex-literal",
  "prost",
  "rust_decimal",
@@ -3513,7 +3512,6 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify#b7e2a24241a06b2afe02d1944a732c4ccb3c2014"
 dependencies = [
  "bytes",
  "msg-signature",
@@ -3547,12 +3545,11 @@ dependencies = [
 [[package]]
 name = "helium-proto-crypto"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-wallet-rs?branch=connor%2Fmove-msg-verify#dd6def5dff000d1966ee9904f8695a22a3b2e5e5"
 dependencies = [
  "helium-crypto",
  "msg-signature",
  "prost",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -3584,7 +3581,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "derive_builder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "hextree",
  "rust_decimal",
  "rust_decimal_macros",
@@ -4111,7 +4108,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "helium-proto-crypto",
  "http 1.3.1",
  "humantime-serde",
@@ -4195,7 +4192,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "helium-proto-crypto",
  "hextree",
  "http 1.3.1",
@@ -4242,7 +4239,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "http 1.3.1",
  "http-serde",
  "humantime-serde",
@@ -4285,7 +4282,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "http-serde",
  "humantime-serde",
  "iot-config",
@@ -4956,7 +4953,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "helium-proto-crypto",
  "hextree",
  "http 1.3.1",
@@ -5004,7 +5001,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -5033,7 +5030,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "http 1.3.1",
  "http-serde",
  "humantime-serde",
@@ -5081,7 +5078,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "hex-assignments",
  "hextree",
  "http-serde",
@@ -5122,7 +5119,6 @@ dependencies = [
 [[package]]
 name = "msg-signature"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify#b7e2a24241a06b2afe02d1944a732c4ccb3c2014"
 dependencies = [
  "msg-signature-macro",
 ]
@@ -5130,7 +5126,6 @@ dependencies = [
 [[package]]
 name = "msg-signature-macro"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify#b7e2a24241a06b2afe02d1944a732c4ccb3c2014"
 dependencies = [
  "quote",
  "syn 2.0.106",
@@ -5727,7 +5722,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "http 1.3.1",
  "hyper 0.14.32",
  "jsonrpsee",
@@ -5842,7 +5837,7 @@ dependencies = [
  "file-store-oracles",
  "futures",
  "futures-util",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -6495,7 +6490,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
+ "helium-proto 0.1.0",
  "humantime-serde",
  "metrics",
  "metrics-exporter-prometheus",

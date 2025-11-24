@@ -2,7 +2,7 @@ use crate::gateway_info::{self, GatewayInfo, GatewayInfoStream};
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{services::iot_config, BlockchainRegionParamV1, Message, Region};
-use helium_proto_crypto::MsgVerify;
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use std::{sync::Arc, time::Duration};
 use tonic::transport::{Channel, Endpoint};
 
@@ -108,7 +108,7 @@ impl Gateways for Client {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        request.sign(&self.signing_key)?;
         let response =
             call_with_retry!(self.admin_client.region_params(request.clone()))?.into_inner();
         response.verify(&self.config_pubkey)?;
@@ -130,7 +130,7 @@ impl Gateways for Client {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        request.sign(&self.signing_key)?;
         tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
         let response = match call_with_retry!(self.gateway_client.info(request.clone())) {
             Ok(info_resp) => {
@@ -152,7 +152,7 @@ impl Gateways for Client {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        request.sign(&self.signing_key)?;
         tracing::debug!("fetching gateway info stream");
         let pubkey = Arc::new(self.config_pubkey.clone());
         let response_stream = call_with_retry!(self.gateway_client.info_stream(request.clone()))?

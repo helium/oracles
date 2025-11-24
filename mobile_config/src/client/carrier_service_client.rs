@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use file_store::traits::TimestampEncode;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{services::mobile_config, Message, ServiceProvider, ServiceProviderPromotions};
-use helium_proto_crypto::MsgVerify;
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use retainer::Cache;
 use std::{str::FromStr, sync::Arc, time::Duration};
 use tonic::transport::Channel;
@@ -44,7 +44,7 @@ impl CarrierServiceVerifier for CarrierServiceClient {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        request.sign(&self.signing_key)?;
         tracing::debug!(?payer, "getting service provider for payer key");
         let response = match call_with_retry!(self.client.clone().key_to_entity(request.clone())) {
             Ok(verify_res) => {
@@ -73,7 +73,7 @@ impl CarrierServiceVerifier for CarrierServiceClient {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        request.sign(&self.signing_key)?;
 
         let response = match call_with_retry!(self
             .client

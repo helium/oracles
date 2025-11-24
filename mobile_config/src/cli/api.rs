@@ -6,6 +6,7 @@ use helium_proto::services::mobile_config::{
 };
 use prost::Message;
 use std::time::Instant;
+use helium_proto_crypto::MsgSign;
 use tonic::Streaming;
 
 #[derive(Debug, clap::Parser)]
@@ -91,7 +92,7 @@ async fn gateway_info_stream_v3(
         min_updated_at,
         min_location_changed_at,
     };
-    req.signature = signer.sign(&req.encode_to_vec())?;
+    req.sign(signer)?;
     let stream = client.info_stream_v3(req).await?.into_inner();
 
     Ok(stream)

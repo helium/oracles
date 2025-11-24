@@ -14,7 +14,7 @@ use helium_proto::{
     services::mobile_config::{self, AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1},
     Message,
 };
-use helium_proto_crypto::MsgVerify;
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};
 use tokio::sync::watch;
 use tonic::{Request, Response, Status};
@@ -53,12 +53,6 @@ impl AdminService {
             .verify_signature_with_role(KeyRole::Administrator, signer, request)
             .map_err(|_| Status::permission_denied("invalid admin signature"))?;
         Ok(())
-    }
-
-    fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
-        self.signing_key
-            .sign(response)
-            .map_err(|_| Status::internal("response signing error"))
     }
 }
 
@@ -99,7 +93,9 @@ impl mobile_config::Admin for AdminService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        resp
+            .sign(&self.signing_key)
+            .map_err(|_| Status::internal("response signing error"))?;
         Ok(Response::new(resp))
     }
 
@@ -138,7 +134,9 @@ impl mobile_config::Admin for AdminService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        resp
+            .sign(&self.signing_key)
+            .map_err(|_| Status::internal("response signing error"))?;
         Ok(Response::new(resp))
     }
 }

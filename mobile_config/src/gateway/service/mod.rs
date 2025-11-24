@@ -19,7 +19,7 @@ use helium_proto::{
     },
     Message,
 };
-use helium_proto_crypto::MsgVerify;
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
@@ -73,12 +73,6 @@ impl GatewayService {
         self.verify_request_signature(&signer, request)
     }
 
-    fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
-        self.signing_key
-            .sign(response)
-            .map_err(|_| Status::internal("response signing error"))
-    }
-
     fn map_info_v2_response(&self, info: GatewayInfo) -> GrpcResult<GatewayInfoResV2> {
         if info.metadata.is_some() {
             telemetry::count_gateway_chain_lookup("asserted");
@@ -96,7 +90,9 @@ impl GatewayService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        res.signature = self.sign_response(&res.encode_to_vec())?;
+        res
+            .sign(&self.signing_key)
+            .map_err(|_| Status::internal("response signing error"))?;
         Ok(Response::new(res))
     }
 }
@@ -138,7 +134,9 @@ impl mobile_config::Gateway for GatewayService {
                         signer: self.signing_key.public_key().into(),
                         signature: vec![],
                     };
-                    res.signature = self.sign_response(&res.encode_to_vec())?;
+                    res
+                        .sign(&self.signing_key)
+                        .map_err(|_| Status::internal("response signing error"))?;
                     Ok(Response::new(res))
                 },
             )

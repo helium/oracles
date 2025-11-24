@@ -2,7 +2,7 @@ use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
 use async_trait::async_trait;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{services::mobile_config, Message};
-use helium_proto_crypto::MsgVerify;
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 use tonic::transport::Channel;
@@ -62,7 +62,7 @@ impl AuthorizationVerifier for AuthorizationClient {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        request.sign(&self.signing_key)?;
         tracing::debug!(pubkey = pubkey.to_string(), role = ?role, "verifying authorized key registered");
         let response = match call_with_retry!(self.client.clone().verify(request.clone())) {
             Ok(verify_res) => {

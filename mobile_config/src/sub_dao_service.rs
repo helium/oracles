@@ -8,7 +8,7 @@ use helium_proto::{
     services::sub_dao::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},
     Message,
 };
-use helium_proto_crypto::MsgVerify;
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
@@ -50,12 +50,6 @@ impl SubDaoService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, request)
     }
-
-    fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
-        self.signing_key
-            .sign(response)
-            .map_err(|_| Status::internal("response signing error"))
-    }
 }
 
 #[tonic::async_trait]
@@ -95,7 +89,9 @@ impl sub_dao::sub_dao_server::SubDao for SubDaoService {
                         signer: self.signing_key.public_key().into(),
                         signature: vec![],
                     };
-                    res.signature = self.sign_response(&res.encode_to_vec())?;
+                    res
+                        .sign(&self.signing_key)
+                        .map_err(|_| Status::internal("response signing error"))?;
                     Ok(Response::new(res))
                 },
             )
