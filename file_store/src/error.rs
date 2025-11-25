@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::file_info::FileInfoError;
+use crate::{file_info::FileInfoError, gzipped_framed_file::GzippedFramedFileError};
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
@@ -32,6 +32,9 @@ pub enum Error {
     #[cfg(feature = "sqlx-postgres")]
     #[error("db error")]
     DbError(#[from] sqlx::Error),
+
+    #[error("error write data to file on disk: {0}")]
+    FileWriteError(#[from] GzippedFramedFileError),
 
     // Generic error wrapper for external (out of that repository) traits implementations.
     // Not recommended for internal use!
