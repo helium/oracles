@@ -7,10 +7,8 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
 config = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -24,23 +22,15 @@ bytes = "*"
 regex = "1"
 tracing = { workspace = true }
 chrono = { workspace = true }
-helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
-http = { workspace = true }
-sha2 = { workspace = true }
 metrics = { workspace = true }
 poc-metrics = { path = "../metrics" }
-rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
-base64 = { workspace = true }
 sqlx = { workspace = true, optional = true }
 async-trait = { workspace = true }
 derive_builder = { workspace = true }
 retainer = { workspace = true }
-uuid = { workspace = true }
 task-manager = { path = "../task_manager" }
 tls-init = { path = "../tls_init" }
-bs58 = { workspace = true }
 
 aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
