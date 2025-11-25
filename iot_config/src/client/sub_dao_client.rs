@@ -1,10 +1,7 @@
 use super::{call_with_retry, ClientError, Settings};
 use crate::sub_dao_epoch_reward_info::EpochRewardInfo;
-use helium_crypto::{Keypair, PublicKey, Sign};
-use helium_proto::{
-    services::sub_dao::{self, SubDaoEpochRewardInfoReqV1},
-    Message,
-};
+use helium_crypto::{Keypair, PublicKey};
+use helium_proto::services::sub_dao::{self, SubDaoEpochRewardInfoReqV1};
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use std::{error::Error, sync::Arc, time::Duration};
 use tonic::transport::{Channel, Endpoint};

@@ -1,12 +1,11 @@
 use crate::settings::Settings;
 use futures::StreamExt;
-use helium_crypto::{Keypair, Sign};
+use helium_crypto::Keypair;
 use helium_proto::services::mobile_config::{
     DeviceTypeV2, GatewayClient, GatewayInfoStreamReqV3, GatewayInfoStreamResV3,
 };
-use prost::Message;
-use std::time::Instant;
 use helium_proto_crypto::MsgSign;
+use std::time::Instant;
 use tonic::Streaming;
 
 #[derive(Debug, clap::Parser)]

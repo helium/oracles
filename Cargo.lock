@@ -1321,17 +1321,17 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#c323a52533dc21b2759328eb7c6b81557aff1e83"
+source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#478d82da17663465693b1cb2b12010e44253c03d"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
  "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait)",
  "prost",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
+ "rand 0.7.3",
+ "rand_chacha 0.2.2",
  "rust_decimal",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.9.9",
  "thiserror 1.0.69",
 ]
 
@@ -1362,7 +1362,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -3513,7 +3513,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#c323a52533dc21b2759328eb7c6b81557aff1e83"
+source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#478d82da17663465693b1cb2b12010e44253c03d"
 dependencies = [
  "bytes",
  "msg-signature",
@@ -3547,7 +3547,7 @@ dependencies = [
 [[package]]
 name = "helium-proto-crypto"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-wallet-rs?branch=connor%2Fmsg-sign-trait#2e696fa894042dbe9de1b914720dea041955b93f"
+source = "git+https://github.com/helium/helium-wallet-rs?branch=connor%2Fmsg-sign-trait#cfe16f382b75bb6a58141ec4bcdd14952c1344f1"
 dependencies = [
  "helium-crypto",
  "msg-signature",
@@ -3884,7 +3884,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "tokio",
  "tower-service",
  "tracing",
@@ -4623,7 +4623,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.5",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -5122,7 +5122,7 @@ dependencies = [
 [[package]]
 name = "msg-signature"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#c323a52533dc21b2759328eb7c6b81557aff1e83"
+source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#478d82da17663465693b1cb2b12010e44253c03d"
 dependencies = [
  "msg-signature-macro",
 ]
@@ -5130,7 +5130,7 @@ dependencies = [
 [[package]]
 name = "msg-signature-macro"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#c323a52533dc21b2759328eb7c6b81557aff1e83"
+source = "git+https://github.com/helium/proto?branch=connor%2Fmsg-sign-trait#478d82da17663465693b1cb2b12010e44253c03d"
 dependencies = [
  "quote",
  "syn 2.0.106",
@@ -5416,7 +5416,7 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77e878c846a8abae00dd069496dbe8751b16ac1c3d6bd2a7283a938e8228f90d"
 dependencies = [
- "proc-macro-crate 3.4.0",
+ "proc-macro-crate 1.1.3",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -5971,7 +5971,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "once_cell",
@@ -5993,7 +5993,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -6091,7 +6091,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.32",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -6130,7 +6130,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -11156,7 +11156,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 
@@ -11563,7 +11563,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -12023,7 +12023,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.9.9",
  "thiserror 1.0.69",
  "twox-hash",
  "xorf",

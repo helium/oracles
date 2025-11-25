@@ -9,11 +9,8 @@ use anyhow::{anyhow, Result};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
 use futures::future::TryFutureExt;
-use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
-use helium_proto::{
-    services::mobile_config::{self, AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1},
-    Message,
-};
+use helium_crypto::{Keypair, PublicKey, PublicKeyBinary};
+use helium_proto::services::mobile_config::{self, AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1};
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};
 use tokio::sync::watch;
@@ -93,8 +90,7 @@ impl mobile_config::Admin for AdminService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp
-            .sign(&self.signing_key)
+        resp.sign(&self.signing_key)
             .map_err(|_| Status::internal("response signing error"))?;
         Ok(Response::new(resp))
     }
@@ -134,8 +130,7 @@ impl mobile_config::Admin for AdminService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp
-            .sign(&self.signing_key)
+        resp.sign(&self.signing_key)
             .map_err(|_| Status::internal("response signing error"))?;
         Ok(Response::new(resp))
     }

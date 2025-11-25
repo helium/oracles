@@ -67,7 +67,9 @@ impl mobile_config::Entity for EntityService {
                 signer: self.signing_key.public_key().into(),
                 signature: vec![],
             };
-            response.sign(&self.signing_key).map_err(|_| Status::internal("response signing error"))?;
+            response
+                .sign(&self.signing_key)
+                .map_err(|_| Status::internal("response signing error"))?;
             Ok(Response::new(response))
         } else {
             Err(Status::not_found("Requested entity not on-chain"))

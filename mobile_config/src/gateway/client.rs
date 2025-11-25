@@ -1,11 +1,8 @@
 use crate::client::{call_with_retry, ClientError, Settings};
 use crate::gateway::service::info::{GatewayInfo, GatewayInfoStream};
 use futures::stream::{self, StreamExt};
-use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
-use helium_proto::{
-    services::mobile_config::{self, DeviceType},
-    Message,
-};
+use helium_crypto::{Keypair, PublicKey, PublicKeyBinary};
+use helium_proto::services::mobile_config::{self, DeviceType};
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};

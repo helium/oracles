@@ -3,11 +3,8 @@ use crate::{
 };
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use helium_crypto::{Keypair, PublicKey, Sign};
-use helium_proto::{
-    services::sub_dao::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1},
-    Message,
-};
+use helium_crypto::{Keypair, PublicKey};
+use helium_proto::services::sub_dao::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1};
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
@@ -89,8 +86,7 @@ impl sub_dao::sub_dao_server::SubDao for SubDaoService {
                         signer: self.signing_key.public_key().into(),
                         signature: vec![],
                     };
-                    res
-                        .sign(&self.signing_key)
+                    res.sign(&self.signing_key)
                         .map_err(|_| Status::internal("response signing error"))?;
                     Ok(Response::new(res))
                 },

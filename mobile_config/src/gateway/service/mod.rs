@@ -10,14 +10,11 @@ use futures::{
     TryFutureExt,
 };
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
-use helium_proto::{
-    services::mobile_config::{
-        self, GatewayInfoAtTimestampReqV1, GatewayInfoBatchReqV1, GatewayInfoReqV1,
-        GatewayInfoResV1, GatewayInfoResV2, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2,
-        GatewayInfoStreamReqV3, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
-        GatewayInfoStreamResV3, GatewayInfoV2,
-    },
-    Message,
+use helium_proto::services::mobile_config::{
+    self, GatewayInfoAtTimestampReqV1, GatewayInfoBatchReqV1, GatewayInfoReqV1,
+    GatewayInfoResV1, GatewayInfoResV2, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2,
+    GatewayInfoStreamReqV3, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
+    GatewayInfoStreamResV3, GatewayInfoV2,
 };
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};
@@ -90,8 +87,7 @@ impl GatewayService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        res
-            .sign(&self.signing_key)
+        res.sign(&self.signing_key)
             .map_err(|_| Status::internal("response signing error"))?;
         Ok(Response::new(res))
     }
@@ -134,8 +130,7 @@ impl mobile_config::Gateway for GatewayService {
                         signer: self.signing_key.public_key().into(),
                         signature: vec![],
                     };
-                    res
-                        .sign(&self.signing_key)
+                    res.sign(&self.signing_key)
                         .map_err(|_| Status::internal("response signing error"))?;
                     Ok(Response::new(res))
                 },

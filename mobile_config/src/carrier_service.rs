@@ -3,14 +3,14 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use helium_crypto::{Keypair, PublicKey, Sign};
+use helium_crypto::{Keypair, PublicKey};
 use helium_proto::{
     service_provider_promotions::Promotion,
     services::mobile_config::{
         self, CarrierIncentivePromotionListReqV1, CarrierIncentivePromotionListResV1,
         CarrierKeyToEntityReqV1, CarrierKeyToEntityResV1,
     },
-    Message, ServiceProvider, ServiceProviderPromotions,
+    ServiceProvider, ServiceProviderPromotions,
 };
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{prelude::FromRow, Pool, Postgres};

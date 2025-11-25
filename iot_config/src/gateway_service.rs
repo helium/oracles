@@ -164,8 +164,7 @@ impl iot_config::Gateway for GatewayService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp
-            .sign(&self.signing_key)
+        resp.sign(&self.signing_key)
             .map_err(|_| Status::internal("response signing error"))?;
 
         Ok(Response::new(resp))
@@ -234,8 +233,7 @@ impl iot_config::Gateway for GatewayService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp
-            .sign(&self.signing_key)
+        resp.sign(&self.signing_key)
             .map_err(|_| Status::internal("response signing error"))?;
         tracing::debug!(
             pubkey = %address,
@@ -266,8 +264,7 @@ impl iot_config::Gateway for GatewayService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp
-            .sign(&self.signing_key)
+        resp.sign(&self.signing_key)
             .map_err(|_| Status::internal("response signing error"))?;
 
         Ok(Response::new(resp))

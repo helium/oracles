@@ -1,6 +1,6 @@
 use super::{
-    call_with_retry, iot_config, Arc, Channel, ClientError, Duration, Endpoint, Keypair, Message,
-    MsgVerify, PublicKey, Settings, Sign,
+    call_with_retry, iot_config, Arc, Channel, ClientError, Duration, Endpoint, Keypair, MsgVerify,
+    PublicKey, Settings,
 };
 use async_trait::async_trait;
 use chrono::Utc;
