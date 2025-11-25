@@ -254,8 +254,8 @@ mod tests {
             .build()
             .await?;
 
-        assert_eq!(true, file.will_fit(&"HelloWorld".into()));
-        assert_eq!(false, file.will_fit(&"Hello World".into()));
+        assert!(file.will_fit(&"HelloWorld".into()));
+        assert!(!file.will_fit(&"Hello World".into()));
 
         Ok(())
     }
@@ -278,8 +278,8 @@ mod tests {
         let one = vec!["HelloWorld".into()];
         let two = vec!["HelloWorld".into(), "a".into()];
 
-        assert_eq!(true, file.will_all_fit(&one));
-        assert_eq!(false, file.will_all_fit(&two));
+        assert!(file.will_all_fit(&one));
+        assert!(!file.will_all_fit(&two));
 
         Ok(())
     }
