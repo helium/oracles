@@ -793,6 +793,7 @@ dependencies = [
  "anyhow",
  "aws-config",
  "aws-sdk-s3",
+ "bytes",
  "chrono",
  "file-store",
  "prost",

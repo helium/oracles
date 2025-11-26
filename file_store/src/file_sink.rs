@@ -41,7 +41,7 @@ pub enum Message<T> {
 pub type MessageSender<T> = mpsc::Sender<Message<T>>;
 pub type MessageReceiver<T> = mpsc::Receiver<Message<T>>;
 
-fn message_channel<T>(size: usize) -> (MessageSender<T>, MessageReceiver<T>) {
+pub fn message_channel<T>(size: usize) -> (MessageSender<T>, MessageReceiver<T>) {
     mpsc::channel(size)
 }
 
