@@ -10,7 +10,7 @@ cache = "/var/data/verified-reports"
 # Default value is 1 hour.
 burn_period = "1 hour"
 
-# In case burn fails we will accelarate and burn in `min_burn_period` minutes instead of `burn_period` hours.
+# In case burn fails we will accelerate and burn in `min_burn_period` minutes instead of `burn_period` hours.
 # Default value is 15 minutes.
 min_burn_period = "15 minutes"
 
