@@ -150,3 +150,39 @@ impl AwsLocalBuilder {
         AwsLocal { client }
     }
 }
+
+// Until AsyncDrop is stablized, ensure buckets are cleaned up in tests. This
+// causes tests to fail unless they call `AwsLocal::delete_bucket()`.
+impl Drop for AwsLocal {
+    fn drop(&mut self) {
+        panic!(
+            "
+=============== WARNING!!! ===============
+Cannot autodrop AwsLocal, must call `AwsLocal::cleanup()`
+=============== WARNING!!! ===============
+            "
+        );
+    }
+}
+
+impl AwsLocal {
+    /// Drop the AwsLocal Client deleting the test bucket in the process.
+    pub async fn cleanup(self) -> Result<()> {
+        let res = self.delete_bucket().await;
+
+        // Secret sauce to bypasses the panic in the Drop impl for AwsLocal.
+        let _ = std::mem::ManuallyDrop::new(self);
+
+        res
+    }
+
+    /// WARNING: This function should only be used in active development if you
+    /// want to run a test and inspect the contents of a test bucket.
+    ///
+    /// # Safety
+    /// It is marked with unsafe to make the calling code extra clear that this
+    /// should not be left in use.
+    pub unsafe fn drop_without_bucket_delete(self) {
+        let _ = std::mem::ManuallyDrop::new(self);
+    }
+}

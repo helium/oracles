@@ -177,7 +177,7 @@ async fn test_dataset_downloader(pool: PgPool) {
     data_set_downloader.check_for_new_data_sets().await.unwrap();
     assert!(hex_assignment_file_exist(&pool, "footfall.1732895200000.gz").await);
 
-    awsl.delete_bucket().await.expect("unable to delete bucket");
+    awsl.cleanup().await.expect("unable to delete bucket");
 }
 
 #[sqlx::test]
