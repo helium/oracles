@@ -14,6 +14,8 @@ pub const MAX_FILE_SIZE: usize = 50_000_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GzippedFramedFileError {
+    #[error("invalid configuration when creating file")]
+    InvalidConfiguration,
     #[error("file has reached maximum size")]
     MaxSizeError,
     #[error("io error: {0}")]
@@ -137,9 +139,12 @@ impl GzippedFramedFileBuilder {
 
     pub async fn build(self) -> Result<GzippedFramedFile, GzippedFramedFileError> {
         GzippedFramedFile::new(
-            self.path.expect("path not set"),
-            self.prefix.expect("prefix not set"),
-            self.time.expect("time not set"),
+            self.path
+                .ok_or(GzippedFramedFileError::InvalidConfiguration)?,
+            self.prefix
+                .ok_or(GzippedFramedFileError::InvalidConfiguration)?,
+            self.time
+                .ok_or(GzippedFramedFileError::InvalidConfiguration)?,
             self.max_size.unwrap_or(MAX_FILE_SIZE),
         )
         .await
