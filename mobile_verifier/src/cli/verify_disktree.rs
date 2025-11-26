@@ -33,7 +33,7 @@ impl Cmd {
         println!("Checking {}, this may take a while...", self.path.display());
         for x in disktree.iter()? {
             idx += 1;
-            if idx % 100_000_000 == 0 {
+            if idx.is_multiple_of(100_000_000) {
                 println!("Processed {} cells after {:?}", idx, start.elapsed());
             }
             let (_cell, vals) = x.unwrap();

@@ -440,7 +440,7 @@ async fn gateway_info_batch_v1(pool: PgPool) -> anyhow::Result<()> {
 
     let stream = info_batch_v1(
         &mut client,
-        &vec![address1.clone(), address2.clone()],
+        &[address1.clone(), address2.clone()],
         &admin_key,
     )
     .await?;
@@ -526,7 +526,7 @@ async fn gateway_info_batch_v2(pool: PgPool) -> anyhow::Result<()> {
 
     let stream = info_batch_v2(
         &mut client,
-        &vec![address1.clone(), address2.clone()],
+        &[address1.clone(), address2.clone()],
         &admin_key,
     )
     .await?;
@@ -669,7 +669,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
 
     let stream = info_batch_v2(
         &mut client,
-        &vec![
+        &[
             address1.clone(),
             address2.clone(),
             address3.clone(),
