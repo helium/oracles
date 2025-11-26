@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
+bytes = { workspace = true }
 tokio = { workspace = true }
 triggered = { workspace = true }
 tonic = { workspace = true }
