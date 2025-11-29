@@ -161,7 +161,7 @@ impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, 
     /// [`offset`](Self::offset).
     ///
     /// If a file comes in late, and is outside the
-    /// `max_lookback` window, it will not be retreived.
+    /// `max_lookback` window, it will not be retrieved.
     pub fn lookback_max(self, max_lookback: Duration) -> Self {
         self.lookback(LookbackBehavior::Max(max_lookback))
     }
@@ -744,7 +744,7 @@ pub mod sqlx_postgres {
                 }
             });
 
-            // Attempting to recieve files for processing. The timeout should fire,
+            // Attempting to receive files for processing. The timeout should fire,
             // because all the files we have setup exist within the offset, and
             // should still be in the database.
             match timeout(Duration::from_secs(1), receiver.recv()).await {
