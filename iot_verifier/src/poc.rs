@@ -1110,7 +1110,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_verify_beacon_payload() {
         // entropy comparisons are performed in secs but create a datetime with millisecs precision
         // confirm the millisecs precision is ignored
