@@ -1,6 +1,7 @@
 extern crate tls_init;
 
 mod error;
+mod gzipped_framed_file;
 mod settings;
 
 pub mod bucket_client;
@@ -16,6 +17,7 @@ pub use bucket_client::BucketClient;
 pub use error::{AwsError, ChannelError, Error, Result};
 pub use file_info::FileInfo;
 pub use file_sink::{FileSink, FileSinkBuilder};
+pub use gzipped_framed_file::GzippedFramedFile;
 pub use settings::{BucketSettings, Settings};
 
 // Client functions
@@ -50,8 +52,8 @@ struct ClientKey {
 pub async fn new_client(
     region: Option<String>,
     endpoint: Option<String>,
-    _access_key_id: Option<String>,
-    _secret_access_key: Option<String>,
+    access_key_id: Option<String>,
+    secret_access_key: Option<String>,
 ) -> aws_sdk_s3::Client {
     let mut client_map = CLIENT_MAP
         .get_or_init(|| Mutex::new(HashMap::new()))
@@ -61,8 +63,8 @@ pub async fn new_client(
     let key = ClientKey {
         region: region.clone(),
         endpoint: endpoint.clone(),
-        access_key_id: _access_key_id.clone(),
-        secret_access_key: _secret_access_key.clone(),
+        access_key_id: access_key_id.clone(),
+        secret_access_key: secret_access_key.clone(),
     };
 
     if let Some(client) = client_map.get(&key) {
@@ -87,7 +89,7 @@ pub async fn new_client(
         s3_config = s3_config.force_path_style(true);
     }
 
-    if let Some((access_key_id, secret_access_key)) = _access_key_id.zip(_secret_access_key) {
+    if let Some((access_key_id, secret_access_key)) = access_key_id.zip(secret_access_key) {
         let creds = aws_sdk_s3::config::Credentials::builder()
             .provider_name("Static")
             .access_key_id(access_key_id)

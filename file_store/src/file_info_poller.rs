@@ -161,7 +161,7 @@ impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, 
     /// [`offset`](Self::offset).
     ///
     /// If a file comes in late, and is outside the
-    /// `max_lookback` window, it will not be retreived.
+    /// `max_lookback` window, it will not be retrieved.
     pub fn lookback_max(self, max_lookback: Duration) -> Self {
         self.lookback(LookbackBehavior::Max(max_lookback))
     }
@@ -428,7 +428,7 @@ pub struct ProstFileInfoPollerParser;
 #[async_trait::async_trait]
 impl<T> FileInfoPollerParser<T> for ProstFileInfoPollerParser
 where
-    T: helium_proto::Message + Default,
+    T: prost::Message + Default,
 {
     async fn parse(&self, byte_stream: ByteStream) -> Result<Vec<T>> {
         Ok(crate::stream_source(byte_stream)
@@ -443,7 +443,7 @@ where
                 .ok()
             })
             .filter_map(|msg| async {
-                <T as helium_proto::Message>::decode(msg)
+                <T as prost::Message>::decode(msg)
                     .map_err(|err| {
                         tracing::error!(
                             "Error in decoding message of type {}: {err:?}",
@@ -658,7 +658,7 @@ pub mod sqlx_postgres {
         #[sqlx::test]
         async fn do_not_reprocess_files_when_offset_exceeds_earliest_file(
             pool: PgPool,
-        ) -> anyhow::Result<()> {
+        ) -> std::result::Result<(), Box<dyn std::error::Error>> {
             // Cleaning the files_processed table should not cause files within the
             // `FileInfoPoller.config.offset` window to be reprocessed.
 
@@ -744,7 +744,7 @@ pub mod sqlx_postgres {
                 }
             });
 
-            // Attempting to recieve files for processing. The timeout should fire,
+            // Attempting to receive files for processing. The timeout should fire,
             // because all the files we have setup exist within the offset, and
             // should still be in the database.
             match timeout(Duration::from_secs(1), receiver.recv()).await {

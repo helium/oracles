@@ -11,7 +11,6 @@ pub mod heartbeats;
 pub mod reward_shares;
 pub mod rewarder;
 pub mod seniority;
-pub mod service_provider;
 mod settings;
 pub mod speedtests;
 pub mod speedtests_average;
