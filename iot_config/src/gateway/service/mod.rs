@@ -293,7 +293,6 @@ impl iot_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         tokio::spawn(async move {
-            let epoch: DateTime<Utc> = "1970-01-01T00:00:00Z".parse().unwrap();
             tokio::select! {
                 _ = stream_all_gateways_info(
                     &pool,
@@ -301,7 +300,7 @@ impl iot_config::Gateway for GatewayService {
                     &signing_key,
                     region_map.clone(),
                     batch_size,
-                    epoch,
+                    DateTime::UNIX_EPOCH,
                     None,
                 ) => (),
             }

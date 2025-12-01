@@ -157,6 +157,7 @@ impl Gateway {
         .bind(min_location_changed_at)
         .fetch(db)
         .map_err(anyhow::Error::from)
+        .inspect_err(|err| tracing::error!("Error streaming {:?}", err))
         .filter_map(|res| async move { res.ok() })
     }
 }

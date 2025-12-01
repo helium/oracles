@@ -41,9 +41,7 @@ impl Tracker {
                 biased;
                 _ = &mut shutdown => break,
                 _ = interval.tick() => {
-                    if let Err(err) = execute(&self.pool, &self.metadata).await {
-                        tracing::error!(?err, "error in tracking changes to mobile radios");
-                    }
+                    execute(&self.pool, &self.metadata).await?;
                 }
             }
         }
