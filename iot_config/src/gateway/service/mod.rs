@@ -293,17 +293,16 @@ impl iot_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         tokio::spawn(async move {
-            tokio::select! {
-                _ = stream_all_gateways_info(
-                    &pool,
-                    tx.clone(),
-                    &signing_key,
-                    region_map.clone(),
-                    batch_size,
-                    DateTime::UNIX_EPOCH,
-                    None,
-                ) => (),
-            }
+            _ = stream_all_gateways_info(
+                &pool,
+                tx.clone(),
+                &signing_key,
+                region_map.clone(),
+                batch_size,
+                DateTime::UNIX_EPOCH,
+                None,
+            )
+            .await
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
@@ -348,17 +347,16 @@ impl iot_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         tokio::spawn(async move {
-            tokio::select! {
-                _ = stream_all_gateways_info(
-                    &pool,
-                    tx.clone(),
-                    &signing_key,
-                    region_map.clone(),
-                    batch_size,
-                    min_last_changed_at,
-                    min_location_changed_at,
-                ) => (),
-            }
+            _ = stream_all_gateways_info(
+                &pool,
+                tx.clone(),
+                &signing_key,
+                region_map.clone(),
+                batch_size,
+                min_last_changed_at,
+                min_location_changed_at,
+            )
+            .await
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
