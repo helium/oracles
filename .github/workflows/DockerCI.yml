@@ -226,7 +226,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Release
-        run: AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --all --release
+        run: AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --release -p reward-index -p price -p ingest -p iot-config -p iot-packet-verifier -p iot-verifier -p poc-entropy
 
       - name: Extract binaries and cleanup
         run: |
