@@ -126,11 +126,11 @@ aws-smithy-types-convert = { version = "0.60.9", features = [
 url = "2.5.4"
 
 ### Protobuf
-helium-proto = { git = "https://github.com/helium/proto", branch = "connor/msg-sign-trait", features = [
+helium-proto = { git = "https://github.com/helium/proto", branch = "connor/move-msg-verify", features = [
   "services"
 ] }
-beacon = { git = "https://github.com/helium/proto", branch = "connor/msg-sign-trait" }
-helium-proto-crypto = { git = "https://github.com/helium/helium-wallet-rs", branch = "connor/msg-sign-trait" }
+beacon = { git = "https://github.com/helium/proto", branch = "connor/move-msg-verify" }
+helium-proto-crypto = { git = "https://github.com/helium/helium-wallet-rs", branch = "connor/move-msg-verify" }
 # Pickup versions from above
 prost = "*"
 tonic = { version = "*", features = ["tls-aws-lc", "tls-native-roots"] }

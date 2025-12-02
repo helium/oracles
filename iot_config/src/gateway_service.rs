@@ -12,9 +12,9 @@ use futures::stream::StreamExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::iot_config::{
-        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1, GatewayInfoStreamResV1,
-        GatewayLocationReqV1, GatewayLocationResV1, GatewayRegionParamsReqV1,
-        GatewayRegionParamsResV1,
+        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2,
+        GatewayInfoStreamResV1, GatewayLocationReqV1, GatewayLocationResV1,
+        GatewayRegionParamsReqV1, GatewayRegionParamsResV1,
     },
     Message, Region,
 };
@@ -303,6 +303,14 @@ impl iot_config::Gateway for GatewayService {
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
+
+    type info_stream_v2Stream = GrpcStreamResult<GatewayInfoStreamResV1>;
+    async fn info_stream_v2(
+        &self,
+        _request: Request<GatewayInfoStreamReqV2>,
+    ) -> GrpcResult<Self::info_stream_v2Stream> {
+        todo!()
     }
 }
 
