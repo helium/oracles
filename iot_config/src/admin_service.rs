@@ -6,7 +6,6 @@ use crate::{
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use futures::future::TryFutureExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
@@ -16,6 +15,7 @@ use helium_proto::{
     },
     Message, Region,
 };
+use helium_proto_crypto::MsgVerify;
 use sqlx::{Pool, Postgres};
 use tokio::sync::watch;
 use tonic::{Request, Response, Status};

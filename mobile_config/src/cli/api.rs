@@ -1,10 +1,10 @@
 use crate::settings::Settings;
 use futures::StreamExt;
-use helium_crypto::{Keypair, Sign};
+use helium_crypto::Keypair;
 use helium_proto::services::mobile_config::{
     DeviceTypeV2, GatewayClient, GatewayInfoStreamReqV3, GatewayInfoStreamResV3,
 };
-use prost::Message;
+use helium_proto_crypto::MsgSign;
 use std::time::Instant;
 use tonic::Streaming;
 
@@ -91,7 +91,7 @@ async fn gateway_info_stream_v3(
         min_updated_at,
         min_location_changed_at,
     };
-    req.signature = signer.sign(&req.encode_to_vec())?;
+    req.sign(signer)?;
     let stream = client.info_stream_v3(req).await?.into_inner();
 
     Ok(stream)

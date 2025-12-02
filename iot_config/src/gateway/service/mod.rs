@@ -5,7 +5,6 @@ use crate::{
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use file_store::traits::TimestampEncode;
-use file_store_oracles::traits::MsgVerify;
 use futures::stream::StreamExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
@@ -16,6 +15,7 @@ use helium_proto::{
     },
     Message, Region,
 };
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use hextree::Cell;
 use retainer::Cache;
 use sqlx::{Pool, Postgres};
@@ -57,12 +57,6 @@ impl GatewayService {
             signing_key,
             delegate_cache,
         })
-    }
-
-    fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
-        self.signing_key
-            .sign(response)
-            .map_err(|_| Status::internal("response signing error"))
     }
 
     fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
@@ -169,7 +163,8 @@ impl iot_config::Gateway for GatewayService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        resp.sign(&self.signing_key)
+            .map_err(|_| Status::internal("response signing error"))?;
 
         Ok(Response::new(resp))
     }
@@ -237,7 +232,8 @@ impl iot_config::Gateway for GatewayService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        resp.sign(&self.signing_key)
+            .map_err(|_| Status::internal("response signing error"))?;
         tracing::debug!(
             pubkey = %address,
             %region,
@@ -267,7 +263,8 @@ impl iot_config::Gateway for GatewayService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        resp.sign(&self.signing_key)
+            .map_err(|_| Status::internal("response signing error"))?;
 
         Ok(Response::new(resp))
     }

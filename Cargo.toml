@@ -130,6 +130,7 @@ helium-proto = { git = "https://github.com/helium/proto", branch = "master", fea
   "services",
 ] }
 beacon = { git = "https://github.com/helium/proto", branch = "master" }
+helium-proto-crypto = { git = "https://github.com/helium/helium-wallet-rs", branch = "master" }
 # Pickup versions from above
 prost = "*"
 tonic = { version = "*", features = ["tls-aws-lc", "tls-native-roots"] }

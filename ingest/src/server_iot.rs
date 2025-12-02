@@ -2,9 +2,7 @@ use crate::Settings;
 use anyhow::{Error, Result};
 use chrono::Utc;
 use file_store::{file_sink::FileSinkClient, file_upload};
-use file_store_oracles::traits::{
-    FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify,
-};
+use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures::{future::TryFutureExt, Stream, StreamExt};
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_lora::{
@@ -14,6 +12,7 @@ use helium_proto::services::poc_lora::{
     LoraStreamSessionInitV1, LoraStreamSessionOfferV1, LoraWitnessIngestReportV1,
     LoraWitnessReportReqV1, LoraWitnessReportRespV1,
 };
+use helium_proto_crypto::MsgVerify;
 use std::{convert::TryFrom, net::SocketAddr, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{sync::mpsc::Sender, time::Instant};

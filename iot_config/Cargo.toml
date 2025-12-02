@@ -19,6 +19,7 @@ futures-util = { workspace = true }
 helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
 hex = "0.4"
 helium-proto = { workspace = true }
+helium-proto-crypto = { workspace = true }
 hextree = { workspace = true }
 http = { workspace = true }
 http-serde = { workspace = true }

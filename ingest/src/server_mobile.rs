@@ -2,9 +2,7 @@ use crate::Settings;
 use anyhow::{bail, Error, Result};
 use chrono::Utc;
 use file_store::{file_sink::FileSinkClient, file_upload};
-use file_store_oracles::traits::{
-    FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt, MsgVerify,
-};
+use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey, PublicKeyBinary};
 use helium_proto::services::poc_mobile::{
@@ -16,7 +14,8 @@ use helium_proto::services::poc_mobile::{
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
     RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
-    RadioUsageStatsResV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    RadioUsageStatsReqV2, RadioUsageStatsResV1, RadioUsageStatsResV2,
+    ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1, SubscriberMappingActivityIngestReportV1,
@@ -29,6 +28,7 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{UniqueConnectionsReqV1, UniqueConnectionsRespV1},
 };
+use helium_proto_crypto::MsgVerify;
 use mobile_config::client::{authorization_client::AuthorizationVerifier, AuthorizationClient};
 use std::net::SocketAddr;
 use task_manager::{ManagedTask, TaskManager};
@@ -650,6 +650,13 @@ where
         Ok(Response::new(EnabledCarriersInfoRespV1 {
             timestamp_ms: received_timestamp_ms,
         }))
+    }
+
+    async fn submit_radio_usage_stats_report_v2(
+        &self,
+        _request: Request<RadioUsageStatsReqV2>,
+    ) -> std::result::Result<Response<RadioUsageStatsResV2>, Status> {
+        Err(Status::unimplemented("unimplemented"))
     }
 }
 

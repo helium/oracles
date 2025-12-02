@@ -1,8 +1,8 @@
 use crate::gateway::service::info::{self as gateway_info, GatewayInfo, GatewayInfoStream};
-use file_store_oracles::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
-use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
-use helium_proto::{services::iot_config, BlockchainRegionParamV1, Message, Region};
+use helium_crypto::{Keypair, PublicKey, PublicKeyBinary};
+use helium_proto::{services::iot_config, BlockchainRegionParamV1, Region};
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use std::{sync::Arc, time::Duration};
 use tonic::transport::{Channel, Endpoint};
 
@@ -16,11 +16,11 @@ pub use settings::Settings;
 #[derive(thiserror::Error, Debug)]
 pub enum ClientError {
     #[error("error signing request: {0}")]
-    Signing(#[from] helium_crypto::Error),
+    Signing(#[from] helium_proto_crypto::MsgSignError),
     #[error("grpc error response: {0}")]
     Rpc(#[from] tonic::Status),
     #[error("error verifying response signature: {0}")]
-    Verification(#[from] file_store::Error),
+    Verification(#[from] helium_proto_crypto::MsgVerifyError),
     #[error("error resolving region params: {0}")]
     UndefinedRegionParams(String),
     #[error("Invalid SubDaoRewardInfo proto response {0}")]
@@ -106,7 +106,7 @@ impl Gateways for Client {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        request.sign(&self.signing_key)?;
         let response =
             call_with_retry!(self.admin_client.region_params(request.clone()))?.into_inner();
         response.verify(&self.config_pubkey)?;
@@ -128,7 +128,7 @@ impl Gateways for Client {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        request.sign(&self.signing_key)?;
         tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
         let response = match call_with_retry!(self.gateway_client.info(request.clone())) {
             Ok(info_resp) => {
@@ -150,7 +150,7 @@ impl Gateways for Client {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        request.sign(&self.signing_key)?;
         tracing::debug!("fetching gateway info stream");
         let pubkey = Arc::new(self.config_pubkey.clone());
         let response_stream = call_with_retry!(self.gateway_client.info_stream(request.clone()))?
