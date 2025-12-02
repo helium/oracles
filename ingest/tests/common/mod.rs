@@ -457,6 +457,7 @@ impl TestClient {
 
         metadata.insert("authorization", self.authorization.clone());
 
+        #[expect(deprecated)]
         let res = self.client.submit_radio_usage_stats_report(request).await?;
 
         Ok(res.into_inner())

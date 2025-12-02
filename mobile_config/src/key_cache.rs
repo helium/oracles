@@ -158,6 +158,7 @@ pub(crate) mod db {
 #[cfg(test)]
 mod tests {
     use helium_crypto::{KeyTag, Keypair};
+    use helium_proto_crypto::MsgVerifyError;
     use rand::rngs::OsRng;
 
     use super::*;
@@ -165,7 +166,7 @@ mod tests {
     struct VerifiedGood;
 
     impl MsgVerify for VerifiedGood {
-        fn verify(&self, _verifier: &PublicKey) -> Result<(), helium_crypto::Error> {
+        fn verify(&self, _verifier: &PublicKey) -> Result<(), MsgVerifyError> {
             Ok(())
         }
     }
@@ -173,8 +174,8 @@ mod tests {
     struct VerifiedBad;
 
     impl MsgVerify for VerifiedBad {
-        fn verify(&self, _verifier: &PublicKey) -> Result<(), helium_crypto::Error> {
-            Err(helium_crypto::Error::InvalidNetwork)
+        fn verify(&self, _verifier: &PublicKey) -> Result<(), MsgVerifyError> {
+            Err(helium_crypto::Error::InvalidNetwork.into())
         }
     }
 
