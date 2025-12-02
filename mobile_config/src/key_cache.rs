@@ -165,7 +165,7 @@ mod tests {
     struct VerifiedGood;
 
     impl MsgVerify for VerifiedGood {
-        fn verify(&self, _verifier: &PublicKey) -> Result<(), helium_proto_crypto::MsgVerifyError> {
+        fn verify(&self, _verifier: &PublicKey) -> Result<(), helium_crypto::Error> {
             Ok(())
         }
     }
@@ -173,10 +173,8 @@ mod tests {
     struct VerifiedBad;
 
     impl MsgVerify for VerifiedBad {
-        fn verify(&self, _verifier: &PublicKey) -> Result<(), helium_proto_crypto::MsgVerifyError> {
-            Err(helium_proto_crypto::MsgVerifyError::Crypto(
-                helium_crypto::Error::InvalidNetwork,
-            ))
+        fn verify(&self, _verifier: &PublicKey) -> Result<(), helium_crypto::Error> {
+            Err(helium_crypto::Error::InvalidNetwork)
         }
     }
 

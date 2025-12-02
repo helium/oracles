@@ -1324,15 +1324,15 @@ name = "beacon"
 version = "0.1.0"
 source = "git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify#baa293f57a1e5423e2a2e114cec699e36b572ba0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "byteorder",
  "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=connor%2Fmove-msg-verify)",
  "prost",
- "rand 0.7.3",
- "rand_chacha 0.2.2",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
 ]
 
@@ -1363,7 +1363,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2350,7 +2350,7 @@ dependencies = [
 name = "denylist"
 version = "0.1.0"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "bincode",
  "bytes",
  "chrono",
@@ -2854,7 +2854,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.1",
  "beacon",
  "blake3",
  "bs58",
@@ -3442,7 +3442,7 @@ version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3ae6081be123db88474f4c5f12f9b0d3d90b9f5ce15171dee64fe92e3cae2dd"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "bs58",
  "byteorder",
  "ed25519-compact",
@@ -3469,7 +3469,7 @@ dependencies = [
  "anchor-spl",
  "angry-purple-tiger",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bincode",
  "bytemuck",
  "chrono",
@@ -3538,7 +3538,7 @@ dependencies = [
 [[package]]
 name = "helium-proto-crypto"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-wallet-rs?branch=connor%2Fmove-msg-verify#dc074a4c8abe1e3986a5a2a23b6c483e03f61dd3"
+source = "git+https://github.com/helium/helium-wallet-rs?branch=connor%2Fmove-msg-verify#9c157d76f7bcc8d57882a801de464586cdc55cc4"
 dependencies = [
  "helium-crypto",
  "msg-signature",
@@ -4091,7 +4091,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "backon 1.5.2",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bs58",
  "chrono",
  "clap",
@@ -4174,7 +4174,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "backon 0.5.0",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bs58",
  "chrono",
  "clap",
@@ -4260,7 +4260,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.1",
  "beacon",
  "blake3",
  "chrono",
@@ -4931,7 +4931,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.1",
  "blake3",
  "bs58",
  "chrono",
@@ -4988,7 +4988,7 @@ version = "0.1.0"
 dependencies = [
  "angry-purple-tiger",
  "anyhow",
- "base64 0.21.7",
+ "base64 0.22.1",
  "clap",
  "custom-tracing",
  "dialoguer",
@@ -5056,7 +5056,7 @@ dependencies = [
  "async-compression",
  "async-trait",
  "aws-local",
- "base64 0.21.7",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "config",
@@ -5407,7 +5407,7 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77e878c846a8abae00dd069496dbe8751b16ac1c3d6bd2a7283a938e8228f90d"
 dependencies = [
- "proc-macro-crate 1.1.3",
+ "proc-macro-crate 3.4.0",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -5706,7 +5706,7 @@ name = "poc-entropy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.21.7",
+ "base64 0.22.1",
  "blake3",
  "bs58",
  "chrono",
@@ -5962,7 +5962,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "once_cell",
@@ -5984,7 +5984,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -6474,7 +6474,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bs58",
  "chrono",
  "clap",
@@ -11147,7 +11147,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
@@ -11554,7 +11554,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -12001,7 +12001,7 @@ version = "0.7.0"
 source = "git+https://github.com/helium/xorf-generator?branch=main#0d23ba2dcac2e2823d842566436df406f5ce923c"
 dependencies = [
  "anyhow",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bincode",
  "bytes",
  "clap",
@@ -12014,7 +12014,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "twox-hash",
  "xorf",

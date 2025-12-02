@@ -25,8 +25,6 @@ pub enum ClientError {
     UndefinedRegionParams(String),
     #[error("Invalid SubDaoRewardInfo proto response {0}")]
     InvalidSubDaoRewardInfoProto(#[from] SubDaoRewardInfoParseError),
-    #[error("error verifying request signature: {0}")]
-    RequestVerification(#[from] helium_proto_crypto::MsgVerifyError),
 }
 
 #[async_trait::async_trait]
