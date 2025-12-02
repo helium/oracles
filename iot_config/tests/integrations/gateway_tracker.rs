@@ -12,8 +12,6 @@ use sqlx::PgPool;
 
 #[sqlx::test]
 async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
-    custom_tracing::init("iot_config=debug,info".to_string(), Settings::default()).await?;
-
     let pubkey1 = make_keypair().public_key().clone();
     let location = 631_711_281_837_647_359_i64;
     let now = Utc::now() - chrono::Duration::seconds(10);
@@ -118,8 +116,6 @@ async fn execute_test(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn execute_test_with_invalid_entity_key(pool: PgPool) -> anyhow::Result<()> {
-    custom_tracing::init("iot_config=debug,info".to_string(), Settings::default()).await?;
-
     let pubkey1 = make_keypair().public_key().clone();
     let location = 631_711_281_837_647_359_i64;
     let now = Utc::now() - chrono::Duration::seconds(10);
@@ -148,23 +144,24 @@ async fn execute_test_with_invalid_entity_key(pool: PgPool) -> anyhow::Result<()
 
     // Insert a gateway with an invalid entity_key (like the real-world failures we found)
     // This uses bytes that start with 0x00 which fail helium-crypto validation
-    let invalid_key_bytes = hex::decode("00d34decd6cdfed91784d98d7525fb8a3c1ee381d7052bfcb3d1c90b3f54b09fc9").unwrap();
+    let invalid_key_bytes =
+        hex::decode("00d34decd6cdfed91784d98d7525fb8a3c1ee381d7052bfcb3d1c90b3f54b09fc9").unwrap();
 
     insert_gateway_with_invalid_key(
         &pool,
-        "invalid_address",      // address (PRIMARY KEY)
-        "invalid_asset",        // asset
-        Some(location),         // location
-        Some(5),                // elevation
-        Some(6),                // gain
-        Some(false),            // is_full_hotspot
-        Some(7),                // num_location_asserts
-        Some(false),            // is_active
-        Some(0),                // dc_onboarding_fee_paid
-        now,                    // created_at
-        Some(now),              // refreshed_at
-        Some(0),                // last_block
-        invalid_key_bytes,      // invalid entity_key bytes
+        "invalid_address", // address (PRIMARY KEY)
+        "invalid_asset",   // asset
+        Some(location),    // location
+        Some(5),           // elevation
+        Some(6),           // gain
+        Some(false),       // is_full_hotspot
+        Some(7),           // num_location_asserts
+        Some(false),       // is_active
+        Some(0),           // dc_onboarding_fee_paid
+        now,               // created_at
+        Some(now),         // refreshed_at
+        Some(0),           // last_block
+        invalid_key_bytes, // invalid entity_key bytes
     )
     .await?;
 
