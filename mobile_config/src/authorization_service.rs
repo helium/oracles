@@ -3,15 +3,12 @@ use std::sync::Arc;
 use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult, KeyRole};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use helium_crypto::{Keypair, PublicKey, Sign};
-use helium_proto::{
-    services::mobile_config::{
-        self, AuthorizationListReqV1, AuthorizationListResV1, AuthorizationVerifyReqV1,
-        AuthorizationVerifyResV1, NetworkKeyRole,
-    },
-    Message,
+use helium_crypto::{Keypair, PublicKey};
+use helium_proto::services::mobile_config::{
+    self, AuthorizationListReqV1, AuthorizationListResV1, AuthorizationVerifyReqV1,
+    AuthorizationVerifyResV1, NetworkKeyRole,
 };
-use helium_proto_crypto::MsgVerify;
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use tonic::{Request, Response, Status};
 
 pub struct AuthorizationService {
@@ -36,12 +33,6 @@ impl AuthorizationService {
             return Ok(());
         }
         Err(Status::permission_denied("unauthorized request signature"))
-    }
-
-    fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
-        self.signing_key
-            .sign(response)
-            .map_err(|_| Status::internal("response signing error"))
     }
 }
 
@@ -72,7 +63,9 @@ impl mobile_config::Authorization for AuthorizationService {
                 signer: self.signing_key.public_key().into(),
                 signature: vec![],
             };
-            response.signature = self.sign_response(&response.encode_to_vec())?;
+            response
+                .sign(&self.signing_key)
+                .map_err(|_| Status::internal("response signing error"))?;
             Ok(Response::new(response))
         } else {
             Err(Status::not_found(format!(
@@ -109,7 +102,9 @@ impl mobile_config::Authorization for AuthorizationService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        response.signature = self.sign_response(&response.encode_to_vec())?;
+        response
+            .sign(&self.signing_key)
+            .map_err(|_| Status::internal("response signing error"))?;
         Ok(Response::new(response))
     }
 }

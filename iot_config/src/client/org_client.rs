@@ -1,6 +1,6 @@
 use super::{
-    call_with_retry, iot_config, Arc, Channel, ClientError, Duration, Endpoint, Keypair, Message,
-    MsgVerify, PublicKey, Settings, Sign,
+    call_with_retry, iot_config, Arc, Channel, ClientError, Duration, Endpoint, Keypair, MsgVerify,
+    PublicKey, Settings,
 };
 use async_trait::async_trait;
 use chrono::Utc;
@@ -8,6 +8,7 @@ use file_store::traits::TimestampEncode;
 use helium_proto::services::iot_config::{
     OrgDisableReqV1, OrgEnableReqV1, OrgGetReqV1, OrgListReqV1, OrgResV1, OrgV1,
 };
+use helium_proto_crypto::MsgSign;
 
 #[async_trait]
 pub trait Orgs: Send + Sync + 'static {
@@ -66,7 +67,7 @@ impl Orgs for OrgClient {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        req.signature = self.signing_key.sign(&req.encode_to_vec())?;
+        req.sign(&self.signing_key)?;
         let res = call_with_retry!(self.client.enable(req.clone()))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(())
@@ -81,7 +82,7 @@ impl Orgs for OrgClient {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        req.signature = self.signing_key.sign(&req.encode_to_vec())?;
+        req.sign(&self.signing_key)?;
         let res = call_with_retry!(self.client.disable(req.clone()))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(())

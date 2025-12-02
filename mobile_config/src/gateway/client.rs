@@ -2,12 +2,9 @@ use crate::client::{call_with_retry, ClientError, Settings};
 use crate::gateway::service::info::{GatewayInfo, GatewayInfoStream};
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
-use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
-use helium_proto::{
-    services::mobile_config::{self, DeviceType},
-    Message,
-};
-use helium_proto_crypto::MsgVerify;
+use helium_crypto::{Keypair, PublicKey, PublicKeyBinary};
+use helium_proto::services::mobile_config::{self, DeviceType};
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 use tonic::transport::Channel;
@@ -76,7 +73,7 @@ impl GatewayInfoResolver for GatewayClient {
             signature: vec![],
             query_time: gateway_query_timestamp.clone().timestamp() as u64,
         };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        request.sign(&self.signing_key)?;
         tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
         let response =
             match call_with_retry!(self.client.clone().info_at_timestamp(request.clone())) {
@@ -109,7 +106,7 @@ impl GatewayInfoResolver for GatewayClient {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        req.signature = self.signing_key.sign(&req.encode_to_vec())?;
+        req.sign(&self.signing_key)?;
         tracing::debug!("fetching gateway info stream");
         let pubkey = Arc::new(self.config_pubkey.clone());
         let res_stream = call_with_retry!(self.client.info_stream_v2(req.clone()))?

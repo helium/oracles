@@ -2,9 +2,9 @@ use super::{call_with_retry, ClientError, Settings};
 use crate::boosted_hex_info::{self, BoostedHexInfoStream};
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
-use helium_crypto::{Keypair, PublicKey, Sign};
-use helium_proto::{services::mobile_config, Message};
-use helium_proto_crypto::MsgVerify;
+use helium_crypto::{Keypair, PublicKey};
+use helium_proto::services::mobile_config;
+use helium_proto_crypto::{MsgSign, MsgVerify};
 use std::{sync::Arc, time::Duration};
 use tonic::transport::Channel;
 
@@ -45,7 +45,7 @@ impl HexBoostingInfoResolver for HexBoostingClient {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        req.signature = self.signing_key.sign(&req.encode_to_vec())?;
+        req.sign(&self.signing_key)?;
         tracing::debug!("fetching boosted hexes info stream");
         let pubkey = Arc::new(self.config_pubkey.clone());
         let res_stream = call_with_retry!(self.client.info_stream(req.clone()))?
@@ -76,7 +76,7 @@ impl HexBoostingInfoResolver for HexBoostingClient {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        req.signature = self.signing_key.sign(&req.encode_to_vec())?;
+        req.sign(&self.signing_key)?;
         tracing::debug!("fetching modified boosted hexes info stream");
         let pubkey = Arc::new(self.config_pubkey.clone());
         let res_stream = call_with_retry!(self.client.modified_info_stream(req.clone()))?
