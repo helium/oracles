@@ -18,9 +18,9 @@ pub struct Settings {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct BucketSettings {
-    bucket: String,
+    pub bucket: String,
     #[serde(flatten)]
-    settings: Settings,
+    pub settings: Settings,
 }
 
 impl Settings {
