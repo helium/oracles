@@ -1,13 +1,7 @@
-use anyhow::{anyhow, Result};
-use aws_config::BehaviorVersion;
-use aws_sdk_s3::Client;
+use anyhow::Result;
 use chrono::Utc;
-use file_store::{file_sink, file_upload, Settings};
+use file_store::{BucketClient, GzippedFramedFile};
 use std::env;
-use std::path::Path;
-use std::sync::Arc;
-use tempfile::TempDir;
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
 pub const AWSLOCAL_ENDPOINT_ENV: &str = "AWSLOCAL_ENDPOINT";
@@ -22,141 +16,137 @@ pub fn gen_bucket_name() -> String {
 }
 
 // Interacts with the locastack.
-// Used to create mocked aws buckets and files.
 pub struct AwsLocal {
-    pub fs_settings: Settings,
-    pub file_store_client: file_store::Client,
-    bucket: String,
+    client: BucketClient,
 }
 
 impl AwsLocal {
-    async fn create_aws_client(settings: &Settings) -> aws_sdk_s3::Client {
-        let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
+    pub fn builder() -> AwsLocalBuilder {
+        AwsLocalBuilder::default()
+    }
 
-        let mut s3_config = aws_sdk_s3::config::Builder::from(&config)
-            .force_path_style(true)
-            .region(aws_config::Region::new("us-east-1"))
-            .endpoint_url(settings.endpoint.as_ref().expect("endpoint"));
+    pub fn bucket(&self) -> &str {
+        &self.client.bucket
+    }
 
-        let creds = aws_sdk_s3::config::Credentials::builder()
-            .access_key_id(settings.access_key_id.as_ref().expect("access_key_id"))
-            .secret_access_key(
-                settings
-                    .secret_access_key
-                    .as_ref()
-                    .expect("secret_access_key"),
+    pub fn bucket_client(&self) -> BucketClient {
+        self.client.clone()
+    }
+
+    pub fn aws_client(&self) -> aws_sdk_s3::Client {
+        self.client.client.clone()
+    }
+
+    pub async fn create_bucket(&self) -> Result<()> {
+        self.client
+            .client
+            .create_bucket()
+            .bucket(&self.client.bucket)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(anyhow::Error::from)
+    }
+
+    pub async fn delete_bucket(&self) -> Result<()> {
+        let files = self.client.list_all_files("", None, None).await?;
+
+        let objects: Vec<aws_sdk_s3::types::ObjectIdentifier> = files
+            .into_iter()
+            .map(|fi| {
+                aws_sdk_s3::types::ObjectIdentifier::builder()
+                    .key(fi.key)
+                    .build()
+            })
+            .collect::<Result<_, _>>()?;
+
+        self.client
+            .client
+            .delete_objects()
+            .bucket(&self.client.bucket)
+            .delete(
+                aws_sdk_s3::types::Delete::builder()
+                    .set_objects(Some(objects))
+                    .build()?,
             )
-            .provider_name("Static")
-            .build();
-        s3_config = s3_config.credentials_provider(creds);
+            .send()
+            .await?;
 
-        Client::from_conf(s3_config.build())
+        self.client
+            .client
+            .delete_bucket()
+            .bucket(&self.client.bucket)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(anyhow::Error::from)
     }
 
-    pub async fn new(region: &str, endpoint: &str, bucket: &str) -> AwsLocal {
-        let settings = Settings {
-            region: Some(region.into()),
-            endpoint: Some(endpoint.into()),
-            access_key_id: Some("random".into()),
-            secret_access_key: Some("random2".into()),
-        };
-        let client = Self::create_aws_client(&settings).await;
-        client.create_bucket().bucket(bucket).send().await.unwrap();
-        AwsLocal {
-            file_store_client: client,
-            fs_settings: settings.clone(),
-            bucket: bucket.to_string(),
-        }
-    }
-
-    pub fn fs_settings(&self) -> Settings {
-        self.fs_settings.clone()
-    }
-
-    pub async fn put_proto_to_aws<T: prost::Message>(
+    pub async fn put_protos<T: prost::Message>(
         &self,
-        items: Vec<T>,
-        file_type: impl ToString,
-        metric_name: &'static str,
+        file_prefix: String,
+        protos: Vec<T>,
     ) -> Result<String> {
-        let tmp_dir = TempDir::new()?;
-        let tmp_dir_path = tmp_dir.path().to_owned();
+        let tempdir = tempfile::tempdir()?;
+        let mut file = GzippedFramedFile::builder()
+            .path(&tempdir)
+            .prefix(file_prefix)
+            .build()
+            .await?;
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let bytes: Vec<bytes::Bytes> = protos
+            .into_iter()
+            .map(|m| m.encode_to_vec().into())
+            .collect();
 
-        let (file_upload, file_upload_server) =
-            file_upload::FileUpload::new(self.file_store_client.clone(), self.bucket.clone()).await;
+        file.write_all(bytes).await?;
+        let file_path = file.close().await?;
 
-        let (item_sink, item_server) =
-            file_sink::FileSinkBuilder::new(file_type, &tmp_dir_path, file_upload, metric_name)
-                .auto_commit(false)
-                .roll_time(std::time::Duration::new(15, 0))
-                .create::<T>()
-                .await
-                .unwrap();
+        self.client.put_file(&file_path).await?;
 
-        for item in items {
-            item_sink.write(item, &[]).await.unwrap();
-        }
-        let item_recv = item_sink.commit().await.unwrap();
+        tokio::fs::remove_file(&file_path).await?;
 
-        let uploaded_file = Arc::new(Mutex::new(String::default()));
-        let up_2 = uploaded_file.clone();
-        let mut timeout = std::time::Duration::new(5, 0);
-
-        tokio::spawn(async move {
-            let uploaded_files = item_recv.await.unwrap().unwrap();
-            assert!(uploaded_files.len() == 1);
-            let mut val = up_2.lock().await;
-            *val = uploaded_files.first().unwrap().to_string();
-
-            // After files uploaded to aws the must be removed.
-            // So we wait when dir will be empty.
-            // It means all files are uploaded to aws
-            loop {
-                if is_dir_has_files(&tmp_dir_path) {
-                    let dur = std::time::Duration::from_millis(10);
-                    tokio::time::sleep(dur).await;
-                    timeout -= dur;
-                    continue;
-                }
-                break;
-            }
-
-            shutdown_trigger.trigger();
-        });
-
-        tokio::try_join!(
-            file_upload_server.run(shutdown_listener.clone()),
-            item_server.run(shutdown_listener.clone())
-        )
-        .unwrap();
-
-        tmp_dir.close()?;
-
-        let res = uploaded_file.lock().await;
-        Ok(res.clone())
-    }
-
-    pub async fn put_file_to_aws(&self, file_path: &Path) -> Result<()> {
-        let path_str = file_path.display();
-        if !file_path.exists() {
-            return Err(anyhow!("File {path_str} is absent"));
-        }
-        if !file_path.is_file() {
-            return Err(anyhow!("File {path_str} is not a file"));
-        }
-        file_store::put_file(&self.file_store_client, &self.bucket, file_path).await?;
-
-        Ok(())
+        Ok(file_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("invalid file name upload to s3")
+            .into())
     }
 }
 
-fn is_dir_has_files(dir_path: &Path) -> bool {
-    let entries = std::fs::read_dir(dir_path)
-        .unwrap()
-        .map(|res| res.map(|e| e.path().is_dir()))
-        .collect::<Result<Vec<_>, std::io::Error>>()
-        .unwrap();
-    entries.contains(&false)
+#[derive(Debug, Clone, Default)]
+pub struct AwsLocalBuilder {
+    region: Option<String>,
+    endpoint: Option<String>,
+    bucket: Option<String>,
+}
+
+impl AwsLocalBuilder {
+    pub fn region(mut self, region: String) -> Self {
+        self.region = Some(region);
+        self
+    }
+
+    pub fn endpoint(mut self, endpoint: String) -> Self {
+        self.endpoint = Some(endpoint);
+        self
+    }
+
+    pub fn bucket(mut self, bucket: String) -> Self {
+        self.bucket = Some(bucket);
+        self
+    }
+
+    pub async fn build(self) -> AwsLocal {
+        let client = BucketClient::new(
+            self.bucket.unwrap_or_else(gen_bucket_name),
+            self.region.or(Some("us-east-1".to_string())),
+            self.endpoint.or_else(|| Some(aws_local_default_endpoint())),
+            Some("fake".to_string()),
+            Some("fake".to_string()),
+        )
+        .await;
+
+        AwsLocal { client }
+    }
 }

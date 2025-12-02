@@ -5,10 +5,10 @@ use crate::{
     heartbeats::{self, HeartbeatReward},
     resolve_subdao_pubkey,
     reward_shares::{
-        CalculatedPocRewardShares, CoverageShares, DataTransferAndPocAllocatedRewardBuckets,
-        TransferRewards,
+        get_scheduled_tokens_for_service_providers, CalculatedPocRewardShares, CoverageShares,
+        DataTransferAndPocAllocatedRewardBuckets, TransferRewards,
     },
-    service_provider, speedtests,
+    speedtests,
     speedtests_average::SpeedtestAverages,
     telemetry, unique_connections, PriceInfo, Settings,
 };
@@ -503,7 +503,7 @@ pub async fn reward_service_providers(
     mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     reward_info: &EpochRewardInfo,
 ) -> anyhow::Result<()> {
-    let total_sp_rewards = service_provider::get_scheduled_tokens(reward_info.epoch_emissions);
+    let total_sp_rewards = get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions);
     let sp_reward_amount = total_sp_rewards
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()

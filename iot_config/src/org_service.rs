@@ -242,7 +242,7 @@ impl iot_config::Org for OrgService {
         tracing::info!(?request, "create helium org");
 
         let net_id = request.net_id();
-        let requested_addrs = if request.devaddrs >= 8 && request.devaddrs % 2 == 0 {
+        let requested_addrs = if request.devaddrs >= 8 && request.devaddrs.is_multiple_of(2) {
             request.devaddrs
         } else {
             return Err(Status::invalid_argument(format!(

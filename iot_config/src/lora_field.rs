@@ -62,7 +62,7 @@ impl DevAddrConstraint {
         if end_addr <= start_addr {
             return Err(DevAddrRangeError::EndLessThanStart);
         }
-        if start_addr.0 % 2 != 0 || end_addr.0 % 2 == 0 {
+        if !start_addr.0.is_multiple_of(2) || end_addr.0.is_multiple_of(2) {
             return Err(DevAddrRangeError::RangeUneven);
         }
 

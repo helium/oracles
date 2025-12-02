@@ -1,26 +1,24 @@
 use crate::error::ChannelError;
+use crate::GzippedFramedFile;
 use crate::{file_upload::FileUpload, Error, Result};
-use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
-use futures::{SinkExt, TryFutureExt};
+use chrono::Utc;
+use futures::TryFutureExt;
 use metrics::Label;
 use std::time::Duration;
 use std::{
-    io, mem,
+    mem,
     path::{Path, PathBuf},
 };
 use task_manager::ManagedTask;
 use tokio::{
-    fs::{self, File, OpenOptions},
-    io::{AsyncWriteExt, BufWriter},
+    fs::{self},
     sync::{
         mpsc::{self, error::SendTimeoutError},
         oneshot,
     },
     time,
 };
-use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
 pub const DEFAULT_SINK_ROLL_SECS: u64 = 3 * 60;
 
@@ -31,19 +29,7 @@ pub const SINK_CHECK_MILLIS: u64 = 50;
 
 pub const MAX_FRAME_LENGTH: usize = 15_000_000;
 
-type Sink = GzipEncoder<BufWriter<File>>;
-type Transport = FramedWrite<Sink, LengthDelimitedCodec>;
 pub type FileManifest = Vec<String>;
-
-fn new_transport(sink: Sink) -> Transport {
-    LengthDelimitedCodec::builder()
-        .max_frame_length(MAX_FRAME_LENGTH)
-        .new_write(sink)
-}
-
-fn transport_sink(transport: &mut Transport) -> &mut Sink {
-    transport.get_mut()
-}
 
 #[derive(Debug)]
 pub enum Message<T> {
@@ -55,7 +41,7 @@ pub enum Message<T> {
 pub type MessageSender<T> = mpsc::Sender<Message<T>>;
 pub type MessageReceiver<T> = mpsc::Receiver<Message<T>>;
 
-fn message_channel<T>(size: usize) -> (MessageSender<T>, MessageReceiver<T>) {
+pub fn message_channel<T>(size: usize) -> (MessageSender<T>, MessageReceiver<T>) {
     mpsc::channel(size)
 }
 
@@ -271,21 +257,7 @@ pub struct FileSink<T> {
     /// surpassed, or `max_size` would be exceeded by an incoming message.
     auto_commit: bool,
 
-    active_sink: Option<ActiveSink>,
-}
-
-#[derive(Debug)]
-struct ActiveSink {
-    size: usize,
-    time: DateTime<Utc>,
-    transport: Transport,
-}
-
-impl ActiveSink {
-    async fn shutdown(&mut self) -> Result {
-        transport_sink(&mut self.transport).shutdown().await?;
-        Ok(())
-    }
+    active_sink: Option<GzippedFramedFile>,
 }
 
 impl<T: prost::Message + Send + Sync + 'static> ManagedTask for FileSink<T> {
@@ -385,35 +357,14 @@ impl<T: prost::Message> FileSink<T> {
             }
         }
         tracing::info!("stopping file sink {}", &self.prefix);
-        if let Some(active_sink) = self.active_sink.as_mut() {
-            let _ = active_sink.shutdown().await;
-            self.active_sink = None;
-        }
+        let _ = self.maybe_close_active_sink().await;
         Ok(())
     }
 
-    async fn new_sink(&mut self) -> Result {
-        let sink_time = Utc::now();
-        let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
-        let new_path = self.tmp_path.join(filename);
-        let writer = GzipEncoder::new(BufWriter::new(
-            OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(&new_path)
-                .await?,
-        ));
-
-        self.staged_files.push(new_path);
-
-        self.active_sink = Some(ActiveSink {
-            size: 0,
-            time: sink_time,
-            transport: new_transport(writer),
-        });
-
-        Ok(())
+    async fn new_sink(&self) -> Result<GzippedFramedFile> {
+        GzippedFramedFile::new(&self.tmp_path, &self.prefix, Utc::now(), self.max_size)
+            .await
+            .map_err(Error::from)
     }
 
     pub async fn commit(&mut self) -> Result<FileManifest> {
@@ -445,8 +396,9 @@ impl<T: prost::Message> FileSink<T> {
     }
 
     pub async fn maybe_roll(&mut self) -> Result {
-        if let Some(active_sink) = self.active_sink.as_mut() {
-            if (active_sink.time + self.roll_time) <= Utc::now() {
+        if let Some(active_sink) = self.active_sink.as_ref() {
+            let time_to_close = active_sink.open_timestamp() + self.roll_time;
+            if time_to_close <= Utc::now() {
                 if self.auto_commit {
                     self.commit().await?;
                 } else {
@@ -458,9 +410,9 @@ impl<T: prost::Message> FileSink<T> {
     }
 
     async fn maybe_close_active_sink(&mut self) -> Result {
-        if let Some(active_sink) = self.active_sink.as_mut() {
-            active_sink.shutdown().await?;
-            self.active_sink = None;
+        if let Some(active_sink) = self.active_sink.take() {
+            let path = active_sink.close().await?;
+            self.staged_files.push(path);
         }
 
         Ok(())
@@ -485,34 +437,23 @@ impl<T: prost::Message> FileSink<T> {
     }
 
     pub async fn write(&mut self, buf: Bytes) -> Result {
-        let buf_len = buf.len();
-
-        match self.active_sink.as_mut() {
-            // If there is an active sink check if the write would make it too
-            // large. if so deposit and make a new sink. Otherwise the current
-            // active sink is usable.
-            Some(active_sink) => {
-                if active_sink.size + buf_len >= self.max_size {
-                    active_sink.shutdown().await?;
-                    if self.auto_commit {
-                        self.commit().await?;
-                    }
-                    self.new_sink().await?;
+        let mut active_sink = match self.active_sink.take() {
+            Some(active_sink) if !active_sink.will_fit(&buf) => {
+                if self.auto_commit {
+                    self.commit().await?;
+                } else {
+                    self.maybe_close_active_sink().await?;
                 }
-            }
-            // No sink, make a new one
-            None => {
-                self.new_sink().await?;
-            }
-        }
 
-        if let Some(active_sink) = self.active_sink.as_mut() {
-            active_sink.transport.send(buf).await?;
-            active_sink.size += buf_len;
-            Ok(())
-        } else {
-            Err(Error::from(io::Error::other("sink not available")))
-        }
+                self.new_sink().await?
+            }
+            Some(active_sink) => active_sink,
+            None => self.new_sink().await?,
+        };
+
+        active_sink.write(buf).await?;
+        self.active_sink = Some(active_sink);
+        Ok(())
     }
 }
 

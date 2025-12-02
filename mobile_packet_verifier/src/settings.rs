@@ -11,7 +11,7 @@ use crate::banning;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Settings {
-    /// RUST_LOG compatible settings string. Defsault to
+    /// RUST_LOG compatible settings string. Default to
     /// "mobile_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
@@ -28,11 +28,9 @@ pub struct Settings {
     pub min_burn_period: Duration,
     pub database: db_store::Settings,
     #[serde(default)]
-    pub file_store: file_store::Settings,
-    pub ingest_bucket: String,
-    pub output_bucket: String,
-    #[serde(default)]
     pub metrics: poc_metrics::Settings,
+    pub ingest_bucket: file_store::BucketSettings,
+    pub output_bucket: file_store::BucketSettings,
     #[serde(default)]
     pub enable_solana_integration: bool,
     pub solana: Option<solana::burn::Settings>,
