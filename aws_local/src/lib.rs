@@ -18,16 +18,25 @@ pub fn gen_bucket_name() -> String {
 // Interacts with the locastack.
 pub struct AwsLocal {
     client: BucketClient,
+    endpoint: String,
     gaurd_drop: bool,
 }
 
 impl AwsLocal {
+    pub async fn new() -> AwsLocal {
+        Self::builder().build().await
+    }
+
     pub fn builder() -> AwsLocalBuilder {
         AwsLocalBuilder::default()
     }
 
     pub fn bucket(&self) -> &str {
         &self.client.bucket
+    }
+
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
     }
 
     pub fn bucket_client(&self) -> BucketClient {
@@ -92,6 +101,7 @@ impl AwsLocal {
         let mut file = GzippedFramedFile::builder()
             .path(&tempdir)
             .prefix(file_prefix)
+            .time(Utc::now())
             .build()
             .await?;
 
@@ -139,10 +149,14 @@ impl AwsLocalBuilder {
     }
 
     pub async fn build(self) -> AwsLocal {
+        let endpoint = self
+            .endpoint
+            .unwrap_or_else(|| aws_local_default_endpoint());
+
         let client = BucketClient::new(
             self.bucket.unwrap_or_else(gen_bucket_name),
             self.region.or(Some("us-east-1".to_string())),
-            self.endpoint.or_else(|| Some(aws_local_default_endpoint())),
+            Some(endpoint.clone()),
             Some("fake".to_string()),
             Some("fake".to_string()),
         )
@@ -150,6 +164,7 @@ impl AwsLocalBuilder {
 
         AwsLocal {
             client,
+            endpoint,
             gaurd_drop: true,
         }
     }
@@ -160,7 +175,7 @@ impl AwsLocalBuilder {
 impl Drop for AwsLocal {
     fn drop(&mut self) {
         if self.gaurd_drop {
-            panic!(
+            println!(
                 "
 =============== WARNING!!! ===============
 Cannot autodrop AwsLocal, must call `AwsLocal::cleanup()`
