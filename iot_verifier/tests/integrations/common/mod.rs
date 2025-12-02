@@ -17,7 +17,7 @@ use helium_proto::{
 };
 use iot_config::{
     client::RegionParamsInfo,
-    gateway_info::{GatewayInfo, GatewayMetadata},
+    gateway::service::info::{GatewayInfo, GatewayMetadata},
 };
 use iot_verifier::{
     entropy::Entropy,

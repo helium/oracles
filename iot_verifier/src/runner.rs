@@ -56,7 +56,7 @@ use helium_proto::services::poc_lora::{
     InvalidDetails, InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1,
     LoraInvalidWitnessReportV1, LoraPocV1, VerificationStatus,
 };
-use iot_config::{client::Gateways, gateway_info::GatewayInfo};
+use iot_config::{client::Gateways, gateway::service::info::GatewayInfo};
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
