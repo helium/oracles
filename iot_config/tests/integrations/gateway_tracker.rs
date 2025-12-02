@@ -6,7 +6,6 @@ use crate::common::{
     make_keypair,
 };
 use chrono::Utc;
-use custom_tracing::Settings;
 use iot_config::gateway::{db::Gateway, tracker};
 use sqlx::PgPool;
 
