@@ -10,7 +10,9 @@ use chrono::Utc;
 use file_store::traits::TimestampEncode;
 use futures::future::TryFutureExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary};
-use helium_proto::services::mobile_config::{self, AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1};
+use helium_proto::services::mobile_config::{
+    self, AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1,
+};
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};
 use tokio::sync::watch;

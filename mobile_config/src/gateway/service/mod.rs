@@ -11,10 +11,9 @@ use futures::{
 };
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::services::mobile_config::{
-    self, GatewayInfoAtTimestampReqV1, GatewayInfoBatchReqV1, GatewayInfoReqV1,
-    GatewayInfoResV1, GatewayInfoResV2, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2,
-    GatewayInfoStreamReqV3, GatewayInfoStreamResV1, GatewayInfoStreamResV2,
-    GatewayInfoStreamResV3, GatewayInfoV2,
+    self, GatewayInfoAtTimestampReqV1, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1,
+    GatewayInfoResV2, GatewayInfoStreamReqV1, GatewayInfoStreamReqV2, GatewayInfoStreamReqV3,
+    GatewayInfoStreamResV1, GatewayInfoStreamResV2, GatewayInfoStreamResV3, GatewayInfoV2,
 };
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};

@@ -4,7 +4,9 @@ use crate::{
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
 use helium_crypto::{Keypair, PublicKey};
-use helium_proto::services::sub_dao::{self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1};
+use helium_proto::services::sub_dao::{
+    self, SubDaoEpochRewardInfoReqV1, SubDaoEpochRewardInfoResV1,
+};
 use helium_proto_crypto::{MsgSign, MsgVerify};
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
