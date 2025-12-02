@@ -17,6 +17,7 @@ config = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 helium-crypto = { workspace = true, features = ["sqlx-postgres"] }
+hex = "0.4"
 helium-proto = { workspace = true }
 helium-proto-crypto = { workspace = true }
 hextree = { workspace = true }
@@ -52,5 +53,6 @@ poc-metrics = { path = "../metrics" }
 task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
-rand = { workspace = true }
 backon = { version = "0", features = ["tokio-sleep"] }
+h3o = { workspace = true }
+rand = { workspace = true }

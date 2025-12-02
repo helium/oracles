@@ -1,12 +1,9 @@
 use crate::{
-    admin::AuthCache,
-    gateway_info::{self, GatewayInfo},
-    org,
-    region_map::RegionMapReader,
-    telemetry, verify_public_key, GrpcResult, GrpcStreamResult, Settings,
+    admin::AuthCache, gateway::service::info::GatewayInfo, org, region_map::RegionMapReader,
+    telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, TimeZone, Utc};
 use file_store::traits::TimestampEncode;
 use futures::stream::StreamExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
@@ -26,13 +23,15 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::watch;
 use tonic::{Request, Response, Status};
 
+pub mod info;
+
 const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
 const CACHE_TTL: Duration = Duration::from_secs(60 * 60 * 3);
 
 pub struct GatewayService {
     auth_cache: AuthCache,
     gateway_cache: Arc<Cache<PublicKeyBinary, GatewayInfo>>,
-    metadata_pool: Pool<Postgres>,
+    pool: Pool<Postgres>,
     region_map: RegionMapReader,
     signing_key: Arc<Keypair>,
     delegate_cache: watch::Receiver<org::DelegateCache>,
@@ -40,8 +39,8 @@ pub struct GatewayService {
 
 impl GatewayService {
     pub fn new(
-        settings: &Settings,
-        metadata_pool: Pool<Postgres>,
+        signing_key: Arc<Keypair>,
+        pool: Pool<Postgres>,
         region_map: RegionMapReader,
         auth_cache: AuthCache,
         delegate_cache: watch::Receiver<org::DelegateCache>,
@@ -53,9 +52,9 @@ impl GatewayService {
         Ok(Self {
             auth_cache,
             gateway_cache,
-            metadata_pool,
+            pool,
             region_map,
-            signing_key: Arc::new(settings.signing_keypair()?),
+            signing_key,
             delegate_cache,
         })
     }
@@ -98,7 +97,7 @@ impl GatewayService {
             Some(gateway) => Ok(gateway.value().clone()),
             None => {
                 let metadata = tokio::select! {
-                    query_result = gateway_info::db::get_info(&self.metadata_pool, pubkey) => {
+                    query_result = info::get(&self.pool, pubkey) => {
                         query_result.map_err(|_| Status::internal("error fetching gateway info"))?
                             .ok_or_else(|| {
                                 telemetry::count_gateway_info_lookup("not-found");
@@ -283,7 +282,7 @@ impl iot_config::Gateway for GatewayService {
 
         tracing::debug!("fetching all gateways' info");
 
-        let pool = self.metadata_pool.clone();
+        let pool = self.pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
         let region_map = self.region_map.clone();
@@ -291,15 +290,16 @@ impl iot_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         tokio::spawn(async move {
-            tokio::select! {
-                _ = stream_all_gateways_info(
-                    &pool,
-                    tx.clone(),
-                    &signing_key,
-                    region_map.clone(),
-                    batch_size,
-                ) => (),
-            }
+            _ = stream_all_gateways_info(
+                &pool,
+                tx.clone(),
+                &signing_key,
+                region_map.clone(),
+                batch_size,
+                DateTime::UNIX_EPOCH,
+                None,
+            )
+            .await
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
@@ -308,9 +308,55 @@ impl iot_config::Gateway for GatewayService {
     type info_stream_v2Stream = GrpcStreamResult<GatewayInfoStreamResV1>;
     async fn info_stream_v2(
         &self,
-        _request: Request<GatewayInfoStreamReqV2>,
+        request: Request<GatewayInfoStreamReqV2>,
     ) -> GrpcResult<Self::info_stream_v2Stream> {
-        Err(Status::unimplemented("not implemented"))
+        let request = request.into_inner();
+        telemetry::count_request("gateway", "info-stream");
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        tracing::debug!("fetching all gateways' info");
+
+        let pool = self.pool.clone();
+        let signing_key = self.signing_key.clone();
+        let batch_size = request.batch_size;
+        let min_last_changed_at = Utc
+            .timestamp_opt(request.min_updated_at as i64, 0)
+            .single()
+            .ok_or(Status::invalid_argument(
+                "Invalid min_refreshed_at argument",
+            ))?;
+
+        let min_location_changed_at = if request.min_location_changed_at == 0 {
+            None
+        } else {
+            Some(
+                Utc.timestamp_opt(request.min_location_changed_at as i64, 0)
+                    .single()
+                    .ok_or(Status::invalid_argument(
+                        "Invalid min_location_changed_at argument",
+                    ))?,
+            )
+        };
+        let region_map = self.region_map.clone();
+
+        let (tx, rx) = tokio::sync::mpsc::channel(20);
+
+        tokio::spawn(async move {
+            _ = stream_all_gateways_info(
+                &pool,
+                tx.clone(),
+                &signing_key,
+                region_map.clone(),
+                batch_size,
+                min_last_changed_at,
+                min_location_changed_at,
+            )
+            .await
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
     }
 }
 
@@ -320,10 +366,14 @@ async fn stream_all_gateways_info(
     signing_key: &Keypair,
     region_map: RegionMapReader,
     batch_size: u32,
+    min_last_changed_at: DateTime<Utc>,
+    min_location_changed_at: Option<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
-    let mut stream = gateway_info::db::all_info_stream(pool).chunks(batch_size as usize);
+
+    let mut stream = info::stream(pool, min_last_changed_at, min_location_changed_at)
+        .chunks(batch_size as usize);
     while let Some(infos) = stream.next().await {
         let gateway_infos = infos
             .into_iter()

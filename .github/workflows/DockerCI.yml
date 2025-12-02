@@ -226,7 +226,26 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Release
-        run: AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --all --release
+        run: AWS_LC_SYS_CMAKE_BUILDER=1 cargo build --release -p reward-index -p price -p ingest -p iot-config -p iot-packet-verifier -p iot-verifier -p poc-entropy
+
+      - name: Extract binaries and cleanup
+        run: |
+          mkdir -p /tmp/binaries
+          mv target/release/reward-index /tmp/binaries/
+          mv target/release/price /tmp/binaries/
+          mv target/release/ingest /tmp/binaries/
+          mv target/release/iot-config /tmp/binaries/
+          mv target/release/iot-packet-verifier /tmp/binaries/
+          mv target/release/iot-verifier /tmp/binaries/
+          mv target/release/poc-entropy /tmp/binaries/
+          echo "Before cleanup:"
+          df -h
+          rm -rf target/
+          echo "After cleanup:"
+          df -h
+          mkdir -p target/release
+          mv /tmp/binaries/* target/release/
+          echo "Binaries restored to target/release/"
 
       - name: Debian packaging
         env:

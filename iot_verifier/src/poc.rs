@@ -26,7 +26,7 @@ use helium_proto::{
 };
 use iot_config::{
     client::Gateways,
-    gateway_info::{GatewayInfo, GatewayMetadata},
+    gateway::service::info::{GatewayInfo, GatewayMetadata},
 };
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -1110,7 +1110,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_verify_beacon_payload() {
         // entropy comparisons are performed in secs but create a datetime with millisecs precision
         // confirm the millisecs precision is ignored

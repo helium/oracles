@@ -1,6 +1,7 @@
-use crate::region_map;
+use crate::{gateway::db::Gateway, region_map};
 use anyhow::anyhow;
-use futures::stream::BoxStream;
+use chrono::{DateTime, Utc};
+use futures::{stream::BoxStream, Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::iot_config::{
@@ -8,8 +9,31 @@ use helium_proto::{
     },
     Region,
 };
+use sqlx::PgExecutor;
 
 pub type GatewayInfoStream = BoxStream<'static, GatewayInfo>;
+
+// Hotspot gain default; dbi * 10
+const DEFAULT_GAIN: u32 = 12;
+// Hotspot elevation default; meters above sea level
+const DEFAULT_ELEVATION: u32 = 0;
+
+pub async fn get(
+    db: impl PgExecutor<'_>,
+    address: &PublicKeyBinary,
+) -> anyhow::Result<Option<IotMetadata>> {
+    let gateway = Gateway::get_by_address(db, address).await?;
+    Ok(gateway.map(IotMetadata::from))
+}
+
+pub fn stream<'a>(
+    db: impl PgExecutor<'a> + 'a,
+    min_last_changed_at: DateTime<Utc>,
+    min_location_changed_at: Option<DateTime<Utc>>,
+) -> impl Stream<Item = IotMetadata> + 'a {
+    let stream = Gateway::stream(db, min_last_changed_at, min_location_changed_at);
+    stream.map(IotMetadata::from).boxed()
+}
 
 #[derive(Clone, Debug)]
 pub struct GatewayMetadata {
@@ -26,9 +50,17 @@ pub struct GatewayInfo {
     pub is_full_hotspot: bool,
 }
 
+pub struct IotMetadata {
+    pub address: PublicKeyBinary,
+    pub location: Option<u64>,
+    pub elevation: i32,
+    pub gain: i32,
+    pub is_full_hotspot: bool,
+}
+
 impl GatewayInfo {
     pub fn chain_metadata_to_info(
-        meta: db::IotMetadata,
+        meta: IotMetadata,
         region_map: &region_map::RegionMapReader,
     ) -> Self {
         let metadata = if let Some(location) = meta.location {
@@ -112,69 +144,14 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
     }
 }
 
-pub(crate) mod db {
-    use futures::stream::{Stream, StreamExt};
-    use helium_crypto::PublicKeyBinary;
-    use sqlx::{PgExecutor, Row};
-    use std::str::FromStr;
-
-    // Hotspot gain default; dbi * 10
-    const DEFAULT_GAIN: i32 = 12;
-    // Hotspot elevation default; meters above sea level
-    const DEFAULT_ELEVATION: i32 = 0;
-
-    pub struct IotMetadata {
-        pub address: PublicKeyBinary,
-        pub location: Option<u64>,
-        pub elevation: i32,
-        pub gain: i32,
-        pub is_full_hotspot: bool,
-    }
-
-    const GET_METADATA_SQL: &str = r#"
-            select kta.entity_key, infos.location::bigint, CAST(infos.elevation AS integer), CAST(infos.gain as integer), infos.is_full_hotspot
-            from iot_hotspot_infos infos
-            join key_to_assets kta on infos.asset = kta.asset
-        "#;
-
-    pub async fn get_info(
-        db: impl PgExecutor<'_>,
-        address: &PublicKeyBinary,
-    ) -> anyhow::Result<Option<IotMetadata>> {
-        let entity_key = bs58::decode(address.to_string()).into_vec()?;
-        let mut query: sqlx::QueryBuilder<sqlx::Postgres> =
-            sqlx::QueryBuilder::new(GET_METADATA_SQL);
-        query.push(" where kta.entity_key = $1 ");
-        Ok(query
-            .build_query_as::<IotMetadata>()
-            .bind(entity_key)
-            .fetch_optional(db)
-            .await?)
-    }
-
-    pub fn all_info_stream<'a>(
-        db: impl PgExecutor<'a> + 'a,
-    ) -> impl Stream<Item = IotMetadata> + 'a {
-        sqlx::query_as::<_, IotMetadata>(GET_METADATA_SQL)
-            .fetch(db)
-            .filter_map(|metadata| async move { metadata.ok() })
-            .boxed()
-    }
-
-    impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for IotMetadata {
-        fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-            Ok(Self {
-                address: PublicKeyBinary::from_str(
-                    &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
-                )
-                .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
-                location: row.get::<Option<i64>, &str>("location").map(|v| v as u64),
-                elevation: row
-                    .get::<Option<i32>, &str>("elevation")
-                    .unwrap_or(DEFAULT_ELEVATION),
-                gain: row.get::<Option<i32>, &str>("gain").unwrap_or(DEFAULT_GAIN),
-                is_full_hotspot: row.get("is_full_hotspot"),
-            })
+impl From<Gateway> for IotMetadata {
+    fn from(gateway: Gateway) -> Self {
+        Self {
+            address: gateway.address,
+            location: gateway.location,
+            elevation: gateway.elevation.unwrap_or(DEFAULT_ELEVATION) as i32,
+            gain: gateway.gain.unwrap_or(DEFAULT_GAIN) as i32,
+            is_full_hotspot: gateway.is_full_hotspot.unwrap_or(false),
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::gateway_info::{self, GatewayInfo, GatewayInfoStream};
+use crate::gateway::service::info::{self as gateway_info, GatewayInfo, GatewayInfoStream};
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary};
 use helium_proto::{services::iot_config, BlockchainRegionParamV1, Region};
