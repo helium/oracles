@@ -4159,6 +4159,7 @@ dependencies = [
  "h3o",
  "helium-crypto",
  "helium-proto",
+ "hex",
  "hextree",
  "http 1.3.1",
  "http-serde",

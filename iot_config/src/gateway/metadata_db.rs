@@ -95,11 +95,26 @@ impl IOTHotspotInfo {
 
 impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for IOTHotspotInfo {
     fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
+        let entity_key_bytes = row.get::<&[u8], &str>("entity_key");
+        let entity_key_b58 = bs58::encode(entity_key_bytes).into_string();
+
+        let entity_key = match PublicKeyBinary::from_str(&entity_key_b58) {
+            Ok(key) => key,
+            Err(err) => {
+                // Log the invalid data for investigation
+                tracing::warn!(
+                    entity_key_bytes = ?hex::encode(entity_key_bytes),
+                    entity_key_b58 = %entity_key_b58,
+                    error = ?err,
+                    "Skipping IOTHotspotInfo with invalid entity_key, failed to decode PublicKeyBinary"
+                );
+                // Return a decode error which will be filtered out by the stream
+                return Err(sqlx::Error::Decode(Box::new(err)));
+            }
+        };
+
         Ok(Self {
-            entity_key: PublicKeyBinary::from_str(
-                &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
-            )
-            .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
+            entity_key,
             location: row.get::<Option<i64>, &str>("location"),
             elevation: row.get::<Option<i32>, &str>("elevation"),
             gain: row.get::<Option<i32>, &str>("gain"),

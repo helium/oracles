@@ -1,6 +1,5 @@
 use crate::gateway::{db::Gateway, metadata_db::IOTHotspotInfo};
-use futures::stream::TryChunksError;
-use futures_util::TryStreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use sqlx::{Pool, Postgres};
 use std::time::{Duration, Instant};
 use task_manager::ManagedTask;
@@ -59,15 +58,22 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
     const BATCH_SIZE: usize = 1_000;
 
     let total: u64 = IOTHotspotInfo::stream(metadata)
-        .map_err(anyhow::Error::from)
-        .try_filter_map(|mhi| async move { mhi.to_gateway() })
-        .try_chunks(BATCH_SIZE)
-        .map_err(|TryChunksError(_gateways, err)| err)
-        .try_fold(0, |total, batch| async move {
-            let affected = Gateway::insert_bulk(pool, &batch).await?;
-            Ok(total + affected)
+        .inspect_err(|err| {
+            tracing::error!(?err, "unexpected error streaming IOTHotspotInfo");
         })
-        .await?;
+        .filter_map(|res| async move { res.ok() })
+        .filter_map(|mhi| async move { mhi.to_gateway().ok().flatten() })
+        .chunks(BATCH_SIZE)
+        .fold(0, |total, batch| async move {
+            match Gateway::insert_bulk(pool, &batch).await {
+                Ok(affected) => total + affected,
+                Err(err) => {
+                    tracing::error!(?err, "failed to insert gateway batch");
+                    total
+                }
+            }
+        })
+        .await;
 
     let elapsed = start.elapsed();
     tracing::info!(?elapsed, affected = total, "done execute");

@@ -126,6 +126,57 @@ async fn insert_asset_key(pool: &PgPool, asset: &str, key: PublicKeyBinary) -> a
     Ok(())
 }
 
+/// Insert a gateway with an invalid entity_key (for testing error handling)
+#[allow(clippy::too_many_arguments)]
+pub async fn insert_gateway_with_invalid_key(
+    pool: &PgPool,
+    address: &str,
+    asset: &str,
+    location: Option<i64>,
+    elevation: Option<i64>,
+    gain: Option<i64>,
+    is_full_hotspot: Option<bool>,
+    num_location_asserts: Option<i32>,
+    is_active: Option<bool>,
+    dc_onboarding_fee_paid: Option<i64>,
+    created_at: DateTime<Utc>,
+    refreshed_at: Option<DateTime<Utc>>,
+    last_block: Option<i64>,
+    invalid_entity_key_bytes: Vec<u8>,
+) -> anyhow::Result<()> {
+    insert_iot_hotspot_infos(
+        pool,
+        address,
+        asset,
+        location,
+        elevation,
+        gain,
+        is_full_hotspot,
+        num_location_asserts,
+        is_active,
+        dc_onboarding_fee_paid,
+        created_at,
+        refreshed_at,
+        last_block,
+    )
+    .await?;
+
+    // Insert the invalid key directly as bytes
+    sqlx::query(
+        r#"
+        INSERT INTO
+            "key_to_assets" ("asset", "entity_key")
+        VALUES ($1, $2);
+        "#,
+    )
+    .bind(asset)
+    .bind(invalid_entity_key_bytes)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn create_tables(pool: &PgPool) -> anyhow::Result<()> {
     sqlx::query(
         r#"
