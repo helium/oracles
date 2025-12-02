@@ -19,11 +19,11 @@ const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
 #[derive(thiserror::Error, Debug)]
 pub enum ClientError {
     #[error("error signing request {0}")]
-    SigningError(#[from] helium_crypto::Error),
+    SigningError(#[from] helium_proto_crypto::MsgSignError),
     #[error("grpc error response {0}")]
     GrpcError(#[from] tonic::Status),
     #[error("error verifying response signature {0}")]
-    VerificationError(#[from] file_store::Error),
+    VerificationError(#[from] helium_proto_crypto::MsgVerifyError),
     #[error("error parsing gateway location {0}")]
     LocationParseError(#[from] std::num::ParseIntError),
     #[error("unknown service provider {0}")]

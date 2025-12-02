@@ -16,11 +16,11 @@ pub use settings::Settings;
 #[derive(thiserror::Error, Debug)]
 pub enum ClientError {
     #[error("error signing request: {0}")]
-    Signing(#[from] helium_crypto::Error),
+    Signing(#[from] helium_proto_crypto::MsgSignError),
     #[error("grpc error response: {0}")]
     Rpc(#[from] tonic::Status),
     #[error("error verifying response signature: {0}")]
-    Verification(#[from] file_store::Error),
+    Verification(#[from] helium_proto_crypto::MsgVerifyError),
     #[error("error resolving region params: {0}")]
     UndefinedRegionParams(String),
     #[error("Invalid SubDaoRewardInfo proto response {0}")]

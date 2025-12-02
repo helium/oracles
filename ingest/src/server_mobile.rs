@@ -14,7 +14,8 @@ use helium_proto::services::poc_mobile::{
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
     RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
-    RadioUsageStatsResV1, ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
+    RadioUsageStatsReqV2, RadioUsageStatsResV1, RadioUsageStatsResV2,
+    ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1, SubscriberMappingActivityIngestReportV1,
@@ -649,6 +650,13 @@ where
         Ok(Response::new(EnabledCarriersInfoRespV1 {
             timestamp_ms: received_timestamp_ms,
         }))
+    }
+
+    async fn submit_radio_usage_stats_report_v2(
+        &self,
+        _request: Request<RadioUsageStatsReqV2>,
+    ) -> std::result::Result<Response<RadioUsageStatsResV2>, Status> {
+        Err(Status::unimplemented("unimplemented"))
     }
 }
 

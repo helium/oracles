@@ -310,7 +310,7 @@ impl iot_config::Gateway for GatewayService {
         &self,
         _request: Request<GatewayInfoStreamReqV2>,
     ) -> GrpcResult<Self::info_stream_v2Stream> {
-        todo!()
+        Err(Status::unimplemented("not implemented"))
     }
 }
 
