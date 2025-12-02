@@ -149,9 +149,7 @@ impl AwsLocalBuilder {
     }
 
     pub async fn build(self) -> AwsLocal {
-        let endpoint = self
-            .endpoint
-            .unwrap_or_else(|| aws_local_default_endpoint());
+        let endpoint = self.endpoint.unwrap_or_else(aws_local_default_endpoint);
 
         let client = BucketClient::new(
             self.bucket.unwrap_or_else(gen_bucket_name),
