@@ -127,7 +127,7 @@ url = "2.5.4"
 
 ### Protobuf
 helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
-  "services"
+  "services",
 ] }
 beacon = { git = "https://github.com/helium/proto", branch = "master" }
 helium-proto-crypto = { git = "https://github.com/helium/helium-wallet-rs", branch = "master" }
