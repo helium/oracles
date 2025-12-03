@@ -275,15 +275,14 @@ async fn submit_radio_usage_report_v2() -> anyhow::Result<()> {
 
     let carrier_info = RadioUsageCarrierDataTransferInfoV2 {
         carrier_id: 1,
-        rewarded_bytes_transferred_total: 50,
+        rewarded_bytes_transferred: 50,
         ..Default::default()
     };
 
     let sampling_carrier_info = RadioUsageSamplingCarrierDataTransferInfoV1 {
         carrier_id: 2,
-        bytes_transferred_total: SAMPLING_BYTES_TRANSFERRED_TOTAL,
+        bytes_transferred: SAMPLING_BYTES_TRANSFERRED_TOTAL,
         user_count: 2,
-        ..Default::default()
     };
 
     let res = client
@@ -294,8 +293,8 @@ async fn submit_radio_usage_report_v2() -> anyhow::Result<()> {
             UNREWARDED_BYTES_TRANSFERRED_TOTAL,
             SAMPLING_USER_COUNT_TOTAL,
             SAMPLING_BYTES_TRANSFERRED_TOTAL,
-            vec![carrier_info.clone()],
-            vec![sampling_carrier_info.clone()],
+            vec![carrier_info],
+            vec![sampling_carrier_info],
         )
         .await;
 
