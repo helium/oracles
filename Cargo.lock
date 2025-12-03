@@ -1324,7 +1324,7 @@ name = "beacon"
 version = "0.1.0"
 source = "git+https://github.com/helium/proto?branch=master#a585fb2ed58ef2b2fa28b1cc9c45b512bd805425"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "byteorder",
  "helium-proto",
  "prost",
@@ -1363,7 +1363,7 @@ dependencies = [
  "bitflags 2.9.4",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2350,7 +2350,7 @@ dependencies = [
 name = "denylist"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "bincode",
  "bytes",
  "chrono",
@@ -2723,7 +2723,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2854,7 +2854,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "beacon",
  "blake3",
  "bs58",
@@ -3442,7 +3442,7 @@ version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3ae6081be123db88474f4c5f12f9b0d3d90b9f5ce15171dee64fe92e3cae2dd"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "byteorder",
  "ed25519-compact",
@@ -3469,7 +3469,7 @@ dependencies = [
  "anchor-spl",
  "angry-purple-tiger",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bincode",
  "bytemuck",
  "chrono",
@@ -3858,7 +3858,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -4074,7 +4074,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "backon 1.5.2",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "chrono",
  "clap",
@@ -4157,7 +4157,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "backon 0.5.0",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "chrono",
  "clap",
@@ -4245,7 +4245,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "beacon",
  "blake3",
  "chrono",
@@ -4599,7 +4599,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.5",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -4916,7 +4916,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "blake3",
  "bs58",
  "chrono",
@@ -4973,7 +4973,7 @@ version = "0.1.0"
 dependencies = [
  "angry-purple-tiger",
  "anyhow",
- "base64 0.22.1",
+ "base64 0.21.7",
  "clap",
  "custom-tracing",
  "dialoguer",
@@ -5041,7 +5041,7 @@ dependencies = [
  "async-compression",
  "async-trait",
  "aws-local",
- "base64 0.22.1",
+ "base64 0.21.7",
  "chrono",
  "clap",
  "config",
@@ -5392,7 +5392,7 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77e878c846a8abae00dd069496dbe8751b16ac1c3d6bd2a7283a938e8228f90d"
 dependencies = [
- "proc-macro-crate 3.4.0",
+ "proc-macro-crate 1.1.3",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -5691,7 +5691,7 @@ name = "poc-entropy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.21.7",
  "blake3",
  "bs58",
  "chrono",
@@ -5947,7 +5947,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "log",
  "multimap",
  "once_cell",
@@ -5969,7 +5969,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -6067,7 +6067,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.32",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -6106,7 +6106,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -6459,7 +6459,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bs58",
  "chrono",
  "clap",
@@ -6729,7 +6729,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -10500,7 +10500,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -11539,7 +11539,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -11986,7 +11986,7 @@ version = "0.7.0"
 source = "git+https://github.com/helium/xorf-generator?branch=main#0d23ba2dcac2e2823d842566436df406f5ce923c"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bincode",
  "bytes",
  "clap",

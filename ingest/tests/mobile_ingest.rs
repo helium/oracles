@@ -2,7 +2,8 @@ use chrono::{TimeZone, Utc};
 use common::generate_keypair;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    CarrierIdV2, DataTransferRadioAccessTechnology, RadioUsageCarrierTransferInfo,
+    CarrierIdV2, DataTransferRadioAccessTechnology, RadioUsageCarrierDataTransferInfoV2,
+    RadioUsageCarrierTransferInfo, RadioUsageSamplingCarrierDataTransferInfoV1,
 };
 use std::str::FromStr;
 
@@ -251,6 +252,83 @@ async fn submit_radio_usage_report() -> anyhow::Result<()> {
                     assert_eq!(OFFLOAD_TRANSFER_BYTES, event.offload_transfer_bytes);
                     assert_eq!(OFFLOAD_TRANSFER_BYTES, event.offload_transfer_bytes);
                     assert_eq!(vec![radio_usage_carrier_info], event.carrier_transfer_info);
+                }
+            }
+        }
+        Err(e) => panic!("got error {e}"),
+    }
+
+    trigger.trigger();
+    Ok(())
+}
+
+#[tokio::test]
+async fn submit_radio_usage_report_v2() -> anyhow::Result<()> {
+    let (mut client, trigger) = common::setup_mobile().await?;
+
+    let hotspot_pubkey = PublicKeyBinary::from_str(PUBKEY1)?;
+    const USER_COUNT_TOTAL: u64 = 10;
+    const REWARDED_BYTES_TRANSFERRED_TOTAL: u64 = 100;
+    const UNREWARDED_BYTES_TRANSFERRED_TOTAL: u64 = 50;
+    const SAMPLING_USER_COUNT_TOTAL: u64 = 5;
+    const SAMPLING_BYTES_TRANSFERRED_TOTAL: u64 = 75;
+
+    let carrier_info = RadioUsageCarrierDataTransferInfoV2 {
+        carrier_id: 1,
+        rewarded_bytes_transferred: 50,
+        ..Default::default()
+    };
+
+    let sampling_carrier_info = RadioUsageSamplingCarrierDataTransferInfoV1 {
+        carrier_id: 2,
+        bytes_transferred: SAMPLING_BYTES_TRANSFERRED_TOTAL,
+        user_count: 2,
+    };
+
+    let res = client
+        .submit_radio_usage_req_v2(
+            hotspot_pubkey.clone(),
+            USER_COUNT_TOTAL,
+            REWARDED_BYTES_TRANSFERRED_TOTAL,
+            UNREWARDED_BYTES_TRANSFERRED_TOTAL,
+            SAMPLING_USER_COUNT_TOTAL,
+            SAMPLING_BYTES_TRANSFERRED_TOTAL,
+            vec![carrier_info],
+            vec![sampling_carrier_info],
+        )
+        .await;
+
+    assert!(res.is_ok());
+
+    let timestamp: String = res.unwrap().id;
+
+    match client.radio_usage_recv_v2().await {
+        Ok(report) => {
+            assert_eq!(timestamp, report.received_timestamp_ms.to_string());
+
+            match report.report {
+                None => panic!("No report found"),
+                Some(event) => {
+                    assert_eq!(hotspot_pubkey.as_ref(), event.hotspot_pubkey);
+                    assert_eq!(USER_COUNT_TOTAL, event.user_count_total);
+                    assert_eq!(
+                        REWARDED_BYTES_TRANSFERRED_TOTAL,
+                        event.rewarded_bytes_transferred_total
+                    );
+                    assert_eq!(
+                        UNREWARDED_BYTES_TRANSFERRED_TOTAL,
+                        event.unrewarded_bytes_transferred_total
+                    );
+                    assert_eq!(SAMPLING_USER_COUNT_TOTAL, event.sampling_user_count_total);
+                    assert_eq!(
+                        SAMPLING_BYTES_TRANSFERRED_TOTAL,
+                        event.sampling_bytes_transferred_total
+                    );
+                    assert_eq!(vec![carrier_info], event.carrier_transfer_info);
+                    assert_eq!(
+                        vec![sampling_carrier_info],
+                        event.sampling_carrier_transfer_info
+                    );
                 }
             }
         }

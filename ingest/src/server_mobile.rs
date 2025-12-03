@@ -13,8 +13,8 @@ use helium_proto::services::poc_mobile::{
     EnabledCarriersInfoRespV1, HexUsageStatsIngestReportV1, HexUsageStatsReqV1, HexUsageStatsResV1,
     InvalidatedRadioThresholdIngestReportV1, InvalidatedRadioThresholdReportReqV1,
     InvalidatedRadioThresholdReportRespV1, RadioThresholdIngestReportV1, RadioThresholdReportReqV1,
-    RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsReqV1,
-    RadioUsageStatsReqV2, RadioUsageStatsResV1, RadioUsageStatsResV2,
+    RadioThresholdReportRespV1, RadioUsageStatsIngestReportV1, RadioUsageStatsIngestReportV2,
+    RadioUsageStatsReqV1, RadioUsageStatsReqV2, RadioUsageStatsResV1, RadioUsageStatsResV2,
     ServiceProviderBoostedRewardsBannedRadioIngestReportV1,
     ServiceProviderBoostedRewardsBannedRadioReqV1, ServiceProviderBoostedRewardsBannedRadioRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
@@ -54,6 +54,7 @@ pub struct GrpcServer<AV> {
     subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
     hex_usage_stats_event_sink: FileSinkClient<HexUsageStatsIngestReportV1>,
     radio_usage_stats_event_sink: FileSinkClient<RadioUsageStatsIngestReportV1>,
+    radio_usage_stats_event_sink_v2: FileSinkClient<RadioUsageStatsIngestReportV2>,
     unique_connections_sink: FileSinkClient<UniqueConnectionsIngestReportV1>,
     subscriber_mapping_activity_sink: FileSinkClient<SubscriberMappingActivityIngestReportV1>,
     ban_sink: FileSinkClient<BanIngestReportV1>,
@@ -105,6 +106,7 @@ where
         subscriber_mapping_event_sink: FileSinkClient<SubscriberVerifiedMappingEventIngestReportV1>,
         hex_usage_stats_event_sink: FileSinkClient<HexUsageStatsIngestReportV1>,
         radio_usage_stats_event_sink: FileSinkClient<RadioUsageStatsIngestReportV1>,
+        radio_usage_stats_event_sink_v2: FileSinkClient<RadioUsageStatsIngestReportV2>,
         unique_connections_sink: FileSinkClient<UniqueConnectionsIngestReportV1>,
         subscriber_mapping_activity_sink: FileSinkClient<SubscriberMappingActivityIngestReportV1>,
         ban_sink: FileSinkClient<BanIngestReportV1>,
@@ -126,6 +128,7 @@ where
             subscriber_mapping_event_sink,
             hex_usage_stats_event_sink,
             radio_usage_stats_event_sink,
+            radio_usage_stats_event_sink_v2,
             unique_connections_sink,
             subscriber_mapping_activity_sink,
             ban_sink,
@@ -566,6 +569,32 @@ where
         Ok(Response::new(RadioUsageStatsResV1 { id }))
     }
 
+    async fn submit_radio_usage_stats_report_v2(
+        &self,
+        request: Request<RadioUsageStatsReqV2>,
+    ) -> GrpcResult<RadioUsageStatsResV2> {
+        let timestamp = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+
+        custom_tracing::record_b58("pub_key", &event.hotspot_pubkey);
+
+        let (verified_pubkey, event) = self
+            .verify_public_key(event.carrier_pubkey.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))?;
+        self.verify_known_carrier_key(verified_pubkey).await?;
+
+        let report = RadioUsageStatsIngestReportV2 {
+            received_timestamp_ms: timestamp,
+            report: Some(event),
+        };
+
+        _ = self.radio_usage_stats_event_sink_v2.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(RadioUsageStatsResV2 { id }))
+    }
+
     async fn submit_unique_connections(
         &self,
         request: Request<UniqueConnectionsReqV1>,
@@ -650,13 +679,6 @@ where
         Ok(Response::new(EnabledCarriersInfoRespV1 {
             timestamp_ms: received_timestamp_ms,
         }))
-    }
-
-    async fn submit_radio_usage_stats_report_v2(
-        &self,
-        _request: Request<RadioUsageStatsReqV2>,
-    ) -> std::result::Result<Response<RadioUsageStatsResV2>, Status> {
-        Err(Status::unimplemented("unimplemented"))
     }
 }
 
@@ -782,6 +804,16 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         )
         .await?;
 
+    let (radio_usage_stats_event_sink_v2, radio_usage_stats_event_server_v2) =
+        RadioUsageStatsIngestReportV2::file_sink(
+            &settings.cache,
+            file_upload.clone(),
+            FileSinkCommitStrategy::Automatic,
+            FileSinkRollTime::Duration(settings.roll_time),
+            env!("CARGO_PKG_NAME"),
+        )
+        .await?;
+
     let (unique_connections_sink, unique_connections_server) =
         UniqueConnectionsIngestReportV1::file_sink(
             &settings.cache,
@@ -844,6 +876,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         subscriber_mapping_event_sink,
         hex_usage_stats_event_sink,
         radio_usage_stats_event_sink,
+        radio_usage_stats_event_sink_v2,
         unique_connections_sink,
         subscriber_mapping_activity_sink,
         ban_sink,
@@ -873,6 +906,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(subscriber_mapping_event_server)
         .add_task(hex_usage_stats_event_server)
         .add_task(radio_usage_stats_event_server)
+        .add_task(radio_usage_stats_event_server_v2)
         .add_task(unique_connections_server)
         .add_task(subscriber_mapping_activity_server)
         .add_task(ban_server)

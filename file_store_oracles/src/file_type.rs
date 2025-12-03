@@ -4,6 +4,7 @@ use std::{fmt, io, str::FromStr};
 
 pub const HEX_USAGE_STATS_INGEST_REPORT: &str = "hex_usage_stats_ingest_report";
 pub const RADIO_USAGE_STATS_INGEST_REPORT: &str = "radio_usage_stats_ingest_report";
+pub const RADIO_USAGE_STATS_INGEST_REPORT_V2: &str = "radio_usage_stats_ingest_report_v2";
 pub const HEX_USAGE_STATS_REQ: &str = "hex_usage_stats_req";
 pub const RADIO_USAGE_STATS_REQ: &str = "radio_usage_stats_req";
 
@@ -144,6 +145,7 @@ pub enum FileType {
     ServiceProviderPromotionFund,
     HexUsageStatsIngestReport,
     RadioUsageStatsIngestReport,
+    RadioUsageStatsIngestReportV2,
     HexUsageStatsReq,
     RadioUsageStatsReq,
     UniqueConnectionsReport,
@@ -240,6 +242,7 @@ impl FileType {
             Self::ServiceProviderPromotionFund => SERVICE_PROVIDER_PROMOTION_FUND,
             Self::HexUsageStatsIngestReport => HEX_USAGE_STATS_INGEST_REPORT,
             Self::RadioUsageStatsIngestReport => RADIO_USAGE_STATS_INGEST_REPORT,
+            Self::RadioUsageStatsIngestReportV2 => RADIO_USAGE_STATS_INGEST_REPORT_V2,
             Self::HexUsageStatsReq => HEX_USAGE_STATS_REQ,
             Self::RadioUsageStatsReq => RADIO_USAGE_STATS_REQ,
             Self::UniqueConnectionsReport => UNIQUE_CONNECTIONS_REPORT,
@@ -336,6 +339,7 @@ impl FromStr for FileType {
             SERVICE_PROVIDER_PROMOTION_FUND => Self::ServiceProviderPromotionFund,
             HEX_USAGE_STATS_INGEST_REPORT => Self::HexUsageStatsIngestReport,
             RADIO_USAGE_STATS_INGEST_REPORT => Self::RadioUsageStatsIngestReport,
+            RADIO_USAGE_STATS_INGEST_REPORT_V2 => Self::RadioUsageStatsIngestReportV2,
             HEX_USAGE_STATS_REQ => Self::HexUsageStatsReq,
             RADIO_USAGE_STATS_REQ => Self::RadioUsageStatsReq,
             UNIQUE_CONNECTIONS_REPORT => Self::UniqueConnectionsReport,
