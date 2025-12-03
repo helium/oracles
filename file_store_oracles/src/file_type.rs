@@ -1,31 +1,36 @@
-/// Generates a string-mapped enum and its parsing/formatting implementations.
-///
-/// This macro defines:
-/// - an enum with the given variants,
-/// - a `to_str()` method returning the associated string literal,
-/// - a `Display` impl that prints the variant’s string form,
-/// - a `FromStr` impl that parses the string back into the enum,
-/// - and an error type used by `FromStr`.
-///
-/// Each variant is written as `Name => "string"` inside the macro invocation.
-/// The error type name must be provided explicitly, since `macro_rules!`
-/// cannot construct identifiers from other identifiers.
-///
-/// # Example
-///
-/// ```rust
-/// make_string_mapped_enum! {
-///     ParseFileTypeError,
-///     enum FileType {
-///         A => "a",
-///         B => "b",
-///     }
-/// }
-///
-/// assert_eq!(FileType::A.to_str(), "a");
-/// assert_eq!("b".parse::<FileType>().unwrap(), FileType::B);
-/// assert!("x".parse::<FileType>().is_err());
-/// ```
+// Generates a string-mapped enum and its parsing/formatting implementations.
+//
+// This macro defines:
+// - an enum with the given variants,
+// - a `to_str()` method returning the associated string literal,
+// - a `Display` impl that prints the variant’s string form,
+// - a `FromStr` impl that parses the string back into the enum,
+// - and an error type used by `FromStr`.
+//
+// Each variant is written as `Name => "string"` inside the macro invocation.
+// The error type name must be provided explicitly, since `macro_rules!`
+// cannot construct identifiers from other identifiers.
+//
+// # Example
+//
+// ```rust
+// make_string_mapped_enum! {
+//     ParseFileTypeError,
+//     enum FileType {
+//         A => "a",
+//         B => "b",
+//     }
+// }
+//
+// assert_eq!(FileType::A.to_str(), "a");
+// assert_eq!("b".parse::<FileType>().unwrap(), FileType::B);
+// assert!("x".parse::<FileType>().is_err());
+// ```
+//
+// # Note
+//
+// This cannot be a rustdoc because macros cannot be used before they are
+// defined, even in comments.
 macro_rules! make_string_mapped_enum {
     (
         $err_name:ident,
