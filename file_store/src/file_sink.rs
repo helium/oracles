@@ -439,6 +439,16 @@ impl<T: prost::Message> FileSink<T> {
     pub async fn write(&mut self, buf: Bytes) -> Result {
         let mut active_sink = match self.active_sink.take() {
             Some(active_sink) if !active_sink.will_fit(&buf) => {
+                // FIXME: self.commit() and self.maybe_close_active_sink() both
+                // expect self.active_sink to have a sink for the taking. If
+                // there is no sink the currnt file is never added to
+                // self.staged_files and will not be uploaded. Until we can add
+                // some tests around this case for safer refactoring, putting
+                // the sink back into place when we know we're about to close it
+                // most closely resembles how this function used to work, when
+                // it was still working.
+                self.active_sink = Some(active_sink);
+
                 if self.auto_commit {
                     self.commit().await?;
                 } else {
