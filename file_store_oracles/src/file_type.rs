@@ -65,12 +65,12 @@ macro_rules! make_string_mapped_enum {
 
 
         impl std::str::FromStr for $enum_name {
-            type Err = ParseFileTypeError;
+            type Err = $err_name;
 
-            fn from_str(s: &str) -> Result<Self, ParseFileTypeError> {
+            fn from_str(s: &str) -> Result<Self, $err_name> {
                 let result = match s {
                     $($str => Self::$name,)*
-                    other => return Err(ParseFileTypeError(other.to_owned()))
+                    other => return Err($err_name(other.to_owned()))
                 };
                 Ok(result)
             }
