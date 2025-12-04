@@ -2829,7 +2829,6 @@ dependencies = [
  "derive_builder",
  "futures",
  "futures-util",
- "helium-crypto",
  "metrics",
  "poc-metrics",
  "prost",
