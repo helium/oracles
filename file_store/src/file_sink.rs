@@ -488,6 +488,40 @@ mod tests {
     use tempfile::TempDir;
     use tokio::fs::DirEntry;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
+    #[tokio::test]
+    async fn auto_commit_file_sent_for_upload_when_size_exceeded() -> TestResult {
+        let tmp_dir = TempDir::new()?;
+
+        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
+        let file_upload = FileUpload {
+            sender: file_upload_tx,
+        };
+
+        let msg = bytes::Bytes::from(prost::Message::encode_to_vec(&"hello".to_string()));
+        let (_file_sink_client, mut file_sink_server) =
+            FileSinkBuilder::new("report", tmp_dir.path(), file_upload, "metric")
+                .auto_commit(true)
+                .max_size(msg.len() + 2) // big enough for one, not for two
+                .create::<String>()
+                .await?;
+
+        file_sink_server.write(msg.clone()).await?;
+        assert!(
+            file_upload_rx.is_empty(),
+            "size not exceeded, nothing to upload"
+        );
+
+        file_sink_server.write(msg).await?;
+        assert!(
+            !file_upload_rx.is_empty(),
+            "size exceeded, file should be uploaded"
+        );
+
+        Ok(())
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn writes_a_framed_gzip_encoded_file() {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
