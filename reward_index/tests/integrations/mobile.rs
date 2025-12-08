@@ -222,7 +222,7 @@ async fn service_provider_reward(pool: PgPool) -> anyhow::Result<()> {
     let reward = common::get_reward(
         &pool,
         &ServiceProvider::HeliumMobile.to_string(),
-        RewardType::MobileServiceProvider,
+        RewardType::MobileServiceProviderNetwork,
     )
     .await?;
     assert_eq!(reward.rewards, 1);

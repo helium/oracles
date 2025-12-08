@@ -505,23 +505,23 @@ pub async fn reward_service_providers(
         .to_u64()
         .unwrap_or(0);
 
-    // Write a ServiceProviderReward for HeliumMobile Network Wallet for 450 HNT
+    // Write a ServiceProviderReward for HeliumMobile Subscriber Wallet for 450 HNT
     write_service_provider_reward(
         &mobile_rewards,
         reward_info,
         HELIUM_MOBILE_SERVICE_REWARD_BONES,
         ServiceProvider::HeliumMobile,
-        ServiceProviderRewardType::Network
+        ServiceProviderRewardType::Subscriber
     ).await?;
 
-    // Remaining rewards goes to HeliumMobile Subscriber Wallet
+    // Remaining rewards goes to HeliumMobile Network Wallet
     let remaining_reward_amount = sp_reward_amount - HELIUM_MOBILE_SERVICE_REWARD_BONES;
     write_service_provider_reward(
         &mobile_rewards,
         reward_info,
         remaining_reward_amount,
         ServiceProvider::HeliumMobile,
-        ServiceProviderRewardType::Subscriber
+        ServiceProviderRewardType::Network
     ).await?;
 
     Ok(())
