@@ -9,6 +9,11 @@ use std::collections::HashMap;
 use task_manager::ManagedTask;
 use tokio::sync::{mpsc, watch};
 
+#[async_trait::async_trait]
+pub trait PriceProvider {
+    async fn price(&self, token_type: &BlockchainTokenTypeV1) -> Result<u64, PriceTrackerError>;
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum PriceTrackerError {
     #[error("invalid timestamp in price: {0}")]
@@ -70,6 +75,30 @@ pub struct PriceTracker {
     price_receiver: watch::Receiver<Prices>,
 }
 
+#[async_trait::async_trait]
+impl PriceProvider for PriceTracker {
+    async fn price(&self, token_type: &BlockchainTokenTypeV1) -> Result<u64, PriceTrackerError> {
+        let result = self
+            .price_receiver
+            .borrow()
+            .get(token_type)
+            .ok_or(PriceTrackerError::PriceNotAvailable)
+            .and_then(|price| {
+                if price.timestamp > Utc::now() - self.price_duration {
+                    Ok(price.price)
+                } else {
+                    Err(PriceTrackerError::PriceTooOld(price.timestamp))
+                }
+            });
+
+        if let Err(error) = &result {
+            self.task_killer.send(error.to_string()).await?;
+        }
+
+        result
+    }
+}
+
 impl PriceTracker {
     pub async fn new(settings: &Settings) -> anyhow::Result<(Self, PriceTrackerDaemon)> {
         let price_duration = settings.price_duration();
@@ -92,30 +121,6 @@ impl PriceTracker {
                 after: initial_timestamp,
             },
         ))
-    }
-
-    pub async fn price(
-        &self,
-        token_type: &BlockchainTokenTypeV1,
-    ) -> Result<u64, PriceTrackerError> {
-        let result = self
-            .price_receiver
-            .borrow()
-            .get(token_type)
-            .ok_or(PriceTrackerError::PriceNotAvailable)
-            .and_then(|price| {
-                if price.timestamp > Utc::now() - self.price_duration {
-                    Ok(price.price)
-                } else {
-                    Err(PriceTrackerError::PriceTooOld(price.timestamp))
-                }
-            });
-
-        if let Err(error) = &result {
-            self.task_killer.send(error.to_string()).await?;
-        }
-
-        result
     }
 }
 

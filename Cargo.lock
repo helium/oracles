@@ -5847,6 +5847,7 @@ name = "price-tracker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "file-store",
  "file-store-oracles",
