@@ -75,11 +75,16 @@ pub fn mobile_reward(
             let sp = ServiceProvider::try_from(r.service_provider_id)
                 .map_err(|_| ExtractError::ServiceProviderDecode(r.service_provider_id))?;
 
-            let sp_reward_type = match ServiceProviderRewardType::try_from(r.service_provider_reward_type) {
-                Ok(ServiceProviderRewardType::Subscriber) => RewardType::MobileServiceProviderSubscriber,
-                Ok(ServiceProviderRewardType::Network) => RewardType::MobileServiceProviderNetwork,
-                _ => RewardType::MobileServiceProvider,
-            };
+            let sp_reward_type =
+                match ServiceProviderRewardType::try_from(r.service_provider_reward_type) {
+                    Ok(ServiceProviderRewardType::Subscriber) => {
+                        RewardType::MobileServiceProviderSubscriber
+                    }
+                    Ok(ServiceProviderRewardType::Network) => {
+                        RewardType::MobileServiceProviderNetwork
+                    }
+                    _ => RewardType::MobileServiceProvider,
+                };
 
             Ok((
                 RewardKey {

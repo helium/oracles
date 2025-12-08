@@ -19,10 +19,16 @@ use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::Tim
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
-use helium_proto::{reward_manifest::RewardData::MobileRewardData, services::poc_mobile::{
-    self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
-    UnallocatedReward, UnallocatedRewardType,
-}, MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest, ServiceProvider, ServiceProviderRewardType};
+use crate::reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES;
+use helium_proto::{
+    reward_manifest::RewardData::MobileRewardData,
+    services::poc_mobile::{
+        self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
+        UnallocatedReward, UnallocatedRewardType,
+    },
+    MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
+    ServiceProvider, ServiceProviderRewardType,
+};
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{
@@ -39,7 +45,6 @@ use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
-use crate::reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES;
 
 pub mod boosted_hex_eligibility;
 mod db;
@@ -511,8 +516,9 @@ pub async fn reward_service_providers(
         reward_info,
         HELIUM_MOBILE_SERVICE_REWARD_BONES,
         ServiceProvider::HeliumMobile,
-        ServiceProviderRewardType::Subscriber
-    ).await?;
+        ServiceProviderRewardType::Subscriber,
+    )
+    .await?;
 
     // Remaining rewards goes to HeliumMobile Network Wallet
     let remaining_reward_amount = sp_reward_amount - HELIUM_MOBILE_SERVICE_REWARD_BONES;
@@ -521,8 +527,9 @@ pub async fn reward_service_providers(
         reward_info,
         remaining_reward_amount,
         ServiceProvider::HeliumMobile,
-        ServiceProviderRewardType::Network
-    ).await?;
+        ServiceProviderRewardType::Network,
+    )
+    .await?;
 
     Ok(())
 }
