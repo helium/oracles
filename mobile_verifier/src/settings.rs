@@ -35,7 +35,7 @@ pub struct Settings {
     pub database: db_store::Settings,
     #[serde(default)]
     pub metrics: poc_metrics::Settings,
-    pub price_tracker: price::price_tracker::Settings,
+    pub price_tracker: price_tracker::Settings,
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: DateTime<Utc>,
