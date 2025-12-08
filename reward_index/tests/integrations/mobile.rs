@@ -1,12 +1,9 @@
 use chrono::{Duration, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::{
-    services::poc_mobile::{
-        mobile_reward_share, GatewayReward, MobileRewardShare, PromotionReward, RadioRewardV2,
-        ServiceProviderReward, SubscriberReward, UnallocatedReward, UnallocatedRewardType,
-    },
-    ServiceProvider,
-};
+use helium_proto::{services::poc_mobile::{
+    mobile_reward_share, GatewayReward, MobileRewardShare, PromotionReward, RadioRewardV2,
+    ServiceProviderReward, SubscriberReward, UnallocatedReward, UnallocatedRewardType,
+}, ServiceProvider, ServiceProviderRewardType};
 use reward_index::indexer::{handle_mobile_rewards, RewardType};
 use sqlx::PgPool;
 
@@ -212,6 +209,7 @@ async fn service_provider_reward(pool: PgPool) -> anyhow::Result<()> {
             ServiceProviderReward {
                 service_provider_id: ServiceProvider::HeliumMobile.into(),
                 amount: 1,
+                service_provider_reward_type: ServiceProviderRewardType::Network.into(),
             },
         )),
     }]);
@@ -241,6 +239,7 @@ async fn fails_on_unknown_service_provider(pool: PgPool) -> anyhow::Result<()> {
             ServiceProviderReward {
                 service_provider_id: 999,
                 amount: 1,
+                service_provider_reward_type: ServiceProviderRewardType::Network.into(),
             },
         )),
     }]);

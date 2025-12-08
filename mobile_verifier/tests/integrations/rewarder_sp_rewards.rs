@@ -6,8 +6,6 @@ use sqlx::PgPool;
 use crate::common::{self, reward_info_24_hours};
 use mobile_verifier::{reward_shares, rewarder};
 
-const HELIUM_MOBILE_NETWORK_BONES: u64 = 4_500_000_000;
-
 #[sqlx::test]
 async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
@@ -31,7 +29,7 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
         network_reward.service_provider_reward_type,
         ServiceProviderRewardType::Network as i32
     );
-    assert_eq!(HELIUM_MOBILE_NETWORK_BONES, network_reward.amount);
+    assert_eq!(reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES, network_reward.amount);
 
     // Verify second reward is to HeliumMobile Subscribers wallet
     let subscribers_reward = rewards.sp_rewards.get(1).expect("sp reward");
@@ -49,10 +47,10 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
         reward_shares::get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
-    assert_eq!(expected_sum - HELIUM_MOBILE_NETWORK_BONES, subscribers_reward.amount);
+    assert_eq!(expected_sum - reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES, subscribers_reward.amount);
 
     // confirm the rewarded percentage amount matches expectations
-    let percent = (Decimal::from(subscribers_reward.amount + HELIUM_MOBILE_NETWORK_BONES) / reward_info.epoch_emissions)
+    let percent = (Decimal::from(subscribers_reward.amount + reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES) / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     assert_eq!(percent, dec!(0.24));
 
