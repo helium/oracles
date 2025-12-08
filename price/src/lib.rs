@@ -6,7 +6,6 @@ pub mod price_generator;
 pub mod settings;
 
 pub use price_generator::PriceGenerator;
-pub use price_tracker::PriceTracker;
 pub use settings::Settings;
 
 #[cfg(test)]

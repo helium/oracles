@@ -36,7 +36,7 @@ use mobile_config::{
     sub_dao_epoch_reward_info::EpochRewardInfo,
     EpochInfo,
 };
-use price::PriceTracker;
+use price_tracker::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use solana::{SolPubkey, Token};
