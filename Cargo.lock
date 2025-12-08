@@ -1328,11 +1328,11 @@ dependencies = [
  "byteorder",
  "helium-proto",
  "prost",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
+ "rand 0.7.3",
+ "rand_chacha 0.2.2",
  "rust_decimal",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.9.9",
  "thiserror 1.0.69",
 ]
 
@@ -3504,7 +3504,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#a585fb2ed58ef2b2fa28b1cc9c45b512bd805425"
+source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fsplit-service-provider-rewards#4d5a0ba5bb84dfe37ab706d8747650f8aca3e61e"
 dependencies = [
  "bytes",
  "msg-signature",
@@ -5098,7 +5098,7 @@ dependencies = [
 [[package]]
 name = "msg-signature"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#a585fb2ed58ef2b2fa28b1cc9c45b512bd805425"
+source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fsplit-service-provider-rewards#4d5a0ba5bb84dfe37ab706d8747650f8aca3e61e"
 dependencies = [
  "msg-signature-macro",
 ]
@@ -5106,7 +5106,7 @@ dependencies = [
 [[package]]
 name = "msg-signature-macro"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#a585fb2ed58ef2b2fa28b1cc9c45b512bd805425"
+source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fsplit-service-provider-rewards#4d5a0ba5bb84dfe37ab706d8747650f8aca3e61e"
 dependencies = [
  "quote",
  "syn 2.0.106",

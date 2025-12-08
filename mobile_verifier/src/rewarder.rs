@@ -19,15 +19,10 @@ use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::Tim
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
-use helium_proto::{
-    reward_manifest::RewardData::MobileRewardData,
-    services::poc_mobile::{
-        self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
-        UnallocatedReward, UnallocatedRewardType,
-    },
-    MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
-    ServiceProvider,
-};
+use helium_proto::{reward_manifest::RewardData::MobileRewardData, services::poc_mobile::{
+    self as proto, mobile_reward_share::Reward as ProtoReward, MobileRewardShare,
+    UnallocatedReward, UnallocatedRewardType,
+}, MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest, ServiceProvider, ServiceProviderRewardType};
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{
@@ -44,6 +39,7 @@ use sqlx::{PgExecutor, Pool, Postgres};
 use std::{ops::Range, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::time::sleep;
+use crate::reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES;
 
 pub mod boosted_hex_eligibility;
 mod db;
@@ -509,18 +505,25 @@ pub async fn reward_service_providers(
         .to_u64()
         .unwrap_or(0);
 
-    // Write a single ServiceProviderReward for HeliumMobile with the full 24% allocation
-    let sp_reward = proto::MobileRewardShare {
-        start_period: reward_info.epoch_period.start.encode_timestamp(),
-        end_period: reward_info.epoch_period.end.encode_timestamp(),
-        reward: Some(ProtoReward::ServiceProviderReward(
-            proto::ServiceProviderReward {
-                service_provider_id: ServiceProvider::HeliumMobile.into(),
-                amount: sp_reward_amount,
-            },
-        )),
-    };
-    mobile_rewards.write(sp_reward, []).await?.await??;
+    // Write a ServiceProviderReward for HeliumMobile Network Wallet for 450 HNT
+    write_service_provider_reward(
+        &mobile_rewards,
+        reward_info,
+        HELIUM_MOBILE_SERVICE_REWARD_BONES,
+        ServiceProvider::HeliumMobile,
+        ServiceProviderRewardType::Network
+    ).await?;
+
+    // Remaining rewards goes to HeliumMobile Subscriber Wallet
+    let remaining_reward_amount = sp_reward_amount - HELIUM_MOBILE_SERVICE_REWARD_BONES;
+    write_service_provider_reward(
+        &mobile_rewards,
+        reward_info,
+        remaining_reward_amount,
+        ServiceProvider::HeliumMobile,
+        ServiceProviderRewardType::Subscriber
+    ).await?;
+
     Ok(())
 }
 
@@ -553,4 +556,27 @@ pub async fn next_reward_epoch(db: &Pool<Postgres>) -> db_store::Result<u64> {
 
 async fn save_next_reward_epoch(exec: impl PgExecutor<'_>, value: u64) -> db_store::Result<()> {
     meta::store(exec, "next_reward_epoch", value).await
+}
+
+async fn write_service_provider_reward(
+    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    reward_info: &EpochRewardInfo,
+    reward_amount: u64,
+    service_provider_id: ServiceProvider,
+    service_provider_reward_type: ServiceProviderRewardType,
+) -> anyhow::Result<()> {
+    let reward = proto::MobileRewardShare {
+        start_period: reward_info.epoch_period.start.encode_timestamp(),
+        end_period: reward_info.epoch_period.end.encode_timestamp(),
+        reward: Some(ProtoReward::ServiceProviderReward(
+            proto::ServiceProviderReward {
+                service_provider_id: service_provider_id.into(),
+                amount: reward_amount,
+                service_provider_reward_type: service_provider_reward_type as i32,
+            },
+        )),
+    };
+
+    mobile_rewards.write(reward, []).await?.await??;
+    Ok(())
 }

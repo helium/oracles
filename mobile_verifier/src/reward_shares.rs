@@ -43,6 +43,9 @@ pub const DEFAULT_PREC: u32 = 15;
 // Percent of total emissions allocated for service provider rewards
 const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.24);
 
+// Fixed price of service provider rewards to be given to Helium Mobile Service Rewards
+pub const HELIUM_MOBILE_SERVICE_REWARD_BONES: u64 = 4_500_000_000;
+
 #[derive(Debug)]
 pub struct TransferRewards {
     reward_scale: Decimal,
