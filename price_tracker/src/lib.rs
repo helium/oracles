@@ -58,8 +58,8 @@ type Prices = HashMap<BlockchainTokenTypeV1, Price>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
-    price_duration_minutes: u64,
-    bucket: BucketSettings,
+    pub price_duration_minutes: u64,
+    pub bucket: BucketSettings,
 }
 
 impl Settings {
