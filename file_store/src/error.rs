@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::{file_info::FileInfoError, gzipped_framed_file::GzippedFramedFileError};
+use crate::{file_info::FileInfoError, rolling_file_sink::RollingFileSinkError};
 
 pub use aws_error::AwsError;
 
@@ -33,7 +33,7 @@ pub enum Error {
     DbError(#[from] sqlx::Error),
 
     #[error("error write data to file on disk: {0}")]
-    FileWriteError(#[from] GzippedFramedFileError),
+    FileWriteError(#[from] RollingFileSinkError),
 
     // Generic error wrapper for external (out of that repository) traits implementations.
     // Not recommended for internal use!

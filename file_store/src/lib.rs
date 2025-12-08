@@ -2,6 +2,7 @@ extern crate tls_init;
 
 mod error;
 mod gzipped_framed_file;
+mod rolling_file_sink;
 mod settings;
 
 pub mod bucket_client;
@@ -18,6 +19,7 @@ pub use error::{AwsError, ChannelError, Error, Result};
 pub use file_info::FileInfo;
 pub use file_sink::{FileSink, FileSinkBuilder};
 pub use gzipped_framed_file::GzippedFramedFile;
+pub use rolling_file_sink::{RollingFileSink, WriteResult};
 pub use settings::{BucketSettings, Settings};
 
 // Client functions

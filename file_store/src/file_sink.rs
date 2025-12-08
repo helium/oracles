@@ -1,8 +1,5 @@
 use crate::error::ChannelError;
-use crate::GzippedFramedFile;
-use crate::{file_upload::FileUpload, Error, Result};
-use bytes::Bytes;
-use chrono::Utc;
+use crate::{file_upload::FileUpload, Error, Result, RollingFileSink, WriteResult};
 use futures::TryFutureExt;
 use metrics::Label;
 use std::time::Duration;
@@ -122,16 +119,17 @@ impl FileSinkBuilder {
         metrics::counter!(client.metric.clone(), vec![OK_LABEL]).increment(1);
 
         let mut sink = FileSink {
-            target_path: self.target_path,
-            tmp_path: self.tmp_path,
-            prefix: self.prefix,
-            max_size: self.max_size,
+            target_path: self.target_path.clone(),
+            rolling_sink: RollingFileSink::new(
+                self.tmp_path,
+                self.prefix,
+                self.max_size,
+                self.roll_time,
+            ),
             file_upload: self.file_upload,
-            roll_time: self.roll_time,
             messages: rx,
             staged_files: Vec::new(),
             auto_commit: self.auto_commit,
-            active_sink: None,
         };
         sink.init().await?;
         Ok((client, sink))
@@ -240,24 +238,13 @@ impl<T> FileSinkClient<T> {
 #[derive(Debug)]
 pub struct FileSink<T> {
     target_path: PathBuf,
-    tmp_path: PathBuf,
-    prefix: String,
-    /// Maximum file size in bytes. If a single write would cause this limit to
-    /// be exceeded, the `active_sink` is rolled.
-    max_size: usize,
-    /// Window within which writes can occur to `active_sink`. `roll_time` is
-    /// not checked during writing, so a file may contain items exceeding the
-    /// window of `roll_time`.
-    roll_time: Duration,
-
+    rolling_sink: RollingFileSink,
     messages: MessageReceiver<T>,
     file_upload: FileUpload,
     staged_files: Vec<PathBuf>,
     /// 'commit' the file to s3 automatically when either the `roll_time` is
     /// surpassed, or `max_size` would be exceeded by an incoming message.
     auto_commit: bool,
-
-    active_sink: Option<GzippedFramedFile>,
 }
 
 impl<T: prost::Message + Send + Sync + 'static> ManagedTask for FileSink<T> {
@@ -272,18 +259,14 @@ impl<T: prost::Message + Send + Sync + 'static> ManagedTask for FileSink<T> {
 impl<T: prost::Message> FileSink<T> {
     async fn init(&mut self) -> Result {
         fs::create_dir_all(&self.target_path).await?;
-        fs::create_dir_all(&self.tmp_path).await?;
+        fs::create_dir_all(self.rolling_sink.dir()).await?;
 
         // Notify all existing completed sinks via file uploads
         let mut dir = fs::read_dir(&self.target_path).await?;
+        let prefix = self.rolling_sink.prefix().to_string();
         loop {
             match dir.next_entry().await {
-                Ok(Some(entry))
-                    if entry
-                        .file_name()
-                        .to_string_lossy()
-                        .starts_with(&self.prefix) =>
-                {
+                Ok(Some(entry)) if entry.file_name().to_string_lossy().starts_with(&prefix) => {
                     self.file_upload.upload_file(&entry.path()).await?;
                 }
                 Ok(None) => break,
@@ -292,15 +275,11 @@ impl<T: prost::Message> FileSink<T> {
         }
 
         // Move any partial previous sink files to the target
-        let mut dir = fs::read_dir(&self.tmp_path).await?;
+        let mut dir = fs::read_dir(self.rolling_sink.dir()).await?;
+        let prefix = self.rolling_sink.prefix().to_string();
         loop {
             match dir.next_entry().await {
-                Ok(Some(entry))
-                    if entry
-                        .file_name()
-                        .to_string_lossy()
-                        .starts_with(&self.prefix) =>
-                {
+                Ok(Some(entry)) if entry.file_name().to_string_lossy().starts_with(&prefix) => {
                     if self.auto_commit {
                         let _ = self.deposit_sink(&entry.path()).await;
                     } else {
@@ -316,9 +295,10 @@ impl<T: prost::Message> FileSink<T> {
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result {
+        let prefix = self.rolling_sink.prefix().to_string();
         tracing::info!(
             "starting file sink {} in {}",
-            self.prefix,
+            prefix,
             self.target_path.display()
         );
 
@@ -332,14 +312,7 @@ impl<T: prost::Message> FileSink<T> {
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
                     Some(Message::Data(on_write_tx, item)) => {
-                        let bytes = bytes::Bytes::from(item.encode_to_vec());
-                        let res = match self.write(bytes).await {
-                            Ok(_) => Ok(()),
-                            Err(err) => {
-                                tracing::error!("failed to store {}: {err:?}", &self.prefix);
-                                Err(err)
-                            }
-                        };
+                        let res = self.write(item).await;
                         let _ = on_write_tx.send(res);
                     }
                     Some(Message::Commit(on_commit_tx)) => {
@@ -356,19 +329,40 @@ impl<T: prost::Message> FileSink<T> {
                 }
             }
         }
-        tracing::info!("stopping file sink {}", &self.prefix);
-        let _ = self.maybe_close_active_sink().await;
+
+        if let Some(closed) = self.rolling_sink.close_current_file_if_exists().await? {
+            // auto_commit files will be uploaded on restart.
+            tracing::info!(
+                path = closed.display().to_string(),
+                auto_commit = self.auto_commit,
+                "existing file cleanup"
+            );
+        }
+
+        tracing::info!("stopping file sink {}", &prefix);
+
         Ok(())
     }
 
-    async fn new_sink(&self) -> Result<GzippedFramedFile> {
-        GzippedFramedFile::new(&self.tmp_path, &self.prefix, Utc::now(), self.max_size)
-            .await
-            .map_err(Error::from)
+    async fn write(&mut self, item: T) -> Result {
+        let buf = Self::encode_msg(item);
+        match self.rolling_sink.write(buf).await? {
+            WriteResult::Wrote => (),
+            WriteResult::Rolled { closed_file } => {
+                if self.auto_commit {
+                    self.deposit_sink(&closed_file).await?;
+                } else {
+                    self.staged_files.push(closed_file);
+                }
+            }
+        }
+        Ok(())
     }
 
-    pub async fn commit(&mut self) -> Result<FileManifest> {
-        self.maybe_close_active_sink().await?;
+    async fn commit(&mut self) -> Result<FileManifest> {
+        if let Some(closed_file) = self.rolling_sink.close_current_file_if_exists().await? {
+            self.staged_files.push(closed_file);
+        }
 
         let mut manifest: FileManifest = Vec::new();
         let staged_files = mem::take(&mut self.staged_files);
@@ -381,8 +375,10 @@ impl<T: prost::Message> FileSink<T> {
         Ok(manifest)
     }
 
-    pub async fn rollback(&mut self) -> Result<FileManifest> {
-        self.maybe_close_active_sink().await?;
+    async fn rollback(&mut self) -> Result<FileManifest> {
+        if let Some(closed_file) = self.rolling_sink.close_current_file_if_exists().await? {
+            self.staged_files.push(closed_file);
+        }
 
         let mut manifest: FileManifest = Vec::new();
         let staged_files = mem::take(&mut self.staged_files);
@@ -395,31 +391,20 @@ impl<T: prost::Message> FileSink<T> {
         Ok(manifest)
     }
 
-    pub async fn maybe_roll(&mut self) -> Result {
-        if let Some(active_sink) = self.active_sink.as_ref() {
-            let time_to_close = active_sink.open_timestamp() + self.roll_time;
-            if time_to_close <= Utc::now() {
-                if self.auto_commit {
-                    self.commit().await?;
-                } else {
-                    self.maybe_close_active_sink().await?;
-                }
+    async fn maybe_roll(&mut self) -> Result {
+        if let Some(closed_file) = self.rolling_sink.maybe_roll().await? {
+            if self.auto_commit {
+                self.deposit_sink(&closed_file).await?;
+            } else {
+                self.staged_files.push(closed_file);
             }
         }
         Ok(())
     }
 
-    async fn maybe_close_active_sink(&mut self) -> Result {
-        if let Some(active_sink) = self.active_sink.take() {
-            let path = active_sink.close().await?;
-            self.staged_files.push(path);
-        }
-
-        Ok(())
-    }
-
     async fn deposit_sink(&mut self, sink_path: &Path) -> Result {
         if !sink_path.exists() {
+            tracing::warn!(?sink_path, "sink path does not exist");
             return Ok(());
         }
         let target_filename = sink_path.file_name().ok_or_else(|| {
@@ -436,34 +421,8 @@ impl<T: prost::Message> FileSink<T> {
         Ok(())
     }
 
-    pub async fn write(&mut self, buf: Bytes) -> Result {
-        let mut active_sink = match self.active_sink.take() {
-            Some(active_sink) if !active_sink.will_fit(&buf) => {
-                // FIXME: self.commit() and self.maybe_close_active_sink() both
-                // expect self.active_sink to have a sink for the taking. If
-                // there is no sink the currnt file is never added to
-                // self.staged_files and will not be uploaded. Until we can add
-                // some tests around this case for safer refactoring, putting
-                // the sink back into place when we know we're about to close it
-                // most closely resembles how this function used to work, when
-                // it was still working.
-                self.active_sink = Some(active_sink);
-
-                if self.auto_commit {
-                    self.commit().await?;
-                } else {
-                    self.maybe_close_active_sink().await?;
-                }
-
-                self.new_sink().await?
-            }
-            Some(active_sink) => active_sink,
-            None => self.new_sink().await?,
-        };
-
-        active_sink.write(buf).await?;
-        self.active_sink = Some(active_sink);
-        Ok(())
+    fn encode_msg(item: T) -> bytes::Bytes {
+        bytes::Bytes::from(item.encode_to_vec())
     }
 }
 
@@ -499,11 +458,13 @@ mod tests {
             sender: file_upload_tx,
         };
 
-        let msg = bytes::Bytes::from(prost::Message::encode_to_vec(&"hello".to_string()));
+        let msg = "hello".to_string();
+        let msg_size = FileSink::encode_msg(msg.clone()).len();
+
         let (_file_sink_client, mut file_sink_server) =
             FileSinkBuilder::new("report", tmp_dir.path(), file_upload, "metric")
                 .auto_commit(true)
-                .max_size(msg.len() + 2) // big enough for one, not for two
+                .max_size(msg_size + 2) // big enough for one, not for two
                 .create::<String>()
                 .await?;
 
