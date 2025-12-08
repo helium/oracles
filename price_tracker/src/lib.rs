@@ -7,7 +7,6 @@ use helium_proto::{BlockchainTokenTypeV1, Message, PriceReportV1};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use task_manager::ManagedTask;
-use tokio;
 use tokio::sync::{mpsc, watch};
 
 #[derive(thiserror::Error, Debug)]
