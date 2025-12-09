@@ -23,7 +23,6 @@ use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, ops::Range};
-use std::fmt::Formatter;
 use uuid::Uuid;
 
 mod radio_reward_v2;
@@ -578,20 +577,6 @@ fn eligible_for_coverage_map(
         }
     }
     true
-}
-
-pub enum ServiceProviderRewardType {
-    Network,
-    Subscriber,
-}
-
-impl std::fmt::Display for ServiceProviderRewardType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ServiceProviderRewardType::Subscriber => f.write_str("Helium Mobile Service Rewards"),
-            ServiceProviderRewardType::Network => f.write_str("Helium Mobile"),
-        }
-    }
 }
 
 #[cfg(test)]

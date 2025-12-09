@@ -257,7 +257,7 @@ async fn fails_on_unknown_service_provider(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn defaults_to_helium_mobile_for_unknown_sp_reward_type(pool: PgPool) -> anyhow::Result<()> {
+async fn default_to_helium_mobile_for_unknown_sp_reward_type(pool: PgPool) -> anyhow::Result<()> {
     let rewards = bytes_mut_stream(vec![MobileRewardShare {
         start_period: Utc::now().timestamp_millis() as u64,
         end_period: Utc::now().timestamp_millis() as u64,

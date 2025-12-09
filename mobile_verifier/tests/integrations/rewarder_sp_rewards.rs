@@ -4,10 +4,9 @@ use helium_proto::{
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-
+use file_store_oracles::service_provider_reward_type::ServiceProviderRewardType;
 use crate::common::{self, reward_info_24_hours};
 use mobile_verifier::{reward_shares, rewarder};
-use mobile_verifier::reward_shares::ServiceProviderRewardType;
 
 #[sqlx::test]
 async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
