@@ -18,7 +18,7 @@ use db_store::meta;
 use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
 use file_store_oracles::{
     network_common::service_provider_reward_type::ServiceProviderRewardType,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt}
+    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
 };
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;

@@ -280,7 +280,7 @@ async fn default_to_helium_mobile_for_unknown_sp_reward_type(pool: PgPool) -> an
         &ServiceProvider::HeliumMobile.to_string(),
         RewardType::MobileServiceProvider,
     )
-        .await?;
+    .await?;
     assert_eq!(reward.rewards, 1);
 
     Ok(())

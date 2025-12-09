@@ -24,7 +24,7 @@ impl FromStr for ServiceProviderRewardType {
             "Helium Mobile" => Ok(ServiceProviderRewardType::Network),
             unknown => Err(prost::DecodeError::new(format!(
                 "unknown service provider reward type: {unknown}"
-            )))
+            ))),
         }
     }
 }

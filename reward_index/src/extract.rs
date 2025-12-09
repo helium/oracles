@@ -1,12 +1,12 @@
-use std::str::FromStr;
 use crate::{
     indexer::{RewardKey, RewardType},
     settings,
 };
+use std::str::FromStr;
 
 use anyhow::Result;
-use helium_crypto::PublicKeyBinary;
 use file_store_oracles::service_provider_reward_type::ServiceProviderRewardType;
+use helium_crypto::PublicKeyBinary;
 pub mod proto {
     pub use helium_proto::{
         services::{
@@ -83,7 +83,7 @@ pub fn mobile_reward(
                     Ok(ServiceProviderRewardType::Network) => {
                         RewardType::MobileServiceProviderNetwork
                     }
-                    Err(_) => RewardType::MobileServiceProvider
+                    Err(_) => RewardType::MobileServiceProvider,
                 };
 
             Ok((
