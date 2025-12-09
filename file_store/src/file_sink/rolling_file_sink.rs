@@ -1,13 +1,14 @@
-use crate::{gzipped_framed_file::GzippedFramedFileError, GzippedFramedFile};
 use bytes::Bytes;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
 
+use crate::{GzippedFramedFile, GzippedFramedFileError};
+
 #[derive(Debug)]
-pub enum WriteResult {
+pub enum RollingFileWriteResult {
     Wrote,
     Rolled { closed_file: PathBuf },
 }
@@ -23,10 +24,10 @@ pub struct RollingFileSink {
 
 #[derive(thiserror::Error, Debug)]
 pub enum RollingFileSinkError {
-    #[error("")]
+    #[error("no active file")]
     NoActiveFile,
 
-    #[error("")]
+    #[error("gzipped framed file error: {0}")]
     Sink(#[from] GzippedFramedFileError),
 }
 
@@ -51,36 +52,35 @@ impl RollingFileSink {
         &self.prefix
     }
 
-    pub async fn write(&mut self, buf: Bytes) -> Result<WriteResult> {
+    pub async fn write(&mut self, buf: Bytes) -> Result<RollingFileWriteResult> {
         self._write(buf).await.inspect(|err| {
             tracing::error!(?err, prefix = self.prefix, "write error");
         })
     }
 
-    async fn _write(&mut self, buf: Bytes) -> Result<WriteResult> {
+    async fn _write(&mut self, buf: Bytes) -> Result<RollingFileWriteResult> {
         match self.should_roll_file(&buf) {
             true => {
                 let closed_file = self.close_current_file().await?;
                 self.get_writer().await?.write(buf).await?;
 
-                Ok(WriteResult::Rolled { closed_file })
+                Ok(RollingFileWriteResult::Rolled { closed_file })
             }
             false => {
                 self.get_writer().await?.write(buf).await?;
 
-                Ok(WriteResult::Wrote)
+                Ok(RollingFileWriteResult::Wrote)
             }
         }
     }
 
-    pub async fn maybe_roll(&mut self) -> Result<Option<PathBuf>> {
-        if let Some(file) = &self.current_file {
+    pub fn should_close(&self, now: DateTime<Utc>) -> bool {
+        if let Some(ref file) = self.current_file {
             let time_to_close = file.open_timestamp() + self.roll_time;
-            if time_to_close <= Utc::now() {
-                return Ok(Some(self.close_current_file().await?));
-            }
+            return time_to_close <= now;
         }
-        Ok(None)
+
+        false
     }
 
     pub async fn close_current_file(&mut self) -> Result<PathBuf> {
@@ -117,7 +117,7 @@ impl RollingFileSink {
     fn should_roll_file(&self, buf: &Bytes) -> bool {
         self.current_file
             .as_ref()
-            .map(|f| !f.will_fit(&buf))
+            .map(|f| !f.will_fit(buf))
             .unwrap_or(false)
     }
 }

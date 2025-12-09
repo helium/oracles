@@ -1,4 +1,4 @@
-use crate::{error::ChannelError, traits::MsgDecode, BucketClient, Error, FileInfo, Result};
+use crate::{traits::MsgDecode, BucketClient, Error, FileInfo, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
@@ -8,6 +8,7 @@ use retainer::Cache;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc, time::Duration};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tracing::instrument;
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: Duration = Duration::from_secs(DEFAULT_POLL_DURATION_SECS as u64);
@@ -254,10 +255,44 @@ where
     Parser: FileInfoPollerParser<Message>,
     Store: FileInfoPollerStore + Send + Sync + 'static,
 {
-    async fn get_next_file(&mut self) -> Result<FileInfo> {
+    #[instrument(skip(self), fields(r#type = self.config.prefix, self.config.process_name))]
+    async fn run(mut self, shutdown: triggered::Listener) -> Result {
+        let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
+
+        tracing::info!("starting FileInfoPoller",);
+
+        loop {
+            tokio::select! {
+                biased;
+                _ = shutdown.clone() => {
+                    tracing::info!("shutting down");
+                    break;
+                }
+                _ = cleanup_trigger.tick() => {
+                    self.clean(&self.cache).await?;
+                }
+                next_file = self.get_next_file() => {
+                    self.handle_next_file(next_file?).await?;
+                }
+            }
+        }
+
+        tracing::info!("stopping FileInfoPoller");
+
+        Ok(())
+    }
+
+    async fn get_next_file(
+        &mut self,
+    ) -> Result<(
+        tokio::sync::mpsc::OwnedPermit<FileInfoStream<Message>>,
+        FileInfo,
+    )> {
         loop {
             if let Some(file_info) = self.file_queue.pop_front() {
-                return Ok(file_info);
+                // Wait for a spot once we have some files to send.
+                let permit = self.reserve_next_spot().await?;
+                return Ok((permit, file_info));
             }
 
             let after = self.after(self.latest_file_timestamp);
@@ -281,37 +316,33 @@ where
         }
     }
 
-    async fn run(mut self, shutdown: triggered::Listener) -> Result {
-        let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
-        let process_name = self.config.process_name.clone();
-        let prefix = self.config.prefix.clone();
+    async fn reserve_next_spot(
+        &self,
+    ) -> std::result::Result<tokio::sync::mpsc::OwnedPermit<FileInfoStream<Message>>, Error> {
+        let x = self
+            .sender
+            .clone()
+            .reserve_owned()
+            .map_err(|_| Error::poller_send_error(&self.config.prefix, &self.config.process_name))
+            .await;
+        x
+    }
 
-        tracing::info!(
-            r#type = self.config.prefix,
-            %process_name,
-            "starting FileInfoPoller",
-        );
+    async fn handle_next_file(
+        &mut self,
+        (permit, file): (
+            tokio::sync::mpsc::OwnedPermit<FileInfoStream<Message>>,
+            FileInfo,
+        ),
+    ) -> Result {
+        let byte_stream = self.config.store.get_raw(file.clone()).await?;
+        let data = self.config.parser.parse(byte_stream).await?;
+        let file_info_stream =
+            FileInfoStream::new(self.config.process_name.clone(), file.clone(), data);
 
-        let sender = self.sender.clone();
-        loop {
-            tokio::select! {
-                biased;
-                _ = shutdown.clone() => {
-                    tracing::info!(r#type = self.config.prefix, %process_name, "stopping FileInfoPoller");
-                    break;
-                }
-                _ = cleanup_trigger.tick() => self.clean(&self.cache).await?,
-                result = futures::future::try_join(sender.reserve().map_err(|_| ChannelError::poller_send_error(&prefix, &process_name)), self.get_next_file()) => {
-                    let (permit, file) = result?;
-                    let byte_stream = self.config.store.get_raw(file.clone()).await?;
-                    let data = self.config.parser.parse(byte_stream).await?;
-                    let file_info_stream = FileInfoStream::new(process_name.clone(), file.clone(), data);
+        permit.send(file_info_stream);
+        cache_file(&self.cache, &file).await;
 
-                    permit.send(file_info_stream);
-                    cache_file(&self.cache, &file).await;
-                }
-            }
-        }
         Ok(())
     }
 

@@ -3,7 +3,7 @@ use std::{path::Path, time::Duration};
 use file_store::{
     file_sink::{FileSinkClient, DEFAULT_SINK_ROLL_SECS},
     file_upload::FileUpload,
-    FileSink, FileSinkBuilder, Result,
+    FileSinkBuilder, FileSinkServer, Result,
 };
 use helium_proto::{
     self as proto,
@@ -44,7 +44,7 @@ where
         commit_strategy: FileSinkCommitStrategy,
         roll_time: FileSinkRollTime,
         metric_prefix: &str,
-    ) -> Result<(FileSinkClient<Self>, FileSink<Self>)> {
+    ) -> Result<(FileSinkClient<Self>, FileSinkServer<Self>)> {
         let builder = FileSinkBuilder::new(
             Self::FILE_PREFIX.to_string(),
             target_path,

@@ -1,8 +1,6 @@
-use std::path::{Path, PathBuf};
-
 use thiserror::Error;
 
-use crate::{file_info::FileInfoError, rolling_file_sink::RollingFileSinkError};
+use crate::file_info::FileInfoError;
 
 pub use aws_error::AwsError;
 
@@ -22,18 +20,15 @@ pub enum Error {
     #[error("aws error: {0}")]
     Aws(#[from] AwsError),
 
-    #[error("channel error: {0}")]
-    Channel(#[from] ChannelError),
-
     #[error("error building file info poller: {0}")]
     FileInfoPollerError(#[from] crate::file_info_poller::FileInfoPollerConfigBuilderError),
+
+    #[error("failed to send {prefix} for process {process}")]
+    PollerSendError { prefix: String, process: String },
 
     #[cfg(feature = "sqlx-postgres")]
     #[error("db error")]
     DbError(#[from] sqlx::Error),
-
-    #[error("error write data to file on disk: {0}")]
-    FileWriteError(#[from] RollingFileSinkError),
 
     // Generic error wrapper for external (out of that repository) traits implementations.
     // Not recommended for internal use!
@@ -41,45 +36,12 @@ pub enum Error {
     ExternalError(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum ChannelError {
-    #[error("failed to send {prefix} for process {process}")]
-    PollerSendError { prefix: String, process: String },
-
-    #[error("channel closed sink {name}")]
-    SinkClosed { name: String },
-
-    #[error("timeout for sink {name}")]
-    SinkTimeout { name: String },
-
-    #[error("channel closed for upload {path}")]
-    UploadClosed { path: PathBuf },
-}
-
-impl ChannelError {
-    pub fn poller_send_error(prefix: &str, process: &str) -> Error {
-        Error::Channel(Self::PollerSendError {
+impl Error {
+    pub fn poller_send_error(prefix: &str, process_name: &str) -> Self {
+        Self::PollerSendError {
             prefix: prefix.to_owned(),
-            process: process.to_owned(),
-        })
-    }
-
-    pub fn sink_closed(name: &str) -> Error {
-        Error::Channel(Self::SinkClosed {
-            name: name.to_owned(),
-        })
-    }
-
-    pub fn sink_timeout(name: &str) -> Error {
-        Error::Channel(Self::SinkTimeout {
-            name: name.to_owned(),
-        })
-    }
-
-    pub fn upload_closed(path: &Path) -> Error {
-        Error::Channel(Self::UploadClosed {
-            path: path.to_owned(),
-        })
+            process: process_name.to_owned(),
+        }
     }
 }
 

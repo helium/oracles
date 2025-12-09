@@ -1,5 +1,5 @@
-use crate::{error::ChannelError, BucketClient, Result};
-use futures::{StreamExt, TryFutureExt};
+use crate::BucketClient;
+use futures::StreamExt;
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -15,9 +15,10 @@ pub fn message_channel() -> (MessageSender, MessageReceiver) {
     mpsc::unbounded_channel()
 }
 
-pub async fn upload_file(tx: &MessageSender, file: &Path) -> Result {
-    tx.send(file.to_path_buf())
-        .map_err(|_| ChannelError::upload_closed(file))
+#[derive(thiserror::Error, Debug)]
+pub enum FileUploadClientError {
+    #[error("upload channel closed: {0}")]
+    ChannelClosed(PathBuf),
 }
 
 #[derive(Debug, Clone)]
@@ -48,10 +49,10 @@ impl FileUpload {
         Self::new(bucket_client.client.clone(), bucket_client.bucket.clone()).await
     }
 
-    pub async fn upload_file(&self, file: &Path) -> Result {
+    pub async fn upload_file(&self, file: &Path) -> std::result::Result<(), FileUploadClientError> {
         self.sender
             .send(file.to_path_buf())
-            .map_err(|_| ChannelError::upload_closed(file))
+            .map_err(|_| FileUploadClientError::ChannelClosed(file.to_path_buf()))
     }
 }
 
@@ -60,12 +61,17 @@ impl ManagedTask for FileUploadServer {
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> task_manager::TaskLocalBoxFuture {
-        task_manager::spawn(self.run(shutdown).err_into())
+        // This was written in a way where every error is handled. Let's not
+        // have it return a Result when it will not fail.
+        task_manager::spawn(async move {
+            self.run(shutdown).await;
+            Ok(())
+        })
     }
 }
 
 impl FileUploadServer {
-    pub async fn run(self, shutdown: triggered::Listener) -> Result {
+    pub async fn run(self, shutdown: triggered::Listener) {
         tracing::info!("starting file uploader {}", self.bucket);
 
         let client = &self.client;
@@ -117,6 +123,5 @@ impl FileUploadServer {
         }
 
         tracing::info!("stopping file uploader {}", self.bucket);
-        Ok(())
     }
 }

@@ -320,7 +320,7 @@ where
                 RewardManifest {
                     start_timestamp: reward_info.epoch_period.start.encode_timestamp(),
                     end_timestamp: reward_info.epoch_period.end.encode_timestamp(),
-                    written_files,
+                    written_files: written_files.into_inner(),
                     reward_data: Some(MobileRewardData(reward_data)),
                     epoch: reward_info.epoch_day,
                     price: price_info.price_in_bones,
