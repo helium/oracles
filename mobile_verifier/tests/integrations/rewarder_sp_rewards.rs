@@ -1,5 +1,5 @@
 use helium_proto::{
-    services::poc_mobile::UnallocatedRewardType, ServiceProvider, ServiceProviderRewardType,
+    services::poc_mobile::UnallocatedRewardType, ServiceProvider,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -7,6 +7,7 @@ use sqlx::PgPool;
 
 use crate::common::{self, reward_info_24_hours};
 use mobile_verifier::{reward_shares, rewarder};
+use mobile_verifier::reward_shares::ServiceProviderRewardType;
 
 #[sqlx::test]
 async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
@@ -29,7 +30,7 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
     );
     assert_eq!(
         subscriber_reward.service_provider_reward_type,
-        ServiceProviderRewardType::Subscriber as i32
+        ServiceProviderRewardType::Subscriber.to_string()
     );
     assert_eq!(
         reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES,
@@ -44,7 +45,7 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
     );
     assert_eq!(
         network_reward.service_provider_reward_type,
-        ServiceProviderRewardType::Network as i32
+        ServiceProviderRewardType::Network.to_string()
     );
 
     // confirm the total rewards allocated matches expectations

@@ -3504,7 +3504,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fsplit-service-provider-rewards#4d5a0ba5bb84dfe37ab706d8747650f8aca3e61e"
+source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fsplit-service-provider-rewards#911cfb8e2b98dcfe3179ab390c44242c4486559a"
 dependencies = [
  "bytes",
  "msg-signature",
@@ -5098,7 +5098,7 @@ dependencies = [
 [[package]]
 name = "msg-signature"
 version = "0.1.0"
-source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fsplit-service-provider-rewards#4d5a0ba5bb84dfe37ab706d8747650f8aca3e61e"
+source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fsplit-service-provider-rewards#911cfb8e2b98dcfe3179ab390c44242c4486559a"
 dependencies = [
  "msg-signature-macro",
 ]
@@ -5106,7 +5106,7 @@ dependencies = [
 [[package]]
 name = "msg-signature-macro"
 version = "0.1.0"
-source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fsplit-service-provider-rewards#4d5a0ba5bb84dfe37ab706d8747650f8aca3e61e"
+source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fsplit-service-provider-rewards#911cfb8e2b98dcfe3179ab390c44242c4486559a"
 dependencies = [
  "quote",
  "syn 2.0.106",

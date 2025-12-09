@@ -5,7 +5,7 @@ use helium_proto::{
         mobile_reward_share, GatewayReward, MobileRewardShare, PromotionReward, RadioRewardV2,
         ServiceProviderReward, SubscriberReward, UnallocatedReward, UnallocatedRewardType,
     },
-    ServiceProvider, ServiceProviderRewardType,
+    ServiceProvider,
 };
 use reward_index::indexer::{handle_mobile_rewards, RewardType};
 use sqlx::PgPool;
@@ -212,7 +212,7 @@ async fn service_provider_reward(pool: PgPool) -> anyhow::Result<()> {
             ServiceProviderReward {
                 service_provider_id: ServiceProvider::HeliumMobile.into(),
                 amount: 1,
-                service_provider_reward_type: ServiceProviderRewardType::Network.into(),
+                service_provider_reward_type: "Helium Mobile Service Rewards".into(),
             },
         )),
     }]);
@@ -225,7 +225,7 @@ async fn service_provider_reward(pool: PgPool) -> anyhow::Result<()> {
     let reward = common::get_reward(
         &pool,
         &ServiceProvider::HeliumMobile.to_string(),
-        RewardType::MobileServiceProviderNetwork,
+        RewardType::MobileServiceProviderSubscriber,
     )
     .await?;
     assert_eq!(reward.rewards, 1);
@@ -242,7 +242,7 @@ async fn fails_on_unknown_service_provider(pool: PgPool) -> anyhow::Result<()> {
             ServiceProviderReward {
                 service_provider_id: 999,
                 amount: 1,
-                service_provider_reward_type: ServiceProviderRewardType::Network.into(),
+                service_provider_reward_type: "Helium Mobile Service Rewards".into(),
             },
         )),
     }]);
@@ -252,6 +252,36 @@ async fn fails_on_unknown_service_provider(pool: PgPool) -> anyhow::Result<()> {
     let res = handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &manifest_time).await;
 
     assert!(res.is_err());
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn defaults_to_helium_mobile_for_unknown_sp_reward_type(pool: PgPool) -> anyhow::Result<()> {
+    let rewards = bytes_mut_stream(vec![MobileRewardShare {
+        start_period: Utc::now().timestamp_millis() as u64,
+        end_period: Utc::now().timestamp_millis() as u64,
+        reward: Some(mobile_reward_share::Reward::ServiceProviderReward(
+            ServiceProviderReward {
+                service_provider_id: ServiceProvider::HeliumMobile.into(),
+                amount: 1,
+                service_provider_reward_type: "Unknown".into(),
+            },
+        )),
+    }]);
+
+    let mut txn = pool.begin().await?;
+    let manifest_time = Utc::now();
+    handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &manifest_time).await?;
+    txn.commit().await?;
+
+    let reward = common::get_reward(
+        &pool,
+        &ServiceProvider::HeliumMobile.to_string(),
+        RewardType::MobileServiceProvider,
+    )
+        .await?;
+    assert_eq!(reward.rewards, 1);
 
     Ok(())
 }

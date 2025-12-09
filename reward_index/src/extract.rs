@@ -5,7 +5,6 @@ use crate::{
 
 use anyhow::Result;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::ServiceProviderRewardType;
 
 pub mod proto {
     pub use helium_proto::{
@@ -76,14 +75,14 @@ pub fn mobile_reward(
                 .map_err(|_| ExtractError::ServiceProviderDecode(r.service_provider_id))?;
 
             let sp_reward_type =
-                match ServiceProviderRewardType::try_from(r.service_provider_reward_type) {
-                    Ok(ServiceProviderRewardType::Subscriber) => {
+                match r.service_provider_reward_type.as_str() {
+                    "Helium Mobile Service Rewards" => {
                         RewardType::MobileServiceProviderSubscriber
                     }
-                    Ok(ServiceProviderRewardType::Network) => {
+                    "Helium Mobile" => {
                         RewardType::MobileServiceProviderNetwork
                     }
-                    _ => RewardType::MobileServiceProvider,
+                    _ => RewardType::MobileServiceProvider
                 };
 
             Ok((

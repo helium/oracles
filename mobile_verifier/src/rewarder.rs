@@ -19,7 +19,7 @@ use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::Tim
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
-use crate::reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES;
+use crate::reward_shares::{ServiceProviderRewardType, HELIUM_MOBILE_SERVICE_REWARD_BONES};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -27,7 +27,7 @@ use helium_proto::{
         UnallocatedReward, UnallocatedRewardType,
     },
     MobileRewardData as ManifestMobileRewardData, MobileRewardToken, RewardManifest,
-    ServiceProvider, ServiceProviderRewardType,
+    ServiceProvider,
 };
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
@@ -579,7 +579,7 @@ async fn write_service_provider_reward(
             proto::ServiceProviderReward {
                 service_provider_id: service_provider_id.into(),
                 amount: reward_amount,
-                service_provider_reward_type: service_provider_reward_type as i32,
+                service_provider_reward_type: service_provider_reward_type.to_string(),
             },
         )),
     };
