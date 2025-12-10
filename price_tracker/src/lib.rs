@@ -22,14 +22,10 @@ pub enum PriceTrackerError {
     PriceNotAvailable,
     #[error("price too old, price timestamp: {0}")]
     PriceTooOld(DateTime<Utc>),
-    #[error("tokio join error")]
-    JoinError(#[from] tokio::task::JoinError),
     #[error("file store error")]
     FileStoreError(#[from] file_store::Error),
     #[error("proto decode error")]
     DecodeError(#[from] helium_proto::DecodeError),
-    #[error("killed due to {0}")]
-    KilledError(String),
     #[error("error sending over mpsc channel")]
     SendError(#[from] mpsc::error::SendError<String>),
 }
