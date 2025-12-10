@@ -2,10 +2,8 @@ use crate::{
     indexer::{RewardKey, RewardType},
     settings,
 };
-use std::str::FromStr;
 
 use anyhow::Result;
-use file_store_oracles::service_provider_reward_type::ServiceProviderRewardType;
 use helium_crypto::PublicKeyBinary;
 pub mod proto {
     pub use helium_proto::{
@@ -75,21 +73,16 @@ pub fn mobile_reward(
             let sp = ServiceProvider::try_from(r.service_provider_id)
                 .map_err(|_| ExtractError::ServiceProviderDecode(r.service_provider_id))?;
 
-            let sp_reward_type =
-                match ServiceProviderRewardType::from_str(&r.service_provider_reward_type) {
-                    Ok(ServiceProviderRewardType::Subscriber) => {
-                        RewardType::MobileServiceProviderSubscriber
-                    }
-                    Ok(ServiceProviderRewardType::Network) => {
-                        RewardType::MobileServiceProviderNetwork
-                    }
-                    Err(_) => RewardType::MobileServiceProvider,
-                };
+            #[allow(unreachable_patterns)]
+            let sp_key = match sp {
+                ServiceProvider::HeliumMobile => r.service_provider_reward_type,
+                _ => sp.to_string(),
+            };
 
             Ok((
                 RewardKey {
-                    key: sp.to_string(),
-                    reward_type: sp_reward_type,
+                    key: sp_key,
+                    reward_type: RewardType::MobileServiceProvider,
                 },
                 r.amount,
             ))
