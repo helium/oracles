@@ -56,10 +56,9 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
     );
 
     // confirm the rewarded percentage amount matches expectations
-    let percent =
-        (Decimal::from(network_reward.amount + subscriber_reward.amount)
-            / reward_info.epoch_emissions)
-            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+    let percent = (Decimal::from(network_reward.amount + subscriber_reward.amount)
+        / reward_info.epoch_emissions)
+        .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     assert_eq!(percent, dec!(0.24));
 
     // Verify no unallocated service provider rewards
@@ -100,10 +99,7 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
         subscriber_reward.service_provider_reward_type,
         ServiceProviderRewardType::Subscriber.to_string()
     );
-    assert_eq!(
-        8_400_000_000,
-        subscriber_reward.amount
-    );
+    assert_eq!(8_400_000_000, subscriber_reward.amount);
 
     // Network reward should be 0 as Subscriber wallet received the full reward amount
     let network_reward = rewards.sp_rewards.get(1).expect("sp reward");
@@ -115,10 +111,7 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
         network_reward.service_provider_reward_type,
         ServiceProviderRewardType::Network.to_string()
     );
-    assert_eq!(
-        0,
-        network_reward.amount
-    );
+    assert_eq!(0, network_reward.amount);
 
     Ok(())
 }

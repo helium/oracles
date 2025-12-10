@@ -22,7 +22,9 @@ use file_store_oracles::{
 };
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
-use crate::reward_shares::{get_reward_amount_for_helium_mobile_network, get_reward_amount_for_helium_mobile_subscriber};
+use crate::reward_shares::{
+    get_reward_amount_for_helium_mobile_network, get_reward_amount_for_helium_mobile_subscriber,
+};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
