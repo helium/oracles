@@ -576,20 +576,6 @@ impl std::fmt::Display for ServiceProviderRewardType {
     }
 }
 
-impl FromStr for ServiceProviderRewardType {
-    type Err = prost::DecodeError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Helium Mobile Service Rewards" => Ok(ServiceProviderRewardType::Subscriber),
-            "Helium Mobile" => Ok(ServiceProviderRewardType::Network),
-            unknown => Err(prost::DecodeError::new(format!(
-                "unknown service provider reward type: {unknown}"
-            ))),
-        }
-    }
-}
-
 fn eligible_for_coverage_map(
     oracle_boosting_status: OracleBoostingStatus,
     speedtests: &[Speedtest],
