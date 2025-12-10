@@ -22,6 +22,7 @@ use mobile_config::{boosted_hex_info::BoostedHexes, sub_dao_epoch_reward_info::E
 use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+use std::fmt::Formatter;
 use std::{collections::HashMap, ops::Range};
 use uuid::Uuid;
 
@@ -559,6 +560,34 @@ pub fn get_reward_amount_for_helium_mobile_subscriber(sp_reward_amount: u64) -> 
 pub fn get_reward_amount_for_helium_mobile_network(sp_reward_amount: u64) -> u64 {
     // Ensures that a negative amount cannot be rewarded
     sp_reward_amount.saturating_sub(HELIUM_MOBILE_SERVICE_REWARD_BONES)
+}
+
+pub enum ServiceProviderRewardType {
+    Network,
+    Subscriber,
+}
+
+impl std::fmt::Display for ServiceProviderRewardType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ServiceProviderRewardType::Subscriber => f.write_str("Helium Mobile Service Rewards"),
+            ServiceProviderRewardType::Network => f.write_str("Helium Mobile"),
+        }
+    }
+}
+
+impl FromStr for ServiceProviderRewardType {
+    type Err = prost::DecodeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Helium Mobile Service Rewards" => Ok(ServiceProviderRewardType::Subscriber),
+            "Helium Mobile" => Ok(ServiceProviderRewardType::Network),
+            unknown => Err(prost::DecodeError::new(format!(
+                "unknown service provider reward type: {unknown}"
+            ))),
+        }
+    }
 }
 
 fn eligible_for_coverage_map(

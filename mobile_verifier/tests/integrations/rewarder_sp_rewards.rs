@@ -1,6 +1,6 @@
 use crate::common::{self, reward_info_24_hours};
-use file_store_oracles::service_provider_reward_type::ServiceProviderRewardType;
 use helium_proto::{services::poc_mobile::UnallocatedRewardType, ServiceProvider};
+use mobile_verifier::reward_shares::ServiceProviderRewardType;
 use mobile_verifier::{reward_shares, rewarder};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;

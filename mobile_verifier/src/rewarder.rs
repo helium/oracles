@@ -16,14 +16,12 @@ use anyhow::bail;
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::TimestampEncode};
-use file_store_oracles::{
-    network_common::service_provider_reward_type::ServiceProviderRewardType,
-    traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt},
-};
+use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
 use crate::reward_shares::{
     get_reward_amount_for_helium_mobile_network, get_reward_amount_for_helium_mobile_subscriber,
+    ServiceProviderRewardType,
 };
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
