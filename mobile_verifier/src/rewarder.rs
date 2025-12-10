@@ -22,7 +22,7 @@ use file_store_oracles::{
 };
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
-use crate::reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES;
+use crate::reward_shares::{get_reward_amount_for_helium_mobile_network, get_reward_amount_for_helium_mobile_subscriber};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -517,18 +517,17 @@ pub async fn reward_service_providers(
     write_service_provider_reward(
         &mobile_rewards,
         reward_info,
-        HELIUM_MOBILE_SERVICE_REWARD_BONES,
+        get_reward_amount_for_helium_mobile_subscriber(sp_reward_amount),
         ServiceProvider::HeliumMobile,
         ServiceProviderRewardType::Subscriber,
     )
     .await?;
 
     // Remaining rewards goes to HeliumMobile Network Wallet
-    let remaining_reward_amount = sp_reward_amount - HELIUM_MOBILE_SERVICE_REWARD_BONES;
     write_service_provider_reward(
         &mobile_rewards,
         reward_info,
-        remaining_reward_amount,
+        get_reward_amount_for_helium_mobile_network(sp_reward_amount),
         ServiceProvider::HeliumMobile,
         ServiceProviderRewardType::Network,
     )

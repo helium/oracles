@@ -551,6 +551,16 @@ pub fn get_scheduled_tokens_for_service_providers(total_emission_pool: Decimal) 
     total_emission_pool * SERVICE_PROVIDER_PERCENT
 }
 
+pub fn get_reward_amount_for_helium_mobile_subscriber(sp_reward_amount: u64) -> u64 {
+    // Return the smaller of the two amounts
+    std::cmp::min(sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES)
+}
+
+pub fn get_reward_amount_for_helium_mobile_network(sp_reward_amount: u64) -> u64 {
+    // Ensures that a negative amount cannot be rewarded
+    sp_reward_amount.saturating_sub(HELIUM_MOBILE_SERVICE_REWARD_BONES)
+}
+
 fn eligible_for_coverage_map(
     oracle_boosting_status: OracleBoostingStatus,
     speedtests: &[Speedtest],

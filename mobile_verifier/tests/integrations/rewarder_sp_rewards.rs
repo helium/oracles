@@ -74,3 +74,51 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[sqlx::test]
+async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> anyhow::Result<()> {
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+
+    let mut reward_info = reward_info_24_hours();
+    // Total reward amount of 350 HNT
+    reward_info.epoch_emissions = Decimal::from(35_000_000_000u64);
+
+    rewarder::reward_service_providers(mobile_rewards_client, &reward_info).await?;
+
+    let rewards = mobile_rewards.finish().await?;
+
+    // Verify two ServiceProviderRewards
+    assert_eq!(rewards.sp_rewards.len(), 2);
+
+    // Subscriber reward should be clamped to 84 HNT (24% of 350HNT)
+    let subscriber_reward = rewards.sp_rewards.first().expect("sp reward");
+    assert_eq!(
+        subscriber_reward.service_provider_id,
+        ServiceProvider::HeliumMobile as i32
+    );
+    assert_eq!(
+        subscriber_reward.service_provider_reward_type,
+        ServiceProviderRewardType::Subscriber.to_string()
+    );
+    assert_eq!(
+        8_400_000_000,
+        subscriber_reward.amount
+    );
+
+    // Network reward should be 0 as Subscriber wallet received the full reward amount
+    let network_reward = rewards.sp_rewards.get(1).expect("sp reward");
+    assert_eq!(
+        network_reward.service_provider_id,
+        ServiceProvider::HeliumMobile as i32
+    );
+    assert_eq!(
+        network_reward.service_provider_reward_type,
+        ServiceProviderRewardType::Network.to_string()
+    );
+    assert_eq!(
+        0,
+        network_reward.amount
+    );
+
+    Ok(())
+}
