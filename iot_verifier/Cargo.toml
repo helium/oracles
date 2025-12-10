@@ -55,6 +55,7 @@ file-store-oracles = { path = "../file_store_oracles" }
 iot-config = { path = "../iot_config" }
 poc-metrics = { path = "../metrics" }
 price = { path = "../price" }
+price-tracker = { path = "../price_tracker" }
 reward-scheduler = { path = "../reward_scheduler" }
 solana = { path = "../solana" }
 task-manager = { path = "../task_manager" }

@@ -1,0 +1,26 @@
+[package]
+name = "price-tracker"
+version = "0.1.0"
+description = "Price tracking library for the Helium Network"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
+helium-proto = { workspace = true }
+triggered = { workspace = true }
+async-trait = { workspace = true }
+
+file-store = { path = "../file_store" }
+file-store-oracles = { path = "../file_store_oracles" }
+task-manager = { path = "../task_manager" }
+
+[dev-dependencies]
+aws-local = { path = "../aws_local" }

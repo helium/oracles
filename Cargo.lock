@@ -4268,6 +4268,7 @@ dependencies = [
  "metrics",
  "poc-metrics",
  "price",
+ "price-tracker",
  "prost",
  "rand 0.8.5",
  "retainer",
@@ -5067,6 +5068,7 @@ dependencies = [
  "mobile-config",
  "poc-metrics",
  "price",
+ "price-tracker",
  "proptest",
  "prost",
  "rand 0.8.5",
@@ -5836,6 +5838,26 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
+name = "price-tracker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-local",
+ "chrono",
+ "file-store",
+ "file-store-oracles",
+ "futures",
+ "helium-proto",
+ "serde",
+ "task-manager",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
  "triggered",
 ]
 

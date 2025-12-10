@@ -21,7 +21,7 @@ use iot_verifier::{
     packet_loader, purger, rewarder::Rewarder, runner, telemetry,
     tx_scaler::Server as DensityScaler, witness_updater::WitnessUpdater, Settings,
 };
-use price::PriceTracker;
+use price_tracker::PriceTracker;
 use std::{path, time::Duration};
 use task_manager::TaskManager;
 

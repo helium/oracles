@@ -20,7 +20,7 @@ use iot_config::{
     sub_dao_epoch_reward_info::EpochRewardInfo,
     EpochInfo,
 };
-use price::PriceTracker;
+use price_tracker::{PriceProvider, PriceTracker};
 use reward_scheduler::Scheduler;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
