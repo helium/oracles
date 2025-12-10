@@ -212,7 +212,7 @@ async fn service_provider_reward(pool: PgPool) -> anyhow::Result<()> {
             ServiceProviderReward {
                 service_provider_id: ServiceProvider::HeliumMobile.into(),
                 amount: 1,
-                service_provider_reward_type: "Helium Mobile Service Rewards".into(),
+                rewardable_entity_key: "Helium Mobile Service Rewards".into(),
             },
         )),
     }]);
@@ -242,7 +242,7 @@ async fn fails_on_unknown_service_provider(pool: PgPool) -> anyhow::Result<()> {
             ServiceProviderReward {
                 service_provider_id: 999,
                 amount: 1,
-                service_provider_reward_type: "Helium Mobile Service Rewards".into(),
+                rewardable_entity_key: "Helium Mobile Service Rewards".into(),
             },
         )),
     }]);

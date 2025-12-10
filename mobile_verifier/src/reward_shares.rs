@@ -562,16 +562,16 @@ pub fn get_reward_amount_for_helium_mobile_network(sp_reward_amount: u64) -> u64
     sp_reward_amount.saturating_sub(HELIUM_MOBILE_SERVICE_REWARD_BONES)
 }
 
-pub enum ServiceProviderRewardType {
+pub enum RewardableEntityKey {
     Network,
     Subscriber,
 }
 
-impl std::fmt::Display for ServiceProviderRewardType {
+impl std::fmt::Display for RewardableEntityKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ServiceProviderRewardType::Subscriber => f.write_str("Helium Mobile Service Rewards"),
-            ServiceProviderRewardType::Network => f.write_str("Helium Mobile"),
+            RewardableEntityKey::Subscriber => f.write_str("Helium Mobile Service Rewards"),
+            RewardableEntityKey::Network => f.write_str("Helium Mobile"),
         }
     }
 }

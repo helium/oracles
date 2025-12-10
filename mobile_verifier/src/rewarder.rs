@@ -21,7 +21,7 @@ use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileS
 use self::boosted_hex_eligibility::BoostedHexEligibility;
 use crate::reward_shares::{
     get_reward_amount_for_helium_mobile_network, get_reward_amount_for_helium_mobile_subscriber,
-    ServiceProviderRewardType,
+    RewardableEntityKey,
 };
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
@@ -519,7 +519,7 @@ pub async fn reward_service_providers(
         reward_info,
         get_reward_amount_for_helium_mobile_subscriber(sp_reward_amount),
         ServiceProvider::HeliumMobile,
-        ServiceProviderRewardType::Subscriber,
+        RewardableEntityKey::Subscriber,
     )
     .await?;
 
@@ -529,7 +529,7 @@ pub async fn reward_service_providers(
         reward_info,
         get_reward_amount_for_helium_mobile_network(sp_reward_amount),
         ServiceProvider::HeliumMobile,
-        ServiceProviderRewardType::Network,
+        RewardableEntityKey::Network,
     )
     .await?;
 
@@ -572,7 +572,7 @@ async fn write_service_provider_reward(
     reward_info: &EpochRewardInfo,
     reward_amount: u64,
     service_provider_id: ServiceProvider,
-    service_provider_reward_type: ServiceProviderRewardType,
+    rewardable_entity_key: RewardableEntityKey,
 ) -> anyhow::Result<()> {
     let reward = proto::MobileRewardShare {
         start_period: reward_info.epoch_period.start.encode_timestamp(),
@@ -581,7 +581,7 @@ async fn write_service_provider_reward(
             proto::ServiceProviderReward {
                 service_provider_id: service_provider_id.into(),
                 amount: reward_amount,
-                service_provider_reward_type: service_provider_reward_type.to_string(),
+                rewardable_entity_key: rewardable_entity_key.to_string(),
             },
         )),
     };

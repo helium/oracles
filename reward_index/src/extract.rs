@@ -75,7 +75,7 @@ pub fn mobile_reward(
 
             #[allow(unreachable_patterns)]
             let sp_key = match sp {
-                ServiceProvider::HeliumMobile => r.service_provider_reward_type,
+                ServiceProvider::HeliumMobile => r.rewardable_entity_key,
                 _ => sp.to_string(),
             };
 

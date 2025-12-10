@@ -1,6 +1,6 @@
 use crate::common::{self, reward_info_24_hours};
 use helium_proto::{services::poc_mobile::UnallocatedRewardType, ServiceProvider};
-use mobile_verifier::reward_shares::ServiceProviderRewardType;
+use mobile_verifier::reward_shares::RewardableEntityKey;
 use mobile_verifier::{reward_shares, rewarder};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -26,8 +26,8 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
         ServiceProvider::HeliumMobile as i32
     );
     assert_eq!(
-        subscriber_reward.service_provider_reward_type,
-        ServiceProviderRewardType::Subscriber.to_string()
+        subscriber_reward.rewardable_entity_key,
+        RewardableEntityKey::Subscriber.to_string()
     );
     assert_eq!(
         reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES,
@@ -41,8 +41,8 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
         ServiceProvider::HeliumMobile as i32
     );
     assert_eq!(
-        network_reward.service_provider_reward_type,
-        ServiceProviderRewardType::Network.to_string()
+        network_reward.rewardable_entity_key,
+        RewardableEntityKey::Network.to_string()
     );
 
     // confirm the total rewards allocated matches expectations
@@ -96,8 +96,8 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
         ServiceProvider::HeliumMobile as i32
     );
     assert_eq!(
-        subscriber_reward.service_provider_reward_type,
-        ServiceProviderRewardType::Subscriber.to_string()
+        subscriber_reward.rewardable_entity_key,
+        RewardableEntityKey::Subscriber.to_string()
     );
     assert_eq!(8_400_000_000, subscriber_reward.amount);
 
@@ -108,8 +108,8 @@ async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> an
         ServiceProvider::HeliumMobile as i32
     );
     assert_eq!(
-        network_reward.service_provider_reward_type,
-        ServiceProviderRewardType::Network.to_string()
+        network_reward.rewardable_entity_key,
+        RewardableEntityKey::Network.to_string()
     );
     assert_eq!(0, network_reward.amount);
 
