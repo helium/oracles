@@ -7,8 +7,12 @@ use helium_proto::{BlockchainTokenTypeV1, Message, PriceReportV1};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use task_manager::ManagedTask;
-use tokio;
 use tokio::sync::{mpsc, watch};
+
+#[async_trait::async_trait]
+pub trait PriceProvider {
+    async fn price(&self, token_type: &BlockchainTokenTypeV1) -> Result<u64, PriceTrackerError>;
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum PriceTrackerError {
@@ -18,14 +22,10 @@ pub enum PriceTrackerError {
     PriceNotAvailable,
     #[error("price too old, price timestamp: {0}")]
     PriceTooOld(DateTime<Utc>),
-    #[error("tokio join error")]
-    JoinError(#[from] tokio::task::JoinError),
     #[error("file store error")]
     FileStoreError(#[from] file_store::Error),
     #[error("proto decode error")]
     DecodeError(#[from] helium_proto::DecodeError),
-    #[error("killed due to {0}")]
-    KilledError(String),
     #[error("error sending over mpsc channel")]
     SendError(#[from] mpsc::error::SendError<String>),
 }
@@ -54,8 +54,8 @@ type Prices = HashMap<BlockchainTokenTypeV1, Price>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
-    price_duration_minutes: u64,
-    bucket: BucketSettings,
+    pub price_duration_minutes: u64,
+    pub bucket: BucketSettings,
 }
 
 impl Settings {
@@ -69,6 +69,30 @@ pub struct PriceTracker {
     price_duration: Duration,
     task_killer: mpsc::Sender<String>,
     price_receiver: watch::Receiver<Prices>,
+}
+
+#[async_trait::async_trait]
+impl PriceProvider for PriceTracker {
+    async fn price(&self, token_type: &BlockchainTokenTypeV1) -> Result<u64, PriceTrackerError> {
+        let result = self
+            .price_receiver
+            .borrow()
+            .get(token_type)
+            .ok_or(PriceTrackerError::PriceNotAvailable)
+            .and_then(|price| {
+                if price.timestamp > Utc::now() - self.price_duration {
+                    Ok(price.price)
+                } else {
+                    Err(PriceTrackerError::PriceTooOld(price.timestamp))
+                }
+            });
+
+        if let Err(error) = &result {
+            self.task_killer.send(error.to_string()).await?;
+        }
+
+        result
+    }
 }
 
 impl PriceTracker {
@@ -93,30 +117,6 @@ impl PriceTracker {
                 after: initial_timestamp,
             },
         ))
-    }
-
-    pub async fn price(
-        &self,
-        token_type: &BlockchainTokenTypeV1,
-    ) -> Result<u64, PriceTrackerError> {
-        let result = self
-            .price_receiver
-            .borrow()
-            .get(token_type)
-            .ok_or(PriceTrackerError::PriceNotAvailable)
-            .and_then(|price| {
-                if price.timestamp > Utc::now() - self.price_duration {
-                    Ok(price.price)
-                } else {
-                    Err(PriceTrackerError::PriceTooOld(price.timestamp))
-                }
-            });
-
-        if let Err(error) = &result {
-            self.task_killer.send(error.to_string()).await?;
-        }
-
-        result
     }
 }
 

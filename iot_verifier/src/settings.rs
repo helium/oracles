@@ -63,7 +63,7 @@ pub struct Settings {
     pub buckets: Buckets,
     pub metrics: poc_metrics::Settings,
     pub denylist: denylist::Settings,
-    pub price_tracker: price::price_tracker::Settings,
+    pub price_tracker: price_tracker::Settings,
 
     /// Reward period in hours
     #[serde(with = "humantime_serde", default = "default_reward_period")]

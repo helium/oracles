@@ -21,6 +21,7 @@ members = [
   "mobile_verifier",
   "poc_entropy",
   "price",
+  "price_tracker",
   "reward_index",
   "reward_scheduler",
   "solana",

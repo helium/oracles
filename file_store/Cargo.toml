@@ -22,7 +22,6 @@ bytes = "*"
 regex = "1"
 tracing = { workspace = true }
 chrono = { workspace = true }
-helium-crypto = { workspace = true }
 metrics = { workspace = true }
 poc-metrics = { path = "../metrics" }
 sqlx = { workspace = true, optional = true }

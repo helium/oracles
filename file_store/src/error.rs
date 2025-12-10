@@ -20,9 +20,6 @@ pub enum Error {
     #[error("aws error: {0}")]
     Aws(#[from] AwsError),
 
-    #[error("crypto error: {0}")]
-    Crypto(Box<helium_crypto::Error>),
-
     #[error("channel error: {0}")]
     Channel(#[from] ChannelError),
 
@@ -99,12 +96,6 @@ impl ChannelError {
         Error::Channel(Self::UploadClosed {
             path: path.to_owned(),
         })
-    }
-}
-
-impl From<helium_crypto::Error> for Error {
-    fn from(err: helium_crypto::Error) -> Self {
-        Self::Crypto(Box::new(err))
     }
 }
 

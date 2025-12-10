@@ -58,6 +58,7 @@ file-store-oracles = { path = "../file_store_oracles" }
 hex-assignments = { path = "../hex_assignments" }
 mobile-config = { path = "../mobile_config" }
 poc-metrics = { path = "../metrics" }
+price-tracker = { path = "../price_tracker" }
 reward-scheduler = { path = "../reward_scheduler" }
 solana = { path = "../solana" }
 task-manager = { path = "../task_manager" }
