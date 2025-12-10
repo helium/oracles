@@ -57,7 +57,7 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
 
     // confirm the rewarded percentage amount matches expectations
     let percent =
-        (Decimal::from(network_reward.amount + reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES)
+        (Decimal::from(network_reward.amount + subscriber_reward.amount)
             / reward_info.epoch_emissions)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     assert_eq!(percent, dec!(0.24));
