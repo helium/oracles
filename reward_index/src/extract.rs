@@ -33,7 +33,7 @@ pub fn mobile_reward(
         return Err(ExtractError::InvalidRewardShare(settings::Mode::Mobile));
     };
 
-    use proto::{MobileReward, ServiceProvider};
+    use proto::MobileReward;
 
     match reward {
         MobileReward::RadioReward(_r) => {
@@ -69,24 +69,13 @@ pub fn mobile_reward(
                 r.discovery_location_amount + r.verification_mapping_amount,
             ))
         }
-        MobileReward::ServiceProviderReward(r) => {
-            let sp = ServiceProvider::try_from(r.service_provider_id)
-                .map_err(|_| ExtractError::ServiceProviderDecode(r.service_provider_id))?;
-
-            #[allow(unreachable_patterns)]
-            let sp_key = match sp {
-                ServiceProvider::HeliumMobile => r.rewardable_entity_key,
-                _ => sp.to_string(),
-            };
-
-            Ok((
-                RewardKey {
-                    key: sp_key,
-                    reward_type: RewardType::MobileServiceProvider,
-                },
-                r.amount,
-            ))
-        }
+        MobileReward::ServiceProviderReward(r) => Ok((
+            RewardKey {
+                key: r.rewardable_entity_key,
+                reward_type: RewardType::MobileServiceProvider,
+            },
+            r.amount,
+        )),
         MobileReward::UnallocatedReward(r) => Ok((
             RewardKey {
                 key: unallocated_reward_key.to_string(),
