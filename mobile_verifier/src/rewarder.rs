@@ -19,6 +19,7 @@ use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::Tim
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
+use crate::reward_shares::{RewardableEntityKey, HELIUM_MOBILE_SERVICE_REWARD_BONES};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -509,18 +510,29 @@ pub async fn reward_service_providers(
         .to_u64()
         .unwrap_or(0);
 
-    // Write a single ServiceProviderReward for HeliumMobile with the full 24% allocation
-    let sp_reward = proto::MobileRewardShare {
-        start_period: reward_info.epoch_period.start.encode_timestamp(),
-        end_period: reward_info.epoch_period.end.encode_timestamp(),
-        reward: Some(ProtoReward::ServiceProviderReward(
-            proto::ServiceProviderReward {
-                service_provider_id: ServiceProvider::HeliumMobile.into(),
-                amount: sp_reward_amount,
-            },
-        )),
-    };
-    mobile_rewards.write(sp_reward, []).await?.await??;
+    let subscriber_reward = std::cmp::min(sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
+    let network_reward = sp_reward_amount.saturating_sub(subscriber_reward);
+
+    // Write a ServiceProviderReward for HeliumMobile Subscriber Wallet for 450 HNT
+    write_service_provider_reward(
+        &mobile_rewards,
+        reward_info,
+        subscriber_reward,
+        ServiceProvider::HeliumMobile,
+        RewardableEntityKey::Subscriber,
+    )
+    .await?;
+
+    // Remaining rewards goes to HeliumMobile Network Wallet
+    write_service_provider_reward(
+        &mobile_rewards,
+        reward_info,
+        network_reward,
+        ServiceProvider::HeliumMobile,
+        RewardableEntityKey::Network,
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -553,4 +565,27 @@ pub async fn next_reward_epoch(db: &Pool<Postgres>) -> db_store::Result<u64> {
 
 async fn save_next_reward_epoch(exec: impl PgExecutor<'_>, value: u64) -> db_store::Result<()> {
     meta::store(exec, "next_reward_epoch", value).await
+}
+
+async fn write_service_provider_reward(
+    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    reward_info: &EpochRewardInfo,
+    reward_amount: u64,
+    service_provider_id: ServiceProvider,
+    rewardable_entity_key: RewardableEntityKey,
+) -> anyhow::Result<()> {
+    let reward = proto::MobileRewardShare {
+        start_period: reward_info.epoch_period.start.encode_timestamp(),
+        end_period: reward_info.epoch_period.end.encode_timestamp(),
+        reward: Some(ProtoReward::ServiceProviderReward(
+            proto::ServiceProviderReward {
+                service_provider_id: service_provider_id.into(),
+                amount: reward_amount,
+                rewardable_entity_key: rewardable_entity_key.to_string(),
+            },
+        )),
+    };
+
+    mobile_rewards.write(reward, []).await?.await??;
+    Ok(())
 }
