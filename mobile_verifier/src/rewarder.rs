@@ -19,10 +19,7 @@ use file_store::{file_sink::FileSinkClient, file_upload::FileUpload, traits::Tim
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
 
 use self::boosted_hex_eligibility::BoostedHexEligibility;
-use crate::reward_shares::{
-    get_reward_amount_for_helium_mobile_network, get_reward_amount_for_helium_mobile_subscriber,
-    RewardableEntityKey,
-};
+use crate::reward_shares::{RewardableEntityKey, HELIUM_MOBILE_SERVICE_REWARD_BONES};
 use helium_proto::{
     reward_manifest::RewardData::MobileRewardData,
     services::poc_mobile::{
@@ -513,11 +510,14 @@ pub async fn reward_service_providers(
         .to_u64()
         .unwrap_or(0);
 
+    let subscriber_reward = std::cmp::min(sp_reward_amount, HELIUM_MOBILE_SERVICE_REWARD_BONES);
+    let network_reward = sp_reward_amount.saturating_sub(subscriber_reward);
+
     // Write a ServiceProviderReward for HeliumMobile Subscriber Wallet for 450 HNT
     write_service_provider_reward(
         &mobile_rewards,
         reward_info,
-        get_reward_amount_for_helium_mobile_subscriber(sp_reward_amount),
+        subscriber_reward,
         ServiceProvider::HeliumMobile,
         RewardableEntityKey::Subscriber,
     )
@@ -527,7 +527,7 @@ pub async fn reward_service_providers(
     write_service_provider_reward(
         &mobile_rewards,
         reward_info,
-        get_reward_amount_for_helium_mobile_network(sp_reward_amount),
+        network_reward,
         ServiceProvider::HeliumMobile,
         RewardableEntityKey::Network,
     )
