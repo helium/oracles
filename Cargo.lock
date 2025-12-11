@@ -5081,6 +5081,8 @@ dependencies = [
  "sha2 0.10.9",
  "solana",
  "sqlx",
+ "strum",
+ "strum_macros",
  "task-manager",
  "tempfile",
  "thiserror 1.0.69",

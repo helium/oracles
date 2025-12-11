@@ -22,8 +22,8 @@ use mobile_config::{boosted_hex_info::BoostedHexes, sub_dao_epoch_reward_info::E
 use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use std::fmt::Formatter;
 use std::{collections::HashMap, ops::Range};
+use strum_macros::{Display, EnumString};
 use uuid::Uuid;
 
 mod radio_reward_v2;
@@ -552,18 +552,12 @@ pub fn get_scheduled_tokens_for_service_providers(total_emission_pool: Decimal) 
     total_emission_pool * SERVICE_PROVIDER_PERCENT
 }
 
+#[derive(Display, EnumString)]
 pub enum RewardableEntityKey {
+    #[strum(serialize = "Helium Mobile")]
     Network,
+    #[strum(serialize = "Helium Mobile Service Rewards")]
     Subscriber,
-}
-
-impl std::fmt::Display for RewardableEntityKey {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RewardableEntityKey::Subscriber => f.write_str("Helium Mobile Service Rewards"),
-            RewardableEntityKey::Network => f.write_str("Helium Mobile"),
-        }
-    }
 }
 
 fn eligible_for_coverage_map(

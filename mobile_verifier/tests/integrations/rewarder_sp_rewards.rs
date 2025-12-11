@@ -27,7 +27,7 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
     );
     assert_eq!(
         subscriber_reward.rewardable_entity_key,
-        RewardableEntityKey::Subscriber.to_string()
+        "Helium Mobile Service Rewards"
     );
     assert_eq!(
         reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES,
@@ -42,7 +42,7 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
     );
     assert_eq!(
         network_reward.rewardable_entity_key,
-        RewardableEntityKey::Network.to_string()
+        "Helium Mobile"
     );
 
     // confirm the total rewards allocated matches expectations
