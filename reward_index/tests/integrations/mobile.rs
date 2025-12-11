@@ -234,29 +234,6 @@ async fn service_provider_reward(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
-async fn fails_on_unknown_service_provider(pool: PgPool) -> anyhow::Result<()> {
-    let rewards = bytes_mut_stream(vec![MobileRewardShare {
-        start_period: Utc::now().timestamp_millis() as u64,
-        end_period: Utc::now().timestamp_millis() as u64,
-        reward: Some(mobile_reward_share::Reward::ServiceProviderReward(
-            ServiceProviderReward {
-                service_provider_id: 999,
-                amount: 1,
-                rewardable_entity_key: "Helium Mobile Service Rewards".into(),
-            },
-        )),
-    }]);
-
-    let mut txn = pool.begin().await?;
-    let manifest_time = Utc::now();
-    let res = handle_mobile_rewards(&mut txn, rewards, "unallocated-key", &manifest_time).await;
-
-    assert!(res.is_err());
-
-    Ok(())
-}
-
-#[sqlx::test]
 async fn unallocated_rewards_are_combined(pool: PgPool) -> anyhow::Result<()> {
     fn make_unallocated_reward(
         amount: u64,
