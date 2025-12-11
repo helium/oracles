@@ -169,6 +169,5 @@ anchor-lang = { git = "https://github.com/madninja/anchor.git", branch = "madnin
 # helium-proto = { path = "../proto" }
 # beacon = { path = "../proto/beacon" }
 
- [patch.'https://github.com/helium/proto']
- helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "connor/split-service-provider-rewards" }
- msg-signature = { git = "https://www.github.com/helium/proto.git", branch = "connor/split-service-provider-rewards" }
+# [patch.'https://github.com/helium/proto']
+# helium-proto = { git = "https://www.github.com/helium/proto.git", branch = "dcyoung/radio-usage-stats-req-v2" }
