@@ -40,10 +40,7 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
         network_reward.service_provider_id,
         ServiceProvider::HeliumMobile as i32
     );
-    assert_eq!(
-        network_reward.rewardable_entity_key,
-        "Helium Mobile"
-    );
+    assert_eq!(network_reward.rewardable_entity_key, "Helium Mobile");
 
     // confirm the total rewards allocated matches expectations
     let expected_sum =
