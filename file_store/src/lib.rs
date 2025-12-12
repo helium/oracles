@@ -128,7 +128,7 @@ where
         .send()
         .into_stream_03x()
         .map_ok(|page| stream::iter(page.contents.unwrap_or_default()).map(Ok))
-        .map_err(|err| Error::from(aws_sdk_s3::Error::from(err)))
+        .map_err(AwsError::list_object_error)
         .try_flatten()
         .try_filter_map(|file| {
             future::ready(FileInfo::try_from(&file).map(Some).map_err(Error::from))
@@ -155,7 +155,9 @@ where
 }
 
 pub async fn put_file(client: &Client, bucket: impl Into<String>, file: &Path) -> Result {
-    let byte_stream = ByteStream::from_path(&file).await?;
+    let byte_stream = ByteStream::from_path(&file)
+        .map_err(AwsError::pub_object_byte_stream_error)
+        .await?;
 
     poc_metrics::record_duration!(
         "file_store_put_duration",
@@ -167,7 +169,7 @@ pub async fn put_file(client: &Client, bucket: impl Into<String>, file: &Path) -
             .content_type("application/octet-stream")
             .send()
             .map_ok(|_| ())
-            .map_err(AwsError::s3_error)
+            .map_err(AwsError::put_object_error)
             .await
     )
 }
@@ -185,7 +187,7 @@ pub async fn remove_file(
             .key(key)
             .send()
             .map_ok(|_| ())
-            .map_err(AwsError::s3_error)
+            .map_err(AwsError::delete_object_error)
             .await
     )
 }
@@ -278,7 +280,7 @@ async fn get_byte_stream(
         .key(key)
         .send()
         .map_ok(|output| output.body)
-        .map_err(AwsError::s3_error)
+        .map_err(AwsError::get_object_error)
         .fuse()
         .await
 }
