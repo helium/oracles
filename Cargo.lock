@@ -7334,8 +7334,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "clap",
- "file-store",
- "file-store-oracles",
  "futures",
  "helium-crypto",
  "helium-lib",
