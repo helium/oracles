@@ -23,7 +23,6 @@ pub use helium_lib::{
 
 pub mod burn;
 pub mod carrier;
-pub mod start_boost;
 
 macro_rules! send_with_retry {
     ($rpc:expr) => {{
