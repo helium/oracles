@@ -140,6 +140,8 @@ impl MobileHotspotInfo {
                 None
             },
             location_asserts: self.num_location_asserts.map(|n| n as u32),
+            owner: None, // TODO
+            hash_v2: None,
         }))
     }
 }
