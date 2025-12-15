@@ -1,0 +1,3 @@
+ALTER TABLE gateways
+ADD COLUMN owner VARCHAR(255),
+ADD COLUMN hash_v2 TEXT;
