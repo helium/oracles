@@ -1,4 +1,4 @@
-use crate::common::{make_keypair, spawn_gateway_service};
+use crate::common::{gateway_db::TestGatewayBuilder, make_keypair, spawn_gateway_service};
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
@@ -113,42 +113,34 @@ async fn gateway_stream_info_v1(pool: PgPool) -> anyhow::Result<()> {
     let now = Utc::now();
     let now_plus_10 = now + chrono::Duration::seconds(10);
 
-    let gateway1 = Gateway {
-        address: address1.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
-        created_at: now,
-        inserted_at: now,
-        refreshed_at: now,
-        last_changed_at: now,
-        hash: "".to_string(),
-        antenna: None,
-        elevation: None,
-        azimuth: None,
-        location: Some(loc1),
-        location_changed_at: Some(now),
-        location_asserts: Some(1),
-        owner: None,
-        hash_v2: None,
-    };
+    let gateway1: Gateway = TestGatewayBuilder::default()
+        .address(address1.clone())
+        .gateway_type(GatewayType::WifiIndoor)
+        .created_at(now)
+        .inserted_at(now)
+        .refreshed_at(now)
+        .last_changed_at(now)
+        .antenna(None)
+        .location(Some(loc1))
+        .location_changed_at(Some(now))
+        .location_asserts(Some(1))
+        .build()?
+        .into();
     gateway1.insert(&pool).await?;
 
-    let gateway2 = Gateway {
-        address: address2.clone().into(),
-        gateway_type: GatewayType::WifiDataOnly,
-        created_at: now_plus_10,
-        inserted_at: now_plus_10,
-        refreshed_at: now_plus_10,
-        last_changed_at: now_plus_10,
-        hash: "".to_string(),
-        antenna: None,
-        elevation: None,
-        azimuth: None,
-        location: Some(loc2),
-        location_changed_at: Some(now_plus_10),
-        location_asserts: Some(1),
-        owner: None,
-        hash_v2: None,
-    };
+    let gateway2: Gateway = TestGatewayBuilder::default()
+        .address(address2.clone())
+        .gateway_type(GatewayType::WifiDataOnly)
+        .created_at(now_plus_10)
+        .inserted_at(now_plus_10)
+        .refreshed_at(now_plus_10)
+        .last_changed_at(now_plus_10)
+        .antenna(None)
+        .location(Some(loc2))
+        .location_changed_at(Some(now_plus_10))
+        .location_asserts(Some(1))
+        .build()?
+        .into();
     gateway2.insert(&pool).await?;
 
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
@@ -182,42 +174,34 @@ async fn gateway_stream_info_v2_by_type(pool: PgPool) -> anyhow::Result<()> {
     let now = Utc::now();
     let now_plus_10 = now + chrono::Duration::seconds(10);
 
-    let gateway1 = Gateway {
-        address: address1.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
-        created_at: now,
-        inserted_at: now,
-        refreshed_at: now,
-        last_changed_at: now,
-        hash: "".to_string(),
-        antenna: None,
-        elevation: None,
-        azimuth: None,
-        location: Some(loc1),
-        location_changed_at: Some(now),
-        location_asserts: Some(1),
-        owner: None,
-        hash_v2: None,
-    };
+    let gateway1: Gateway = TestGatewayBuilder::default()
+        .address(address1.clone())
+        .gateway_type(GatewayType::WifiIndoor)
+        .created_at(now)
+        .inserted_at(now)
+        .refreshed_at(now)
+        .last_changed_at(now)
+        .antenna(None)
+        .location(Some(loc1))
+        .location_changed_at(Some(now))
+        .location_asserts(Some(1))
+        .build()?
+        .into();
     gateway1.insert(&pool).await?;
 
-    let gateway2 = Gateway {
-        address: address2.clone().into(),
-        gateway_type: GatewayType::WifiDataOnly,
-        created_at: now_plus_10,
-        inserted_at: now_plus_10,
-        refreshed_at: now_plus_10,
-        last_changed_at: now_plus_10,
-        hash: "".to_string(),
-        antenna: None,
-        elevation: None,
-        azimuth: None,
-        location: Some(loc2),
-        location_changed_at: Some(now_plus_10),
-        location_asserts: Some(1),
-        owner: None,
-        hash_v2: None,
-    };
+    let gateway2: Gateway = TestGatewayBuilder::default()
+        .address(address2.clone())
+        .gateway_type(GatewayType::WifiDataOnly)
+        .created_at(now_plus_10)
+        .inserted_at(now_plus_10)
+        .refreshed_at(now_plus_10)
+        .last_changed_at(now_plus_10)
+        .antenna(None)
+        .location(Some(loc2))
+        .location_changed_at(Some(now_plus_10))
+        .location_asserts(Some(1))
+        .build()?
+        .into();
     gateway2.insert(&pool).await?;
 
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
@@ -257,80 +241,66 @@ async fn gateway_stream_info_v2(pool: PgPool) -> anyhow::Result<()> {
     let created_at = Utc::now() - Duration::hours(5);
     let inserted_at = Utc::now() - Duration::hours(3);
 
-    let gateway1 = Gateway {
-        address: address1.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
-        created_at,
-        inserted_at,
-        refreshed_at: inserted_at,
-        last_changed_at: inserted_at,
-        hash: "".to_string(),
-        antenna: None,
-        elevation: None,
-        azimuth: None,
-        location: Some(loc1),
-        location_changed_at: Some(inserted_at),
-        location_asserts: Some(1),
-        owner: None,
-        hash_v2: None,
-    };
+    let gateway1: Gateway = TestGatewayBuilder::default()
+        .address(address1.clone())
+        .gateway_type(GatewayType::WifiIndoor)
+        .created_at(created_at)
+        .inserted_at(inserted_at)
+        .refreshed_at(inserted_at)
+        .last_changed_at(inserted_at)
+        .antenna(None)
+        .location(Some(loc1))
+        .location_changed_at(Some(inserted_at))
+        .location_asserts(Some(1))
+        .build()?
+        .into();
     gateway1.insert(&pool).await?;
 
-    let gateway2 = Gateway {
-        address: address2.clone().into(),
-        gateway_type: GatewayType::WifiIndoor,
-        created_at,
-        inserted_at,
-        refreshed_at: inserted_at,
-        last_changed_at: inserted_at,
-        hash: "".to_string(),
-        antenna: Some(1),
-        elevation: None,
-        azimuth: None,
-        location: Some(loc2),
-        location_changed_at: Some(inserted_at),
-        location_asserts: Some(1),
-        owner: None,
-        hash_v2: None,
-    };
+    let gateway2: Gateway = TestGatewayBuilder::default()
+        .address(address2.clone())
+        .gateway_type(GatewayType::WifiIndoor)
+        .created_at(created_at)
+        .inserted_at(inserted_at)
+        .refreshed_at(inserted_at)
+        .last_changed_at(inserted_at)
+        .antenna(Some(1u32))
+        .location(Some(loc2))
+        .location_changed_at(Some(inserted_at))
+        .location_asserts(Some(1))
+        .build()?
+        .into();
     gateway2.insert(&pool).await?;
 
-    let gateway3 = Gateway {
-        address: address3.clone().into(),
-        gateway_type: GatewayType::WifiDataOnly,
-        created_at,
-        inserted_at,
-        refreshed_at: inserted_at,
-        last_changed_at: inserted_at,
-        hash: "".to_string(),
-        antenna: Some(1),
-        elevation: Some(2),
-        azimuth: Some(3),
-        location: Some(loc3),
-        location_changed_at: Some(inserted_at),
-        location_asserts: Some(1),
-        owner: None,
-        hash_v2: None,
-    };
+    let gateway3: Gateway = TestGatewayBuilder::default()
+        .address(address3.clone())
+        .gateway_type(GatewayType::WifiDataOnly)
+        .created_at(created_at)
+        .inserted_at(inserted_at)
+        .refreshed_at(inserted_at)
+        .last_changed_at(inserted_at)
+        .antenna(Some(1))
+        .elevation(Some(2))
+        .azimuth(Some(3))
+        .location(Some(loc3))
+        .location_changed_at(Some(inserted_at))
+        .location_asserts(Some(1))
+        .build()?
+        .into();
     gateway3.insert(&pool).await?;
 
-    let gateway4 = Gateway {
-        address: address4.clone().into(),
-        gateway_type: GatewayType::WifiDataOnly,
-        created_at,
-        inserted_at: created_at,
-        refreshed_at: created_at,
-        last_changed_at: created_at,
-        hash: "".to_string(),
-        antenna: None,
-        elevation: None,
-        azimuth: None,
-        location: Some(loc4),
-        location_changed_at: Some(created_at),
-        location_asserts: Some(1),
-        owner: None,
-        hash_v2: None,
-    };
+    let gateway4: Gateway = TestGatewayBuilder::default()
+        .address(address4.clone())
+        .gateway_type(GatewayType::WifiDataOnly)
+        .created_at(created_at)
+        .inserted_at(created_at)
+        .refreshed_at(created_at)
+        .last_changed_at(created_at)
+        .antenna(None)
+        .location(Some(loc4))
+        .location_changed_at(Some(created_at))
+        .location_asserts(Some(1))
+        .build()?
+        .into();
     gateway4.insert(&pool).await?;
 
     let (addr, _handle) = spawn_gateway_service(pool.clone(), admin_key.public_key().clone()).await;
