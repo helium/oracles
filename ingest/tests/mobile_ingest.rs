@@ -20,6 +20,7 @@ async fn submit_enabled_carriers_info_valid() -> anyhow::Result<()> {
             &keypair,
             PUBKEY1,
             vec![CarrierIdV2::Carrier0],
+            vec![CarrierIdV2::Carrier1],
             Utc::now().timestamp_millis() as u64,
         )
         .await?;
@@ -35,6 +36,10 @@ async fn submit_enabled_carriers_info_valid() -> anyhow::Result<()> {
         inner_report.enabled_carriers,
         vec![CarrierIdV2::Carrier0 as i32]
     );
+    assert_eq!(
+        inner_report.sampling_enabled_carriers,
+        vec![CarrierIdV2::Carrier1 as i32]
+    );
 
     trigger.trigger();
     Ok(())
@@ -49,6 +54,7 @@ async fn submit_enabled_carriers_info_expired() -> anyhow::Result<()> {
             &keypair,
             PUBKEY1,
             vec![CarrierIdV2::Carrier0],
+            vec![CarrierIdV2::Carrier1],
             Utc::now().timestamp_millis() as u64 - (610 * 1000), // 11 min
         )
         .await;

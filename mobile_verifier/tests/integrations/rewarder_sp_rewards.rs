@@ -1,10 +1,10 @@
+use crate::common::{self, reward_info_24_hours};
 use helium_proto::{services::poc_mobile::UnallocatedRewardType, ServiceProvider};
+use mobile_verifier::reward_shares::RewardableEntityKey;
+use mobile_verifier::{reward_shares, rewarder};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-
-use crate::common::{self, reward_info_24_hours};
-use mobile_verifier::{reward_shares, rewarder};
 
 #[sqlx::test]
 async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
@@ -16,23 +16,45 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
 
     let rewards = mobile_rewards.finish().await?;
 
-    // Verify single ServiceProviderReward with full 24% allocation
-    assert_eq!(rewards.sp_rewards.len(), 1);
-    let sp_reward = rewards.sp_rewards.first().expect("sp reward");
+    // Verify two ServiceProviderRewards
+    assert_eq!(rewards.sp_rewards.len(), 2);
+
+    // Verify first reward is 450HNT to HeliumMobile Subscriber wallet
+    let subscriber_reward = rewards.sp_rewards.first().expect("sp reward");
     assert_eq!(
-        sp_reward.service_provider_id,
+        subscriber_reward.service_provider_id,
         ServiceProvider::HeliumMobile as i32
     );
+    assert_eq!(
+        subscriber_reward.rewardable_entity_key,
+        "Helium Mobile Service Rewards"
+    );
+    assert_eq!(
+        reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES,
+        subscriber_reward.amount
+    );
+
+    // Verify second reward is to HeliumMobile Network wallet with remaining amount
+    let network_reward = rewards.sp_rewards.get(1).expect("sp reward");
+    assert_eq!(
+        network_reward.service_provider_id,
+        ServiceProvider::HeliumMobile as i32
+    );
+    assert_eq!(network_reward.rewardable_entity_key, "Helium Mobile");
 
     // confirm the total rewards allocated matches expectations
     let expected_sum =
         reward_shares::get_scheduled_tokens_for_service_providers(reward_info.epoch_emissions)
             .to_u64()
             .unwrap();
-    assert_eq!(expected_sum, sp_reward.amount);
+    assert_eq!(
+        expected_sum - reward_shares::HELIUM_MOBILE_SERVICE_REWARD_BONES,
+        network_reward.amount
+    );
 
     // confirm the rewarded percentage amount matches expectations
-    let percent = (Decimal::from(sp_reward.amount) / reward_info.epoch_emissions)
+    let percent = (Decimal::from(network_reward.amount + subscriber_reward.amount)
+        / reward_info.epoch_emissions)
         .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     assert_eq!(percent, dec!(0.24));
 
@@ -45,6 +67,48 @@ async fn test_service_provider_rewards(_pool: PgPool) -> anyhow::Result<()> {
             .count(),
         0
     );
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn should_not_reward_service_provider_negative_amount(_pool: PgPool) -> anyhow::Result<()> {
+    let (mobile_rewards_client, mobile_rewards) = common::create_file_sink();
+
+    let mut reward_info = reward_info_24_hours();
+    // Total reward amount of 350 HNT
+    reward_info.epoch_emissions = Decimal::from(35_000_000_000u64);
+
+    rewarder::reward_service_providers(mobile_rewards_client, &reward_info).await?;
+
+    let rewards = mobile_rewards.finish().await?;
+
+    // Verify two ServiceProviderRewards
+    assert_eq!(rewards.sp_rewards.len(), 2);
+
+    // Subscriber reward should be clamped to 84 HNT (24% of 350HNT)
+    let subscriber_reward = rewards.sp_rewards.first().expect("sp reward");
+    assert_eq!(
+        subscriber_reward.service_provider_id,
+        ServiceProvider::HeliumMobile as i32
+    );
+    assert_eq!(
+        subscriber_reward.rewardable_entity_key,
+        RewardableEntityKey::Subscriber.to_string()
+    );
+    assert_eq!(8_400_000_000, subscriber_reward.amount);
+
+    // Network reward should be 0 as Subscriber wallet received the full reward amount
+    let network_reward = rewards.sp_rewards.get(1).expect("sp reward");
+    assert_eq!(
+        network_reward.service_provider_id,
+        ServiceProvider::HeliumMobile as i32
+    );
+    assert_eq!(
+        network_reward.rewardable_entity_key,
+        RewardableEntityKey::Network.to_string()
+    );
+    assert_eq!(0, network_reward.amount);
 
     Ok(())
 }

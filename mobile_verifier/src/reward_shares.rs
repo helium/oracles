@@ -23,6 +23,7 @@ use radio_reward_v2::{RadioRewardV2Ext, ToProtoDecimal};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, ops::Range};
+use strum_macros::{Display, EnumString};
 use uuid::Uuid;
 
 mod radio_reward_v2;
@@ -42,6 +43,9 @@ pub const DEFAULT_PREC: u32 = 15;
 
 // Percent of total emissions allocated for service provider rewards
 const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.24);
+
+// Fixed price of service provider rewards to be given to Helium Mobile Service Rewards
+pub const HELIUM_MOBILE_SERVICE_REWARD_BONES: u64 = 45_000_000_000;
 
 #[derive(Debug)]
 pub struct TransferRewards {
@@ -546,6 +550,14 @@ pub fn get_scheduled_tokens_for_poc(total_emission_pool: Decimal) -> Decimal {
 
 pub fn get_scheduled_tokens_for_service_providers(total_emission_pool: Decimal) -> Decimal {
     total_emission_pool * SERVICE_PROVIDER_PERCENT
+}
+
+#[derive(Display, EnumString)]
+pub enum RewardableEntityKey {
+    #[strum(serialize = "Helium Mobile")]
+    Network,
+    #[strum(serialize = "Helium Mobile Service Rewards")]
+    Subscriber,
 }
 
 fn eligible_for_coverage_map(
