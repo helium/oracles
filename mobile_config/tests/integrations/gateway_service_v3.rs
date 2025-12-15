@@ -1,8 +1,7 @@
-use crate::common::{make_keypair, spawn_gateway_service};
-use chrono::{DateTime, Duration, Utc};
-use derive_builder::Builder;
+use crate::common::{gateway_db::TestGatewayBuilder, make_keypair, spawn_gateway_service};
+use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
-use helium_crypto::{Keypair, PublicKey, Sign};
+use helium_crypto::{Keypair, Sign};
 use helium_proto::services::mobile_config::{
     self as proto, DeploymentInfo, DeviceTypeV2, GatewayClient, GatewayInfoStreamReqV3,
     GatewayInfoV3, LocationInfo,
@@ -11,61 +10,6 @@ use mobile_config::gateway::db::{Gateway, GatewayType};
 use prost::Message;
 use sqlx::PgPool;
 use std::vec;
-
-#[derive(Builder)]
-#[builder(setter(into))]
-struct TestGateway {
-    address: PublicKey,
-    gateway_type: GatewayType,
-    #[builder(default)]
-    created_at: DateTime<Utc>,
-    #[builder(default)]
-    inserted_at: DateTime<Utc>,
-    #[builder(default)]
-    refreshed_at: DateTime<Utc>,
-    #[builder(default)]
-    last_changed_at: DateTime<Utc>,
-    #[builder(default)]
-    hash: String,
-    #[builder(default = "Some(18)")]
-    antenna: Option<u32>,
-    #[builder(default)]
-    elevation: Option<u32>,
-    #[builder(default)]
-    azimuth: Option<u32>,
-    #[builder(default)]
-    location: Option<u64>,
-    #[builder(default)]
-    location_changed_at: Option<DateTime<Utc>>,
-    #[builder(default)]
-    location_asserts: Option<u32>,
-    #[builder(default)]
-    owner: Option<String>,
-    #[builder(default)]
-    hash_v2: Option<String>,
-}
-
-impl From<TestGateway> for Gateway {
-    fn from(tg: TestGateway) -> Self {
-        Gateway {
-            address: tg.address.into(),
-            gateway_type: tg.gateway_type,
-            created_at: tg.created_at,
-            inserted_at: tg.inserted_at,
-            refreshed_at: tg.refreshed_at,
-            last_changed_at: tg.last_changed_at,
-            hash: tg.hash,
-            antenna: tg.antenna,
-            elevation: tg.elevation,
-            azimuth: tg.azimuth,
-            location: tg.location,
-            location_changed_at: tg.location_changed_at,
-            location_asserts: tg.location_asserts,
-            owner: tg.owner,
-            hash_v2: tg.hash_v2,
-        }
-    }
-}
 
 #[sqlx::test]
 async fn gateway_stream_info_v3_basic(pool: PgPool) -> anyhow::Result<()> {
@@ -404,8 +348,8 @@ async fn gateway_stream_info_v3_location_changed_at(pool: PgPool) -> anyhow::Res
         .inserted_at(now_minus_six)
         .refreshed_at(now)
         .last_changed_at(now_minus_three)
-        .elevation(2u32)
-        .azimuth(161u32)
+        .elevation(2)
+        .azimuth(161)
         .location(loc1)
         .location_changed_at(now_minus_six)
         .location_asserts(1)
