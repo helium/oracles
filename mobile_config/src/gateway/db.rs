@@ -96,7 +96,7 @@ pub struct Gateway {
     pub location_changed_at: Option<DateTime<Utc>>,
     pub location_asserts: Option<u32>,
     pub owner: Option<String>,
-    pub hash_v2: Option<String>,
+    pub owner_changed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug)]
@@ -126,7 +126,7 @@ impl Gateway {
                 location_changed_at,
                 location_asserts,
                 owner,
-                hash_v2
+                owner_changed_at
             ) ",
         );
 
@@ -144,7 +144,7 @@ impl Gateway {
                 .push_bind(g.location_changed_at)
                 .push_bind(g.location_asserts.map(|v| v as i64))
                 .push_bind(g.owner.as_deref())
-                .push_bind(g.hash_v2.as_deref());
+                .push_bind(g.owner_changed_at);
         });
 
         let res = qb.build().execute(pool).await?;
@@ -168,7 +168,7 @@ impl Gateway {
                 location_changed_at,
                 location_asserts,
                 owner,
-                hash_v2
+                owner_changed_at
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
@@ -189,7 +189,7 @@ impl Gateway {
         .bind(self.location_changed_at)
         .bind(self.location_asserts.map(|v| v as i64))
         .bind(self.owner.as_deref())
-        .bind(self.hash_v2.as_deref())
+        .bind(self.owner_changed_at)
         .execute(pool)
         .await?;
 
@@ -217,7 +217,7 @@ impl Gateway {
                 location_changed_at,
                 location_asserts,
                 owner,
-                hash_v2
+                owner_changed_at
             FROM gateways
             WHERE address = $1
             ORDER BY inserted_at DESC
@@ -254,7 +254,7 @@ impl Gateway {
                 location_changed_at,
                 location_asserts,
                 owner,
-                hash_v2
+                owner_changed_at
             FROM gateways
             WHERE address = ANY($1)
             ORDER BY address, inserted_at DESC
@@ -289,7 +289,7 @@ impl Gateway {
                 location_changed_at,
                 location_asserts,
                 owner,
-                hash_v2
+                owner_changed_at
             FROM gateways
             WHERE address = $1
             AND inserted_at <= $2
@@ -329,7 +329,7 @@ impl Gateway {
                 location_changed_at,
                 location_asserts,
                 owner,
-                hash_v2
+                owner_changed_at
             FROM gateways
             WHERE address = ANY($1)
                 AND last_changed_at >= $2
@@ -366,7 +366,7 @@ impl Gateway {
                     location_changed_at,
                     location_asserts,
                     owner,
-                    hash_v2
+                    owner_changed_at
                 FROM gateways
                 WHERE gateway_type = ANY($1)
                 AND last_changed_at >= $2
@@ -449,7 +449,7 @@ impl FromRow<'_, PgRow> for Gateway {
             location_changed_at: row.try_get("location_changed_at")?,
             location_asserts: to_u32(row.try_get("location_asserts")?),
             owner: row.try_get("owner")?,
-            hash_v2: row.try_get("hash_v2")?,
+            owner_changed_at: row.try_get("owner_changed_at")?,
         })
     }
 }
