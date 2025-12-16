@@ -3,7 +3,6 @@ use crate::GzippedFramedFile;
 use crate::{file_upload::FileUpload, Error, Result};
 use bytes::Bytes;
 use chrono::Utc;
-use futures::TryFutureExt;
 use metrics::Label;
 use std::time::Duration;
 use std::{
@@ -265,7 +264,7 @@ impl<T: prost::Message + Send + Sync + 'static> ManagedTask for FileSink<T> {
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> task_manager::TaskLocalBoxFuture {
-        task_manager::spawn(self.run(shutdown).err_into())
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

@@ -243,7 +243,7 @@ where
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> task_manager::TaskLocalBoxFuture {
-        task_manager::spawn(self.run(shutdown).err_into())
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

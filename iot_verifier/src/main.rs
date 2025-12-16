@@ -318,7 +318,8 @@ impl Server {
             .add_task(rewarder)
             .build()
             .start()
-            .await
+            .await?;
+        Ok(())
     }
 }
 
