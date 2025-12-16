@@ -138,4 +138,18 @@ pub async fn create_tables(pool: &PgPool) {
     .execute(pool)
     .await
     .unwrap();
+
+    sqlx::query(
+        r#"
+        CREATE TABLE asset_owners (
+            asset character varying(255) NULL,
+            owner character varying(255) NULL,
+            created_at timestamptz,
+            updated_at timestamptz,
+            last_block integer
+        );"#,
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 }
