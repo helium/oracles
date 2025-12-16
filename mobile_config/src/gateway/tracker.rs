@@ -91,29 +91,35 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                         to_insert.push(gw);
                     }
                     Some(last_gw) => {
-                        // FYI hash includes location
-                        let hash_changed = gw.hash != last_gw.hash;
-                        if !hash_changed {
-                            continue;
-                        }
-
-                        gw.last_changed_at = gw.refreshed_at;
-
                         let loc_changed = gw.location != last_gw.location;
+                        // FYI hash includes location
+                        // owner (at this moment) is not included in hash
+                        let hash_changed = gw.hash != last_gw.hash;
+                        let owner_changed = gw.owner != last_gw.owner;
+
+                        gw.last_changed_at = if hash_changed {
+                            gw.refreshed_at
+                        } else {
+                            last_gw.last_changed_at
+                        };
+
                         gw.location_changed_at = if loc_changed {
                             Some(gw.refreshed_at)
                         } else {
                             last_gw.location_changed_at
                         };
 
-                        let owner_changed = gw.owner != last_gw.owner;
                         gw.owner_changed_at = if owner_changed {
                             Some(gw.refreshed_at)
                         } else {
                             last_gw.owner_changed_at
                         };
 
-                        to_insert.push(gw);
+                        // We only add record if something changed
+                        // FYI hash includes location
+                        if hash_changed || owner_changed {
+                            to_insert.push(gw);
+                        }
                     }
                 }
             }
