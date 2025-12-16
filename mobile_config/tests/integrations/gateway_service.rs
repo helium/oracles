@@ -402,7 +402,7 @@ async fn gateway_info_batch_v1(pool: PgPool) -> anyhow::Result<()> {
         location_changed_at: Some(inserted_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway1.insert(&pool).await?;
 
@@ -421,7 +421,7 @@ async fn gateway_info_batch_v1(pool: PgPool) -> anyhow::Result<()> {
         location_changed_at: Some(created_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway2.insert(&pool).await?;
 
@@ -492,7 +492,7 @@ async fn gateway_info_batch_v2(pool: PgPool) -> anyhow::Result<()> {
         location_changed_at: Some(inserted_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway1.insert(&pool).await?;
 
@@ -511,7 +511,7 @@ async fn gateway_info_batch_v2(pool: PgPool) -> anyhow::Result<()> {
         location_changed_at: Some(created_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway2.insert(&pool).await?;
 
@@ -605,7 +605,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         location_changed_at: Some(refreshed_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway1.insert(&pool).await?;
 
@@ -624,7 +624,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         location_changed_at: Some(created_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway2.insert(&pool).await?;
 
@@ -643,7 +643,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         location_changed_at: Some(inserted_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway3.insert(&pool).await?;
 
@@ -662,7 +662,7 @@ async fn gateway_info_batch_v2_updated_at_check(pool: PgPool) -> anyhow::Result<
         location_changed_at: Some(created_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway4.insert(&pool).await?;
 
@@ -743,7 +743,7 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
         location_changed_at: Some(refreshed_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway1.insert(&pool).await?;
 
@@ -762,7 +762,7 @@ async fn gateway_info_v2(pool: PgPool) -> anyhow::Result<()> {
         location_changed_at: Some(created_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway2.insert(&pool).await?;
 
@@ -844,7 +844,7 @@ async fn gateway_info_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
         location_changed_at: Some(refreshed_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway_original.insert(&pool).await?;
 
@@ -871,7 +871,7 @@ async fn gateway_info_at_timestamp(pool: PgPool) -> anyhow::Result<()> {
         location_changed_at: Some(created_at),
         location_asserts: Some(1),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(created_at),
     };
     gateway_recent.insert(&pool).await?;
 

@@ -106,6 +106,13 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                             last_gw.location_changed_at
                         };
 
+                        let owner_changed = gw.owner != last_gw.owner;
+                        gw.owner_changed_at = if owner_changed {
+                            Some(gw.refreshed_at)
+                        } else {
+                            last_gw.owner_changed_at
+                        };
+
                         to_insert.push(gw);
                     }
                 }

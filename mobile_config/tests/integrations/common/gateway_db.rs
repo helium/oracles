@@ -34,7 +34,7 @@ pub struct TestGateway {
     #[builder(default)]
     owner: Option<String>,
     #[builder(default)]
-    hash_v2: Option<String>,
+    owner_changed_at: Option<DateTime<Utc>>,
 }
 
 impl From<TestGateway> for Gateway {
@@ -54,7 +54,7 @@ impl From<TestGateway> for Gateway {
             location_changed_at: tg.location_changed_at,
             location_asserts: tg.location_asserts,
             owner: tg.owner,
-            hash_v2: tg.hash_v2,
+            owner_changed_at: tg.owner_changed_at,
         }
     }
 }

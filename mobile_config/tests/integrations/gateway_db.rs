@@ -202,6 +202,6 @@ fn gw(address: PublicKeyBinary, gateway_type: GatewayType, t: chrono::DateTime<U
         location_changed_at: None,
         location_asserts: Some(5),
         owner: None,
-        hash_v2: None,
+        owner_changed_at: Some(t),
     }
 }
