@@ -11,9 +11,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
-file-store = { path = "../file_store" }
-file-store-oracles = { path = "../file_store_oracles" }
-futures = { workspace = true }
 helium-crypto = { workspace = true }
 itertools = { workspace = true }
 metrics = { workspace = true }
@@ -24,7 +21,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 spl-token = { version = "8" }
-sqlx = { workspace = true }
 
 helium-lib = { git = "https://github.com/helium/helium-wallet-rs", branch = "master" }
 tls-init = { path = "../tls_init" }
