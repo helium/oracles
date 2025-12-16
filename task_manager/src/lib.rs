@@ -1,3 +1,25 @@
+//! Async task lifecycle management for coordinated startup and graceful shutdown.
+//!
+//! This crate provides a lightweight task manager built on Tokio that allows you to:
+//! - Register multiple long-running async tasks
+//! - Run them concurrently with coordinated startup
+//! - Handle graceful shutdown on SIGTERM or Ctrl+C
+//! - Shut down tasks in reverse order (LIFO) for proper cleanup
+//! - Propagate errors with automatic shutdown of remaining tasks
+//!
+//! # Example
+//!
+//! ```ignore
+//! use task_manager::TaskManager;
+//!
+//! TaskManager::builder()
+//!     .add_task(my_server)
+//!     .add_task(my_worker)
+//!     .build()
+//!     .start()
+//!     .await?;
+//! ```
+
 mod select_all;
 
 use std::pin::pin;
@@ -6,9 +28,27 @@ use crate::select_all::select_all;
 use futures::{future::LocalBoxFuture, Future, FutureExt, StreamExt};
 use tokio::signal;
 
+/// The return type for managed tasks.
+///
+/// A boxed local future that returns `anyhow::Result<()>` when complete.
+/// Tasks should return `Ok(())` on successful shutdown or an error if something went wrong.
 pub type TaskLocalBoxFuture = LocalBoxFuture<'static, anyhow::Result<()>>;
 
-/// Helper for starting tasks that can be spawned into their own tokio task.
+/// Spawns a future into its own Tokio task.
+///
+/// Use this in [`ManagedTask::start_task`] implementations when your future
+/// is `Send + 'static`. This is the preferred approach as it allows the task
+/// to run independently on the Tokio runtime.
+///
+/// # Example
+///
+/// ```ignore
+/// impl ManagedTask for MyDaemon {
+///     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskLocalBoxFuture {
+///         task_manager::spawn(self.run(shutdown))
+///     }
+/// }
+/// ```
 pub fn spawn<F>(fut: F) -> TaskLocalBoxFuture
 where
     F: Future<Output = anyhow::Result<()>> + Send + 'static,
@@ -17,10 +57,11 @@ where
     Box::pin(async move { handle.await? })
 }
 
-/// Helper for tasks that do not satisfy the `Send` requirement of `spawn`.
+/// Boxes a future for local execution without spawning a separate task.
 ///
-/// The aim should be to have tasks spawned in their own tasks, unless there's a
-/// good reason for them not to be.
+/// Use this in [`ManagedTask::start_task`] implementations when your future
+/// does not satisfy the `Send` requirement. Prefer [`spawn`] when possible,
+/// as spawned tasks can run more efficiently on the Tokio runtime.
 pub fn run<F>(fut: F) -> TaskLocalBoxFuture
 where
     F: Future<Output = anyhow::Result<()>> + 'static,
@@ -28,10 +69,63 @@ where
     Box::pin(fut)
 }
 
+/// A trait for types that can be managed as async tasks.
+///
+/// Implement this trait to make your type usable with [`TaskManager`].
+/// The trait is also automatically implemented for closures of the form
+/// `FnOnce(triggered::Listener) -> Future<Output = anyhow::Result<()>>`.
+///
+/// # Example
+///
+/// ```ignore
+/// use task_manager::{ManagedTask, TaskLocalBoxFuture};
+///
+/// struct MyDaemon { /* ... */ }
+///
+/// impl ManagedTask for MyDaemon {
+///     fn start_task(
+///         self: Box<Self>,
+///         shutdown: triggered::Listener,
+///     ) -> TaskLocalBoxFuture {
+///         task_manager::spawn(self.run(shutdown))
+///     }
+/// }
+/// ```
 pub trait ManagedTask {
+    /// Starts the task and returns a future that completes when the task is done.
+    ///
+    /// The `shutdown` listener will be triggered when the task manager wants to
+    /// shut down this task. Implementations should listen for this signal and
+    /// clean up gracefully.
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskLocalBoxFuture;
 }
 
+/// Manages the lifecycle of multiple async tasks with coordinated shutdown.
+///
+/// `TaskManager` runs all registered tasks concurrently and handles graceful
+/// shutdown when receiving SIGTERM or Ctrl+C. Tasks are shut down in reverse
+/// order of registration (LIFO), allowing dependent tasks to stop before their
+/// dependencies.
+///
+/// # Example
+///
+/// ```ignore
+/// use task_manager::TaskManager;
+///
+/// // Using the builder pattern
+/// TaskManager::builder()
+///     .add_task(server)
+///     .add_task(worker)
+///     .build()
+///     .start()
+///     .await?;
+///
+/// // Or using direct construction
+/// let mut manager = TaskManager::new();
+/// manager.add(server);
+/// manager.add(worker);
+/// manager.start().await?;
+/// ```
 pub struct TaskManager {
     tasks: Vec<Box<dyn ManagedTask>>,
 }
@@ -42,6 +136,19 @@ impl ManagedTask for TaskManager {
     }
 }
 
+/// Builder for constructing a [`TaskManager`] with a fluent API.
+///
+/// # Example
+///
+/// ```ignore
+/// use task_manager::TaskManager;
+///
+/// let manager = TaskManager::builder()
+///     .add_task(server)
+///     .add_task(worker)
+///     .add_task(sink)
+///     .build();
+/// ```
 pub struct TaskManagerBuilder {
     tasks: Vec<Box<dyn ManagedTask>>,
 }
@@ -82,18 +189,30 @@ impl Default for TaskManager {
 }
 
 impl TaskManager {
+    /// Creates a new empty task manager.
     pub fn new() -> Self {
         Self { tasks: Vec::new() }
     }
 
+    /// Creates a new [`TaskManagerBuilder`] for fluent task registration.
     pub fn builder() -> TaskManagerBuilder {
         TaskManagerBuilder { tasks: Vec::new() }
     }
 
+    /// Adds a task to the manager.
+    ///
+    /// Tasks are started in the order they are added and shut down in reverse order.
     pub fn add(&mut self, task: impl ManagedTask + 'static) {
         self.tasks.push(Box::new(task));
     }
 
+    /// Starts all registered tasks and waits for completion or shutdown.
+    ///
+    /// This method:
+    /// 1. Starts all tasks concurrently
+    /// 2. Listens for SIGTERM or Ctrl+C signals
+    /// 3. On signal or error, shuts down all tasks in reverse order (LIFO)
+    /// 4. Returns the first error encountered, or `Ok(())` if all tasks complete successfully
     pub async fn start(self) -> anyhow::Result<()> {
         let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
         let shutdown = Box::pin(
@@ -137,11 +256,15 @@ impl TaskManager {
 }
 
 impl TaskManagerBuilder {
+    /// Adds a task to the builder.
+    ///
+    /// Tasks are started in the order they are added and shut down in reverse order.
     pub fn add_task(mut self, task: impl ManagedTask + 'static) -> Self {
         self.tasks.push(Box::new(task));
         self
     }
 
+    /// Consumes the builder and returns a configured [`TaskManager`].
     pub fn build(self) -> TaskManager {
         TaskManager { tasks: self.tasks }
     }
