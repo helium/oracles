@@ -25,14 +25,51 @@ mod select_all;
 use std::pin::pin;
 
 use crate::select_all::select_all;
-use futures::{future::LocalBoxFuture, Future, FutureExt, StreamExt};
+use futures::{future::LocalBoxFuture, Future, FutureExt, StreamExt, TryFutureExt};
 use tokio::signal;
+
+/// A boxed error type for task errors from user code.
+pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+/// Error type returned by task operations.
+#[derive(Debug, thiserror::Error)]
+pub enum TaskError {
+    /// Error setting up signal handlers.
+    #[error("signal handler setup failed: {0}")]
+    Signal(#[from] std::io::Error),
+
+    /// Error from a managed task.
+    #[error("task failed: {0}")]
+    Task(#[source] BoxError),
+}
+
+impl TaskError {
+    /// Creates a `TaskError::Task` from any error type that can be converted to [`BoxError`].
+    ///
+    /// This is useful in `map_err` calls to convert task errors:
+    ///
+    /// ```ignore
+    /// some_future.map_err(TaskError::from_err)
+    /// ```
+    pub fn from_err<E: Into<BoxError>>(err: E) -> Self {
+        TaskError::Task(err.into())
+    }
+}
+
+impl From<BoxError> for TaskError {
+    fn from(err: BoxError) -> Self {
+        TaskError::Task(err)
+    }
+}
+
+/// Result type for task operations.
+pub type TaskResult = Result<(), TaskError>;
 
 /// The return type for managed tasks.
 ///
-/// A boxed local future that returns `anyhow::Result<()>` when complete.
+/// A boxed local future that returns [`TaskResult`] when complete.
 /// Tasks should return `Ok(())` on successful shutdown or an error if something went wrong.
-pub type TaskLocalBoxFuture = LocalBoxFuture<'static, anyhow::Result<()>>;
+pub type TaskLocalBoxFuture = LocalBoxFuture<'static, TaskResult>;
 
 /// Spawns a future into its own Tokio task.
 ///
@@ -49,12 +86,17 @@ pub type TaskLocalBoxFuture = LocalBoxFuture<'static, anyhow::Result<()>>;
 ///     }
 /// }
 /// ```
-pub fn spawn<F>(fut: F) -> TaskLocalBoxFuture
+pub fn spawn<F, E>(fut: F) -> TaskLocalBoxFuture
 where
-    F: Future<Output = anyhow::Result<()>> + Send + 'static,
+    F: Future<Output = Result<(), E>> + Send + 'static,
+    E: Into<BoxError> + Send + 'static,
 {
-    let handle = tokio::spawn(fut);
-    Box::pin(async move { handle.await? })
+    // tokio::spawn returns Result<Result<(), E>, JoinError>
+    Box::pin(tokio::spawn(fut).map(|result| match result {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(TaskError::from_err(e)),
+        Err(e) => Err(TaskError::from_err(e)),
+    }))
 }
 
 /// Boxes a future for local execution without spawning a separate task.
@@ -62,18 +104,29 @@ where
 /// Use this in [`ManagedTask::start_task`] implementations when your future
 /// does not satisfy the `Send` requirement. Prefer [`spawn`] when possible,
 /// as spawned tasks can run more efficiently on the Tokio runtime.
-pub fn run<F>(fut: F) -> TaskLocalBoxFuture
+///
+/// # Example
+///
+/// ```ignore
+/// impl ManagedTask for MyLocalDaemon {
+///     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskLocalBoxFuture {
+///         task_manager::run(self.run(shutdown))
+///     }
+/// }
+/// ```
+pub fn run<F, E>(fut: F) -> TaskLocalBoxFuture
 where
-    F: Future<Output = anyhow::Result<()>> + 'static,
+    F: Future<Output = Result<(), E>> + 'static,
+    E: Into<BoxError> + 'static,
 {
-    Box::pin(fut)
+    Box::pin(fut.map_err(TaskError::from_err))
 }
 
 /// A trait for types that can be managed as async tasks.
 ///
 /// Implement this trait to make your type usable with [`TaskManager`].
 /// The trait is also automatically implemented for closures of the form
-/// `FnOnce(triggered::Listener) -> Future<Output = anyhow::Result<()>>`.
+/// `FnOnce(triggered::Listener) -> Future<Output = TaskResult>`.
 ///
 /// # Example
 ///
@@ -155,11 +208,11 @@ pub struct TaskManagerBuilder {
 
 struct StoppableLocalFuture {
     shutdown_trigger: triggered::Trigger,
-    future: LocalBoxFuture<'static, anyhow::Result<()>>,
+    future: LocalBoxFuture<'static, TaskResult>,
 }
 
 impl Future for StoppableLocalFuture {
-    type Output = anyhow::Result<()>;
+    type Output = TaskResult;
 
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
@@ -171,13 +224,13 @@ impl Future for StoppableLocalFuture {
 
 impl<F, O> ManagedTask for F
 where
-    O: Future<Output = anyhow::Result<()>> + 'static,
+    O: Future<Output = TaskResult> + 'static,
     F: FnOnce(triggered::Listener) -> O,
 {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+    ) -> LocalBoxFuture<'static, TaskResult> {
         Box::pin(self(shutdown))
     }
 }
@@ -213,7 +266,7 @@ impl TaskManager {
     /// 2. Listens for SIGTERM or Ctrl+C signals
     /// 3. On signal or error, shuts down all tasks in reverse order (LIFO)
     /// 4. Returns the first error encountered, or `Ok(())` if all tasks complete successfully
-    pub async fn start(self) -> anyhow::Result<()> {
+    pub async fn start(self) -> TaskResult {
         let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
         let shutdown = Box::pin(
             futures::future::select(
@@ -225,7 +278,7 @@ impl TaskManager {
         self.do_start(shutdown).await
     }
 
-    async fn do_start(self, mut shutdown: LocalBoxFuture<'static, ()>) -> anyhow::Result<()> {
+    async fn do_start(self, mut shutdown: LocalBoxFuture<'static, ()>) -> TaskResult {
         let mut futures = start_futures(self.tasks);
 
         loop {
@@ -283,7 +336,7 @@ fn start_futures(tasks: Vec<Box<dyn ManagedTask>>) -> Vec<StoppableLocalFuture> 
         .collect()
 }
 
-async fn stop_all(futures: Vec<StoppableLocalFuture>) -> anyhow::Result<()> {
+async fn stop_all(futures: Vec<StoppableLocalFuture>) -> TaskResult {
     #[allow(clippy::manual_try_fold)]
     futures::stream::iter(futures.into_iter().rev())
         .then(|local| async move {
@@ -299,14 +352,27 @@ async fn stop_all(futures: Vec<StoppableLocalFuture>) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::anyhow;
-    use futures::TryFutureExt;
     use tokio::sync::mpsc;
+
+    #[derive(Debug)]
+    struct TestError(&'static str);
+
+    impl std::fmt::Display for TestError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
+    impl std::error::Error for TestError {}
+
+    fn test_err(msg: &'static str) -> TaskError {
+        TaskError::from_err(TestError(msg))
+    }
 
     struct TestTask {
         name: &'static str,
         delay: u64,
-        result: anyhow::Result<()>,
+        result: TaskResult,
         sender: mpsc::Sender<&'static str>,
     }
 
@@ -314,7 +380,7 @@ mod tests {
         fn start_task(
             self: Box<Self>,
             shutdown_listener: triggered::Listener,
-        ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        ) -> LocalBoxFuture<'static, TaskResult> {
             let handle = tokio::spawn(async move {
                 tokio::select! {
                     _ = shutdown_listener.clone() => (),
@@ -324,11 +390,11 @@ mod tests {
                 self.result
             });
 
-            Box::pin(
-                handle
-                    .map_err(|err| err.into())
-                    .and_then(|result| async move { result }),
-            )
+            // handle.await returns Result<TaskResult, JoinError>
+            Box::pin(handle.map(|result| match result {
+                Ok(inner) => inner,
+                Err(e) => Err(TaskError::from_err(e)),
+            }))
         }
     }
 
@@ -372,7 +438,7 @@ mod tests {
             .add_task(TestTask {
                 name: "2",
                 delay: 50,
-                result: Err(anyhow!("error")),
+                result: Err(test_err("error")),
                 sender: sender.clone(),
             })
             .add_task(TestTask {
@@ -388,7 +454,7 @@ mod tests {
         assert_eq!(Some("2"), receiver.recv().await);
         assert_eq!(Some("3"), receiver.recv().await);
         assert_eq!(Some("1"), receiver.recv().await);
-        assert_eq!("error", result.unwrap_err().to_string());
+        assert_eq!("task failed: error", result.unwrap_err().to_string());
     }
 
     #[tokio::test]
@@ -405,13 +471,13 @@ mod tests {
             .add_task(TestTask {
                 name: "2",
                 delay: 50,
-                result: Err(anyhow!("error")),
+                result: Err(test_err("error")),
                 sender: sender.clone(),
             })
             .add_task(TestTask {
                 name: "3",
                 delay: 200,
-                result: Err(anyhow!("second")),
+                result: Err(test_err("second")),
                 sender: sender.clone(),
             })
             .build()
@@ -421,7 +487,7 @@ mod tests {
         assert_eq!(Some("2"), receiver.recv().await);
         assert_eq!(Some("3"), receiver.recv().await);
         assert_eq!(Some("1"), receiver.recv().await);
-        assert_eq!("error", result.unwrap_err().to_string());
+        assert_eq!("task failed: error", result.unwrap_err().to_string());
     }
 
     #[tokio::test]
@@ -446,7 +512,7 @@ mod tests {
                     .add_task(TestTask {
                         name: "task-2-2",
                         delay: 100,
-                        result: Err(anyhow!("error")),
+                        result: Err(test_err("error")),
                         sender: sender.clone(),
                     })
                     .add_task(TestTask {

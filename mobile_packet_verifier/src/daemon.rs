@@ -218,6 +218,7 @@ impl Cmd {
             .add_task(daemon)
             .build()
             .start()
-            .await
+            .await?;
+        Ok(())
     }
 }

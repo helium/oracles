@@ -88,6 +88,7 @@ impl Server {
             ))
             .build()
             .start()
-            .await
+            .await?;
+        Ok(())
     }
 }
