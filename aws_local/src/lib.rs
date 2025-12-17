@@ -94,7 +94,7 @@ impl AwsLocal {
 
     pub async fn put_protos<T: prost::Message>(
         &self,
-        file_prefix: String,
+        file_prefix: impl Into<String>,
         protos: Vec<T>,
     ) -> Result<String> {
         let tempdir = tempfile::tempdir()?;
