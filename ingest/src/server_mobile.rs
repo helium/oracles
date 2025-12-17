@@ -914,5 +914,6 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
         .add_task(grpc_server)
         .build()
         .start()
-        .await
+        .await?;
+    Ok(())
 }

@@ -1,5 +1,5 @@
 use crate::{error::ChannelError, BucketClient, Result};
-use futures::{StreamExt, TryFutureExt};
+use futures::StreamExt;
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -60,7 +60,7 @@ impl ManagedTask for FileUploadServer {
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> task_manager::TaskLocalBoxFuture {
-        task_manager::spawn(self.run(shutdown).err_into())
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

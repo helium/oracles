@@ -83,7 +83,8 @@ impl Server {
             .add_task(indexer)
             .build()
             .start()
-            .await
+            .await?;
+        Ok(())
     }
 }
 

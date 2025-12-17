@@ -200,13 +200,14 @@ impl Cmd {
                         monitor_funds_period,
                         shutdown,
                     )
-                    .map_err(anyhow::Error::from)
+                    .map_err(task_manager::TaskError::from_err)
             })
             .add_task(verifier_daemon)
             .add_task(burner)
             .add_task(report_files_server)
             .build()
             .start()
-            .await
+            .await?;
+        Ok(())
     }
 }

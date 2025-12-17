@@ -3,7 +3,7 @@ use std::{net::SocketAddr, str::FromStr};
 use chrono::Utc;
 use file_store::{file_sink::FileSinkClient, file_upload};
 use file_store_oracles::traits::{FileSinkCommitStrategy, FileSinkRollTime, FileSinkWriteExt};
-use futures::{future::LocalBoxFuture, TryFutureExt};
+use futures::TryFutureExt;
 use helium_crypto::PublicKey;
 use helium_proto::services::chain_rewardable_entities::{
     self, EntityOwnershipChangeReportV1, EntityOwnershipChangeReqV1, EntityOwnershipChangeRespV1,
@@ -98,7 +98,8 @@ pub async fn grpc_server(settings: &Settings) -> anyhow::Result<()> {
         .add_task(grpc_server)
         .build()
         .start()
-        .await
+        .await?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -115,7 +116,7 @@ impl ManagedTask for GrpcServer {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+    ) -> task_manager::TaskLocalBoxFuture {
         task_manager::spawn(self.run(shutdown))
     }
 }

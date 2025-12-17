@@ -4,7 +4,6 @@ use crate::{
         confirm_pending_txns, Burn, ConfirmPendingError, PendingTables, PendingTablesTransaction,
     },
 };
-use futures::TryFutureExt;
 use solana::{burn::SolanaNetwork, GetSignature, SolanaRpcError};
 use std::time::Duration;
 use task_manager::ManagedTask;
@@ -26,7 +25,7 @@ where
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> task_manager::TaskLocalBoxFuture {
-        task_manager::spawn(self.run(shutdown).err_into())
+        task_manager::spawn(self.run(shutdown))
     }
 }
 

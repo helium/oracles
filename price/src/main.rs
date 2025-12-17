@@ -110,7 +110,8 @@ impl Server {
             );
         }
 
-        task_manager.start().await
+        task_manager.start().await?;
+        Ok(())
     }
 }
 

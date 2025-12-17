@@ -96,6 +96,7 @@ impl Daemon {
             .add_task(db_cleaner)
             .build()
             .start()
-            .await
+            .await?;
+        Ok(())
     }
 }

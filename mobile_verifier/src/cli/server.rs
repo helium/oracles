@@ -180,6 +180,7 @@ impl Cmd {
             )
             .build()
             .start()
-            .await
+            .await?;
+        Ok(())
     }
 }
