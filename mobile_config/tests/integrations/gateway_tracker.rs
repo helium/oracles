@@ -118,3 +118,73 @@ async fn count_gateways(pool: &PgPool) -> anyhow::Result<i64> {
 
     Ok(count)
 }
+
+#[sqlx::test]
+async fn test_gateway_tracker_owner_tracking(pool: PgPool) -> anyhow::Result<()> {
+    let now = Utc::now()
+        .with_nanosecond(Utc::now().timestamp_subsec_micros() * 1000)
+        .unwrap();
+
+    // ensure tables exist
+    gateway_metadata_db::create_tables(&pool).await;
+
+    // Create a gateway with owner information
+    let pubkey: helium_crypto::PublicKeyBinary = make_keypair().public_key().clone().into();
+    let asset = "test_asset_001".to_string();
+    let initial_owner = "owner1_address".to_string();
+    let hex_val = 631_711_281_837_647_359_i64;
+
+    let gateway = gateway_metadata_db::GatewayInsert {
+        asset: asset.clone(),
+        location: Some(hex_val),
+        device_type: "\"wifiIndoor\"".to_string(),
+        key: pubkey.clone(),
+        created_at: now,
+        refreshed_at: Some(now),
+        deployment_info: None,
+    };
+
+    // Insert the gateway into mobile_hotspot_infos and key_to_assets
+    gateway_metadata_db::insert_gateway_bulk(&pool, &[gateway], 1000).await?;
+
+    // Insert the owner into asset_owners table
+    gateway_metadata_db::insert_asset_owner(&pool, &asset, &initial_owner, now, now).await?;
+
+    // Run the tracker execute function
+    tracker::execute(&pool, &pool).await?;
+
+    // Verify the gateway was created with the correct owner
+    let retrieved_gateway = Gateway::get_by_address(&pool, &pubkey)
+        .await?
+        .expect("gateway not found");
+
+    assert_eq!(retrieved_gateway.address, pubkey.clone());
+    assert_eq!(retrieved_gateway.gateway_type, GatewayType::WifiIndoor);
+    assert_eq!(retrieved_gateway.owner, Some(initial_owner.clone()));
+    assert_eq!(retrieved_gateway.owner_changed_at, Some(now));
+
+    // Update the owner in asset_owners table
+    let new_owner = "owner2_address".to_string();
+    let update_time = now + chrono::Duration::hours(1);
+
+    // Update the refreshed_at time in mobile_hotspot_infos to simulate a new update
+    gateway_metadata_db::update_gateway(&pool, &asset, hex_val, update_time, 1).await?;
+
+    gateway_metadata_db::update_asset_owner(&pool, &asset, &new_owner, update_time).await?;
+
+    // Run tracker::execute again
+    tracker::execute(&pool, &pool).await?;
+
+    // Verify the owner and owner_changed_at were updated
+    let updated_gateway = Gateway::get_by_address(&pool, &pubkey)
+        .await?
+        .expect("gateway not found");
+
+    assert_eq!(updated_gateway.address, pubkey.clone());
+    assert_eq!(updated_gateway.owner, Some(new_owner.clone()));
+    assert_eq!(updated_gateway.owner_changed_at, Some(update_time));
+    // last_changed_at should also be updated since owner changed
+    assert_eq!(updated_gateway.last_changed_at, update_time);
+
+    Ok(())
+}
