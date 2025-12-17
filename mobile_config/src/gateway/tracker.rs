@@ -37,7 +37,7 @@ impl Tracker {
         let mut interval = tokio::time::interval(self.interval);
 
         if let Err(e) = backfill_gateway_owners(&self.pool, &self.metadata).await {
-            tracing::error!("backfill_gateway_owners is faled. {e}");
+            tracing::error!("backfill_gateway_owners is failed. {e}");
         }
 
         loop {
