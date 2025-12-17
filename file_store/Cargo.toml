@@ -37,6 +37,7 @@ aws-smithy-types-convert = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+aws-local = { path = "../aws_local" }
 
 [features]
 default = ["sqlx-postgres"]

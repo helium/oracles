@@ -281,7 +281,7 @@ where
         }
     }
 
-    async fn run(mut self, shutdown: triggered::Listener) -> Result {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> Result {
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
         let process_name = self.config.process_name.clone();
         let prefix = self.config.prefix.clone();
