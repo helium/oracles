@@ -178,7 +178,9 @@ pub async fn execute(pool: &Pool<Postgres>, metadata: &Pool<Postgres>) -> anyhow
                             gw.owner != last_gw.owner
                         };
 
-                        gw.last_changed_at = if hash_changed || owner_changed {
+                        // TODO at the second stage of implementing owner and owner_changed at
+                        // last_changed_at should also be affected if owner was changed
+                        gw.last_changed_at = if hash_changed {
                             gw.refreshed_at
                         } else {
                             last_gw.last_changed_at
