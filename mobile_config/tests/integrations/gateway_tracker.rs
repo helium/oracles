@@ -163,6 +163,10 @@ async fn test_gateway_tracker_owner_tracking(pool: PgPool) -> anyhow::Result<()>
     assert_eq!(retrieved_gateway.owner, Some(initial_owner.clone()));
     assert_eq!(retrieved_gateway.owner_changed_at, Some(now));
 
+    // Count gateways before owner change
+    let count_before = count_gateways(&pool).await?;
+    assert_eq!(1, count_before);
+
     // Update the owner in asset_owners table
     let new_owner = "owner2_address".to_string();
     let update_time = now + chrono::Duration::hours(1);
@@ -174,6 +178,13 @@ async fn test_gateway_tracker_owner_tracking(pool: PgPool) -> anyhow::Result<()>
 
     // Run tracker::execute again
     tracker::execute(&pool, &pool).await?;
+
+    // Verify a new record was created after owner change
+    let count_after = count_gateways(&pool).await?;
+    assert_eq!(
+        2, count_after,
+        "A new record should be created when owner changes"
+    );
 
     // Verify the owner and owner_changed_at were updated
     let updated_gateway = Gateway::get_by_address(&pool, &pubkey)
