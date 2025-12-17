@@ -118,7 +118,7 @@ impl PacketLoader {
                         reward_share.save(&mut transaction).await?;
                         metrics.increment_packets();
                     } else {
-                        // the gateway doesnt exist, dont reward
+                        // the gateway doesn't exist, dont reward
                         // write out a paper trail for an unrewardable packet
                         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
                         let reason = NonRewardablePacketReason::GatewayNotFoundForPacket;

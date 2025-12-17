@@ -168,7 +168,7 @@ impl AwsLocalBuilder {
     }
 }
 
-// Until AsyncDrop is stablized, ensure buckets are cleaned up in tests. This
+// Until AsyncDrop is stabilized, ensure buckets are cleaned up in tests. This
 // causes tests to fail unless they call `AwsLocal::delete_bucket()`.
 impl Drop for AwsLocal {
     fn drop(&mut self) {
