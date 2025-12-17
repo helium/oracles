@@ -312,7 +312,10 @@ async fn test_backfill_gateway_owners(pool: PgPool) -> anyhow::Result<()> {
 
     // Count gateway records before backfill
     let count_before = count_gateways(&pool).await?;
-    assert_eq!(2, count_before, "Should have 2 gateway records before backfill");
+    assert_eq!(
+        2, count_before,
+        "Should have 2 gateway records before backfill"
+    );
 
     // Run backfill_gateway_owners
     tracker::backfill_gateway_owners(&pool, &pool).await?;
@@ -359,13 +362,19 @@ async fn test_backfill_gateway_owners(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(gw1_after.gateway_type, gw1_before.gateway_type);
     assert_eq!(gw1_after.last_changed_at, gw1_before.last_changed_at);
     assert_eq!(gw1_after.location, gw1_before.location);
-    assert_eq!(gw1_after.hash, gw1_before.hash, "Hash should not change during backfill");
+    assert_eq!(
+        gw1_after.hash, gw1_before.hash,
+        "Hash should not change during backfill"
+    );
 
     assert_eq!(gw2_after.address, gw2_before.address);
     assert_eq!(gw2_after.gateway_type, gw2_before.gateway_type);
     assert_eq!(gw2_after.last_changed_at, gw2_before.last_changed_at);
     assert_eq!(gw2_after.location, gw2_before.location);
-    assert_eq!(gw2_after.hash, gw2_before.hash, "Hash should not change during backfill");
+    assert_eq!(
+        gw2_after.hash, gw2_before.hash,
+        "Hash should not change during backfill"
+    );
 
     Ok(())
 }
