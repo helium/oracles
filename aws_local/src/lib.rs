@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use file_store::{BucketClient, GzippedFramedFile};
 use std::env;
 use uuid::Uuid;
@@ -97,11 +97,21 @@ impl AwsLocal {
         file_prefix: impl Into<String>,
         protos: Vec<T>,
     ) -> Result<String> {
+        self.put_protos_at_time(file_prefix, protos, Utc::now())
+            .await
+    }
+
+    pub async fn put_protos_at_time<T: prost::Message>(
+        &self,
+        file_prefix: impl Into<String>,
+        protos: Vec<T>,
+        timestamp: DateTime<Utc>,
+    ) -> Result<String> {
         let tempdir = tempfile::tempdir()?;
         let mut file = GzippedFramedFile::builder()
             .path(&tempdir)
             .prefix(file_prefix)
-            .time(Utc::now())
+            .time(timestamp)
             .build()
             .await?;
 

@@ -115,15 +115,28 @@ where
     A: Into<Option<DateTime<Utc>>> + Copy,
     B: Into<Option<DateTime<Utc>>> + Copy,
 {
-    let file_type: String = prefix.into();
     let before = before.into();
     let after = after.into();
+
+    _list_files(client, bucket, prefix, after)
+        .try_filter(move |info| future::ready(after.is_none_or(|v| info.timestamp > v)))
+        .try_filter(move |info| future::ready(before.is_none_or(|v| info.timestamp <= v)))
+        .boxed()
+}
+
+fn _list_files(
+    client: &Client,
+    bucket: impl Into<String>,
+    prefix: impl Into<String>,
+    after: Option<DateTime<Utc>>,
+) -> FileInfoStream {
+    let prefix = prefix.into();
 
     client
         .list_objects_v2()
         .bucket(bucket)
-        .prefix(&file_type)
-        .set_start_after(after.map(|dt| FileInfo::from((file_type, dt)).into()))
+        .prefix(&prefix)
+        .set_start_after(after.map(|dt| FileInfo::from_maybe_dotted_prefix(&prefix, dt).into()))
         .into_paginator()
         .send()
         .into_stream_03x()
@@ -133,8 +146,6 @@ where
         .try_filter_map(|file| {
             future::ready(FileInfo::try_from(&file).map(Some).map_err(Error::from))
         })
-        .try_filter(move |info| future::ready(after.is_none_or(|v| info.timestamp > v)))
-        .try_filter(move |info| future::ready(before.is_none_or(|v| info.timestamp <= v)))
         .boxed()
 }
 
@@ -287,3 +298,104 @@ async fn get_byte_stream(
 
 #[cfg(test)]
 tls_init::include_tls_tests!();
+
+#[cfg(test)]
+mod tests {
+    use aws_local::AwsLocal;
+    use std::time::Duration;
+
+    use super::*;
+
+    type TestResult<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+    #[derive(Clone, prost::Message)]
+    struct TestMsg {}
+
+    #[tokio::test]
+    async fn list_files_respects_start_after_with_dotted_prefix() -> TestResult {
+        let file_prefix = "file_prefix.";
+
+        let awsl = create_aws_local_with_timestamped_files(
+            file_prefix.trim_end_matches('.'),
+            &[hours_ago(5), hours_ago(3), hours_ago(1)],
+        )
+        .await?;
+
+        let after = hours_ago(4);
+        let files = test_list_files_after(&awsl, file_prefix, Some(after)).await?;
+        assert_eq!(files.len(), 2);
+        assert!(files.into_iter().all(|f| f.timestamp >= after));
+
+        awsl.cleanup().await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_files_respects_start_after_without_dotted_prefix() -> TestResult {
+        let file_prefix = "file_prefix";
+
+        let awsl = create_aws_local_with_timestamped_files(
+            file_prefix,
+            &[hours_ago(5), hours_ago(3), hours_ago(1)],
+        )
+        .await?;
+
+        let after = hours_ago(4);
+        let files = test_list_files_after(&awsl, file_prefix, Some(after)).await?;
+        assert_eq!(files.len(), 2);
+        assert!(files.into_iter().all(|f| f.timestamp >= after));
+
+        awsl.cleanup().await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_files_returns_all_files_when_no_after_provided() -> TestResult {
+        let file_prefix = "file_prefix.";
+
+        let awsl = create_aws_local_with_timestamped_files(
+            file_prefix.trim_end_matches('.'),
+            &[hours_ago(5), hours_ago(3), hours_ago(1)],
+        )
+        .await?;
+
+        let files = test_list_files_after(&awsl, file_prefix, None).await?;
+        assert_eq!(files.len(), 3);
+
+        awsl.cleanup().await?;
+
+        Ok(())
+    }
+
+    async fn create_aws_local_with_timestamped_files(
+        file_prefix: &str,
+        timestamps: &[DateTime<Utc>],
+    ) -> TestResult<AwsLocal> {
+        let awsl = AwsLocal::new().await;
+        awsl.create_bucket().await?;
+
+        for timestamp in timestamps {
+            awsl.put_protos_at_time(file_prefix, vec![TestMsg {}], *timestamp)
+                .await?;
+        }
+
+        Ok(awsl)
+    }
+
+    async fn test_list_files_after(
+        awsl: &AwsLocal,
+        file_prefix: &str,
+        after: Option<DateTime<Utc>>,
+    ) -> TestResult<Vec<FileInfo>> {
+        let files = _list_files(&awsl.aws_client(), awsl.bucket(), file_prefix, after)
+            .try_collect()
+            .await?;
+        Ok(files)
+    }
+
+    fn hours_ago(hours: u64) -> DateTime<Utc> {
+        Utc::now() - Duration::from_hours(hours)
+    }
+}

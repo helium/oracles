@@ -106,6 +106,16 @@ impl TryFrom<&Path> for FileInfo {
 }
 
 impl FileInfo {
+    pub fn from_maybe_dotted_prefix(prefix: &str, dt: DateTime<Utc>) -> Self {
+        let prefix = prefix.trim_end_matches('.').to_string();
+        Self {
+            key: format!("{}.{}.gz", &prefix, dt.timestamp_millis()),
+            prefix,
+            timestamp: dt,
+            size: 0,
+        }
+    }
+
     pub fn matches(str: &str) -> bool {
         RE.is_match(str)
     }
