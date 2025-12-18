@@ -148,15 +148,26 @@ impl AwsLocalBuilder {
         self
     }
 
+    fn next_fake_credential(&self) -> String {
+        // Generate unique credentials per AwsLocal instance to avoid CLIENT_MAP
+        // cache collisions. This prevents "dispatch task is gone" errors in tests
+        // where cached clients' dispatch tasks can outlive the test runtime.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static BUILT_CLIENT_COUNT: AtomicUsize = AtomicUsize::new(0);
+        let count = BUILT_CLIENT_COUNT.fetch_add(1, Ordering::Relaxed);
+        format!("fake-{count}")
+    }
+
     pub async fn build(self) -> AwsLocal {
+        let fake_cred = self.next_fake_credential();
         let endpoint = self.endpoint.unwrap_or_else(aws_local_default_endpoint);
 
         let client = BucketClient::new(
             self.bucket.unwrap_or_else(gen_bucket_name),
             self.region.or(Some("us-east-1".to_string())),
             Some(endpoint.clone()),
-            Some("fake".to_string()),
-            Some("fake".to_string()),
+            Some(fake_cred.clone()),
+            Some(fake_cred),
         )
         .await;
 
