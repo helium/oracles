@@ -11,6 +11,7 @@ use file_store_oracles::{
     unique_connections::{UniqueConnectionReq, UniqueConnectionsIngestReport},
 };
 use helium_crypto::PublicKeyBinary;
+use helium_proto::services::poc_mobile::UnallocatedRewardType;
 use mobile_verifier::{
     banning,
     cell_type::CellType,
@@ -60,7 +61,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let price_info = default_price_info();
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
+    let (_, poc_unallocated_amount) = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
@@ -72,7 +73,6 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
     let dc_rewards = rewards.gateway_rewards;
-    let unallocated_reward = rewards.unallocated.first();
 
     let poc_sum: u64 = poc_rewards.iter().map(|r| r.total_poc_reward()).sum();
 
@@ -80,9 +80,15 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(poc_sum / 3, poc_rewards[1].total_poc_reward());
     assert_eq!(poc_sum / 3, poc_rewards[2].total_poc_reward());
 
-    // assert the unallocated reward
-    let unallocated_reward = unallocated_reward.unwrap();
-    assert_eq!(unallocated_reward.amount, 1);
+    // assert no unallocated reward writes
+    assert_eq!(
+        rewards
+            .unallocated
+            .iter()
+            .filter(|r| r.reward_type == UnallocatedRewardType::Poc as i32)
+            .count(),
+        0
+    );
 
     // assert the boosted hexes in the radio rewards
     // boosted hexes will contain the used multiplier for each boosted hex
@@ -98,7 +104,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     // confirm the total rewards allocated matches expectations
     let dc_sum: u64 = dc_rewards.iter().map(|r| r.dc_transfer_reward).sum();
-    let total = poc_sum + dc_sum + unallocated_reward.amount;
+    let total = poc_sum + dc_sum + poc_unallocated_amount.to_u64().unwrap_or(0);
 
     let expected_sum = reward_shares::get_scheduled_tokens_for_poc(reward_info.epoch_emissions)
         .to_u64()
@@ -275,7 +281,7 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
+    let (_, poc_unallocated_reward) = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
@@ -286,13 +292,13 @@ async fn test_all_banned_radio(pool: PgPool) -> anyhow::Result<()> {
 
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
-
     let dc_rewards = rewards.gateway_rewards;
+    let poc_unallocated_reward = poc_unallocated_reward.to_u64().unwrap_or(0);
 
     // expecting single radio with poc rewards, minimal unallocated due to rounding
     assert_eq!(poc_rewards.len(), 2);
     assert_eq!(dc_rewards.len(), 3);
-    assert_eq!(rewards.unallocated.len(), 1);
+    assert!(poc_unallocated_reward >= 1);
 
     Ok(())
 }
@@ -328,7 +334,7 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     txn.commit().await?;
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(
+    let (_, poc_unallocated_reward) = rewarder::reward_poc_and_dc(
         &pool,
         &hex_boosting_client,
         mobile_rewards_client,
@@ -340,10 +346,11 @@ async fn test_data_banned_radio_still_receives_poc(pool: PgPool) -> anyhow::Resu
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
     let dc_rewards = rewards.gateway_rewards;
+    let poc_unallocated_reward = poc_unallocated_reward.to_u64().unwrap_or(0);
 
     assert_eq!(poc_rewards.len(), 3);
     assert_eq!(dc_rewards.len(), 0);
-    assert_eq!(rewards.unallocated.len(), 1);
+    assert!(poc_unallocated_reward >= 1);
 
     Ok(())
 }

@@ -3503,7 +3503,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#3dbaedf3a39ab79cabd3b80cf7c648bf23d3c3f8"
+source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fmissing-bones-sp-rewards#af7461fcc7ddc5f302fa6b08c25c5380a623c895"
 dependencies = [
  "bytes",
  "msg-signature",
@@ -5101,7 +5101,7 @@ dependencies = [
 [[package]]
 name = "msg-signature"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#3dbaedf3a39ab79cabd3b80cf7c648bf23d3c3f8"
+source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fmissing-bones-sp-rewards#af7461fcc7ddc5f302fa6b08c25c5380a623c895"
 dependencies = [
  "msg-signature-macro",
 ]
@@ -5109,7 +5109,7 @@ dependencies = [
 [[package]]
 name = "msg-signature-macro"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#3dbaedf3a39ab79cabd3b80cf7c648bf23d3c3f8"
+source = "git+https://www.github.com/helium/proto.git?branch=connor%2Fmissing-bones-sp-rewards#af7461fcc7ddc5f302fa6b08c25c5380a623c895"
 dependencies = [
  "quote",
  "syn 2.0.106",
