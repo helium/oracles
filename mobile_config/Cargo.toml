@@ -60,6 +60,7 @@ task-manager = { path = "../task_manager" }
 tls-init = { path = "../tls_init" }
 
 [dev-dependencies]
+derive_builder = "0.20"
 rand = { workspace = true }
 tokio-stream = { workspace = true, features = ["net"] }
 tempfile = "3"

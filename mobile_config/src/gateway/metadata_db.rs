@@ -21,6 +21,7 @@ pub struct MobileHotspotInfo {
     dc_onboarding_fee_paid: Option<i64>,
     device_type: DeviceType,
     deployment_info: Option<DeploymentInfo>,
+    owner: Option<String>,
 }
 
 impl MobileHotspotInfo {
@@ -88,10 +89,13 @@ impl MobileHotspotInfo {
                     mhi.is_active,
                     mhi.dc_onboarding_fee_paid::bigint,
                     mhi.device_type::text,
-                    mhi.deployment_info::text
+                    mhi.deployment_info::text,
+                    ao.owner
                 FROM key_to_assets kta
                 INNER JOIN mobile_hotspot_infos mhi ON
                     kta.asset = mhi.asset
+                LEFT JOIN asset_owners ao ON
+                    kta.asset = ao.asset
                 WHERE kta.entity_key IS NOT NULL
                     AND mhi.refreshed_at IS NOT NULL
                 ORDER BY kta.entity_key, refreshed_at DESC
@@ -140,6 +144,8 @@ impl MobileHotspotInfo {
                 None
             },
             location_asserts: self.num_location_asserts.map(|n| n as u32),
+            owner: self.owner.clone(),
+            owner_changed_at: Some(refreshed_at),
         }))
     }
 }
@@ -171,6 +177,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for MobileHotspotInfo {
             num_location_asserts: row.get::<Option<i32>, &str>("num_location_asserts"),
             is_active: row.get::<Option<bool>, &str>("is_active"),
             dc_onboarding_fee_paid: row.get::<Option<i64>, &str>("dc_onboarding_fee_paid"),
+            owner: row.get::<Option<String>, &str>("owner"),
             device_type,
             deployment_info,
         })
