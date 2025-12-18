@@ -129,6 +129,7 @@ pub struct FileInfoPollerConfig<Message, State, Store, Parser> {
     poll_duration: Duration,
     state: State,
     store: Store,
+    #[builder(setter(custom))]
     prefix: String,
     parser: Parser,
     lookback: LookbackBehavior,
@@ -164,6 +165,25 @@ impl<Message, State, Store, Parser> FileInfoPollerConfigBuilder<Message, State, 
     /// `max_lookback` window, it will not be retrieved.
     pub fn lookback_max(self, max_lookback: Duration) -> Self {
         self.lookback(LookbackBehavior::Max(max_lookback))
+    }
+
+    /// Set the prefix for the file names.
+    ///
+    /// The prefix is used to filter files when polling.
+    /// A dot will be appended to the prefix to ensure matches only the prefix provided.
+    ///
+    /// To match multiple files with the same prefix, use `prefix_without_dot`.
+    pub fn prefix(mut self, value: impl Into<String>) -> Self {
+        self.prefix = Some(format!("{}.", value.into()));
+        self
+    }
+
+    /// Set the prefix for the file names without appending a dot.
+    ///
+    /// The prefix is used to filter files when polling.
+    pub fn prefix_without_dot(mut self, value: impl Into<String>) -> Self {
+        self.prefix = Some(value.into());
+        self
     }
 }
 
@@ -281,7 +301,7 @@ where
         }
     }
 
-    async fn run(mut self, shutdown: triggered::Listener) -> Result {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> Result {
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
         let process_name = self.config.process_name.clone();
         let prefix = self.config.prefix.clone();

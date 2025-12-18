@@ -2821,6 +2821,7 @@ dependencies = [
  "async-compression",
  "async-trait",
  "aws-config",
+ "aws-local",
  "aws-sdk-s3",
  "aws-smithy-types-convert",
  "bytes",

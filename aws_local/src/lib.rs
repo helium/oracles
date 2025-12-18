@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use file_store::{BucketClient, GzippedFramedFile};
 use std::env;
 use uuid::Uuid;
@@ -94,14 +94,24 @@ impl AwsLocal {
 
     pub async fn put_protos<T: prost::Message>(
         &self,
-        file_prefix: String,
+        file_prefix: impl Into<String>,
         protos: Vec<T>,
+    ) -> Result<String> {
+        self.put_protos_at_time(file_prefix, protos, Utc::now())
+            .await
+    }
+
+    pub async fn put_protos_at_time<T: prost::Message>(
+        &self,
+        file_prefix: impl Into<String>,
+        protos: Vec<T>,
+        timestamp: DateTime<Utc>,
     ) -> Result<String> {
         let tempdir = tempfile::tempdir()?;
         let mut file = GzippedFramedFile::builder()
             .path(&tempdir)
             .prefix(file_prefix)
-            .time(Utc::now())
+            .time(timestamp)
             .build()
             .await?;
 
@@ -148,15 +158,26 @@ impl AwsLocalBuilder {
         self
     }
 
+    fn next_fake_credential(&self) -> String {
+        // Generate unique credentials per AwsLocal instance to avoid CLIENT_MAP
+        // cache collisions. This prevents "dispatch task is gone" errors in tests
+        // where cached clients' dispatch tasks can outlive the test runtime.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static BUILT_CLIENT_COUNT: AtomicUsize = AtomicUsize::new(0);
+        let count = BUILT_CLIENT_COUNT.fetch_add(1, Ordering::Relaxed);
+        format!("fake-{count}")
+    }
+
     pub async fn build(self) -> AwsLocal {
+        let fake_cred = self.next_fake_credential();
         let endpoint = self.endpoint.unwrap_or_else(aws_local_default_endpoint);
 
         let client = BucketClient::new(
             self.bucket.unwrap_or_else(gen_bucket_name),
             self.region.or(Some("us-east-1".to_string())),
             Some(endpoint.clone()),
-            Some("fake".to_string()),
-            Some("fake".to_string()),
+            Some(fake_cred.clone()),
+            Some(fake_cred),
         )
         .await;
 
