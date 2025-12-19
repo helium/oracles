@@ -77,13 +77,11 @@ where
         }
     }
 
-    pub async fn into_stream(
-        self,
-        recorder: &mut impl FileInfoPollerStateRecorder,
-    ) -> Result<BoxStream<'static, T>>
-    where
-        T: 'static,
-    {
+    async fn mark_processed(&self, recorder: &mut impl FileInfoPollerStateRecorder) -> Result<()> {
+        recorder.record(&self.process_name, &self.file_info).await
+    }
+
+    fn record_metrics(&self) {
         let latency = Utc::now() - self.file_info.timestamp;
         metrics::gauge!(
             "file-processing-latency",
@@ -98,8 +96,17 @@ where
             "process-name" => self.process_name.clone(),
         )
         .set(self.file_info.timestamp.timestamp_millis() as f64);
+    }
 
-        recorder.record(&self.process_name, &self.file_info).await?;
+    pub async fn into_stream(
+        self,
+        recorder: &mut impl FileInfoPollerStateRecorder,
+    ) -> Result<BoxStream<'static, T>>
+    where
+        T: 'static,
+    {
+        self.record_metrics();
+        self.mark_processed(recorder).await?;
         Ok(futures::stream::iter(self.data.into_iter()).boxed())
     }
 }
@@ -629,10 +636,12 @@ pub mod sqlx_postgres {
 
         use crate::{aws_local::AwsLocal, file_source};
         use sqlx::{Executor, PgPool};
-        use std::time::Duration;
         use tokio::time::timeout;
 
         use super::*;
+
+        #[derive(Clone, prost::Message)]
+        struct TestMsg {}
 
         #[sqlx::test]
         async fn poller_filters_files_by_exact_prefix(
@@ -643,17 +652,11 @@ pub mod sqlx_postgres {
             let awsl = AwsLocal::new().await;
             awsl.create_bucket().await?;
 
-            #[derive(Clone, prost::Message)]
-            struct TestV1 {}
-
-            #[derive(Clone, prost::Message)]
-            struct TestV2 {}
-
             // Put 1 file of each type with overlapping prefixes
-            awsl.put_protos("file_type", vec![TestV1 {}]).await?;
-            awsl.put_protos("file_type_v2", vec![TestV2 {}]).await?;
+            awsl.put_protos("file_type", vec![TestMsg {}]).await?;
+            awsl.put_protos("file_type_v2", vec![TestMsg {}]).await?;
 
-            let (receiver_v1, server_v1) = file_source::Continuous::prost_source::<TestV1, _, _>()
+            let (receiver_v1, server_v1) = file_source::Continuous::prost_source::<TestMsg, _, _>()
                 .state(pool.clone())
                 .bucket_client(awsl.bucket_client())
                 .lookback_start_after(DateTime::UNIX_EPOCH)
@@ -661,7 +664,7 @@ pub mod sqlx_postgres {
                 .create()
                 .await?;
 
-            let (receiver_v2, server_v2) = file_source::Continuous::prost_source::<TestV2, _, _>()
+            let (receiver_v2, server_v2) = file_source::Continuous::prost_source::<TestMsg, _, _>()
                 .state(pool.clone())
                 .bucket_client(awsl.bucket_client())
                 .lookback_start_after(DateTime::UNIX_EPOCH)
@@ -673,15 +676,19 @@ pub mod sqlx_postgres {
             let _handle_v1 = tokio::spawn(server_v1.run(listener.clone()));
             let _handle_v2 = tokio::spawn(server_v2.run(listener.clone()));
 
-            let mut v1 = consume_msgs(receiver_v1).await.into_iter();
-            let mut v2 = consume_msgs(receiver_v2).await.into_iter();
+            let files_v1 = consume_files_and_mark_processed(receiver_v1, &pool).await?;
+            let files_v2 = consume_files_and_mark_processed(receiver_v2, &pool).await?;
 
             assert!(
-                v1.all(|f| !f.file_info.key.starts_with("file_type_v2")),
+                files_v1
+                    .into_iter()
+                    .all(|f| !f.key.starts_with("file_type_v2")),
                 "Expected no files with prefix 'file_type_v2'"
             );
             assert!(
-                v2.all(|f| f.file_info.key.starts_with("file_type_v2")),
+                files_v2
+                    .into_iter()
+                    .all(|f| f.key.starts_with("file_type_v2")),
                 "Expected all files with prefix 'file_type_v2'"
             );
 
@@ -689,64 +696,6 @@ pub mod sqlx_postgres {
             awsl.cleanup().await?;
 
             Ok(())
-        }
-
-        async fn consume_msgs<T>(mut receiver: Receiver<T>) -> Vec<T> {
-            use std::time::Duration;
-            use tokio::time::timeout;
-
-            let mut msgs = Vec::with_capacity(10);
-
-            // FileInfoPoller puts a single file into the channel at a time. It's easier
-            // to loop here with a timeout than sleep some arbitrary amount hoping it
-            // will have processed all it's files by then.
-            while let Ok(Some(msg)) = timeout(Duration::from_millis(100), receiver.recv()).await {
-                msgs.push(msg);
-            }
-
-            msgs
-        }
-
-        struct TestParser;
-        struct TestStore(Vec<FileInfo>);
-
-        #[async_trait::async_trait]
-        impl FileInfoPollerParser<String> for TestParser {
-            async fn parse(&self, _byte_stream: ByteStream) -> Result<Vec<String>> {
-                Ok(vec![])
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl FileInfoPollerStore for TestStore {
-            async fn list_all<A, B>(
-                &self,
-                _file_type: &str,
-                after: A,
-                before: B,
-            ) -> Result<Vec<FileInfo>>
-            where
-                A: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
-                B: Into<Option<DateTime<Utc>>> + Send + Sync + Copy,
-            {
-                let after = after.into();
-                let before = before.into();
-
-                Ok(self
-                    .0
-                    .clone()
-                    .into_iter()
-                    .filter(|file_info| after.is_none_or(|v| file_info.timestamp > v))
-                    .filter(|file_info| before.is_none_or(|v| file_info.timestamp <= v))
-                    .collect())
-            }
-
-            async fn get_raw<K>(&self, _key: K) -> Result<ByteStream>
-            where
-                K: Into<String> + Send + Sync,
-            {
-                Ok(ByteStream::default())
-            }
         }
 
         #[sqlx::test]
@@ -758,28 +707,26 @@ pub mod sqlx_postgres {
 
             create_files_processed_table(&pool).await?;
 
+            let awsl = AwsLocal::new().await;
+            awsl.create_bucket().await?;
+
             // The important aspect of this test is that all the files to be
             // processed happen _within_ the lookback offset.
-            const EXPECTED_FILE_COUNT: i64 = 150;
-            let mut infos = vec![];
+            const EXPECTED_FILE_COUNT: usize = 150;
+            let now = Utc::now();
             for seconds in 0..EXPECTED_FILE_COUNT {
-                let file_info = FileInfo {
-                    key: format!("key-{seconds}"),
-                    prefix: "file_type".to_string(),
-                    timestamp: Utc::now() - chrono::Duration::seconds(seconds),
-                    size: 42,
-                };
-                infos.push(file_info);
+                let timestamp = now - Duration::from_secs(seconds as u64);
+                awsl.put_protos_at_time("file_type", vec![TestMsg {}], timestamp)
+                    .await?;
             }
 
             // To simulate a restart, we're going to make a new FileInfoPoller.
             // This closure is to ensure they have the same settings.
             let file_info_builder = || {
-                let six_hours = chrono::Duration::hours(6).to_std().unwrap();
-                FileInfoPollerConfigBuilder::<String, _, TestStore, _>::default()
-                    .parser(TestParser)
+                let six_hours = Duration::from_hours(6);
+                file_source::Continuous::prost_source::<TestMsg, _, _>()
                     .state(pool.clone())
-                    .store(TestStore(infos.clone()))
+                    .bucket_client(awsl.bucket_client())
                     .lookback_max(six_hours)
                     .prefix("file_type".to_string())
                     .offset(six_hours)
@@ -788,28 +735,13 @@ pub mod sqlx_postgres {
 
             // The first startup of the file info poller, there is nothing to clean.
             // And all file_infos will be returned to be processed.
-            let (mut receiver, ingest_server) = file_info_builder().await?;
             let (trigger, shutdown) = triggered::trigger();
-            tokio::spawn(async move {
-                if let Err(status) = ingest_server.run(shutdown).await {
-                    println!("ingest server went down unexpectedly: {status:?}");
-                }
-            });
+            let (receiver, ingest_server) = file_info_builder().await?;
+            let _handle = tokio::spawn(ingest_server.run(shutdown));
 
-            // "process" all the files. They are not recorded into the database
-            // until the file is consumed as a stream.
-            let mut processed = 0;
-            while processed < EXPECTED_FILE_COUNT {
-                match timeout(Duration::from_secs(1), receiver.recv()).await? {
-                    Some(msg) => {
-                        processed += 1;
-                        let mut txn = pool.begin().await?;
-                        let _x = msg.into_stream(&mut txn).await?;
-                        txn.commit().await?;
-                    }
-                    err => panic!("something went wrong: {err:?}"),
-                };
-            }
+            // "process" all the files.
+            let files = consume_files_and_mark_processed(receiver, &pool).await?;
+            assert_eq!(files.len(), EXPECTED_FILE_COUNT);
 
             // Shutdown the ingest server, we're going to create a new one and start it.
             trigger.trigger();
@@ -818,26 +750,20 @@ pub mod sqlx_postgres {
             // have been processed. The initial clean should not remove processed
             // files in a way that causes us to re-receive any files within our
             // offset for processing.
-            let (mut receiver, ingest_server) = file_info_builder().await?;
             let (trigger, shutdown) = triggered::trigger();
-            let _handle = tokio::spawn(async move {
-                if let Err(status) = ingest_server.run(shutdown).await {
-                    println!("ingest server went down unexpectedly: {status:?}");
-                }
-            });
+            let (receiver, ingest_server) = file_info_builder().await?;
+            let _handle = tokio::spawn(ingest_server.run(shutdown));
 
-            // Attempting to receive files for processing. The timeout should fire,
-            // because all the files we have setup exist within the offset, and
-            // should still be in the database.
-            match timeout(Duration::from_secs(1), receiver.recv()).await {
-                Err(_err) => (),
-                Ok(msg) => {
-                    panic!("we got something when we expected nothing.: {msg:?}");
-                }
-            }
+            // Attempting to receive files for processing. All the files we have
+            // setup exist within the offset, and should still be in the
+            // database.
+            let files = consume_files_and_mark_processed(receiver, &pool).await?;
+            assert!(files.is_empty());
 
             // Shut down for great good
             trigger.trigger();
+
+            awsl.cleanup().await?;
 
             Ok(())
         }
@@ -858,6 +784,26 @@ pub mod sqlx_postgres {
             .await?;
 
             Ok(())
+        }
+
+        async fn consume_files_and_mark_processed<T: Send>(
+            mut receiver: FileInfoStreamReceiver<T>,
+            pool: &PgPool,
+        ) -> std::result::Result<Vec<FileInfo>, Box<dyn std::error::Error>> {
+            let mut msgs = Vec::with_capacity(10);
+            let mut txn = pool.begin().await?;
+
+            // FileInfoPoller puts a single file into the channel at a time. It's easier
+            // to loop here with a timeout than sleep some arbitrary amount hoping it
+            // will have processed all it's files by then.
+            while let Ok(Some(msg)) = timeout(Duration::from_millis(250), receiver.recv()).await {
+                msgs.push(msg.file_info.clone());
+                msg.mark_processed(&mut txn).await?;
+            }
+
+            txn.commit().await?;
+
+            Ok(msgs)
         }
     }
 }
