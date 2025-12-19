@@ -787,24 +787,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aws-local"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "aws-config",
- "aws-sdk-s3",
- "bytes",
- "chrono",
- "file-store",
- "prost",
- "tempfile",
- "tokio",
- "tonic",
- "triggered",
- "uuid",
-]
-
-[[package]]
 name = "aws-runtime"
 version = "1.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2821,7 +2803,6 @@ dependencies = [
  "async-compression",
  "async-trait",
  "aws-config",
- "aws-local",
  "aws-sdk-s3",
  "aws-smithy-types-convert",
  "bytes",
@@ -2846,6 +2827,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "triggered",
+ "uuid",
 ]
 
 [[package]]
@@ -5041,7 +5023,6 @@ dependencies = [
  "anyhow",
  "async-compression",
  "async-trait",
- "aws-local",
  "base64 0.22.1",
  "chrono",
  "clap",
@@ -5850,7 +5831,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "aws-local",
  "chrono",
  "file-store",
  "file-store-oracles",

@@ -4,6 +4,7 @@ mod error;
 mod gzipped_framed_file;
 mod settings;
 
+pub mod aws_local;
 pub mod bucket_client;
 pub mod file_info;
 pub mod file_info_poller;
