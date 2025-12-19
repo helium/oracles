@@ -194,7 +194,9 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default() + poc_unallocated_amount;
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -317,7 +319,9 @@ async fn test_poc_boosted_hexes_unique_connections_not_seeded(pool: PgPool) -> a
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default() + poc_unallocated_amount;
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -490,7 +494,9 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default() + poc_unallocated_amount;
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -587,7 +593,9 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default() + poc_unallocated_amount;
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -720,7 +728,9 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default() + poc_unallocated_amount;
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -861,7 +871,9 @@ async fn test_distance_from_asserted_removes_boosting_but_not_location_trust(
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default() + poc_unallocated_amount;
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_amount;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())
@@ -1030,7 +1042,9 @@ async fn test_poc_with_wifi_and_multi_coverage_boosted_hexes(pool: PgPool) -> an
 
     // confirm the total rewards allocated matches emissions
     // and the rewarded percentage amount matches percentage
-    let total = rewards.total_poc_rewards() + rewards.unallocated_amount_or_default() + poc_unallocated_reward;
+    let total = rewards.total_poc_rewards()
+        + rewards.unallocated_amount_or_default()
+        + poc_unallocated_reward;
     assert_total_matches_emissions(total, &reward_info);
 
     Ok(())

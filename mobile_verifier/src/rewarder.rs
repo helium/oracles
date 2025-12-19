@@ -282,16 +282,20 @@ where
         .await?;
 
         // process rewards for service providers
-        let sp_unallocated_amount = reward_service_providers(self.mobile_rewards.clone(), &reward_info).await?;
+        let sp_unallocated_amount =
+            reward_service_providers(self.mobile_rewards.clone(), &reward_info).await?;
 
         // write combined poc and sp unallocated reward
-        let total_unallocated_amount = (poc_unallocated_amount + sp_unallocated_amount).to_u64().unwrap_or(0);
+        let total_unallocated_amount = (poc_unallocated_amount + sp_unallocated_amount)
+            .to_u64()
+            .unwrap_or(0);
         write_unallocated_reward(
             &self.mobile_rewards.clone(),
             UnallocatedRewardType::PocAndServiceProvider,
             total_unallocated_amount,
-            &reward_info
-        ).await?;
+            &reward_info,
+        )
+        .await?;
 
         self.speedtest_averages.commit().await?;
         let written_files = self.mobile_rewards.commit().await?.await??;
