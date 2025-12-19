@@ -287,8 +287,10 @@ where
 
         // write combined poc and sp unallocated reward
         let total_unallocated_amount = (poc_unallocated_amount + sp_unallocated_amount)
+            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
+
         write_unallocated_reward(
             &self.mobile_rewards.clone(),
             UnallocatedRewardType::PocAndServiceProvider,
