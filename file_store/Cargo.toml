@@ -30,14 +30,14 @@ derive_builder = { workspace = true }
 retainer = { workspace = true }
 task-manager = { path = "../task_manager" }
 tls-init = { path = "../tls_init" }
+uuid = { workspace = true }
+tempfile = { workspace = true }
 
 aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 aws-smithy-types-convert = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
-aws-local = { path = "../aws_local" }
 
 [features]
 default = ["sqlx-postgres"]

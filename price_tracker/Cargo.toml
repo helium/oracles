@@ -23,4 +23,3 @@ file-store-oracles = { path = "../file_store_oracles" }
 task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
-aws-local = { path = "../aws_local" }
