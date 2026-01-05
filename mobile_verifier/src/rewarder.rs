@@ -357,14 +357,14 @@ pub async fn distribute_rewards(
         pool,
         hex_service_client,
         mobile_rewards.clone(),
-        &reward_info,
+        reward_info,
         price_info.clone(),
     )
     .await?;
 
     // process rewards for service providers
     let sp_unallocated_amount =
-        reward_service_providers(mobile_rewards.clone(), &reward_info).await?;
+        reward_service_providers(mobile_rewards.clone(), reward_info).await?;
 
     // write combined poc and sp unallocated reward
     let total_unallocated_amount = (poc_unallocated_amount + sp_unallocated_amount)
@@ -376,7 +376,7 @@ pub async fn distribute_rewards(
         mobile_rewards,
         UnallocatedRewardType::PocAndServiceProvider,
         total_unallocated_amount,
-        &reward_info,
+        reward_info,
     )
     .await?;
 
