@@ -15,7 +15,6 @@ async fn test_distribute_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mobile_rewards) = create_file_sink();
     let reward_info = reward_info_24_hours();
 
-    // seed all the things
     let mut txn = pool.clone().begin().await?;
     seed_heartbeats(reward_info.epoch_period.start, &mut txn).await?;
     seed_speedtests(reward_info.epoch_period.end, &mut txn).await?;
@@ -26,7 +25,6 @@ async fn test_distribute_rewards(pool: PgPool) -> anyhow::Result<()> {
     let hex_boosting_client = MockHexBoostingClient::new(vec![]);
     let price_info = default_price_info();
 
-    // Run rewards
     rewarder::distribute_rewards(
         &pool,
         &hex_boosting_client,
@@ -36,7 +34,6 @@ async fn test_distribute_rewards(pool: PgPool) -> anyhow::Result<()> {
     )
     .await?;
 
-    // Retrieve distributed rewards
     let rewards = mobile_rewards.finish().await?;
     let poc_rewards = rewards.radio_reward_v2s;
     let dc_rewards = rewards.gateway_rewards;
@@ -50,10 +47,8 @@ async fn test_distribute_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let total: u64 = poc_sum + dc_sum + sp_sum + unallocated_sum;
 
-    // Calculate expected rewards
     let expected_total = calculate_expected_total_rewards(reward_info.epoch_emissions);
 
-    // Assert total
     assert_eq!(total, expected_total);
 
     Ok(())
