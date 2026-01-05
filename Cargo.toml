@@ -27,7 +27,6 @@ members = [
   "solana",
   "task_manager",
   "hex_assignments",
-  "aws_local",
   "tls_init",
 ]
 resolver = "2"

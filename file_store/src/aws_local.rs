@@ -1,8 +1,9 @@
-use anyhow::Result;
+use crate::{BucketClient, GzippedFramedFile};
 use chrono::{DateTime, Utc};
-use file_store::{BucketClient, GzippedFramedFile};
 use std::env;
 use uuid::Uuid;
+
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub const AWSLOCAL_ENDPOINT_ENV: &str = "AWSLOCAL_ENDPOINT";
 pub const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://localhost:4566";
@@ -53,9 +54,9 @@ impl AwsLocal {
             .create_bucket()
             .bucket(&self.client.bucket)
             .send()
-            .await
-            .map(|_| ())
-            .map_err(anyhow::Error::from)
+            .await?;
+
+        Ok(())
     }
 
     pub async fn delete_bucket(&self) -> Result<()> {
@@ -67,8 +68,9 @@ impl AwsLocal {
                 aws_sdk_s3::types::ObjectIdentifier::builder()
                     .key(fi.key)
                     .build()
+                    .map_err(Into::into)
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<_>>()?;
 
         self.client
             .client
@@ -87,9 +89,9 @@ impl AwsLocal {
             .delete_bucket()
             .bucket(&self.client.bucket)
             .send()
-            .await
-            .map(|_| ())
-            .map_err(anyhow::Error::from)
+            .await?;
+
+        Ok(())
     }
 
     pub async fn put_protos<T: prost::Message>(

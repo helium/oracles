@@ -1,7 +1,7 @@
 use crate::common::{self, GatewayClientAllOwnersValid, MockHexBoostDataColl};
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
-use file_store::file_sink;
+use file_store::{aws_local::AwsLocal, file_sink};
 use file_store_oracles::{
     coverage::RadioHexSignalLevel,
     speedtest::CellSpeedtest,
@@ -13,7 +13,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
     CoverageObjectValidity, LocationSource, OracleBoostingHexAssignment, SignalLevel,
 };
-use hex_assignments::Assignment;
+use hex_assignments::{Assignment, HexBoostData};
 use mobile_config::boosted_hex_info::BoostedHexes;
 use mobile_verifier::{
     banning::BannedRadios,
@@ -34,7 +34,7 @@ use mobile_verifier::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-use std::{collections::HashMap, pin::pin};
+use std::{collections::HashMap, path::PathBuf, pin::pin, str::FromStr};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -100,10 +100,6 @@ fn signal_level(hex: &str, signal_level: SignalLevel) -> anyhow::Result<RadioHex
 fn hex_cell(loc: &str) -> hextree::Cell {
     hextree::Cell::from_raw(u64::from_str_radix(loc, 16).unwrap()).unwrap()
 }
-
-use aws_local::*;
-use hex_assignments::HexBoostData;
-use std::{path::PathBuf, str::FromStr};
 
 pub async fn hex_assignment_file_exist(pool: &PgPool, filename: &str) -> bool {
     sqlx::query_scalar::<_, bool>(
