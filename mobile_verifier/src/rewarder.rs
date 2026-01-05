@@ -271,31 +271,12 @@ where
             reward_info.epoch_emissions,
         );
 
-        // process rewards for poc and data transfer
-        let (poc_dc_shares, poc_unallocated_amount) = reward_poc_and_dc(
+        let poc_dc_shares = distribute_rewards(
             &self.pool,
             &self.hex_service_client,
             self.mobile_rewards.clone(),
             &reward_info,
             price_info.clone(),
-        )
-        .await?;
-
-        // process rewards for service providers
-        let sp_unallocated_amount =
-            reward_service_providers(self.mobile_rewards.clone(), &reward_info).await?;
-
-        // write combined poc and sp unallocated reward
-        let total_unallocated_amount = (poc_unallocated_amount + sp_unallocated_amount)
-            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or(0);
-
-        write_unallocated_reward(
-            &self.mobile_rewards.clone(),
-            UnallocatedRewardType::PocAndServiceProvider,
-            total_unallocated_amount,
-            &reward_info,
         )
         .await?;
 
@@ -362,6 +343,44 @@ where
     ) -> task_manager::TaskLocalBoxFuture {
         task_manager::spawn(self.run(shutdown))
     }
+}
+
+pub async fn distribute_rewards(
+    pool: &Pool<Postgres>,
+    hex_service_client: &impl HexBoostingInfoResolver,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
+    reward_info: &EpochRewardInfo,
+    price_info: PriceInfo,
+) -> anyhow::Result<CalculatedPocRewardShares> {
+    // process rewards for poc and data transfer
+    let (poc_dc_shares, poc_unallocated_amount) = reward_poc_and_dc(
+        pool,
+        hex_service_client,
+        mobile_rewards.clone(),
+        &reward_info,
+        price_info.clone(),
+    )
+    .await?;
+
+    // process rewards for service providers
+    let sp_unallocated_amount =
+        reward_service_providers(mobile_rewards.clone(), &reward_info).await?;
+
+    // write combined poc and sp unallocated reward
+    let total_unallocated_amount = (poc_unallocated_amount + sp_unallocated_amount)
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+
+    write_unallocated_reward(
+        mobile_rewards,
+        UnallocatedRewardType::PocAndServiceProvider,
+        total_unallocated_amount,
+        &reward_info,
+    )
+    .await?;
+
+    Ok(poc_dc_shares)
 }
 
 pub async fn reward_poc_and_dc(
@@ -540,7 +559,7 @@ pub async fn reward_service_providers(
 }
 
 async fn write_unallocated_reward(
-    mobile_rewards: &FileSinkClient<proto::MobileRewardShare>,
+    mobile_rewards: FileSinkClient<proto::MobileRewardShare>,
     unallocated_type: UnallocatedRewardType,
     unallocated_amount: u64,
     reward_info: &'_ EpochRewardInfo,
