@@ -43,10 +43,7 @@ impl GrpcServer {
 }
 
 impl ManagedTask for GrpcServer {
-    fn start_task(
-        self: Box<Self>,
-        shutdown: triggered::Listener,
-    ) -> task_manager::TaskLocalBoxFuture {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(async move {
             let grpc_server = transport::Server::builder()
                 .http2_keepalive_interval(Some(Duration::from_secs(250)))

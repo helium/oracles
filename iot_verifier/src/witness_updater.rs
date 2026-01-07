@@ -60,10 +60,7 @@ pub struct WitnessUpdaterServer {
 }
 
 impl ManagedTask for WitnessUpdaterServer {
-    fn start_task(
-        self: Box<Self>,
-        shutdown: triggered::Listener,
-    ) -> task_manager::TaskLocalBoxFuture {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }
 }

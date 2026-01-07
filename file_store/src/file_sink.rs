@@ -260,10 +260,7 @@ pub struct FileSink<T> {
 }
 
 impl<T: prost::Message + Send + Sync + 'static> ManagedTask for FileSink<T> {
-    fn start_task(
-        self: Box<Self>,
-        shutdown: triggered::Listener,
-    ) -> task_manager::TaskLocalBoxFuture {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }
 }

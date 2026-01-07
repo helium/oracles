@@ -69,7 +69,7 @@ pub type TaskResult = Result<(), TaskError>;
 ///
 /// A boxed local future that returns [`TaskResult`] when complete.
 /// Tasks should return `Ok(())` on successful shutdown or an error if something went wrong.
-pub type TaskLocalBoxFuture = LocalBoxFuture<'static, TaskResult>;
+pub type TaskFuture = LocalBoxFuture<'static, TaskResult>;
 
 /// Spawns a future into its own Tokio task.
 ///
@@ -81,12 +81,12 @@ pub type TaskLocalBoxFuture = LocalBoxFuture<'static, TaskResult>;
 ///
 /// ```ignore
 /// impl ManagedTask for MyDaemon {
-///     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskLocalBoxFuture {
+///     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskFuture {
 ///         task_manager::spawn(self.run(shutdown))
 ///     }
 /// }
 /// ```
-pub fn spawn<F, E>(fut: F) -> TaskLocalBoxFuture
+pub fn spawn<F, E>(fut: F) -> TaskFuture
 where
     F: Future<Output = Result<(), E>> + Send + 'static,
     E: Into<BoxError> + Send + 'static,
@@ -109,12 +109,12 @@ where
 ///
 /// ```ignore
 /// impl ManagedTask for MyLocalDaemon {
-///     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskLocalBoxFuture {
+///     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskFuture {
 ///         task_manager::run(self.run(shutdown))
 ///     }
 /// }
 /// ```
-pub fn run<F, E>(fut: F) -> TaskLocalBoxFuture
+pub fn run<F, E>(fut: F) -> TaskFuture
 where
     F: Future<Output = Result<(), E>> + 'static,
     E: Into<BoxError> + 'static,
@@ -131,15 +131,12 @@ where
 /// # Example
 ///
 /// ```ignore
-/// use task_manager::{ManagedTask, TaskLocalBoxFuture};
+/// use task_manager::{ManagedTask, TaskFuture};
 ///
 /// struct MyDaemon { /* ... */ }
 ///
 /// impl ManagedTask for MyDaemon {
-///     fn start_task(
-///         self: Box<Self>,
-///         shutdown: triggered::Listener,
-///     ) -> TaskLocalBoxFuture {
+///     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskFuture {
 ///         task_manager::spawn(self.run(shutdown))
 ///     }
 /// }
@@ -150,7 +147,7 @@ pub trait ManagedTask {
     /// The `shutdown` listener will be triggered when the task manager wants to
     /// shut down this task. Implementations should listen for this signal and
     /// clean up gracefully.
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskLocalBoxFuture;
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskFuture;
 }
 
 /// Manages the lifecycle of multiple async tasks with coordinated shutdown.
@@ -184,7 +181,7 @@ pub struct TaskManager {
 }
 
 impl ManagedTask for TaskManager {
-    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskLocalBoxFuture {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskFuture {
         crate::run(self.do_start(Box::pin(shutdown)))
     }
 }
@@ -208,7 +205,7 @@ pub struct TaskManagerBuilder {
 
 struct StoppableLocalFuture {
     shutdown_trigger: triggered::Trigger,
-    future: LocalBoxFuture<'static, TaskResult>,
+    future: TaskFuture,
 }
 
 impl Future for StoppableLocalFuture {
@@ -227,10 +224,7 @@ where
     O: Future<Output = TaskResult> + 'static,
     F: FnOnce(triggered::Listener) -> O,
 {
-    fn start_task(
-        self: Box<Self>,
-        shutdown: triggered::Listener,
-    ) -> LocalBoxFuture<'static, TaskResult> {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskFuture {
         Box::pin(self(shutdown))
     }
 }
@@ -377,10 +371,7 @@ mod tests {
     }
 
     impl ManagedTask for TestTask {
-        fn start_task(
-            self: Box<Self>,
-            shutdown_listener: triggered::Listener,
-        ) -> LocalBoxFuture<'static, TaskResult> {
+        fn start_task(self: Box<Self>, shutdown_listener: triggered::Listener) -> TaskFuture {
             let handle = tokio::spawn(async move {
                 tokio::select! {
                     _ = shutdown_listener.clone() => (),
