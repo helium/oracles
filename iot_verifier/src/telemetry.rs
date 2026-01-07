@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{poc_report::Report, rewarder};
 use chrono::{DateTime, Utc};
@@ -72,15 +72,15 @@ pub fn last_rewarded_end_time(datetime: DateTime<Utc>) {
 
 #[derive(Default)]
 pub struct LoaderMetricTracker {
-    beacons: RefCell<u64>,
-    beacons_denied: RefCell<u64>,
-    beacons_unknown: RefCell<u64>,
-    witnesses: RefCell<u64>,
-    witnesses_no_beacon: RefCell<u64>,
-    witnesses_denied: RefCell<u64>,
-    witnesses_unknown: RefCell<u64>,
-    packets: RefCell<u64>,
-    non_rewardable_packets: RefCell<u64>,
+    beacons: AtomicU64,
+    beacons_denied: AtomicU64,
+    beacons_unknown: AtomicU64,
+    witnesses: AtomicU64,
+    witnesses_no_beacon: AtomicU64,
+    witnesses_denied: AtomicU64,
+    witnesses_unknown: AtomicU64,
+    packets: AtomicU64,
+    non_rewardable_packets: AtomicU64,
 }
 
 impl LoaderMetricTracker {
@@ -89,39 +89,39 @@ impl LoaderMetricTracker {
     }
 
     pub fn increment_packets(&self) {
-        *self.packets.borrow_mut() += 1;
+        self.packets.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_non_rewardable_packets(&self) {
-        *self.non_rewardable_packets.borrow_mut() += 1;
+        self.non_rewardable_packets.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_beacons(&self) {
-        *self.beacons.borrow_mut() += 1;
+        self.beacons.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_beacons_denied(&self) {
-        *self.beacons_denied.borrow_mut() += 1;
+        self.beacons_denied.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_beacons_unknown(&self) {
-        *self.beacons_unknown.borrow_mut() += 1;
+        self.beacons_unknown.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_witnesses(&self) {
-        *self.witnesses.borrow_mut() += 1;
+        self.witnesses.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_witnesses_no_beacon(&self) {
-        *self.witnesses_no_beacon.borrow_mut() += 1;
+        self.witnesses_no_beacon.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_witnesses_denied(&self) {
-        *self.witnesses_denied.borrow_mut() += 1;
+        self.witnesses_denied.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_witnesses_unknown(&self) {
-        *self.witnesses_unknown.borrow_mut() += 1;
+        self.witnesses_unknown.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_metrics(self) {
