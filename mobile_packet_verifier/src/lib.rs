@@ -43,7 +43,7 @@ impl MobileConfigClients {
 }
 
 #[async_trait::async_trait]
-pub trait MobileConfigResolverExt {
+pub trait MobileConfigResolverExt: Send + Sync {
     async fn is_gateway_known(
         &self,
         public_key: &PublicKeyBinary,
