@@ -173,10 +173,7 @@ pub struct GrpcServer {
 }
 
 impl ManagedTask for GrpcServer {
-    fn start_task(
-        self: Box<Self>,
-        shutdown: triggered::Listener,
-    ) -> task_manager::TaskLocalBoxFuture {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         let address = self.address;
         task_manager::spawn(async move {
             let grpc_server = transport::Server::builder()

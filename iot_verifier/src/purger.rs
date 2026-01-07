@@ -43,10 +43,7 @@ pub struct Purger {
 pub struct NewPurgerError(#[from] db_store::Error);
 
 impl ManagedTask for Purger {
-    fn start_task(
-        self: Box<Self>,
-        shutdown: triggered::Listener,
-    ) -> task_manager::TaskLocalBoxFuture {
+    fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> task_manager::TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }
 }

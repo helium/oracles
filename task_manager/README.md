@@ -61,7 +61,7 @@ task_manager.start().await?;
 Implement the `ManagedTask` trait for your types:
 
 ```rust
-use task_manager::{ManagedTask, TaskLocalBoxFuture};
+use task_manager::{ManagedTask, TaskFuture};
 
 struct MyDaemon {
     // fields...
@@ -71,7 +71,7 @@ impl ManagedTask for MyDaemon {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
-    ) -> TaskLocalBoxFuture {
+    ) -> TaskFuture {
         task_manager::spawn(self.run(shutdown))
     }
 }
