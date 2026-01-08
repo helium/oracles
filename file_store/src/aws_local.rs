@@ -3,7 +3,17 @@ use chrono::{DateTime, Utc};
 use std::env;
 use uuid::Uuid;
 
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+#[derive(thiserror::Error, Debug)]
+#[error("aws local error: {0}")]
+pub struct AwsLocalError(Box<dyn std::error::Error + Send + Sync>);
+
+impl AwsLocalError {
+    pub fn new<E: std::error::Error + Send + Sync + 'static>(err: E) -> Self {
+        Self(Box::new(err))
+    }
+}
+
+pub type Result<T> = std::result::Result<T, AwsLocalError>;
 
 pub const AWSLOCAL_ENDPOINT_ENV: &str = "AWSLOCAL_ENDPOINT";
 pub const AWSLOCAL_DEFAULT_ENDPOINT: &str = "http://localhost:4566";
@@ -54,13 +64,18 @@ impl AwsLocal {
             .create_bucket()
             .bucket(&self.client.bucket)
             .send()
-            .await?;
+            .await
+            .map_err(AwsLocalError::new)?;
 
         Ok(())
     }
 
     pub async fn delete_bucket(&self) -> Result<()> {
-        let files = self.client.list_all_files("", None, None).await?;
+        let files = self
+            .client
+            .list_all_files("", None, None)
+            .await
+            .map_err(AwsLocalError::new)?;
 
         let objects: Vec<aws_sdk_s3::types::ObjectIdentifier> = files
             .into_iter()
@@ -68,7 +83,7 @@ impl AwsLocal {
                 aws_sdk_s3::types::ObjectIdentifier::builder()
                     .key(fi.key)
                     .build()
-                    .map_err(Into::into)
+                    .map_err(AwsLocalError::new)
             })
             .collect::<Result<_>>()?;
 
@@ -79,17 +94,20 @@ impl AwsLocal {
             .delete(
                 aws_sdk_s3::types::Delete::builder()
                     .set_objects(Some(objects))
-                    .build()?,
+                    .build()
+                    .map_err(AwsLocalError::new)?,
             )
             .send()
-            .await?;
+            .await
+            .map_err(AwsLocalError::new)?;
 
         self.client
             .client
             .delete_bucket()
             .bucket(&self.client.bucket)
             .send()
-            .await?;
+            .await
+            .map_err(AwsLocalError::new)?;
 
         Ok(())
     }
@@ -109,25 +127,31 @@ impl AwsLocal {
         protos: Vec<T>,
         timestamp: DateTime<Utc>,
     ) -> Result<String> {
-        let tempdir = tempfile::tempdir()?;
+        let tempdir = tempfile::tempdir().map_err(AwsLocalError::new)?;
         let mut file = GzippedFramedFile::builder()
             .path(&tempdir)
             .prefix(file_prefix)
             .time(timestamp)
             .build()
-            .await?;
+            .await
+            .map_err(AwsLocalError::new)?;
 
         let bytes: Vec<bytes::Bytes> = protos
             .into_iter()
             .map(|m| m.encode_to_vec().into())
             .collect();
 
-        file.write_all(bytes).await?;
-        let file_path = file.close().await?;
+        file.write_all(bytes).await.map_err(AwsLocalError::new)?;
+        let file_path = file.close().await.map_err(AwsLocalError::new)?;
 
-        self.client.put_file(&file_path).await?;
+        self.client
+            .put_file(&file_path)
+            .await
+            .map_err(AwsLocalError::new)?;
 
-        tokio::fs::remove_file(&file_path).await?;
+        tokio::fs::remove_file(&file_path)
+            .await
+            .map_err(AwsLocalError::new)?;
 
         Ok(file_path
             .file_name()
