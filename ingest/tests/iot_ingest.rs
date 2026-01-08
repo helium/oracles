@@ -14,7 +14,7 @@ use ingest::server_iot::GrpcServer;
 use prost::Message;
 use rand::rngs::OsRng;
 use task_manager::TaskManager;
-use tokio::{sync::mpsc::error::TryRecvError, task::LocalSet, time::timeout};
+use tokio::{sync::mpsc::error::TryRecvError, time::timeout};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{transport::Channel, Streaming};
 
@@ -24,51 +24,47 @@ async fn initialize_session_and_send_beacon_and_witness() {
     let (witness_client, mut witnesses) = create_file_sink();
     let addr = get_socket_addr().expect("socket addr");
 
-    LocalSet::new()
-        .run_until(async move {
-            tokio::task::spawn_local(async move {
-                let server = create_test_server(addr, beacon_client, witness_client, None, None);
-                TaskManager::builder()
-                    .add_task(server)
-                    .build()
-                    .start()
-                    .await
-            });
+    tokio::spawn(async move {
+        let server = create_test_server(addr, beacon_client, witness_client, None, None);
+        TaskManager::builder()
+            .add_task(server)
+            .build()
+            .start()
+            .await
+    });
 
-            let pub_key = generate_keypair();
-            let session_key = generate_keypair();
+    let pub_key = generate_keypair();
+    let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(addr).await;
-            let offer = client.receive_offer().await;
+    let mut client = connect_and_stream(addr).await;
+    let offer = client.receive_offer().await;
 
-            client
-                .send_init(
-                    offer,
-                    pub_key.public_key(),
-                    session_key.public_key(),
-                    &pub_key,
-                )
-                .await;
-
-            client.send_beacon(pub_key.public_key(), &session_key).await;
-
-            let beacon_ingest_report = beacons.receive_beacon().await;
-            assert_eq!(
-                beacon_ingest_report.report.unwrap().pub_key,
-                <Vec<u8>>::from(pub_key.public_key())
-            );
-
-            client
-                .send_witness(pub_key.public_key(), &session_key)
-                .await;
-
-            let witness_ingest_report = witnesses.receive_witness().await;
-            assert_eq!(
-                witness_ingest_report.report.unwrap().pub_key,
-                <Vec<u8>>::from(pub_key.public_key())
-            );
-        })
+    client
+        .send_init(
+            offer,
+            pub_key.public_key(),
+            session_key.public_key(),
+            &pub_key,
+        )
         .await;
+
+    client.send_beacon(pub_key.public_key(), &session_key).await;
+
+    let beacon_ingest_report = beacons.receive_beacon().await;
+    assert_eq!(
+        beacon_ingest_report.report.unwrap().pub_key,
+        <Vec<u8>>::from(pub_key.public_key())
+    );
+
+    client
+        .send_witness(pub_key.public_key(), &session_key)
+        .await;
+
+    let witness_ingest_report = witnesses.receive_witness().await;
+    assert_eq!(
+        witness_ingest_report.report.unwrap().pub_key,
+        <Vec<u8>>::from(pub_key.public_key())
+    );
 }
 
 #[tokio::test]
@@ -77,36 +73,32 @@ async fn stream_stops_after_incorrectly_signed_init_request() {
     let (witness_client, _) = create_file_sink();
     let addr = get_socket_addr().expect("socket addr");
 
-    LocalSet::new()
-        .run_until(async move {
-            tokio::task::spawn_local(async move {
-                let server = create_test_server(addr, beacon_client, witness_client, None, None);
-                TaskManager::builder()
-                    .add_task(server)
-                    .build()
-                    .start()
-                    .await
-            });
+    tokio::spawn(async move {
+        let server = create_test_server(addr, beacon_client, witness_client, None, None);
+        TaskManager::builder()
+            .add_task(server)
+            .build()
+            .start()
+            .await
+    });
 
-            let pub_key = generate_keypair();
-            let session_key = generate_keypair();
+    let pub_key = generate_keypair();
+    let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(addr).await;
-            let offer = client.receive_offer().await;
+    let mut client = connect_and_stream(addr).await;
+    let offer = client.receive_offer().await;
 
-            client
-                .send_init(
-                    offer,
-                    pub_key.public_key(),
-                    session_key.public_key(),
-                    // should be signed by pub_key
-                    &session_key,
-                )
-                .await;
-
-            client.assert_closed().await;
-        })
+    client
+        .send_init(
+            offer,
+            pub_key.public_key(),
+            session_key.public_key(),
+            // should be signed by pub_key
+            &session_key,
+        )
         .await;
+
+    client.assert_closed().await;
 }
 
 #[tokio::test]
@@ -115,39 +107,35 @@ async fn stream_stops_after_incorrectly_signed_beacon() {
     let (witness_client, _) = create_file_sink();
     let addr = get_socket_addr().expect("socket addr");
 
-    LocalSet::new()
-        .run_until(async move {
-            tokio::task::spawn_local(async move {
-                let server = create_test_server(addr, beacon_client, witness_client, None, None);
-                TaskManager::builder()
-                    .add_task(server)
-                    .build()
-                    .start()
-                    .await
-            });
+    tokio::spawn(async move {
+        let server = create_test_server(addr, beacon_client, witness_client, None, None);
+        TaskManager::builder()
+            .add_task(server)
+            .build()
+            .start()
+            .await
+    });
 
-            let pub_key = generate_keypair();
-            let session_key = generate_keypair();
+    let pub_key = generate_keypair();
+    let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(addr).await;
-            let offer = client.receive_offer().await;
+    let mut client = connect_and_stream(addr).await;
+    let offer = client.receive_offer().await;
 
-            client
-                .send_init(
-                    offer,
-                    pub_key.public_key(),
-                    session_key.public_key(),
-                    &pub_key,
-                )
-                .await;
-
-            // Incorrectly signed by pub_key
-            client.send_beacon(pub_key.public_key(), &pub_key).await;
-
-            client.assert_closed().await;
-            beacons.assert_no_messages();
-        })
+    client
+        .send_init(
+            offer,
+            pub_key.public_key(),
+            session_key.public_key(),
+            &pub_key,
+        )
         .await;
+
+    // Incorrectly signed by pub_key
+    client.send_beacon(pub_key.public_key(), &pub_key).await;
+
+    client.assert_closed().await;
+    beacons.assert_no_messages();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -156,42 +144,38 @@ async fn stream_stops_after_incorrect_beacon_pubkey() {
     let (witness_client, _) = create_file_sink();
     let addr = get_socket_addr().expect("socket addr");
 
-    LocalSet::new()
-        .run_until(async move {
-            tokio::task::spawn_local(async move {
-                let server = create_test_server(addr, beacon_client, witness_client, None, None);
-                TaskManager::builder()
-                    .add_task(server)
-                    .build()
-                    .start()
-                    .await
-            });
+    tokio::spawn(async move {
+        let server = create_test_server(addr, beacon_client, witness_client, None, None);
+        TaskManager::builder()
+            .add_task(server)
+            .build()
+            .start()
+            .await
+    });
 
-            let pub_key = generate_keypair();
-            let session_key = generate_keypair();
+    let pub_key = generate_keypair();
+    let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(addr).await;
-            let offer = client.receive_offer().await;
+    let mut client = connect_and_stream(addr).await;
+    let offer = client.receive_offer().await;
 
-            client
-                .send_init(
-                    offer,
-                    pub_key.public_key(),
-                    session_key.public_key(),
-                    &pub_key,
-                )
-                .await;
-
-            // Incorrect pub_key sent
-            let other_key = generate_keypair();
-            client
-                .send_beacon(other_key.public_key(), &session_key)
-                .await;
-
-            client.assert_closed().await;
-            beacons.assert_no_messages();
-        })
+    client
+        .send_init(
+            offer,
+            pub_key.public_key(),
+            session_key.public_key(),
+            &pub_key,
+        )
         .await;
+
+    // Incorrect pub_key sent
+    let other_key = generate_keypair();
+    client
+        .send_beacon(other_key.public_key(), &session_key)
+        .await;
+
+    client.assert_closed().await;
+    beacons.assert_no_messages();
 }
 
 #[tokio::test]
@@ -200,39 +184,35 @@ async fn stream_stops_after_incorrectly_signed_witness() {
     let (witness_client, witnesses) = create_file_sink();
     let addr = get_socket_addr().expect("socket addr");
 
-    LocalSet::new()
-        .run_until(async move {
-            tokio::task::spawn_local(async move {
-                let server = create_test_server(addr, beacon_client, witness_client, None, None);
-                TaskManager::builder()
-                    .add_task(server)
-                    .build()
-                    .start()
-                    .await
-            });
+    tokio::spawn(async move {
+        let server = create_test_server(addr, beacon_client, witness_client, None, None);
+        TaskManager::builder()
+            .add_task(server)
+            .build()
+            .start()
+            .await
+    });
 
-            let pub_key = generate_keypair();
-            let session_key = generate_keypair();
+    let pub_key = generate_keypair();
+    let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(addr).await;
-            let offer = client.receive_offer().await;
+    let mut client = connect_and_stream(addr).await;
+    let offer = client.receive_offer().await;
 
-            client
-                .send_init(
-                    offer,
-                    pub_key.public_key(),
-                    session_key.public_key(),
-                    &pub_key,
-                )
-                .await;
-
-            // Incorrectly signed by pub_key
-            client.send_witness(pub_key.public_key(), &pub_key).await;
-
-            client.assert_closed().await;
-            witnesses.assert_no_messages();
-        })
+    client
+        .send_init(
+            offer,
+            pub_key.public_key(),
+            session_key.public_key(),
+            &pub_key,
+        )
         .await;
+
+    // Incorrectly signed by pub_key
+    client.send_witness(pub_key.public_key(), &pub_key).await;
+
+    client.assert_closed().await;
+    witnesses.assert_no_messages();
 }
 
 #[tokio::test]
@@ -241,42 +221,38 @@ async fn stream_stops_after_incorrect_witness_pubkey() {
     let (witness_client, witnesses) = create_file_sink();
     let addr = get_socket_addr().expect("socket addr");
 
-    LocalSet::new()
-        .run_until(async move {
-            tokio::task::spawn_local(async move {
-                let server = create_test_server(addr, beacon_client, witness_client, None, None);
-                TaskManager::builder()
-                    .add_task(server)
-                    .build()
-                    .start()
-                    .await
-            });
+    tokio::spawn(async move {
+        let server = create_test_server(addr, beacon_client, witness_client, None, None);
+        TaskManager::builder()
+            .add_task(server)
+            .build()
+            .start()
+            .await
+    });
 
-            let pub_key = generate_keypair();
-            let session_key = generate_keypair();
+    let pub_key = generate_keypair();
+    let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(addr).await;
-            let offer = client.receive_offer().await;
+    let mut client = connect_and_stream(addr).await;
+    let offer = client.receive_offer().await;
 
-            client
-                .send_init(
-                    offer,
-                    pub_key.public_key(),
-                    session_key.public_key(),
-                    &pub_key,
-                )
-                .await;
-
-            // Incorrect pub_key
-            let other_key = generate_keypair();
-            client
-                .send_witness(other_key.public_key(), &session_key)
-                .await;
-
-            client.assert_closed().await;
-            witnesses.assert_no_messages();
-        })
+    client
+        .send_init(
+            offer,
+            pub_key.public_key(),
+            session_key.public_key(),
+            &pub_key,
+        )
         .await;
+
+    // Incorrect pub_key
+    let other_key = generate_keypair();
+    client
+        .send_witness(other_key.public_key(), &session_key)
+        .await;
+
+    client.assert_closed().await;
+    witnesses.assert_no_messages();
 }
 
 #[tokio::test]
@@ -285,52 +261,48 @@ async fn stream_stop_if_client_attempts_to_initiliaze_2nd_session() {
     let (witness_client, _) = create_file_sink();
     let addr = get_socket_addr().expect("socket addr");
 
-    LocalSet::new()
-        .run_until(async move {
-            tokio::task::spawn_local(async move {
-                let server = create_test_server(addr, beacon_client, witness_client, None, None);
-                TaskManager::builder()
-                    .add_task(server)
-                    .build()
-                    .start()
-                    .await
-            });
+    tokio::spawn(async move {
+        let server = create_test_server(addr, beacon_client, witness_client, None, None);
+        TaskManager::builder()
+            .add_task(server)
+            .build()
+            .start()
+            .await
+    });
 
-            let pub_key = generate_keypair();
-            let session_key = generate_keypair();
+    let pub_key = generate_keypair();
+    let session_key = generate_keypair();
 
-            let mut client = connect_and_stream(addr).await;
-            let offer = client.receive_offer().await;
+    let mut client = connect_and_stream(addr).await;
+    let offer = client.receive_offer().await;
 
-            client
-                .send_init(
-                    offer.clone(),
-                    pub_key.public_key(),
-                    session_key.public_key(),
-                    &pub_key,
-                )
-                .await;
-
-            client.send_beacon(pub_key.public_key(), &session_key).await;
-
-            let beacon_ingest_report = beacons.receive_beacon().await;
-            assert_eq!(
-                beacon_ingest_report.report.unwrap().pub_key,
-                <Vec<u8>>::from(pub_key.public_key())
-            );
-
-            client
-                .send_init(
-                    offer,
-                    pub_key.public_key(),
-                    session_key.public_key(),
-                    &pub_key,
-                )
-                .await;
-
-            client.assert_closed().await;
-        })
+    client
+        .send_init(
+            offer.clone(),
+            pub_key.public_key(),
+            session_key.public_key(),
+            &pub_key,
+        )
         .await;
+
+    client.send_beacon(pub_key.public_key(), &session_key).await;
+
+    let beacon_ingest_report = beacons.receive_beacon().await;
+    assert_eq!(
+        beacon_ingest_report.report.unwrap().pub_key,
+        <Vec<u8>>::from(pub_key.public_key())
+    );
+
+    client
+        .send_init(
+            offer,
+            pub_key.public_key(),
+            session_key.public_key(),
+            &pub_key,
+        )
+        .await;
+
+    client.assert_closed().await;
 }
 
 #[tokio::test]
@@ -339,24 +311,19 @@ async fn stream_stops_if_init_not_sent_within_timeout() {
     let (witness_client, _) = create_file_sink();
     let addr = get_socket_addr().expect("socket addr");
 
-    LocalSet::new()
-        .run_until(async move {
-            tokio::task::spawn_local(async move {
-                let server =
-                    create_test_server(addr, beacon_client, witness_client, Some(500), None);
-                TaskManager::builder()
-                    .add_task(server)
-                    .build()
-                    .start()
-                    .await
-            });
+    tokio::spawn(async move {
+        let server = create_test_server(addr, beacon_client, witness_client, Some(500), None);
+        TaskManager::builder()
+            .add_task(server)
+            .build()
+            .start()
+            .await
+    });
 
-            let mut client = connect_and_stream(addr).await;
-            let _offer = client.receive_offer().await;
+    let mut client = connect_and_stream(addr).await;
+    let _offer = client.receive_offer().await;
 
-            client.assert_closed().await;
-        })
-        .await;
+    client.assert_closed().await;
 }
 
 #[tokio::test]
@@ -365,44 +332,39 @@ async fn stream_stops_on_session_timeout() {
     let (witness_client, _) = create_file_sink();
     let addr = get_socket_addr().expect("socket addr");
 
-    LocalSet::new()
-        .run_until(async move {
-            tokio::task::spawn_local(async move {
-                let server =
-                    create_test_server(addr, beacon_client, witness_client, Some(500), Some(900));
-                TaskManager::builder()
-                    .add_task(server)
-                    .build()
-                    .start()
-                    .await
-            });
+    tokio::spawn(async move {
+        let server = create_test_server(addr, beacon_client, witness_client, Some(500), Some(900));
+        TaskManager::builder()
+            .add_task(server)
+            .build()
+            .start()
+            .await
+    });
 
-            let mut client = connect_and_stream(addr).await;
-            let offer = client.receive_offer().await;
+    let mut client = connect_and_stream(addr).await;
+    let offer = client.receive_offer().await;
 
-            let pub_key = generate_keypair();
-            let session_key = generate_keypair();
+    let pub_key = generate_keypair();
+    let session_key = generate_keypair();
 
-            client
-                .send_init(
-                    offer,
-                    pub_key.public_key(),
-                    session_key.public_key(),
-                    &pub_key,
-                )
-                .await;
-
-            client.send_beacon(pub_key.public_key(), &session_key).await;
-
-            let beacon_ingest_report = beacons.receive_beacon().await;
-            assert_eq!(
-                beacon_ingest_report.report.unwrap().pub_key,
-                <Vec<u8>>::from(pub_key.public_key())
-            );
-
-            client.assert_closed().await;
-        })
+    client
+        .send_init(
+            offer,
+            pub_key.public_key(),
+            session_key.public_key(),
+            &pub_key,
+        )
         .await;
+
+    client.send_beacon(pub_key.public_key(), &session_key).await;
+
+    let beacon_ingest_report = beacons.receive_beacon().await;
+    assert_eq!(
+        beacon_ingest_report.report.unwrap().pub_key,
+        <Vec<u8>>::from(pub_key.public_key())
+    );
+
+    client.assert_closed().await;
 }
 
 struct MockFileSinkReceiver<T> {

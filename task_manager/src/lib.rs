@@ -25,7 +25,7 @@ mod select_all;
 use std::pin::pin;
 
 use crate::select_all::select_all;
-use futures::{future::LocalBoxFuture, Future, FutureExt, StreamExt, TryFutureExt};
+use futures::{future::BoxFuture, Future, FutureExt, StreamExt, TryFutureExt};
 use tokio::signal;
 
 /// A boxed error type for task errors from user code.
@@ -67,9 +67,9 @@ pub type TaskResult = Result<(), TaskError>;
 
 /// The return type for managed tasks.
 ///
-/// A boxed local future that returns [`TaskResult`] when complete.
+/// A boxed future that returns [`TaskResult`] when complete.
 /// Tasks should return `Ok(())` on successful shutdown or an error if something went wrong.
-pub type TaskFuture = LocalBoxFuture<'static, TaskResult>;
+pub type TaskFuture = futures::future::BoxFuture<'static, TaskResult>;
 
 /// Spawns a future into its own Tokio task.
 ///
@@ -99,10 +99,10 @@ where
     }))
 }
 
-/// Boxes a future for local execution without spawning a separate task.
+/// Boxes a future without spawning a separate task.
 ///
-/// Use this in [`ManagedTask::start_task`] implementations when your future
-/// does not satisfy the `Send` requirement. Prefer [`spawn`] when possible,
+/// Use this in [`ManagedTask::start_task`] implementations when you want to
+/// run the future directly rather than spawning it. Prefer [`spawn`] when possible,
 /// as spawned tasks can run more efficiently on the Tokio runtime.
 ///
 /// # Example
@@ -116,7 +116,7 @@ where
 /// ```
 pub fn run<F, E>(fut: F) -> TaskFuture
 where
-    F: Future<Output = Result<(), E>> + 'static,
+    F: Future<Output = Result<(), E>> + Send + 'static,
     E: Into<BoxError> + 'static,
 {
     Box::pin(fut.map_err(TaskError::from_err))
@@ -141,7 +141,7 @@ where
 ///     }
 /// }
 /// ```
-pub trait ManagedTask {
+pub trait ManagedTask: Send + Sync {
     /// Starts the task and returns a future that completes when the task is done.
     ///
     /// The `shutdown` listener will be triggered when the task manager wants to
@@ -221,8 +221,8 @@ impl Future for StoppableLocalFuture {
 
 impl<F, O> ManagedTask for F
 where
-    O: Future<Output = TaskResult> + 'static,
-    F: FnOnce(triggered::Listener) -> O,
+    O: Future<Output = TaskResult> + Send + 'static,
+    F: FnOnce(triggered::Listener) -> O + Send + Sync,
 {
     fn start_task(self: Box<Self>, shutdown: triggered::Listener) -> TaskFuture {
         Box::pin(self(shutdown))
@@ -272,7 +272,7 @@ impl TaskManager {
         self.do_start(shutdown).await
     }
 
-    async fn do_start(self, mut shutdown: LocalBoxFuture<'static, ()>) -> TaskResult {
+    async fn do_start(self, mut shutdown: BoxFuture<'static, ()>) -> TaskResult {
         let mut futures = start_futures(self.tasks);
 
         loop {
@@ -347,6 +347,15 @@ async fn stop_all(futures: Vec<StoppableLocalFuture>) -> TaskResult {
 mod tests {
     use super::*;
     use tokio::sync::mpsc;
+
+    // Compile-time assertion that TaskManager is Send + Sync
+    #[allow(dead_code)]
+    fn assert_send_sync() {
+        fn is_send<T: Send>() {}
+        fn is_sync<T: Sync>() {}
+        is_send::<TaskManager>();
+        is_sync::<TaskManager>();
+    }
 
     #[derive(Debug)]
     struct TestError(&'static str);
